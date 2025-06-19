@@ -49,3 +49,7 @@ src-tauri/resources/bin
 # Helper tools
 .opencode
 OpenCode.md
+
+# automated testing framework
+allure-results/
+junit-results/

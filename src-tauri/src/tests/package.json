@@ -1,0 +1,34 @@
+{
+  "name": "automation-test",
+  "version": "1.0.0",
+  "description": "automation test for tauri applications",
+  "author": "",
+  "scripts": {
+    "test": "wdio run ./config/wdio.conf.js",
+    "wdio": "wdio run ./config/wdio.conf.js",
+    "report": "allure serve allure-results"
+  },
+  "devDependencies": {
+    "@wdio/allure-reporter": "^9.14.0",
+    "@wdio/appium-service": "^9.14.0",
+    "@wdio/cli": "^9.14.0",
+    "@wdio/devtools-service": "^8.42.0",
+    "@wdio/junit-reporter": "^9.14.0",
+    "@wdio/local-runner": "^9.14.0",
+    "@wdio/mocha-framework": "^9.14.0",
+    "@wdio/spec-reporter": "^9.14.0",
+    "@wdio/types": "^9.15.0",
+    "install": "^0.13.0",
+    "prettier": "3.5.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^4.9.5",
+    "wdio-json-html-reporter": "^1.5.9",
+    "wdio-mochawesome-reporter": "^7.0.0",
+    "wdio-wait-for": "^3.1.0",
+    "webdriver": "^9.14.0"
+  },
+  "dependencies": {
+    "typescript-string-operations": "^1.5.1",
+    "webdriverio": "^9.15.0"
+  }
+}

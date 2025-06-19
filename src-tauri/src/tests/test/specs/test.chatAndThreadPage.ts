@@ -1,0 +1,632 @@
+import * as dotenv from 'dotenv'
+import { IHomePage } from '../../pageObjects/interface/iHomePage'
+import { IChatPage } from '../../pageObjects/interface/iChatPage'
+import { ISettingsPage } from '@interface/iSettingsPage'
+import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
+import { ChatPage as MacChatPage } from '../../pageObjects/mac/chatPage'
+import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
+import { String } from 'typescript-string-operations'
+import common from '@data/common.json'
+dotenv.config()
+
+let homePage: IHomePage
+let chatPage: IChatPage
+let settingsPage: ISettingsPage
+
+const appInfo = common.appInfo
+const gptv4 = common.models.gptv4dot5Preview
+const qwen3v4b = common.models.qwen3v4b
+const qwen3v0dot6b = common.models.qwen3v0dot6b
+const qwen3v1dot7b = common.models.qwen3v1dot7b
+const codeBlock = common.codeBlock
+const notify = common.notify
+const ui = common.ui
+const toolResp = common.toolResp
+const toolSend = common.toolSend
+const parts = common.partThread
+const recentsMenu = common.recentsMenu
+const threadMenu = common.threadMenu
+const btn = common.btn
+const title = common.title
+const submenu1 = common.submenu1
+const modelType = common.modelType
+
+async function configCodeBlock(codeBlock: string) {
+  await homePage.openSettings()
+  await settingsPage.selectSub1Menu(submenu1.appearance)
+  if (!(await chatPage.isText(codeBlock))) {
+    await settingsPage.tapBtnSetting(title.codeBlock)
+    await settingsPage.selectDropdown(codeBlock)
+  }
+}
+
+async function configAPIKey(key: string) {
+  await goToModelProviders()
+  await settingsPage.selectSub1Menu(modelType.openAI)
+  await settingsPage.enterSetting(title.apiKey, key)
+}
+
+async function goToModelProviders() {
+  await homePage.openSettings()
+  await settingsPage.selectSub1Menu(submenu1.modelProviders)
+}
+
+async function getStatusModels(models: any) {
+  let object: any = {}
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i]
+    let status = await settingsPage.getTextStatus(model)
+    object[model] = status
+  }
+  return object
+}
+
+async function getContentAndThought() {
+  await chatPage.waitSendDone(120000)
+  const content = await chatPage.getContentResp()
+  let thought = new Array()
+  if (await chatPage.isThought()) {
+    await chatPage.tapThought()
+    thought = await chatPage.getContentThought()
+    await chatPage.tapThought()
+  }
+  return {
+    content: content,
+    thought: thought,
+  }
+}
+
+async function createThead(model: string, msg: string) {
+  await homePage.openNewChat()
+  await chatPage.selectModel(model)
+  await chatPage.sendMessage(msg)
+  await chatPage.waitSendDone(120000)
+  return await getContentAndThought()
+}
+
+async function showLoadingModelAndDisableInputSending(
+  model: string,
+  msg: string
+) {
+  const loadingModel = ui.loadingModel
+  await chatPage.selectModel(model)
+  await chatPage.sendMessage(msg)
+  await chatPage.waitText(loadingModel)
+  expect(await chatPage.isText(loadingModel)).toBe(true)
+  expect(await chatPage.getSendInputEnabled()).toBe('false')
+  await chatPage.waitSendDone(120000)
+}
+
+describe('Chat & Thread', () => {
+  beforeEach(async () => {
+    if (process.env.RUNNING_OS === 'macOS') {
+      homePage = new MacHomePage(driver)
+      chatPage = new MacChatPage(driver)
+      settingsPage = new MacSettingsPage(driver)
+    }
+    await homePage.activateApp(process.env.BUNDLE_ID)
+    await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
+    await homePage.setWindowBounds()
+  })
+
+  it('Validate model responses in table format.', async () => {
+    const model = gptv4
+    const msg = 'draw a table with 2 columns and rows'
+    await createThead(model, msg)
+    expect(await chatPage.isTable()).toBe(true)
+  })
+
+  it('Check formatting of code responses and code block usage.', async () => {
+    await configCodeBlock(codeBlock.dark)
+    const model = gptv4
+    const msg = 'hello example in python'
+    await createThead(model, msg)
+    //await driver.takeScreenshot();
+    expect(await chatPage.isText(ui.python)).toBe(true)
+    expect(await chatPage.isText(ui.copy)).toBe(true)
+  })
+
+  it('Validate long-form response from model.', async () => {
+    const msg = 'generate a new story long any theme'
+    const model = gptv4
+    const thoughtAndContent = await createThead(model, msg)
+    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+  })
+
+  it('Validate model summary for long-form response.', async () => {
+    const msg = 'summary this'
+    await chatPage.sendMessage(msg)
+    await chatPage.waitSendDone(120000)
+    const content = await chatPage.getContentResp(2)
+    expect(content.length).toBeGreaterThan(0)
+  })
+
+  it('Successful deletion of requests from user /responses from model without issues', async () => {
+    const msg = 'summarize further'
+    await chatPage.sendMessage(msg)
+    await chatPage.waitSendDone(120000)
+    await chatPage.tapBtnTool(toolResp.delete, 3)
+    expect(await chatPage.isJanName(3)).toBe(false)
+    await chatPage.tapBtnTool(toolResp.delete, 2)
+    expect(await chatPage.isJanName(2)).toBe(false)
+  })
+
+  it("Model response generation stops completely when user clicks 'Stop' ", async () => {
+    const model = gptv4
+    const msg = 'generate a new story long any theme'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.sendMessage(msg)
+    await chatPage.waitForTimeout(2000)
+    await chatPage.tapSend()
+    expect(await chatPage.getSendEnabled()).toBe('false')
+  })
+
+  it('Disable Send/Save button when input is empty.', async () => {
+    const msg = 'generate a new story long any theme'
+    await homePage.openNewChat()
+    expect(await chatPage.getSendEnabled()).toBe('false')
+    await chatPage.enterText(chatPage.elements.chatInput, msg)
+    expect(await chatPage.getSendEnabled()).toBe('true')
+    await chatPage.enterText(chatPage.elements.chatInput, '')
+    expect(await chatPage.getSendEnabled()).toBe('false')
+  })
+
+  it('Display full user input for long messages.', async () => {
+    const msg =
+      'As the world becomes increasingly interconnected through globalization and the rapid development of digital communication technologies, cultures and societies are interacting with one another more frequently and intensely than ever before. While this has led to many positive outcomes, such as increased cultural exchange, improved access to information, and the fostering of international cooperation, it has also resulted in significant challenges, including the loss of cultural identity, the spread of misinformation, and increased economic inequality. Given this complex and multifaceted situation, to what extent do you believe that governments, educational institutions, and international organizations should intervene to manage the effects of globalization and digital transformation on cultural diversity, economic equity, and the well-being of future generations, and what specific strategies or policies do you think would be most effective in achieving these goals while still promoting innovation and progress?'
+    await homePage.openNewChat()
+    await chatPage.enterText(chatPage.elements.chatInput, msg)
+    await chatPage.waitForTimeout(5000)
+    const textInput = await chatPage.getText(chatPage.elements.chatInput)
+    expect(msg).toBe(textInput)
+    await chatPage.enterText(chatPage.elements.chatInput, '')
+  })
+
+  it('Message updates after editing and saving.', async () => {
+    const model = gptv4
+    const msg = 'generate 500/1000 words'
+    const newMsg = 'generate 1000 words'
+    await createThead(model, msg)
+    await chatPage.tapBtnSendTool(msg, toolSend.edit)
+    await chatPage.editMsgSend(newMsg)
+    const isNotify = await settingsPage.isNotify(
+      notify.title.editMessage,
+      notify.content.editMessageSuccess
+    )
+    expect(isNotify).toBe(true)
+    expect(await chatPage.getSendEnabled()).toBe('true')
+    await chatPage.waitSendDone(120000)
+    expect(await chatPage.isText(newMsg)).toBe(true)
+  })
+
+  it('Sending messages with special characters or emojis.', async () => {
+    const model = gptv4
+    const msg = '😀😃😄😁😁. Hello!'
+    const thoughtAndContent = await createThead(model, msg)
+    expect(await chatPage.isText(msg)).toBe(true)
+    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+  })
+
+  it('Canceling edit restores the original message.', async () => {
+    const model = gptv4
+    const msg = 'Hello'
+    const newMsg = 'Hello1'
+    await createThead(model, msg)
+    expect(await chatPage.isText(msg)).toBe(true)
+    await chatPage.tapBtnSendTool(msg, toolSend.edit)
+    await chatPage.enterText(chatPage.elements.editSendInput, newMsg)
+    await chatPage.clickElement(chatPage.elements.cancelBtn)
+    await chatPage.waitForTimeout(1000)
+    expect(await chatPage.isText(newMsg)).toBe(false)
+    expect(await chatPage.isText(msg)).toBe(true)
+  })
+
+  it('Delete message send.', async () => {
+    const model = gptv4
+    const msg = 'Hello'
+    await createThead(model, msg)
+    expect(await chatPage.isText(msg)).toBe(true)
+    await chatPage.tapBtnSendTool(msg, toolSend.delete)
+    expect(await chatPage.isMessageSend(msg)).toBe(false)
+  })
+
+  it('Delete multiple sent messages.', async () => {
+    const model = gptv4
+    const msg1 = 'Hello1'
+    const msg2 = 'Hello2'
+    await createThead(model, msg1)
+    await chatPage.sendMessage(msg2)
+    await chatPage.waitSendDone(120000)
+    await chatPage.tapBtnSendTool(msg1, toolSend.delete)
+    expect(await chatPage.isMessageSend(msg1)).toBe(false)
+    await chatPage.tapBtnSendTool(msg2, toolSend.delete)
+    expect(await chatPage.isMessageSend(msg2)).toBe(false)
+  })
+
+  it('Display JSON metadata on clicking the metadata icon.', async () => {
+    const model = gptv4
+    const msg = 'Hello'
+    await createThead(model, msg)
+    await chatPage.tapBtnTool(toolResp.info)
+    const metaData = await chatPage.getContentMetaData()
+    await chatPage.clickElement(chatPage.elements.closeBtn)
+    expect(() => JSON.parse(metaData)).not.toThrow()
+  })
+
+  it('Allow copying response content.', async () => {
+    const model = qwen3v4b
+    const msg = 'Hello'
+    const thoughtAndContent = await createThead(model, msg)
+    await chatPage.tapBtnTool(toolResp.copy, 1)
+    expect(await chatPage.isText(ui.copied)).toBe(true)
+    await chatPage.clickElement(chatPage.elements.chatInput)
+    await chatPage.pasteText()
+    const thought = thoughtAndContent.thought[0]
+    const content = thoughtAndContent.content[0][0]
+    const textExpect = '<think>' + thought + '</think>' + content
+    const textInput = await chatPage.getText(chatPage.elements.chatInput)
+    expect(textInput).toBe(textExpect)
+    await chatPage.enterText(chatPage.elements.chatInput, '')
+  })
+
+  it('App redirects correctly when a link is clicked.', async () => {
+    const model = gptv4
+    const msg = 'What is Google link? Please provide full google.com link'
+    const link = 'https://www.google.com'
+    await createThead(model, msg)
+    await chatPage.tapText(link)
+    await chatPage.waitForTimeout(3000)
+    const urlBrower = await chatPage.getBrowserUrl()
+    expect(urlBrower).toBe(link + '/')
+    await chatPage.focusApp(appInfo.name)
+  })
+
+  it('Chat with invalid API key remote provider.', async () => {
+    const key = 'invalid'
+    const model = gptv4
+    const msg = 'Test'
+    await configAPIKey(key)
+    await createThead(model, msg)
+    await chatPage.waitSendDone(120000)
+    expect(
+      await chatPage.isNotify(notify.content.incorrectAPIKeyProvided)
+    ).toBe(true)
+  })
+
+  it('Chat with valid API key remote provider.', async () => {
+    const key = process.env.OPENAI || ''
+    const model = gptv4
+    const msg = 'Test'
+    await homePage.openNewChat()
+    await configAPIKey(key)
+    const thoughtAndContent = await createThead(model, msg)
+    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+  })
+
+  it('Display latest selected model name after switching.', async () => {
+    const msg1 = 'Hello'
+    const msg2 = 'Hello 1'
+    const model1 = gptv4
+    const model2 = qwen3v4b
+    const thoughtAndContent1 = await createThead(model1, msg1)
+    expect(thoughtAndContent1.content.length).toBeGreaterThan(0)
+    await chatPage.selectModel(model2)
+    await chatPage.sendMessage(msg2)
+    await chatPage.waitSendDone(120000)
+    const content2 = await chatPage.getContentResp(2)
+    expect(content2.length).toBeGreaterThan(0)
+    await chatPage.tapThought()
+    const thought2 = await chatPage.getContentThought()
+    await chatPage.tapThought()
+    expect(thought2.length).toBeGreaterThan(0)
+    expect(await chatPage.isTextContains(model2)).toBe(true)
+  })
+
+  it("Show 'Loading Model...' and disable input during sending.", async () => {
+    const model1 = qwen3v0dot6b
+    const model2 = qwen3v1dot7b
+    const msg1 = 'Content 1'
+    const msg2 = 'Content 2'
+    await goToModelProviders()
+    await settingsPage.toggle(title.autoUnloadOldModels, true)
+    let modelsStatus = await getStatusModels([model1, model2])
+    expect(modelsStatus[model1]).toBe(btn.start)
+    expect(modelsStatus[model2]).toBe(btn.start)
+    await homePage.openNewChat()
+    await showLoadingModelAndDisableInputSending(model1, msg1)
+    await goToModelProviders()
+    modelsStatus = await getStatusModels([model1, model2])
+    expect(modelsStatus[model1]).toBe(btn.stop)
+    expect(modelsStatus[model2]).toBe(btn.start)
+    await homePage.openNewChat()
+    await showLoadingModelAndDisableInputSending(model2, msg2)
+    await goToModelProviders()
+    modelsStatus = await getStatusModels([model1, model2])
+    expect(modelsStatus[model1]).toBe(btn.start)
+    expect(modelsStatus[model2]).toBe(btn.stop)
+    await settingsPage.toggle(title.autoUnloadOldModels, false)
+    await homePage.openNewChat()
+    await showLoadingModelAndDisableInputSending(model1, msg1)
+    await showLoadingModelAndDisableInputSending(model2, msg2)
+    await goToModelProviders()
+    modelsStatus = await getStatusModels([model1, model2])
+    expect(modelsStatus[model1]).toBe(btn.stop)
+    expect(modelsStatus[model2]).toBe(btn.stop)
+  })
+
+  it('Verify thread switching retains correct model and content.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const model1 = gptv4
+    const model2 = qwen3v4b
+    await chatPage.deleteAllHistory()
+    const content1 = await createThead(model1, msg1)
+    const content2 = await createThead(model2, msg2)
+    await chatPage.selectHistory(msg1)
+    const contentThread1 = await getContentAndThought()
+    expect(await chatPage.isTextContains(model1)).toBe(true)
+    expect(await chatPage.isText(msg1)).toBe(true)
+    expect(contentThread1).toStrictEqual(content1)
+    await chatPage.selectHistory(msg2)
+    const contentThread2 = await getContentAndThought()
+    expect(await chatPage.isTextContains(model2)).toBe(true)
+    expect(await chatPage.isText(msg2)).toBe(true)
+    expect(contentThread2).toStrictEqual(content2)
+  })
+
+  it('Verify thread switching retains correct model and content.', async () => {
+    const msg = 'Test3'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    const content = await createThead(model, msg)
+    await chatPage.quitApp(appInfo.name)
+    await chatPage.wait(3000)
+    await chatPage.openApp(appInfo.address)
+    await chatPage.wait(2000)
+    await chatPage.focusApp(appInfo.name)
+    await chatPage.selectHistory(msg)
+    const contentThread = await getContentAndThought()
+    expect(await chatPage.isTextContains(model)).toBe(true)
+    expect(await chatPage.isText(msg)).toBe(true)
+    expect(contentThread).toStrictEqual(content)
+  })
+
+  it('Regenerate response multiple times to ensure relevance.', async () => {
+    const msg = 'Test3'
+    const model = gptv4
+    let content
+    if (!(await chatPage.isText(msg))) {
+      content = await createThead(model, msg)
+    } else {
+      await chatPage.selectHistory(msg)
+      content = await getContentAndThought()
+    }
+    await chatPage.tapBtnTool(toolResp.regenerate)
+    const contentThread1 = await getContentAndThought()
+    expect(contentThread1).not.toStrictEqual(content)
+    await chatPage.tapBtnTool(toolResp.regenerate)
+    const contentThread2 = await getContentAndThought()
+    expect(contentThread2).not.toStrictEqual(content)
+  })
+
+  it('Update thread name after renaming.', async () => {
+    const msg = 'Test3'
+    const newMsg = 'Test4'
+    const model = gptv4
+    if (!(await chatPage.isText(msg))) {
+      await createThead(model, msg)
+    } else {
+      await chatPage.selectHistory(msg)
+      await getContentAndThought()
+    }
+    await chatPage.selectHistoryMenu(msg, threadMenu.rename)
+    await chatPage.renameHistory(newMsg)
+    const isNotify = await settingsPage.isNotify(
+      notify.title.renameThread,
+      String.format(notify.content.renameThreadSuccess, newMsg)
+    )
+    expect(isNotify).toBe(true)
+    expect(await chatPage.isHistory(newMsg)).toBe(true)
+  })
+
+  it('New thread shows under Recent by default.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    const history = await chatPage.getHistoryToPart()
+    expect(history[0]).toBe(msg2)
+    expect(history[1]).toBe(msg1)
+  })
+
+  it('Starred thread moves to Favorites.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await chatPage.selectHistoryMenu(msg1, threadMenu.star)
+    const favoritesHistory = await chatPage.getHistoryToPart('Favorites')
+    expect(favoritesHistory[0]).toBe(msg1)
+    console.log(favoritesHistory)
+    const recentsHistory = await chatPage.getHistoryToPart('Recents')
+    expect(recentsHistory[0]).toBe(msg2)
+  })
+
+  it('Unstarred thread returns to Recent.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await chatPage.selectHistoryMenu(msg1, threadMenu.star)
+    await chatPage.selectHistoryMenu(msg1, threadMenu.unstar, parts.favorites)
+    const recentsHistory = await chatPage.getHistoryToPart(parts.recents)
+    expect(await chatPage.isText(parts.favorites)).toBe(false)
+    expect(recentsHistory[0]).toBe(msg2)
+    expect(recentsHistory[1]).toBe(msg1)
+  })
+
+  it('Show exact thread on exact name search.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await chatPage.searchHistory(msg1)
+    expect(await chatPage.isText(parts.recents)).toBe(true)
+    const recentsHistory1 = await chatPage.getHistoryToPart(parts.recents)
+    expect(recentsHistory1.length).toBe(1)
+    expect(recentsHistory1[0]).toBe(msg1.split('').join(' '))
+    await chatPage.searchHistory(msg2)
+    expect(await chatPage.isText(parts.recents)).toBe(true)
+    const recentsHistory2 = await chatPage.getHistoryToPart(parts.recents)
+    expect(recentsHistory1.length).toBe(1)
+    expect(recentsHistory2[0]).toBe(msg2.split('').join(' '))
+  })
+
+  it('Show partial matches when searching thread names.', async () => {
+    const keyword = 'test'
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const msg3 = 'Hello'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await createThead(model, msg3)
+    await chatPage.searchHistory(keyword)
+    expect(await chatPage.isText(parts.recents)).toBe(true)
+    const recentsHistory = await chatPage.getHistoryToPart(parts.recents)
+    expect(recentsHistory.length).toBe(2)
+    expect(recentsHistory[0]).toBe(msg2.split('').join(' '))
+    expect(recentsHistory[1]).toBe(msg1.split('').join(' '))
+    expect(await chatPage.isText(msg3.split('').join(' '))).toBe(false)
+  })
+
+  it('Thread search is case-insensitive.', async () => {
+    const keywords = ['hello', 'Hello', 'hELLO']
+    const msg1 = 'TEST3'
+    const msg2 = 'TEST4'
+    const msg3 = 'HELLO'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await createThead(model, msg3)
+    for (let i = 0; i < keywords.length; i++) {
+      const keyword = keywords[i]
+      await chatPage.searchHistory(keyword)
+      expect(await chatPage.isText(parts.recents)).toBe(true)
+      const recentsHistory = await chatPage.getHistoryToPart(parts.recents)
+      expect(recentsHistory.length).toBe(1)
+      expect(recentsHistory[0]).toBe(msg3.split('').join(' '))
+      expect(await chatPage.isText(msg1.split('').join(' '))).toBe(false)
+      expect(await chatPage.isText(msg2.split('').join(' '))).toBe(false)
+    }
+  })
+
+  it('Cancel delete thread is kept intact.', async () => {
+    const msg = 'Test3'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg)
+    const history = await chatPage.getHistoryToPart()
+    await chatPage.selectHistoryMenu(msg, btn.delete)
+    await chatPage.tapText(btn.cancel)
+    await chatPage.waitForTimeout(1000)
+    const historyAfter = await chatPage.getHistoryToPart()
+    expect(history).toStrictEqual(historyAfter)
+  })
+
+  it('Thread is permanently deleted on user action.', async () => {
+    const msg = 'Test3'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg)
+    await chatPage.deleteHistory(msg)
+    const isNotify = await settingsPage.isNotify(
+      notify.title.deleteThread,
+      notify.content.deleteThreadSuccess
+    )
+    expect(isNotify).toBe(true)
+  })
+
+  it('Cancel delete all threads are kept intact.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const msg3 = 'Hello'
+    const model = gptv4
+    await chatPage.enterText(chatPage.elements.searchHistoryInput, '')
+    let history = await chatPage.getHistoryToPart()
+    if (history.length == 0) {
+      await createThead(model, msg1)
+      await createThead(model, msg2)
+      await createThead(model, msg3)
+    }
+    history = await chatPage.getHistoryToPart()
+    await chatPage.tapThreeDotsPart()
+    await chatPage.tapText(recentsMenu.deleteAll)
+    await chatPage.clickElement(chatPage.elements.cancelBtn)
+    await chatPage.closeRecentsMenu()
+    await chatPage.waitForTimeout(1000)
+    const historyAfter = await chatPage.getHistoryToPart()
+    expect(history).toStrictEqual(historyAfter)
+  })
+
+  it('Delete All removes all recent threads permanently.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const msg3 = 'Hello'
+    const model = gptv4
+    const history = await chatPage.getHistoryToPart()
+    if (history.length == 0) {
+      await createThead(model, msg1)
+      await createThead(model, msg2)
+      await createThead(model, msg3)
+    }
+    await chatPage.deleteAllHistory()
+    const isNotify = await settingsPage.isNotify(
+      notify.title.deleteAllThreads,
+      notify.content.deleteAllThreadSuccess
+    )
+    expect(isNotify).toBe(true)
+    expect(await chatPage.isText(ui.noThreadsYet)).toBe(true)
+    expect(await chatPage.isText(ui.noThreadsYetDetail)).toBe(true)
+  })
+
+  it('Unstar all thread returns to Recent.', async () => {
+    const msg1 = 'Test3'
+    const msg2 = 'Test4'
+    const msg3 = 'Hello'
+    const model = gptv4
+    await chatPage.deleteAllHistory()
+    await createThead(model, msg1)
+    await createThead(model, msg2)
+    await createThead(model, msg3)
+    await chatPage.selectHistoryMenu(msg1, threadMenu.star)
+    await chatPage.selectHistoryMenu(msg2, threadMenu.star)
+    await chatPage.selectHistoryMenu(msg3, threadMenu.star)
+    await chatPage.unstarAllHistory()
+    const isNotify = await settingsPage.isNotify(
+      notify.title.allThreadsUnfavorited,
+      notify.content.allThreadsUnfavoritedSuccess
+    )
+    expect(isNotify).toBe(true)
+    expect(await chatPage.isText(parts.favorites)).toBe(false)
+  })
+
+  it('Can open setting model on chat page.', async () => {
+    const model = qwen3v0dot6b
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+  })
+})

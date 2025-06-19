@@ -1,0 +1,123 @@
+{
+  "appInfo": {
+    "name": "Jan-nightly",
+    "address": "/Applications/Jan-nightly"
+  },
+  "modelsHub": {
+    "janNanoGguf": "Jan-Nano-Gguf",
+    "qwen3": "Qwen3"
+  },
+  "btnModelHub": {
+    "use": "Use",
+    "download": "Download"
+  },
+  "submenu1": {
+    "general": "General",
+    "appearance": "Appearance",
+    "pricivacy": "Pricivacy",
+    "modelProviders": "Model Providers",
+    "shortcuts": "Shortcuts",
+    "mcpServers": "Shortcuts",
+    "locaAPIServer": "Local API Server",
+    "httpsProxy": "HTTPS Proxy",
+    "extensions": "Extensions"
+  },
+  "modelType": {
+    "llama": "lLama.cpp",
+    "openAI": "OpenAI"
+  },
+  "models": {
+    "gptv4dot5Preview": "gpt-4.5-preview",
+    "qwen3v4b": "qwen3:4b",
+    "qwen3v0dot6b": "qwen3:0.6b",
+    "qwen3v1dot7b": "qwen3:1.7b"
+  },
+  "btnModel": {
+    "start": "Start",
+    "stop": "Stop",
+    "delete": "Delete",
+    "settings": "Settings",
+    "edit": "Edit"
+  },
+  "codeBlock": {
+    "dark": "Dark"
+  },
+  "btn": {
+    "start": "Start",
+    "stop": "Stop",
+    "delete": "Delete",
+    "cancel": "Cancel"
+  },
+  "toolResp": {
+    "copy": "Copy",
+    "delete": "Delete",
+    "info": "Info",
+    "regenerate": "Regenerate"
+  },
+  "toolSend": {
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "partThread": {
+    "recents": "Recents",
+    "favorites": "Favorites"
+  },
+  "recentsMenu": {
+    "deleteAll": "Delete All"
+  },
+  "favoritesMenu": {
+    "unstarAll": "Unstar All"
+  },
+  "threadMenu": {
+    "star": "Star",
+    "unstar": "Unstar",
+    "rename": "Rename",
+    "delete": "Delete"
+  },
+  "title": {
+    "codeBlock": "Code Block",
+    "apiKey": "API Key",
+    "autoUnloadOldModels": "Auto-Unload Old Models",
+    "modelSettings": {
+      "contextSize": "Context Size",
+      "gpuLayers": "GPU Layers",
+      "temperature": "Temperature",
+      "topK": "Top K",
+      "minP": "Min P",
+      "repeatLastN": "Repeat Last N",
+      "repeatPenalty": "Repeat Last N",
+      "presencePenalty": "Presence Penalty",
+      "frequencyPenalty": "Frequency Penalty"
+    }
+  },
+  "notify": {
+    "title": {
+      "importModel": "Import Model",
+      "deleteModel": "Delete Model",
+      "editMessage": "Edit Message",
+      "renameThread": "Rename Thread",
+      "deleteThread": "Delete Thread",
+      "deleteAllThreads": "Delete All Threads",
+      "allThreadsUnfavorited": "All Threads Unfavorited"
+    },
+    "content": {
+      "importModelSuccess": "Model {0} has been imported successfully.",
+      "deleteModelSuccess": "Model {0} has been permanently deleted.",
+      "editMessageSuccess": "Message edited successfully. Please wait for the model to respond.",
+      "incorrectAPIKeyProvided": "Error sending message: 401 Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+      "renameThreadSuccess": "Thread title has been renamed to '{0}'",
+      "deleteThreadSuccess": "This thread has been permanently deleted.",
+      "deleteAllThreadSuccess": "All threads have been permanently deleted.",
+      "allThreadsUnfavoritedSuccess": "All threads have been removed from your favorites."
+    }
+  },
+  "ui": {
+    "deleteModel": "Delete Model: ",
+    "python": "Python",
+    "copy": "Copy",
+    "loadingModel": "Loading model...",
+    "copied": "Copied!",
+    "noThreadsYet": "No threads yet",
+    "noThreadsYetDetail": "Start a new conversation to see your thread history here."
+  }
+}
