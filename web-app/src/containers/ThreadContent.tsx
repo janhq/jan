@@ -79,6 +79,14 @@ const EditDialog = ({
   message: string
   setMessage: (message: string) => void
 }) => {
+  const [draft, setDraft] = useState(message)
+
+  const handleSave = () => {
+    if (draft !== message) {
+      setMessage(draft)
+    }
+  }
+
   return (
     <Dialog>
       <DialogTrigger>
@@ -97,10 +105,8 @@ const EditDialog = ({
         <DialogHeader>
           <DialogTitle>Edit Message</DialogTitle>
           <Textarea
-            value={message}
-            onChange={(e) => {
-              setMessage(e.target.value)
-            }}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
             className="mt-2 resize-none h-full w-full"
             onKeyDown={(e) => {
               // Prevent key from being captured by parent components
@@ -114,7 +120,12 @@ const EditDialog = ({
               </Button>
             </DialogClose>
             <DialogClose asChild>
-              <Button disabled={!message}>Save</Button>
+              <Button
+                disabled={draft === message || !draft}
+                onClick={handleSave}
+              >
+                Save
+              </Button>
             </DialogClose>
           </DialogFooter>
         </DialogHeader>
