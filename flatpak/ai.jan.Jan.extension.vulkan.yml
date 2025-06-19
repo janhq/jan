@@ -1,0 +1,71 @@
+id: ai.jan.Jan.extension.vulkan
+branch: '1.4'
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk//24.08
+build-extension: true
+separate-locales: false
+build-options:
+  prefix: /app/lib/GL/vulkan
+  prepend-ld-library-path: lib
+modules:
+  - name: volk
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DVOLK_INSTALL=ON
+    sources:
+      - type: archive
+        url: https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.280.0.zip
+        sha256: 178875134d36e8b90f7e3ec31171355df3b71f47eba49cca2f98158e6552b011
+
+  - name: vulkan-headers
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.283.zip
+        sha256: 2094159c87fb4b6d8f734bd4cad59564cef7ef32feb00cf6d8ca7e75a84df921
+
+  - name: vulkan-tools
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/v1.3.283.zip
+        sha256: 11ec6b474e91dc8cb6e7f22891294ede549bb6ed67c19d230e293b3fc9610883
+
+
+  - name: shaderc
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+      - -DSHADERC_SKIP_EXAMPLES=ON
+      - -DSHADERC_SKIP_TESTS=ON
+      - -DSPIRV_SKIP_EXECUTABLES=ON
+      - -DENABLE_GLSLANG_BINARIES=OFF
+    cleanup:
+      - /bin
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/google/shaderc.git
+        tag: v2024.1
+        commit: 47a9387ef5b3600d30d84c71ec77a59dc7db46fa
+      # https://github.com/google/shaderc/blob/known-good/known_good.json
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Tools.git
+        commit: dd4b663e13c07fea4fbb3f70c1c91c86731099f7
+        dest: third_party/spirv-tools
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Headers.git
+        commit: 5e3ad389ee56fca27c9705d093ae5387ce404df4
+        dest: third_party/spirv-headers
+      - type: git
+        url: https://github.com/KhronosGroup/glslang.git
+        commit: 142052fa30f9eca191aa9dcf65359fcaed09eeec
+        dest: third_party/glslang
+

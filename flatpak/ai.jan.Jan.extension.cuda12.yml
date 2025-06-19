@@ -1,0 +1,30 @@
+id: ai.jan.Jan.extension.cuda
+branch: '1.4'
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk//24.08
+build-extension: true
+separate-locales: false
+build-options:
+  prefix: /app/cuda
+  prepend-ld-library-path: lib
+modules:
+  - name: cuda-toolkit
+    only-arches:
+      - x86_64
+    cleanup:
+      - /cuda
+    buildsystem: simple
+    build-commands:
+      - mkdir /app/cuda
+      - sh cuda_toolkit.run --silent --toolkit --toolkitpath=/app/cuda
+      - mv /app/cuda/lib64/libcudart.* /app/lib/
+      - mv /app/cuda/lib64/libcublas* /app/lib/
+    sources:
+      - type: file
+        only-arches:
+          - x86_64
+        url: https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run
+        dest-filename: cuda_toolkit.run
+        md5: c71027cf1a4ce84f80b9cbf81116e767
+
