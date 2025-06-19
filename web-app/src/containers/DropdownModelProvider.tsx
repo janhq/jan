@@ -391,14 +391,9 @@ const DropdownModelProvider = ({
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span
-                                  className="truncate text-main-view-fg/80 text-sm"
-                                  dangerouslySetInnerHTML={{
-                                    __html:
-                                      searchableModel.highlightedId ||
-                                      searchableModel.model.id,
-                                  }}
-                                />
+                                <span className="truncate text-main-view-fg/80 text-sm">
+                                  {searchableModel.model.id}
+                                </span>
 
                                 <div className="flex-1"></div>
                                 {!isProd && capabilities.length > 0 && (

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import { Fzf } from 'fzf'
-import { highlightFzfMatch } from '../utils/highlight'
+
 type ThreadState = {
   threads: Record<string, Thread>
   currentThreadId?: string
@@ -68,12 +68,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     return fzfResults.map(
       (result: { item: Thread; positions: Set<number> }) => {
         const thread = result.item // Fzf stores the original item here
-        // Ensure result.positions is an array, default to empty if undefined
-        const positions = Array.from(result.positions) || []
-        const highlightedTitle = highlightFzfMatch(thread.title, positions)
+
         return {
           ...thread,
-          title: highlightedTitle, // Override title with highlighted version
+          title: thread.title, // Override title with highlighted version
         }
       }
     )
