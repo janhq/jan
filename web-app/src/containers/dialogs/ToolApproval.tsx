@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { Trans } from 'react-i18next'
 
 export default function ToolApproval() {
   const { t } = useTranslation()
@@ -51,10 +52,10 @@ export default function ToolApproval() {
             <div>
               <DialogTitle>{t('tools:toolApproval.title')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: t('tools:toolApproval.description', { toolName }),
-                  }}
+                <Trans
+                  i18nKey="tools:toolApproval.description"
+                  values={{ toolName }}
+                  components={{ strong: <strong className="font-semibold" /> }}
                 />
               </DialogDescription>
             </div>
@@ -63,28 +64,30 @@ export default function ToolApproval() {
 
         <div className="bg-main-view-fg/8 p-2 border border-main-view-fg/5 rounded-lg">
           <p className="text-sm text-main-view-fg/70 leading-relaxed">
-            <span
-              dangerouslySetInnerHTML={{
-                __html: t('tools:toolApproval.securityNotice'),
-              }}
-            />
+            {t('tools:toolApproval.securityNotice')}
           </p>
         </div>
 
-        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="link" onClick={handleDeny} className="w-full">
-            {t('tools:toolApproval.deny')}
-          </Button>
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
           <Button
             variant="link"
-            onClick={handleAllowOnce}
-            className="border border-main-view-fg/20"
+            onClick={handleDeny}
+            className="flex-1 text-right sm:flex-none"
           >
-            {t('tools:toolApproval.allowOnce')}
+            {t('tools:toolApproval.deny')}
           </Button>
-          <Button variant="default" onClick={handleAllow}>
-            {t('tools:toolApproval.alwaysAllow')}
-          </Button>
+          <div className="flex flex-col sm:flex-row sm:gap-2 sm:items-center">
+            <Button
+              variant="link"
+              onClick={handleAllowOnce}
+              className="border border-main-view-fg/20"
+            >
+              {t('tools:toolApproval.allowOnce')}
+            </Button>
+            <Button variant="default" onClick={handleAllow}>
+              {t('tools:toolApproval.alwaysAllow')}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
