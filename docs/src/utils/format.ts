@@ -1,6 +1,20 @@
 export function formatCompactNumber(count: number) {
-  const formatter = Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+  const formatter = Intl.NumberFormat('en', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
   return formatter.format(count)
+}
+
+export function formatFileSize(bytes: number): string {
+  if (!bytes) return '0 B'
+
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+
+  if (i === 0) return `${bytes} ${sizes[i]}`
+
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`
 }
 
 export const totalDownload = (release: []) => {

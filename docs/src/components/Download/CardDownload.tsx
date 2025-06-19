@@ -3,6 +3,7 @@ import { IconType } from 'react-icons/lib'
 import { FaWindows, FaApple, FaLinux } from 'react-icons/fa'
 import { twMerge } from 'tailwind-merge'
 import { DownloadIcon } from 'lucide-react'
+import { formatFileSize } from '@/utils/format'
 
 type Props = {
   lastRelease: any
@@ -14,6 +15,7 @@ type SystemType = {
   logo: IconType
   fileFormat: string
   href?: string
+  size?: string
 }
 
 const systemsTemplate: SystemType[] = [
@@ -84,9 +86,16 @@ export default function CardDownload({ lastRelease }: Props) {
           const downloadUrl = system.fileFormat
             .replace('{appname}', appname)
             .replace('{tag}', tag)
+
+          // Find the corresponding asset to get the file size
+          const asset = lastRelease.assets.find(
+            (asset: any) => asset.name === downloadUrl
+          )
+
           return {
             ...system,
             href: `https://github.com/menloresearch/jan/releases/download/${lastRelease.tag_name}/${downloadUrl}`,
+            size: asset ? formatFileSize(asset.size) : undefined,
           }
         })
 
@@ -118,6 +127,11 @@ export default function CardDownload({ lastRelease }: Props) {
               >
                 <span>{system.label}</span>
                 <DownloadIcon size={16} />
+                {system.size && (
+                  <div className="text-sm text-black/60 dark:text-white/60">
+                    {system.size}
+                  </div>
+                )}
               </a>
             </div>
           ))}

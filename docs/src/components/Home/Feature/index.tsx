@@ -44,7 +44,7 @@ const features = [
   {
     title: 'Chat with your files',
     experimantal: true,
-    description: `Set up and run your own OpenAI-compatible API server using local models with just one click.`,
+    description: `Talk to PDFs, notes, and other documents directly to get summaries, answers, or insights.`,
     image: {
       light: '/assets/images/homepage/features05.png',
       dark: '/assets/images/homepage/features05dark.png',
