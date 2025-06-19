@@ -23,26 +23,25 @@ const systemsTemplate: SystemType[] = [
     name: 'Mac ',
     label: 'Universal',
     logo: FaApple,
-    fileFormat: '{appname}-mac-universal-{tag}.dmg',
+    fileFormat: 'Jan_{tag}_universal.dmg',
   },
-
   {
     name: 'Windows',
     label: 'Standard (64-bit)',
     logo: FaWindows,
-    fileFormat: '{appname}-win-x64-{tag}.exe',
+    fileFormat: 'Jan_{tag}_x64-setup.exe',
   },
   {
     name: 'Linux (AppImage)',
     label: 'AppImage',
     logo: FaLinux,
-    fileFormat: '{appname}-linux-x86_64-{tag}.AppImage',
+    fileFormat: 'Jan_{tag}_amd64.AppImage',
   },
   {
     name: 'Linux (deb)',
     label: 'Deb',
     logo: FaLinux,
-    fileFormat: '{appname}-linux-amd64-{tag}.deb',
+    fileFormat: 'Jan_{tag}_amd64.deb',
   },
 ]
 
@@ -55,37 +54,16 @@ const groupTemnplate = [
 export default function CardDownload({ lastRelease }: Props) {
   const [systems, setSystems] = useState(systemsTemplate)
 
-  const extractAppName = (fileName: string) => {
-    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|amd64|x86_64)-.*$/
-    const match = fileName.match(regex)
-    return match ? match[1] : null
-  }
-
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {
-        // Extract appname from the first asset name
-        const firstAssetName = lastRelease.assets[0].name
-        const appname = extractAppName(firstAssetName)
-
-        if (!appname) {
-          console.error(
-            'Failed to extract appname from file name:',
-            firstAssetName
-          )
-
-          return
-        }
-
         // Remove 'v' at the start of the tag_name
         const tag = lastRelease.tag_name.startsWith('v')
           ? lastRelease.tag_name.substring(1)
           : lastRelease.tag_name
 
         const updatedSystems = systems.map((system) => {
-          const downloadUrl = system.fileFormat
-            .replace('{appname}', appname)
-            .replace('{tag}', tag)
+          const downloadUrl = system.fileFormat.replace('{tag}', tag)
 
           // Find the corresponding asset to get the file size
           const asset = lastRelease.assets.find(
