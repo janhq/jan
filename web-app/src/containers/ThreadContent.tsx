@@ -243,7 +243,7 @@ export const ThreadContent = memo(
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditDialog
-                message={item.content?.[0].text.value}
+                message={item.content?.[0]?.text.value}
                 setMessage={(message) => {
                   item.updateMessage(item, message)
                 }}
