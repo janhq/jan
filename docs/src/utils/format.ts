@@ -7,7 +7,7 @@ export function formatCompactNumber(count: number) {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (!bytes) return ''
+  if (!bytes) return '0 B'
 
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
