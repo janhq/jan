@@ -125,8 +125,6 @@ const DropdownDownload = ({ lastRelease }: Props) => {
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {
-        console.log(lastRelease)
-
         const tag = lastRelease.tag_name.startsWith('v')
           ? lastRelease.tag_name.substring(1)
           : lastRelease.tag_name
