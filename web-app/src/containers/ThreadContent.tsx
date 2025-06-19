@@ -26,7 +26,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { toast } from 'sonner'
 import {
   Tooltip,
   TooltipContent,
@@ -73,6 +72,57 @@ const CopyButton = ({ text }: { text: string }) => {
   )
 }
 
+const EditDialog = ({
+  message,
+  setMessage,
+}: {
+  message: string
+  setMessage: (message: string) => void
+}) => {
+  return (
+    <Dialog>
+      <DialogTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+              <IconPencil size={16} />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Edit</p>
+          </TooltipContent>
+        </Tooltip>
+      </DialogTrigger>
+      <DialogContent className="w-3/4 h-3/4">
+        <DialogHeader>
+          <DialogTitle>Edit Message</DialogTitle>
+          <Textarea
+            value={message}
+            onChange={(e) => {
+              setMessage(e.target.value)
+            }}
+            className="mt-2 resize-none h-full w-full"
+            onKeyDown={(e) => {
+              // Prevent key from being captured by parent components
+              e.stopPropagation()
+            }}
+          />
+          <DialogFooter className="mt-2 flex items-center">
+            <DialogClose asChild>
+              <Button variant="link" size="sm" className="hover:no-underline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <DialogClose asChild>
+              <Button disabled={!message}>Save</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
   (
@@ -84,10 +134,9 @@ export const ThreadContent = memo(
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
       showContextOverflowModal?: () => Promise<unknown>
+      updateMessage: (item: ThreadMessage, message: string) => void
     }
   ) => {
-    const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
-
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
       () => ({
@@ -167,30 +216,6 @@ export const ThreadContent = memo(
       }
     }, [deleteMessage, getMessages, item])
 
-    const editMessage = useCallback(
-      (messageId: string) => {
-        const threadMessages = getMessages(item.thread_id)
-
-        const index = threadMessages.findIndex((msg) => msg.id === messageId)
-        if (index === -1) return
-
-        // Delete all messages after the edited message
-        for (let i = threadMessages.length - 1; i >= index; i--) {
-          deleteMessage(threadMessages[i].thread_id, threadMessages[i].id)
-        }
-
-        sendMessage(message, item.showContextOverflowModal)
-      },
-      [
-        deleteMessage,
-        getMessages,
-        item.thread_id,
-        message,
-        sendMessage,
-        item.showContextOverflowModal,
-      ]
-    )
-
     const isToolCalls =
       item.metadata &&
       'tool_calls' in item.metadata &&
@@ -217,62 +242,12 @@ export const ThreadContent = memo(
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
-              <Dialog>
-                <DialogTrigger>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-                        <IconPencil size={16} />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Edit</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Edit Message</DialogTitle>
-                    <Textarea
-                      value={message}
-                      onChange={(e) => {
-                        setMessage(e.target.value)
-                      }}
-                      className="mt-2 resize-none"
-                      onKeyDown={(e) => {
-                        // Prevent key from being captured by parent components
-                        e.stopPropagation()
-                      }}
-                    />
-                    <DialogFooter className="mt-2 flex items-center">
-                      <DialogClose asChild>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="hover:no-underline"
-                        >
-                          Cancel
-                        </Button>
-                      </DialogClose>
-                      <DialogClose asChild>
-                        <Button
-                          disabled={!message}
-                          onClick={() => {
-                            editMessage(item.id)
-                            toast.success('Edit Message', {
-                              id: 'edit-message',
-                              description:
-                                'Message edited successfully. Please wait for the model to respond.',
-                            })
-                          }}
-                        >
-                          Save
-                        </Button>
-                      </DialogClose>
-                    </DialogFooter>
-                  </DialogHeader>
-                </DialogContent>
-              </Dialog>
+              <EditDialog
+                message={item.content?.[0].text.value}
+                setMessage={(message) => {
+                  item.updateMessage(item, message)
+                }}
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -369,6 +344,12 @@ export const ThreadContent = memo(
                         'hidden'
                     )}
                   >
+                    <EditDialog
+                      message={item.content?.[0]?.text.value}
+                      setMessage={(message) =>
+                        item.updateMessage(item, message)
+                      }
+                    />
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <Tooltip>
                       <TooltipTrigger asChild>

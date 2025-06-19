@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { UIEventHandler } from 'react'
 import debounce from 'lodash.debounce'
+import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 
@@ -19,6 +20,7 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
 import { useOutOfContextPromiseModal } from '@/containers/dialogs/OutOfContextDialog'
+import { ContentType, ThreadMessage } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -179,6 +181,26 @@ function ThreadDetail() {
     lastScrollTopRef.current = scrollTop
   }
 
+  const updateMessage = (item: ThreadMessage, message: string) => {
+    const newMessages: ThreadMessage[] = messages.map((m) => {
+      if (m.id === item.id) {
+        const msg: ThreadMessage = cloneDeep(m)
+        msg.content = [
+          {
+            type: ContentType.Text,
+            text: {
+              value: message,
+              annotations: m.content[0].text?.annotations ?? [],
+            },
+          },
+        ]
+        return msg
+      }
+      return m
+    })
+    setMessages(threadId, newMessages)
+  }
+
   // Use a shorter debounce time for more responsive scrolling
   const debouncedScroll = debounce(handleDOMScroll)
 
@@ -243,6 +265,7 @@ function ThreadDetail() {
                           ))
                       }
                       index={index}
+                      updateMessage={updateMessage}
                       showContextOverflowModal={showModal}
                       contextOverflowModal={contextOverflowModalComponent}
                     />
