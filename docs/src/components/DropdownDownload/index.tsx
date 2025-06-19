@@ -4,6 +4,7 @@ import { IconType } from 'react-icons/lib'
 import { IoChevronDownOutline } from 'react-icons/io5'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { twMerge } from 'tailwind-merge'
+import { formatFileSize } from '@/utils/format'
 
 type Props = {
   lastRelease: any
@@ -14,6 +15,7 @@ type SystemType = {
   logo: IconType
   fileFormat: string
   href?: string
+  size?: string
 }
 
 type GpuInfo = {
@@ -130,6 +132,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
     const updateDownloadLinks = async () => {
       try {
         const firstAssetName = await lastRelease.assets[0]?.name
+
         const appname = extractAppName(firstAssetName)
         if (!appname) {
           console.error(
@@ -147,9 +150,16 @@ const DropdownDownload = ({ lastRelease }: Props) => {
           const downloadUrl = system.fileFormat
             .replace('{appname}', appname)
             .replace('{tag}', tag)
+
+          // Find the corresponding asset to get the file size
+          const asset = lastRelease.assets.find(
+            (asset: any) => asset.name === downloadUrl
+          )
+
           return {
             ...system,
             href: `https://github.com/menloresearch/jan/releases/download/${lastRelease.tag_name}/${downloadUrl}`,
+            size: asset ? formatFileSize(asset.size) : undefined,
           }
         })
         setSystems(updatedSystems)
@@ -176,10 +186,15 @@ const DropdownDownload = ({ lastRelease }: Props) => {
     <div className="inline-flex flex-shrink-0 justify-center relative">
       <a
         href={defaultSystem.href}
-        className="dark:border-r-0 dark:nx-bg-neutral-900 dark:text-white bg-black text-white hover:text-white justify-center dark:border dark:border-neutral-800 flex-shrink-0 pl-4 pr-6 py-4 rounded-l-xl inline-flex items-center !rounded-r-none"
+        className="min-w-[300px] dark:border-r-0 dark:nx-bg-neutral-900 dark:text-white bg-black text-white hover:text-white dark:border dark:border-neutral-800 flex-shrink-0 pl-4 pr-6 py-4 rounded-l-xl inline-flex items-center !rounded-r-none"
       >
         <defaultSystem.logo className="h-4 mr-2" />
-        {defaultSystem.name}
+        <span>{defaultSystem.name}</span>
+        {defaultSystem.size && (
+          <span className="text-white/60 text-sm ml-2">
+            ({defaultSystem.size})
+          </span>
+        )}
       </a>
       <button
         className="dark:nx-bg-neutral-900 dark:text-white bg-black text-white hover:text-white justify-center dark:border border-l border-gray-500 dark:border-neutral-800 flex-shrink-0 p-4 px-3 rounded-r-xl"
@@ -192,18 +207,27 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       </button>
       {open && (
         <div
-          className="absolute left-0 top-[64px] w-full dark:nx-bg-neutral-900 bg-black z-30 rounded-xl lg:w-[300px]"
+          className="absolute left-0 top-[64px] w-full dark:nx-bg-neutral-900 bg-black z-30 rounded-xl lg:w-[380px]"
           ref={setRefDropdownContent}
         >
           {systems.map((system) => (
             <div key={system.name} className="py-1">
               <a
                 href={system.href || ''}
-                className="flex px-4 py-3 items-center text-white hover:text-white hover:bg-white/10 dark:hover:bg-white/5"
+                className="flex px-4 py-3 items-center text-white hover:text-white hover:bg-white/10 dark:hover:bg-white/5 justify-between"
                 onClick={() => setOpen(false)}
               >
-                <system.logo className="w-3 mr-3 -mt-1 flex-shrink-0" />
-                <span className="text-white font-medium">{system.name}</span>
+                <div className="flex items-center">
+                  <system.logo className="w-3 mr-3 -mt-1 flex-shrink-0" />
+                  <span className="text-white font-medium flex-1">
+                    {system.name}
+                  </span>
+                </div>
+                {system.size && (
+                  <span className="text-white/60 text-sm ml-2">
+                    {system.size}
+                  </span>
+                )}
               </a>
             </div>
           ))}
