@@ -32,7 +32,7 @@ rand = "0.8"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
-reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
 tokio = { version = "1", features = ["full"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "c1c4c9a0c9afbfbbf9eb42d6f8b00d8546fbdc2c", features = [
     "client",
