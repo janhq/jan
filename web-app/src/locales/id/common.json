@@ -1,31 +1,267 @@
 {
-  "common": {
-    "general": "Umum",
-    "settings": "Pengaturan",
-    "modelProviders": "Penyedia Model",
-    "appearance": "Tampilan",
-    "privacy": "Privasi",
-    "keyboardShortcuts": "Pintasan",
-    "newChat": "Obrolan Baru",
-    "favorites": "Favorit",
-    "recents": "Terbaru",
-    "hub": "Hub",
-    "helpSupport": "Bantuan & Dukungan",
-    "unstarAll": "Hapus Bintang",
-    "unstar": "Hapus Bintang",
-    "deleteAll": "Hapus Semua",
-    "star": "Bintang",
-    "rename": "Ganti Nama",
-    "delete": "Hapus",
-    "dataFolder": "Folder Data",
-    "others": "Lainnya",
-    "language": "Bahasa",
-    "reset": "Atur Ulang",
-    "search": "Cari",
-    "name": "Nama",
-
-    "placeholder": {
-      "chatInput": "Tanya apa saja..."
+  "assistants": "Asisten",
+  "hardware": "Perangkat Keras",
+  "mcp-servers": "Server MCP",
+  "local_api_server": "Server API Lokal",
+  "https_proxy": "Proksi HTTPS",
+  "extensions": "Ekstensi",
+  "general": "Umum",
+  "settings": "Pengaturan",
+  "modelProviders": "Penyedia Model",
+  "appearance": "Tampilan",
+  "privacy": "Privasi",
+  "keyboardShortcuts": "Pintasan",
+  "newChat": "Obrolan Baru",
+  "favorites": "Favorit",
+  "recents": "Terbaru",
+  "hub": "Hub",
+  "helpSupport": "Bantuan & Dukungan",
+  "helpUsImproveJan": "Bantu Kami Meningkatkan Jan",
+  "unstarAll": "Batal Bintangi Semua",
+  "unstar": "Batal Bintangi",
+  "deleteAll": "Hapus Semua",
+  "star": "Bintangi",
+  "rename": "Ubah Nama",
+  "delete": "Hapus",
+  "copied": "Tersalin!",
+  "dataFolder": "Folder Data",
+  "others": "Lainnya",
+  "language": "Bahasa",
+  "reset": "Setel Ulang",
+  "search": "Cari",
+  "name": "Nama",
+  "cancel": "Batal",
+  "create": "Buat",
+  "save": "Simpan",
+  "edit": "Edit",
+  "copy": "Salin",
+  "back": "Kembali",
+  "close": "Tutup",
+  "next": "Berikutnya",
+  "finish": "Selesai",
+  "skip": "Lewati",
+  "allow": "Izinkan",
+  "deny": "Tolak",
+  "start": "Mulai",
+  "stop": "Hentikan",
+  "preview": "Pratinjau",
+  "compactWidth": "Lebar Ringkas",
+  "fullWidth": "Lebar Penuh",
+  "dark": "Gelap",
+  "light": "Terang",
+  "system": "Sistem",
+  "auto": "Otomatis",
+  "english": "Inggris",
+  "medium": "Sedang",
+  "newThread": "Utas Baru",
+  "noResultsFound": "Tidak ada hasil yang ditemukan",
+  "noThreadsYet": "Belum ada utas",
+  "noThreadsYetDesc": "Mulai percakapan baru untuk melihat riwayat utas Anda di sini.",
+  "downloads": "Unduhan",
+  "downloading": "Mengunduh",
+  "cancelDownload": "Batalkan unduhan",
+  "downloadCancelled": "Unduhan Dibatalkan",
+  "downloadComplete": "Unduhan Selesai",
+  "thinking": "Berpikir...",
+  "thought": "Pikiran",
+  "callingTool": "Memanggil alat",
+  "completed": "Selesai",
+  "image": "Gambar",
+  "vision": "Visi",
+  "embeddings": "Embedding",
+  "tools": "Alat",
+  "webSearch": "Pencarian Web",
+  "reasoning": "Penalaran",
+  "selectAModel": "Pilih model",
+  "noToolsAvailable": "Tidak ada alat yang tersedia",
+  "noModelsFoundFor": "Tidak ada model yang ditemukan untuk \"{{searchValue}}\"",
+  "customAvatar": "Avatar kustom",
+  "editAssistant": "Edit Asisten",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Hasilkan Ulang",
+  "threadImage": "Gambar utas",
+  "editMessage": "Edit Pesan",
+  "deleteMessage": "Hapus Pesan",
+  "deleteThread": "Hapus Utas",
+  "renameThread": "Ubah Nama Utas",
+  "threadTitle": "Judul Utas",
+  "deleteAllThreads": "Hapus Semua Utas",
+  "allThreadsUnfavorited": "Semua Utas Batal Difavoritkan",
+  "deleteAllThreadsConfirm": "Apakah Anda yakin ingin menghapus semua utas? Tindakan ini tidak dapat dibatalkan.",
+  "addProvider": "Tambah Penyedia",
+  "addOpenAIProvider": "Tambah Penyedia OpenAI",
+  "enterNameForProvider": "Masukkan nama untuk penyedia Anda",
+  "providerAlreadyExists": "Penyedia dengan nama \"{{name}}\" sudah ada. Silakan pilih nama yang berbeda.",
+  "adjustFontSize": "Sesuaikan Ukuran Font",
+  "changeLanguage": "Ubah Bahasa",
+  "editTheme": "Edit Tema",
+  "editCodeBlockStyle": "Edit Gaya Blok Kode",
+  "editServerHost": "Edit Host Server",
+  "pickColorWindowBackground": "Pilih Warna Latar Belakang Jendela",
+  "pickColorAppMainView": "Pilih Warna Tampilan Utama Aplikasi",
+  "pickColorAppPrimary": "Pilih Warna Utama Aplikasi",
+  "pickColorAppAccent": "Pilih Warna Aksen Aplikasi",
+  "pickColorAppDestructive": "Pilih Warna Merusak Aplikasi",
+  "apiKeyRequired": "Kunci API diperlukan",
+  "enterTrustedHosts": "Masukkan host tepercaya",
+  "placeholder": {
+    "chatInput": "Tanyakan apa saja padaku..."
+  },
+  "confirm": "Konfirmasi",
+  "loading": "Memuat...",
+  "error": "Kesalahan",
+  "success": "Sukses",
+  "warning": "Peringatan",
+  "noResultsFoundDesc": "Kami tidak dapat menemukan obrolan yang cocok dengan pencarian Anda. Coba kata kunci yang berbeda.",
+  "searchModels": "Cari model...",
+  "searchStyles": "Cari gaya...",
+  "createAssistant": "Buat Asisten",
+  "enterApiKey": "Masukkan Kunci API",
+  "scrollToBottom": "Gulir ke bawah",
+  "addModel": {
+    "title": "Tambah Model",
+    "modelId": "ID Model",
+    "enterModelId": "Masukkan ID Model",
+    "addModel": "Tambah Model",
+    "description": "Tambahkan model baru ke penyedia",
+    "exploreModels": "Lihat daftar model dari penyedia"
+  },
+  "mcpServers": {
+    "editServer": "Edit Server",
+    "addServer": "Tambah Server",
+    "serverName": "Nama Server",
+    "enterServerName": "Masukkan nama server",
+    "command": "Perintah",
+    "enterCommand": "Masukkan perintah",
+    "arguments": "Argumen",
+    "argument": "Argumen {{index}}",
+    "envVars": "Variabel Lingkungan",
+    "key": "Kunci",
+    "value": "Nilai",
+    "save": "Simpan"
+  },
+  "deleteServer": {
+    "title": "Hapus Server",
+    "delete": "Hapus"
+  },
+  "editJson": {
+    "errorParse": "Gagal mengurai JSON",
+    "errorPaste": "Gagal menempelkan JSON",
+    "errorFormat": "Format JSON tidak valid",
+    "titleAll": "Edit Semua Konfigurasi Server",
+    "placeholder": "Masukkan konfigurasi JSON...",
+    "save": "Simpan"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Konfigurasikan kemampuan model dengan mengalihkan opsi di bawah ini.",
+    "capabilities": "Kemampuan",
+    "tools": "Alat",
+    "vision": "Visi",
+    "embeddings": "Embedding",
+    "notAvailable": "Belum tersedia"
+  },
+  "toolApproval": {
+    "title": "Permintaan Izin Alat",
+    "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>",
+    "securityNotice": "Hanya izinkan alat yang Anda percayai. Alat dapat mengakses sistem dan data Anda.",
+    "deny": "Tolak",
+    "allowOnce": "Izinkan Sekali",
+    "alwaysAllow": "Selalu Izinkan"
+  },
+  "deleteModel": {
+    "title": "Hapus Model: {{modelId}}",
+    "description": "Apakah Anda yakin ingin menghapus model ini? Tindakan ini tidak dapat dibatalkan.",
+    "success": "Model {{modelId}} telah dihapus secara permanen.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "deleteProvider": {
+    "title": "Hapus Penyedia",
+    "description": "Hapus penyedia ini dan semua modelnya. Tindakan ini tidak dapat dibatalkan.",
+    "success": "Penyedia {{provider}} telah dihapus secara permanen.",
+    "confirmTitle": "Hapus Penyedia: {{provider}}",
+    "confirmDescription": "Apakah Anda yakin ingin menghapus penyedia ini? Tindakan ini tidak dapat dibatalkan.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "modelSettings": {
+    "title": "Pengaturan Model - {{modelId}}",
+    "description": "Konfigurasikan pengaturan model untuk mengoptimalkan kinerja dan perilaku."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Ubah Lokasi Folder Data",
+      "description": "Apakah Anda yakin ingin mengubah lokasi folder data? Ini akan memindahkan semua data Anda ke lokasi baru dan memulai ulang aplikasi.",
+      "currentLocation": "Lokasi Saat Ini:",
+      "newLocation": "Lokasi Baru:",
+      "cancel": "Batal",
+      "changeLocation": "Ubah Lokasi"
+    },
+    "deleteAllThreads": {
+      "title": "Hapus Semua Utas",
+      "description": "Semua utas akan dihapus. Tindakan ini tidak dapat dibatalkan."
+    },
+    "deleteThread": {
+      "description": "Apakah Anda yakin ingin menghapus thread ini? Tindakan ini tidak dapat dibatalkan."
+    },
+    "editMessage": {
+      "title": "Edit Pesan"
+    },
+    "messageMetadata": {
+      "title": "Metadata Pesan"
     }
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Semua Utas Batal Difavoritkan",
+      "description": "Semua utas telah dihapus dari favorit Anda."
+    },
+    "deleteAllThreads": {
+      "title": "Hapus Semua Utas",
+      "description": "Semua utas telah dihapus secara permanen."
+    },
+    "renameThread": {
+      "title": "Ubah Nama Utas",
+      "description": "Judul utas telah diubah menjadi '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Hapus Utas",
+      "description": "Utas ini telah dihapus secara permanen."
+    },
+    "editMessage": {
+      "title": "Edit Pesan",
+      "description": "Pesan berhasil diedit. Silakan tunggu model merespons."
+    },
+    "appUpdateDownloaded": {
+      "title": "Pembaruan Aplikasi Diunduh",
+      "description": "Pembaruan aplikasi telah berhasil diunduh."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Gagal Mengunduh Pembaruan Aplikasi",
+      "description": "Gagal mengunduh pembaruan aplikasi. Silakan coba lagi."
+    },
+    "downloadComplete": {
+      "title": "Unduhan Selesai",
+      "description": "Model {{modelId}} telah diunduh"
+    },
+    "downloadCancelled": {
+      "title": "Unduhan Dibatalkan",
+      "description": "Proses unduhan telah dibatalkan"
+    }
+  },
+  "cortexFailureDialog": {
+    "title": "Cortex gagal dimulai",
+    "description": "Cortex gagal dimulai. Silakan periksa log untuk detail lebih lanjut.",
+    "contactSupport": "Hubungi Dukungan",
+    "restartJan": "Restart Jan"
+  },
+  "outOfContextError": {
+    "title": "Kesalahan di luar konteks",
+    "description": "Obrolan ini mencapai batas memori AI, seperti papan tulis yang penuh. Kami dapat memperluas jendela memori (disebut ukuran konteks) sehingga mengingat lebih banyak, tetapi mungkin menggunakan lebih banyak memori komputer Anda. Kami juga dapat memotong input, yang berarti akan melupakan sebagian riwayat obrolan untuk memberi ruang bagi pesan baru.",
+    "increaseContextSizeDescription": "Apakah Anda ingin meningkatkan ukuran konteks?",
+    "truncateInput": "Potong Input",
+    "increaseContextSize": "Tingkatkan Ukuran Konteks"
   }
 }

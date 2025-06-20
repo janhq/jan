@@ -15,6 +15,7 @@ import { useCodeblock } from '@/hooks/useCodeblock'
 import 'katex/dist/katex.min.css'
 import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import rehypeRaw from 'rehype-raw'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface MarkdownProps {
   content: string
@@ -33,6 +34,7 @@ function RenderMarkdownComponent({
   components,
   isWrapping,
 }: MarkdownProps) {
+  const { t } = useTranslation()
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
 
   // State for tracking which code block has been copied
@@ -91,12 +93,12 @@ function RenderMarkdownComponent({
                 {copiedId === codeId ? (
                   <>
                     <IconCopyCheck size={16} className="text-primary" />
-                    <span>Copied!</span>
+                    <span>{t('copied')}</span>
                   </>
                 ) : (
                   <>
                     <IconCopy size={16} />
-                    <span>Copy</span>
+                    <span>{t('copy')}</span>
                   </>
                 )}
               </button>

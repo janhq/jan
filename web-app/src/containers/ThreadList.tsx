@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DialogClose, DialogFooter, DialogHeader } from '@/components/ui/dialog'
 import {
   Dialog,
@@ -85,7 +85,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
   }, [thread.title])
 
-  const [title, setTitle] = useState(plainTitleForRename || 'New Thread')
+  const [title, setTitle] = useState(plainTitleForRename || t('common:newThread'))
 
   return (
     <div
@@ -101,7 +101,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       )}
     >
       <div className="py-1 pr-2 truncate">
-        <span>{thread.title || 'New Thread'}</span>
+        <span
+          dangerouslySetInnerHTML={{ __html: thread.title || t('common:newThread') }}
+        />
       </div>
       <div className="flex items-center">
         <DropdownMenu
@@ -127,7 +129,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                 }}
               >
                 <IconStarFilled />
-                <span>{t('common.unstar')}</span>
+                <span>{t('common:unstar')}</span>
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
@@ -137,26 +139,26 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                 }}
               >
                 <IconStar />
-                <span>{t('common.star')}</span>
+                <span>{t('common:star')}</span>
               </DropdownMenuItem>
             )}
             <Dialog
               onOpenChange={(open) => {
                 if (!open) {
                   setOpenDropdown(false)
-                  setTitle(plainTitleForRename || 'New Thread')
+                  setTitle(plainTitleForRename || t('common:newThread'))
                 }
               }}
             >
               <DialogTrigger asChild>
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <IconEdit />
-                  <span>{t('common.rename')}</span>
+                  <span>{t('common:rename')}</span>
                 </DropdownMenuItem>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Thread Title</DialogTitle>
+                  <DialogTitle>{t('common:threadTitle')}</DialogTitle>
                   <Input
                     value={title}
                     onChange={(e) => {
@@ -175,7 +177,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                         size="sm"
                         className="hover:no-underline"
                       >
-                        Cancel
+                        {t('common:cancel')}
                       </Button>
                     </DialogClose>
                     <Button
@@ -183,14 +185,13 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       onClick={() => {
                         renameThread(thread.id, title)
                         setOpenDropdown(false)
-                        toast.success('Rename Thread', {
+                        toast.success(t('common:toast.renameThread.title'), {
                           id: 'rename-thread',
-                          description:
-                            "Thread title has been renamed to '" + title + "'",
+                          description: t('common:toast.renameThread.description', { title }),
                         })
                       }}
                     >
-                      Rename
+                      {t('common:rename')}
                     </Button>
                   </DialogFooter>
                 </DialogHeader>
@@ -206,15 +207,14 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
               <DialogTrigger asChild>
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <IconTrash />
-                  <span>{t('common.delete')}</span>
+                  <span>{t('common:delete')}</span>
                 </DropdownMenuItem>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Delete Thread</DialogTitle>
+                  <DialogTitle>{t('common:deleteThread')}</DialogTitle>
                   <DialogDescription>
-                    Are you sure you want to delete this thread? This action
-                    cannot be undone.
+                    {t('common:dialogs.deleteThread.description')}
                   </DialogDescription>
                   <DialogFooter className="mt-2 flex items-center">
                     <DialogClose asChild>
@@ -223,7 +223,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                         size="sm"
                         className="hover:no-underline"
                       >
-                        Cancel
+                        {t('common:cancel')}
                       </Button>
                     </DialogClose>
                     <Button
@@ -231,17 +231,16 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       onClick={() => {
                         deleteThread(thread.id)
                         setOpenDropdown(false)
-                        toast.success('Delete Thread', {
+                        toast.success(t('common:toast.deleteThread.title'), {
                           id: 'delete-thread',
-                          description:
-                            'This thread has been permanently deleted.',
+                          description: t('common:toast.deleteThread.description'),
                         })
                         setTimeout(() => {
                           navigate({ to: route.home })
                         }, 0)
                       }}
                     >
-                      Delete
+                      {t('common:delete')}
                     </Button>
                   </DialogFooter>
                 </DialogHeader>

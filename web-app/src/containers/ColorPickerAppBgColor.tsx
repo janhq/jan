@@ -7,9 +7,11 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function ColorPickerAppBgColor() {
   const { appBgColor, setAppBgColor } = useAppearance()
+  const { t } = useTranslation()
 
   const predefineAppBgColor: RgbaColor[] = [
     {
@@ -80,7 +82,7 @@ export function ColorPickerAppBgColor() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              title="Pick Color Window Background"
+              title={t('common:pickColorWindowBackground')}
               className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10"
             >
               <IconColorPicker size={18} className="text-main-view-fg/50" />

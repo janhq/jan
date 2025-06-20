@@ -6,20 +6,22 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { fontSizeOptions, useAppearance } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function FontSizeSwitcher() {
   const { fontSize, setFontSize } = useAppearance()
+  const { t } = useTranslation()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <span
-          title="Adjust Font Size"
+          title={t('common:adjustFontSize')}
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
         >
           {fontSizeOptions.find(
             (item: { value: string; label: string }) => item.value === fontSize
-          )?.label || 'Medium'}
+          )?.label || t('common:medium')}
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-24">

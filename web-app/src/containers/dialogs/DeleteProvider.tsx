@@ -18,11 +18,13 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { normalizeProvider } from '@/lib/models'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type Props = {
   provider?: ProviderObject
 }
 const DeleteProvider = ({ provider }: Props) => {
+  const { t } = useTranslation()
   const { deleteProvider, providers } = useModelProvider()
   const router = useRouter()
   if (
@@ -34,9 +36,11 @@ const DeleteProvider = ({ provider }: Props) => {
 
   const removeProvider = async () => {
     deleteProvider(provider.provider)
-    toast.success('Delete Provider', {
+    toast.success(t('providers:deleteProvider.title'), {
       id: `delete-provider-${provider.provider}`,
-      description: `Provider ${provider.provider} has been permanently deleted.`,
+      description: t('providers:deleteProvider.success', {
+        provider: provider.provider,
+      }),
     })
     setTimeout(() => {
       router.navigate({
@@ -50,28 +54,31 @@ const DeleteProvider = ({ provider }: Props) => {
 
   return (
     <CardItem
-      title="Delete Provider"
-      description="Delete this provider and all its models. This action cannot be undone."
+      title={t('providers:deleteProvider.title')}
+      description={t('providers:deleteProvider.description')}
       actions={
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="destructive" size="sm">
-              Delete
+              {t('providers:deleteProvider.delete')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete Provider: {provider.provider}</DialogTitle>
+              <DialogTitle>
+                {t('providers:deleteProvider.confirmTitle', {
+                  provider: provider.provider,
+                })}
+              </DialogTitle>
               <DialogDescription>
-                Are you sure you want to delete this provider? This action
-                cannot be undone.
+                {t('providers:deleteProvider.confirmDescription')}
               </DialogDescription>
             </DialogHeader>
 
             <DialogFooter className="mt-2">
               <DialogClose asChild>
                 <Button variant="link" size="sm" className="hover:no-underline">
-                  Cancel
+                  {t('providers:deleteProvider.cancel')}
                 </Button>
               </DialogClose>
               <DialogClose asChild>
@@ -80,7 +87,7 @@ const DeleteProvider = ({ provider }: Props) => {
                   size="sm"
                   onClick={removeProvider}
                 >
-                  Delete
+                  {t('providers:deleteProvider.delete')}
                 </Button>
               </DialogClose>
             </DialogFooter>

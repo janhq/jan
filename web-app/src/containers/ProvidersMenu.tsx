@@ -19,6 +19,7 @@ import { openAIProviderSettings } from '@/mock/data'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const ProvidersMenu = ({
   stepSetupRemoteProvider,
@@ -29,11 +30,11 @@ const ProvidersMenu = ({
   const navigate = useNavigate()
   const matches = useMatches()
   const [name, setName] = useState('')
+  const { t } = useTranslation()
+
   const createProvider = useCallback(() => {
     if (providers.some((e) => e.provider === name)) {
-      toast.error(
-        `Provider with name "${name}" already exists. Please choose a different name.`
-      )
+      toast.error(t('providerAlreadyExists', { name }))
       return
     }
     const newProvider = {
@@ -53,14 +54,14 @@ const ProvidersMenu = ({
         },
       })
     }, 0)
-  }, [providers, name, addProvider, navigate])
+  }, [providers, name, addProvider, t, navigate])
 
   return (
     <div className="w-44 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
       <Link to={route.settings.general}>
         <div className="flex items-center gap-0.5 ml-3 mb-4 mt-1">
           <IconArrowLeft size={16} className="text-main-view-fg/70" />
-          <span className="text-main-view-fg/80">Back</span>
+          <span className="text-main-view-fg/80">{t('common:back')}</span>
         </div>
       </Link>
       <div className="first-step-setup-remote-provider">
@@ -108,17 +109,17 @@ const ProvidersMenu = ({
           <DialogTrigger asChild>
             <div className="flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80">
               <IconCirclePlus size={18} />
-              <span>Add Provider</span>
+              <span>{t('provider:addProvider')}</span>
             </div>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add OpenAI Provider</DialogTitle>
+              <DialogTitle>{t('provider:addOpenAIProvider')}</DialogTitle>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="mt-2"
-                placeholder="Enter a name for your provider"
+                placeholder={t('provider:enterNameForProvider')}
                 onKeyDown={(e) => {
                   // Prevent key from being captured by parent components
                   e.stopPropagation()
@@ -131,12 +132,12 @@ const ProvidersMenu = ({
                     size="sm"
                     className="hover:no-underline"
                   >
-                    Cancel
+                    {t('common:cancel')}
                   </Button>
                 </DialogClose>
                 <DialogClose asChild>
                   <Button disabled={!name} onClick={createProvider}>
-                    Create
+                    {t('common:create')}
                   </Button>
                 </DialogClose>
               </DialogFooter>

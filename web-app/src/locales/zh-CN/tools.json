@@ -1,0 +1,10 @@
+{
+  "toolApproval": {
+    "title": "需要工具批准",
+    "securityNotice": "此工具想要执行一个操作。请审查并批准。",
+    "deny": "拒绝",
+    "allowOnce": "允许一次",
+    "alwaysAllow": "始终允许",
+    "description": "助手想要使用 <strong>{{toolName}}</strong>"
+  }
+}

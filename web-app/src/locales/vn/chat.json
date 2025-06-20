@@ -1,9 +1,10 @@
 {
-  "chat": {
-    "welcome": "Xin chào, bạn khỏe không?",
-    "description": "Tôi có thể giúp gì cho bạn hôm nay?",
-    "status": {
-      "empty": "Không tìm thấy cuộc trò chuyện"
-    }
-  }
+  "welcome": "Chào bạn, bạn khỏe không?",
+  "description": "Hôm nay tôi có thể giúp gì cho bạn?",
+  "status": {
+    "empty": "Không tìm thấy cuộc trò chuyện nào"
+  },
+  "sendMessage": "Gửi tin nhắn",
+  "newConversation": "Cuộc trò chuyện mới",
+  "clearHistory": "Xóa lịch sử"
 }

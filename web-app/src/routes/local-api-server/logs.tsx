@@ -4,6 +4,7 @@ import { route } from '@/constants/routes'
 import { useEffect, useState, useRef } from 'react'
 import { parseLogLine, readLogs } from '@/services/app'
 import { listen } from '@tauri-apps/api/event'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.localApiServerlogs as any)({
@@ -14,6 +15,7 @@ const SERVER_LOG_TARGET = 'app_lib::core::server'
 const LOG_EVENT_NAME = 'log://log'
 
 function LogsViewer() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
@@ -87,7 +89,7 @@ function LogsViewer() {
         <div className="font-mono p-2">
           {logs.length === 0 ? (
             <div className="text-center text-main-view-fg/50 py-8">
-              No logs available
+              {t('logs:noLogs')}
             </div>
           ) : (
             logs.map((log, index) => (

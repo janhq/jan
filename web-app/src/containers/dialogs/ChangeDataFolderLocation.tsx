@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { IconFolder } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface ChangeDataFolderLocationProps {
   children: React.ReactNode
@@ -28,6 +29,7 @@ export default function ChangeDataFolderLocation({
   open,
   onOpenChange,
 }: ChangeDataFolderLocationProps) {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -35,18 +37,17 @@ export default function ChangeDataFolderLocation({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <IconFolder size={20} />
-            Change Data Folder Location
+            {t('settings:dialogs.changeDataFolder.title')}
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to change the data folder location? This will
-            move all your data to the new location and restart the application.
+            {t('settings:dialogs.changeDataFolder.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
             <h4 className="text-sm font-medium text-main-view-fg/80 mb-2">
-              Current Location:
+              {t('settings:dialogs.changeDataFolder.currentLocation')}
             </h4>
             <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded">
               <code className="text-xs text-main-view-fg/70 break-all">
@@ -57,7 +58,7 @@ export default function ChangeDataFolderLocation({
 
           <div>
             <h4 className="text-sm font-medium text-main-view-fg/80 mb-2">
-              New Location:
+              {t('settings:dialogs.changeDataFolder.newLocation')}
             </h4>
             <div className="bg-accent/10 border border-accent/20 rounded">
               <code className="text-xs text-accent break-all">{newPath}</code>
@@ -68,11 +69,13 @@ export default function ChangeDataFolderLocation({
         <DialogFooter className="flex items-center gap-2">
           <DialogClose asChild>
             <Button variant="link" size="sm">
-              Cancel
+              {t('settings:dialogs.changeDataFolder.cancel')}
             </Button>
           </DialogClose>
           <DialogClose asChild>
-            <Button onClick={onConfirm}>Change Location</Button>
+            <Button onClick={onConfirm}>
+              {t('settings:dialogs.changeDataFolder.changeLocation')}
+            </Button>
           </DialogClose>
         </DialogFooter>
       </DialogContent>

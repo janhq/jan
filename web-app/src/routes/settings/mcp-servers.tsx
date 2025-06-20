@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
-import { t } from 'i18next'
 import { Card, CardItem } from '@/containers/Card'
 import {
   IconPencil,
@@ -21,6 +20,7 @@ import { getConnectedServers } from '@/services/mcp'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -35,6 +35,7 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
+  const { t } = useTranslation()
   const {
     mcpServers,
     addServer,
@@ -183,7 +184,9 @@ function MCPServers() {
             })
             syncServers()
             toast.success(
-              `Server ${serverKey} is now ${active ? 'active' : 'inactive'}.`
+              active
+                ? t('mcp-servers:serverStatusActive', { serverKey })
+                : t('mcp-servers:serverStatusInactive', { serverKey })
             )
             getConnectedServers().then(setConnectedServers)
           })
@@ -193,8 +196,7 @@ function MCPServers() {
               active: false,
             })
             toast.error(error, {
-              description:
-                'Please check the parameters according to the tutorial.',
+              description: t('mcp-servers:checkParams'),
             })
           })
           .finally(() => {
@@ -227,7 +229,7 @@ function MCPServers() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
@@ -239,10 +241,10 @@ function MCPServers() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <h1 className="text-main-view-fg font-medium text-base">
-                        MCP Servers
+                        {t('mcp-servers:title')}
                       </h1>
                       <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
-                        <span>Experimental</span>
+                        <span>{t('mcp-servers:experimental')}</span>
                       </div>
                     </div>
 
@@ -250,7 +252,7 @@ function MCPServers() {
                       <div
                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                         onClick={() => handleOpenJsonEditor()}
-                        title="Edit All Servers JSON"
+                        title={t('mcp-servers:editAllJson')}
                       >
                         <IconCodeCircle
                           size={18}
@@ -260,14 +262,14 @@ function MCPServers() {
                       <div
                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                         onClick={() => handleOpenDialog()}
-                        title="Add Server"
+                        title={t('mcp-servers:addServer')}
                       >
                         <IconPlus size={18} className="text-main-view-fg/50" />
                       </div>
                     </div>
                   </div>
                   <p className="text-sm text-main-view-fg/70 mt-1">
-                    Find more MCP servers at{' '}
+                    {t('mcp-servers:findMore')}{' '}
                     <a
                       href="https://mcp.so/"
                       target="_blank"
@@ -281,9 +283,8 @@ function MCPServers() {
               }
             >
               <CardItem
-                title="Allow All MCP Tool Permissions"
-                description="When enabled, all MCP tool calls will be automatically
-                      approved without showing permission dialogs."
+                title={t('mcp-servers:allowPermissions')}
+                description={t('mcp-servers:allowPermissionsDesc')}
                 actions={
                   <div className="flex-shrink-0 ml-4">
                     <Switch
@@ -297,7 +298,7 @@ function MCPServers() {
 
             {Object.keys(mcpServers).length === 0 ? (
               <div className="py-4 text-center font-medium text-main-view-fg/50">
-                No MCP servers found
+                {t('mcp-servers:noServers')}
               </div>
             ) : (
               Object.entries(mcpServers).map(([key, config], index) => (
@@ -321,13 +322,15 @@ function MCPServers() {
                     }
                     description={
                       <div className="text-sm text-main-view-fg/70">
-                        <div>Command: {config.command}</div>
+                        <div>
+                          {t('mcp-servers:command')}: {config.command}
+                        </div>
                         <div className="my-1 break-all">
-                          Args: {config?.args?.join(', ')}
+                          {t('mcp-servers:args')}: {config?.args?.join(', ')}
                         </div>
                         {config.env && Object.keys(config.env).length > 0 && (
                           <div className="break-all">
-                            Env:{' '}
+                            {t('mcp-servers:env')}:{' '}
                             {Object.entries(config.env)
                               .map(
                                 ([key, value]) =>
@@ -343,7 +346,7 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleOpenJsonEditor(key)}
-                          title="Edit JSON"
+                          title={t('mcp-servers:editJson')}
                         >
                           <IconCodeCircle
                             size={18}
@@ -353,7 +356,7 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleEdit(key)}
-                          title="Edit Server"
+                          title={t('mcp-servers:editServer')}
                         >
                           <IconPencil
                             size={18}
@@ -363,7 +366,7 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleDeleteClick(key)}
-                          title="Delete Server"
+                          title={t('mcp-servers:deleteServer')}
                         >
                           <IconTrash
                             size={18}

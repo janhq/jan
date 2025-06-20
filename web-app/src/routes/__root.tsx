@@ -18,6 +18,7 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
+import { TranslationProvider } from '@/i18n/TranslationContext'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -87,13 +88,15 @@ function RootLayout() {
       <ThemeProvider />
       <AppearanceProvider />
       <ToasterProvider />
-      <ExtensionProvider>
-        <DataProvider />
-      </ExtensionProvider>
-      {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-      {/* <TanStackRouterDevtools position="bottom-right" /> */}
-      <CortexFailureDialog />
-      <ToolApproval />
+      <TranslationProvider>
+        <ExtensionProvider>
+          <DataProvider />
+        </ExtensionProvider>
+        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+        {/* <TanStackRouterDevtools position="bottom-right" /> */}
+        <CortexFailureDialog />
+        <ToolApproval />
+      </TranslationProvider>
     </Fragment>
   )
 }
