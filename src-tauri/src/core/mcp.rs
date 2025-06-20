@@ -139,61 +139,123 @@ pub async fn run_mcp_commands<R: Runtime>(
 
     log::trace!("MCP Servers: {server_map:#?}");
 
+    // Collect handles for initial server startup
+    let mut startup_handles = Vec::new();
+
     for (name, config) in server_map {
         if extract_active_status(config) == Some(false) {
             log::trace!("Server {name} is not active, skipping.");
             continue;
         }
 
-        // Start server with restart monitoring - spawn async task
         let app_clone = app.clone();
         let servers_clone = servers_state.clone();
         let name_clone = name.clone();
         let config_clone = config.clone();
         
-        tauri::async_runtime::spawn(async move {
-            let _ = start_mcp_server_with_restart(
-                app_clone,
-                servers_clone,
-                name_clone,
-                config_clone,
+        // Spawn task for initial startup attempt
+        let handle = tokio::spawn(async move {
+            // Only wait for the initial startup attempt, not the monitoring
+            let result = start_mcp_server_with_restart(
+                app_clone.clone(),
+                servers_clone.clone(),
+                name_clone.clone(),
+                config_clone.clone(),
                 Some(3), // Default max restarts for startup
             ).await;
+            
+            // If initial startup failed, we still want to continue with other servers
+            if let Err(e) = &result {
+                log::error!("Initial startup failed for MCP server {}: {}", name_clone, e);
+            }
+            
+            (name_clone, result)
         });
+        
+        startup_handles.push(handle);
     }
+
+    // Wait for all initial startup attempts to complete
+    let mut successful_count = 0;
+    let mut failed_count = 0;
+    
+    for handle in startup_handles {
+        match handle.await {
+            Ok((name, result)) => {
+                match result {
+                    Ok(_) => {
+                        log::info!("MCP server {} initialized successfully", name);
+                        successful_count += 1;
+                    }
+                    Err(e) => {
+                        log::error!("MCP server {} failed to initialize: {}", name, e);
+                        failed_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to join startup task: {}", e);
+                failed_count += 1;
+            }
+        }
+    }
+    
+    log::info!(
+        "MCP server initialization complete: {} successful, {} failed",
+        successful_count,
+        failed_count
+    );
 
     Ok(())
 }
 
-/// Monitor MCP server using RunningService's JoinHandle<QuitReason> - much better approach!
+/// Monitor MCP server health without removing it from the HashMap
 async fn monitor_mcp_server_handle(
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
 ) -> Option<rmcp::service::QuitReason> {
-    // Extract the service from the HashMap and wait on its handle
-    let service = {
-        let mut servers = servers_state.lock().await;
-        servers.remove(&name)
-    };
+    log::info!("Monitoring MCP server {} health", name);
     
-    let service = if let Some(service) = service { service } else {
-        log::warn!("MCP server {name} not found in running services");
-        return None;
-    };
-
-    log::info!("Monitoring MCP server {} using JoinHandle<QuitReason>", name);
-    
-    // Wait for the service to quit and get the reason
-    // This is much better than periodic health checks!
-    match service.waiting().await {
-        Ok(quit_reason) => {
-            log::info!("MCP server {name} finished with quit reason: {quit_reason:?}");
-            Some(quit_reason)
-        }
-        Err(e) => {
-            log::error!("MCP server {name} monitoring error: {e}");
-            // Consider this as an unexpected termination
-            None
+    // Monitor server health with periodic checks
+    loop {
+        // Small delay between health checks
+        sleep(Duration::from_secs(5)).await;
+        
+        // Check if server is still healthy by trying to list tools
+        let health_check_result = {
+            let servers = servers_state.lock().await;
+            if let Some(service) = servers.get(&name) {
+                // Try to list tools as a health check with a short timeout
+                match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+                    Ok(Ok(_)) => {
+                        // Server responded successfully
+                        true
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("MCP server {} health check failed: {}", name, e);
+                        false
+                    }
+                    Err(_) => {
+                        log::warn!("MCP server {} health check timed out", name);
+                        false
+                    }
+                }
+            } else {
+                // Server was removed from HashMap (e.g., by deactivate_mcp_server)
+                log::info!("MCP server {} no longer in running services", name);
+                return Some(rmcp::service::QuitReason::Closed);
+            }
+        };
+        
+        if !health_check_result {
+            // Server failed health check - remove it and return
+            log::error!("MCP server {} failed health check, removing from active servers", name);
+            let mut servers = servers_state.lock().await;
+            if let Some(service) = servers.remove(&name) {
+                // Try to cancel the service gracefully
+                let _ = service.cancel().await;
+            }
+            return Some(rmcp::service::QuitReason::Closed);
         }
     }
 }
@@ -231,18 +293,30 @@ async fn start_mcp_server_with_restart<R: Runtime>(
             log::info!("MCP server {} started successfully on first attempt", name);
             reset_restart_count(&restart_counts, &name).await;
             
-            // Spawn monitoring task for future restarts
-            spawn_server_monitoring_task(
-                app,
-                servers_state,
-                name,
-                config,
-                max_restarts,
-                restart_counts,
-                successfully_connected,
-            ).await;
+            // Check if server was marked as successfully connected (passed verification)
+            let was_verified = {
+                let connected = successfully_connected.lock().await;
+                connected.get(&name).copied().unwrap_or(false)
+            };
             
-            Ok(())
+            if was_verified {
+                // Only spawn monitoring task if server passed verification
+                spawn_server_monitoring_task(
+                    app,
+                    servers_state,
+                    name,
+                    config,
+                    max_restarts,
+                    restart_counts,
+                    successfully_connected,
+                ).await;
+                
+                Ok(())
+            } else {
+                // Server failed verification, don't monitor for restarts
+                log::error!("MCP server {} failed verification after startup", name);
+                Err(format!("MCP server {} failed verification after startup", name))
+            }
         }
         Err(e) => {
             log::error!("Failed to start MCP server {} on first attempt: {}", name, e);
@@ -315,7 +389,21 @@ async fn start_restart_loop<R: Runtime>(
             Ok(_) => {
                 log::info!("MCP server {} restarted successfully.", name);
                 
-                // Reset restart count on successful restart
+                // Check if server passed verification (was marked as successfully connected)
+                let passed_verification = {
+                    let connected = successfully_connected.lock().await;
+                    connected.get(&name).copied().unwrap_or(false)
+                };
+                
+                if !passed_verification {
+                    log::error!(
+                        "MCP server {} failed verification after restart - stopping permanently",
+                        name
+                    );
+                    break;
+                }
+                
+                // Reset restart count on successful restart with verification
                 {
                     let mut counts = restart_counts.lock().await;
                     if let Some(count) = counts.get_mut(&name) {
@@ -498,6 +586,21 @@ async fn schedule_mcp_start_task<R: Runtime>(
     // Now move the service into the HashMap
     servers.lock().await.insert(name.clone(), service);
     log::info!("Server {name} started successfully.");
+
+    // Wait a short time to verify the server is stable before marking as connected
+    // This prevents race conditions where the server quits immediately
+    let verification_delay = Duration::from_millis(500);
+    sleep(verification_delay).await;
+    
+    // Check if server is still running after the verification delay
+    let server_still_running = {
+        let servers_map = servers.lock().await;
+        servers_map.contains_key(&name)
+    };
+    
+    if !server_still_running {
+        return Err(format!("MCP server {} quit immediately after starting", name));
+    }
 
     // Mark server as successfully connected (for restart policy)
     {
