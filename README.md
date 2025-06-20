@@ -14,246 +14,174 @@
 <p align="center">
   <a href="https://jan.ai/docs/quickstart">Getting Started</a> 
   - <a href="https://jan.ai/docs">Docs</a> 
-  - <a href="https://github.com/menloresearch/jan/releases">Changelog</a> 
+  - <a href="https://jan.ai/changelog">Changelog</a> 
   - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a> 
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-<p align="center">
-⚠️ <b> Jan is currently in Development</b>: Expect breaking changes and bugs!
-</p>
-
 Jan is a ChatGPT-alternative that runs 100% offline on your device. Our goal is to make it easy for a layperson to download and run LLMs and use AI with **full control** and **privacy**.
 
-Jan is powered by [Cortex](https://github.com/menloresearch/cortex.cpp), our embeddable local AI engine that runs on any hardware.
-From PCs to multi-GPU clusters, Jan & Cortex supports universal architectures:
+**⚠️ Jan is in active development.**
 
-- [x] NVIDIA GPUs (fast)
-- [x] Apple M-series (fast)
-- [x] Apple Intel
-- [x] Linux Debian
-- [x] Windows x64
+## Installation
 
-#### Features:
-
-- [Model Library](https://jan.ai/docs/models/manage-models#add-models) with popular LLMs like Llama, Gemma, Mistral, or Qwen
-- Connect to [Remote AI APIs](https://jan.ai/docs/remote-models/openai) like Groq and OpenRouter
-- Local API Server with OpenAI-equivalent API
-- [Extensions](https://jan.ai/docs/extensions) for customizing Jan
-
-## Download
+Because clicking a button is still the easiest way to get started:
 
 <table>
-  <tr style="text-align:center">
-    <td style="text-align:center"><b>Version Type</b></td>
-    <td style="text-align:center"><b>Windows</b></td>
-    <td style="text-align:center"><b>MacOS Universal</b></td>
-    <td colspan="2" style="text-align:center"><b>Linux</b></td>
+  <tr>
+    <td><b>Platform</b></td>
+    <td><b>Stable</b></td>
+    <td><b>Beta</b></td>
+    <td><b>Nightly</b></td>
   </tr>
-  <tr style="text-align:center">
-    <td style="text-align:center"><b>Stable (Recommended)</b></td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/win-x64'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
-        <b>jan.exe</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/mac-universal'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>jan.dmg</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/linux-amd64-deb'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.deb</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.AppImage</b>
-      </a>
-    </td>
+  <tr>
+    <td><b>Windows</b></td>
+    <td><a href='https://app.jan.ai/download/latest/win-x64'>jan.exe</a></td>
+    <td><a href='https://app.jan.ai/download/beta/win-x64'>jan.exe</a></td>
+    <td><a href='https://app.jan.ai/download/nightly/win-x64'>jan.exe</a></td>
   </tr>
-  <tr style="text-align:center">
-    <td style="text-align:center"><b>Beta (Preview)</b></td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/win-x64'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
-        <b>jan.exe</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/mac-universal'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>jan.dmg</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/linux-amd64-deb'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.deb</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/linux-amd64-appimage'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.AppImage</b>
-      </a>
-    </td>
+  <tr>
+    <td><b>macOS</b></td>
+    <td><a href='https://app.jan.ai/download/latest/mac-universal'>jan.dmg</a></td>
+    <td><a href='https://app.jan.ai/download/beta/mac-universal'>jan.dmg</a></td>
+    <td><a href='https://app.jan.ai/download/nightly/mac-universal'>jan.dmg</a></td>
   </tr>
-  <tr style="text-align:center">
-    <td style="text-align:center"><b>Nightly Build (Experimental)</b></td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/win-x64'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
-        <b>jan.exe</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/mac-universal'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>jan.dmg</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.deb</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>
-        <img src='https://github.com/menloresearch/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
-        <b>jan.AppImage</b>
-      </a>
-    </td>
+  <tr>
+    <td><b>Linux (deb)</b></td>
+    <td><a href='https://app.jan.ai/download/latest/linux-amd64-deb'>jan.deb</a></td>
+    <td><a href='https://app.jan.ai/download/beta/linux-amd64-deb'>jan.deb</a></td>
+    <td><a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>jan.deb</a></td>
+  </tr>
+  <tr>
+    <td><b>Linux (AppImage)</b></td>
+    <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
+    <td><a href='https://app.jan.ai/download/beta/linux-amd64-appimage'>jan.AppImage</a></td>
+    <td><a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>jan.AppImage</a></td>
   </tr>
 </table>
 
-Download the latest version of Jan at https://jan.ai/ or visit the [GitHub Releases](https://github.com/menloresearch/jan/releases) to download any previous release.
+Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/menloresearch/jan/releases).
 
 ## Demo
 
-https://github.com/user-attachments/assets/c3592fa2-c504-4d9d-a885-7e00122a50f3
+<video width="100%" controls>
+  <source src="./docs/public/assets/videos/enable-tool-call-for-models.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
-_Real-time Video: Jan v0.5.7 on a Mac M2, 16GB Sonoma 14.2_
+## Features
 
-## Quicklinks
+- **Local AI Models**: Download and run LLMs (Llama, Gemma, Qwen, etc.) from HuggingFace
+- **Cloud Integration**: Connect to OpenAI, Anthropic, Mistral, Groq, and others
+- **Custom Assistants**: Create specialized AI assistants for your tasks
+- **OpenAI-Compatible API**: Local server at `localhost:1337` for other applications
+- **Model Context Protocol**: MCP integration for enhanced capabilities
+- **Privacy First**: Everything runs locally when you want it to
 
-### Jan
+## Build from Source
 
-- [Jan Website](https://jan.ai/)
-- [Jan GitHub](https://github.com/menloresearch/jan)
-- [Documentation](https://jan.ai/docs)
-- [Jan Changelog](https://jan.ai/changelog)
-- [Jan Blog](https://jan.ai/blog)
+For those who enjoy the scenic route:
 
-### Cortex.cpp
+### Prerequisites
 
-Jan is powered by **Cortex.cpp**. It is a C++ command-line interface (CLI) designed as an alternative to [Ollama](https://ollama.com/). By default, it runs on the llama.cpp engine but also supports other engines, including ONNX and TensorRT-LLM, making it a multi-engine platform.
+- Node.js ≥ 20.0.0
+- Yarn ≥ 1.22.0
+- Make ≥ 3.81
+- Rust (for Tauri)
 
-- [Cortex Website](https://cortex.so/)
-- [Cortex GitHub](https://github.com/menloresearch/cortex.cpp)
-- [Documentation](https://cortex.so/docs/)
-- [Models Library](https://cortex.so/models)
-- API Reference: _Under development_
+### Quick Start
 
-## Requirements for running Jan
+```bash
+git clone https://github.com/menloresearch/jan
+cd jan
+make dev
+```
 
-- **MacOS**: 13 or higher
-- **Windows**:
-  - Windows 10 or higher
-  - To enable GPU support:
-    - Nvidia GPU with CUDA Toolkit 11.7 or higher
-    - Nvidia driver 470.63.01 or higher
-- **Linux**:
-  - glibc 2.27 or higher (check with `ldd --version`)
-  - gcc 11, g++ 11, cpp 11 or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information
-  - To enable GPU support:
-    - Nvidia GPU with CUDA Toolkit 11.7 or higher
-    - Nvidia driver 470.63.01 or higher
+This handles everything: installs dependencies, builds core components, and launches the app.
+
+### Alternative Commands
+
+If you prefer the verbose approach:
+
+```bash
+# Setup and development
+yarn install
+yarn build:core
+yarn build:extensions
+yarn dev
+
+# Production build
+yarn build
+
+# Clean slate (when things inevitably break)
+make clean
+```
+
+### Available Make Targets
+
+- `make dev` - Full development setup and launch (recommended)
+- `make dev-tauri` - Tauri development (deprecated, use `make dev`)
+- `make build` - Production build
+- `make install-and-build` - Install dependencies and build core/extensions
+- `make test` - Run tests and linting
+- `make lint` - Check your code doesn't offend the linters
+- `make clean` - Nuclear option: delete everything and start fresh
+
+## System Requirements
+
+**Minimum specs for a decent experience:**
+
+- **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
+- **Windows**: 10+ with GPU support for NVIDIA/AMD/Intel Arc
+- **Linux**: Most distributions work, GPU acceleration available
+
+For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/mac).
 
 ## Troubleshooting
 
-As Jan is in development mode, you might get stuck on a some common issues:
+When things go sideways (they will):
 
-- [Troubleshooting a broken build](https://jan.ai/docs/troubleshooting#broken-build)
-- [Troubleshooting NVIDIA GPU](https://jan.ai/docs/troubleshooting#troubleshooting-nvidia-gpu)
-- [Troubleshooting Something's Amiss](https://jan.ai/docs/troubleshooting#somethings-amiss)
+1. Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)
+2. Copy your error logs and system specs
+3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
-If you can't find what you need in our troubleshooting guide, feel free reach out to us for extra help:
-
-1. Copy your [error logs & device specifications](https://jan.ai/docs/troubleshooting#how-to-get-error-logs).
-2. Go to our [Discord](https://discord.com/invite/FTk2MvZwJH) & send it to **#🆘|get-help** channel for further support.
-
-_Check the logs to ensure the information is what you intend to send. Note that we retain your logs for only 24 hours, so report any issues promptly._
+We keep logs for 24 hours, so don't procrastinate on reporting issues.
 
 ## Contributing
 
-Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.
 
-### Pre-requisites
+## Links
 
-- node >= 20.0.0
-- yarn >= 1.22.0
-- make >= 3.81
-
-### Instructions
-
-1. **Clone the repository and prepare:**
-
-   ```bash
-   git clone https://github.com/menloresearch/jan
-   cd jan
-   git checkout -b DESIRED_BRANCH
-   ```
-
-2. **Run development and use Jan Desktop**
-
-   ```bash
-   make dev
-   ```
-
-This will start the development server and open the desktop app.
-
-### For production build
-
-```bash
-# Do steps 1 and 2 in the previous section
-# Build the app
-make build
-```
-
-This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
-
-## Acknowledgements
-
-Jan builds on top of other open-source projects:
-
-- [llama.cpp](https://github.com/ggml-org/llama.cpp)
-- [LangChain](https://github.com/langchain-ai)
-- [TensorRT](https://github.com/NVIDIA/TensorRT)
-- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
+- [Documentation](https://jan.ai/docs) - The manual you should read
+- [API Reference](https://jan.ai/api-reference) - For the technically inclined
+- [Changelog](https://jan.ai/changelog) - What we broke and fixed
+- [Discord](https://discord.gg/FTk2MvZwJH) - Where the community lives
 
 ## Contact
 
-- Bugs & requests: file a GitHub ticket
-- For discussion: join our Discord [here](https://discord.gg/FTk2MvZwJH)
-- For business inquiries: email hello@jan.ai
-- For jobs: please email hr@jan.ai
+- **Bugs**: [GitHub Issues](https://github.com/menloresearch/jan/issues)
+- **Business**: hello@jan.ai
+- **Jobs**: hr@jan.ai
+- **General Discussion**: [Discord](https://discord.gg/FTk2MvZwJH)
 
 ## Trust & Safety
 
-Beware of scams!
+**Friendly reminder**: We're not trying to scam you.
 
-- We will never request your personal information.
-- Our product is completely free; no paid version exists.
-- We do not have a token or ICO.
-- We are a [bootstrapped company](https://en.wikipedia.org/wiki/Bootstrapping), and don't have any external investors (_yet_). We're open to exploring opportunities with strategic partners want to tackle [our mission](https://jan.ai/about#mission) together.
+- We won't ask for personal information
+- Jan is completely free (no premium version exists)
+- We don't have a cryptocurrency or ICO
+- We're bootstrapped and not seeking your investment (yet)
 
 ## License
 
-Jan is free and open source, under the **Apache 2.0** license.
+Apache 2.0 - Because sharing is caring.
+
+## Acknowledgements
+
+Built on the shoulders of giants:
+
+- [Llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [Tauri](https://tauri.app/)
+- [Scalar](https://github.com/scalar/scalar)

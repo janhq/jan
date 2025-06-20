@@ -105,9 +105,9 @@ To resolve the issue where Jan is stuck in a broken build after installation:
 
   <Tabs.Tab>
       1. **Uninstall** Jan
-      
+
       Choose the appropriate method based on how you installed Jan:
-      
+
       **For Debian/Ubuntu:**
       ```
       sudo apt-get remove Jan
@@ -120,7 +120,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       # Default dir
       ~/.config/Jan
       # Custom installation directory
-      $XDG_CONFIG_HOME = /home/username/custom_config/Jan 
+      $XDG_CONFIG_HOME = /home/username/custom_config/Jan
       ```
 
       3. If you are using a version before `0.4.2`, you need to run the following commands:
@@ -206,14 +206,13 @@ To verify GPU acceleration is turned on:
 
 <br/>
 ![Hardware](./_assets/trouble-shooting-01.png)
-![Hardware](./_assets/trouble-shooting-03.png)
 <br/>
 
 
 ### Step 3: GPU Settings Check
 
-1. Go to **Settings** > **Advanced Settings** > Open **Jan Data Folder**
-2. Open **Settings** folder
+1. Go to **Settings** > **General** > **Data Folder**
+2. Click on **Open Containing Folder**
 3. Open `settings.json` file
 
 Example `settings.json`:
@@ -347,7 +346,7 @@ If you check your [app logs](/docs/troubleshooting#how-to-get-error-logs) & see 
 netstat -an | grep 39291
 
 # Windows
-netstat -ano | find "39291" 
+netstat -ano | find "39291"
 tasklist /fi "PID eq 39291"
 
 # Linux
@@ -383,7 +382,7 @@ This will delete all your Jan data.
 The "Unexpected token" error usually relates to OpenAI API authentication or regional restrictions.
 
 **Step 1: API Key Sepup**
-1. Get a valid API key from [OpenAI's developer platform](https://platform.openai.com/) 
+1. Get a valid API key from [OpenAI's developer platform](https://platform.openai.com/)
 2. Ensure the key has sufficient credits & appropriate permissions
 
 **Step 2: Regional Access**
