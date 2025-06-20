@@ -189,5 +189,60 @@
     "promise3": "All data sharing is anonymous and aggregated",
     "promise4": "You can opt out anytime without losing functionality",
     "promise5": "We're transparent about what we collect and why"
+  },
+  "general": {
+    "showInFinder": "Show in Finder",
+    "showInFileExplorer": "Show in File Explorer",
+    "openContainingFolder": "Open Containing Folder",
+    "failedToRelocateDataFolder": "Failed to relocate data folder",
+    "failedToRelocateDataFolderDesc": "Failed to relocate data folder. Please try again.",
+    "devVersion": "Development version detected",
+    "noUpdateAvailable": "You're running the latest version",
+    "updateError": "Failed to check for updates",
+    "appVersion": "App Version",
+    "checkForUpdates": "Check for Updates",
+    "checkForUpdatesDesc": "Check if a newer version of Jan is available.",
+    "checkingForUpdates": "Checking for updates...",
+    "copied": "Copied",
+    "copyPath": "Copy Path",
+    "changeLocation": "Change Location",
+    "openLogs": "Open Logs",
+    "revealLogs": "Reveal Logs",
+    "factoryResetTitle": "Reset to Factory Settings",
+    "factoryResetDesc": "This will reset all app settings to their defaults. This can't be undone. We only recommend this if the app is corrupted.",
+    "cancel": "Cancel",
+    "reset": "Reset",
+    "resources": "Resources",
+    "documentation": "Documentation",
+    "documentationDesc": "Learn how to use Jan and explore its features.",
+    "viewDocs": "View Docs",
+    "releaseNotes": "Release Notes",
+    "releaseNotesDesc": "See what's new in the latest version of Jan.",
+    "viewReleases": "View Releases",
+    "community": "Community",
+    "github": "GitHub",
+    "githubDesc": "Contribute to Jan's development.",
+    "discord": "Discord",
+    "discordDesc": "Join our community for support and discussions.",
+    "support": "Support",
+    "reportAnIssue": "Report an Issue",
+    "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
+    "reportIssue": "Report Issue",
+    "credits": "Credits",
+    "creditsDesc1": "Jan is built with ❤️ by the Menlo Team.",
+    "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community."
+  },
+  "extensions": {
+    "title": "Extensions"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Change Data Folder Location",
+      "description": "Are you sure you want to change the data folder location? This will move all your data to the new location and restart the application.",
+      "currentLocation": "Current Location:",
+      "newLocation": "New Location:",
+      "cancel": "Cancel",
+      "changeLocation": "Change Location"
+    }
   }
 }

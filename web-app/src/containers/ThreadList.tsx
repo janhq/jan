@@ -214,7 +214,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                 <DialogHeader>
                   <DialogTitle>{t('common:deleteThread')}</DialogTitle>
                   <DialogDescription>
-                    {t('common:deleteAllThreadsConfirm')}
+                    {t('common:dialogs.deleteThread.description')}
                   </DialogDescription>
                   <DialogFooter className="mt-2 flex items-center">
                     <DialogClose asChild>

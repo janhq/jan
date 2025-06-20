@@ -1,6 +1,6 @@
 {
   "welcome": "Selamat Datang di Jan",
-  "description": "Pilih bagaimana Anda ingin memulai dengan Jan",
-  "localModel": "Unduh model lokal",
-  "remoteProvider": "Hubungkan ke penyedia jarak jauh"
+  "description": "Untuk memulai, Anda perlu mengunduh model AI lokal atau terhubung ke model cloud menggunakan kunci API",
+  "localModel": "Siapkan model lokal",
+  "remoteProvider": "Siapkan penyedia jarak jauh"
 }

@@ -37,5 +37,7 @@
   "allowPermissionsDesc": "When enabled, all MCP tool calls will be automatically approved without showing permission dialogs.",
   "noServers": "No MCP servers found",
   "args": "Args",
-  "env": "Env"
+  "env": "Env",
+  "serverStatusActive": "Server {{serverKey}} activated successfully",
+  "serverStatusInactive": "Server {{serverKey}} deactivated successfully"
 }

@@ -66,8 +66,7 @@ const DIRS = {
 const i18nPatterns = [
 	/{t\("([^"]+)"\)}/g, // Match {t("key")} format
 	/i18nKey="([^"]+)"/g, // Match i18nKey="key" format
-	/\bt\(\s*["']([a-zA-Z][a-zA-Z0-9_]*[:.][a-zA-Z0-9_.]+)["']\s*\)/g, // Match t("namespace:key") or t("namespace.key") format
-	/\bt\(\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']\s*\)/g, // Match t("key") format with proper key validation
+	/\bt\(\s*["']([^"']+)["']\s*(?:,\s*[^)]+)?\)/g, // Match t("key") format with optional parameters - simplified and more robust
 ]
 
 // Get all language directories for a specific locales directory
@@ -116,7 +115,7 @@ function checkKeyInLocales(key, localeDirs, localesDir) {
 		const parts = key.split(".")
 
 		// Check if the first part is a known namespace
-		const knownNamespaces = ['common', 'settings', 'systemMonitor', 'chat', 'hub', 'providers', 'assistants', 'mcpServers', 'toolApproval', 'updater', 'setup', 'logs']
+		const knownNamespaces = ['common', 'settings', 'systemMonitor', 'chat', 'hub', 'providers', 'assistants', 'mcpServers', 'mcp-servers', 'toolApproval', 'tool-approval', 'updater', 'setup', 'logs', 'provider']
 
 		if (knownNamespaces.includes(parts[0])) {
 			namespace = parts[0]
@@ -138,7 +137,9 @@ function checkKeyInLocales(key, localeDirs, localesDir) {
 	const namespaceToFile = {
 		'systemMonitor': 'system-monitor',
 		'mcpServers': 'mcp-servers',
-		'toolApproval': 'tool-approval'
+		'mcp-servers': 'mcp-servers',
+		'toolApproval': 'tool-approval',
+		'tool-approval': 'tool-approval'
 	}
 
 	const fileName = namespaceToFile[namespace] || namespace
@@ -153,14 +154,10 @@ function checkKeyInLocales(key, localeDirs, localesDir) {
 		try {
 			const json = JSON.parse(fs.readFileSync(filePath, "utf8"))
 
-			// For Jan's structure, we need to check within the namespace object
-			// e.g., common.json has { "common": { "save": "Save" } }
-			let valueToCheck
-			if (json[namespace]) {
-				valueToCheck = getValueByPath(json[namespace], keyPath)
-			} else {
-				valueToCheck = getValueByPath(json, keyPath)
-			}
+			// Jan's localization files have flat structure
+			// e.g., common.json has { "save": "Save", "cancel": "Cancel" }
+			// not nested like { "common": { "save": "Save" } }
+			const valueToCheck = getValueByPath(json, keyPath)
 
 			if (valueToCheck === undefined) {
 				missingLocales.push(`${locale}/${fileName}.json`)

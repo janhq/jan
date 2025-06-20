@@ -162,9 +162,6 @@
     "embeddings": "嵌入",
     "notAvailable": "尚不可用"
   },
-  "outOfContextError": {
-    "truncateInput": "截断输入"
-  },
   "toolApproval": {
     "title": "工具权限请求",
     "description": "助手想要使用 <strong>{{toolName}}</strong>",
@@ -205,6 +202,9 @@
     "deleteAllThreads": {
       "title": "删除所有会话",
       "description": "所有会话将被删除。此操作无法撤销。"
+    },
+    "deleteThread": {
+      "description": "您确定要删除此对话吗？此操作无法撤销。"
     },
     "editMessage": {
       "title": "编辑消息"
@@ -250,5 +250,18 @@
       "title": "下载已取消",
       "description": "下载过程已取消"
     }
+  },
+  "cortexFailureDialog": {
+    "title": "Cortex 启动失败",
+    "description": "Cortex 启动失败。请检查日志以获取更多详细信息。",
+    "contactSupport": "联系支持",
+    "restartJan": "重启 Jan"
+  },
+  "outOfContextError": {
+    "title": "超出上下文错误",
+    "description": "此聊天正在达到AI的内存限制，就像白板填满了一样。我们可以扩展内存窗口（称为上下文大小），使其记住更多内容，但可能会使用更多计算机内存。我们也可以截断输入，这意味着它会忘记一些聊天历史记录，为新消息腾出空间。",
+    "increaseContextSizeDescription": "您想要增加上下文大小吗？",
+    "truncateInput": "截断输入",
+    "increaseContextSize": "增加上下文大小"
   }
 }

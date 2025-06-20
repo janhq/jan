@@ -37,5 +37,7 @@
   "allowPermissionsDesc": "啟用後，所有 MCP 工具呼叫將自動核准，而不會顯示權限對話方塊。",
   "noServers": "找不到 MCP 伺服器",
   "args": "參數",
-  "env": "環境"
+  "env": "環境",
+  "serverStatusActive": "伺服器 {{serverKey}} 啟用成功",
+  "serverStatusInactive": "伺服器 {{serverKey}} 停用成功"
 }

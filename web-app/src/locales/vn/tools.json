@@ -4,6 +4,7 @@
     "securityNotice": "Công cụ này muốn thực hiện một hành động. Vui lòng xem xét và phê duyệt.",
     "deny": "Từ chối",
     "allowOnce": "Cho phép một lần",
-    "alwaysAllow": "Luôn cho phép"
+    "alwaysAllow": "Luôn cho phép",
+    "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>"
   }
 }

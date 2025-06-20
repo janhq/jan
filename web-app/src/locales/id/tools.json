@@ -4,6 +4,7 @@
     "securityNotice": "Alat ini ingin melakukan suatu tindakan. Harap tinjau dan setujui.",
     "deny": "Tolak",
     "allowOnce": "Izinkan Sekali",
-    "alwaysAllow": "Selalu Izinkan"
+    "alwaysAllow": "Selalu Izinkan",
+    "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>"
   }
 }

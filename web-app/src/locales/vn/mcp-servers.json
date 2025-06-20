@@ -37,5 +37,7 @@
   "allowPermissionsDesc": "Khi được bật, tất cả các lệnh gọi công cụ MCP sẽ được tự động phê duyệt mà không hiển thị hộp thoại cấp phép.",
   "noServers": "Không tìm thấy máy chủ MCP nào",
   "args": "Đối số",
-  "env": "Môi trường"
+  "env": "Môi trường",
+  "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
+  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công"
 }

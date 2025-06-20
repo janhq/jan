@@ -163,7 +163,11 @@
     "notAvailable": "Not available yet"
   },
   "outOfContextError": {
-    "truncateInput": "Truncate Input"
+    "truncateInput": "Truncate Input",
+    "title": "Out of context error",
+    "description": "This chat is reaching the AI's memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer's memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.",
+    "increaseContextSizeDescription": "Do you want to increase the context size?",
+    "increaseContextSize": "Increase Context Size"
   },
   "toolApproval": {
     "title": "Tool Permission Request",
@@ -205,6 +209,9 @@
     "deleteAllThreads": {
       "title": "Delete All Threads",
       "description": "All threads will be deleted. This action cannot be undone."
+    },
+    "deleteThread": {
+      "description": "Are you sure you want to delete this thread? This action cannot be undone."
     },
     "editMessage": {
       "title": "Edit Message"
@@ -250,5 +257,11 @@
       "title": "Download Cancelled",
       "description": "The download process was cancelled"
     }
+  },
+  "cortexFailureDialog": {
+    "title": "Local AI Engine Issue",
+    "description": "The local AI engine (Cortex) failed to start after multiple attempts. This might prevent some features from working correctly.",
+    "contactSupport": "Contact Support",
+    "restartJan": "Restart Jan"
   }
 }
