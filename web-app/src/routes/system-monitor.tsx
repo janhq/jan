@@ -224,7 +224,7 @@ function SystemMonitor() {
                         Driver Version:
                       </span>
                       <span className="text-main-view-fg">
-                        {gpu.additional_information.driver_version}
+                        {gpu.additional_information?.driver_version || '-'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -232,7 +232,7 @@ function SystemMonitor() {
                         Compute Capability:
                       </span>
                       <span className="text-main-view-fg">
-                        {gpu.additional_information.compute_cap}
+                        {gpu.additional_information?.compute_cap || '-'}
                       </span>
                     </div>
                     <div className="mt-2">
