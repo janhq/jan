@@ -3,7 +3,7 @@ import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,17 +17,17 @@ function Shortcuts() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Application */}
-            <Card title="Application">
+            <Card title={t('settings:shortcuts.application')}>
               <CardItem
-                title="New Chat"
-                description="Create a new chat."
+                title={t('settings:shortcuts.newChat')}
+                description={t('settings:shortcuts.newChatDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -37,8 +37,8 @@ function Shortcuts() {
                 }
               />
               <CardItem
-                title="Toggle Sidebar"
-                description="Show or hide the sidebar."
+                title={t('settings:shortcuts.toggleSidebar')}
+                description={t('settings:shortcuts.toggleSidebarDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -48,8 +48,8 @@ function Shortcuts() {
                 }
               />
               <CardItem
-                title="Zoom In"
-                description="Increase the zoom level."
+                title={t('settings:shortcuts.zoomIn')}
+                description={t('settings:shortcuts.zoomInDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -59,8 +59,8 @@ function Shortcuts() {
                 }
               />
               <CardItem
-                title="Zoom Out"
-                description="Decrease the zoom level."
+                title={t('settings:shortcuts.zoomOut')}
+                description={t('settings:shortcuts.zoomOutDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -72,32 +72,36 @@ function Shortcuts() {
             </Card>
 
             {/* Chat */}
-            <Card title="Chat">
+            <Card title={t('settings:shortcuts.chat')}>
               <CardItem
-                title="Send Message"
-                description="Send the current message."
+                title={t('settings:shortcuts.sendMessage')}
+                description={t('settings:shortcuts.sendMessageDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
-                    <span className="font-medium">Enter</span>
+                    <span className="font-medium">
+                      {t('settings:shortcuts.enter')}
+                    </span>
                   </div>
                 }
               />
               <CardItem
-                title="New Line"
-                description="Insert a new line."
+                title={t('settings:shortcuts.newLine')}
+                description={t('settings:shortcuts.newLineDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
-                    <span className="font-medium">Shift + Enter</span>
+                    <span className="font-medium">
+                      {t('settings:shortcuts.shiftEnter')}
+                    </span>
                   </div>
                 }
               />
             </Card>
 
             {/* Navigation */}
-            <Card title="Navigation">
+            <Card title={t('settings:shortcuts.navigation')}>
               <CardItem
-                title="Go to Settings"
-                description="Open settings."
+                title={t('settings:shortcuts.goToSettings')}
+                description={t('settings:shortcuts.goToSettingsDesc')}
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">

@@ -1,0 +1,10 @@
+{
+  "welcome": "嗨，你好吗？",
+  "description": "今天我能为您做些什么？",
+  "status": {
+    "empty": "未找到聊天"
+  },
+  "sendMessage": "发送消息",
+  "newConversation": "新对话",
+  "clearHistory": "清除历史记录"
+}

@@ -1,9 +1,10 @@
 {
-  "chat": {
-    "welcome": "Hi, how are you?",
-    "description": "How can I help you today?",
-    "status": {
-      "empty": "No Chats Found"
-    }
-  }
+  "welcome": "Hi, how are you?",
+  "description": "How can I help you today?",
+  "status": {
+    "empty": "No Chats Found"
+  },
+  "sendMessage": "Send Message",
+  "newConversation": "New Conversation",
+  "clearHistory": "Clear History"
 }

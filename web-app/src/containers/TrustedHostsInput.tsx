@@ -1,10 +1,12 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useState, useEffect } from 'react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function TrustedHostsInput() {
   const { trustedHosts, setTrustedHosts } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(trustedHosts.join(', '))
+  const { t } = useTranslation()
 
   // Update input value when trustedHosts changes externally
   useEffect(() => {
@@ -37,7 +39,7 @@ export function TrustedHostsInput() {
       onChange={handleChange}
       onBlur={handleBlur}
       className="w-full h-8 text-sm"
-      placeholder="Enter trusted hosts"
+      placeholder={t('common:enterTrustedHosts')}
     />
   )
 }

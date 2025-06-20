@@ -1,0 +1,6 @@
+{
+  "welcome": "歡迎來到 Jan",
+  "description": "若要開始使用，您需要下載本機 AI 模型或使用 API 金鑰連線至雲端模型",
+  "localModel": "設定本機模型",
+  "remoteProvider": "設定遠端提供者"
+}

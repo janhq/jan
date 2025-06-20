@@ -17,6 +17,7 @@ import { IconTrash } from '@tabler/icons-react'
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type DialogDeleteModelProps = {
   provider: ModelProvider
@@ -27,6 +28,7 @@ export const DialogDeleteModel = ({
   provider,
   modelId,
 }: DialogDeleteModelProps) => {
+  const { t } = useTranslation()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const { setProviders, deleteModel: deleteModelCache } = useModelProvider()
 
@@ -34,10 +36,15 @@ export const DialogDeleteModel = ({
     deleteModelCache(selectedModelId)
     deleteModel(selectedModelId).then(() => {
       getProviders().then(setProviders)
-      toast.success('Delete Model', {
-        id: `delete-model-${selectedModel?.id}`,
-        description: `Model ${selectedModel?.id} has been permanently deleted.`,
-      })
+      toast.success(
+        t('providers:deleteModel.title', { modelId: selectedModel?.id }),
+        {
+          id: `delete-model-${selectedModel?.id}`,
+          description: t('providers:deleteModel.success', {
+            modelId: selectedModel?.id,
+          }),
+        }
+      )
     })
   }
 
@@ -69,22 +76,23 @@ export const DialogDeleteModel = ({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete Model: {selectedModel.id}</DialogTitle>
+          <DialogTitle>
+            {t('providers:deleteModel.title', { modelId: selectedModel.id })}
+          </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete this model? This action cannot be
-            undone.
+            {t('providers:deleteModel.description')}
           </DialogDescription>
         </DialogHeader>
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>
             <Button variant="link" size="sm" className="hover:no-underline">
-              Cancel
+              {t('providers:deleteModel.cancel')}
             </Button>
           </DialogClose>
           <DialogClose asChild>
             <Button variant="destructive" size="sm" onClick={removeModel}>
-              Delete
+              {t('providers:deleteModel.delete')}
             </Button>
           </DialogClose>
         </DialogFooter>

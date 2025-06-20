@@ -3,6 +3,7 @@ import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
 import { readLogs } from '@/services/app'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.appLogs as any)({
@@ -12,6 +13,7 @@ export const Route = createFileRoute(route.appLogs as any)({
 // Define log entry type
 
 function LogsViewer() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
@@ -76,7 +78,7 @@ function LogsViewer() {
         <div className="font-mono p-2">
           {logs.length === 0 ? (
             <div className="text-center text-main-view-fg/50 py-8">
-              No logs available
+              {t('logs:noLogs')}
             </div>
           ) : (
             logs.map((log, index) => (

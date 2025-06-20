@@ -1,0 +1,6 @@
+{
+  "welcome": "Chào mừng đến với Jan",
+  "description": "Để bắt đầu, bạn cần tải xuống một mô hình AI cục bộ hoặc kết nối với một mô hình đám mây bằng khóa API",
+  "localModel": "Thiết lập mô hình cục bộ",
+  "remoteProvider": "Thiết lập nhà cung cấp từ xa"
+}

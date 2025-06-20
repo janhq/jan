@@ -5,9 +5,9 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 
 import SettingsMenu from '@/containers/SettingsMenu'
-import { t } from 'i18next'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { ExtensionManager } from '@/lib/extension'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.extensions as any)({
@@ -15,11 +15,12 @@ export const Route = createFileRoute(route.settings.extensions as any)({
 })
 
 function Extensions() {
+  const { t } = useTranslation()
   const extensions = ExtensionManager.getInstance().listExtensions()
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
@@ -30,7 +31,7 @@ function Extensions() {
               header={
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-main-view-fg font-medium text-base">
-                    Extensions
+                    {t('settings:extensions.title')}
                   </h1>
                   {/* <div className="flex items-center gap-2">
                     <Button size="sm">Install Extension</Button>
@@ -44,7 +45,9 @@ function Extensions() {
                     key={i}
                     title={
                       <div className="flex items-center gap-x-2">
-                        <h1 className="text-main-view-fg">{item.productName ?? item.name}</h1>
+                        <h1 className="text-main-view-fg">
+                          {item.productName ?? item.name}
+                        </h1>
                         <div className="bg-main-view-fg/10 px-1 py-0.5 rounded text-main-view-fg/70 text-xs">
                           v{item.version}
                         </div>
@@ -52,7 +55,7 @@ function Extensions() {
                     }
                     description={
                       <RenderMarkdown
-                        content={item.description ?? ""}
+                        content={item.description ?? ''}
                         components={{
                           // Make links open in a new tab
                           a: ({ ...props }) => (

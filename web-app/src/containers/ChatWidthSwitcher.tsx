@@ -2,9 +2,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAppearance } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { IconCircleCheckFilled } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function ChatWidthSwitcher() {
   const { chatWidth, setChatWidth } = useAppearance()
+  const { t } = useTranslation()
 
   return (
     <div className="flex gap-4">
@@ -16,7 +18,7 @@ export function ChatWidthSwitcher() {
         onClick={() => setChatWidth('compact')}
       >
         <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
-          <span className="font-medium text-xs font-sans">Compact Width</span>
+          <span className="font-medium text-xs font-sans">{t('common:compactWidth')}</span>
           {chatWidth === 'compact' && (
             <IconCircleCheckFilled className="size-4 text-accent" />
           )}
@@ -27,7 +29,7 @@ export function ChatWidthSwitcher() {
             <Skeleton className="h-2 w-full rounded-full" />
             <Skeleton className="h-2 w-full rounded-full" />
             <div className="bg-main-view-fg/10 h-8 px-4 w-full flex-shrink-0 border-none resize-none outline-0 rounded-2xl flex items-center">
-              <span className="text-main-view-fg/50">Ask me anything...</span>
+              <span className="text-main-view-fg/50">{t('common:placeholder.chatInput')}</span>
             </div>
           </div>
         </div>
@@ -40,7 +42,7 @@ export function ChatWidthSwitcher() {
         onClick={() => setChatWidth('full')}
       >
         <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
-          <span className="font-medium text-xs font-sans">Full Width</span>
+          <span className="font-medium text-xs font-sans">{t('common:fullWidth')}</span>
           {chatWidth === 'full' && (
             <IconCircleCheckFilled className="size-4 text-accent" />
           )}
@@ -51,7 +53,7 @@ export function ChatWidthSwitcher() {
             <Skeleton className="h-2 w-full rounded-full" />
             <Skeleton className="h-2 w-full rounded-full" />
             <div className="bg-main-view-fg/10 h-8 px-4 w-full flex-shrink-0 border-none resize-none outline-0 rounded-2xl flex items-center">
-              <span className="text-main-view-fg/50">Ask me anything...</span>
+              <span className="text-main-view-fg/50">{t('common:placeholder.chatInput')}</span>
             </div>
           </div>
         </div>

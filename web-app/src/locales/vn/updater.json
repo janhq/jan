@@ -1,0 +1,10 @@
+{
+  "newVersion": "Phiên bản mới {{version}}",
+  "updateAvailable": "Có bản cập nhật",
+  "nightlyBuild": "Bản dựng hàng đêm",
+  "showReleaseNotes": "Hiển thị ghi chú phát hành",
+  "hideReleaseNotes": "Ẩn ghi chú phát hành",
+  "remindMeLater": "Nhắc tôi sau",
+  "downloading": "Đang tải xuống...",
+  "updateNow": "Cập nhật ngay"
+}

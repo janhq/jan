@@ -7,6 +7,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface DeleteMCPServerConfirmProps {
   open: boolean
@@ -21,15 +22,15 @@ export default function DeleteMCPServerConfirm({
   serverName,
   onConfirm,
 }: DeleteMCPServerConfirmProps) {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete MCP Server</DialogTitle>
+          <DialogTitle>{t('mcp-servers:deleteServer.title')}</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete the MCP server{' '}
+            {t('mcp-servers:deleteServer.description', { serverName })}
             <span className="font-medium text-main-view-fg">{serverName}</span>?
-            This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -40,7 +41,7 @@ export default function DeleteMCPServerConfirm({
               onOpenChange(false)
             }}
           >
-            Delete
+            {t('mcp-servers:deleteServer.delete')}
           </Button>
         </DialogFooter>
       </DialogContent>

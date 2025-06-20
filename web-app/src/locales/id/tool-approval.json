@@ -1,0 +1,11 @@
+{
+  "title": "Permintaan Panggilan Alat",
+  "description": "Asisten ingin menggunakan alat: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Pemberitahuan Keamanan:</strong> Alat berbahaya atau konten percakapan berpotensi menipu asisten untuk mencoba tindakan berbahaya. Tinjau setiap panggilan alat dengan cermat sebelum menyetujui.",
+  "deny": "Tolak",
+  "allowOnce": "Izinkan Sekali",
+  "alwaysAllow": "Selalu Izinkan",
+  "permissions": "Izin",
+  "approve": "Setujui",
+  "reject": "Tolak"
+}

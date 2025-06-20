@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { MCPServerConfig } from '@/hooks/useMCPServers'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface EditJsonMCPserverProps {
   open: boolean
@@ -26,6 +27,7 @@ export default function EditJsonMCPserver({
   initialData,
   onSave,
 }: EditJsonMCPserverProps) {
+  const { t } = useTranslation()
   const [jsonContent, setJsonContent] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -36,10 +38,10 @@ export default function EditJsonMCPserver({
         setJsonContent(JSON.stringify(initialData, null, 2))
         setError(null)
       } catch {
-        setError('Failed to parse initial data')
+        setError(t('mcp-servers:editJson.errorParse'))
       }
     }
-  }, [open, initialData])
+  }, [open, initialData, t])
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const pastedText = e.clipboardData.getData('text')
@@ -51,7 +53,7 @@ export default function EditJsonMCPserver({
       setError(null)
     } catch (error) {
       e.preventDefault()
-      setError('Invalid JSON format in pasted content')
+      setError(t('mcp-servers:editJson.errorPaste'))
       console.error('Paste error:', error)
     }
   }
@@ -63,7 +65,7 @@ export default function EditJsonMCPserver({
       onOpenChange(false)
       setError(null)
     } catch {
-      setError('Invalid JSON format')
+      setError(t('mcp-servers:editJson.errorFormat'))
     }
   }
 
@@ -73,8 +75,8 @@ export default function EditJsonMCPserver({
         <DialogHeader>
           <DialogTitle>
             {serverName
-              ? `Edit JSON for MCP Server: ${serverName}`
-              : 'Edit All MCP Servers JSON'}
+              ? t('mcp-servers:editJson.title', { serverName })
+              : t('mcp-servers:editJson.titleAll')}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
@@ -82,7 +84,7 @@ export default function EditJsonMCPserver({
             <CodeEditor
               value={jsonContent}
               language="json"
-              placeholder="Enter JSON configuration"
+              placeholder={t('mcp-servers:editJson.placeholder')}
               onChange={(e) => setJsonContent(e.target.value)}
               onPaste={handlePaste}
               style={{
@@ -96,7 +98,7 @@ export default function EditJsonMCPserver({
         </div>
 
         <DialogFooter>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
