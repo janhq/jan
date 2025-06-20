@@ -7,6 +7,7 @@ import { ChatPage as MacChatPage } from '../../pageObjects/mac/chatPage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
+import Flow from '../../pageObjects/flow/flow'
 dotenv.config()
 
 let homePage: IHomePage
@@ -30,7 +31,7 @@ const btn = common.btn
 const title = common.title
 const submenu1 = common.submenu1
 const modelType = common.modelType
-
+const flow = new Flow()
 async function configCodeBlock(codeBlock: string) {
   await homePage.openSettings()
   await settingsPage.selectSub1Menu(submenu1.appearance)
@@ -98,7 +99,7 @@ async function showLoadingModelAndDisableInputSending(
 }
 
 describe('Chat & Thread', () => {
-  beforeEach(async () => {
+  before(async () => {
     if (process.env.RUNNING_OS === 'macOS') {
       homePage = new MacHomePage(driver)
       chatPage = new MacChatPage(driver)
@@ -107,6 +108,12 @@ describe('Chat & Thread', () => {
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
+    await configAPIKey(process.env.OPENAI || '')
+    await flow.checkAndDownloadModels(driver, [
+      qwen3v0dot6b,
+      qwen3v1dot7b,
+      qwen3v4b,
+    ])
   })
 
   it('Validate model responses in table format.', async () => {
@@ -222,7 +229,7 @@ describe('Chat & Thread', () => {
     expect(await chatPage.isText(msg)).toBe(true)
   })
 
-  it('Delete message send.', async () => {
+  it('Delete the message sent..', async () => {
     const model = gptv4
     const msg = 'Hello'
     await createThead(model, msg)

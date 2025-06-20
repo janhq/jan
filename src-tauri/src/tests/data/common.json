@@ -23,7 +23,7 @@
     "extensions": "Extensions"
   },
   "modelType": {
-    "llama": "lLama.cpp",
+    "llama": "Llama.cpp",
     "openAI": "OpenAI"
   },
   "models": {
@@ -98,7 +98,8 @@
       "renameThread": "Rename Thread",
       "deleteThread": "Delete Thread",
       "deleteAllThreads": "Delete All Threads",
-      "allThreadsUnfavorited": "All Threads Unfavorited"
+      "allThreadsUnfavorited": "All Threads Unfavorited",
+      "downloadComplete": "Download Complete"
     },
     "content": {
       "importModelSuccess": "Model {0} has been imported successfully.",

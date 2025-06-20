@@ -9,8 +9,6 @@ automation-test/
 ├── allure-results/                # Test results for Allure reporting
 ├── config/                        # All configuration for running.
 │   └── wdio.conf.ts               # WebdriverIO configuration
-├── core_lib/                      # Libs directory.
-│   └── utilities.ts               # Libs utilities include function for general use.
 ├── junit-results/                 # JUnit XML test results
 ├── node_modules/                  # Node.js dependencies
 ├── pageObjects/                   # Page Object Models
@@ -72,7 +70,8 @@ appium driver install mac2
 APP_PATH="/Applications/Jan-nightly.app"
 BUNDLE_ID="jan-nightly.ai.app"
 RUNNING_OS="macOS"
-TEST_FILES=
+TEST_FILES="test/specs/test.chatAndThreadPage.ts"
+OPENAI=
 ```
 
 ## Running Tests
@@ -99,19 +98,19 @@ The tests use platform-agnostic interfaces for all page objects:
 
 ```typescript
 // Test file example
-import { IHomePage } from "../../pageObjects/interface/iHomePage";
-import { HomePage as MacHomePage } from "../../pageObjects/mac/homePage";
+import { IHomePage } from '../../pageObjects/interface/iHomePage'
+import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
 // import { HomePage as WindowsHomePage } from '../../pageObjects/windows/homePage';
 
-let homePage: IHomePage;
+let homePage: IHomePage
 
 beforeEach(async () => {
-  if (process.env.RUNNING_OS === "macOS") {
-    homePage = new MacHomePage(driver);
-  } else if (process.env.RUNNING_OS === "Windows") {
+  if (process.env.RUNNING_OS === 'macOS') {
+    homePage = new MacHomePage(driver)
+  } else if (process.env.RUNNING_OS === 'Windows') {
     // homePage = new WindowsHomePage(driver);
   }
-});
+})
 ```
 
 ### Extending for New Platforms
@@ -126,7 +125,7 @@ Example Windows implementation:
 
 ```typescript
 // /pageObjects/windows/homePage.ts
-import { IHomePage } from "../interface/iHomePage";
+import { IHomePage } from '../interface/iHomePage'
 
 export class HomePage extends BasePage implements IHomePage {
   // Windows-specific implementation of the HomePage interface

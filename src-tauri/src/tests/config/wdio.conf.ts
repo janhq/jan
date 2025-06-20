@@ -1,5 +1,5 @@
-import * as dotenv from "dotenv";
-dotenv.config();
+import * as dotenv from 'dotenv'
+dotenv.config()
 
 export const config: WebdriverIO.Config = {
   //
@@ -7,9 +7,9 @@ export const config: WebdriverIO.Config = {
   // Runner Configuration
   // ====================
   // WebdriverIO supports running e2e tests as well as unit and component tests.
-  runner: "local",
-  tsConfigPath: "./tsconfig.json",
-  specs: ["../" + process.env.TEST_FILES],
+  runner: 'local',
+  tsConfigPath: './tsconfig.json',
+  specs: ['../' + process.env.TEST_FILES],
   // Patterns to exclude.
   exclude: [
     // 'path/to/excluded/files'
@@ -17,10 +17,10 @@ export const config: WebdriverIO.Config = {
   maxInstances: 1,
   capabilities: [
     {
-      platformName: "mac",
-      "appium:automationName": "mac2",
-      "appium:app": process.env.APP_PATH,
-      "appium:bundleId": process.env.BUNDLE_ID,
+      'platformName': 'mac',
+      'appium:automationName': 'mac2',
+      'appium:app': process.env.APP_PATH,
+      'appium:bundleId': process.env.BUNDLE_ID,
     },
   ],
   // capabilities: [{
@@ -42,7 +42,7 @@ export const config: WebdriverIO.Config = {
   // Define all options that are relevant for the WebdriverIO instance here
   //
   // Level of logging verbosity: trace | debug | info | warn | error | silent
-  logLevel: "info",
+  logLevel: 'info',
   //
   // Set specific log levels per logger
   // loggers:
@@ -84,11 +84,11 @@ export const config: WebdriverIO.Config = {
   // commands. Instead, they hook themselves up into the test process.
   services: [
     [
-      "appium",
+      'appium',
       {
-        command: "appium",
+        command: 'appium',
         args: {
-          "--allow-insecure": "apple_script,cliboard",
+          '--allow-insecure': 'apple_script,cliboard',
         },
       },
     ],
@@ -100,7 +100,7 @@ export const config: WebdriverIO.Config = {
   //
   // Make sure you have the wdio adapter package for the specific framework installed
   // before running any tests.
-  framework: "mocha",
+  framework: 'mocha',
 
   //
   // The number of times to retry the entire specfile when it fails as a whole
@@ -116,23 +116,23 @@ export const config: WebdriverIO.Config = {
   // The only one supported by default is 'dot'
   // see also: https://webdriver.io/docs/dot-reporter
   reporters: [
-    "spec",
+    'spec',
     [
-      "junit",
+      'junit',
       {
-        outputDir: "junit-results",
+        outputDir: 'junit-results',
         outputFileFormat: (opts) => `results-${opts.cid}.xml`,
       },
     ],
-    ["allure", { outputDir: "allure-results" }],
-    "mochawesome",
+    ['allure', { outputDir: 'allure-results' }],
+    'mochawesome',
   ],
 
   // Options to be passed to Mocha.
   // See the full list at http://mochajs.org/
   mochaOpts: {
-    ui: "bdd",
-    timeout: 180000,
+    ui: 'bdd',
+    timeout: 15 * 60 * 1000,
   },
 
   //
@@ -306,4 +306,4 @@ export const config: WebdriverIO.Config = {
    */
   // afterAssertion: function(params) {
   // }
-};
+}

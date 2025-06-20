@@ -5,7 +5,9 @@ import { ISettingsPage } from '@interface/iSettingsPage'
 import { HomePage as MacHomePage } from '@mac/homePage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
 import common from '@data/common.json'
+import Flow from '../../pageObjects/flow/flow'
 dotenv.config()
+const flow = new Flow()
 
 let homePage: IHomePage
 let settingsPage: ISettingsPage
@@ -23,6 +25,11 @@ describe('Model providers', () => {
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
+    await flow.checkAndDownloadModels(driver, [
+      models.qwen3v0dot6b,
+      models.qwen3v1dot7b,
+      models.qwen3v4b,
+    ])
   })
 
   it('Models downloaded from the Hub should appear in the list of Models.', async () => {
