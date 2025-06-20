@@ -49,7 +49,7 @@ tauri-plugin-dialog = "2.2.1"
 dirs = "6.0.0"
 sysinfo = "0.34.2"
 ash = "0.38.0"
-nvml-wrapper = "0.10.0"
+nvml-wrapper = "0.11.0"
 tauri-plugin-deep-link = "2"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 
