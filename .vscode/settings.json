@@ -6,9 +6,6 @@
       "directory": "./web-app"
     },
     {
-      "directory": "./electron"
-    },
-    {
       "directory": "./docs"
     }
   ]
