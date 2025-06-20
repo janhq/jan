@@ -309,7 +309,7 @@ const DropdownModelProvider = ({
               ref={searchInputRef}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Search models..."
+              placeholder={t('common:searchModels')}
               className="text-sm font-normal outline-0"
             />
             {searchValue.length > 0 && (
