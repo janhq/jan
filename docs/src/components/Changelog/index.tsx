@@ -57,7 +57,7 @@ const Changelog = () => {
           <p className="text-base mt-2 leading-relaxed">
             Latest release updates from the Jan team. Check out our&nbsp;
             <a
-              href="https://github.com/orgs/menloresearch/projects/5/views/52"
+              href="https://github.com/orgs/menloresearch/projects/30"
               className="text-blue-600 dark:text-blue-400 cursor-pointer"
             >
               Roadmap

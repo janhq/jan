@@ -42,7 +42,9 @@ as well after downloading it from [here](https://github.com/ggml-org/llama.cpp).
 2. Add an API Key (it can be anything) or fully configure the server at [Server Settings](/docs/api-server#server-settings)
 3. Click **Start Server** button
 4. Wait for the confirmation message in the logs panel, your server is ready when you see: `JAN API listening at: http://127.0.0.1:1337`
+5. Make sure you add an API key, this can be anything you want, a word like "testing" or even a combination of numbers and letters.
 
+![Local API Server](./_assets/api-server2.png)
 
 ### Step 2: Test Server
 The easiest way to test your server is through the API Playground:
@@ -50,8 +52,25 @@ The easiest way to test your server is through the API Playground:
 2. Select a model from the dropdown menu in Jan interface
 3. Try a simple request
 4. View the response in real-time
+5. When you send requests from another app, you need to add the API key in the request headers.
 
 ### Step 3: Use the API
+
+```sh
+curl http://127.0.0.1:1337/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer testing-something" \ # here you need to add your API key
+    -d '{
+        "model": "jan-nano-gguf",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Write a one-sentence bedtime story about a unicorn."
+            }
+        ]
+    }'
+
+```
 </Steps>
 
 
@@ -108,6 +127,8 @@ Enable **Verbose Server Logs** for detailed error messages.
 - Verify your JSON request format is correct
 - Verify firewall settings
 - Look for detailed error messages in the logs
+- Make sure you add an API key, this can be anything you want, a word like "testing" or even a combination of numbers and letters.
+- Use the API Key in the request headers when sending requests from another app.
 
 **2. CORS Errors in Web Apps**
 - Enable CORS in server settings if using from a webpage
