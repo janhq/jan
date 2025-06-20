@@ -39,13 +39,7 @@ export const Route = createFileRoute(route.settings.hardware as any)({
   component: Hardware,
 })
 
-function SortableGPUItem({
-  gpu,
-  index,
-}: {
-  gpu: GPU
-  index: number
-}) {
+function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
   const {
     attributes,
     listeners,
@@ -105,7 +99,7 @@ function SortableGPUItem({
           title={t('settings:hardware.driverVersion')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.driver_version}
+              {gpu.additional_information?.driver_version || '-'}
             </span>
           }
         />
@@ -113,7 +107,7 @@ function SortableGPUItem({
           title={t('settings:hardware.computeCapability')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.compute_cap}
+              {gpu.additional_information?.compute_cap || '-'}
             </span>
           }
         />
@@ -164,7 +158,7 @@ function Hardware() {
   }
 
   useEffect(() => {
-    if (pollingPaused) return;
+    if (pollingPaused) return
     const intervalId = setInterval(() => {
       getHardwareInfo().then((data) => {
         updateCPUUsage(data.cpu.usage)
