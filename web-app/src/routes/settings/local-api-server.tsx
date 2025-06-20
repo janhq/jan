@@ -17,7 +17,8 @@ import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -43,6 +44,17 @@ function LocalAPIServer() {
   const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
   )
+
+  useEffect(() => {
+    const checkServerStatus = async () => {
+      invoke('get_server_status').then((running) => {
+        if (running) {
+          setServerStatus('running')
+        }
+      })
+    }
+    checkServerStatus()
+  }, [setServerStatus])
 
   const handleApiKeyValidation = (isValid: boolean) => {
     setIsApiKeyEmpty(!isValid)

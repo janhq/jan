@@ -55,6 +55,7 @@ pub fn run() {
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
+            core::cmd::get_server_status,
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
@@ -92,6 +93,7 @@ pub fn run() {
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             cortex_restart_count: Arc::new(Mutex::new(0)),
             cortex_killed_intentionally: Arc::new(Mutex::new(false)),
+            server_handle: Arc::new(Mutex::new(None)),
         })
         .setup(|app| {
             app.handle().plugin(

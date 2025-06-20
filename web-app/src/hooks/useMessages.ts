@@ -34,7 +34,13 @@ export const useMessages = create<MessageState>()((set, get) => ({
       created_at: message.created_at || Date.now(),
       metadata: {
         ...message.metadata,
-        assistant: currentAssistant,
+        assistant: {
+          id: currentAssistant?.id || '',
+          name: currentAssistant?.name || '',
+          avatar: currentAssistant?.avatar || '',
+          instructions: currentAssistant?.instructions || '',
+          parameters: currentAssistant?.parameters || '',
+        },
       },
     }
     createMessage(newMessage).then((createdMessage) => {

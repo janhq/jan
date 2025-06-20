@@ -1,17 +1,16 @@
+use flate2::read::GzDecoder;
+use futures_util::StreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 use reqwest::Client;
+use serde_json::Value;
 use std::convert::Infallible;
+use std::io::Read;
 use std::net::SocketAddr;
-use std::sync::LazyLock;
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 
-/// Server handle type for managing the proxy server lifecycle
-type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
-
-/// Global singleton for the current server instance
-static SERVER_HANDLE: LazyLock<Mutex<Option<ServerHandle>>> = LazyLock::new(|| Mutex::new(None));
+use crate::core::state::ServerHandle;
 
 /// Configuration for the proxy server
 #[derive(Clone)]
@@ -263,11 +262,12 @@ async fn proxy_request(
 
     let original_path = req.uri().path();
     let path = get_destination_path(original_path, &config.prefix);
+    let method = req.method().clone();
 
     // Verify Host header (check target), but bypass for whitelisted paths
     let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
     let is_whitelisted_path = whitelisted_paths.contains(&path.as_str());
-    
+
     if !is_whitelisted_path {
         if !host_header.is_empty() {
             if !is_valid_host(&host_header, &config.trusted_hosts) {
@@ -328,7 +328,10 @@ async fn proxy_request(
                 .unwrap());
         }
     } else if is_whitelisted_path {
-        log::debug!("Bypassing authorization check for whitelisted path: {}", path);
+        log::debug!(
+            "Bypassing authorization check for whitelisted path: {}",
+            path
+        );
     }
 
     // Block access to /configs endpoint
@@ -368,10 +371,11 @@ async fn proxy_request(
 
             let mut builder = Response::builder().status(status);
 
-            // Copy response headers, excluding CORS headers to avoid conflicts
+            // Copy response headers, excluding CORS headers and Content-Length to avoid conflicts
             for (name, value) in response.headers() {
                 // Skip CORS headers from upstream to avoid duplicates
-                if !is_cors_header(name.as_str()) {
+                // Skip Content-Length header when filtering models response to avoid mismatch
+                if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
                     builder = builder.header(name, value);
                 }
             }
@@ -384,23 +388,59 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
 
-            // Read response body
-            match response.bytes().await {
-                Ok(bytes) => Ok(builder.body(Body::from(bytes)).unwrap()),
-                Err(e) => {
-                    log::error!("Failed to read response body: {}", e);
-                    let mut error_response =
-                        Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
-                    error_response = add_cors_headers_with_host_and_origin(
-                        error_response,
-                        &host_header,
-                        &origin_header,
-                        &config.trusted_hosts,
-                    );
-                    Ok(error_response
-                        .body(Body::from("Error reading upstream response"))
-                        .unwrap())
+            // Handle streaming vs non-streaming responses
+            if path.contains("/models") && method == hyper::Method::GET {
+                // For /models endpoint, we need to buffer and filter the response
+                match response.bytes().await {
+                    Ok(bytes) => match filter_models_response(&bytes) {
+                        Ok(filtered_bytes) => Ok(builder.body(Body::from(filtered_bytes)).unwrap()),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to filter models response: {}, returning original",
+                                e
+                            );
+                            Ok(builder.body(Body::from(bytes)).unwrap())
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Failed to read response body: {}", e);
+                        let mut error_response =
+                            Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+                        error_response = add_cors_headers_with_host_and_origin(
+                            error_response,
+                            &host_header,
+                            &origin_header,
+                            &config.trusted_hosts,
+                        );
+                        Ok(error_response
+                            .body(Body::from("Error reading upstream response"))
+                            .unwrap())
+                    }
                 }
+            } else {
+                // For streaming endpoints (like chat completions), we need to collect and forward the stream
+                let mut stream = response.bytes_stream();
+                let (mut sender, body) = hyper::Body::channel();
+
+                // Spawn a task to forward the stream
+                tokio::spawn(async move {
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                if sender.send_data(chunk).await.is_err() {
+                                    log::debug!("Client disconnected during streaming");
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Stream error: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                Ok(builder.body(body).unwrap())
             }
         }
         Err(e) => {
@@ -416,6 +456,98 @@ async fn proxy_request(
                 .body(Body::from(format!("Upstream error: {}", e)))
                 .unwrap())
         }
+    }
+}
+
+/// Checks if the byte array starts with gzip magic number
+fn is_gzip_encoded(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
+}
+
+/// Decompresses gzip-encoded bytes
+fn decompress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut decoder = GzDecoder::new(bytes);
+    let mut decompressed = Vec::new();
+    decoder.read_to_end(&mut decompressed)?;
+    Ok(decompressed)
+}
+
+/// Compresses bytes using gzip
+fn compress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes)?;
+    let compressed = encoder.finish()?;
+    Ok(compressed)
+}
+
+/// Filters models response to keep only models with status "downloaded"
+fn filter_models_response(
+    bytes: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    // Try to decompress if it's gzip-encoded
+    let decompressed_bytes = if is_gzip_encoded(bytes) {
+        log::debug!("Response is gzip-encoded, decompressing...");
+        decompress_gzip(bytes)?
+    } else {
+        bytes.to_vec()
+    };
+
+    let response_text = std::str::from_utf8(&decompressed_bytes)?;
+    let mut response_json: Value = serde_json::from_str(response_text)?;
+
+    // Check if this is a ListModelsResponseDto format with data array
+    if let Some(data_array) = response_json.get_mut("data") {
+        if let Some(models) = data_array.as_array_mut() {
+            // Keep only models where status == "downloaded"
+            models.retain(|model| {
+                if let Some(status) = model.get("status") {
+                    if let Some(status_str) = status.as_str() {
+                        status_str == "downloaded"
+                    } else {
+                        false // Remove models without string status
+                    }
+                } else {
+                    false // Remove models without status field
+                }
+            });
+            log::debug!(
+                "Filtered models response: {} downloaded models remaining",
+                models.len()
+            );
+        }
+    } else if response_json.is_array() {
+        // Handle direct array format
+        if let Some(models) = response_json.as_array_mut() {
+            models.retain(|model| {
+                if let Some(status) = model.get("status") {
+                    if let Some(status_str) = status.as_str() {
+                        status_str == "downloaded"
+                    } else {
+                        false // Remove models without string status
+                    }
+                } else {
+                    false // Remove models without status field
+                }
+            });
+            log::debug!(
+                "Filtered models response: {} downloaded models remaining",
+                models.len()
+            );
+        }
+    }
+
+    let filtered_json = serde_json::to_vec(&response_json)?;
+
+    // If original was gzip-encoded, re-compress the filtered response
+    if is_gzip_encoded(bytes) {
+        log::debug!("Re-compressing filtered response with gzip");
+        compress_gzip(&filtered_json)
+    } else {
+        Ok(filtered_json)
     }
 }
 
@@ -509,8 +641,19 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
     })
 }
 
+pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
+    let handle_guard = server_handle.lock().await;
+
+    if handle_guard.is_some() {
+        true
+    } else {
+        false
+    }
+}
+
 /// Starts the proxy server
 pub async fn start_server(
+    server_handle: Arc<Mutex<Option<ServerHandle>>>,
     host: String,
     port: u16,
     prefix: String,
@@ -519,7 +662,7 @@ pub async fn start_server(
     trusted_hosts: Vec<String>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if server is already running
-    let mut handle_guard = SERVER_HANDLE.lock().await;
+    let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
         return Err("Server is already running".into());
     }
@@ -538,9 +681,11 @@ pub async fn start_server(
         trusted_hosts,
     };
 
-    // Create HTTP client
+    // Create HTTP client with longer timeout for streaming
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(300)) // 5 minutes for streaming
+        .pool_max_idle_per_host(10)
+        .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
 
     // Create service handler
@@ -560,7 +705,7 @@ pub async fn start_server(
     log::info!("Proxy server started on http://{}", addr);
 
     // Spawn server task
-    let server_handle = tokio::spawn(async move {
+    let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
             log::error!("Server error: {}", e);
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
@@ -568,20 +713,160 @@ pub async fn start_server(
         Ok(())
     });
 
-    *handle_guard = Some(server_handle);
+    *handle_guard = Some(server_task);
     Ok(true)
 }
 
 /// Stops the currently running proxy server
-pub async fn stop_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut handle_guard = SERVER_HANDLE.lock().await;
+pub async fn stop_server(
+    server_handle: Arc<Mutex<Option<ServerHandle>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut handle_guard = server_handle.lock().await;
 
     if let Some(handle) = handle_guard.take() {
         handle.abort();
+        // remove the handle to prevent future use
+        *handle_guard = None;
         log::info!("Proxy server stopped");
     } else {
         log::debug!("No server was running");
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_filter_models_response_with_downloaded_status() {
+        let test_response = json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "status": "downloaded"
+                },
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "status": "available"
+                },
+                {
+                    "id": "model3",
+                    "name": "Model 3"
+                }
+            ]
+        });
+
+        let response_bytes = serde_json::to_vec(&test_response).unwrap();
+        let filtered_bytes = filter_models_response(&response_bytes).unwrap();
+        let filtered_response: serde_json::Value = serde_json::from_slice(&filtered_bytes).unwrap();
+
+        let data = filtered_response["data"].as_array().unwrap();
+        assert_eq!(data.len(), 1); // Should have 1 model (only model1 with "downloaded" status)
+
+        // Verify only model1 (with "downloaded" status) is kept
+        assert!(data.iter().any(|model| model["id"] == "model1"));
+
+        // Verify model2 and model3 are filtered out
+        assert!(!data.iter().any(|model| model["id"] == "model2"));
+        assert!(!data.iter().any(|model| model["id"] == "model3"));
+    }
+
+    #[test]
+    fn test_filter_models_response_direct_array() {
+        let test_response = json!([
+            {
+                "id": "model1",
+                "name": "Model 1",
+                "status": "downloaded"
+            },
+            {
+                "id": "model2",
+                "name": "Model 2",
+                "status": "available"
+            }
+        ]);
+
+        let response_bytes = serde_json::to_vec(&test_response).unwrap();
+        let filtered_bytes = filter_models_response(&response_bytes).unwrap();
+        let filtered_response: serde_json::Value = serde_json::from_slice(&filtered_bytes).unwrap();
+
+        let data = filtered_response.as_array().unwrap();
+        assert_eq!(data.len(), 1); // Should have 1 model (only model1 with "downloaded" status)
+        assert!(data.iter().any(|model| model["id"] == "model1"));
+        assert!(!data.iter().any(|model| model["id"] == "model2"));
+    }
+
+    #[test]
+    fn test_filter_models_response_no_status_field() {
+        let test_response = json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "model1",
+                    "name": "Model 1"
+                },
+                {
+                    "id": "model2",
+                    "name": "Model 2"
+                }
+            ]
+        });
+
+        let response_bytes = serde_json::to_vec(&test_response).unwrap();
+        let filtered_bytes = filter_models_response(&response_bytes).unwrap();
+        let filtered_response: serde_json::Value = serde_json::from_slice(&filtered_bytes).unwrap();
+
+        let data = filtered_response["data"].as_array().unwrap();
+        assert_eq!(data.len(), 0); // Should remove all models when no status field (no "downloaded" status)
+    }
+
+    #[test]
+    fn test_filter_models_response_multiple_downloaded() {
+        let test_response = json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "status": "downloaded"
+                },
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "status": "available"
+                },
+                {
+                    "id": "model3",
+                    "name": "Model 3",
+                    "status": "downloaded"
+                },
+                {
+                    "id": "model4",
+                    "name": "Model 4",
+                    "status": "installing"
+                }
+            ]
+        });
+
+        let response_bytes = serde_json::to_vec(&test_response).unwrap();
+        let filtered_bytes = filter_models_response(&response_bytes).unwrap();
+        let filtered_response: serde_json::Value = serde_json::from_slice(&filtered_bytes).unwrap();
+
+        let data = filtered_response["data"].as_array().unwrap();
+        assert_eq!(data.len(), 2); // Should have 2 models (model1 and model3 with "downloaded" status)
+
+        // Verify only models with "downloaded" status are kept
+        assert!(data.iter().any(|model| model["id"] == "model1"));
+        assert!(data.iter().any(|model| model["id"] == "model3"));
+
+        // Verify other models are filtered out
+        assert!(!data.iter().any(|model| model["id"] == "model2"));
+        assert!(!data.iter().any(|model| model["id"] == "model4"));
+    }
 }

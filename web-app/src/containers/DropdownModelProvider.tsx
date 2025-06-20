@@ -16,6 +16,7 @@ import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
+import { isProd } from '@/lib/version'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -390,17 +391,12 @@ const DropdownModelProvider = ({
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span
-                                  className="truncate text-main-view-fg/80 text-sm"
-                                  dangerouslySetInnerHTML={{
-                                    __html:
-                                      searchableModel.highlightedId ||
-                                      searchableModel.model.id,
-                                  }}
-                                />
+                                <span className="truncate text-main-view-fg/80 text-sm">
+                                  {searchableModel.model.id}
+                                </span>
 
                                 <div className="flex-1"></div>
-                                {capabilities.length > 0 && (
+                                {!isProd && capabilities.length > 0 && (
                                   <div className="flex-shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>

@@ -137,6 +137,10 @@ jobs:
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template          
 
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml
+
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
@@ -160,6 +164,9 @@ jobs:
             
             sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
             sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          else
+            sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template

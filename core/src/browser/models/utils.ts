@@ -17,7 +17,7 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   presence_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
-  ngl: (value: any) => Number.isInteger(value) && value >= 0,
+  ngl: (value: any) => Number.isInteger(value),
   embedding: (value: any) => typeof value === 'boolean',
   n_parallel: (value: any) => Number.isInteger(value) && value >= 0,
   cpu_threads: (value: any) => Number.isInteger(value) && value >= 0,

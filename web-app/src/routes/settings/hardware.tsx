@@ -49,7 +49,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
     isDragging,
   } = useSortable({ id: gpu.id || index })
 
-  const { toggleGPUActivation } = useHardware()
+  const { toggleGPUActivation, gpuLoading } = useHardware()
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -78,6 +78,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           <div className="flex items-center gap-4">
             <Switch
               checked={gpu.activated}
+              disabled={!!gpuLoading[index]}
               onCheckedChange={() => toggleGPUActivation(index)}
             />
           </div>
@@ -122,6 +123,7 @@ function Hardware() {
     updateCPUUsage,
     updateRAMAvailable,
     reorderGPUs,
+    pollingPaused,
   } = useHardware()
   const { vulkanEnabled, setVulkanEnabled } = useVulkan()
 
@@ -155,16 +157,16 @@ function Hardware() {
   }
 
   useEffect(() => {
+    if (pollingPaused) return;
     const intervalId = setInterval(() => {
       getHardwareInfo().then((data) => {
-        setHardwareData(data as unknown as HardwareData)
         updateCPUUsage(data.cpu.usage)
         updateRAMAvailable(data.ram.available)
       })
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, updateCPUUsage, updateRAMAvailable])
+  }, [setHardwareData, updateCPUUsage, updateRAMAvailable, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {
@@ -352,7 +354,7 @@ function Hardware() {
               <Card title="Vulkan">
                 <CardItem
                   title="Enable Vulkan"
-                  description="Use Vulkan API for GPU acceleration."
+                  description="Use Vulkan API for GPU acceleration. Do not enable Vulkan if you have an NVIDIA GPU as it may cause compatibility issues."
                   actions={
                     <div className="flex items-center gap-4">
                       <Switch
@@ -371,30 +373,34 @@ function Hardware() {
             )}
 
             {/* GPU Information */}
-            <Card title="GPUs">
-              {hardwareData.gpus.length > 0 ? (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={hardwareData.gpus.map((gpu) => gpu.id)}
-                    strategy={verticalListSortingStrategy}
+            {!IS_MACOS ? (
+              <Card title="GPUs">
+                {hardwareData.gpus.length > 0 ? (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
                   >
-                    {hardwareData.gpus.map((gpu, index) => (
-                      <SortableGPUItem
-                        key={gpu.id || index}
-                        gpu={gpu}
-                        index={index}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-              ) : (
-                <CardItem title="No GPUs detected" actions={<></>} />
-              )}
-            </Card>
+                    <SortableContext
+                      items={hardwareData.gpus.map((gpu) => gpu.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {hardwareData.gpus.map((gpu, index) => (
+                        <SortableGPUItem
+                          key={gpu.id || index}
+                          gpu={gpu}
+                          index={index}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                ) : (
+                  <CardItem title="No GPUs detected" actions={<></>} />
+                )}
+              </Card>
+            ) : (
+              <></>
+            )}
           </div>
         </div>
       </div>

@@ -348,21 +348,39 @@ pub async fn start_server(
     api_key: String,
     trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
-    let auth_token = app
-        .state::<AppState>()
-        .app_token
-        .clone()
-        .unwrap_or_default();
-    server::start_server(host, port, prefix, auth_token, api_key, trusted_hosts)
-        .await
-        .map_err(|e| e.to_string())?;
+    let state = app.state::<AppState>();
+    let auth_token = state.app_token.clone().unwrap_or_default();
+    let server_handle = state.server_handle.clone();
+
+    server::start_server(
+        server_handle,
+        host,
+        port,
+        prefix,
+        auth_token,
+        api_key,
+        trusted_hosts,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn stop_server() -> Result<(), String> {
-    server::stop_server().await.map_err(|e| e.to_string())?;
+pub async fn stop_server(state: State<'_, AppState>) -> Result<(), String> {
+    let server_handle = state.server_handle.clone();
+
+    server::stop_server(server_handle)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_server_status(state: State<'_, AppState>) -> Result<bool, String> {
+    let server_handle = state.server_handle.clone();
+
+    Ok(server::is_server_running(server_handle).await)
 }
 
 #[tauri::command]

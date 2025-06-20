@@ -358,12 +358,15 @@ export const ThreadContent = memo(
             ) : null}
 
             {!isToolCalls && (
-              <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
+              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
                 <div className={cn('flex items-center gap-2')}>
                   <div
                     className={cn(
                       'flex items-center gap-2',
-                      item.isLastMessage && streamingContent && 'hidden'
+                      item.isLastMessage &&
+                        streamingContent &&
+                        streamingContent.thread_id === item.thread_id &&
+                        'hidden'
                     )}
                   >
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
@@ -417,17 +420,6 @@ export const ThreadContent = memo(
                               />
                             </div>
                           </div>
-                          <DialogFooter className="mt-2 flex items-center">
-                            <DialogClose asChild>
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="hover:no-underline"
-                              >
-                                Close
-                              </Button>
-                            </DialogClose>
-                          </DialogFooter>
                         </DialogHeader>
                       </DialogContent>
                     </Dialog>
@@ -450,7 +442,11 @@ export const ThreadContent = memo(
                   </div>
 
                   <TokenSpeedIndicator
-                    streaming={Boolean(item.isLastMessage && streamingContent)}
+                    streaming={Boolean(
+                      item.isLastMessage &&
+                        streamingContent &&
+                        streamingContent.thread_id === item.thread_id
+                    )}
                     metadata={item.metadata}
                   />
                 </div>
@@ -458,6 +454,7 @@ export const ThreadContent = memo(
             )}
           </>
         )}
+
         {item.type === 'image_url' && image && (
           <div>
             <img

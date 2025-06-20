@@ -14,7 +14,7 @@
     "description": "Automatically shifts the context window when the model is unable to process the entire prompt, ensuring that the most relevant information is always included.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": true
+      "value": false
     }
   },
   {
