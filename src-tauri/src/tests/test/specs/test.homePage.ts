@@ -1,13 +1,9 @@
 import * as dotenv from 'dotenv'
-import { IHomePage } from '../../pageObjects/interface/iHomePage'
-import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
-import Flow from '../../pageObjects/flow/flow'
-import common from '@data/common.json'
+import { IHomePage } from '@interface/iHomePage'
+import { HomePage as MacHomePage } from '@mac/homePage'
 dotenv.config()
 
 let homePage: IHomePage
-const flow = new Flow()
-let models = common.models
 
 describe('Verify Jan Homepage', () => {
   before(async () => {
@@ -17,12 +13,6 @@ describe('Verify Jan Homepage', () => {
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
-    await flow.checkAndDownloadModels(driver, [
-      models.qwen3v0dot6b,
-      models.qwen3v1dot7b,
-      models.qwen3v4b,
-    ])
-    await homePage.openNewChat()
   })
 
   it('should open the app and see welcome message', async () => {

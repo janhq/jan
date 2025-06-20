@@ -1,5 +1,5 @@
 import { ElementReference } from '@wdio/protocols'
-import { IBasePage, BaseElements } from '../interface/iBasePage'
+import { IBasePage, BaseElements } from '@interface/iBasePage'
 import { Browser } from 'webdriverio'
 import { String as TString } from 'typescript-string-operations'
 const { execSync } = require('child_process')

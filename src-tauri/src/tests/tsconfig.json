@@ -25,7 +25,8 @@
       "@interface/*": ["pageObjects/interface/*"],
       "@mac/*": ["pageObjects/mac/*"],
       "@core_lib/*": ["core_lib/*"],
-      "@data/*": ["data/*"]
+      "@data/*": ["data/*"],
+      "@flow/*": ["pageObjects/flow/*"]
     }
   },
   "include": ["test", "config/wdio.conf.ts"]

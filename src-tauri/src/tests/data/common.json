@@ -3,6 +3,13 @@
     "name": "Jan-nightly",
     "address": "/Applications/Jan-nightly"
   },
+  "import": {
+    "downloadQwen3": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf?download=true",
+    "qwen3": "./data/modelsData/Qwen3-Embedding-0.6B-Q8_0.gguf"
+  },
+  "adress": {
+    "modelsFolder": "./data/modelsData/"
+  },
   "modelsHub": {
     "janNanoGguf": "Jan-Nano-Gguf",
     "qwen3": "Qwen3"
@@ -30,7 +37,8 @@
     "gptv4dot5Preview": "gpt-4.5-preview",
     "qwen3v4b": "qwen3:4b",
     "qwen3v0dot6b": "qwen3:0.6b",
-    "qwen3v1dot7b": "qwen3:1.7b"
+    "qwen3v1dot7b": "qwen3:1.7b",
+    "qwen3Embedding": "Qwen3-Embedding-0.6B-Q8_0"
   },
   "btnModel": {
     "start": "Start",
@@ -41,6 +49,10 @@
   },
   "codeBlock": {
     "dark": "Dark"
+  },
+  "toolApiKey": {
+    "eye": "Eye",
+    "copy": "Copy"
   },
   "btn": {
     "start": "Start",
@@ -120,5 +132,15 @@
     "copied": "Copied!",
     "noThreadsYet": "No threads yet",
     "noThreadsYetDetail": "Start a new conversation to see your thread history here."
+  },
+  "compare": {
+    "text1Complex": "🧠 Text 1 is more complex.",
+    "text2Complex": "🧠 Text 2 is more complex.",
+    "similar": "✅ The two documents are of similar complexity."
+  },
+  "confidence": {
+    "differenceClear": "🔥 The difference is CLEAR.",
+    "differenceNotHugeOne": "⚖️ There is a difference, but not a huge one.",
+    "differenceVerySmall": "🤔 The difference is very small — almost equivalent."
   }
 }

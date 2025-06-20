@@ -1,6 +1,6 @@
 import { Browser } from 'webdriverio'
-import { IHubPage, HubPageElements } from '../interface/iHubPage'
-import BasePage from './basePage'
+import { IHubPage, HubPageElements } from '@interface/iHubPage'
+import BasePage from '@mac/basePage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
 const btnModelHub = common.btnModelHub

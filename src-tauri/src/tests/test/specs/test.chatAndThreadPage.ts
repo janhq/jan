@@ -1,24 +1,22 @@
 import * as dotenv from 'dotenv'
-import { IHomePage } from '../../pageObjects/interface/iHomePage'
-import { IChatPage } from '../../pageObjects/interface/iChatPage'
+import { IHomePage } from '@interface/iHomePage'
+import { IChatPage } from '@interface/iChatPage'
 import { ISettingsPage } from '@interface/iSettingsPage'
-import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
-import { ChatPage as MacChatPage } from '../../pageObjects/mac/chatPage'
+import { HomePage as MacHomePage } from '@mac/homePage'
+import { ChatPage as MacChatPage } from '@mac/chatPage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
-import Flow from '../../pageObjects/flow/flow'
+import Utilities from '@core_lib/utilities'
+import Flow from '@flow/flow'
 dotenv.config()
 
 let homePage: IHomePage
 let chatPage: IChatPage
 let settingsPage: ISettingsPage
-
 const appInfo = common.appInfo
 const gptv4 = common.models.gptv4dot5Preview
-const qwen3v4b = common.models.qwen3v4b
-const qwen3v0dot6b = common.models.qwen3v0dot6b
-const qwen3v1dot7b = common.models.qwen3v1dot7b
+const models = common.models
 const codeBlock = common.codeBlock
 const notify = common.notify
 const ui = common.ui
@@ -29,74 +27,10 @@ const recentsMenu = common.recentsMenu
 const threadMenu = common.threadMenu
 const btn = common.btn
 const title = common.title
-const submenu1 = common.submenu1
-const modelType = common.modelType
+const modelSettings = common.title.modelSettings
+const compare = common.compare
 const flow = new Flow()
-async function configCodeBlock(codeBlock: string) {
-  await homePage.openSettings()
-  await settingsPage.selectSub1Menu(submenu1.appearance)
-  if (!(await chatPage.isText(codeBlock))) {
-    await settingsPage.tapBtnSetting(title.codeBlock)
-    await settingsPage.selectDropdown(codeBlock)
-  }
-}
-
-async function configAPIKey(key: string) {
-  await goToModelProviders()
-  await settingsPage.selectSub1Menu(modelType.openAI)
-  await settingsPage.enterSetting(title.apiKey, key)
-}
-
-async function goToModelProviders() {
-  await homePage.openSettings()
-  await settingsPage.selectSub1Menu(submenu1.modelProviders)
-}
-
-async function getStatusModels(models: any) {
-  let object: any = {}
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i]
-    let status = await settingsPage.getTextStatus(model)
-    object[model] = status
-  }
-  return object
-}
-
-async function getContentAndThought() {
-  await chatPage.waitSendDone(120000)
-  const content = await chatPage.getContentResp()
-  let thought = new Array()
-  if (await chatPage.isThought()) {
-    await chatPage.tapThought()
-    thought = await chatPage.getContentThought()
-    await chatPage.tapThought()
-  }
-  return {
-    content: content,
-    thought: thought,
-  }
-}
-
-async function createThead(model: string, msg: string) {
-  await homePage.openNewChat()
-  await chatPage.selectModel(model)
-  await chatPage.sendMessage(msg)
-  await chatPage.waitSendDone(120000)
-  return await getContentAndThought()
-}
-
-async function showLoadingModelAndDisableInputSending(
-  model: string,
-  msg: string
-) {
-  const loadingModel = ui.loadingModel
-  await chatPage.selectModel(model)
-  await chatPage.sendMessage(msg)
-  await chatPage.waitText(loadingModel)
-  expect(await chatPage.isText(loadingModel)).toBe(true)
-  expect(await chatPage.getSendInputEnabled()).toBe('false')
-  await chatPage.waitSendDone(120000)
-}
+const utilities = new Utilities()
 
 describe('Chat & Thread', () => {
   before(async () => {
@@ -108,27 +42,27 @@ describe('Chat & Thread', () => {
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
-    await configAPIKey(process.env.OPENAI || '')
+    await flow.configAPIKey(driver, process.env.OPENAI || '')
     await flow.checkAndDownloadModels(driver, [
-      qwen3v0dot6b,
-      qwen3v1dot7b,
-      qwen3v4b,
+      models.qwen3v0dot6b,
+      models.qwen3v1dot7b,
+      models.qwen3v4b,
     ])
   })
 
   it('Validate model responses in table format.', async () => {
     const model = gptv4
     const msg = 'draw a table with 2 columns and rows'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     expect(await chatPage.isTable()).toBe(true)
   })
 
   it('Check formatting of code responses and code block usage.', async () => {
-    await configCodeBlock(codeBlock.dark)
+    await flow.configCodeBlock(driver, codeBlock.dark)
     const model = gptv4
     const msg = 'hello example in python'
-    await createThead(model, msg)
-    //await driver.takeScreenshot();
+    await flow.createThead(driver, model, msg)
+    await driver.takeScreenshot()
     expect(await chatPage.isText(ui.python)).toBe(true)
     expect(await chatPage.isText(ui.copy)).toBe(true)
   })
@@ -136,22 +70,20 @@ describe('Chat & Thread', () => {
   it('Validate long-form response from model.', async () => {
     const msg = 'generate a new story long any theme'
     const model = gptv4
-    const thoughtAndContent = await createThead(model, msg)
-    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+    const response = await flow.createThead(driver, model, msg)
+    expect(response.content.length).toBeGreaterThan(0)
   })
 
   it('Validate model summary for long-form response.', async () => {
     const msg = 'summary this'
-    await chatPage.sendMessage(msg)
-    await chatPage.waitSendDone(120000)
+    await flow.sentAndWait(driver, msg)
     const content = await chatPage.getContentResp(2)
     expect(content.length).toBeGreaterThan(0)
   })
 
   it('Successful deletion of requests from user /responses from model without issues', async () => {
     const msg = 'summarize further'
-    await chatPage.sendMessage(msg)
-    await chatPage.waitSendDone(120000)
+    await flow.sentAndWait(driver, msg)
     await chatPage.tapBtnTool(toolResp.delete, 3)
     expect(await chatPage.isJanName(3)).toBe(false)
     await chatPage.tapBtnTool(toolResp.delete, 2)
@@ -194,7 +126,7 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const msg = 'generate 500/1000 words'
     const newMsg = 'generate 1000 words'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     await chatPage.tapBtnSendTool(msg, toolSend.edit)
     await chatPage.editMsgSend(newMsg)
     const isNotify = await settingsPage.isNotify(
@@ -210,16 +142,16 @@ describe('Chat & Thread', () => {
   it('Sending messages with special characters or emojis.', async () => {
     const model = gptv4
     const msg = '😀😃😄😁😁. Hello!'
-    const thoughtAndContent = await createThead(model, msg)
+    const response = await flow.createThead(driver, model, msg)
     expect(await chatPage.isText(msg)).toBe(true)
-    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+    expect(response.content.length).toBeGreaterThan(0)
   })
 
   it('Canceling edit restores the original message.', async () => {
     const model = gptv4
     const msg = 'Hello'
     const newMsg = 'Hello1'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     expect(await chatPage.isText(msg)).toBe(true)
     await chatPage.tapBtnSendTool(msg, toolSend.edit)
     await chatPage.enterText(chatPage.elements.editSendInput, newMsg)
@@ -229,10 +161,10 @@ describe('Chat & Thread', () => {
     expect(await chatPage.isText(msg)).toBe(true)
   })
 
-  it('Delete the message sent..', async () => {
+  it('Delete the message sent.', async () => {
     const model = gptv4
     const msg = 'Hello'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     expect(await chatPage.isText(msg)).toBe(true)
     await chatPage.tapBtnSendTool(msg, toolSend.delete)
     expect(await chatPage.isMessageSend(msg)).toBe(false)
@@ -242,9 +174,8 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const msg1 = 'Hello1'
     const msg2 = 'Hello2'
-    await createThead(model, msg1)
-    await chatPage.sendMessage(msg2)
-    await chatPage.waitSendDone(120000)
+    await flow.createThead(driver, model, msg1)
+    await flow.sentAndWait(driver, msg2)
     await chatPage.tapBtnSendTool(msg1, toolSend.delete)
     expect(await chatPage.isMessageSend(msg1)).toBe(false)
     await chatPage.tapBtnSendTool(msg2, toolSend.delete)
@@ -254,7 +185,7 @@ describe('Chat & Thread', () => {
   it('Display JSON metadata on clicking the metadata icon.', async () => {
     const model = gptv4
     const msg = 'Hello'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     await chatPage.tapBtnTool(toolResp.info)
     const metaData = await chatPage.getContentMetaData()
     await chatPage.clickElement(chatPage.elements.closeBtn)
@@ -262,15 +193,15 @@ describe('Chat & Thread', () => {
   })
 
   it('Allow copying response content.', async () => {
-    const model = qwen3v4b
+    const model = models.qwen3v4b
     const msg = 'Hello'
-    const thoughtAndContent = await createThead(model, msg)
+    const response = await flow.createThead(driver, model, msg)
     await chatPage.tapBtnTool(toolResp.copy, 1)
     expect(await chatPage.isText(ui.copied)).toBe(true)
     await chatPage.clickElement(chatPage.elements.chatInput)
     await chatPage.pasteText()
-    const thought = thoughtAndContent.thought[0]
-    const content = thoughtAndContent.content[0][0]
+    const thought = response.thought[0]
+    const content = response.content[0][0]
     const textExpect = '<think>' + thought + '</think>' + content
     const textInput = await chatPage.getText(chatPage.elements.chatInput)
     expect(textInput).toBe(textExpect)
@@ -281,7 +212,7 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const msg = 'What is Google link? Please provide full google.com link'
     const link = 'https://www.google.com'
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     await chatPage.tapText(link)
     await chatPage.waitForTimeout(3000)
     const urlBrower = await chatPage.getBrowserUrl()
@@ -292,10 +223,9 @@ describe('Chat & Thread', () => {
   it('Chat with invalid API key remote provider.', async () => {
     const key = 'invalid'
     const model = gptv4
-    const msg = 'Test'
-    await configAPIKey(key)
-    await createThead(model, msg)
-    await chatPage.waitSendDone(120000)
+    const msg = 'Hello'
+    await flow.configAPIKey(driver, key)
+    await flow.createThead(driver, model, msg)
     expect(
       await chatPage.isNotify(notify.content.incorrectAPIKeyProvided)
     ).toBe(true)
@@ -306,21 +236,20 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const msg = 'Test'
     await homePage.openNewChat()
-    await configAPIKey(key)
-    const thoughtAndContent = await createThead(model, msg)
-    expect(thoughtAndContent.content.length).toBeGreaterThan(0)
+    await flow.configAPIKey(driver, key)
+    const response = await flow.createThead(driver, model, msg)
+    expect(response.content.length).toBeGreaterThan(0)
   })
 
   it('Display latest selected model name after switching.', async () => {
     const msg1 = 'Hello'
     const msg2 = 'Hello 1'
     const model1 = gptv4
-    const model2 = qwen3v4b
-    const thoughtAndContent1 = await createThead(model1, msg1)
-    expect(thoughtAndContent1.content.length).toBeGreaterThan(0)
+    const model2 = models.qwen3v4b
+    const response1 = await flow.createThead(driver, model1, msg1)
+    expect(response1.content.length).toBeGreaterThan(0)
     await chatPage.selectModel(model2)
-    await chatPage.sendMessage(msg2)
-    await chatPage.waitSendDone(120000)
+    await flow.sentAndWait(driver, msg2)
     const content2 = await chatPage.getContentResp(2)
     expect(content2.length).toBeGreaterThan(0)
     await chatPage.tapThought()
@@ -331,33 +260,33 @@ describe('Chat & Thread', () => {
   })
 
   it("Show 'Loading Model...' and disable input during sending.", async () => {
-    const model1 = qwen3v0dot6b
-    const model2 = qwen3v1dot7b
+    const model1 = models.qwen3v0dot6b
+    const model2 = models.qwen3v1dot7b
     const msg1 = 'Content 1'
     const msg2 = 'Content 2'
-    await goToModelProviders()
+    await flow.goToModelProviders(driver)
     await settingsPage.toggle(title.autoUnloadOldModels, true)
-    let modelsStatus = await getStatusModels([model1, model2])
+    let modelsStatus = await flow.getStatusModels(driver, [model1, model2])
     expect(modelsStatus[model1]).toBe(btn.start)
     expect(modelsStatus[model2]).toBe(btn.start)
     await homePage.openNewChat()
-    await showLoadingModelAndDisableInputSending(model1, msg1)
-    await goToModelProviders()
-    modelsStatus = await getStatusModels([model1, model2])
+    await flow.showLoadingModelAndDisableInputSending(driver, model1, msg1)
+    await flow.goToModelProviders(driver)
+    modelsStatus = await flow.getStatusModels(driver, [model1, model2])
     expect(modelsStatus[model1]).toBe(btn.stop)
     expect(modelsStatus[model2]).toBe(btn.start)
     await homePage.openNewChat()
-    await showLoadingModelAndDisableInputSending(model2, msg2)
-    await goToModelProviders()
-    modelsStatus = await getStatusModels([model1, model2])
+    await flow.showLoadingModelAndDisableInputSending(driver, model2, msg2)
+    await flow.goToModelProviders(driver)
+    modelsStatus = await flow.getStatusModels(driver, [model1, model2])
     expect(modelsStatus[model1]).toBe(btn.start)
     expect(modelsStatus[model2]).toBe(btn.stop)
     await settingsPage.toggle(title.autoUnloadOldModels, false)
     await homePage.openNewChat()
-    await showLoadingModelAndDisableInputSending(model1, msg1)
-    await showLoadingModelAndDisableInputSending(model2, msg2)
-    await goToModelProviders()
-    modelsStatus = await getStatusModels([model1, model2])
+    await flow.showLoadingModelAndDisableInputSending(driver, model1, msg1)
+    await flow.showLoadingModelAndDisableInputSending(driver, model2, msg2)
+    await flow.goToModelProviders(driver)
+    modelsStatus = await flow.getStatusModels(driver, [model1, model2])
     expect(modelsStatus[model1]).toBe(btn.stop)
     expect(modelsStatus[model2]).toBe(btn.stop)
   })
@@ -366,17 +295,17 @@ describe('Chat & Thread', () => {
     const msg1 = 'Test3'
     const msg2 = 'Test4'
     const model1 = gptv4
-    const model2 = qwen3v4b
+    const model2 = models.qwen3v4b
     await chatPage.deleteAllHistory()
-    const content1 = await createThead(model1, msg1)
-    const content2 = await createThead(model2, msg2)
+    const content1 = await flow.createThead(driver, model1, msg1)
+    const content2 = await flow.createThead(driver, model2, msg2)
     await chatPage.selectHistory(msg1)
-    const contentThread1 = await getContentAndThought()
+    const contentThread1 = await flow.getContentAndThought(driver)
     expect(await chatPage.isTextContains(model1)).toBe(true)
     expect(await chatPage.isText(msg1)).toBe(true)
     expect(contentThread1).toStrictEqual(content1)
     await chatPage.selectHistory(msg2)
-    const contentThread2 = await getContentAndThought()
+    const contentThread2 = await flow.getContentAndThought(driver)
     expect(await chatPage.isTextContains(model2)).toBe(true)
     expect(await chatPage.isText(msg2)).toBe(true)
     expect(contentThread2).toStrictEqual(content2)
@@ -386,14 +315,14 @@ describe('Chat & Thread', () => {
     const msg = 'Test3'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    const content = await createThead(model, msg)
+    const content = await flow.createThead(driver, model, msg)
     await chatPage.quitApp(appInfo.name)
     await chatPage.wait(3000)
     await chatPage.openApp(appInfo.address)
     await chatPage.wait(2000)
     await chatPage.focusApp(appInfo.name)
     await chatPage.selectHistory(msg)
-    const contentThread = await getContentAndThought()
+    const contentThread = await flow.getContentAndThought(driver)
     expect(await chatPage.isTextContains(model)).toBe(true)
     expect(await chatPage.isText(msg)).toBe(true)
     expect(contentThread).toStrictEqual(content)
@@ -404,16 +333,16 @@ describe('Chat & Thread', () => {
     const model = gptv4
     let content
     if (!(await chatPage.isText(msg))) {
-      content = await createThead(model, msg)
+      content = await flow.createThead(driver, model, msg)
     } else {
       await chatPage.selectHistory(msg)
-      content = await getContentAndThought()
+      content = await flow.getContentAndThought(driver)
     }
     await chatPage.tapBtnTool(toolResp.regenerate)
-    const contentThread1 = await getContentAndThought()
+    const contentThread1 = await flow.getContentAndThought(driver)
     expect(contentThread1).not.toStrictEqual(content)
     await chatPage.tapBtnTool(toolResp.regenerate)
-    const contentThread2 = await getContentAndThought()
+    const contentThread2 = await flow.getContentAndThought(driver)
     expect(contentThread2).not.toStrictEqual(content)
   })
 
@@ -422,10 +351,10 @@ describe('Chat & Thread', () => {
     const newMsg = 'Test4'
     const model = gptv4
     if (!(await chatPage.isText(msg))) {
-      await createThead(model, msg)
+      await flow.createThead(driver, model, msg)
     } else {
       await chatPage.selectHistory(msg)
-      await getContentAndThought()
+      await flow.getContentAndThought(driver)
     }
     await chatPage.selectHistoryMenu(msg, threadMenu.rename)
     await chatPage.renameHistory(newMsg)
@@ -442,8 +371,8 @@ describe('Chat & Thread', () => {
     const msg2 = 'Test4'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
     const history = await chatPage.getHistoryToPart()
     expect(history[0]).toBe(msg2)
     expect(history[1]).toBe(msg1)
@@ -454,8 +383,8 @@ describe('Chat & Thread', () => {
     const msg2 = 'Test4'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
     await chatPage.selectHistoryMenu(msg1, threadMenu.star)
     const favoritesHistory = await chatPage.getHistoryToPart('Favorites')
     expect(favoritesHistory[0]).toBe(msg1)
@@ -469,8 +398,8 @@ describe('Chat & Thread', () => {
     const msg2 = 'Test4'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
     await chatPage.selectHistoryMenu(msg1, threadMenu.star)
     await chatPage.selectHistoryMenu(msg1, threadMenu.unstar, parts.favorites)
     const recentsHistory = await chatPage.getHistoryToPart(parts.recents)
@@ -484,8 +413,8 @@ describe('Chat & Thread', () => {
     const msg2 = 'Test4'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
     await chatPage.searchHistory(msg1)
     expect(await chatPage.isText(parts.recents)).toBe(true)
     const recentsHistory1 = await chatPage.getHistoryToPart(parts.recents)
@@ -505,9 +434,9 @@ describe('Chat & Thread', () => {
     const msg3 = 'Hello'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
-    await createThead(model, msg3)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
+    await flow.createThead(driver, model, msg3)
     await chatPage.searchHistory(keyword)
     expect(await chatPage.isText(parts.recents)).toBe(true)
     const recentsHistory = await chatPage.getHistoryToPart(parts.recents)
@@ -524,9 +453,9 @@ describe('Chat & Thread', () => {
     const msg3 = 'HELLO'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
-    await createThead(model, msg3)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
+    await flow.createThead(driver, model, msg3)
     for (let i = 0; i < keywords.length; i++) {
       const keyword = keywords[i]
       await chatPage.searchHistory(keyword)
@@ -543,7 +472,7 @@ describe('Chat & Thread', () => {
     const msg = 'Test3'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     const history = await chatPage.getHistoryToPart()
     await chatPage.selectHistoryMenu(msg, btn.delete)
     await chatPage.tapText(btn.cancel)
@@ -556,7 +485,7 @@ describe('Chat & Thread', () => {
     const msg = 'Test3'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg)
+    await flow.createThead(driver, model, msg)
     await chatPage.deleteHistory(msg)
     const isNotify = await settingsPage.isNotify(
       notify.title.deleteThread,
@@ -573,9 +502,9 @@ describe('Chat & Thread', () => {
     await chatPage.enterText(chatPage.elements.searchHistoryInput, '')
     let history = await chatPage.getHistoryToPart()
     if (history.length == 0) {
-      await createThead(model, msg1)
-      await createThead(model, msg2)
-      await createThead(model, msg3)
+      await flow.createThead(driver, model, msg1)
+      await flow.createThead(driver, model, msg2)
+      await flow.createThead(driver, model, msg3)
     }
     history = await chatPage.getHistoryToPart()
     await chatPage.tapThreeDotsPart()
@@ -594,9 +523,9 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const history = await chatPage.getHistoryToPart()
     if (history.length == 0) {
-      await createThead(model, msg1)
-      await createThead(model, msg2)
-      await createThead(model, msg3)
+      await flow.createThead(driver, model, msg1)
+      await flow.createThead(driver, model, msg2)
+      await flow.createThead(driver, model, msg3)
     }
     await chatPage.deleteAllHistory()
     const isNotify = await settingsPage.isNotify(
@@ -614,9 +543,9 @@ describe('Chat & Thread', () => {
     const msg3 = 'Hello'
     const model = gptv4
     await chatPage.deleteAllHistory()
-    await createThead(model, msg1)
-    await createThead(model, msg2)
-    await createThead(model, msg3)
+    await flow.createThead(driver, model, msg1)
+    await flow.createThead(driver, model, msg2)
+    await flow.createThead(driver, model, msg3)
     await chatPage.selectHistoryMenu(msg1, threadMenu.star)
     await chatPage.selectHistoryMenu(msg2, threadMenu.star)
     await chatPage.selectHistoryMenu(msg3, threadMenu.star)
@@ -630,10 +559,87 @@ describe('Chat & Thread', () => {
   })
 
   it('Can open setting model on chat page.', async () => {
-    const model = qwen3v0dot6b
+    const model = models.qwen3v0dot6b
     await homePage.openNewChat()
     await chatPage.selectModel(model)
     await chatPage.tapModelSetting()
     expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+  })
+
+  it('Can close setting model on chat page.', async () => {
+    const model = models.qwen3v0dot6b
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+    await settingsPage.closeSettingModel(model)
+    await settingsPage.waitForTimeout(1000)
+    expect(await chatPage.isText('Model Settings - ' + model)).toBe(false)
+    await chatPage.tapModelSetting()
+    expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+    await chatPage.clickAtPoint(200, 200)
+    await settingsPage.waitForTimeout(1000)
+    expect(await chatPage.isText('Model Settings - ' + model)).toBe(false)
+  })
+
+  it("Set the model's 'GPU Layers' when sent and check if it has been applied", async () => {
+    const model = models.qwen3v4b
+    const msg = 'Hello'
+    const gpuLayers1 = '-1'
+    const gpuLayers2 = '50'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.gpuLayers, gpuLayers1)
+    const responseTime1 = await utilities.measureResponseTime(
+      'Send with GPU Layers:' + gpuLayers1,
+      async () => {
+        await flow.sentAndWait(driver, msg)
+      }
+    )
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.gpuLayers, gpuLayers2)
+    const responseTime2 = await utilities.measureResponseTime(
+      'Send with GPU Layers:' + gpuLayers2,
+      async () => {
+        await flow.sentAndWait(driver, msg)
+      }
+    )
+    expect(responseTime1).toBeLessThan(responseTime2)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.gpuLayers, '100')
+  })
+
+  it("Set the model's 'Temperature' when sent and check if it has been applied", async () => {
+    const model = models.qwen3v4b
+    const msg = 'What is the capital of England? a little information'
+    const temperature = ['0', '10']
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    const object: any = {}
+    for (let i = 0; i < temperature.length; i++) {
+      await chatPage.tapModelSetting()
+      await flow.changeSettingModel(modelSettings.temperature, temperature[i])
+      await flow.sentAndWait(driver, msg)
+      const contentAndThought = await flow.getContentAndThought(driver, i + 1)
+      const key = temperature[i] == '10' ? 'more1' : 'equal0'
+      object[key] = {
+        thought: contentAndThought.thought[0],
+        content: contentAndThought.content[0][0],
+      }
+    }
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.temperature, '0.7')
+    const expectCompare = [compare.text1Complex, compare.similar]
+    const compareThought = utilities.compareTextComplexityWithConfidence(
+      object['more1'].thought,
+      object['equal0'].thought
+    )
+    const compareContent = utilities.compareTextComplexityWithConfidence(
+      object['more1'].content,
+      object['equal0'].content
+    )
+    expect(expectCompare).toContain(compareThought.compare)
+    expect(expectCompare).toContain(compareContent.compare)
   })
 })

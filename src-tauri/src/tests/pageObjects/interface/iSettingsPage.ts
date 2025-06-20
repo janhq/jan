@@ -1,4 +1,4 @@
-import { IBasePage } from './iBasePage'
+import { IBasePage } from '@interface/iBasePage'
 
 export type SettingsPageElements = {
   menuSub1: string
@@ -15,6 +15,7 @@ export type SettingsPageElements = {
   importBtn: string
   toogle: string
   inputRightSetting: string
+  closeModelSetting: string
   btnSetting: string
   inputSetting: string
   searchDropdownInput: string
@@ -37,4 +38,7 @@ export interface ISettingsPage extends IBasePage {
   tapBtnSetting(title: string): Promise<void>
   selectDropdown(codeBlock: string): Promise<void>
   enterSetting(title: string, text: string): Promise<void>
+  getValueSetting(title: string): Promise<any>
+  tapToolAPIKey(name: string): Promise<void>
+  closeSettingModel(model: string): Promise<void>
 }

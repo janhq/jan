@@ -1,6 +1,6 @@
 import * as dotenv from 'dotenv'
-import { IHomePage } from '../../pageObjects/interface/iHomePage'
-import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
+import { IHomePage } from '@interface/iHomePage'
+import { HomePage as MacHomePage } from '@mac/homePage'
 
 dotenv.config()
 let homePage: IHomePage

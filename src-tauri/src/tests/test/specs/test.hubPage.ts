@@ -1,11 +1,11 @@
 import * as dotenv from 'dotenv'
-import { IHomePage } from '../../pageObjects/interface/iHomePage'
-import { IHubPage } from '../../pageObjects/interface/iHubPage'
-import { IChatPage } from '../../pageObjects/interface/iChatPage'
-import { HomePage as MacHomePage } from '../../pageObjects/mac/homePage'
-import { HubPage as MacHubPage } from '../../pageObjects/mac/hubPage'
-import { ChatPage as MacChatPage } from '../../pageObjects/mac/chatPage'
-import Flow from '../../pageObjects/flow/flow'
+import { IHomePage } from '@interface/iHomePage'
+import { IHubPage } from '@interface/iHubPage'
+import { IChatPage } from '@interface/iChatPage'
+import { HomePage as MacHomePage } from '@mac/homePage'
+import { HubPage as MacHubPage } from '@mac/hubPage'
+import { ChatPage as MacChatPage } from '@mac/chatPage'
+import Flow from '@flow/flow'
 import common from '@data/common.json'
 
 dotenv.config()
@@ -30,7 +30,6 @@ describe('Verify user can use a model from Hub', () => {
     await flow.checkAndDownloadModels(driver, [
       models.qwen3v0dot6b,
       models.qwen3v1dot7b,
-      models.qwen3v4b,
     ])
   })
 

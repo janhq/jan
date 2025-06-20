@@ -9,6 +9,8 @@ automation-test/
 ├── allure-results/                # Test results for Allure reporting
 ├── config/                        # All configuration for running.
 │   └── wdio.conf.ts               # WebdriverIO configuration
+├── core_lib/                      # Libs directory.
+│   └── utilities.ts               # Libs utilities include function for general use.
 ├── junit-results/                 # JUnit XML test results
 ├── node_modules/                  # Node.js dependencies
 ├── pageObjects/                   # Page Object Models

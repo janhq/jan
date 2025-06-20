@@ -1,7 +1,10 @@
 import { Browser } from 'webdriverio'
-import { ISettingsPage, SettingsPageElements } from '../interface/iSettingsPage'
-import BasePage from './basePage'
+import { ISettingsPage, SettingsPageElements } from '@interface/iSettingsPage'
+import BasePage from '@mac/basePage'
 import { String } from 'typescript-string-operations'
+import common from '@data/common.json'
+const title = common.title
+const toolApiKey = common.toolApiKey
 export class SettingsPage extends BasePage implements ISettingsPage {
   elements: SettingsPageElements
   constructor(driver: Browser) {
@@ -21,8 +24,9 @@ export class SettingsPage extends BasePage implements ISettingsPage {
       importBtn: `//XCUIElementTypeStaticText[@value="Models"]/parent::XCUIElementTypeStaticText[@value="1"]/following-sibling::XCUIElementTypeButton[1]`,
       toogle: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeGroup[2]/XCUIElementTypeSwitch[1]`,
       inputRightSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeTextField[1]`,
+      closeModelSetting: `//XCUIElementTypeGroup[@label="Model Settings - {0}"]/XCUIElementTypeButton[1]`,
       btnSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeGroup[1]/XCUIElementTypeStaticText[1]`,
-      inputSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeSecureTextField[1]`,
+      inputSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::*[contains(name(), 'TextField')][1]`,
       searchDropdownInput: `//XCUIElementTypeMenu/XCUIElementTypeTextField[1]`,
       itemDropdown: `//XCUIElementTypeMenuItem[@title='{0}']`,
     }
@@ -123,11 +127,35 @@ export class SettingsPage extends BasePage implements ISettingsPage {
     await this.waitForTimeout(2000)
   }
 
+  async getValueSetting(title: string): Promise<any> {
+    const locator = String.format(this.elements.inputSetting, title)
+    return await this.getText(locator)
+  }
+
+  async tapToolAPIKey(name: string): Promise<void> {
+    const locator = String.format(this.elements.inputSetting, title.apiKey)
+    const eyeLocator = locator + '/following-sibling::XCUIElementTypeButton[1]'
+    const copyLocator = locator + '/following-sibling::XCUIElementTypeButton[2]'
+    switch (name) {
+      case toolApiKey.eye:
+        await this.clickElement(eyeLocator)
+        break
+      case toolApiKey.copy:
+        await this.clickElement(copyLocator)
+        break
+    }
+  }
+
   async selectDropdown(codeBlock: string): Promise<void> {
     let locator = String.format(this.elements.itemDropdown, codeBlock)
     if (!(await this.isText(codeBlock))) {
       await this.enterText(this.elements.searchDropdownInput, codeBlock)
     }
+    await this.clickElement(locator)
+  }
+
+  async closeSettingModel(model: string) {
+    let locator = String.format(this.elements.closeModelSetting, model)
     await this.clickElement(locator)
   }
 }
