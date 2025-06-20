@@ -86,3 +86,40 @@ Here are some example queries to showcase Jan-Nano's web search capabilities:
 8. **Cultural Events**: What major music festivals are happening in Europe this summer and who are the headliners?
 9. **Health & Medicine**: What are the latest developments in mRNA vaccine technology and its applications beyond COVID-19?
 10. **Space Exploration**: What are the current missions being conducted by NASA, ESA, and China's space program?
+
+
+## FAQ
+
+- What are the recommended GGUF quantizations?
+  - Q8 GGUF is recommended for best performance
+  - iQ4_XS GGUF for very limited VRAM setups
+  - Avoid Q4_0 and Q4_K_M as they show significant performance degradation
+
+- Can I run this on a laptop with 8GB RAM?
+  - Yes, but use the recommended quantizations (iQ4_XS)
+  - Note that performance may be limited with Q4 quantizations
+
+- How much did the training cost?
+  - Training was done on internal A6000 clusters
+  - Estimated cost on RunPod would be under $100 using H200
+  - Hardware used:
+    - 8xA6000 for training code
+    - 4xA6000 for vllm server (inferencing)
+
+- What frontend should I use?
+  - Jan Beta (recommended) - Minimalistic and polished interface
+  - Download link: https://jan.ai/docs/desktop/beta
+
+- Getting Jinja errors in LM Studio?
+  - Use Qwen3 template from other LM Studio compatible models
+  - Disable “thinking” and add the required system prompt
+  - Fix coming soon in future GGUF releases
+- Having model loading issues in Jan?
+  - Use latest beta version: Jan-beta_0.5.18-rc6-beta
+  - Ensure proper CUDA support for your GPU
+  - Check VRAM requirements match your quantization choice
+
+## Resources
+
+- [Jan-Nano Model on Hugging Face](https://huggingface.co/Menlo/Jan-nano)
+- [Jan-Nano GGUF on Hugging Face](https://huggingface.co/Menlo/Jan-nano-gguf)
