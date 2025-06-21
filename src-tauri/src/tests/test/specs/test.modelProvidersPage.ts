@@ -40,6 +40,7 @@ describe('Model providers', () => {
   })
 
   it('Models downloaded from the Hub should appear in the list of Models.', async () => {
+    await homePage.openNewChat()
     await homePage.openSettings()
     await settingsPage.selectSub1Menu(submenu1.modelProviders)
     const isLlama = await settingsPage.isLlamaTitle()
@@ -102,9 +103,65 @@ describe('Model providers', () => {
   })
 
   it('Test response creativity using Temperature, Top K, Top P, and Min P.', async () => {
-    const model = models.qwen3v1dot7b
+    const msg = 'Hello'
+    const model = models.qwen3v4b
     await settingsPage.tapBtnModel(model, btnModel.settings)
     const settings = title.modelSettings
-    await settingsPage.enterInputSettingModel(settings.contextSize, '4085')
+    await settingsPage.enterInputSettingModel(settings.temperature, '100')
+    await settingsPage.enterInputSettingModel(settings.topK, '0.7')
+    await settingsPage.enterInputSettingModel(settings.topP, '0.8')
+    await settingsPage.closeSettingModel(model)
+    const response = await flow.createThead(driver, model, msg)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it('Test answer coherence with Temperature, Top K, and Top P.', async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    await homePage.openSettings()
+    await settingsPage.selectSub1Menu(submenu1.modelProviders)
+    await settingsPage.tapBtnModel(model, btnModel.settings)
+    const settings = title.modelSettings
+    await settingsPage.enterInputSettingModel(settings.temperature, '100')
+    await settingsPage.enterInputSettingModel(settings.topK, '40')
+    await settingsPage.closeSettingModel(model)
+    const response = await flow.createThead(driver, model, msg)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it('Test repetition control using Repeat Last N and Repeat Penalty.', async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    await homePage.openSettings()
+    await settingsPage.selectSub1Menu(submenu1.modelProviders)
+    await settingsPage.tapBtnModel(model, btnModel.settings)
+    const settings = title.modelSettings
+    await settingsPage.enterInputSettingModel(settings.repeatLastN, '')
+    await settingsPage.enterInputSettingModel(settings.repeatPenalty, '')
+    await settingsPage.clickAtPoint(200, 200)
+    const response = await flow.createThead(driver, model, msg)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it('Tool icon appears when a tool is enabled for a model.', async () => {
+    const model = models.qwen3v4b
+    await homePage.openNewChat()
+    await homePage.openSettings()
+    await settingsPage.selectSub1Menu(submenu1.modelProviders)
+    await settingsPage.tapBtnModel(model, btnModel.edit)
+    await settingsPage.toggle(title.editModel.tools, true)
+    await settingsPage.clickAtPoint(100, 100)
+    await settingsPage.waitForTimeout(1000)
+  })
+
+  it('Show error when using an invalid API key with a remote model.', async () => {
+    const key = 'invalid'
+    const model = models.gptv4dot5Preview
+    const msg = 'Hello'
+    await flow.configAPIKey(driver, key)
+    await flow.createThead(driver, model, msg)
+    expect(
+      await settingsPage.isNotify(notify.content.incorrectAPIKeyProvided)
+    ).toBe(true)
   })
 })

@@ -95,11 +95,17 @@
       "gpuLayers": "GPU Layers",
       "temperature": "Temperature",
       "topK": "Top K",
+      "topP": "Top P",
       "minP": "Min P",
       "repeatLastN": "Repeat Last N",
-      "repeatPenalty": "Repeat Last N",
+      "repeatPenalty": "Repeat Penalty",
       "presencePenalty": "Presence Penalty",
       "frequencyPenalty": "Frequency Penalty"
+    },
+    "editModel": {
+      "tools": "Tools",
+      "vision": "Vision",
+      "embeddings": "Embeddings"
     }
   },
   "notify": {

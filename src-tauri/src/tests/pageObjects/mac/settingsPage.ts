@@ -23,12 +23,14 @@ export class SettingsPage extends BasePage implements ISettingsPage {
       closePopupBtn: `//*[contains(@label, "Delete Model:")]/XCUIElementTypeButton[3]`,
       importBtn: `//XCUIElementTypeStaticText[@value="Models"]/parent::XCUIElementTypeStaticText[@value="1"]/following-sibling::XCUIElementTypeButton[1]`,
       toogle: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeGroup[2]/XCUIElementTypeSwitch[1]`,
+      toogleItem: `//*[@value="{0}"]/following-sibling::XCUIElementTypeSwitch[1]`,
       inputRightSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeTextField[1]`,
       closeModelSetting: `//XCUIElementTypeGroup[@label="Model Settings - {0}"]/XCUIElementTypeButton[1]`,
       btnSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::XCUIElementTypeGroup[1]/XCUIElementTypeStaticText[1]`,
       inputSetting: `//*[@value="{0}"]/parent::*[1]/following-sibling::*[contains(name(), 'TextField')][1]`,
       searchDropdownInput: `//XCUIElementTypeMenu/XCUIElementTypeTextField[1]`,
       itemDropdown: `//XCUIElementTypeMenuItem[@title='{0}']`,
+      closeEditModel: `//XCUIElementTypeGroup[@label="Edit Model: {0}"]/XCUIElementTypeButton[3]`,
     }
   }
 
@@ -70,7 +72,10 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   }
 
   async toggle(title: string, statusExpect: boolean): Promise<void> {
-    const locator = String.format(this.elements.toogle, title)
+    let locator = String.format(this.elements.toogle, title)
+    if (!(await this.elementShouldBeVisible(locator))) {
+      locator = String.format(this.elements.toogleItem, title)
+    }
     let status = (await this.getText(locator)) == '1' ? true : false
     if (status != statusExpect) {
       await this.clickElement(locator)

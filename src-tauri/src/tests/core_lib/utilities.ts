@@ -10,6 +10,9 @@ export default class Utilities {
   }
 
   downloadFile(url: string, outputPath: string): Promise<void> {
+    if (!fs.existsSync(this.fromRoot(outputPath))) {
+      fs.mkdirSync(this.fromRoot(outputPath), { recursive: true })
+    }
     const filename = this.fromRoot(
       outputPath + path.basename(url.split('?')[0])
     )

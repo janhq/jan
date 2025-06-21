@@ -568,18 +568,19 @@ describe('Chat & Thread', () => {
 
   it('Can close setting model on chat page.', async () => {
     const model = models.qwen3v0dot6b
+    const modelSettings = 'Model Settings - ' + model
     await homePage.openNewChat()
     await chatPage.selectModel(model)
     await chatPage.tapModelSetting()
-    expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+    expect(await chatPage.isText(modelSettings)).toBe(true)
     await settingsPage.closeSettingModel(model)
     await settingsPage.waitForTimeout(1000)
-    expect(await chatPage.isText('Model Settings - ' + model)).toBe(false)
+    expect(await chatPage.isText(modelSettings)).toBe(false)
     await chatPage.tapModelSetting()
-    expect(await chatPage.isText('Model Settings - ' + model)).toBe(true)
+    expect(await chatPage.isText(modelSettings)).toBe(true)
     await chatPage.clickAtPoint(200, 200)
     await settingsPage.waitForTimeout(1000)
-    expect(await chatPage.isText('Model Settings - ' + model)).toBe(false)
+    expect(await chatPage.isText(modelSettings)).toBe(false)
   })
 
   it("Set the model's 'GPU Layers' when sent and check if it has been applied", async () => {

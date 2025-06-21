@@ -14,12 +14,14 @@ export type SettingsPageElements = {
   closePopupBtn: string
   importBtn: string
   toogle: string
+  toogleItem: string
   inputRightSetting: string
   closeModelSetting: string
   btnSetting: string
   inputSetting: string
   searchDropdownInput: string
   itemDropdown: string
+  closeEditModel: string
 }
 
 export interface ISettingsPage extends IBasePage {
@@ -28,7 +30,6 @@ export interface ISettingsPage extends IBasePage {
   isLlamaTitle(): Promise<boolean>
   getModels(): Promise<any>
   isModel(model: string): Promise<boolean>
-  isNotify(title: string, detail: string): Promise<boolean>
   startOrStopModel(model: string): Promise<void>
   getTextStatus(model: string): Promise<any>
   toggle(title: string, statusExpect: boolean): Promise<void>

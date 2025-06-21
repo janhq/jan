@@ -81,7 +81,9 @@ export default class Flow {
 
   async configAPIKey(driver: any, key: string) {
     this.initializePages(driver)
-    await this.goToModelProviders(driver)
+    if (!(await settingsPage.isText(modelType.openAI))) {
+      await this.goToModelProviders(driver)
+    }
     await settingsPage.selectSub1Menu(modelType.openAI)
     await settingsPage.tapToolAPIKey(toolApiKey.eye)
     const value = await settingsPage.getValueSetting(title.apiKey)
