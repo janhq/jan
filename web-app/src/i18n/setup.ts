@@ -82,7 +82,7 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
       return current && typeof current === 'object' && current !== null && key in current
         ? (current as Record<string, unknown>)[key]
         : undefined
-    }, obj as unknown)
+    }, obj as unknown) as string | undefined
   }
   
   // Try to get translation from current language

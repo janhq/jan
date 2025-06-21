@@ -2,7 +2,7 @@
 export { default as i18n, loadTranslations } from './setup'
 
 // Export the React context and hook
-export { TranslationProvider, useAppTranslation, TranslationContext } from './TranslationContext'
+export { TranslationProvider } from './TranslationContext'
 
 // Export types
 export type { I18nInstance, TranslationResources } from './setup'
