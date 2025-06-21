@@ -1,0 +1,215 @@
+[tools]
+node = "20"
+rust = "1.85.1"
+sccache = "latest"
+
+[env]
+_.path = ['./node_modules/.bin']
+RUSTC_WRAPPER="sccache"
+
+
+# ============================================================================
+# CORE SETUP AND CONFIGURATION TASKS
+# ============================================================================
+
+[tasks.config-yarn]
+description = "Configure yarn version and settings"
+run = [
+  "corepack enable",
+  "corepack prepare yarn@4.5.3 --activate",
+  "yarn --version",
+  "yarn config set -H enableImmutableInstalls false"
+]
+
+[tasks.install]
+description = "Install dependencies"
+depends = ["config-yarn"]
+run = '''
+#!/usr/bin/env bash
+# Skip install on Windows per Makefile logic
+if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
+  yarn install
+fi
+'''
+sources = ['package.json', 'yarn.lock']
+outputs = ['node_modules']
+
+[tasks.build-core]
+description = "Build core package"
+depends = ["install"]
+run = "yarn build:core"
+sources = ['core/**/*']
+outputs = ['core/dist']
+
+[tasks.build-extensions]
+description = "Build extensions"
+depends = ["build-core"]
+run = "yarn build:extensions"
+sources = ['extensions/**/*']
+outputs = ['pre-install/*.tgz']
+
+[tasks.install-and-build]
+description = "Install dependencies and build core and extensions (matches Makefile)"
+depends = ["build-extensions"]
+
+# ============================================================================
+# DEVELOPMENT TASKS
+# ============================================================================
+
+[tasks.dev]
+description = "Start development server (matches Makefile)"
+depends = ["install-and-build"]
+run = [
+  "yarn install:cortex",
+  "yarn download:bin",
+  "yarn copy:lib",
+  "yarn dev"
+]
+
+[tasks.dev-tauri]
+description = "Start development server with Tauri (DEPRECATED - matches Makefile)"
+depends = ["install-and-build"]
+run = [
+  "yarn install:cortex",
+  "yarn download:bin",
+  "yarn copy:lib",
+  "yarn dev:tauri"
+]
+
+# ============================================================================
+# BUILD TASKS
+# ============================================================================
+
+[tasks.build]
+description = "Build complete application (matches Makefile)"
+depends = ["install-and-build"]
+run = "yarn build"
+
+[tasks.build-tauri]
+description = "Build Tauri application (DEPRECATED - matches Makefile)"
+depends = ["install-and-build"]
+run = [
+  "yarn copy:lib",
+  "yarn build"
+]
+
+[tasks.build-and-publish]
+description = "Build and publish the application (matches Makefile)"
+depends = ["install-and-build"]
+run = "yarn build"
+
+# ============================================================================
+# QUALITY ASSURANCE TASKS
+# ============================================================================
+
+[tasks.lint]
+description = "Run linting (matches Makefile)"
+depends = ["build-extensions"]
+run = "yarn lint"
+
+[tasks.test]
+description = "Run test suite (matches Makefile)"
+depends = ["lint"]
+run = "yarn test"
+
+# ============================================================================
+# PARALLEL-FRIENDLY QUALITY ASSURANCE TASKS
+# ============================================================================
+
+[tasks.lint-only]
+description = "Run linting only (parallel-friendly)"
+depends = ["build-extensions"]
+run = "yarn lint"
+hide = true
+
+[tasks.test-only]
+description = "Run tests only (parallel-friendly)"
+depends = ["build-extensions"]
+run = "yarn test"
+hide = true
+
+[tasks.qa-parallel]
+description = "Run linting and testing in parallel"
+depends = ["lint-only", "test-only"]
+
+# ============================================================================
+# UTILITY TASKS
+# ============================================================================
+
+[tasks.clean]
+description = "Clean all build artifacts and dependencies (cross-platform - matches Makefile)"
+run = '''
+#!/usr/bin/env bash
+echo "Cleaning build artifacts and dependencies..."
+
+# Platform detection and cleanup (matches Makefile exactly)
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+  # Windows cleanup using PowerShell (matches Makefile)
+  powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force" 2>/dev/null || true
+  powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force" 2>/dev/null || true
+  powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz" 2>/dev/null || true
+  powershell -Command "Remove-Item -Recurse -Force ./extensions/*/*.tgz" 2>/dev/null || true
+  powershell -Command "Remove-Item -Recurse -Force ./electron/pre-install/*.tgz" 2>/dev/null || true
+  powershell -Command "Remove-Item -Recurse -Force ./src-tauri/resources" 2>/dev/null || true
+  powershell -Command "Remove-Item -Recurse -Force ./src-tauri/target" 2>/dev/null || true
+  powershell -Command "if (Test-Path \"\$(\$env:USERPROFILE)\\jan\\extensions\\\") { Remove-Item -Path \"\$(\$env:USERPROFILE)\\jan\\extensions\" -Recurse -Force }" 2>/dev/null || true
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  # Linux cleanup (matches Makefile)
+  find . -name "node_modules" -type d -prune -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".next" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "dist" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "build" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "out" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".turbo" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".yarn" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "package-lock.json" -type f -exec rm -rf '{}' + 2>/dev/null || true
+  rm -rf ./pre-install/*.tgz 2>/dev/null || true
+  rm -rf ./extensions/*/*.tgz 2>/dev/null || true
+  rm -rf ./electron/pre-install/*.tgz 2>/dev/null || true
+  rm -rf ./src-tauri/resources 2>/dev/null || true
+  rm -rf ./src-tauri/target 2>/dev/null || true
+  rm -rf ~/jan/extensions 2>/dev/null || true
+  rm -rf "~/.cache/jan*" 2>/dev/null || true
+else
+  # macOS cleanup (matches Makefile)
+  find . -name "node_modules" -type d -prune -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".next" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "dist" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "build" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "out" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".turbo" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name ".yarn" -type d -exec rm -rf '{}' + 2>/dev/null || true
+  find . -name "package-lock.json" -type f -exec rm -rf '{}' + 2>/dev/null || true
+  rm -rf ./pre-install/*.tgz 2>/dev/null || true
+  rm -rf ./extensions/*/*.tgz 2>/dev/null || true
+  rm -rf ./electron/pre-install/*.tgz 2>/dev/null || true
+  rm -rf ./src-tauri/resources 2>/dev/null || true
+  rm -rf ./src-tauri/target 2>/dev/null || true
+  rm -rf ~/jan/extensions 2>/dev/null || true
+  rm -rf ~/Library/Caches/jan* 2>/dev/null || true
+fi
+
+echo "Clean completed!"
+'''
+
+[tasks.all]
+description = "Default target - shows available commands (matches Makefile)"
+run = "echo 'Specify a target to run. Use: mise tasks'"
+
+# ============================================================================
+# DEVELOPMENT WORKFLOW SHORTCUTS
+# ============================================================================
+
+[tasks.setup]
+description = "Complete development setup"
+depends = ["install-and-build"]
+alias = "init"
+
+[tasks.ci]
+description = "Run CI pipeline (lint + test sequentially)"
+depends = ["test"]
+
+[tasks.ci-parallel]
+description = "Run CI pipeline (lint + test in parallel)"
+depends = ["qa-parallel"]
+alias = "ci-fast"
