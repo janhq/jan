@@ -76,6 +76,10 @@
   "devDependencies": {
     "@eslint/js": "^9.22.0",
     "@tanstack/router-plugin": "^1.116.1",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/culori": "^2.1.1",
     "@types/lodash.debounce": "^4",
     "@types/node": "^22.14.1",
@@ -87,6 +91,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "jsdom": "^26.1.0",
     "tailwind-merge": "^3.2.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.26.1",
