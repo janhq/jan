@@ -7,7 +7,7 @@ use core::{
 };
 use reqwest::Client;
 use std::{collections::HashMap, sync::Arc};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use tokio::sync::Mutex;
 
@@ -132,7 +132,6 @@ pub fn run() {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
                     window.emit("kill-mcp-servers", ()).unwrap();
-                    clean_up();
                     let state = window.app_handle().state::<AppState>();
 
                     tauri::async_runtime::block_on(async {
