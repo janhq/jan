@@ -8,6 +8,7 @@ import {
   chatCompletionRequestMessage,
   chatCompletion,
   chatCompletionChunk,
+  Tool,
 } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
@@ -241,7 +242,7 @@ export const stopModel = async (
  */
 export const normalizeTools = (
   tools: MCPTool[]
-): ChatCompletionTool[] | undefined => {
+): ChatCompletionTool[] | Tool[] | undefined => {
   if (tools.length === 0) return undefined
   return tools.map((tool) => ({
     type: 'function',
