@@ -4,72 +4,72 @@ import { EngineManager } from './EngineManager'
 /* AIEngine class types */
 
 export interface chatCompletionRequestMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null | Content[]; // Content can be a string OR an array of content parts
-  name?: string;
-  tool_calls?: any[]; // Simplified tool_call_id?: string
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null | Content[] // Content can be a string OR an array of content parts
+  name?: string
+  tool_calls?: any[] // Simplified tool_call_id?: string
 }
 
 export interface Content {
-  type: 'text' | 'input_image' | 'input_audio';
-  text?: string;
-  image_url?: string;
-  input_audio?: InputAudio;
+  type: 'text' | 'input_image' | 'input_audio'
+  text?: string
+  image_url?: string
+  input_audio?: InputAudio
 }
 
 export interface InputAudio {
-  data: string; // Base64 encoded audio data
-  format: 'mp3' | 'wav' | 'ogg' | 'flac'; // Add more formats as needed/llama-server seems to support mp3
+  data: string // Base64 encoded audio data
+  format: 'mp3' | 'wav' | 'ogg' | 'flac' // Add more formats as needed/llama-server seems to support mp3
 }
 
 export interface chatCompletionRequest {
-  model: string; // Model ID, though for local it might be implicit via sessionInfo
-  messages: chatCompletionRequestMessage[];
+  model: string // Model ID, though for local it might be implicit via sessionInfo
+  messages: chatCompletionRequestMessage[]
 
   // Core sampling parameters
-  temperature?: number | null;
-  dynatemp_range?: number | null;
-  dynatemp_exponent?: number | null;
-  top_k?: number | null;
-  top_p?: number | null;
-  min_p?: number | null;
-  typical_p?: number | null;
-  repeat_penalty?: number | null;
-  repeat_last_n?: number | null;
-  presence_penalty?: number | null;
-  frequency_penalty?: number | null;
-  dry_multiplier?: number | null;
-  dry_base?: number | null;
-  dry_allowed_length?: number | null;
-  dry_penalty_last_n?: number | null;
-  dry_sequence_breakers?: string[] | null;
-  xtc_probability?: number | null;
-  xtc_threshold?: number | null;
-  mirostat?: number | null; // 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0
-  mirostat_tau?: number | null;
-  mirostat_eta?: number | null;
+  temperature?: number | null
+  dynatemp_range?: number | null
+  dynatemp_exponent?: number | null
+  top_k?: number | null
+  top_p?: number | null
+  min_p?: number | null
+  typical_p?: number | null
+  repeat_penalty?: number | null
+  repeat_last_n?: number | null
+  presence_penalty?: number | null
+  frequency_penalty?: number | null
+  dry_multiplier?: number | null
+  dry_base?: number | null
+  dry_allowed_length?: number | null
+  dry_penalty_last_n?: number | null
+  dry_sequence_breakers?: string[] | null
+  xtc_probability?: number | null
+  xtc_threshold?: number | null
+  mirostat?: number | null // 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0
+  mirostat_tau?: number | null
+  mirostat_eta?: number | null
 
-  n_predict?: number | null;
-  n_indent?: number | null;
-  n_keep?: number | null;
-  stream?: boolean | null;
-  stop?: string | string[] | null;
-  seed?: number | null; // RNG seed
+  n_predict?: number | null
+  n_indent?: number | null
+  n_keep?: number | null
+  stream?: boolean | null
+  stop?: string | string[] | null
+  seed?: number | null // RNG seed
 
   // Advanced sampling
-  logit_bias?: { [key: string]: number } | null;
-  n_probs?: number | null;
-  min_keep?: number | null;
-  t_max_predict_ms?: number | null;
-  image_data?: Array<{ data: string; id: number }> | null;
+  logit_bias?: { [key: string]: number } | null
+  n_probs?: number | null
+  min_keep?: number | null
+  t_max_predict_ms?: number | null
+  image_data?: Array<{ data: string; id: number }> | null
 
   // Internal/optimization parameters
-  id_slot?: number | null;
-  cache_prompt?: boolean | null;
-  return_tokens?: boolean | null;
-  samplers?: string[] | null;
-  timings_per_token?: boolean | null;
-  post_sampling_probs?: boolean | null;
+  id_slot?: number | null
+  cache_prompt?: boolean | null
+  return_tokens?: boolean | null
+  samplers?: string[] | null
+  timings_per_token?: boolean | null
+  post_sampling_probs?: boolean | null
 }
 
 export interface chatCompletionChunkChoiceDelta {
@@ -208,7 +208,9 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Sends a chat request to the model
    */
-  abstract chat(opts: chatCompletionRequest): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>>
+  abstract chat(
+    opts: chatCompletionRequest
+  ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>>
 
   /**
    * Deletes a model

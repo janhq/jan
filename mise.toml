@@ -60,9 +60,7 @@ depends = ["build-extensions"]
 description = "Start development server (matches Makefile)"
 depends = ["install-and-build"]
 run = [
-  "yarn install:cortex",
   "yarn download:bin",
-  "yarn copy:lib",
   "yarn dev"
 ]
 
@@ -70,9 +68,7 @@ run = [
 description = "Start development server with Tauri (DEPRECATED - matches Makefile)"
 depends = ["install-and-build"]
 run = [
-  "yarn install:cortex",
   "yarn download:bin",
-  "yarn copy:lib",
   "yarn dev:tauri"
 ]
 
@@ -89,7 +85,6 @@ run = "yarn build"
 description = "Build Tauri application (DEPRECATED - matches Makefile)"
 depends = ["install-and-build"]
 run = [
-  "yarn copy:lib",
   "yarn build"
 ]
 

@@ -5,10 +5,9 @@ import { getHardwareInfo } from '@/services/hardware'
 import { Progress } from '@/components/ui/progress'
 import type { HardwareData } from '@/hooks/useHardware'
 import { route } from '@/constants/routes'
-import { formatDuration, formatMegaBytes } from '@/lib/utils'
+import { formatMegaBytes } from '@/lib/utils'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { getActiveModels, stopModel } from '@/services/models'
-import { ActiveModel } from '@/types/models'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -21,7 +20,7 @@ function SystemMonitor() {
   const { t } = useTranslation()
   const { hardwareData, setHardwareData, updateCPUUsage, updateRAMAvailable } =
     useHardware()
-  const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
+  const [activeModels, setActiveModels] = useState<string[]>([])
 
   useEffect(() => {
     // Initial data fetch
@@ -47,7 +46,7 @@ function SystemMonitor() {
     stopModel(modelId)
       .then(() => {
         setActiveModels((prevModels) =>
-          prevModels.filter((model) => model.id !== modelId)
+          prevModels.filter((model) => model !== modelId)
         )
       })
       .catch((error) => {
@@ -173,10 +172,10 @@ function SystemMonitor() {
         {activeModels.length > 0 && (
           <div className="flex flex-col gap-4">
             {activeModels.map((model) => (
-              <div className="bg-main-view-fg/3 rounded-lg p-4" key={model.id}>
+              <div className="bg-main-view-fg/3 rounded-lg p-4" key={model}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-semibold text-main-view-fg">
-                    {model.id}
+                    {model}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2 mt-3">
@@ -190,9 +189,9 @@ function SystemMonitor() {
                     <span className="text-main-view-fg/70">
                       {t('system-monitor:uptime')}
                     </span>
-                    <span className="text-main-view-fg">
+                    {/* <span className="text-main-view-fg">
                       {model.start_time && formatDuration(model.start_time)}
-                    </span>
+                    </span> */}
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-main-view-fg/70">
@@ -202,7 +201,7 @@ function SystemMonitor() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => stopRunningModel(model.id)}
+                        onClick={() => stopRunningModel(model)}
                       >
                         {t('system-monitor:stop')}
                       </Button>

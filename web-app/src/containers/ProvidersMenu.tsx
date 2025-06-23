@@ -80,7 +80,7 @@ const ProvidersMenu = ({
                   'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
                   isActive && 'bg-main-view-fg/5',
                   // hidden for llama.cpp provider for setup remote provider
-                  provider.provider === 'llama.cpp' &&
+                  provider.provider === 'llamacpp' &&
                     stepSetupRemoteProvider &&
                     'hidden'
                 )}

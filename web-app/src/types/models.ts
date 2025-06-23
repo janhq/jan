@@ -20,13 +20,3 @@ export enum DefaultToolUseSupportedModels {
   JanNano = 'jan-nano',
   Qwen3 = 'qwen3',
 }
-
-export type ActiveModel = {
-  engine: string
-  id: string
-  model_size: number
-  object: 'model'
-  ram: number
-  start_time: number
-  vram: number
-}

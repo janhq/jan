@@ -9,7 +9,7 @@ const SettingsMenu = () => {
   const { providers } = useModelProvider()
   const { experimentalFeatures } = useGeneralSetting()
   const firstItemProvider =
-    providers.length > 0 ? providers[0].provider : 'llama.cpp'
+    providers.length > 0 ? providers[0].provider : 'llamacpp'
   const matches = useMatches()
   const isActive = matches.some(
     (match) =>
