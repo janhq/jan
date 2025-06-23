@@ -23,25 +23,25 @@ export interface InputAudio {
 }
 
 export interface ToolFunction {
-  name: string; // Required: a-z, A-Z, 0-9, _, - (max length: 64)
-  description?: string; // Optional
-  parameters?: Record<string, unknown>; // Optional: JSON Schema object
-  strict?: boolean | null; // Optional: defaults to false
-  type: 'function'
+  name: string; // Required: a-z, A-Z, 0-9, _, -, max length 64
+  description?: string;
+  parameters?: Record<string, unknown>; // JSON Schema object
+  strict?: boolean | null; // Defaults to false
 }
 
-export interface ToolCall {
+export interface Tool {
+  type: 'function'; // Currently, only 'function' is supported
   function: ToolFunction;
 }
 
-export interface ToolDefinition {
-  tools?: ToolCall[];
+export interface ToolCallOptions {
+  tools?: Tool[];
 }
 
 export interface chatCompletionRequest {
   model: string; // Model ID, though for local it might be implicit via sessionInfo
   messages: chatCompletionRequestMessage[];
-  tools?:  ToolFunction[];
+  tools?:  Tool[];
   // Core sampling parameters
   temperature?: number | null
   dynatemp_range?: number | null
