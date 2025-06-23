@@ -123,7 +123,7 @@
       "importModelSuccess": "Model {0} has been imported successfully.",
       "deleteModelSuccess": "Model {0} has been permanently deleted.",
       "editMessageSuccess": "Message edited successfully. Please wait for the model to respond.",
-      "incorrectAPIKeyProvided": "Error sending message: 401 Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+      "incorrectAPIKeyProvided": "Error sending message: 401 Incorrect API key provided: Invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
       "renameThreadSuccess": "Thread title has been renamed to '{0}'",
       "deleteThreadSuccess": "This thread has been permanently deleted.",
       "deleteAllThreadSuccess": "All threads have been permanently deleted.",

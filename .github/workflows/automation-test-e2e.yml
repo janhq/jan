@@ -1,0 +1,106 @@
+name: Automation test of e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      TEST_FILES:
+        description: 'ENTER TEST FILES: '
+        type: string
+        default: 'test/specs/test.homePage.ts'
+        required: true
+
+      OPEN_AI:
+        description: 'ENTER OPEN AI KEY: '
+        type: string
+        default: ''
+        required: true
+
+      DMG_URL:
+        description: 'ENTER DMG_URL: '
+        type: string
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.5.17-319_universal.dmg'
+        required: true
+
+      APP_NAME:
+        description: 'ENTER APP NAME: '
+        type: string
+        default: 'Jan-nightly'
+        required: true
+
+      APP_PATH:
+        description: 'ENTER APP PATH: '
+        type: string
+        default: '/Applications/Jan-nightly.app'
+        required: true
+
+      BUNDLE_ID:
+        description: 'ENTER BUNDLE ID: '
+        type: string
+        default: 'jan-nightly.ai.app'
+        required: true
+
+      RUNNING_OS:
+        description: 'ENTER RUNNING OS: '
+        type: string
+        default: 'macOS'
+        required: true
+
+      ENV:
+        description: 'ENTER ENV: '
+        type: string
+        default: 'STAGING'
+        required: true
+
+jobs:
+  test-macos:
+    runs-on: [self-hosted, macOS]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          cd src-tauri/src/tests
+          npm install
+
+      - name: Download and mount Jan DMG
+        run: |
+          DMG_URL="${{ inputs.DMG_URL }}"
+          APP_NAME="${{ inputs.APP_NAME }}"
+          DMG_NAME="${APP_NAME}.dmg"
+
+          echo "Downloading DMG from $DMG_URL..."
+          curl -L -o "$DMG_NAME" "$DMG_URL"
+
+          echo "Mounting DMG..."
+          hdiutil attach "$DMG_NAME" -nobrowse
+
+          echo "Copying app to /Applications..."
+          cp -R "/Volumes/${APP_NAME}/${APP_NAME}.app" /Applications/
+
+          echo "Unmounting DMG..."
+          hdiutil detach "/Volumes/${APP_NAME}"
+
+      - name: Start Appium
+        run: |
+          appium --base-path / --allow-insecure apple_script,clipboard --log-level debug --port 4723 &
+          sleep 10
+
+      - name: Create .env for test
+        run: |
+          echo "APP_PATH=${{ inputs.APP_PATH }}" > src-tauri/src/tests/.env
+          echo "BUNDLE_ID=${{ inputs.BUNDLE_ID }}" >> src-tauri/src/tests/.env
+          echo "RUNNING_OS=${{ inputs.RUNNING_OS }}" >> src-tauri/src/tests/.env
+          echo "TEST_FILES=${{ inputs.TEST_FILES }}" >> src-tauri/src/tests/.env
+          echo "ENV=${{ inputs.ENV }}" >> src-tauri/src/tests/.env
+          echo "OPENAI=${{ inputs.OPEN_AI }}" >> src-tauri/src/tests/.env
+
+      - name: Run WebdriverIO test
+        run: |
+          cd src-tauri/src/tests
+          npm run test

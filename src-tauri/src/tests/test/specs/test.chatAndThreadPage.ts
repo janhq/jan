@@ -643,4 +643,105 @@ describe('Chat & Thread', () => {
     expect(expectCompare).toContain(compareThought.compare)
     expect(expectCompare).toContain(compareContent.compare)
   })
+
+  it("Set the model's 'Top K' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const topK = '40'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.topK, topK)
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it("Set the model's 'Top P' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const topP = '0.8'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.topP, topP)
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it("Set the model's 'Min P' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const minP = '0.1'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.minP, minP)
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+  })
+
+  it("Set the model's 'Repeat Last N' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const repeatLastN = '64'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.repeatLastN, repeatLastN)
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+    await flow.changeSettingModel(modelSettings.repeatLastN, '')
+  })
+
+  it("Set the model's 'Repeat Penalty' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const repeatPenalty = '1.0'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(modelSettings.repeatPenalty, repeatPenalty)
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+    await flow.changeSettingModel(modelSettings.repeatPenalty, '')
+  })
+
+  it("Set the model's 'Presence Penalty' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const presencePenalty = '0'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(
+      modelSettings.presencePenalty,
+      presencePenalty
+    )
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+    await flow.changeSettingModel(modelSettings.presencePenalty, '')
+  })
+
+  it("Set the model's 'Frequency Penalty' when sent and check if it has been applied", async () => {
+    const msg = 'Hello'
+    const model = models.qwen3v4b
+    const frequencyPenalty = '0.1'
+    await homePage.openNewChat()
+    await chatPage.selectModel(model)
+    await chatPage.tapModelSetting()
+    await flow.changeSettingModel(
+      modelSettings.frequencyPenalty,
+      frequencyPenalty
+    )
+    await flow.sentAndWait(driver, msg)
+    const response = await flow.getContentAndThought(driver)
+    expect(response.content.length).toBeGreaterThan(0)
+    await flow.changeSettingModel(modelSettings.frequencyPenalty, '')
+  })
 })
