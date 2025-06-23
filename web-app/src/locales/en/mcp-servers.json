@@ -39,5 +39,7 @@
   "args": "Args",
   "env": "Env",
   "serverStatusActive": "Server {{serverKey}} activated successfully",
-  "serverStatusInactive": "Server {{serverKey}} deactivated successfully"
+  "serverStatusInactive": "Server {{serverKey}} deactivated successfully",
+  "serverDisabled": "MCP Server {{serverName}} Disabled",
+  "serverDisabledDesc": "The server has been automatically disabled due to repeated failures. You can manually re-enable it when the issue is resolved."
 }

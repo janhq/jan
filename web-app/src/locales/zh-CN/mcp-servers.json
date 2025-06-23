@@ -39,5 +39,7 @@
   "args": "参数",
   "env": "环境",
   "serverStatusActive": "服务器 {{serverKey}} 激活成功",
-  "serverStatusInactive": "服务器 {{serverKey}} 停用成功"
+  "serverStatusInactive": "服务器 {{serverKey}} 停用成功",
+  "serverDisabled": "MCP 服务器 {{serverName}} 已禁用",
+  "serverDisabledDesc": "服务器因反复失败已被自动禁用。问题解决后您可以手动重新启用。"
 }

@@ -39,5 +39,7 @@
   "args": "Đối số",
   "env": "Môi trường",
   "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
-  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công"
+  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công",
+  "serverDisabled": "Máy chủ MCP {{serverName}} đã bị vô hiệu hóa",
+  "serverDisabledDesc": "Máy chủ đã được tự động vô hiệu hóa do lỗi lặp lại. Bạn có thể kích hoạt lại thủ công khi vấn đề được giải quyết."
 }

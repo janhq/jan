@@ -39,5 +39,7 @@
   "args": "Argumen",
   "env": "Lingkungan",
   "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
-  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan"
+  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan",
+  "serverDisabled": "Server Dinonaktifkan",
+  "serverDisabledDesc": "Server MCP '{{serverName}}' telah dinonaktifkan secara otomatis karena terlalu banyak percobaan restart yang gagal."
 }

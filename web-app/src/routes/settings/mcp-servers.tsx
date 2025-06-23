@@ -20,7 +20,9 @@ import { getConnectedServers } from '@/services/mcp'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { SystemEvent } from '@/types/events'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -44,6 +46,7 @@ function MCPServers() {
     syncServers,
     syncServersAndRestart,
     getServerConfig,
+    deactivateServer,
   } = useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
@@ -225,6 +228,32 @@ function MCPServers() {
 
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
+
+  // Listen for MCP server max restarts reached event
+  useEffect(() => {
+    const unlistenPromise = listen(
+      SystemEvent.MCP_MAX_RESTARTS_REACHED,
+      (event) => {
+        const { server } = event.payload as {
+          server: string
+          max_restarts: number
+        }
+        // Deactivate the server in the UI
+        deactivateServer(server)
+        // Show notification to user
+        toast.error(t('mcp-servers:serverDisabled', { serverName: server }), {
+          description: t('mcp-servers:serverDisabledDesc', {
+            serverName: server,
+          }),
+          duration: 5000,
+        })
+      }
+    )
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten())
+    }
+  }, [deactivateServer, t])
 
   return (
     <div className="flex flex-col h-full">

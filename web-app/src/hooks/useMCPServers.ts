@@ -25,6 +25,7 @@ type MCPServerStoreState = {
   editServer: (key: string, config: MCPServerConfig) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
+  deactivateServer: (serverName: string) => void
   syncServers: () => void
   syncServersAndRestart: () => void
 }
@@ -75,6 +76,22 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
         mcpServers: updatedServers,
         deletedServerKeys: [...state.deletedServerKeys, key],
       }
+    }),
+  
+  // Deactivate an MCP server (set active to false)
+  deactivateServer: (serverName) =>
+    set((state) => {
+      // Only proceed if the server exists
+      if (!state.mcpServers[serverName]) return state
+
+      const mcpServers = {
+        ...state.mcpServers,
+        [serverName]: {
+          ...state.mcpServers[serverName],
+          active: false,
+        },
+      }
+      return { mcpServers }
     }),
   syncServers: async () => {
     const mcpServers = get().mcpServers
