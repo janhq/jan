@@ -7,9 +7,25 @@ import { SystemEvent } from '@/types/events'
 /**
  * @description This function is used to reset the app to its factory settings.
  * It will remove all the data from the app, including the data folder and local storage.
+ * @param skipValidation Whether to skip validation checks (default: false)
  * @returns {Promise<void>}
  */
-export const factoryReset = async () => {
+export const factoryReset = async (skipValidation: boolean = false) => {
+  // Validate before proceeding if validation is not skipped
+  if (!skipValidation) {
+    const { validateFactoryResetFolder } = await import('./validation')
+    const validation = await validateFactoryResetFolder()
+    
+    if (validation.error_message) {
+      throw new Error(`Factory reset validation failed: ${validation.error_message}`)
+    }
+    
+    // Log warnings but don't block the operation
+    if (validation.warnings.length > 0) {
+      console.warn('Factory reset warnings:', validation.warnings)
+    }
+  }
+
   // Kill background processes and remove data folder
   await stopAllModels()
   emit(SystemEvent.KILL_SIDECAR)

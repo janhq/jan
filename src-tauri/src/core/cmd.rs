@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use super::{server, setup, state::AppState};
+use super::{server, setup, state::AppState, validation::{validate_factory_reset_target, validate_folder_change_target, FolderValidationResult}};
 
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
@@ -392,4 +392,69 @@ pub async fn read_logs(app: AppHandle) -> Result<String, String> {
     } else {
         Err(format!("Log file not found"))
     }
+}
+
+/// Validates a folder for factory reset operation
+#[tauri::command]
+pub fn validate_factory_reset_folder<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<FolderValidationResult, String> {
+    let current_data_folder = get_jan_data_folder_path(app_handle);
+    
+    log::info!("Validating factory reset for folder: {:?}", current_data_folder);
+    
+    let result = validate_factory_reset_target(&current_data_folder);
+    
+    log::info!("Factory reset validation result: {:?}", result);
+    
+    Ok(result)
+}
+
+/// Validates a target folder for data folder change operation
+#[tauri::command]
+pub fn validate_folder_change<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    target_path: String,
+) -> Result<FolderValidationResult, String> {
+    let current_data_folder = get_jan_data_folder_path(app_handle);
+    let target_folder = PathBuf::from(&target_path);
+    
+    log::info!(
+        "Validating folder change from {:?} to {:?}",
+        current_data_folder,
+        target_folder
+    );
+    
+    let result = validate_folder_change_target(&target_folder, Some(&current_data_folder));
+    
+    log::info!("Folder change validation result: {:?}", result);
+    
+    Ok(result)
+}
+
+/// Enhanced change_app_data_folder with validation
+#[tauri::command]
+pub fn change_app_data_folder_with_validation(
+    app_handle: tauri::AppHandle,
+    new_data_folder: String,
+    skip_validation: Option<bool>,
+) -> Result<(), String> {
+    let skip_validation = skip_validation.unwrap_or(false);
+    
+    if !skip_validation {
+        // Validate the target folder first
+        let validation_result = validate_folder_change(app_handle.clone(), new_data_folder.clone())?;
+        
+        if let Some(error) = validation_result.error_message {
+            return Err(format!("Validation failed: {}", error));
+        }
+        
+        // Log warnings but don't block the operation
+        for warning in &validation_result.warnings {
+            log::warn!("Folder change warning: {}", warning);
+        }
+    }
+    
+    // Proceed with the original change_app_data_folder logic
+    change_app_data_folder(app_handle, new_data_folder)
 }

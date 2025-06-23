@@ -58,6 +58,9 @@ pub fn run() {
             core::cmd::get_server_status,
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
+            core::cmd::change_app_data_folder_with_validation,
+            core::cmd::validate_factory_reset_folder,
+            core::cmd::validate_folder_change,
             core::cmd::reset_cortex_restart_count,
             // MCP commands
             core::mcp::get_tools,

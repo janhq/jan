@@ -27,8 +27,12 @@ import {
 import {
   factoryReset,
   getJanDataFolder,
-  relocateJanDataFolder,
 } from '@/services/app'
+import {
+  validateFactoryResetFolder,
+  changeAppDataFolderWithValidation,
+} from '@/services/validation'
+import ValidationDialog from '@/containers/dialogs/ValidationDialog'
 import {
   IconBrandDiscord,
   IconBrandGithub,
@@ -70,6 +74,22 @@ function General() {
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  
+  // Validation states
+  interface FolderValidationResult {
+    is_valid_jan_folder: boolean
+    is_empty: boolean
+    has_important_data: boolean
+    jan_specific_files: string[]
+    folder_size_mb: number
+    permissions_ok: boolean
+    error_message?: string
+    warnings: string[]
+  }
+  
+  const [factoryResetValidation, setFactoryResetValidation] = useState<FolderValidationResult | null>(null)
+  const [showFactoryResetValidation, setShowFactoryResetValidation] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -81,8 +101,27 @@ function General() {
   }, [])
 
   const resetApp = async () => {
-    // TODO: Loading indicator
-    await factoryReset()
+    try {
+      setIsValidating(true)
+      const validation = await validateFactoryResetFolder()
+      setFactoryResetValidation(validation)
+      setShowFactoryResetValidation(true)
+    } catch (error) {
+      console.error('Failed to validate factory reset:', error)
+      toast.error('Failed to validate factory reset. Please try again.')
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  const confirmFactoryReset = async () => {
+    try {
+      setShowFactoryResetValidation(false)
+      await factoryReset(false) // Don't skip validation
+    } catch (error) {
+      console.error('Factory reset failed:', error)
+      toast.error('Factory reset failed. Please try again.')
+    }
   }
 
   const handleOpenLogs = async () => {
@@ -141,38 +180,29 @@ function General() {
 
     if (selectedPath === janDataFolder) return
     if (selectedPath !== null) {
-      setSelectedNewPath(selectedPath)
-      setIsDialogOpen(true)
-    }
-  }
-
-  const confirmDataFolderChange = async () => {
-    if (selectedNewPath) {
       try {
         await stopAllModels()
         emit(SystemEvent.KILL_SIDECAR)
         setTimeout(async () => {
           try {
-            await relocateJanDataFolder(selectedNewPath)
-            setJanDataFolder(selectedNewPath)
+            // Use integrated validation - this will validate and change the folder in one operation
+            await changeAppDataFolderWithValidation(selectedPath, false)
+            setJanDataFolder(selectedPath)
             // Only relaunch if relocation was successful
             window.core?.api?.relaunch()
-            setSelectedNewPath(null)
-            setIsDialogOpen(false)
           } catch (error) {
             toast.error(
               error instanceof Error
                 ? error.message
                 : t('settings:general.failedToRelocateDataFolder')
             )
+            // Revert the data folder path on error
+            const originalPath = await getJanDataFolder()
+            setJanDataFolder(originalPath)
           }
         }, 1000)
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
-        // Revert the data folder path on error
-        const originalPath = await getJanDataFolder()
-        setJanDataFolder(originalPath)
-
         toast.error(t('settings:general.failedToRelocateDataFolderDesc'))
       }
     }
@@ -310,7 +340,7 @@ function General() {
                       <ChangeDataFolderLocation
                         currentPath={janDataFolder || ''}
                         newPath={selectedNewPath}
-                        onConfirm={confirmDataFolderChange}
+                        onConfirm={handleDataFolderChange}
                         open={isDialogOpen}
                         onOpenChange={(open) => {
                           setIsDialogOpen(open)
@@ -550,6 +580,21 @@ function General() {
           </div>
         </div>
       </div>
+
+      {/* Validation Dialogs */}
+      <ValidationDialog
+        open={showFactoryResetValidation}
+        onOpenChange={setShowFactoryResetValidation}
+        title="Factory Reset Validation"
+        description="Please review the validation results before proceeding with factory reset."
+        validation={factoryResetValidation}
+        onConfirm={confirmFactoryReset}
+        onCancel={() => setShowFactoryResetValidation(false)}
+        confirmText="Reset to Factory Settings"
+        cancelText="Cancel"
+        loading={isValidating}
+      />
+
     </div>
   )
 }
