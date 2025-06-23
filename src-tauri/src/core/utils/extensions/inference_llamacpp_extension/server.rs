@@ -7,6 +7,8 @@ use tauri::State; // Import Manager trait
 use thiserror;
 use tokio::process::Command;
 use uuid::Uuid;
+use std::time::Duration;
+use tokio::time::timeout;
 
 use crate::core::state::AppState;
 
@@ -131,6 +133,10 @@ pub async fn load_llama_model(
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
     // command.stdout(Stdio::piped());
     // command.stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
 
     // Spawn the child process
     let child = command.spawn().map_err(ServerError::Io)?;
@@ -163,47 +169,69 @@ pub async fn unload_llama_model(
     pid: String,
     state: State<'_, AppState>,
 ) -> ServerResult<UnloadResult> {
-    let mut process_map = state.llama_server_process.lock().await;
-    match process_map.remove(&pid) {
-        Some(mut child) => {
-            log::info!("Terminating server process with PID: {}", pid);
+    let mut map = state.llama_server_process.lock().await;
+    if let Some(mut child) = map.remove(&pid) {
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{kill, Signal};
+            use nix::unistd::Pid;
 
-            // 1. Send the kill signal
-            if let Err(e) = child.kill().await {
-                log::error!("Failed to send kill to server process: {}", e);
-                return Ok(UnloadResult {
-                    success: false,
-                    error: Some(format!("kill failed: {}", e)),
-                });
-            }
+            if let Some(raw_pid) = child.id() {
+                let raw_pid = raw_pid as i32;
+                log::info!("Sending SIGTERM to PID {}", raw_pid);
+                let _ = kill(Pid::from_raw(raw_pid), Signal::SIGTERM);
 
-            // 2. Await its exit so the OS can reap it
-            match child.wait().await {
-                Ok(exit_status) => {
-                    log::info!("Server exited with: {}", exit_status);
-                    Ok(UnloadResult {
-                        success: true,
-                        error: None,
-                    })
-                }
-                Err(e) => {
-                    log::error!("Error waiting for server process: {}", e);
-                    Ok(UnloadResult {
-                        success: false,
-                        error: Some(format!("wait failed: {}", e)),
-                    })
+                match timeout(Duration::from_secs(5), child.wait()).await {
+                    Ok(Ok(status)) => log::info!("Process exited gracefully: {}", status),
+                    Ok(Err(e)) => log::error!("Error waiting after SIGTERM: {}", e),
+                    Err(_) => {
+                        log::warn!("SIGTERM timed out; sending SIGKILL to PID {}", raw_pid);
+                        let _ = kill(Pid::from_raw(raw_pid), Signal::SIGKILL);
+                        match child.wait().await {
+                            Ok(s) => log::info!("Force-killed process exited: {}", s),
+                            Err(e) => log::error!("Error waiting after SIGKILL: {}", e),
+                        }
+                    }
                 }
             }
         }
-        None => {
-            log::warn!("No server with PID '{}' found to unload", pid);
-            Ok(UnloadResult {
-                success: true,
-                error: None,
-            })
+
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
+            use windows_sys::Win32::Foundation::BOOL;
+
+            if let Some(raw_pid) = child.id() {
+                log::info!("Sending Ctrl-C to PID {}", raw_pid);
+                let ok: BOOL = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid) };
+                if ok == 0 {
+                    log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
+                }
+
+                match timeout(Duration::from_secs(5), child.wait()).await {
+                    Ok(Ok(status)) => log::info!("Process exited after Ctrl-C: {}", status),
+                    Ok(Err(e)) => log::error!("Error waiting after Ctrl-C: {}", e),
+                    Err(_) => {
+                        log::warn!("Timed out; force-killing PID {}", raw_pid);
+                        if let Err(e) = child.kill().await {
+                            log::error!("Failed to kill process {}: {}", raw_pid, e);
+                            return Ok(UnloadResult { success: false, error: Some(format!("kill failed: {}", e)) });
+                        }
+                        if let Ok(s) = child.wait().await {
+                            log::info!("Process finally exited: {}", s);
+                        }
+                    }
+                }
+            }
         }
+
+        Ok(UnloadResult { success: true, error: None })
+    } else {
+        log::warn!("No server with PID '{}' found", pid);
+        Ok(UnloadResult { success: true, error: None })
     }
 }
+
 
 // crypto
 #[tauri::command]
