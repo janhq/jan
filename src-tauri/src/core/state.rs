@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 use crate::core::utils::download::DownloadManagerState;
 use rand::{distributions::Alphanumeric, Rng};
 use rmcp::{service::RunningService, RoleClient};
-use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 /// Server handle type for managing the proxy server lifecycle

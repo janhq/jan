@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Manager};
+use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
