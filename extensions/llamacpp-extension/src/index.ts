@@ -30,6 +30,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
   version_backend: string
+  auto_unload: boolean
   n_gpu_layers: number
   ctx_size: number
   threads: number
@@ -106,6 +107,7 @@ interface EmbeddingData {
 
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
+  autoUnload: boolean = true
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -132,7 +134,7 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
     }
-
+    this.autoUnload = await this.getSetting<boolean>('auto_unload_models', true)
     this.registerSettings(settings)
 
     let config = {}
