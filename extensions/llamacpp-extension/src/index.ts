@@ -456,6 +456,7 @@ export default class llamacpp_extension extends AIEngine {
       janDataFolderPath,
       modelConfig.model_path,
     ])
+    args.push('--jinja')
     args.push('-m', modelPath)
     args.push('-a', modelId)
     args.push('--port', String(port))
