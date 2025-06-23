@@ -1,25 +1,6 @@
 import { SystemInformation } from '../types'
 
 /**
- * Execute a extension module function in main process
- *
- * @param     extension     extension name to import
- * @param     method     function name to execute
- * @param     args       arguments to pass to the function
- * @returns   Promise<any>
- *
- */
-const executeOnMain: (extension: string, method: string, ...args: any[]) => Promise<any> = (
-  extension,
-  method,
-  ...args
-) => {
-  if ('electronAPI' in window && window.electronAPI)
-    return globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
-  return () => {}
-}
-
-/**
  * Gets Jan's data folder path.
  *
  * @returns {Promise<string>} A Promise that resolves with Jan's data folder path.
@@ -127,7 +108,6 @@ export type RegisterExtensionPoint = (
  * Functions exports
  */
 export {
-  executeOnMain,
   getJanDataFolderPath,
   openFileExplorer,
   getResourcePath,

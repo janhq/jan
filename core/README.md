@@ -9,9 +9,6 @@
 ```js
 // Web / extension runtime
 import * as core from '@janhq/core'
-
-// Node runtime
-import * as node from '@janhq/core/node'
 ```
 
 ## Build an Extension
