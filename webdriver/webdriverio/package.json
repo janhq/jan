@@ -8,9 +8,10 @@
     "format": "prettier --write \"./**/*.js\""
   },
   "devDependencies": {
-    "@wdio/cli": "^7.7.3",
-    "@wdio/local-runner": "^7.7.3",
-    "@wdio/mocha-framework": "^7.7.3",
-    "@wdio/spec-reporter": "^7.7.3"
+    "@wdio/cli": "^9.16.2",
+    "@wdio/globals": "^9.16.2",
+    "@wdio/local-runner": "^9.16.2",
+    "@wdio/mocha-framework": "^9.16.2",
+    "@wdio/spec-reporter": "^9.16.2"
   }
 }

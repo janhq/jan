@@ -201,6 +201,18 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download Microsoft Edge WebDriver v137
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://msedgedriver.microsoft.com/137.0.3296.93/edgedriver_win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "edgedriver.zip"
+          Expand-Archive -Path "edgedriver.zip" -DestinationPath "edgedriver"
+          Copy-Item "edgedriver/msedgedriver.exe" "$env:LOCALAPPDATA\Microsoft\WindowsApps\msedgedriver.exe" -Force
+
       - name: Install tauri-driver dependencies
         run: |
           cargo install tauri-driver --locked
@@ -228,16 +240,6 @@ jobs:
       #   shell: bash
       #   run: |
       #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
-
-      - name: Download Microsoft Edge WebDriver v131
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $url = "https://msedgedriver.azureedge.net/131.0.2903.86/edgedriver_win64.zip"
-          Invoke-WebRequest -Uri $url -OutFile "edgedriver.zip"
-
-          Expand-Archive -Path "edgedriver.zip" -DestinationPath "edgedriver"
-          Copy-Item "edgedriver/msedgedriver.exe" "$env:USERPROFILE\.cargo\bin\msedgedriver.exe" -Force
 
       - name: Linter and test
         shell: powershell

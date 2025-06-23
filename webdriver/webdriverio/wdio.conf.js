@@ -11,6 +11,7 @@ exports.config = {
   capabilities: [
     {
       'maxInstances': 1,
+      'browserName': 'edge',
       'tauri:options': {
         application: '../../src-tauri/target/debug/Jan',
       },
