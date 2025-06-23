@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AIEngine, EngineManager, SettingComponentProps } from '@janhq/core'
+import {
+  AIEngine,
+  EngineManager,
+  SessionInfo,
+  SettingComponentProps,
+} from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // TODO: Replace this with the actual provider later
@@ -138,8 +143,8 @@ export const stopAllModels = async () => {
 export const startModel = async (
   provider: ProviderObject,
   model: string
-): Promise<void> => {
-  getEngine(provider.provider)
+): Promise<SessionInfo> => {
+  return getEngine(provider.provider)
     .load(model)
     .catch((error) => {
       console.error(
