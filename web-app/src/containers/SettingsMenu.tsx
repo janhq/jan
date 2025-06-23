@@ -18,6 +18,10 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
+  const { experimentalFeatures } = useGeneralSetting()
+  const { providers } = useModelProvider()
+  const firstItemProvider =
+    providers.length > 0 ? providers[0].provider : 'llamacpp'
   const [expandedProviders, setExpandedProviders] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const matches = useMatches()

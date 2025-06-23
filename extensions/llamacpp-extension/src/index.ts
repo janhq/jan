@@ -152,6 +152,16 @@ export default class llamacpp_extension extends AIEngine {
     ])
   }
 
+  async getProviderPath(): Promise<string> {
+    if (!this.providerPath) {
+      this.providerPath = await joinPath([
+        await getJanDataFolderPath(),
+        this.providerId,
+      ])
+    }
+    return this.providerPath
+  }
+
   override async onUnload(): Promise<void> {
     // Terminate all active sessions
     for (const [_, sInfo] of this.activeSessions) {
@@ -193,7 +203,7 @@ export default class llamacpp_extension extends AIEngine {
 
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
-    const modelsDir = await joinPath([this.providerPath, 'models'])
+    const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
     if (!(await fs.existsSync(modelsDir))) {
       return []
     }
@@ -262,7 +272,7 @@ export default class llamacpp_extension extends AIEngine {
       )
 
     const configPath = await joinPath([
-      this.providerPath,
+      await this.getProviderPath(),
       'models',
       modelId,
       'model.yml',
@@ -498,7 +508,7 @@ export default class llamacpp_extension extends AIEngine {
 
     console.log('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
-    const libraryPath = await joinPath([this.providerPath, 'lib'])
+    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
 
     try {
       // TODO: add LIBRARY_PATH
@@ -568,7 +578,9 @@ export default class llamacpp_extension extends AIEngine {
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
       )
     }
 
@@ -622,7 +634,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async chat(
-    opts: chatCompletionRequest
+    opts: chatCompletionRequest,
+    abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
     const sessionInfo = this.findSessionByModel(opts.model)
     if (!sessionInfo) {
@@ -630,6 +643,7 @@ export default class llamacpp_extension extends AIEngine {
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
+    console.log('Session Info:', sessionInfo, sessionInfo.api_key)
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
@@ -644,12 +658,15 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
+      signal: abortController?.signal,
     })
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
       )
     }
 
@@ -657,7 +674,11 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async delete(modelId: string): Promise<void> {
-    const modelDir = await joinPath([this.providerPath, 'models', modelId])
+    const modelDir = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
 
     if (!(await fs.existsSync(await joinPath([modelDir, 'model.yml'])))) {
       throw new Error(`Model ${modelId} does not exist`)

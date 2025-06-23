@@ -58,12 +58,3 @@ export const extractModelName = (model?: string) => {
 export const extractModelRepo = (model?: string) => {
   return model?.replace('https://huggingface.co/', '')
 }
-
-/**
- * Normalize the provider name to match the format used in the models object
- * @param provider - The provider name to normalize
- */
-export const normalizeProvider = (provider: string) => {
-  // TODO: After migrating to the new provider extension, remove this function
-  return provider === 'llama.cpp' ? 'cortex' : provider
-}

@@ -31,7 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { addModelSource, downloadModel, fetchModelHub } from '@/services/models'
+import { addModelSource, fetchModelHub, pullModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -83,7 +83,7 @@ function Hub() {
   const hasTriggeredDownload = useRef(false)
 
   const { getProviderByName } = useModelProvider()
-  const llamaProvider = getProviderByName('llama.cpp')
+  const llamaProvider = getProviderByName('llamacpp')
 
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
@@ -213,7 +213,7 @@ function Hub() {
         search: {
           model: {
             id: modelId,
-            provider: 'llama.cpp',
+            provider: 'llamacpp',
           },
         },
       })
@@ -240,7 +240,7 @@ function Hub() {
       const handleDownload = () => {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
-        downloadModel(modelId)
+        pullModel(modelId, modelId)
       }
 
       return (
@@ -650,7 +650,7 @@ function Hub() {
                                               addLocalDownloadingModel(
                                                 variant.id
                                               )
-                                              downloadModel(variant.id)
+                                              pullModel(variant.id, variant.id)
                                             }}
                                           >
                                             <IconDownload

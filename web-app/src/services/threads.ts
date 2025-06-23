@@ -51,7 +51,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             ...(thread.assistants?.[0] ?? defaultAssistant),
             model: {
               id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llama.cpp',
+              engine: thread.model?.provider ?? 'llamacpp',
             },
           },
         ],
@@ -88,7 +88,7 @@ export const updateThread = (thread: Thread) => {
         return {
           model: {
             id: thread.model?.id ?? '*',
-            engine: thread.model?.provider ?? 'llama.cpp',
+            engine: thread.model?.provider ?? 'llamacpp',
           },
           id: e.id,
           name: e.name,
@@ -98,7 +98,7 @@ export const updateThread = (thread: Thread) => {
         {
           model: {
             id: thread.model?.id ?? '*',
-            engine: thread.model?.provider ?? 'llama.cpp',
+            engine: thread.model?.provider ?? 'llamacpp',
           },
           id: 'jan',
           name: 'Jan',
