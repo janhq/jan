@@ -22,10 +22,26 @@ export interface InputAudio {
   format: 'mp3' | 'wav' | 'ogg' | 'flac' // Add more formats as needed/llama-server seems to support mp3
 }
 
-export interface chatCompletionRequest {
-  model: string // Model ID, though for local it might be implicit via sessionInfo
-  messages: chatCompletionRequestMessage[]
+export interface ToolFunction {
+  name: string; // Required: a-z, A-Z, 0-9, _, - (max length: 64)
+  description?: string; // Optional
+  parameters?: Record<string, unknown>; // Optional: JSON Schema object
+  strict?: boolean | null; // Optional: defaults to false
+  type: 'function'
+}
 
+export interface ToolCall {
+  function: ToolFunction;
+}
+
+export interface ToolDefinition {
+  tools?: ToolCall[];
+}
+
+export interface chatCompletionRequest {
+  model: string; // Model ID, though for local it might be implicit via sessionInfo
+  messages: chatCompletionRequestMessage[];
+  tools?:  ToolFunction[];
   // Core sampling parameters
   temperature?: number | null
   dynatemp_range?: number | null
