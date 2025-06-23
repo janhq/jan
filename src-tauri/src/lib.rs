@@ -1,4 +1,5 @@
 mod core;
+use reqwest::Client;
 use core::{
     cmd::get_jan_data_folder_path,
     setup::{self, setup_mcp},
