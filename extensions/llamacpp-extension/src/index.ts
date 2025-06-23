@@ -426,6 +426,13 @@ export default class llamacpp_extension extends AIEngine {
     if (sInfo) {
       throw new Error('Model already loaded!!')
     }
+    const loadedModels = await this.getLoadedModels()
+    if (loadedModels.length > 0 && this.autoUnload) {
+      // Unload all other models if auto-unload is enabled
+      await Promise.all(
+        loadedModels.map((loadedModel) => this.unload(loadedModel))
+      )
+    }
     const args: string[] = []
     const cfg = this.config
     const [version, backend] = cfg.version_backend.split('/')
@@ -733,7 +740,9 @@ export default class llamacpp_extension extends AIEngine {
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
       )
     }
     const responseData = await response.json()
