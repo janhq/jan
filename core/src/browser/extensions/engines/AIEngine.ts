@@ -38,10 +38,22 @@ export interface ToolCallOptions {
   tools?: Tool[];
 }
 
+// A specific tool choice to force the model to call
+export interface ToolCallSpec {
+  type: 'function';
+  function: {
+    name: string;
+  };
+}
+
+// tool_choice may be one of several modes or a specific call
+export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec;
+
 export interface chatCompletionRequest {
   model: string; // Model ID, though for local it might be implicit via sessionInfo
   messages: chatCompletionRequestMessage[];
   tools?:  Tool[];
+  tool_choice?: ToolChoice;
   // Core sampling parameters
   temperature?: number | null
   dynatemp_range?: number | null
