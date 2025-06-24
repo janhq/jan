@@ -4,6 +4,7 @@ export const localStorageKey = {
   messages: 'messages',
   theme: 'theme',
   modelProvider: 'model-provider',
+  modelSources: 'model-sources',
   settingAppearance: 'setting-appearance',
   settingGeneral: 'setting-general',
   settingCodeBlock: 'setting-code-block',

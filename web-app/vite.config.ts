@@ -49,6 +49,9 @@ export default defineConfig(({ mode }) => {
 
       POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
+      MODEL_CATALOG_URL: JSON.stringify(
+        'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
+      ),
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

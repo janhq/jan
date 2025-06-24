@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
+import { cn, fuzzySearch } from '@/lib/utils'
 import {
   useState,
   useMemo,
@@ -31,7 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { addModelSource, fetchModelHub, pullModel } from '@/services/models'
+import { CatalogModel, pullModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -39,13 +39,7 @@ import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelProps = {
-  model: {
-    id: string
-    metadata?: any
-    models: {
-      id: string
-    }[]
-  }
+  model: CatalogModel
 }
 type SearchParams = {
   repo: string
@@ -65,7 +59,7 @@ function Hub() {
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
   ]
-  const { sources, fetchSources, loading } = useModelSources()
+  const { sources, fetchSources, addSource, loading } = useModelSources()
   const search = useSearch({ from: route.hub as any })
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -97,7 +91,7 @@ function Hub() {
       setSearchValue(search.repo || '')
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
-        addModelSource(search.repo)
+        addSource(search.repo)
           .then(() => {
             fetchSources()
           })
@@ -106,17 +100,17 @@ function Hub() {
           })
       }, 500)
     }
-  }, [fetchSources, search])
+  }, [addSource, fetchSources, search])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
     return [...sources].sort((a, b) => {
       if (sortSelected === 'most-downloaded') {
-        return (b.metadata?.downloads || 0) - (a.metadata?.downloads || 0)
+        return (b.downloads || 0) - (a.downloads || 0)
       } else {
         return (
-          new Date(b.metadata?.createdAt || 0).getTime() -
-          new Date(a.metadata?.createdAt || 0).getTime()
+          new Date(b.created_at || 0).getTime() -
+          new Date(a.created_at || 0).getTime()
         )
       }
     })
@@ -132,12 +126,12 @@ function Hub() {
         (e) =>
           fuzzySearch(
             searchValue.replace(/\s+/g, '').toLowerCase(),
-            e.id.toLowerCase()
+            e.model_name.toLowerCase()
           ) ||
-          e.models.some((model) =>
+          e.quants.some((model) =>
             fuzzySearch(
               searchValue.replace(/\s+/g, '').toLowerCase(),
-              model.id.toLowerCase()
+              model.model_id.toLowerCase()
             )
           )
       )
@@ -146,8 +140,10 @@ function Hub() {
     // Apply downloaded filter
     if (showOnlyDownloaded) {
       filtered = filtered?.filter((model) =>
-        model.models.some((variant) =>
-          llamaProvider?.models.some((m: { id: string }) => m.id === variant.id)
+        model.quants.some((variant) =>
+          llamaProvider?.models.some(
+            (m: { id: string }) => m.id === variant.model_id
+          )
         )
       )
     }
@@ -156,7 +152,6 @@ function Hub() {
   }, [searchValue, sortedModels, showOnlyDownloaded, llamaProvider?.models])
 
   useEffect(() => {
-    fetchModelHub()
     fetchSources()
   }, [fetchSources])
 
@@ -172,7 +167,7 @@ function Hub() {
     ) {
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
-        addModelSource(e.target.value)
+        addSource(e.target.value)
           .then(() => {
             fetchSources()
           })
@@ -223,10 +218,14 @@ function Hub() {
 
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
-      const modelId =
-        model.models.find((e) =>
-          defaultModelQuantizations.some((m) => e.id.toLowerCase().includes(m))
-        )?.id ?? model.models[0]?.id
+      const quant =
+        model.quants.find((e) =>
+          defaultModelQuantizations.some((m) =>
+            e.model_id.toLowerCase().includes(m)
+          )
+        ) ?? model.quants[0]
+      const modelId = quant?.model_id || model.model_name
+      const modelUrl = quant?.path || modelId
       const isDownloading =
         localDownloadingModels.has(modelId) ||
         downloadProcesses.some((e) => e.id === modelId)
@@ -235,12 +234,12 @@ function Hub() {
       const isDownloaded = llamaProvider?.models.some(
         (m: { id: string }) => m.id === modelId
       )
-      const isRecommended = isRecommendedModel(model.metadata?.id)
+      const isRecommended = isRecommendedModel(model.model_name)
 
       const handleDownload = () => {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
-        pullModel(modelId, modelId)
+        pullModel(modelId, modelUrl)
       }
 
       return (
@@ -316,9 +315,9 @@ function Hub() {
       !hasTriggeredDownload.current
     ) {
       const recommendedModel = filteredModels.find((model) =>
-        isRecommendedModel(model.metadata?.id)
+        isRecommendedModel(model.model_name)
       )
-      if (recommendedModel && recommendedModel.models[0]?.id) {
+      if (recommendedModel && recommendedModel.quants[0]?.model_id) {
         if (downloadButtonRef.current) {
           hasTriggeredDownload.current = true
           downloadButtonRef.current.click()
@@ -475,20 +474,20 @@ function Hub() {
                     {renderFilter()}
                   </div>
                   {filteredModels.map((model) => (
-                    <div key={model.id}>
+                    <div key={model.model_name}>
                       <Card
                         header={
                           <div className="flex items-center justify-between gap-x-2">
                             <Link
                               to={
-                                `https://huggingface.co/${model.metadata?.id}` as string
+                                `https://huggingface.co/${model.model_name}` as string
                               }
                               target="_blank"
                             >
                               <h1
                                 className={cn(
                                   'text-main-view-fg font-medium text-base capitalize truncate max-w-38 sm:max-w-none',
-                                  isRecommendedModel(model.metadata?.id)
+                                  isRecommendedModel(model.model_name)
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
@@ -496,20 +495,20 @@ function Hub() {
                                   extractModelName(model.metadata?.id) || ''
                                 }
                               >
-                                {extractModelName(model.metadata?.id) || ''}
+                                {extractModelName(model.model_name) || ''}
                               </h1>
                             </Link>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-main-view-fg/70 font-medium text-xs">
-                                {toGigabytes(
+                                {
                                   (
-                                    model.models.find((m) =>
+                                    model.quants.find((m) =>
                                       defaultModelQuantizations.some((e) =>
-                                        m.id.toLowerCase().includes(e)
+                                        m.model_id.toLowerCase().includes(e)
                                       )
-                                    ) ?? model.models?.[0]
-                                  )?.size
-                                )}
+                                    ) ?? model.quants?.[0]
+                                  )?.file_size
+                                }
                               </span>
                               <DownloadButtonPlaceholder model={model} />
                             </div>
@@ -530,14 +529,13 @@ function Hub() {
                               ),
                             }}
                             content={
-                              extractDescription(model.metadata?.description) ||
-                              ''
+                              extractDescription(model?.description) || ''
                             }
                           />
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-main-view-fg/80">
-                            {t('hub:by')} {model?.author}
+                            {t('hub:by')} {model?.developer}
                           </span>
                           <div className="flex items-center gap-4 ml-2">
                             <div className="flex items-center gap-1">
@@ -547,7 +545,7 @@ function Hub() {
                                 title={t('hub:downloads')}
                               />
                               <span className="text-main-view-fg/80">
-                                {model.metadata?.downloads || 0}
+                                {model.downloads || 0}
                               </span>
                             </div>
                             <div className="flex items-center gap-1">
@@ -557,15 +555,15 @@ function Hub() {
                                 title={t('hub:variants')}
                               />
                               <span className="text-main-view-fg/80">
-                                {model.models?.length || 0}
+                                {model.quants?.length || 0}
                               </span>
                             </div>
-                            {model.models.length > 1 && (
+                            {model.quants.length > 1 && (
                               <div className="flex items-center gap-2 hub-show-variants-step">
                                 <Switch
-                                  checked={!!expandedModels[model.id]}
+                                  checked={!!expandedModels[model.model_name]}
                                   onCheckedChange={() =>
-                                    toggleModelExpansion(model.id)
+                                    toggleModelExpansion(model.model_name)
                                   }
                                 />
                                 <p className="text-main-view-fg/70">
@@ -575,34 +573,34 @@ function Hub() {
                             )}
                           </div>
                         </div>
-                        {expandedModels[model.id] &&
-                          model.models.length > 0 && (
+                        {expandedModels[model.model_name] &&
+                          model.quants.length > 0 && (
                             <div className="mt-5">
-                              {model.models.map((variant) => (
+                              {model.quants.map((variant) => (
                                 <CardItem
-                                  key={variant.id}
-                                  title={variant.id}
+                                  key={variant.model_id}
+                                  title={variant.model_id}
                                   actions={
                                     <div className="flex items-center gap-2">
                                       <p className="text-main-view-fg/70 font-medium text-xs">
-                                        {toGigabytes(variant.size)}
+                                        {variant.file_size}
                                       </p>
                                       {(() => {
                                         const isDownloading =
                                           localDownloadingModels.has(
-                                            variant.id
+                                            variant.model_id
                                           ) ||
                                           downloadProcesses.some(
-                                            (e) => e.id === variant.id
+                                            (e) => e.id === variant.model_id
                                           )
                                         const downloadProgress =
                                           downloadProcesses.find(
-                                            (e) => e.id === variant.id
+                                            (e) => e.id === variant.model_id
                                           )?.progress || 0
                                         const isDownloaded =
                                           llamaProvider?.models.some(
                                             (m: { id: string }) =>
-                                              m.id === variant.id
+                                              m.id === variant.model_id
                                           )
 
                                         if (isDownloading) {
@@ -633,7 +631,9 @@ function Hub() {
                                                 variant="link"
                                                 size="sm"
                                                 onClick={() =>
-                                                  handleUseModel(variant.id)
+                                                  handleUseModel(
+                                                    variant.model_id
+                                                  )
                                                 }
                                               >
                                                 {t('hub:use')}
@@ -648,9 +648,12 @@ function Hub() {
                                             title={t('hub:downloadModel')}
                                             onClick={() => {
                                               addLocalDownloadingModel(
-                                                variant.id
+                                                variant.model_id
                                               )
-                                              pullModel(variant.id, variant.id)
+                                              pullModel(
+                                                variant.model_id,
+                                                variant.path
+                                              )
                                             }}
                                           >
                                             <IconDownload

@@ -572,7 +572,10 @@ export default class llamacpp_extension extends AIEngine {
 
   private createDownloadTaskId(modelId: string) {
     // prepend provider to make taksId unique across providers
-    return `${this.provider}/${modelId}`
+    const cleanModelId = modelId.includes('.')
+      ? modelId.slice(0, modelId.indexOf('.'))
+      : modelId
+    return `${this.provider}/${cleanModelId}`
   }
 
   private async *handleStreamingResponse(
