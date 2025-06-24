@@ -16,7 +16,7 @@ export class HomePage extends BasePage implements IHomePage {
       newChatButton: `//*[@Name="New Chat"]`,
       assistantsButton: `//*[@Name="Assistants"]`,
       settingsButton: `//*[@Name="Settings"]`,
-      searchInput: `//*[@AutomationId="SearchInput"]`,
+      searchInput: `//Edit[@Name="Search"]`,
       searchResultTitle: `//*[@Name="__TEXT__"]`,
       hubButton: `//*[@Name="Hub"]`,
       menuMoreButton: `//*[@Name="Recents"]/following-sibling::*[@AutomationId="MoreMenu"]`,

@@ -15,14 +15,24 @@ export const config: WebdriverIO.Config = {
     // 'path/to/excluded/files'
   ],
   maxInstances: 1,
-  capabilities: [
-    {
-      'platformName': 'mac',
-      'appium:automationName': 'mac2',
-      'appium:app': process.env.APP_PATH,
-      'appium:bundleId': process.env.BUNDLE_ID,
-    },
-  ],
+  capabilities:
+    process.env.RUNNING_OS === 'win'
+      ? [
+          {
+            'platformName': 'Windows',
+            'appium:deviceName': 'WindowsPC',
+            'appium:app': process.env.BUNDLE_ID,
+            'appium:automationName': 'Windows',
+          },
+        ]
+      : [
+          {
+            'platformName': 'macOS',
+            'appium:automationName': 'mac2',
+            'appium:app': process.env.APP_PATH,
+            'appium:bundleId': process.env.BUNDLE_ID,
+          },
+        ],
   // capabilities: [{
   //   "wdio:maxInstances": 1,
   //   hostname: 'localhost',

@@ -22,7 +22,6 @@ let hubPage: IHubPage
 let chatPage: IChatPage
 const modelsHub = common.modelsHub
 const models = common.models
-
 describe('Verify user can use a model from Hub', () => {
   before(async () => {
     if (process.env.RUNNING_OS === 'macOS') {
@@ -55,6 +54,6 @@ describe('Verify user can use a model from Hub', () => {
 
   it('should be able to send a message using selected model', async () => {
     await chatPage.sendMessage('Hello')
-    await driver.takeScreenshot()
+    //await driver.takeScreenshot()
   })
 })

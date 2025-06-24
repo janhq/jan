@@ -1,106 +1,102 @@
-name: Automation test of e2e
+name: WebdriverIO Cross-OS App Test
 
 on:
   workflow_dispatch:
     inputs:
-      TEST_FILES:
-        description: 'ENTER TEST FILES: '
-        type: string
-        default: 'test/specs/test.homePage.ts'
+      RUNNING_OS:
+        description: 'OS running test (win, mac, linux)'
         required: true
+        default: 'win'
 
-      OPEN_AI:
-        description: 'ENTER OPEN AI KEY: '
-        type: string
-        default: ''
+      EXE_URL:
+        description: 'Enter EXE installer URL'
         required: true
-
-      DMG_URL:
-        description: 'ENTER DMG_URL: '
-        type: string
-        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.5.17-319_universal.dmg'
-        required: true
-
-      APP_NAME:
-        description: 'ENTER APP NAME: '
-        type: string
-        default: 'Jan-nightly'
-        required: true
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.5.17-319_x64-setup.exe'
 
       APP_PATH:
-        description: 'ENTER APP PATH: '
-        type: string
-        default: '/Applications/Jan-nightly.app'
+        description: "Installed app path (e.g. C:\\Program Files\\Jan-nightly\\Jan-nightly.exe)"
         required: true
+        default: "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe"
 
       BUNDLE_ID:
-        description: 'ENTER BUNDLE ID: '
-        type: string
-        default: 'jan-nightly.ai.app'
-        required: true
-
-      RUNNING_OS:
-        description: 'ENTER RUNNING OS: '
-        type: string
-        default: 'macOS'
-        required: true
+        description: 'App bundle ID or identifier'
+        required: false
+        default: "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe"
 
       ENV:
-        description: 'ENTER ENV: '
-        type: string
-        default: 'STAGING'
+        description: 'Test environment (e.g. dev, staging)'
         required: true
+        default: 'dev'
+
+      TEST_FILES:
+        description: 'Test files to run'
+        required: true
+        default: 'test/specs/test.homePage.ts'
+
+      OPEN_AI:
+        description: 'OpenAI API Key'
+        required: false
+        default: ''
 
 jobs:
-  test-macos:
-    runs-on: [self-hosted, macOS]
+  test-on-windows:
+    if: ${{ github.event.inputs.RUNNING_OS == 'win' }}
+    runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      - name: Install dependencies
+      - name: Install Appium + Windows Driver
+        run: |
+          npm install -g appium
+          appium driver install windows
+          appium -v
+
+      - name: Install test dependencies
         run: |
           cd src-tauri/src/tests
           npm install
 
-      - name: Download and mount Jan DMG
+      - name: Download and install the app
         run: |
-          DMG_URL="${{ inputs.DMG_URL }}"
-          APP_NAME="${{ inputs.APP_NAME }}"
-          DMG_NAME="${APP_NAME}.dmg"
+          $installer = "$env:USERPROFILE\AppInstaller.exe"
+          Invoke-WebRequest "${{ github.event.inputs.EXE_URL }}" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/silent" -Wait
 
-          echo "Downloading DMG from $DMG_URL..."
-          curl -L -o "$DMG_NAME" "$DMG_URL"
-
-          echo "Mounting DMG..."
-          hdiutil attach "$DMG_NAME" -nobrowse
-
-          echo "Copying app to /Applications..."
-          cp -R "/Volumes/${APP_NAME}/${APP_NAME}.app" /Applications/
-
-          echo "Unmounting DMG..."
-          hdiutil detach "/Volumes/${APP_NAME}"
-
-      - name: Start Appium
+      - name: Enable Developer Mode (required for WinAppDriver)
         run: |
-          appium --base-path / --allow-insecure apple_script,clipboard --log-level debug --port 4723 &
-          sleep 10
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+        shell: powershell
+
+      - name: Start WinAppDriver
+        run: |
+          Start-Process -FilePath "C:\Program Files (x86)\Windows Application Driver\WinAppDriver.exe"
+        shell: powershell
+
+      - name: Start Appium on custom port
+        run: |
+          taskkill /IM node.exe /F 2>$null
+          cmd /C "start /B appium -p 4725"
+
+      - name: Wait for Appium to start
+        run: Start-Sleep -Seconds 10
 
       - name: Create .env for test
         run: |
-          echo "APP_PATH=${{ inputs.APP_PATH }}" > src-tauri/src/tests/.env
-          echo "BUNDLE_ID=${{ inputs.BUNDLE_ID }}" >> src-tauri/src/tests/.env
-          echo "RUNNING_OS=${{ inputs.RUNNING_OS }}" >> src-tauri/src/tests/.env
-          echo "TEST_FILES=${{ inputs.TEST_FILES }}" >> src-tauri/src/tests/.env
-          echo "ENV=${{ inputs.ENV }}" >> src-tauri/src/tests/.env
-          echo "OPENAI=${{ inputs.OPEN_AI }}" >> src-tauri/src/tests/.env
+          echo "APP_PATH=${{ github.event.inputs.APP_PATH }}" > src-tauri/src/tests/.env
+          echo "BUNDLE_ID=${{ github.event.inputs.BUNDLE_ID }}" >> src-tauri/src/tests/.env
+          echo "RUNNING_OS=${{ github.event.inputs.RUNNING_OS }}" >> src-tauri/src/tests/.env
+          echo "TEST_FILES=${{ github.event.inputs.TEST_FILES }}" >> src-tauri/src/tests/.env
+          echo "ENV=${{ github.event.inputs.ENV }}" >> src-tauri/src/tests/.env
+          echo "OPENAI=${{ github.event.inputs.OPEN_AI }}" >> src-tauri/src/tests/.env
 
-      - name: Run WebdriverIO test
+      - name: Run WebdriverIO tests
         run: |
           cd src-tauri/src/tests
           npm run test

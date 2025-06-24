@@ -37,7 +37,6 @@ const modelSettings = common.title.modelSettings
 const compare = common.compare
 const flow = new Flow()
 const utilities = new Utilities()
-
 describe('Chat & Thread', () => {
   before(async () => {
     if (process.env.RUNNING_OS === 'macOS') {
@@ -72,7 +71,7 @@ describe('Chat & Thread', () => {
     const model = gptv4
     const msg = 'hello example in python'
     await flow.createThead(driver, model, msg)
-    await driver.takeScreenshot()
+    //await driver.takeScreenshot()
     expect(await chatPage.isText(ui.python)).toBe(true)
     expect(await chatPage.isText(ui.copy)).toBe(true)
   })

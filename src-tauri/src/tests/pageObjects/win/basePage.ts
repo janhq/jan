@@ -20,14 +20,12 @@ export default abstract class BasePage implements IBasePage {
   }
 
   async getElement(selector: string): Promise<ElementReference> {
-    return await this.driver.findElement('xpath', selector)
+    return await this.driver.$(selector)
   }
 
   async clickElement(selector: string): Promise<void> {
-    await this.waitUntilElementIsVisible(selector)
-    const element = await this.getElement(selector)
-    const elementId = element['element-6066-11e4-a52e-4f735466cecf']
-    await this.driver.elementClick(elementId)
+    const el = await this.driver.$(selector)
+    await el.click()
   }
 
   async clickElementByCoordinates(
@@ -37,11 +35,11 @@ export default abstract class BasePage implements IBasePage {
   ): Promise<void> {
     await this.waitUntilElementIsVisible(selector)
     const element = await this.getElement(selector)
-    const elementId = element['element-6066-11e4-a52e-4f735466cecf']
-    const rect = await this.driver.getElementRect(elementId)
+    const rect = await element.getRect()
     const centerX = Math.round(rect.x + rect.width / 2)
     const centerY = Math.round(rect.y + rect.height / 2)
-    await this.driver.performActions([
+    const driver = this.driver as any
+    await driver.performActions([
       {
         type: 'pointer',
         id: 'mouse',
@@ -49,7 +47,7 @@ export default abstract class BasePage implements IBasePage {
         actions: [
           {
             type: 'pointerMove',
-            duration: 2,
+            duration: 0,
             x: centerX + addCenterX,
             y: centerY + addCenterY,
           },
@@ -58,11 +56,12 @@ export default abstract class BasePage implements IBasePage {
         ],
       },
     ])
-    await this.driver.releaseActions()
+    await driver.releaseActions()
   }
 
   async clickAtPoint(x: number, y: number): Promise<void> {
-    await this.driver.performActions([
+    const driver = this.driver as any
+    await driver.performActions([
       {
         type: 'pointer',
         id: 'mouse',
@@ -74,7 +73,7 @@ export default abstract class BasePage implements IBasePage {
         ],
       },
     ])
-    await this.driver.releaseActions()
+    await driver.releaseActions()
   }
 
   async scrollToElement(selector: string): Promise<void> {
@@ -91,8 +90,8 @@ export default abstract class BasePage implements IBasePage {
   }
 
   async enterText(selector: string, text: string): Promise<void> {
-    const element = await this.driver.$(selector)
-    await element.setValue(text)
+    const el = await this.driver.$(selector)
+    await el.setValue(text)
   }
 
   async terminateApp(appName?: string): Promise<void> {
@@ -110,29 +109,16 @@ export default abstract class BasePage implements IBasePage {
   }
 
   async elementShouldBeVisible(selector: string): Promise<boolean> {
-    const element = await this.getElement(selector)
-    try {
-      return !!element['element-6066-11e4-a52e-4f735466cecf']
-    } catch (error) {
-      return false
-    }
+    const els = await this.driver.$$(selector)
+    return (await els.length) > 0
   }
 
   async waitUntilElementIsVisible(
     selector: string,
     timeout: number = 5000
   ): Promise<void> {
-    await this.driver.waitUntil(
-      async () => {
-        try {
-          const element = await this.getElement(selector)
-          return !!element['element-6066-11e4-a52e-4f735466cecf']
-        } catch {
-          return false
-        }
-      },
-      { timeout }
-    )
+    const el = await this.driver.$(selector)
+    await el.waitForDisplayed({ timeout })
   }
 
   async getActiveWindowName(): Promise<string> {
@@ -186,15 +172,8 @@ export default abstract class BasePage implements IBasePage {
   }
 
   async getText(selector: string): Promise<string> {
-    const element = await this.driver.$(selector)
-    const attributes = ['title', 'label', 'value']
-    for (const attr of attributes) {
-      const text = await element.getAttribute(attr)
-      if (text && text.trim() !== '') {
-        return text
-      }
-    }
-    return ''
+    const el = await this.driver.$(selector)
+    return await el.getText()
   }
 
   async getAttribute(selector: string, attribute: string): Promise<string> {
@@ -203,8 +182,8 @@ export default abstract class BasePage implements IBasePage {
   }
 
   async count(selector: string): Promise<number> {
-    const elements = await this.driver.findElements('xpath', selector)
-    return elements.length
+    const els = await this.driver.$$(selector)
+    return els.length
   }
 
   async isText(text: string): Promise<boolean> {
