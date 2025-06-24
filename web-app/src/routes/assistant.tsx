@@ -62,7 +62,7 @@ function Assistant() {
         <span>{t('assistants:title')}</span>
       </HeaderPage>
       <div className="h-full p-4 overflow-y-auto">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {assistants.map((assistant) => (
             <div
               className="bg-main-view-fg/3 p-3 rounded-md"
@@ -111,8 +111,9 @@ function Assistant() {
               </p>
             </div>
           ))}
+
           <div
-            className="bg-main-view p-3 rounded-md border border-dashed border-main-view-fg/10 flex items-center justify-center cursor-pointer hover:bg-main-view-fg/1 transition-all duration-200 ease-in-out"
+            className="bg-main-view p-3 min-h-[88px] rounded-md border border-dashed border-main-view-fg/10 flex items-center justify-center cursor-pointer hover:bg-main-view-fg/1 transition-all duration-200 ease-in-out"
             key="new-assistant"
             onClick={() => {
               setEditingKey(null)
