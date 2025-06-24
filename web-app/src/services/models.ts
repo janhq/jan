@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   AIEngine,
   EngineManager,
@@ -6,6 +5,25 @@ import {
   SettingComponentProps,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+// Types for model catalog
+export interface ModelQuant {
+  model_id: string
+  path: string
+  file_size: string
+}
+
+export interface CatalogModel {
+  model_name: string
+  description: string
+  developer: string
+  downloads: number
+  num_quants: number
+  quants: ModelQuant[]
+  created_at?: string
+}
+
+export type ModelCatalog = CatalogModel[]
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -22,43 +40,27 @@ export const fetchModels = async () => {
 }
 
 /**
- * Fetches the sources of the models.
- * @returns A promise that resolves to the model sources.
+ * Fetches the model catalog from the GitHub repository.
+ * @returns A promise that resolves to the model catalog.
  */
-export const fetchModelSources = async () => {
-  // TODO: New Hub
-  return []
-}
+export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
+  try {
+    const response = await fetchTauri(MODEL_CATALOG_URL)
 
-/**
- * Fetches the model hub.
- * @returns A promise that resolves to the model hub.
- */
-export const fetchModelHub = async () => {
-  // TODO: New Hub
-  return
-}
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch model catalog: ${response.status} ${response.statusText}`
+      )
+    }
 
-/**
- * Adds a new model source.
- * @param source The source to add.
- * @returns A promise that resolves when the source is added.
- */
-export const addModelSource = async (source: string) => {
-  // TODO: New Hub
-  console.log(source)
-  return
-}
-
-/**
- * Deletes a model source.
- * @param source The source to delete.
- * @returns A promise that resolves when the source is deleted.
- */
-export const deleteModelSource = async (source: string) => {
-  // TODO: New Hub
-  console.log(source)
-  return
+    const catalog: ModelCatalog = await response.json()
+    return catalog
+  } catch (error) {
+    console.error('Error fetching model catalog:', error)
+    throw new Error(
+      `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
+  }
 }
 
 /**

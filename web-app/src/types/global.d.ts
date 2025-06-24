@@ -18,6 +18,7 @@ declare global {
   declare const VERSION: string
   declare const POSTHOG_KEY: string
   declare const POSTHOG_HOST: string
+  declare const MODEL_CATALOG_URL: string
   interface Window {
     core: AppCore | undefined
   }
