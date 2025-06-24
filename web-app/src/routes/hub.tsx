@@ -363,10 +363,7 @@ function Hub() {
       <>
         <DropdownMenu>
           <DropdownMenuTrigger>
-            <span
-              title={t('hub:editTheme')}
-              className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-            >
+            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
               {
                 sortOptions.find((option) => option.value === sortSelected)
                   ?.name
