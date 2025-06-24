@@ -273,7 +273,6 @@ type ThreadListProps = {
 }
 
 function ThreadList({ threads }: ThreadListProps) {
-  console.log('ThreadList rendered', threads)
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
