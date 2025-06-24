@@ -58,7 +58,10 @@
     "start": "Start",
     "stop": "Stop",
     "delete": "Delete",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "updateNow": "Update Now",
+    "remindMeLater": "Remind me later",
+    "showReleaseNotes": "Show release notes"
   },
   "toolResp": {
     "copy": "Copy",

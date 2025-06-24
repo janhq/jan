@@ -1,10 +1,16 @@
 import * as dotenv from 'dotenv'
+// interface
 import { IHomePage } from '@interface/iHomePage'
 import { IHubPage } from '@interface/iHubPage'
 import { IChatPage } from '@interface/iChatPage'
+// mac
 import { HomePage as MacHomePage } from '@mac/homePage'
 import { HubPage as MacHubPage } from '@mac/hubPage'
-import { ChatPage as MacChatPage } from '@mac/chatPage'
+import { ChatPage as MacChatPage } from '@win/chatPage'
+// win
+import { HomePage as WinHomePage } from '@win/homePage'
+import { HubPage as WinHubPage } from '@win/hubPage'
+import { ChatPage as WinChatPage } from '@win/chatPage'
 import Flow from '@flow/flow'
 import common from '@data/common.json'
 
@@ -23,6 +29,10 @@ describe('Verify user can use a model from Hub', () => {
       homePage = new MacHomePage(driver)
       hubPage = new MacHubPage(driver)
       chatPage = new MacChatPage(driver)
+    } else if (process.env.RUNNING_OS === 'win') {
+      homePage = new WinHomePage(driver)
+      hubPage = new WinHubPage(driver)
+      chatPage = new WinChatPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)

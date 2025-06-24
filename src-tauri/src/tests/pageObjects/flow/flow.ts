@@ -1,12 +1,20 @@
 import * as dotenv from 'dotenv'
+// interface
 import { IHomePage } from '@interface/iHomePage'
 import { IHubPage } from '@interface/iHubPage'
 import { ISettingsPage } from '@interface/iSettingsPage'
 import { IChatPage } from '@interface/iChatPage'
+// mac
 import { HomePage as MacHomePage } from '@mac/homePage'
 import { HubPage as MacHubPage } from '@mac/hubPage'
 import { ChatPage as MacChatPage } from '@mac/chatPage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
+// win
+import { HomePage as WinHomePage } from '@win/homePage'
+import { HubPage as WinHubPage } from '@win/hubPage'
+import { ChatPage as WinChatPage } from '@win/chatPage'
+import { SettingsPage as WinSettingsPage } from '@win/settingsPage'
+
 import common from '@data/common.json'
 import { String } from 'typescript-string-operations'
 dotenv.config()
@@ -22,6 +30,7 @@ let modelType = common.modelType
 let models = common.models
 let title = common.title
 let ui = common.ui
+let btn = common.btn
 let toolApiKey = common.toolApiKey
 
 export default class Flow {
@@ -31,6 +40,11 @@ export default class Flow {
       hubPage = new MacHubPage(driver)
       chatPage = new MacChatPage(driver)
       settingsPage = new MacSettingsPage(driver)
+    } else if (process.env.RUNNING_OS === 'win') {
+      homePage = new WinHomePage(driver)
+      hubPage = new WinHubPage(driver)
+      chatPage = new WinChatPage(driver)
+      settingsPage = new WinSettingsPage(driver)
     } else {
       throw new Error('Unsupported OS or missing page implementations.')
     }
@@ -165,9 +179,18 @@ export default class Flow {
   }
 
   async changeSettingModel(title: string, value: string) {
+    this.initializePages(driver)
     await settingsPage.enterInputSettingModel(title, value)
     await chatPage.waitForTimeout(500)
     await chatPage.clickAtPoint(200, 200)
     await chatPage.waitForTimeout(2000)
+  }
+
+  async updateVersion(driver: any) {
+    this.initializePages(driver)
+    if (!(await settingsPage.isText(btn.updateNow))) {
+      await homePage.tapText(btn.updateNow)
+      await homePage.wait(10000)
+    }
   }
 }

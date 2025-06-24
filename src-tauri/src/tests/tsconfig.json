@@ -24,6 +24,7 @@
     "paths": {
       "@interface/*": ["pageObjects/interface/*"],
       "@mac/*": ["pageObjects/mac/*"],
+      "@win/*": ["pageObjects/win/*"],
       "@core_lib/*": ["core_lib/*"],
       "@data/*": ["data/*"],
       "@flow/*": ["pageObjects/flow/*"]

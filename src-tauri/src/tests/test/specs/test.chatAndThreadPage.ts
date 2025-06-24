@@ -1,10 +1,16 @@
 import * as dotenv from 'dotenv'
+// interface
 import { IHomePage } from '@interface/iHomePage'
 import { IChatPage } from '@interface/iChatPage'
 import { ISettingsPage } from '@interface/iSettingsPage'
+// mac
 import { HomePage as MacHomePage } from '@mac/homePage'
 import { ChatPage as MacChatPage } from '@mac/chatPage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
+// win
+import { HomePage as WinHomePage } from '@win/homePage'
+import { ChatPage as WinChatPage } from '@win/chatPage'
+import { SettingsPage as WinSettingsPage } from '@win/settingsPage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
 import Utilities from '@core_lib/utilities'
@@ -38,6 +44,10 @@ describe('Chat & Thread', () => {
       homePage = new MacHomePage(driver)
       chatPage = new MacChatPage(driver)
       settingsPage = new MacSettingsPage(driver)
+    } else if (process.env.RUNNING_OS === 'win') {
+      homePage = new WinHomePage(driver)
+      chatPage = new WinChatPage(driver)
+      settingsPage = new WinSettingsPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)

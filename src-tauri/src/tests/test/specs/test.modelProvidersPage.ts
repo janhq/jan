@@ -1,9 +1,13 @@
 import * as dotenv from 'dotenv'
+// interface
 import { IHomePage } from '@interface/iHomePage'
-//declare
 import { ISettingsPage } from '@interface/iSettingsPage'
+// mac
 import { HomePage as MacHomePage } from '@mac/homePage'
 import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
+// win
+import { HomePage as WinHomePage } from '@win/homePage'
+import { SettingsPage as WinSettingsPage } from '@win/settingsPage'
 import Flow from '@flow/flow'
 import Utilities from '@core_lib/utilities'
 const utilities = new Utilities()
@@ -29,6 +33,9 @@ describe('Model providers', () => {
     if (process.env.RUNNING_OS === 'macOS') {
       homePage = new MacHomePage(driver)
       settingsPage = new MacSettingsPage(driver)
+    } else if (process.env.RUNNING_OS === 'win') {
+      homePage = new WinHomePage(driver)
+      settingsPage = new WinSettingsPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
