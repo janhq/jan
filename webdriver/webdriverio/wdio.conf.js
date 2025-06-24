@@ -13,6 +13,7 @@ exports.config = {
       'maxInstances': 1,
       'tauri:options': {
         application: '../../src-tauri/target/debug/Jan',
+        webviewOptions: {},
       },
     },
   ],
