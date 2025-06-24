@@ -136,8 +136,8 @@ export const sendCompletion = async (
     apiKey: provider.api_key ?? (await invoke('app_token')),
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
-    // Use Tauri's fetch to avoid CORS issues
-    fetch: fetchTauri,
+    // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
+    ...(providerName === 'openai-compatible' && { fetch: fetchTauri }),
   } as ExtendedConfigOptions)
   if (
     thread.model.id &&
