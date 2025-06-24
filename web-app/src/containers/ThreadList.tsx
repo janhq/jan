@@ -101,9 +101,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       )}
     >
       <div className="py-1 pr-2 truncate">
-        <span
-          dangerouslySetInnerHTML={{ __html: thread.title || t('common:newThread') }}
-        />
+        <span>{thread.title || t('common:newThread')}</span>
       </div>
       <div className="flex items-center">
         <DropdownMenu
