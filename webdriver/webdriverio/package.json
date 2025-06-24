@@ -9,7 +9,6 @@
   },
   "devDependencies": {
     "@wdio/cli": "^7.9.0",
-    "@wdio/globals": "^7.9.0",
     "@wdio/local-runner": "^7.9.0",
     "@wdio/mocha-framework": "^7.9.0",
     "@wdio/spec-reporter": "^7.9.0"
