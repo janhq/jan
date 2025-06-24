@@ -182,7 +182,6 @@ const LeftPanel = () => {
             ) {
               return
             }
-            console.log('click')
             setLeftPanel(false)
           }}
         />
