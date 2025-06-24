@@ -378,7 +378,7 @@ export default function AddEditAssistant({
             </div>
 
             {paramsKeys.map((key, index) => (
-              <div className="flex items-center gap-4">
+              <div key={index} className="flex items-center gap-4">
                 <div
                   key={index}
                   className="flex items-center flex-col sm:flex-row w-full gap-2"
