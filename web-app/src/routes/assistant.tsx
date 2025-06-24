@@ -64,7 +64,7 @@ function Assistant() {
       <div className="h-full p-4 overflow-y-auto">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {assistants
-            .sort((a, b) => a.created_at - b.created_at)
+            .slice().sort((a, b) => a.created_at - b.created_at)
             .map((assistant) => (
               <div
                 className="bg-main-view-fg/3 p-3 rounded-md"
