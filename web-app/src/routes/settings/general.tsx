@@ -248,6 +248,20 @@ function General() {
               )}
             </Card>
 
+            {/* Advanced */}
+            <Card title="Advanced">
+              <CardItem
+                title="Experimental Features"
+                description="Enable experimental features. They may be unstable or change at any time."
+                actions={
+                  <Switch
+                    checked={experimentalFeatures}
+                    onCheckedChange={(e) => setExperimentalFeatures(e)}
+                  />
+                }
+              />
+            </Card>
+
             {/* Data folder */}
             <Card title={t('common.dataFolder')}>
               <CardItem
@@ -392,16 +406,6 @@ function General() {
                   <Switch
                     checked={spellCheckChatInput}
                     onCheckedChange={(e) => setSpellCheckChatInput(e)}
-                  />
-                }
-              />
-              <CardItem
-                title="Experimental Features"
-                description="Enable experimental features and cutting-edge functionality that may be unstable."
-                actions={
-                  <Switch
-                    checked={experimentalFeatures}
-                    onCheckedChange={(e) => setExperimentalFeatures(e)}
                   />
                 }
               />
