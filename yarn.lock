@@ -7140,7 +7140,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@wdio/cli@npm:^7.9.0":
+"@wdio/cli@npm:^7":
   version: 7.40.0
   resolution: "@wdio/cli@npm:7.40.0"
   dependencies:
@@ -7192,7 +7192,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@wdio/local-runner@npm:^7.9.0":
+"@wdio/local-runner@npm:^7":
   version: 7.40.0
   resolution: "@wdio/local-runner@npm:7.40.0"
   dependencies:
@@ -7222,7 +7222,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@wdio/mocha-framework@npm:^7.9.0":
+"@wdio/mocha-framework@npm:^7":
   version: 7.40.0
   resolution: "@wdio/mocha-framework@npm:7.40.0"
   dependencies:
@@ -7286,7 +7286,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@wdio/spec-reporter@npm:^7.9.0":
+"@wdio/spec-reporter@npm:^7":
   version: 7.40.0
   resolution: "@wdio/spec-reporter@npm:7.40.0"
   dependencies:
@@ -20901,10 +20901,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "webdriverio@workspace:webdriver/webdriverio"
   dependencies:
-    "@wdio/cli": "npm:^7.9.0"
-    "@wdio/local-runner": "npm:^7.9.0"
-    "@wdio/mocha-framework": "npm:^7.9.0"
-    "@wdio/spec-reporter": "npm:^7.9.0"
+    "@wdio/cli": "npm:^7"
+    "@wdio/local-runner": "npm:^7"
+    "@wdio/mocha-framework": "npm:^7"
+    "@wdio/spec-reporter": "npm:^7"
   languageName: unknown
   linkType: soft
 
