@@ -2,55 +2,12 @@ import { Link, useMatches } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from 'react-i18next'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { isProd } from '@/lib/version'
-
-const menuSettings = [
-  {
-    title: 'common.general',
-    route: route.settings.general,
-  },
-  {
-    title: 'common.appearance',
-    route: route.settings.appearance,
-  },
-  {
-    title: 'common.privacy',
-    route: route.settings.privacy,
-  },
-  {
-    title: 'common.keyboardShortcuts',
-    route: route.settings.shortcuts,
-  },
-  {
-    title: 'Hardware',
-    route: route.settings.hardware,
-  },
-  // Only show MCP Servers in non-production environment
-  ...(!isProd
-    ? [
-        {
-          title: 'MCP Servers',
-          route: route.settings.mcp_servers,
-        },
-      ]
-    : []),
-  {
-    title: 'Local API Server',
-    route: route.settings.local_api_server,
-  },
-  {
-    title: 'HTTPS Proxy',
-    route: route.settings.https_proxy,
-  },
-  {
-    title: 'Extensions',
-    route: route.settings.extensions,
-  },
-]
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
+  const { experimentalFeatures } = useGeneralSetting()
   const firstItemProvider =
     providers.length > 0 ? providers[0].provider : 'llama.cpp'
   const matches = useMatches()
@@ -59,6 +16,50 @@ const SettingsMenu = () => {
       match.routeId === '/settings/providers/$providerName' &&
       'providerName' in match.params
   )
+
+  const menuSettings = [
+    {
+      title: 'common.general',
+      route: route.settings.general,
+    },
+    {
+      title: 'common.appearance',
+      route: route.settings.appearance,
+    },
+    {
+      title: 'common.privacy',
+      route: route.settings.privacy,
+    },
+    {
+      title: 'common.keyboardShortcuts',
+      route: route.settings.shortcuts,
+    },
+    {
+      title: 'Hardware',
+      route: route.settings.hardware,
+    },
+    // Only show MCP Servers when experimental features are enabled
+    ...(experimentalFeatures
+      ? [
+          {
+            title: 'MCP Servers',
+            route: route.settings.mcp_servers,
+          },
+        ]
+      : []),
+    {
+      title: 'Local API Server',
+      route: route.settings.local_api_server,
+    },
+    {
+      title: 'HTTPS Proxy',
+      route: route.settings.https_proxy,
+    },
+    {
+      title: 'Extensions',
+      route: route.settings.extensions,
+    },
+  ]
 
   return (
     <div className="flex h-full w-44 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5">
