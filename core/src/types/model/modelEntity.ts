@@ -121,6 +121,14 @@ export type ModelSettingParams = {
   vision_model?: boolean
   text_model?: boolean
   engine?: boolean
+  top_p?: number
+  top_k?: number
+  min_p?: number
+  temperature?: number
+  repeat_penalty?: number
+  repeat_last_n?: number
+  presente_penalty?: number
+  frequency_penalty?: number
 }
 
 /**

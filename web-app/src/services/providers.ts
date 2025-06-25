@@ -150,7 +150,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
               ...setting,
               controller_props: {
                 ...setting.controller_props,
-                value: value ?? setting.controller_props.value,
+                value: value,
               },
             }
             return acc
@@ -254,7 +254,10 @@ export const updateSettings = async (
         ...setting,
         controllerProps: {
           ...setting.controller_props,
-          value: setting.controller_props.value ?? '',
+          value:
+            setting.controller_props.value !== undefined
+              ? setting.controller_props.value
+              : '',
         },
         controllerType: setting.controller_type,
       })) as SettingComponentProps[]
