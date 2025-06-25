@@ -10,10 +10,11 @@ exports.config = {
   maxInstances: 1,
   capabilities: [
     {
-      'maxInstances': 1,
-      'browserName': 'edge',
       'tauri:options': {
         application: '../../src-tauri/target/debug/Jan',
+        webviewOptions: {
+          userDataFolder: '../../src-tauri/target/debug/examples',
+        },
       },
     },
   ],
