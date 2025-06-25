@@ -215,7 +215,7 @@ jobs:
 
       - name: Install tauri-driver dependencies
         run: |
-          cargo install tauri-driver --locked
+          cargo install tauri-driver@2.0.1 --locked
 
       # Clean cache, continue on error
       - name: 'Cleanup cache'

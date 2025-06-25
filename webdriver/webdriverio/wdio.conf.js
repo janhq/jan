@@ -17,6 +17,7 @@ exports.config = {
       },
     },
   ],
+  logLevel: 'trace',
   reporters: ['spec'],
   framework: 'mocha',
   mochaOpts: {
