@@ -369,6 +369,7 @@ function Hub() {
         showSkipButton={!isLastStep}
         hideCloseButton={true}
         spotlightClicks={true}
+        disableOverlay={IS_LINUX}
         disableOverlayClose={true}
         callback={handleJoyrideCallback}
         locale={{

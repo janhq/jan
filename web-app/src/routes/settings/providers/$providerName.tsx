@@ -207,6 +207,7 @@ function ProviderDetail() {
         spotlightPadding={0}
         continuous={true}
         showSkipButton={true}
+        disableOverlay={IS_LINUX}
         hideCloseButton={true}
         spotlightClicks={true}
         disableOverlayClose={true}
