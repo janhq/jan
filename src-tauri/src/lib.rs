@@ -68,6 +68,7 @@ pub fn run() {
             core::mcp::get_mcp_configs,
             core::mcp::activate_mcp_server,
             core::mcp::deactivate_mcp_server,
+            core::mcp::reset_mcp_restart_count,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,
@@ -93,6 +94,9 @@ pub fn run() {
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             cortex_restart_count: Arc::new(Mutex::new(0)),
             cortex_killed_intentionally: Arc::new(Mutex::new(false)),
+            mcp_restart_counts: Arc::new(Mutex::new(HashMap::new())),
+            mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
+            mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
         })
         .setup(|app| {
@@ -124,6 +128,7 @@ pub fn run() {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
                     window.emit("kill-sidecar", ()).unwrap();
+                    window.emit("kill-mcp-servers", ()).unwrap();
                     clean_up();
                 }
             }
