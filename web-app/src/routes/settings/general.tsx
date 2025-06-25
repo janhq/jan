@@ -248,7 +248,7 @@ function General() {
               )}
             </Card>
 
-            {/* Advance */}
+            {/* Advanced */}
             <Card title="Advanced">
               <CardItem
                 title="Experimental Features"
