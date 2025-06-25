@@ -12,11 +12,11 @@ export class HubPage extends BasePage implements IHubPage {
   constructor(driver: Browser) {
     super(driver)
     this.elements = {
-      searchModelsInput: `//*[@AutomationId="SearchModelsInput"]`,
-      modelName: `//*[@Name="{0}" and @ControlType="Hyperlink"]`,
-      btnModel: `//*[@Name="{0}" and @ControlType="Hyperlink"]/following-sibling::*[@ControlType="Button"][1]`,
-      toggleModel: `//*[@Name="{0}" and @ControlType="Hyperlink"]/following-sibling::*[@ControlType="CheckBox"][1]`,
-      downloadIcon: `//*[@Name="{0}"]/following-sibling::*[@AutomationId="DownloadIcon"]`,
+      searchModelsInput: `//Edit[@HelpText="Search for models on Hugging Face..."]`,
+      modelName: `//HyperLink[@Name="{0}"]`,
+      btnModel: `//HyperLink[@Name="{0}"]/following-sibling::Button[1]`,
+      toggleModel: `//*[@Name="{0}"]/following-sibling::Button[2]`,
+      downloadIcon: `//*[@Name="{0}"]/following-sibling::*[@HelpText='Download model']`,
     }
   }
 

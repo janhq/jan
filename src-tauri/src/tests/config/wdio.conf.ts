@@ -23,6 +23,7 @@ export const config: WebdriverIO.Config = {
             'appium:deviceName': 'WindowsPC',
             'appium:app': process.env.BUNDLE_ID,
             'appium:automationName': 'Windows',
+            'appium:newCommandTimeout': 300,
           },
         ]
       : [

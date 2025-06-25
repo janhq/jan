@@ -14,8 +14,8 @@ export default abstract class BasePage implements IBasePage {
   constructor(driver: Browser) {
     this.driver = driver
     this.elementsCom = {
-      text: `//*[@value="{0}" or  @label="{0}" or @title="{0}"]`,
-      textContains: `//*[contains(@value, "{0}") or contains(@label, "{0}") or contains(@title, "{0}")]`,
+      text: `//*[@Name="{0}"]`,
+      textContains: `//*[contains(@Name, "{0}")]`,
     }
   }
 
@@ -161,19 +161,21 @@ export default abstract class BasePage implements IBasePage {
 
   async uploadFile(filePath: string): Promise<boolean> {
     try {
+      await this.waitForTimeout(1500)
+      await this.enterText("//ComboBox/Edit[@AccessKey='Alt+n']", filePath)
       execSync(
-        `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\"^o\"); Start-Sleep -Seconds 1; [System.Windows.Forms.SendKeys]::SendWait(\"${filePath}\"); Start-Sleep -Seconds 1; [System.Windows.Forms.SendKeys]::SendWait(\"{ENTER}\")"`
+        `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}');"`
       )
       return true
-    } catch (e) {
-      console.error('Upload failed:', e)
+    } catch (error) {
+      console.error('❌ Upload file failed:', error)
       return false
     }
   }
 
   async getText(selector: string): Promise<string> {
     const el = await this.driver.$(selector)
-    return await el.getText()
+    return (await el.getText()) || ''
   }
 
   async getAttribute(selector: string, attribute: string): Promise<string> {

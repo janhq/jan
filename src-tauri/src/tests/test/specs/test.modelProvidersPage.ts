@@ -61,9 +61,13 @@ describe('Model providers', () => {
     const uploaded = await settingsPage.uploadFile(
       utilities.fromRoot(imports.qwen3)
     )
+    const importModel =
+      process.env.RUNNING_OS == 'win'
+        ? notify.title.import
+        : notify.title.importModel
     expect(uploaded).toBe(true)
     const isNotify = await settingsPage.isNotify(
-      notify.title.importModel,
+      importModel,
       String.format(notify.content.importModelSuccess, 'llama.cpp')
     )
     expect(isNotify).toBe(true)
@@ -74,13 +78,13 @@ describe('Model providers', () => {
     const model2 = models.qwen3v0dot6b
     await settingsPage.toggle(title.autoUnloadOldModels, true)
     await settingsPage.startOrStopModel(model1)
-    let llama3Status = await settingsPage.getTextStatus(model1)
-    expect(llama3Status).toBe(btnModel.stop)
+    let model1Status = await settingsPage.getTextStatus(model1)
+    expect(model1Status).toBe(btnModel.stop)
     await settingsPage.startOrStopModel(model2)
-    llama3Status = await settingsPage.getTextStatus(model1)
-    let qwen3Status = await settingsPage.getTextStatus(model2)
-    expect(llama3Status).toBe(btnModel.start)
-    expect(qwen3Status).toBe(btnModel.stop)
+    model1Status = await settingsPage.getTextStatus(model1)
+    let model2Status = await settingsPage.getTextStatus(model2)
+    expect(model1Status).toBe(btnModel.start)
+    expect(model2Status).toBe(btnModel.stop)
   })
 
   it('Multiple models can run simultaneously when Auto-Unload Old Models is disabled.', async () => {

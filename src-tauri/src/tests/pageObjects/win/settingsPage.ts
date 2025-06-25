@@ -13,27 +13,27 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   constructor(driver: Browser) {
     super(driver)
     this.elements = {
-      menuSub1: `//*[@Name="{0}" and @ControlType="Text"]`,
+      menuSub1: `//*[@Name="{0}"]`,
       llamaTitle: `(//*[@Name="Llama.cpp"])[2]`,
-      model: `//*[@Name="Models"]/following-sibling::*[@Name="1" and @ControlType="Text"]`,
-      modelItems: `//*[@ControlType="Hyperlink"][1]/*[@Name="{0}" and @ControlType="Text"]`,
-      startBtn: `//*[@Name="{0}"]/ancestor::*[3]/following-sibling::*[4]/*[@ControlType="Button"][1]`,
-      deleteModelBtn: `//*[@Name="{0}"]/ancestor::*[3]/following-sibling::*[3]/*[@ControlType="Button"][1]`,
-      settingsModelBtn: `//*[@Name="{0}"]/ancestor::*[3]/following-sibling::*[2]/*[@ControlType="Button"][1]`,
-      editsModelBtn: `//*[@Name="{0}"]/ancestor::*[3]/following-sibling::*[1]/*[@ControlType="Button"][1]`,
-      cancelPopupBtn: `//*[contains(@Name, "Delete Model:")]/*[@Name="Cancel" and @ControlType="Button"]`,
-      deletePopupBtn: `//*[contains(@Name, "Delete Model:")]/*[@Name="Delete" and @ControlType="Button"]`,
-      closePopupBtn: `//*[contains(@Name, "Delete Model:")]/*[@Name="Close" and @ControlType="Button"]`,
-      importBtn: `//*[@Name="Models"]/following-sibling::*[@Name="1"]/following-sibling::*[@ControlType="Button"][1]`,
-      toogle: `//*[@Name="{0}"]/parent::*[1]/following-sibling::*[2]/*[@ControlType="CheckBox"][1]`,
-      toogleItem: `//*[@Name="{0}"]/following-sibling::*[@ControlType="CheckBox"][1]`,
-      inputRightSetting: `//*[@Name="{0}"]/parent::*[1]/following-sibling::*[@ControlType="Edit"][1]`,
-      closeModelSetting: `//*[@Name="Model Settings - {0}"]/*[@Name="Close" and @ControlType="Button"]`,
-      btnSetting: `//*[@Name="{0}"]/parent::*[1]/following-sibling::*[1]/*[@ControlType="Text"][1]`,
-      inputSetting: `//*[@Name="{0}"]/parent::*[1]/following-sibling::*[@ControlType="Edit"][1]`,
-      searchDropdownInput: `//*[@AutomationId="DropdownSearchInput"]`,
-      itemDropdown: `//*[@ControlType="MenuItem" and @Name="{0}"]`,
-      closeEditModel: `//*[@Name="Edit Model: {0}"]/*[@Name="Close" and @ControlType="Button"]`,
+      model: `//*[@Name="Models"]/following-sibling::Text[@ClassName="font-medium"]`,
+      modelItems: `//Text[@Name="{0}"]`,
+      startBtn: `//Text[@Name="{0}"]/following-sibling::Button[1]`,
+      deleteModelBtn: `//Text[@Name="{0}"]/following-sibling::Group[3]/Image[1]`,
+      settingsModelBtn: `//Text[@Name="{0}"]/following-sibling::Group[2]/Image[1]`,
+      editsModelBtn: `//Text[@Name="{0}"]/following-sibling::Group[1]/Image[1]`,
+      cancelPopupBtn: `//Button[@Name="Cancel"]`,
+      deletePopupBtn: `//Button[@Name="Delete"]`,
+      closePopupBtn: `//Button[@Name="Close"]`,
+      importBtn: `//Button[@Name="Import"]`,
+      toogle: `//*[@Name="{0}"]/following-sibling::Button[1]`,
+      toogleItem: `//*[@Name="{0}"]/following-sibling::Button[1]`,
+      inputRightSetting: `//*[@Name="{0}"]/following-sibling::Spinner[1]`,
+      closeModelSetting: `//Button[@Name="Close"]`,
+      btnSetting: `//*[@Name="{0}"]/following-sibling::Button[1]`,
+      inputSetting: `//*[@Name="{0}"]/following-sibling::Edit[1]`,
+      searchDropdownInput: `//Menu/Edit`,
+      itemDropdown: `//Menu/[@ControlType="MenuItem" and @Name="{0}"]`,
+      closeEditModel: `//Button[@Name="Close"]`,
     }
   }
 
@@ -47,14 +47,17 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   }
 
   async getModels(): Promise<any> {
+    await this.waitForTimeout(1000)
     const arr = new Array()
     const models = this.elements.model
     const count = await this.count(models)
     for (let i = 1; i <= count; i++) {
-      const locator = models + `[${i}]`
+      const locator = '(' + models + ')' + `[${i}]`
       const model = await this.getText(locator)
       arr.push(model)
     }
+    console.log(arr);
+    
     return arr
   }
 
@@ -66,21 +69,20 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   async startOrStopModel(model: string): Promise<void> {
     const locator = String.format(this.elements.startBtn, model)
     await this.clickElement(locator)
-    await this.waitForTimeout(5000)
+    await this.waitForTimeout(10000)
   }
 
   async getTextStatus(model: string): Promise<any> {
-    await this.waitForTimeout(5000)
+    await this.waitForTimeout(10000)
     const locator = String.format(this.elements.startBtn, model)
     return await this.getText(locator)
   }
 
   async toggle(title: string, statusExpect: boolean): Promise<void> {
     let locator = String.format(this.elements.toogle, title)
-    if (!(await this.elementShouldBeVisible(locator))) {
-      locator = String.format(this.elements.toogleItem, title)
-    }
-    const current = (await this.getText(locator)) === '1'
+    const toogleOnLocator = locator + "[@ToggleState='On']"
+    const current = await this.elementShouldBeVisible(toogleOnLocator)
+    console.log(current)
     if (current !== statusExpect) {
       await this.clickElement(locator)
       await this.waitForTimeout(3000)
