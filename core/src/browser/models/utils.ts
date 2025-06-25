@@ -134,7 +134,7 @@ export const extractModelLoadParams = (
     temperature: undefined,
     repeat_penalty: undefined,
     repeat_last_n: undefined,
-    presente_penalty: undefined,
+    presence_penalty: undefined,
     frequency_penalty: undefined,
   }
   const settingParams: ModelSettingParams = {}

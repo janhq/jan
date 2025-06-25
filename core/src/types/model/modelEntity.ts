@@ -127,7 +127,7 @@ export type ModelSettingParams = {
   temperature?: number
   repeat_penalty?: number
   repeat_last_n?: number
-  presente_penalty?: number
+  presence_penalty?: number
   frequency_penalty?: number
 }
 
