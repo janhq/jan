@@ -13,7 +13,7 @@ exports.config = {
       'tauri:options': {
         application: '../../src-tauri/target/debug/Jan',
         webviewOptions: {
-          userDataFolder: '../../src-tauri/target/debug/examples',
+          userDataFolder: os.tmpdir(),
         },
       },
     },
