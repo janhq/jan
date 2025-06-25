@@ -211,7 +211,7 @@ jobs:
           $url = "https://msedgedriver.microsoft.com/137.0.3296.93/edgedriver_win64.zip"
           Invoke-WebRequest -Uri $url -OutFile "edgedriver.zip"
           Expand-Archive -Path "edgedriver.zip" -DestinationPath "edgedriver"
-          Copy-Item "edgedriver/msedgedriver.exe" "$env:LOCALAPPDATA\Microsoft\WindowsApps\msedgedriver.exe" -Force
+          Copy-Item "edgedriver/msedgedriver.exe" "$env:LOCALAPPDATA\Microsoft\WindowsApps\msedge.exe" -Force
 
       - name: Install tauri-driver dependencies
         run: |
