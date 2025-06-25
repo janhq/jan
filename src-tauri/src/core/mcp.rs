@@ -513,7 +513,16 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
     let mut cmd = Command::new(command.clone());
     
-    if command == "npx" {
+    let mut is_macos_without_avx2 = false;
+    #[cfg(all(target_os="macos", any(target_arch = "x86", target_arch = "x86_64"))) ]
+    {
+        is_macos_without_avx2 = !is_x86_feature_detected!("avx2");
+        if is_macos_without_avx2 {
+            log::warn!("Your CPU doesn't support AVX2 instruction");
+        }
+    }
+
+    if command == "npx" && !is_macos_without_avx2 {
         let mut cache_dir = app_path.clone();
         cache_dir.push(".npx");
         let bun_x_path = format!("{}/bun", bin_path.display());
