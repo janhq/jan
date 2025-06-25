@@ -33,7 +33,16 @@ export const DialogDeleteModel = ({
   const removeModel = async () => {
     deleteModelCache(selectedModelId)
     deleteModel(selectedModelId).then(() => {
-      getProviders().then(setProviders)
+      getProviders().then((providers) => {
+        // Filter out the deleted model from all providers
+        const filteredProviders = providers.map((provider) => ({
+          ...provider,
+          models: provider.models.filter(
+            (model) => model.id !== selectedModelId
+          ),
+        }))
+        setProviders(filteredProviders)
+      })
       toast.success('Delete Model', {
         id: `delete-model-${selectedModel?.id}`,
         description: `Model ${selectedModel?.id} has been permanently deleted.`,
