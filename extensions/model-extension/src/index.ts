@@ -28,7 +28,7 @@ type Data<T> = {
 /**
  * Defaul mode sources
  */
-const defaultModelSources = ['Menlo/Jan-nano-gguf']
+const defaultModelSources = ['Menlo/Jan-nano-gguf', 'Menlo/Jan-nano-128k-gguf']
 
 /**
  * A extension for models
