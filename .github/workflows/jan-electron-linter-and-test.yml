@@ -189,7 +189,7 @@ jobs:
 
   test-on-windows-pr:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
+    runs-on: windows-desktop-mcafee
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -204,14 +204,55 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download Microsoft Edge WebDriver v137
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $url = "https://msedgedriver.microsoft.com/137.0.3296.93/edgedriver_win64.zip"
-          Invoke-WebRequest -Uri $url -OutFile "edgedriver.zip"
-          Expand-Archive -Path "edgedriver.zip" -DestinationPath "edgedriver"
-          Copy-Item "edgedriver/msedgedriver.exe" "$env:LOCALAPPDATA\Microsoft\WindowsApps\msedgedriver.exe" -Force
+      # - name: Download and Replace ALL Microsoft Edge WebDriver v137
+      #   shell: powershell
+      #   run: |
+      #     $ErrorActionPreference = "Stop"
+
+      #     Write-Output "=== SYSTEM PATH ==="
+      #     $env:PATH -split ';' | ForEach-Object { Write-Output "  - $_" }
+
+      #     # Step 1: Find all msedgedriver.exe in PATH
+      #     $driverPaths = @()
+      #     $env:PATH -split ';' | ForEach-Object {
+      #       $candidate = Join-Path $_ "msedgedriver.exe"
+      #       if (Test-Path $candidate) {
+      #         $driverPaths += $candidate
+      #       }
+      #     }
+
+      #     if ($driverPaths.Count -eq 0) {
+      #       Write-Output "`n❌ No existing msedgedriver.exe found in PATH"
+      #       exit 1
+      #     }
+
+      #     Write-Output "`n=== Existing EdgeDriver Locations ==="
+      #     $driverPaths | ForEach-Object { Write-Output "  - $_" }
+
+      #     # Step 2: Download the new version
+      #     $url = "https://msedgedriver.microsoft.com/137.0.3296.93/edgedriver_win64.zip"
+      #     Write-Output "`nDownloading EdgeDriver from $url"
+      #     Invoke-WebRequest -Uri $url -OutFile "edgedriver.zip"
+
+      #     # Step 3: Extract it
+      #     Expand-Archive -Path "edgedriver.zip" -DestinationPath "edgedriver" -Force
+      #     $newDriverPath = Resolve-Path "edgedriver/msedgedriver.exe"
+      #     Write-Output "`n=== New EdgeDriver Downloaded ==="
+      #     Write-Output "  Path: $newDriverPath"
+
+      #     # Step 4: Replace all existing msedgedriver.exe
+      #     Write-Output "`n=== Replacing All EdgeDrivers ==="
+      #     foreach ($target in $driverPaths) {
+      #       Copy-Item $newDriverPath $target -Force
+      #       Write-Output "  → Replaced: $target"
+      #     }
+      #     Copy-Item $newDriverPath C:\ProgramData\Chocolatey\bin\ -Force
+
+      #     # Step 5: Show version
+      #     Write-Output "`n=== EdgeDriver Version After Update ==="
+      #     foreach ($target in $driverPaths) {
+      #       & $target --version
+      #     }
 
       - name: Install tauri-driver dependencies
         run: |

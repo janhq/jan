@@ -14,6 +14,12 @@ exports.config = {
         application: '../../src-tauri/target/debug/Jan',
         webviewOptions: {
           userDataFolder: path.resolve(__dirname, './test/userDataFolder'),
+          additionalBrowserArguments: [
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-features=EdgeIdentity',
+            '--disable-sync --guest',
+          ],
         },
       },
     },

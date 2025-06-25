@@ -50,3 +50,6 @@ src-tauri/resources/bin
 .opencode
 OpenCode.md
 archive/
+
+# Tauri e2e test userData
+webdriver/webdriverio/test/userDataFolder
