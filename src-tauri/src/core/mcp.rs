@@ -513,12 +513,15 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
     let mut cmd = Command::new(command.clone());
     
+    // we need to check CPU for the AVX2 instruction if we are running under the MacOS
+    // with Intel CPU. We can replace `npx` command with `bun` only if CPU is
+    // supporting AVX2, otherwise we need to use default `npx` binary
     let mut is_macos_without_avx2 = false;
     if cfg!(all(target_os="macos", any(target_arch = "x86", target_arch = "x86_64")))
     {
         is_macos_without_avx2 = !is_x86_feature_detected!("avx2");
-        if is_macos_without_avx2 {
-            log::warn!("Your CPU doesn't support AVX2 instruction");
+        if is_macos_without_avx2 && command == "npx" {
+            log::warn!("Your CPU doesn't support AVX2 instruction, default npx binary will be used");
         }
     }
 
