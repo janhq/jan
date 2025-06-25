@@ -64,7 +64,12 @@ const openFileTitle = (): string => {
 
 function General() {
   const { t } = useTranslation()
-  const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
+  const {
+    spellCheckChatInput,
+    setSpellCheckChatInput,
+    experimentalFeatures,
+    setExperimentalFeatures,
+  } = useGeneralSetting()
   const { checkForUpdate } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
@@ -387,6 +392,16 @@ function General() {
                   <Switch
                     checked={spellCheckChatInput}
                     onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                  />
+                }
+              />
+              <CardItem
+                title="Experimental Features"
+                description="Enable experimental features and cutting-edge functionality that may be unstable."
+                actions={
+                  <Switch
+                    checked={experimentalFeatures}
+                    onCheckedChange={(e) => setExperimentalFeatures(e)}
                   />
                 }
               />
