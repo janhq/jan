@@ -30,6 +30,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { updateSettings } from '@/services/providers'
+import { useContextSizeApproval } from './useModelContextApproval'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -47,6 +48,8 @@ export const useChat = () => {
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
     useToolApproval()
+  const { showApprovalModal: showIncreaseContextSizeModal } =
+    useContextSizeApproval()
   const { getDisabledToolsForThread } = useToolAvailable()
 
   const { getProviderByName, selectedModel, selectedProvider } =
@@ -223,11 +226,7 @@ export const useChat = () => {
   )
 
   const sendMessage = useCallback(
-    async (
-      message: string,
-      showModal?: () => Promise<unknown>,
-      troubleshooting = true
-    ) => {
+    async (message: string, troubleshooting = true) => {
       const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
@@ -361,7 +360,7 @@ export const useChat = () => {
               selectedModel &&
               troubleshooting
             ) {
-              const method = await showModal?.()
+              const method = await showIncreaseContextSizeModal()
               if (method === 'ctx_len') {
                 /// Increase context size
                 activeProvider = await increaseModelContextSize(
@@ -447,8 +446,7 @@ export const useChat = () => {
       updateThreadTimestamp,
       setPrompt,
       selectedModel,
-      currentAssistant?.instructions,
-      currentAssistant.parameters,
+      currentAssistant,
       tools,
       updateLoadingModel,
       getDisabledToolsForThread,
@@ -456,6 +454,7 @@ export const useChat = () => {
       allowAllMCPPermissions,
       showApprovalModal,
       updateTokenSpeed,
+      showIncreaseContextSizeModal,
       increaseModelContextSize,
       toggleOnContextShifting,
     ]

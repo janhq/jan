@@ -35,7 +35,6 @@ import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
 import { stopAllModels } from '@/services/models'
-import { useOutOfContextPromiseModal } from './dialogs/OutOfContextDialog'
 
 type ChatInputProps = {
   className?: string
@@ -55,8 +54,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
 
-  const { showModal, PromiseModal: OutOfContextModal } =
-    useOutOfContextPromiseModal()
   const maxRows = 10
 
   const { selectedModel } = useModelProvider()
@@ -107,7 +104,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       return
     }
     setMessage('')
-    sendMessage(prompt, showModal)
+    sendMessage(prompt)
   }
 
   useEffect(() => {
@@ -599,7 +596,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       )}
-      <OutOfContextModal />
     </div>
   )
 }
