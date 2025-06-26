@@ -39,7 +39,6 @@ import { toast } from 'sonner'
 import { ActiveModel } from '@/types/models'
 import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/mock/data'
-import { isProd } from '@/lib/version'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -455,19 +454,15 @@ function ProviderDetail() {
                           title={
                             <div className="flex items-center gap-2">
                               <h1 className="font-medium">{model.id}</h1>
-                              {!isProd && (
-                                <Capabilities capabilities={capabilities} />
-                              )}
+                              <Capabilities capabilities={capabilities} />
                             </div>
                           }
                           actions={
                             <div className="flex items-center gap-1">
-                              {!isProd && (
-                                <DialogEditModel
-                                  provider={provider}
-                                  modelId={model.id}
-                                />
-                              )}
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
                               {model.settings && (
                                 <ModelSetting
                                   provider={provider}
