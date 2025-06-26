@@ -24,13 +24,7 @@ run = [
 [tasks.install]
 description = "Install dependencies"
 depends = ["config-yarn"]
-run = '''
-#!/usr/bin/env bash
-# Skip install on Windows per Makefile logic
-if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "win32" ]]; then
-  yarn install
-fi
-'''
+run = "yarn install"
 sources = ['package.json', 'yarn.lock']
 outputs = ['node_modules']
 
