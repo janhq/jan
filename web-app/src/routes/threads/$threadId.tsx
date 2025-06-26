@@ -5,6 +5,7 @@ import debounce from 'lodash.debounce'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
+import { Play } from 'lucide-react'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -22,6 +23,7 @@ import { useAppearance } from '@/hooks/useAppearance'
 import { useOutOfContextPromiseModal } from '@/containers/dialogs/OutOfContextDialog'
 import { ContentType, ThreadMessage } from '@janhq/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useChat } from '@/hooks/useChat'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -40,6 +42,7 @@ function ThreadDetail() {
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
   const { appMainViewBgColor, chatWidth } = useAppearance()
+  const { sendMessage } = useChat()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -216,11 +219,23 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // used when there is a sent/added user message and no assistant message (error or manual deletion)
+  const generateAIResponse = () => {
+    const latestUserMessage = messages[messages.length - 1]
+    if (latestUserMessage?.content?.[0]?.text?.value) {
+      sendMessage(latestUserMessage.content[0].text.value, undefined, false)
+    }
+  }
+
   const threadModel = useMemo(() => thread?.model, [thread])
 
   if (!messages || !threadModel) return null
 
   const contextOverflowModalComponent = <OutOfContextModal />
+
+  const showScrollToBottomBtn = !isAtBottom && hasScrollbar
+  const showGenerateAIResponseBtn =
+    messages[messages.length - 1]?.role === 'user' && !streamingContent
 
   return (
     <div className="flex flex-col h-full">
@@ -289,19 +304,31 @@ function ThreadDetail() {
               appMainViewBgColor.a === 1
                 ? 'from-main-view/20 bg-gradient-to-b to-main-view backdrop-blur'
                 : 'bg-transparent',
-              !isAtBottom && hasScrollbar && 'visibility-visible opacity-100'
+              (showScrollToBottomBtn || showGenerateAIResponseBtn) &&
+                'visibility-visible opacity-100'
             )}
           >
-            <div
-              className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
-              onClick={() => {
-                scrollToBottom(true)
-                setIsUserScrolling(false)
-              }}
-            >
-              <p className="text-xs">{t('scrollToBottom')}</p>
-              <ArrowDown size={12} />
-            </div>
+            {showScrollToBottomBtn && (
+              <div
+                className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
+                onClick={() => {
+                  scrollToBottom(true)
+                  setIsUserScrolling(false)
+                }}
+              >
+                <p className="text-xs">{t('scrollToBottom')}</p>
+                <ArrowDown size={12} />
+              </div>
+            )}
+            {showGenerateAIResponseBtn && (
+              <div
+                className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
+                onClick={generateAIResponse}
+              >
+                <p className="text-xs">{t('Generate AI Response')}</p>
+                <Play size={12} />
+              </div>
+            )}
           </div>
           <ChatInput model={threadModel} />
         </div>
