@@ -1,4 +1,3 @@
-import { t } from 'i18next'
 import {
   Dialog,
   DialogContent,
@@ -10,8 +9,10 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { useContextSizeApproval } from '@/hooks/useModelContextApproval'
+import { useTranslation } from '@/i18n'
 
 export default function OutOfContextPromiseModal() {
+  const { t } = useTranslation()
   const { isModalOpen, modalProps, setModalOpen } = useContextSizeApproval()
   if (!modalProps) {
     return null
@@ -37,21 +38,13 @@ export default function OutOfContextPromiseModal() {
     <Dialog open={isModalOpen} onOpenChange={handleDialogOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {t('outOfContextError.title', 'Out of context error')}
-          </DialogTitle>
+          <DialogTitle>{t('model-errors:title')}</DialogTitle>
         </DialogHeader>
         <DialogDescription>
-          {t(
-            'outOfContextError.description',
-            'This chat is reaching the AI’s memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer’s memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.'
-          )}
+          {t('model-errors:description')}
           <br />
           <br />
-          {t(
-            'outOfContextError.increaseContextSizeDescription',
-            'Do you want to increase the context size?'
-          )}
+          {t('model-errors:increaseContextSizeDescription')}
         </DialogDescription>
         <DialogFooter className="flex gap-2">
           <Button
@@ -61,7 +54,7 @@ export default function OutOfContextPromiseModal() {
               handleContextShift()
             }}
           >
-            {t('outOfContextError.truncateInput', 'Truncate Input')}
+            {t('model-errors:truncateInput')}
           </Button>
           <Button
             asChild
@@ -70,10 +63,7 @@ export default function OutOfContextPromiseModal() {
             }}
           >
             <span className="text-main-view-fg/70">
-              {t(
-                'outOfContextError.increaseContextSize',
-                'Increase Context Size'
-              )}
+              {t('model-errors:increaseContextSize')}
             </span>
           </Button>
         </DialogFooter>
