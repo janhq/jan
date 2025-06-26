@@ -53,6 +53,12 @@ export const Route = createFileRoute(route.settings.general as any)({
 
 function General() {
   const { t } = useTranslation()
+  const {
+    spellCheckChatInput,
+    setSpellCheckChatInput,
+    experimentalFeatures,
+    setExperimentalFeatures,
+  } = useGeneralSetting()
 
   const openFileTitle = (): string => {
     if (IS_MACOS) {
@@ -63,7 +69,6 @@ function General() {
       return t('settings:general.openContainingFolder')
     }
   }
-  const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
   const { checkForUpdate } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
@@ -236,6 +241,20 @@ function General() {
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
+              />
+            </Card>
+
+            {/* Advanced */}
+            <Card title="Advanced">
+              <CardItem
+                title="Experimental Features"
+                description="Enable experimental features. They may be unstable or change at any time."
+                actions={
+                  <Switch
+                    checked={experimentalFeatures}
+                    onCheckedChange={(e) => setExperimentalFeatures(e)}
+                  />
+                }
               />
             </Card>
 

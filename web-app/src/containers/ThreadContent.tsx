@@ -85,7 +85,6 @@ export const ThreadContent = memo(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      showContextOverflowModal?: () => Promise<unknown>
     }
   ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
@@ -137,10 +136,7 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(
-          toSendMessage.content?.[0]?.text?.value || '',
-          item.showContextOverflowModal
-        )
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
@@ -182,16 +178,9 @@ export const ThreadContent = memo(
           deleteMessage(threadMessages[i].thread_id, threadMessages[i].id)
         }
 
-        sendMessage(message, item.showContextOverflowModal)
+        sendMessage(message)
       },
-      [
-        deleteMessage,
-        getMessages,
-        item.thread_id,
-        message,
-        sendMessage,
-        item.showContextOverflowModal,
-      ]
+      [deleteMessage, getMessages, item.thread_id, message, sendMessage]
     )
 
     const isToolCalls =

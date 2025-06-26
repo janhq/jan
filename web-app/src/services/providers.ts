@@ -13,6 +13,8 @@ import {
 import { modelSettings } from '@/lib/predefined'
 import { fetchModels } from './models'
 import { ExtensionManager } from '@/lib/extension'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const engines = !localStorage.getItem('migration_completed')
@@ -148,7 +150,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
               ...setting,
               controller_props: {
                 ...setting.controller_props,
-                value: value ?? setting.controller_props.value,
+                value: value,
               },
             }
             return acc
@@ -163,26 +165,35 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   return runtimeProviders.concat(builtinProviders as ModelProvider[])
 }
 
+
 /**
  * Fetches models from a provider's API endpoint
+ * Always uses Tauri's HTTP client to bypass CORS issues
  * @param provider The provider object containing base_url and api_key
  * @returns Promise<string[]> Array of model IDs
  */
 export const fetchModelsFromProvider = async (
   provider: ModelProvider
 ): Promise<string[]> => {
-  if (!provider.base_url || !provider.api_key) {
-    throw new Error('Provider must have base_url and api_key configured')
+  if (!provider.base_url) {
+    throw new Error('Provider must have base_url configured')
   }
 
   try {
-    const response = await fetch(`${provider.base_url}/models`, {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+
+    // Only add authentication headers if API key is provided
+    if (provider.api_key) {
+      headers['x-api-key'] = provider.api_key
+      headers['Authorization'] = `Bearer ${provider.api_key}`
+    }
+
+    // Always use Tauri's fetch to avoid CORS issues
+    const response = await fetchTauri(`${provider.base_url}/models`, {
       method: 'GET',
-      headers: {
-        'x-api-key': provider.api_key,
-        'Authorization': `Bearer ${provider.api_key}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
     })
 
     if (!response.ok) {
@@ -213,6 +224,14 @@ export const fetchModelsFromProvider = async (
     }
   } catch (error) {
     console.error('Error fetching models from provider:', error)
+    
+    // Provide helpful error message
+    if (error instanceof Error && error.message.includes('fetch')) {
+      throw new Error(
+        `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
+      )
+    }
+    
     throw error
   }
 }
@@ -235,7 +254,10 @@ export const updateSettings = async (
         ...setting,
         controllerProps: {
           ...setting.controller_props,
-          value: setting.controller_props.value ?? '',
+          value:
+            setting.controller_props.value !== undefined
+              ? setting.controller_props.value
+              : '',
         },
         controllerType: setting.controller_type,
       })) as SettingComponentProps[]

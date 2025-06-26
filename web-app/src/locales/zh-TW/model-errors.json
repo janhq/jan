@@ -1,0 +1,7 @@
+{
+  "title": "超出上下文錯誤",
+  "description": "此對話已接近 AI 的記憶上限，就像白板快被填滿一樣。我們可以擴大記憶視窗（稱為上下文大小），讓它能記住更多內容，但這可能會佔用你電腦更多記憶體。我們也可以截斷輸入，這表示它會忘記部分對話歷史，以便為新訊息騰出空間。",
+  "increaseContextSizeDescription": "你想要增加上下文大小嗎？",
+  "truncateInput": "截斷輸入",
+  "increaseContextSize": "增加上下文大小"
+}
