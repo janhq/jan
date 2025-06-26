@@ -25,6 +25,7 @@ export default abstract class BasePage implements IBasePage {
 
   async clickElement(selector: string): Promise<void> {
     const el = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     await el.click()
   }
 
@@ -35,6 +36,7 @@ export default abstract class BasePage implements IBasePage {
   ): Promise<void> {
     await this.waitUntilElementIsVisible(selector)
     const element = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     const rect = await element.getWindowRect()
     const centerX = Math.round(rect.x + rect.width / 2)
     const centerY = Math.round(rect.y + rect.height / 2)
@@ -78,6 +80,7 @@ export default abstract class BasePage implements IBasePage {
 
   async scrollToElement(selector: string): Promise<void> {
     const element = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     await this.driver.execute(function (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, element)
@@ -86,11 +89,13 @@ export default abstract class BasePage implements IBasePage {
   async sendKeys(selector: string, keys: string): Promise<void> {
     await this.clickElement(selector)
     const element = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     await element.addValue(keys)
   }
 
   async enterText(selector: string, text: string): Promise<void> {
     const el = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     await el.setValue(text)
   }
 
@@ -175,11 +180,13 @@ export default abstract class BasePage implements IBasePage {
 
   async getText(selector: string): Promise<string> {
     const el = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     return (await el.getText()) || ''
   }
 
   async getAttribute(selector: string, attribute: string): Promise<string> {
     const element = await this.driver.$(selector)
+    await this.waitUntilElementIsVisible(selector)
     return await element.getAttribute(attribute)
   }
 

@@ -4,6 +4,7 @@ import BasePage from '@linux/basePage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
 const btnModelHub = common.btnModelHub
+const notify = common.notify
 export class HubPage extends BasePage implements IHubPage {
   elements: HubPageElements
 
@@ -31,8 +32,12 @@ export class HubPage extends BasePage implements IHubPage {
   async downloadModel(modelName: string): Promise<void> {
     const locator = String.format(this.elements.btnModel, modelName)
     await this.clickElement(locator)
-    // wait for the download to finish
-    await this.waitForTimeout(20000)
+    const notifyLocator = String.format(
+      this.elementsCom.text,
+      notify.title.downloadComplete
+    )
+    await this.waitUntilElementIsVisible(notifyLocator, 900000)
+    await this.waitForTimeout(5000)
   }
 
   async selectModel(modelName: string): Promise<void> {

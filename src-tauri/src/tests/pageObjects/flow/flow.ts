@@ -1,4 +1,5 @@
 import * as dotenv from 'dotenv'
+import { Browser } from 'webdriverio'
 // interface
 import { IHomePage } from '@interface/iHomePage'
 import { IHubPage } from '@interface/iHubPage'
@@ -20,6 +21,8 @@ import { HubPage as LinuxHubPage } from '@linux/hubPage'
 import { ChatPage as LinuxChatPage } from '@linux/chatPage'
 import { SettingsPage as LinuxSettingsPage } from '@linux/settingsPage'
 
+import Utilities from '@core_lib/utilities'
+const utilities = new Utilities()
 import common from '@data/common.json'
 import { String } from 'typescript-string-operations'
 dotenv.config()
@@ -37,31 +40,38 @@ let title = common.title
 let ui = common.ui
 let btn = common.btn
 let toolApiKey = common.toolApiKey
+let imports = common.import
+let address = common.address
 
 export default class Flow {
-  public initializePages(driver: any): void {
+  protected driver: Browser
+  constructor(driver: Browser) {
+    this.driver = driver
+    this.initializePages()
+  }
+
+  public initializePages(): void {
     if (process.env.RUNNING_OS === 'macOS') {
-      homePage = new MacHomePage(driver)
-      hubPage = new MacHubPage(driver)
-      chatPage = new MacChatPage(driver)
-      settingsPage = new MacSettingsPage(driver)
+      homePage = new MacHomePage(this.driver)
+      hubPage = new MacHubPage(this.driver)
+      chatPage = new MacChatPage(this.driver)
+      settingsPage = new MacSettingsPage(this.driver)
     } else if (process.env.RUNNING_OS === 'win') {
-      homePage = new WinHomePage(driver)
-      hubPage = new WinHubPage(driver)
-      chatPage = new WinChatPage(driver)
-      settingsPage = new WinSettingsPage(driver)
+      homePage = new WinHomePage(this.driver)
+      hubPage = new WinHubPage(this.driver)
+      chatPage = new WinChatPage(this.driver)
+      settingsPage = new WinSettingsPage(this.driver)
     } else if (process.env.RUNNING_OS === 'linux') {
-      homePage = new LinuxHomePage(driver)
-      hubPage = new LinuxHubPage(driver)
-      chatPage = new LinuxChatPage(driver)
-      settingsPage = new LinuxSettingsPage(driver)
+      homePage = new LinuxHomePage(this.driver)
+      hubPage = new LinuxHubPage(this.driver)
+      chatPage = new LinuxChatPage(this.driver)
+      settingsPage = new LinuxSettingsPage(this.driver)
     } else {
       throw new Error('Unsupported OS or missing page implementations.')
     }
   }
 
-  public async checkAndDownloadModels(driver: any, models: any): Promise<void> {
-    this.initializePages(driver)
+  public async checkDownloadModels(models: any): Promise<void> {
     if (!(await settingsPage.isText(modelType.llama))) {
       await homePage.openSettings()
       await settingsPage.selectSub1Menu(submenu1.modelProviders)
@@ -77,12 +87,11 @@ export default class Flow {
       }
     }
     for (let i = 0; i < arr.length; i++) {
-      await this.dowloadModels(driver, arr[i])
+      await this.dowloadModels(arr[i])
     }
   }
 
-  public async dowloadModels(driver: any, model: string) {
-    this.initializePages(driver)
+  public async dowloadModels(model: string) {
     if (
       model == models.qwen3v0dot6b ||
       model == models.qwen3v1dot7b ||
@@ -103,10 +112,54 @@ export default class Flow {
     }
   }
 
-  async configAPIKey(driver: any, key: string) {
-    this.initializePages(driver)
+  async checkImportModels(models: any) {
+    await homePage.openSettings()
+    await settingsPage.selectSub1Menu(submenu1.modelProviders)
+    const list = await settingsPage.getModels()
+    console.log(list)
+    console.log(models)
+
+    const arr = new Array()
+    for (let i = 0; i < models.length; i++) {
+      const idx = list.indexOf(models[i])
+      if (idx == -1) {
+        arr.push(models[i])
+      }
+    }
+    console.log(arr)
+
+    for (let i = 0; i < arr.length; i++) {
+      await this.importModel(arr[i])
+    }
+  }
+
+  async importModel(model: string) {
+    let url = ''
+    let urlFile = ''
+    switch (model) {
+      case models.qwen2:
+        url = imports.downloadQwen2
+        urlFile = imports.qwen2
+        break
+
+      case models.qwen2dot5:
+        url = imports.downloadQwen2dot5
+        urlFile = imports.qwen2dot5
+        break
+
+      case models.qwen3Embedding:
+        url = imports.downloadQwen3
+        urlFile = imports.qwen3
+        break
+    }
+    await settingsPage.clickElement(settingsPage.elements.importBtn)
+    await utilities.downloadFile(url, address.modelsFolder)
+    return await settingsPage.uploadFile(utilities.fromRoot(urlFile))
+  }
+
+  async configAPIKey(key: string) {
     if (!(await settingsPage.isText(modelType.openAI))) {
-      await this.goToModelProviders(driver)
+      await this.goToModelProviders()
     }
     await settingsPage.selectSub1Menu(modelType.openAI)
     await settingsPage.tapToolAPIKey(toolApiKey.eye)
@@ -116,14 +169,12 @@ export default class Flow {
     }
   }
 
-  async goToModelProviders(driver: any) {
-    this.initializePages(driver)
+  async goToModelProviders() {
     await homePage.openSettings()
     await settingsPage.selectSub1Menu(submenu1.modelProviders)
   }
 
-  async getContentAndThought(driver: any, index: number = 1) {
-    this.initializePages(driver)
+  async getResponse(index: number = 1) {
     await chatPage.waitSendDone(120000)
     const content = await chatPage.getContentResp(index)
     let thought = new Array()
@@ -138,26 +189,19 @@ export default class Flow {
     }
   }
 
-  async sentAndWait(driver: any, msg: string) {
-    this.initializePages(driver)
+  async sentAndWait(msg: string) {
     await chatPage.sendMessage(msg)
     await chatPage.waitSendDone(120000)
   }
 
-  async createThead(driver: any, model: string, msg: string) {
-    this.initializePages(driver)
+  async createThead(model: string, msg: string) {
     await homePage.openNewChat()
     await chatPage.selectModel(model)
-    await this.sentAndWait(driver, msg)
-    return await this.getContentAndThought(driver)
+    await this.sentAndWait(msg)
+    return await this.getResponse()
   }
 
-  async showLoadingModelAndDisableInputSending(
-    driver: any,
-    model: string,
-    msg: string
-  ) {
-    this.initializePages(driver)
+  async waitLoadingModel(model: string, msg: string) {
     const loadingModel = ui.loadingModel
     await chatPage.selectModel(model)
     await chatPage.sendMessage(msg)
@@ -167,8 +211,7 @@ export default class Flow {
     await chatPage.waitSendDone(120000)
   }
 
-  async configCodeBlock(driver: any, codeBlock: string) {
-    this.initializePages(driver)
+  async configCodeBlock(codeBlock: string) {
     await homePage.openSettings()
     await settingsPage.selectSub1Menu(submenu1.appearance)
     if (!(await chatPage.isText(codeBlock))) {
@@ -177,8 +220,7 @@ export default class Flow {
     }
   }
 
-  async getStatusModels(driver: any, models: any) {
-    this.initializePages(driver)
+  async getStatusModels(models: any) {
     let object: any = {}
     for (let i = 0; i < models.length; i++) {
       const model = models[i]
@@ -189,15 +231,13 @@ export default class Flow {
   }
 
   async changeSettingModel(title: string, value: string) {
-    this.initializePages(driver)
     await settingsPage.enterInputSettingModel(title, value)
     await chatPage.waitForTimeout(500)
     await chatPage.clickAtPoint(200, 200)
     await chatPage.waitForTimeout(2000)
   }
 
-  async updateVersion(driver: any) {
-    this.initializePages(driver)
+  async updateVersion() {
     if (!(await settingsPage.isText(btn.updateNow))) {
       await homePage.tapText(btn.updateNow)
       await homePage.wait(10000)

@@ -56,8 +56,6 @@ export class SettingsPage extends BasePage implements ISettingsPage {
       const model = await this.getText(locator)
       arr.push(model)
     }
-    console.log(arr);
-    
     return arr
   }
 
@@ -109,6 +107,7 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   }
 
   async tapButtonDeletePopup(nameButton: string): Promise<void> {
+    await this.waitForTimeout(3000)
     switch (nameButton) {
       case 'Cancel':
         await this.clickElement(this.elements.cancelPopupBtn)

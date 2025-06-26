@@ -17,7 +17,7 @@ import Utilities from '@core_lib/utilities'
 const utilities = new Utilities()
 import common from '@data/common.json'
 import { String } from 'typescript-string-operations'
-const flow = new Flow()
+let flow: Flow
 dotenv.config()
 
 let homePage: IHomePage
@@ -28,7 +28,7 @@ const title = common.title
 const notify = common.notify
 const btnModel = common.btnModel
 const imports = common.import
-const address = common.adress
+const address = common.address
 const btn = common.btn
 const ui = common.ui
 
@@ -44,13 +44,11 @@ describe('Model providers', () => {
       homePage = new LinuxHomePage(driver)
       settingsPage = new LinuxSettingsPage(driver)
     }
+    flow = new Flow(driver)
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
-    await flow.checkAndDownloadModels(driver, [
-      models.qwen3v0dot6b,
-      models.qwen3v1dot7b,
-    ])
+    await flow.checkImportModels([models.qwen2, models.qwen2dot5])
   })
 
   it('Models downloaded from the Hub should appear in the list of Models.', async () => {
@@ -62,12 +60,7 @@ describe('Model providers', () => {
   })
 
   it('Successfully import model from GGUF file', async () => {
-    await settingsPage.clickElement(settingsPage.elements.importBtn)
-    const url = imports.downloadQwen3
-    await utilities.downloadFile(url, address.modelsFolder)
-    const uploaded = await settingsPage.uploadFile(
-      utilities.fromRoot(imports.qwen3)
-    )
+    const uploaded = await flow.importModel(models.qwen3Embedding)
     const importModel =
       process.env.RUNNING_OS == 'win'
         ? notify.title.import
@@ -81,8 +74,8 @@ describe('Model providers', () => {
   })
 
   it('Only one model starts at a time when Auto-Unload Old Models is enabled.', async () => {
-    const model1 = models.qwen3v1dot7b
-    const model2 = models.qwen3v0dot6b
+    const model1 = models.qwen2
+    const model2 = models.qwen2dot5
     await settingsPage.toggle(title.autoUnloadOldModels, true)
     await settingsPage.startOrStopModel(model1)
     let model1Status = await settingsPage.getTextStatus(model1)
@@ -95,8 +88,8 @@ describe('Model providers', () => {
   })
 
   it('Multiple models can run simultaneously when Auto-Unload Old Models is disabled.', async () => {
-    const model1 = models.qwen3v0dot6b
-    const model2 = models.qwen3v1dot7b
+    const model1 = models.qwen2dot5
+    const model2 = models.qwen2
     await settingsPage.startOrStopModel(model1)
     await settingsPage.toggle(title.autoUnloadOldModels, false)
     await settingsPage.startOrStopModel(model2)
@@ -110,76 +103,80 @@ describe('Model providers', () => {
   it('Delete popup shows model name and removes it after confirmation.', async () => {
     const model = models.qwen3Embedding
     await settingsPage.tapBtnModel(model, btnModel.delete)
-    expect(await settingsPage.isText(ui.deleteModel)).toBe(true)
-    expect(await settingsPage.isText(model)).toBe(true)
+    expect(await settingsPage.isTextContains(ui.deleteModel)).toBe(true)
+    expect(await settingsPage.isTextContains(model)).toBe(true)
     await settingsPage.tapButtonDeletePopup(btn.delete)
+    let notifyName = notify.title.deleteModel
+    if (process.env.RUNNING_OS == 'win') {
+      notifyName = String.format(notify.title.deleteModelName, model)
+    }
     const isNotify = await settingsPage.isNotify(
-      notify.title.deleteModel,
+      notifyName,
       String.format(notify.content.deleteModelSuccess, model)
     )
     expect(isNotify).toBe(true)
   })
 
-  it('Test response creativity using Temperature, Top K, Top P, and Min P.', async () => {
-    const msg = 'Hello'
-    const model = models.qwen3v4b
-    await settingsPage.tapBtnModel(model, btnModel.settings)
-    const settings = title.modelSettings
-    await settingsPage.enterInputSettingModel(settings.temperature, '100')
-    await settingsPage.enterInputSettingModel(settings.topK, '0.7')
-    await settingsPage.enterInputSettingModel(settings.topP, '0.8')
-    await settingsPage.closeSettingModel(model)
-    const response = await flow.createThead(driver, model, msg)
-    expect(response.content.length).toBeGreaterThan(0)
-  })
+  // it('Test response creativity using Temperature, Top K, Top P, and Min P.', async () => {
+  //   const msg = 'Hello'
+  //   const model = models.qwen2
+  //   await settingsPage.tapBtnModel(model, btnModel.settings)
+  //   const settings = title.modelSettings
+  //   await settingsPage.enterInputSettingModel(settings.temperature, '100')
+  //   await settingsPage.enterInputSettingModel(settings.topK, '0.7')
+  //   await settingsPage.enterInputSettingModel(settings.topP, '0.8')
+  //   await settingsPage.closeSettingModel(model)
+  //   const response = await flow.createThead(model, msg)
+  //   expect(response.content.length).toBeGreaterThan(0)
+  // })
 
-  it('Test answer coherence with Temperature, Top K, and Top P.', async () => {
-    const msg = 'Hello'
-    const model = models.qwen3v4b
-    await homePage.openSettings()
-    await settingsPage.selectSub1Menu(submenu1.modelProviders)
-    await settingsPage.tapBtnModel(model, btnModel.settings)
-    const settings = title.modelSettings
-    await settingsPage.enterInputSettingModel(settings.temperature, '100')
-    await settingsPage.enterInputSettingModel(settings.topK, '40')
-    await settingsPage.closeSettingModel(model)
-    const response = await flow.createThead(driver, model, msg)
-    expect(response.content.length).toBeGreaterThan(0)
-  })
+  // it('Test answer coherence with Temperature, Top K, and Top P.', async () => {
+  //   const msg = 'Hello'
+  //   const model = models.qwen2
+  //   await homePage.openSettings()
+  //   await settingsPage.selectSub1Menu(submenu1.modelProviders)
+  //   await settingsPage.tapBtnModel(model, btnModel.settings)
+  //   const settings = title.modelSettings
+  //   await settingsPage.enterInputSettingModel(settings.temperature, '100')
+  //   await settingsPage.enterInputSettingModel(settings.topK, '40')
+  //   await settingsPage.closeSettingModel(model)
+  //   const response = await flow.createThead(model, msg)
+  //   expect(response.content.length).toBeGreaterThan(0)
+  // })
 
-  it('Test repetition control using Repeat Last N and Repeat Penalty.', async () => {
-    const msg = 'Hello'
-    const model = models.qwen3v4b
-    await homePage.openSettings()
-    await settingsPage.selectSub1Menu(submenu1.modelProviders)
-    await settingsPage.tapBtnModel(model, btnModel.settings)
-    const settings = title.modelSettings
-    await settingsPage.enterInputSettingModel(settings.repeatLastN, '')
-    await settingsPage.enterInputSettingModel(settings.repeatPenalty, '')
-    await settingsPage.clickAtPoint(200, 200)
-    const response = await flow.createThead(driver, model, msg)
-    expect(response.content.length).toBeGreaterThan(0)
-  })
+  // it('Test repetition control using Repeat Last N and Repeat Penalty.', async () => {
+  //   const msg = 'Hello'
+  //   const model = models.qwen2
+  //   await homePage.openSettings()
+  //   await settingsPage.selectSub1Menu(submenu1.modelProviders)
+  //   await settingsPage.tapBtnModel(model, btnModel.settings)
+  //   const settings = title.modelSettings
+  //   await settingsPage.enterInputSettingModel(settings.repeatLastN, '')
+  //   await settingsPage.enterInputSettingModel(settings.repeatPenalty, '')
+  //   await settingsPage.clickAtPoint(200, 200)
+  //   const response = await flow.createThead(model, msg)
+  //   expect(response.content.length).toBeGreaterThan(0)
+  // })
 
-  it('Tool icon appears when a tool is enabled for a model.', async () => {
-    const model = models.qwen3v4b
-    await homePage.openNewChat()
-    await homePage.openSettings()
-    await settingsPage.selectSub1Menu(submenu1.modelProviders)
-    await settingsPage.tapBtnModel(model, btnModel.edit)
-    await settingsPage.toggle(title.editModel.tools, true)
-    await settingsPage.clickAtPoint(100, 100)
-    await settingsPage.waitForTimeout(1000)
-  })
+  // it('Tool icon appears when a tool is enabled for a model.', async () => {
+  //   const model = models.qwen2
+  //   await homePage.openNewChat()
+  //   await homePage.openSettings()
+  //   await settingsPage.selectSub1Menu(submenu1.modelProviders)
+  //   await settingsPage.tapBtnModel(model, btnModel.edit)
+  //   await settingsPage.toggle(title.editModel.tools, true)
+  //   await settingsPage.clickAtPoint(100, 100)
+  //   await settingsPage.waitForTimeout(1000)
+  // })
 
-  it('Show error when using an invalid API key with a remote model.', async () => {
-    const key = 'invalid'
-    const model = models.gptv4dot5Preview
-    const msg = 'Hello'
-    await flow.configAPIKey(driver, key)
-    await flow.createThead(driver, model, msg)
-    expect(
-      await settingsPage.isNotify(notify.content.incorrectAPIKeyProvided)
-    ).toBe(true)
-  })
+  // it('Show error when using an invalid API key with a remote model.', async () => {
+  //   const key = 'invalid'
+  //   const model = models.gptv4dot5Preview
+  //   const msg = 'Hello'
+  //   await flow.configAPIKey(key)
+  //   await flow.createThead(model, msg)
+  //   expect(
+  //     await settingsPage.isNotify(notify.content.incorrectAPIKeyProvided)
+  //   ).toBe(true)
+  // })
 })

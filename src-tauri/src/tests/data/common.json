@@ -5,9 +5,13 @@
   },
   "import": {
     "downloadQwen3": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf?download=true",
-    "qwen3": "./data/modelsData/Qwen3-Embedding-0.6B-Q8_0.gguf"
+    "qwen3": "./data/modelsData/Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "downloadQwen2dot5": "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q2_k.gguf?download=true",
+    "qwen2dot5": "./data/modelsData/qwen2.5-coder-0.5b-instruct-q2_k.gguf",
+    "downloadQwen2": "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q2_k.gguf?download=true",
+    "qwen2": "./data/modelsData/qwen2-0_5b-instruct-q2_k.gguf"
   },
-  "adress": {
+  "address": {
     "modelsFolder": "./data/modelsData/"
   },
   "modelsHub": {
@@ -38,7 +42,9 @@
     "qwen3v4b": "qwen3:4b",
     "qwen3v0dot6b": "qwen3:0.6b",
     "qwen3v1dot7b": "qwen3:1.7b",
-    "qwen3Embedding": "Qwen3-Embedding-0.6B-Q8_0"
+    "qwen3Embedding": "Qwen3-Embedding-0.6B-Q8_0",
+    "qwen2dot5": "qwen2.5-coder-0.5b-instruct-q2_k",
+    "qwen2": "qwen2-0_5b-instruct-q2_k"
   },
   "btnModel": {
     "start": "Start",
@@ -116,6 +122,7 @@
       "import": "Import",
       "importModel": "Import Model",
       "deleteModel": "Delete Model",
+      "deleteModelName": "Delete Model: {0}",
       "editMessage": "Edit Message",
       "renameThread": "Rename Thread",
       "deleteThread": "Delete Thread",

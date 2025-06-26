@@ -3,7 +3,7 @@ import { IHubPage, HubPageElements } from '@interface/iHubPage'
 import BasePage from '@win/basePage'
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
-
+const notify = common.notify
 const btnModelHub = common.btnModelHub
 
 export class HubPage extends BasePage implements IHubPage {
@@ -16,7 +16,7 @@ export class HubPage extends BasePage implements IHubPage {
       modelName: `//HyperLink[@Name="{0}"]`,
       btnModel: `//HyperLink[@Name="{0}"]/following-sibling::Button[1]`,
       toggleModel: `//*[@Name="{0}"]/following-sibling::Button[2]`,
-      downloadIcon: `//*[@Name="{0}"]/following-sibling::*[@HelpText='Download model']`,
+      downloadIcon: `//*[@Name="{0}"]/following-sibling::Group[1]/Image[1]`,
     }
   }
 
@@ -33,7 +33,12 @@ export class HubPage extends BasePage implements IHubPage {
   async downloadModel(modelName: string): Promise<void> {
     const locator = String.format(this.elements.btnModel, modelName)
     await this.clickElement(locator)
-    await this.waitForTimeout(20000) // optionally wait for download
+    const notifyLocator = String.format(
+      this.elementsCom.text,
+      notify.title.downloadComplete
+    )
+    await this.waitUntilElementIsVisible(notifyLocator, 900000)
+    await this.waitForTimeout(5000)
   }
 
   async selectModel(modelName: string): Promise<void> {

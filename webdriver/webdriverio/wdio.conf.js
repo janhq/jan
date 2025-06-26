@@ -2,13 +2,14 @@ const os = require('os')
 const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 
-// keep track of the `tauri-driver` child process
 let tauriDriver
+const isWindows = os.platform() === 'win32'
+const tauriPort = isWindows ? 4445 : 4444
 
 exports.config = {
   specs: ['./test/specs/home.e2e.ts'],
   maxInstances: 1,
-  port: 4444,
+  port: tauriPort,
   capabilities: [
     {
       'tauri:options': {
@@ -26,7 +27,6 @@ exports.config = {
     timeout: 60000,
   },
 
-  // ensure the rust project is built since we expect this binary to exist for the webdriver sessions
   onPrepare: () => {
     spawnSync('yarn', ['build:web'], {
       cwd: path.resolve(__dirname, '../..'),
@@ -39,7 +39,6 @@ exports.config = {
     })
   },
 
-  // ensure we are running `tauri-driver` before the session starts so that we can proxy the webdriver requests
   beforeSession: () => {
     const driverPath = path.resolve(
       os.homedir(),
@@ -47,7 +46,12 @@ exports.config = {
       'bin',
       'tauri-driver'
     )
-    tauriDriver = spawn(driverPath, ['--port', '4444'], { stdio: 'pipe' })
+    const args = ['--port', tauriPort.toString()]
+    if (isWindows) {
+      args.push('--native-driver', 'C:\\tools\\webdrivers\\msedgedriver.exe')
+    }
+
+    tauriDriver = spawn(driverPath, args, { stdio: 'pipe' })
 
     if (tauriDriver && tauriDriver.stdout && tauriDriver.stderr) {
       tauriDriver.stdout.on('data', (data) => {
@@ -61,6 +65,9 @@ exports.config = {
     }
   },
 
-  // clean up the `tauri-driver` process we spawned at the start of the session
-  afterSession: () => tauriDriver.kill(),
+  afterSession: () => {
+    if (tauriDriver) {
+      tauriDriver.kill()
+    }
+  },
 }

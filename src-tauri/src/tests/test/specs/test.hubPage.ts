@@ -19,13 +19,12 @@ import Flow from '@flow/flow'
 import common from '@data/common.json'
 
 dotenv.config()
-const flow = new Flow()
+let flow: Flow
 
 let homePage: IHomePage
 let hubPage: IHubPage
 let chatPage: IChatPage
 const modelsHub = common.modelsHub
-const models = common.models
 describe('Verify user can use a model from Hub', () => {
   before(async () => {
     if (process.env.RUNNING_OS === 'macOS') {
@@ -36,19 +35,15 @@ describe('Verify user can use a model from Hub', () => {
       homePage = new WinHomePage(driver)
       hubPage = new WinHubPage(driver)
       chatPage = new WinChatPage(driver)
-    }
-    else if (process.env.RUNNING_OS === 'linux') {
+    } else if (process.env.RUNNING_OS === 'linux') {
       homePage = new LinuxHomePage(driver)
       hubPage = new LinuxHubPage(driver)
       chatPage = new LinuxChatPage(driver)
     }
+    flow = new Flow(driver)
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
     await homePage.setWindowBounds()
-    await flow.checkAndDownloadModels(driver, [
-      models.qwen3v0dot6b,
-      models.qwen3v1dot7b,
-    ])
   })
 
   it('should be able to search and use a model from hub', async () => {
@@ -63,6 +58,6 @@ describe('Verify user can use a model from Hub', () => {
 
   it('should be able to send a message using selected model', async () => {
     await chatPage.sendMessage('Hello')
-    //await driver.takeScreenshot()
+    //await .takeScreenshot()
   })
 })
