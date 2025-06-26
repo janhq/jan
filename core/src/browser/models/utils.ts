@@ -15,6 +15,8 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   stop: (value: any) => Array.isArray(value) && value.every((v) => typeof v === 'string'),
   frequency_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   presence_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
+  repeat_last_n: (value: any) => typeof value === 'number',
+  repeat_penalty: (value: any) => typeof value === 'number',
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
   ngl: (value: any) => Number.isInteger(value),
@@ -126,6 +128,14 @@ export const extractModelLoadParams = (
     vision_model: undefined,
     text_model: undefined,
     engine: undefined,
+    top_p: undefined,
+    top_k: undefined,
+    min_p: undefined,
+    temperature: undefined,
+    repeat_penalty: undefined,
+    repeat_last_n: undefined,
+    presence_penalty: undefined,
+    frequency_penalty: undefined,
   }
   const settingParams: ModelSettingParams = {}
 
