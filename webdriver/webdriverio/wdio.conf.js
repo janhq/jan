@@ -11,7 +11,7 @@ exports.config = {
   port: 4445,
   capabilities: [
     {
-      'browserName': '',
+      'browserName': 'tauri',
       'tauri:options': {
         application: path.resolve(
           __dirname,
