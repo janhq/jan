@@ -21,6 +21,49 @@ import { Callout, Steps } from 'nextra/components'
 
 # Using the Model Context Protocol (MCP) in Jan
 
+```mermaid
+graph TD
+    subgraph "What is MCP?"
+        You[You using Jan Desktop]
+        Claude[Jan AI Assistant]
+        
+        subgraph "Your Connected Tools"
+            Files[📁 Your Files<br/>Documents, folders,<br/>text files]
+            Database[📊 Your Data<br/>Spreadsheets,<br/>databases]
+            WebServices[🌐 Online Services<br/>GitHub, Slack,<br/>Google Drive]
+            Custom[🔧 Custom Tools<br/>Special programs<br/>you've added]
+        end
+        
+        subgraph "What Jan Can Do"
+            Read[Read & Understand<br/>- View your files<br/>- Check your data<br/>- See updates]
+            Action[Take Actions<br/>- Search for info<br/>- Create content<br/>- Run commands]
+            Templates[Use Templates<br/>- Common tasks<br/>- Saved prompts<br/>- Workflows]
+        end
+    end
+    
+    You --> Claude
+    Claude -->|"Can I see this file?"| Files
+    Claude -->|"What's in my database?"| Database
+    Claude -->|"Check my GitHub"| WebServices
+    Claude -->|"Run this tool"| Custom
+    
+    Files --> Read
+    Database --> Read
+    WebServices --> Action
+    Custom --> Templates
+    
+    style You fill:transparent
+    style Claude fill:transparent
+    style Files fill:transparent
+    style Database fill:transparent
+    style WebServices fill:transparent
+    style Custom fill:transparent
+    style Read fill:transparent
+    style Action fill:transparent
+    style Templates fill:transparent
+```
+
+
 Jan now supports the **Model Context Protocol (MCP)**, an open standard designed to allow language models to
 interact with external tools and data sources.
 
