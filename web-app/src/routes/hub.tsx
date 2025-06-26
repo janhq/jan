@@ -358,6 +358,46 @@ function Hub() {
   // Check if we're on the last step
   const isLastStep = currentStepIndex === steps.length - 1
 
+  const renderFilter = () => {
+    return (
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger>
+            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+              {
+                sortOptions.find((option) => option.value === sortSelected)
+                  ?.name
+              }
+            </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end">
+            {sortOptions.map((option) => (
+              <DropdownMenuItem
+                className={cn(
+                  'cursor-pointer my-0.5',
+                  sortSelected === option.value && 'bg-main-view-fg/5'
+                )}
+                key={option.value}
+                onClick={() => setSortSelected(option.value)}
+              >
+                {option.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showOnlyDownloaded}
+            onCheckedChange={setShowOnlyDownloaded}
+          />
+          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+            {t('hub:downloaded')}
+          </span>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <Joyride
@@ -391,9 +431,12 @@ function Hub() {
             <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
               <div className="flex items-center gap-2 w-full">
                 {isSearching ? (
-                  <Loader className="size-4 animate-spin text-main-view-fg/60" />
+                  <Loader className="shrink-0 size-4 animate-spin text-main-view-fg/60" />
                 ) : (
-                  <IconSearch className="text-main-view-fg/60" size={14} />
+                  <IconSearch
+                    className="shrink-0 text-main-view-fg/60"
+                    size={14}
+                  />
                 )}
                 <input
                   placeholder={t('hub:searchPlaceholder')}
@@ -402,49 +445,13 @@ function Hub() {
                   className="w-full focus:outline-none"
                 />
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger>
-                    <span
-                      title={t('hub:editTheme')}
-                      className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-                    >
-                      {
-                        sortOptions.find(
-                          (option) => option.value === sortSelected
-                        )?.name
-                      }
-                    </span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent side="bottom" align="end">
-                    {sortOptions.map((option) => (
-                      <DropdownMenuItem
-                        className={cn(
-                          'cursor-pointer my-0.5',
-                          sortSelected === option.value && 'bg-main-view-fg/5'
-                        )}
-                        key={option.value}
-                        onClick={() => setSortSelected(option.value)}
-                      >
-                        {option.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={showOnlyDownloaded}
-                    onCheckedChange={setShowOnlyDownloaded}
-                  />
-                  <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-                    {t('hub:downloaded')}
-                  </span>
-                </div>
+              <div className="sm:flex items-center gap-2 shrink-0 hidden">
+                {renderFilter()}
               </div>
             </div>
           </HeaderPage>
           <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
-            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
+            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 mx-auto">
               {loading ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
@@ -459,6 +466,9 @@ function Hub() {
                 </div>
               ) : (
                 <div className="flex flex-col pb-2 mb-2 gap-2 ">
+                  <div className="flex items-center gap-2 justify-end sm:hidden">
+                    {renderFilter()}
+                  </div>
                   {filteredModels.map((model) => (
                     <div key={model.id}>
                       <Card
@@ -472,11 +482,14 @@ function Hub() {
                             >
                               <h1
                                 className={cn(
-                                  'text-main-view-fg font-medium text-base capitalize truncate',
+                                  'text-main-view-fg font-medium text-base capitalize truncate max-w-38 sm:max-w-none',
                                   isRecommendedModel(model.metadata?.id)
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
+                                title={
+                                  extractModelName(model.metadata?.id) || ''
+                                }
                               >
                                 {extractModelName(model.metadata?.id) || ''}
                               </h1>
