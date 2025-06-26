@@ -83,7 +83,7 @@ export function useOutOfContextPromiseModal() {
           </DialogDescription>
           <DialogFooter className="flex gap-2">
             <Button
-              variant="default"
+              variant="link"
               className="bg-transparent border border-main-view-fg/20 hover:bg-main-view-fg/4"
               onClick={() => {
                 handleContextShift()
