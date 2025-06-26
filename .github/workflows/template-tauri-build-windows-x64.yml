@@ -249,6 +249,8 @@ jobs:
       - name: upload to aws s3 if public provider is aws
         shell: bash
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+      env:
+        GITHUB_VAR: ${{ github.event.head_commit.message || github.event.pull_request.title || github.ref_name }}
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
