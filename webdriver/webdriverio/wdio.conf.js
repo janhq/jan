@@ -8,10 +8,9 @@ let tauriDriver
 exports.config = {
   specs: ['./test/specs/home.e2e.ts'],
   maxInstances: 1,
-  port: 4445,
+  port: 4444,
   capabilities: [
     {
-      'browserName': 'tauri',
       'tauri:options': {
         application: path.resolve(
           __dirname,
@@ -48,7 +47,7 @@ exports.config = {
       'bin',
       'tauri-driver'
     )
-    tauriDriver = spawn(driverPath, ['--port', '4455'], { stdio: 'pipe' })
+    tauriDriver = spawn(driverPath, ['--port', '4444'], { stdio: 'pipe' })
 
     if (tauriDriver && tauriDriver.stdout && tauriDriver.stderr) {
       tauriDriver.stdout.on('data', (data) => {

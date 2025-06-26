@@ -366,12 +366,7 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y \
-            libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev \
-            libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 \
-            webkit2gtk-driver \
-            libvulkan1 vulkan-utils mesa-vulkan-drivers \
-            libegl1-mesa libgl1-mesa-dri
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
 
       - name: Install tauri-driver dependencies
         run: |
@@ -395,8 +390,9 @@ jobs:
 
       - name: Linter and test
         run: |
-          sudo apt-get install -y xvfb
-          xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' make test
+          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
+          echo -e "Display ID: $DISPLAY"
+          make test
 
       - uses: actions/upload-artifact@v4
         if: always()
