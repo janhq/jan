@@ -76,3 +76,18 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     }
     ret
 }
+
+pub fn can_override_npx() -> bool {
+    // we need to check the CPU for the AVX2 instruction support if we are running under the MacOS
+    // with Intel CPU. We can override `npx` command with `bun` only if CPU is
+    // supporting AVX2, otherwise we need to use default `npx` binary
+    if cfg!(all(target_os="macos", any(target_arch = "x86", target_arch = "x86_64")))
+    {
+        if !is_x86_feature_detected!("avx2") {
+            log::warn!("Your CPU doesn't support AVX2 instruction, default npx binary will be used");
+            return false; // we cannot override npx with bun binary
+        }
+    }
+
+    true // by default, we can override npx with bun binary
+}
