@@ -1,0 +1,7 @@
+{
+  "title": "Lỗi vượt quá ngữ cảnh",
+  "description": "Cuộc trò chuyện này đang đạt đến giới hạn bộ nhớ của AI, giống như một bảng trắng sắp đầy. Chúng ta có thể mở rộng cửa sổ bộ nhớ (gọi là kích thước ngữ cảnh) để AI nhớ được nhiều hơn, nhưng điều này có thể sử dụng nhiều bộ nhớ máy tính của bạn hơn. Chúng ta cũng có thể cắt bớt đầu vào, nghĩa là AI sẽ quên một phần lịch sử trò chuyện để dành chỗ cho các tin nhắn mới.",
+  "increaseContextSizeDescription": "Bạn có muốn tăng kích thước ngữ cảnh không?",
+  "truncateInput": "Cắt bớt đầu vào",
+  "increaseContextSize": "Tăng kích thước ngữ cảnh"
+}

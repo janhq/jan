@@ -7,6 +7,7 @@ import {
   ModelManager,
 } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -15,7 +16,13 @@ import {
   models,
   StreamCompletionResponse,
   TokenJS,
+  ConfigOptions,
 } from 'token.js'
+
+// Extended config options to include custom fetch function
+type ExtendedConfigOptions = ConfigOptions & {
+  fetch?: typeof fetch
+}
 import { ulid } from 'ulidx'
 import { normalizeProvider } from './models'
 import { MCPTool } from '@/types/completion'
@@ -129,7 +136,9 @@ export const sendCompletion = async (
     apiKey: provider.api_key ?? (await invoke('app_token')),
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
-  })
+    // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
+    ...(providerName === 'openai-compatible' && { fetch: fetchTauri }),
+  } as ExtendedConfigOptions)
   if (
     thread.model.id &&
     !(thread.model.id in Object.values(models).flat()) &&

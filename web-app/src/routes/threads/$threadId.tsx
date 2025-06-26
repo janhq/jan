@@ -18,7 +18,6 @@ import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
-import { useOutOfContextPromiseModal } from '@/containers/dialogs/OutOfContextDialog'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
@@ -52,8 +51,6 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
   const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
-  const { showModal, PromiseModal: OutOfContextModal } =
-    useOutOfContextPromiseModal()
 
   // Function to check scroll position and scrollbar presence
   const checkScrollState = () => {
@@ -200,8 +197,6 @@ function ThreadDetail() {
 
   if (!messages || !threadModel) return null
 
-  const contextOverflowModalComponent = <OutOfContextModal />
-
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -248,8 +243,6 @@ function ThreadDetail() {
                           ))
                       }
                       index={index}
-                      showContextOverflowModal={showModal}
-                      contextOverflowModal={contextOverflowModalComponent}
                     />
                   </div>
                 )

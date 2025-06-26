@@ -10,7 +10,13 @@ type DynamicControllerProps = {
   title?: string
   className?: string
   description?: string
-  controllerType: 'input' | 'checkbox' | 'dropdown' | 'textarea' | 'slider' | string
+  controllerType:
+    | 'input'
+    | 'checkbox'
+    | 'dropdown'
+    | 'textarea'
+    | 'slider'
+    | string
   controllerProps: {
     value?: string | boolean | number
     placeholder?: string
@@ -36,7 +42,11 @@ export function DynamicControllerSetting({
       <InputControl
         type={controllerProps.type}
         placeholder={controllerProps.placeholder}
-        value={(controllerProps.value as string) || ''}
+        value={
+          typeof controllerProps.value === 'number'
+            ? controllerProps.value.toString()
+            : (controllerProps.value as string) || ''
+        }
         inputActions={controllerProps.input_actions}
         className={className}
         onChange={(newValue) => onChange(newValue)}
