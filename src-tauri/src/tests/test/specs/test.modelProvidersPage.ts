@@ -8,6 +8,10 @@ import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
 // win
 import { HomePage as WinHomePage } from '@win/homePage'
 import { SettingsPage as WinSettingsPage } from '@win/settingsPage'
+// linux
+import { HomePage as LinuxHomePage } from '@linux/homePage'
+import { SettingsPage as LinuxSettingsPage } from '@linux/settingsPage'
+
 import Flow from '@flow/flow'
 import Utilities from '@core_lib/utilities'
 const utilities = new Utilities()
@@ -36,6 +40,9 @@ describe('Model providers', () => {
     } else if (process.env.RUNNING_OS === 'win') {
       homePage = new WinHomePage(driver)
       settingsPage = new WinSettingsPage(driver)
+    } else if (process.env.RUNNING_OS === 'linux') {
+      homePage = new LinuxHomePage(driver)
+      settingsPage = new LinuxSettingsPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)

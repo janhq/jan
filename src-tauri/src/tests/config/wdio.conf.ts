@@ -26,14 +26,25 @@ export const config: WebdriverIO.Config = {
             'appium:newCommandTimeout': 300,
           },
         ]
-      : [
-          {
-            'platformName': 'macOS',
-            'appium:automationName': 'mac2',
-            'appium:app': process.env.APP_PATH,
-            'appium:bundleId': process.env.BUNDLE_ID,
-          },
-        ],
+      : process.env.RUNNING_OS === 'mac'
+        ? [
+            {
+              'platformName': 'macOS',
+              'appium:automationName': 'mac2',
+              'appium:app': process.env.APP_PATH,
+              'appium:bundleId': process.env.BUNDLE_ID,
+            },
+          ]
+        : process.env.RUNNING_OS === 'linux'
+          ? [
+              {
+                'platformName': 'Linux',
+                'appium:automationName': 'LinuxDesktop', 
+                'appium:app': process.env.APP_PATH, 
+                'appium:newCommandTimeout': 300,
+              },
+            ]
+          : [],
   // capabilities: [{
   //   "wdio:maxInstances": 1,
   //   hostname: 'localhost',

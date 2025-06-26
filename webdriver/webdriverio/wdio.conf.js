@@ -6,15 +6,17 @@ const { spawn, spawnSync } = require('child_process')
 let tauriDriver
 
 exports.config = {
-  specs: ['./test/specs/**/*.js'],
+  specs: ['./test/specs/home.e2e.ts'],
   maxInstances: 1,
+  port: 4445,
   capabilities: [
     {
+      'browserName': '',
       'tauri:options': {
-        application: '../../src-tauri/target/debug/Jan',
-        webviewOptions: {
-          userDataFolder: path.resolve(__dirname, './test/userDataFolder'),
-        },
+        application: path.resolve(
+          __dirname,
+          '../../src-tauri/target/debug/Jan'
+        ),
       },
     },
   ],
@@ -39,12 +41,26 @@ exports.config = {
   },
 
   // ensure we are running `tauri-driver` before the session starts so that we can proxy the webdriver requests
-  beforeSession: () =>
-    (tauriDriver = spawn(
-      path.resolve(os.homedir(), '.cargo', 'bin', 'tauri-driver'),
-      [],
-      { stdio: [null, process.stdout, process.stderr] }
-    )),
+  beforeSession: () => {
+    const driverPath = path.resolve(
+      os.homedir(),
+      '.cargo',
+      'bin',
+      'tauri-driver'
+    )
+    tauriDriver = spawn(driverPath, ['--port', '4455'], { stdio: 'pipe' })
+
+    if (tauriDriver && tauriDriver.stdout && tauriDriver.stderr) {
+      tauriDriver.stdout.on('data', (data) => {
+        console.log('[tauri-driver]', data.toString())
+      })
+      tauriDriver.stderr.on('data', (data) => {
+        console.error('[tauri-driver error]', data.toString())
+      })
+    } else {
+      console.error('[tauri-driver] Failed to spawn or attach stdout/stderr')
+    }
+  },
 
   // clean up the `tauri-driver` process we spawned at the start of the session
   afterSession: () => tauriDriver.kill(),

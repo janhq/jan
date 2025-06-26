@@ -5,8 +5,7 @@
     "packages": [
       "core",
       "web-app",
-      "webdriver/webdriverio",
-      "src-tauri/src/tests"
+      "webdriver/webdriverio"
     ]
   },
   "scripts": {

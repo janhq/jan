@@ -5,6 +5,8 @@ import { IHomePage } from '@interface/iHomePage'
 import { HomePage as MacHomePage } from '@mac/homePage'
 //win
 import { HomePage as WinHomePage } from '@win/homePage'
+// linux
+import { HomePage as LinuxHomePage } from '@linux/homePage'
 
 dotenv.config()
 let homePage: IHomePage
@@ -15,6 +17,8 @@ describe('Verify Jan Homepage', () => {
       homePage = new MacHomePage(driver)
     } else if (process.env.RUNNING_OS === 'win') {
       homePage = new WinHomePage(driver)
+    } else if (process.env.RUNNING_OS === 'linux') {
+      homePage = new LinuxHomePage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)

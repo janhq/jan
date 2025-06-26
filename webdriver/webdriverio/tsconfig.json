@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "module": "commonjs",
+    "strict": true,
+    "moduleResolution": "node",
+    "types": ["node", "mocha", "@wdio/globals/types"],
+    "outDir": "dist"
+  },
+  "skipLibCheck": true,
+  "noEmit": true,
+  "allowImportingTsExtensions": true,
+  "resolveJsonModule": true,
+  "isolatedModules": true,
+  "strict": true,
+  "noUnusedLocals": true,
+  "noUnusedParameters": true,
+  "noFallthroughCasesInSwitch": true,
+  "baseUrl": "./",
+  "paths": {
+    "@data/*": ["data/*"],
+    "@pom/*": ["pom/*"]
+  },
+  "include": ["test/**/*.ts", "config/**/*.ts", "wdio.conf.ts"],
+  "exclude": ["node_modules", "dist"]
+}

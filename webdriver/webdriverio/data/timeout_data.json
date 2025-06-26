@@ -1,0 +1,18 @@
+{
+  "light": 50,
+  "rocket": 100,
+  "super_fast": 500,
+  "very_fast": 1000,
+  "fast": 3000,
+  "fast_lv1": 5000,
+  "normal": 10000,
+  "normal_lv1": 15000,
+  "normal_lv2": 20000,
+  "normal_lv3": 25000,
+  "slow": 30000,
+  "very_slow": 60000,
+  "super_slow": 120000,
+  "turtle": 180000,
+  "turtle_lv1": 240000,
+  "turtle_lv2": 300000
+}

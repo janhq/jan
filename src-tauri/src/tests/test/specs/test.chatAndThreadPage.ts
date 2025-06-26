@@ -11,6 +11,11 @@ import { SettingsPage as MacSettingsPage } from '@mac/settingsPage'
 import { HomePage as WinHomePage } from '@win/homePage'
 import { ChatPage as WinChatPage } from '@win/chatPage'
 import { SettingsPage as WinSettingsPage } from '@win/settingsPage'
+// linux
+import { HomePage as LinuxHomePage } from '@linux/homePage'
+import { ChatPage as LinuxChatPage } from '@linux/chatPage'
+import { SettingsPage as LinuxSettingsPage } from '@linux/settingsPage'
+
 import { String } from 'typescript-string-operations'
 import common from '@data/common.json'
 import Utilities from '@core_lib/utilities'
@@ -47,6 +52,10 @@ describe('Chat & Thread', () => {
       homePage = new WinHomePage(driver)
       chatPage = new WinChatPage(driver)
       settingsPage = new WinSettingsPage(driver)
+    } else if (process.env.RUNNING_OS === 'linux') {
+      homePage = new LinuxHomePage(driver)
+      chatPage = new LinuxChatPage(driver)
+      settingsPage = new LinuxSettingsPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)

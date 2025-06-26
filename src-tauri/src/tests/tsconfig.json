@@ -25,6 +25,7 @@
       "@interface/*": ["pageObjects/interface/*"],
       "@mac/*": ["pageObjects/mac/*"],
       "@win/*": ["pageObjects/win/*"],
+      "@linux/*": ["pageObjects/linux/*"],
       "@core_lib/*": ["core_lib/*"],
       "@data/*": ["data/*"],
       "@flow/*": ["pageObjects/flow/*"]

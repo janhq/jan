@@ -34,8 +34,8 @@ export default abstract class BasePage implements IBasePage {
     addCenterY: number = 0
   ): Promise<void> {
     await this.waitUntilElementIsVisible(selector)
-    const element = await this.getElement(selector)
-    const rect = await element.getRect()
+    const element = await this.driver.$(selector)
+    const rect = await element.getWindowRect()
     const centerX = Math.round(rect.x + rect.width / 2)
     const centerY = Math.round(rect.y + rect.height / 2)
     const driver = this.driver as any

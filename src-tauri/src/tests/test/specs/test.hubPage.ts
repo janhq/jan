@@ -11,6 +11,10 @@ import { ChatPage as MacChatPage } from '@win/chatPage'
 import { HomePage as WinHomePage } from '@win/homePage'
 import { HubPage as WinHubPage } from '@win/hubPage'
 import { ChatPage as WinChatPage } from '@win/chatPage'
+// linux
+import { HomePage as LinuxHomePage } from '@linux/homePage'
+import { HubPage as LinuxHubPage } from '@linux/hubPage'
+import { ChatPage as LinuxChatPage } from '@linux/chatPage'
 import Flow from '@flow/flow'
 import common from '@data/common.json'
 
@@ -32,6 +36,11 @@ describe('Verify user can use a model from Hub', () => {
       homePage = new WinHomePage(driver)
       hubPage = new WinHubPage(driver)
       chatPage = new WinChatPage(driver)
+    }
+    else if (process.env.RUNNING_OS === 'linux') {
+      homePage = new LinuxHomePage(driver)
+      hubPage = new LinuxHubPage(driver)
+      chatPage = new LinuxChatPage(driver)
     }
     await homePage.activateApp(process.env.BUNDLE_ID)
     await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
