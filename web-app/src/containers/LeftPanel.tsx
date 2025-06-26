@@ -25,7 +25,7 @@ import {
 
 import { useThreads } from '@/hooks/useThreads'
 
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo, useState } from 'react'
 import {
   Dialog,
@@ -43,22 +43,22 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 
 const mainMenus = [
   {
-    title: 'common.newChat',
+    title: 'common:newChat',
     icon: IconCirclePlusFilled,
     route: route.home,
   },
   {
-    title: 'Assistants',
+    title: 'common:assistants',
     icon: IconClipboardSmileFilled,
     route: route.assistant,
   },
   {
-    title: 'common.hub',
+    title: 'common:hub',
     icon: IconAppsFilled,
     route: route.hub,
   },
   {
-    title: 'common.settings',
+    title: 'common:settings',
     icon: IconSettingsFilled,
     route: route.settings.general,
   },
@@ -114,7 +114,7 @@ const LeftPanel = () => {
             <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
             <input
               type="text"
-              placeholder={t('common.search')}
+              placeholder={t('common:search')}
               className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -138,7 +138,7 @@ const LeftPanel = () => {
               <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
               <input
                 type="text"
-                placeholder={t('common.search')}
+                placeholder={t('common:search')}
                 className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -159,7 +159,7 @@ const LeftPanel = () => {
                 <>
                   <div className="flex items-center justify-between mb-2">
                     <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold sticky top-0">
-                      {t('common.favorites')}
+                      {t('common:favorites')}
                     </span>
                     <div className="relative">
                       <DropdownMenu>
@@ -175,15 +175,14 @@ const LeftPanel = () => {
                           <DropdownMenuItem
                             onClick={() => {
                               unstarAllThreads()
-                              toast.success('All Threads Unfavorited', {
+                              toast.success(t('common:toast.allThreadsUnfavorited.title'), {
                                 id: 'unfav-all-threads',
-                                description:
-                                  'All threads have been removed from your favorites.',
+                                description: t('common:toast.allThreadsUnfavorited.description'),
                               })
                             }}
                           >
                             <IconStar size={16} />
-                            <span>{t('common.unstarAll')}</span>
+                            <span>{t('common:unstarAll')}</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -206,7 +205,7 @@ const LeftPanel = () => {
               {unFavoritedThreads.length > 0 && (
                 <div className="flex items-center justify-between mb-2">
                   <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                    {t('common.recents')}
+                    {t('common:recents')}
                   </span>
                   <div className="relative">
                     <Dialog>
@@ -231,15 +230,18 @@ const LeftPanel = () => {
                               onSelect={(e) => e.preventDefault()}
                             >
                               <IconTrash size={16} />
-                              <span>{t('common.deleteAll')}</span>
+                              <span>{t('common:deleteAll')}</span>
                             </DropdownMenuItem>
                           </DialogTrigger>
                           <DialogContent>
                             <DialogHeader>
-                              <DialogTitle>Delete All Threads</DialogTitle>
+                              <DialogTitle>
+                                {t('common:dialogs.deleteAllThreads.title')}
+                              </DialogTitle>
                               <DialogDescription>
-                                All threads will be deleted. This action cannot
-                                be undone.
+                                {t(
+                                  'common:dialogs.deleteAllThreads.description'
+                                )}
                               </DialogDescription>
                               <DialogFooter className="mt-2">
                                 <DialogClose asChild>
@@ -248,7 +250,7 @@ const LeftPanel = () => {
                                     size="sm"
                                     className="hover:no-underline"
                                   >
-                                    Cancel
+                                    {t('common:cancel')}
                                   </Button>
                                 </DialogClose>
                                 <Button
@@ -256,17 +258,16 @@ const LeftPanel = () => {
                                   size="sm"
                                   onClick={() => {
                                     deleteAllThreads()
-                                    toast.success('Delete All Threads', {
+                                    toast.success(t('common:toast.deleteAllThreads.title'), {
                                       id: 'delete-all-thread',
-                                      description:
-                                        'All threads have been permanently deleted.',
+                                      description: t('common:toast.deleteAllThreads.description'),
                                     })
                                     setTimeout(() => {
                                       navigate({ to: route.home })
                                     }, 0)
                                   }}
                                 >
-                                  Delete
+                                  {t('common:deleteAll')}
                                 </Button>
                               </DialogFooter>
                             </DialogHeader>
@@ -282,11 +283,12 @@ const LeftPanel = () => {
                 <div className="px-1 mt-2">
                   <div className="flex items-center gap-1 text-left-panel-fg/80">
                     <IconSearch size={18} />
-                    <h6 className="font-medium text-base">No results found</h6>
+                    <h6 className="font-medium text-base">
+                      {t('common:noResultsFound')}
+                    </h6>
                   </div>
                   <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                    We couldn't find any chats matching your search. Try a
-                    different keyword.
+                    {t('common:noResultsFoundDesc')}
                   </p>
                 </div>
               )}
@@ -296,10 +298,12 @@ const LeftPanel = () => {
                   <div className="px-1 mt-2">
                     <div className="flex items-center gap-1 text-left-panel-fg/80">
                       <IconMessageFilled size={18} />
-                      <h6 className="font-medium text-base">No threads yet</h6>
+                      <h6 className="font-medium text-base">
+                        {t('common:noThreadsYet')}
+                      </h6>
                     </div>
                     <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      Start a new conversation to see your thread history here.
+                      {t('common:noThreadsYetDesc')}
                     </p>
                   </div>
                 </>

@@ -1,4 +1,8 @@
 {
+  "-- Switcher": {
+    "type": "separator",
+    "title": "Switcher"
+  },
   "index": "Overview",
   "how-to-separator": {
     "title": "HOW TO",
@@ -6,7 +10,7 @@
   },
   "desktop": "Install 👋 Jan",
   "threads": "Start Chatting",
-  "manage-models": "Manage Models",
+  "jan-models": "Use Jan Models",
   "assistants": "Create Assistants",
 
   "tutorials-separators": {
@@ -15,8 +19,7 @@
   },
   "quickstart": "Quickstart",
   "remote-models": "Connect to Remote Models",
-  "server-examples": "Provide AI to Tools",
-  "mcp": "Model Context Protocol",
+  "server-examples": "Integrations",
 
   "explanation-separator": {
     "title": "EXPLANATION",
@@ -25,12 +28,18 @@
   "llama-cpp": "Local AI Engine",
   "api-server": "Server Overview",
   "data-folder": "Jan Data Folder",
-  "privacy": "Privacy",
   "privacy-policy": {
     "type": "page",
     "display": "hidden",
     "title": "Privacy Policy"
   },
+
+  "advanced-separator": {
+    "title": "ADVANCED",
+    "type": "separator"
+  },
+  "manage-models": "Manage Models",
+  "mcp": "Model Context Protocol",
 
   "reference-separator": {
     "title": "REFERENCE",
@@ -38,5 +47,6 @@
   },
   "settings": "Settings",
   "troubleshooting": "Troubleshooting",
-  "model-parameters": "Model Parameters"
+  "model-parameters": "Model Parameters",
+  "privacy": "Privacy"
 }

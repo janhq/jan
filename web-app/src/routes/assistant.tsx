@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.assistant as any)({
@@ -24,6 +25,7 @@ export const Route = createFileRoute(route.assistant as any)({
 })
 
 function Assistant() {
+  const { t } = useTranslation()
   const { assistants, addAssistant, updateAssistant, deleteAssistant } =
     useAssistant()
   const [open, setOpen] = useState(false)
@@ -57,7 +59,7 @@ function Assistant() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <span>Assistants</span>
+        <span>{t('assistants:title')}</span>
       </HeaderPage>
       <div className="h-full p-4 overflow-y-auto">
         <div className="grid grid-cols-3 gap-4">
@@ -84,7 +86,7 @@ function Assistant() {
                 <div className="flex items-center gap-0.5">
                   <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                    title="Edit Assistant"
+                    title={t('assistants:editAssistant')}
                     onClick={() => {
                       setEditingKey(assistant.id)
                       setOpen(true)
@@ -94,7 +96,7 @@ function Assistant() {
                   </div>
                   <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                    title="Delete Assistant"
+                    title={t('assistants:deleteAssistant')}
                     onClick={() => handleDelete(assistant.id)}
                   >
                     <IconTrash size={18} className="text-main-view-fg/50" />
@@ -132,10 +134,9 @@ function Assistant() {
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete Assistant</DialogTitle>
+              <DialogTitle>{t('assistants:deleteConfirmation')}</DialogTitle>
               <DialogDescription>
-                Are you sure you want to delete this assistant? This action
-                cannot be undone.
+                {t('assistants:deleteConfirmationDesc')}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -143,10 +144,10 @@ function Assistant() {
                 variant="link"
                 onClick={() => setDeleteConfirmOpen(false)}
               >
-                Cancel
+                {t('assistants:cancel')}
               </Button>
               <Button variant="destructive" onClick={confirmDelete} autoFocus>
-                Delete
+                {t('assistants:delete')}
               </Button>
             </DialogFooter>
           </DialogContent>

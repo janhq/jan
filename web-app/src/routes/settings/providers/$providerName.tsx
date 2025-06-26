@@ -19,7 +19,7 @@ import {
   useParams,
   useSearch,
 } from '@tanstack/react-router'
-import { t } from 'i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
@@ -51,30 +51,28 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
   },
 })
 
-const steps = [
-  {
-    target: '.first-step-setup-remote-provider',
-    title: 'Choose a Provider',
-    disableBeacon: true,
-    content:
-      'Pick the provider you want to use, make sure you have access to an API key for it.',
-  },
-  {
-    target: '.second-step-setup-remote-provider',
-    title: 'Get Your API Key',
-    disableBeacon: true,
-    content:
-      "Log into the provider's dashboard to find or generate your API key.",
-  },
-  {
-    target: '.third-step-setup-remote-provider',
-    title: 'Insert Your API Key',
-    disableBeacon: true,
-    content: 'Paste your API key here to connect and activate the provider.',
-  },
-]
-
 function ProviderDetail() {
+  const { t } = useTranslation()
+  const steps = [
+    {
+      target: '.first-step-setup-remote-provider',
+      title: t('providers:joyride.chooseProviderTitle'),
+      disableBeacon: true,
+      content: t('providers:joyride.chooseProviderContent'),
+    },
+    {
+      target: '.second-step-setup-remote-provider',
+      title: t('providers:joyride.getApiKeyTitle'),
+      disableBeacon: true,
+      content: t('providers:joyride.getApiKeyContent'),
+    },
+    {
+      target: '.third-step-setup-remote-provider',
+      title: t('providers:joyride.insertApiKeyTitle'),
+      disableBeacon: true,
+      content: t('providers:joyride.insertApiKeyContent'),
+    },
+  ]
   const { step } = useSearch({ from: Route.id })
   const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
@@ -109,9 +107,8 @@ function ProviderDetail() {
 
   const handleRefreshModels = async () => {
     if (!provider || !provider.base_url) {
-      toast.error('Refresh Models', {
-        description:
-          'Provider must have base URL and API key configured to fetch models.',
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
       })
       return
     }
@@ -143,19 +140,26 @@ function ProviderDetail() {
           models: updatedModels,
         })
 
-        toast.success('Refresh Models', {
-          description: `Added ${modelsToAdd.length} new model(s) from ${provider.provider}.`,
+        toast.success(t('providers:models'), {
+          description: t('providers:refreshModelsSuccess', {
+            count: modelsToAdd.length,
+            provider: provider.provider,
+          }),
         })
       } else {
-        toast.success('Refresh Models', {
-          description:
-            'No new models found. All available models are already added.',
+        toast.success(t('providers:models'), {
+          description: t('providers:noNewModels'),
         })
       }
     } catch (error) {
-      console.error('Failed to refresh models:', error)
-      toast.error('Refresh Models', {
-        description: `Failed to fetch models from ${provider.provider}. Please check your API key and base URL.`,
+      console.error(
+        t('providers:refreshModelsFailed', { provider: provider.provider }),
+        error
+      )
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsFailed', {
+          provider: provider.provider,
+        }),
       })
     } finally {
       setRefreshingModels(false)
@@ -211,16 +215,16 @@ function ProviderDetail() {
         disableOverlayClose={true}
         callback={handleJoyrideCallback}
         locale={{
-          back: 'Back',
-          close: 'Close',
-          last: 'Finish',
-          next: 'Next',
-          skip: 'Skip',
+          back: t('providers:joyride.back'),
+          close: t('providers:joyride.close'),
+          last: t('providers:joyride.last'),
+          next: t('providers:joyride.next'),
+          skip: t('providers:joyride.skip'),
         }}
       />
       <div className="flex flex-col h-full">
         <HeaderPage>
-          <h1 className="font-medium">{t('common.settings')}</h1>
+          <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
         <div className="flex h-full w-full">
           <div className="flex">
@@ -356,7 +360,7 @@ function ProviderDetail() {
                   header={
                     <div className="flex items-center justify-between mb-4">
                       <h1 className="text-main-view-fg font-medium text-base">
-                        Models
+                        {t('providers:models')}
                       </h1>
                       <div className="flex items-center gap-2">
                         {provider && provider.provider !== 'llama.cpp' && (
@@ -385,8 +389,8 @@ function ProviderDetail() {
                                   )}
                                   <span className="text-main-view-fg/70">
                                     {refreshingModels
-                                      ? 'Refreshing...'
-                                      : 'Refresh'}
+                                      ? t('providers:refreshing')
+                                      : t('providers:refresh')}
                                   </span>
                                 </div>
                               </Button>
@@ -416,15 +420,18 @@ function ProviderDetail() {
                                   await importModel(selectedFile)
                                 } catch (error) {
                                   console.error(
-                                    'Failed to import model:',
+                                    t('providers:importModelError'),
                                     error
                                   )
                                 } finally {
                                   // Refresh the provider to update the models list
                                   getProviders().then(setProviders)
-                                  toast.success('Import Model', {
+                                  toast.success(t('providers:import'), {
                                     id: `import-model-${provider.provider}`,
-                                    description: `Model ${provider.provider} has been imported successfully.`,
+                                    description: t(
+                                      'providers:importModelSuccess',
+                                      { provider: provider.provider }
+                                    ),
                                   })
                                 }
                               }
@@ -436,7 +443,7 @@ function ProviderDetail() {
                                 className="text-main-view-fg/50"
                               />
                               <span className="text-main-view-fg/70">
-                                Import
+                                {t('providers:import')}
                               </span>
                             </div>
                           </Button>
@@ -487,7 +494,7 @@ function ProviderDetail() {
                                           handleStopModel(model.id)
                                         }
                                       >
-                                        Stop
+                                        {t('providers:stop')}
                                       </Button>
                                     ) : (
                                       <Button
@@ -507,7 +514,7 @@ function ProviderDetail() {
                                             />
                                           </div>
                                         ) : (
-                                          'Start'
+                                          t('providers:start')
                                         )}
                                       </Button>
                                     )}
@@ -522,14 +529,13 @@ function ProviderDetail() {
                     <div className="-mt-2">
                       <div className="flex items-center gap-2 text-main-view-fg/80">
                         <h6 className="font-medium text-base">
-                          No model found
+                          {t('providers:noModelFound')}
                         </h6>
                       </div>
                       <p className="text-main-view-fg/70 mt-1 text-xs leading-relaxed">
-                        Available models will be listed here. If you don't have
-                        any models yet, visit the&nbsp;
-                        <Link to={route.hub}>Hub</Link>
-                        &nbsp;to download.
+                        {t('providers:noModelFoundDesc')}
+                        &nbsp;
+                        <Link to={route.hub}>{t('common:hub')}</Link>
                       </p>
                     </div>
                   )}

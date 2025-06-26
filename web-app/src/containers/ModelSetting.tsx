@@ -14,6 +14,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { updateModel, stopModel } from '@/services/models'
 import { ModelSettingParams } from '@janhq/core'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -27,6 +28,7 @@ export function ModelSetting({
   smallIcon,
 }: ModelSettingProps) {
   const { updateProvider } = useModelProvider()
+  const { t } = useTranslation()
 
   // Create a debounced version of stopModel that waits 500ms after the last call
   const debouncedStopModel = debounce((modelId: string) => {
@@ -104,9 +106,9 @@ export function ModelSetting({
       </SheetTrigger>
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Model Settings - {model.id}</SheetTitle>
+          <SheetTitle>{t('common:modelSettings.title', { modelId: model.id })}</SheetTitle>
           <SheetDescription>
-            Configure model settings to optimize performance and behavior.
+            {t('common:modelSettings.description')}
           </SheetDescription>
         </SheetHeader>
         <div className="px-4 space-y-6">

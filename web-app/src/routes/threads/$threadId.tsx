@@ -18,6 +18,7 @@ import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -25,6 +26,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 })
 
 function ThreadDetail() {
+  const { t } = useTranslation()
   const { threadId } = useParams({ from: Route.id })
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -267,7 +269,7 @@ function ThreadDetail() {
                 setIsUserScrolling(false)
               }}
             >
-              <p className="text-xs">Scroll to bottom</p>
+              <p className="text-xs">{t('scrollToBottom')}</p>
               <ArrowDown size={12} />
             </div>
           </div>

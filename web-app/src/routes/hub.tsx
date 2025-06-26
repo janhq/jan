@@ -36,6 +36,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelProps = {
   model: {
@@ -58,12 +59,12 @@ export const Route = createFileRoute(route.hub as any)({
   }),
 })
 
-const sortOptions = [
-  { value: 'newest', name: 'Newest' },
-  { value: 'most-downloaded', name: 'Most downloaded' },
-]
-
 function Hub() {
+  const { t } = useTranslation()
+  const sortOptions = [
+    { value: 'newest', name: t('hub:sortNewest') },
+    { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
+  ]
   const { sources, fetchSources, loading } = useModelSources()
   const search = useSearch({ from: route.hub as any })
   const [searchValue, setSearchValue] = useState('')
@@ -259,7 +260,7 @@ function Hub() {
           )}
           {isDownloaded ? (
             <Button size="sm" onClick={() => handleUseModel(modelId)}>
-              Use
+              {t('hub:use')}
             </Button>
           ) : (
             <Button
@@ -268,7 +269,7 @@ function Hub() {
               className={cn(isDownloading && 'hidden')}
               ref={isRecommended ? downloadButtonRef : undefined}
             >
-              Download
+              {t('hub:download')}
             </Button>
           )}
         </div>
@@ -277,11 +278,12 @@ function Hub() {
   }, [
     downloadProcesses,
     llamaProvider?.models,
-    handleUseModel,
     isRecommendedModel,
     downloadButtonRef,
     localDownloadingModels,
     addLocalDownloadingModel,
+    t,
+    handleUseModel,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -337,18 +339,19 @@ function Hub() {
   const steps = [
     {
       target: '.hub-model-card-step',
-      title: 'Recommended Model',
+      title: t('hub:joyride.recommendedModelTitle'),
       disableBeacon: true,
-      content:
-        "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-Nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
+      content: t('hub:joyride.recommendedModelContent'),
     },
     {
       target: '.hub-download-button-step',
-      title: isDownloading ? 'Download in Progress' : 'Download Model',
+      title: isDownloading
+        ? t('hub:joyride.downloadInProgressTitle')
+        : t('hub:joyride.downloadModelTitle'),
       disableBeacon: true,
       content: isDownloading
-        ? 'Your model is now downloading. Track progress here - once finished, it will be ready to use.'
-        : 'Click the Download button to begin downloading the model.',
+        ? t('hub:joyride.downloadInProgressContent')
+        : t('hub:joyride.downloadModelContent'),
     },
   ]
 
@@ -372,11 +375,13 @@ function Hub() {
         disableOverlayClose={true}
         callback={handleJoyrideCallback}
         locale={{
-          back: 'Back',
-          close: 'Close',
-          last: !isDownloading ? 'Download' : 'Finish',
-          next: 'Next',
-          skip: 'Skip',
+          back: t('hub:joyride.back'),
+          close: t('hub:joyride.close'),
+          last: !isDownloading
+            ? t('hub:joyride.lastWithDownload')
+            : t('hub:joyride.last'),
+          next: t('hub:joyride.next'),
+          skip: t('hub:joyride.skip'),
         }}
       />
       <div className="flex h-full w-full">
@@ -390,7 +395,7 @@ function Hub() {
                   <IconSearch className="text-main-view-fg/60" size={14} />
                 )}
                 <input
-                  placeholder="Search for models on Hugging Face..."
+                  placeholder={t('hub:searchPlaceholder')}
                   value={searchValue}
                   onChange={handleSearchChange}
                   className="w-full focus:outline-none"
@@ -400,7 +405,7 @@ function Hub() {
                 <DropdownMenu>
                   <DropdownMenuTrigger>
                     <span
-                      title="Edit Theme"
+                      title={t('hub:editTheme')}
                       className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
                     >
                       {
@@ -431,7 +436,7 @@ function Hub() {
                     onCheckedChange={setShowOnlyDownloaded}
                   />
                   <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-                    Downloaded
+                    {t('hub:downloaded')}
                   </span>
                 </div>
               </div>
@@ -442,13 +447,13 @@ function Hub() {
               {loading ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
-                    Loading models...
+                    {t('hub:loadingModels')}
                   </div>
                 </div>
               ) : filteredModels.length === 0 ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
-                    No models found
+                    {t('hub:noModels')}
                   </div>
                 </div>
               ) : (
@@ -513,14 +518,14 @@ function Hub() {
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-main-view-fg/80">
-                            By {model?.author}
+                            {t('hub:by')} {model?.author}
                           </span>
                           <div className="flex items-center gap-4 ml-2">
                             <div className="flex items-center gap-1">
                               <IconDownload
                                 size={18}
                                 className="text-main-view-fg/50"
-                                title="Downloads"
+                                title={t('hub:downloads')}
                               />
                               <span className="text-main-view-fg/80">
                                 {model.metadata?.downloads || 0}
@@ -530,7 +535,7 @@ function Hub() {
                               <IconFileCode
                                 size={20}
                                 className="text-main-view-fg/50"
-                                title="Variants"
+                                title={t('hub:variants')}
                               />
                               <span className="text-main-view-fg/80">
                                 {model.models?.length || 0}
@@ -545,7 +550,7 @@ function Hub() {
                                   }
                                 />
                                 <p className="text-main-view-fg/70">
-                                  Show variants
+                                  {t('hub:showVariants')}
                                 </p>
                               </div>
                             )}
@@ -603,7 +608,7 @@ function Hub() {
                                           return (
                                             <div
                                               className="flex items-center justify-center rounded bg-main-view-fg/10"
-                                              title="Use this model"
+                                              title={t('hub:useModel')}
                                             >
                                               <Button
                                                 variant="link"
@@ -612,7 +617,7 @@ function Hub() {
                                                   handleUseModel(variant.id)
                                                 }
                                               >
-                                                Use
+                                                {t('hub:use')}
                                               </Button>
                                             </div>
                                           )
@@ -621,7 +626,7 @@ function Hub() {
                                         return (
                                           <div
                                             className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                            title="Download model"
+                                            title={t('hub:downloadModel')}
                                             onClick={() => {
                                               addLocalDownloadingModel(
                                                 variant.id
