@@ -6,6 +6,7 @@ type ModelProviderState = {
   providers: ModelProvider[]
   selectedProvider: string
   selectedModel: Model | null
+  deletedModels: string[]
   getModelBy: (modelId: string) => Model | undefined
   setProviders: (providers: ModelProvider[]) => void
   getProviderByName: (providerName: string) => ModelProvider | undefined
@@ -25,6 +26,7 @@ export const useModelProvider = create<ModelProviderState>()(
       providers: [],
       selectedProvider: 'llama.cpp',
       selectedModel: null,
+      deletedModels: [],
       getModelBy: (modelId: string) => {
         const provider = get().providers.find(
           (provider) => provider.provider === get().selectedProvider
@@ -35,6 +37,11 @@ export const useModelProvider = create<ModelProviderState>()(
       setProviders: (providers) =>
         set((state) => {
           const existingProviders = state.providers
+          // Ensure deletedModels is always an array
+          const currentDeletedModels = Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+
           const updatedProviders = providers.map((provider) => {
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
@@ -43,7 +50,9 @@ export const useModelProvider = create<ModelProviderState>()(
             const mergedModels = [
               ...models,
               ...(provider?.models ?? []).filter(
-                (e) => !models.some((m) => m.id === e.id)
+                (e) =>
+                  !models.some((m) => m.id === e.id) &&
+                  !currentDeletedModels.includes(e.id)
               ),
             ]
             return {
@@ -118,17 +127,25 @@ export const useModelProvider = create<ModelProviderState>()(
         return modelObject
       },
       deleteModel: (modelId: string) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
-            const models = provider.models.filter(
-              (model) => model.id !== modelId
-            )
-            return {
-              ...provider,
-              models,
-            }
-          }),
-        }))
+        set((state) => {
+          // Ensure deletedModels is always an array
+          const currentDeletedModels = Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+
+          return {
+            providers: state.providers.map((provider) => {
+              const models = provider.models.filter(
+                (model) => model.id !== modelId
+              )
+              return {
+                ...provider,
+                models,
+              }
+            }),
+            deletedModels: [...currentDeletedModels, modelId],
+          }
+        })
       },
       addProvider: (provider: ModelProvider) => {
         set((state) => ({

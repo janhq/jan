@@ -65,6 +65,54 @@ const config: DocsThemeConfig = {
       </div>
     ),
   },
+  sidebar: {
+    titleComponent: ({ type, title }) => {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const { asPath } = useRouter()
+      if (type === 'separator' && title === 'Switcher') {
+        return (
+          <div className="-mx-2 hidden md:block">
+            {[
+              { title: 'Jan', path: '/docs', Icon: LibraryBig },
+              {
+                title: 'Jan Web',
+                path: '/platforms',
+                Icon: BrainCircuit,
+              },
+              { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
+              {
+                title: 'API Platform',
+                path: '/platforms',
+                Icon: Computer,
+              },
+            ].map((item) =>
+              asPath.startsWith(item.path) ? (
+                <div
+                  key={item.path}
+                  className="group mb-3 flex flex-row items-center gap-3 nx-text-primary-800 dark:nx-text-primary-600"
+                >
+                  <item.Icon className="w-7 h-7 p-1 border  border-gray-200 dark:border-gray-700 rounded nx-bg-primary-100 dark:nx-bg-primary-400/10" />
+                  {item.title}
+                </div>
+              ) : (
+                <Link
+                  href={item.path}
+                  key={item.path}
+                  className="group mb-3 flex flex-row items-center gap-3 text-gray-500 hover:text-primary/100"
+                >
+                  <item.Icon className="w-7 h-7 p-1 border rounded border-gray-200 dark:border-gray-700" />
+                  {item.title}
+                </Link>
+              )
+            )}
+          </div>
+        )
+      }
+      return title
+    },
+    defaultMenuCollapseLevel: 1,
+    toggleButton: true,
+  },
   toc: {
     backToTop: true,
   },
@@ -83,14 +131,14 @@ const config: DocsThemeConfig = {
           name="description"
           content={
             frontMatter?.description ||
-            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI’s GPT-4 or Groq.`
+            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
           }
         />
         <meta
           name="og:description"
           content={
             frontMatter?.description ||
-            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI’s GPT-4 or Groq.`
+            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
           }
         />
         <link

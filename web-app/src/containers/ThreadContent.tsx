@@ -147,7 +147,6 @@ export const ThreadContent = memo(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      showContextOverflowModal?: () => Promise<unknown>
       updateMessage: (item: ThreadMessage, message: string) => void
     }
   ) => {
@@ -199,10 +198,7 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(
-          toSendMessage.content?.[0]?.text?.value || '',
-          item.showContextOverflowModal
-        )
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
