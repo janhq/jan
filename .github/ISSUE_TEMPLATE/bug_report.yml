@@ -1,6 +1,5 @@
 name: "\U0001F41B Bug Report"
 description: "If something isn't working as expected \U0001F914"
-labels: [ "type: bug" ]
 title: 'bug: [DESCRIPTION]'
 
 body:
