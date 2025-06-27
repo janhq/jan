@@ -280,7 +280,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...(model.id.toLowerCase().includes('jan-nano')
               ? { reasoning_budget: 0 }
               : { reasoning_budget: this.reasoning_budget }),
-            ...(this.context_shift === false
+            ...(this.context_shift !== true // explicit true required to enable context shift
               ? { 'no-context-shift': true }
               : {}),
             ...(modelSettings.ngl === -1 || modelSettings.ngl === undefined
