@@ -47,10 +47,6 @@ exports.config = {
       'tauri-driver'
     )
     const args = ['--port', tauriPort.toString()]
-    if (isWindows) {
-      args.push('--native-driver', 'C:\\tools\\webdrivers\\msedgedriver.exe')
-    }
-
     tauriDriver = spawn(driverPath, args, { stdio: 'pipe' })
 
     if (tauriDriver && tauriDriver.stdout && tauriDriver.stderr) {
