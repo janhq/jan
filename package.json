@@ -20,7 +20,7 @@
     "test:e2e:darwin": "echo 'E2E tests are not supported on macOS yet due to WebDriver limitations'",
     "test:e2e": "run-script-os",
     "dev:web": "yarn workspace @janhq/web-app dev",
-    "dev:tauri": "CLEAN=true yarn build:icon && yarn copy:assets:tauri && tauri dev",
+    "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && tauri dev",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",

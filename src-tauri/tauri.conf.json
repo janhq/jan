@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeDevCommand": "cross-env IS_TAURI=true CLEAN=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {
@@ -90,10 +90,7 @@
       "resources/lib/",
       "binaries/**/*"
     ],
-    "externalBin": [
-      "resources/bin/bun",
-      "resources/bin/uv"
-    ],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

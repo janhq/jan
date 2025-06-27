@@ -29,7 +29,7 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
                 }
             }
 
-            #[cfg(windows)]
+            #[cfg(all(windows, target_arch = "x86_64"))]
             {
                 use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
                 use windows_sys::Win32::Foundation::BOOL;
