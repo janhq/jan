@@ -79,13 +79,6 @@ const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: st
   globalThis.core.api?.isSubdirectory(from, to)
 
 /**
- * Get system information
- * @returns {Promise<any>} - A promise that resolves with the system information.
- */
-const systemInformation: () => Promise<SystemInformation> = () =>
-  globalThis.core.api?.systemInformation()
-
-/**
  * Show toast message from browser processes.
  * @param title
  * @param message
@@ -117,7 +110,6 @@ export {
   log,
   isSubdirectory,
   getUserHomePath,
-  systemInformation,
   showToast,
   dirName,
 }

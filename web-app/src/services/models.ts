@@ -5,7 +5,6 @@ import {
   SettingComponentProps,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 // Types for model catalog
 export interface ModelQuant {
   model_id: string
@@ -45,7 +44,7 @@ export const fetchModels = async () => {
  */
 export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
   try {
-    const response = await fetchTauri(MODEL_CATALOG_URL)
+    const response = await fetch(MODEL_CATALOG_URL)
 
     if (!response.ok) {
       throw new Error(
