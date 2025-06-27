@@ -17,9 +17,10 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   presence_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   repeat_last_n: (value: any) => typeof value === 'number',
   repeat_penalty: (value: any) => typeof value === 'number',
+  min_p: (value: any) => typeof value === 'number',
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
-  ngl: (value: any) => Number.isInteger(value),
+  ngl: (value: any) => Number.isInteger(value) && value >= 0,
   embedding: (value: any) => typeof value === 'boolean',
   n_parallel: (value: any) => Number.isInteger(value) && value >= 0,
   cpu_threads: (value: any) => Number.isInteger(value) && value >= 0,
