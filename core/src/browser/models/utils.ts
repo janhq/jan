@@ -20,7 +20,7 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   min_p: (value: any) => typeof value === 'number',
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
-  ngl: (value: any) => Number.isInteger(value),
+  ngl: (value: any) => Number.isInteger(value) && value >= 0,
   embedding: (value: any) => typeof value === 'boolean',
   n_parallel: (value: any) => Number.isInteger(value) && value >= 0,
   cpu_threads: (value: any) => Number.isInteger(value) && value >= 0,
