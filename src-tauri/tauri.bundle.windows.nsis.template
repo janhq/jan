@@ -33,7 +33,7 @@ ${StrLoc}
 !define VERSION "jan_version"
 !define VERSIONWITHBUILD "jan_build"
 !define HOMEPAGE ""
-!define INSTALLMODE "currentUser"
+!define INSTALLMODE "both"
 !define LICENSE ""
 !define INSTALLERICON "D:\a\jan\jan\src-tauri\icons\icon.ico"
 !define SIDEBARIMAGE ""
