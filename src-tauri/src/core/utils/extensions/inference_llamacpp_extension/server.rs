@@ -133,7 +133,7 @@ pub async fn load_llama_model(
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
     // command.stdout(Stdio::piped());
     // command.stderr(Stdio::piped());
-    #[cfg(windows)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     {
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
@@ -196,7 +196,7 @@ pub async fn unload_llama_model(
             }
         }
 
-        #[cfg(windows)]
+        #[cfg(all(windows, target_arch = "x86_64"))]
         {
             use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
             use windows_sys::Win32::Foundation::BOOL;
