@@ -58,7 +58,6 @@ Root directory: `~/jan`
 </Callout>
 
 ```sh
-#updated
 /assistants/
   /jan/
     assistant.json
@@ -190,54 +189,63 @@ GPU settings (`settings.json`):
 | is_initial          | First run flag                             |
 | vulkan              | Vulkan support                             |
 
-### `themes/`
-Visual wardrobe. Each theme's `theme.json`:
-
-| Parameter         | Description                               |
-|------------------|-------------------------------------------|
-| id               | Theme identifier                          |
-| displayName      | UI name                                   |
-| reduceTransparent| Transparency control                      |
-| nativeTheme      | OS theme sync                             |
-| variables        | Component settings                        |
 
 ### `threads/`
 Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
 
 - `messages.jsonl`:
 ```json
-    {
-      "id":"01J6Y6FH8PFTHQB5PNJTHEN27C",
-      "thread_id":"jan_1725437954",
-      "type":"Thread",
-      "role":"assistant",
-      "content":
-      [
-        {
-          "type": "text",
-          "text": {
-            "value": "Hello! Is there something I can help you with or would you like to chat?",
-            "annotations": []
-          }
-        }
-      ],
-      "status": "ready",
-      "created": 1725442802966,
-      "updated": 1725442802966,
-      "object": "thread.message"
-    }
+  {
+    "completed_at": 0,
+    "content": [
+      {
+        "text": {
+          "annotations": [],
+          "value": "Hello! I can help you with various tasks. I can search for information on the internet, including news, videos, images, shopping, and more. I can also scrape webpages to extract specific information. Let me know what you need!"
+        },
+        "type": "text"
+      }
+    ],
+    "created_at": 1751012639307,
+    "id": "01JYR7S0JB5ZBGMJV52KWMW5VW",
+    "metadata": {
+      "assistant": {
+        "avatar": "👋",
+        "id": "jan",
+        "instructions": "You have access to a set of tools to help you answer the user's question. You can use only one tool per message, and you'll receive the result of that tool in the user's next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.",
+        "name": "Jan",
+        "parameters": ""
+      },
+      "tokenSpeed": {
+        "lastTimestamp": 1751012637097,
+        "message": "01JYR7S0GW5M9PSHMRE7T8VQJM",
+        "tokenCount": 49,
+        "tokenSpeed": 22.653721682847895
+      }
+    },
+    "object": "thread.message",
+    "role": "assistant",
+    "status": "ready",
+    "thread_id": "8f2c9922-db49-4d1e-8620-279c05baf2d0",
+    "type": "text"
+  }
 ```
 
 - `thread.json`:
 
 | Parameter   | Description                                    |
 |------------|------------------------------------------------|
+| assistants | Assistant configuration clone                  |
+| created    | Creation timestamp                             |
 | id         | Thread identifier                              |
+| metadata   | Additional thread data                         |
+| model      | Active model settings                          |
 | object     | OpenAI compatibility marker                    |
 | title      | Thread name                                    |
-| assistants | Assistant configuration clone                  |
-| model      | Active model settings                          |
-| metadata   | Additional thread data                         |
+| updated    | Updated timestamp                              |
+
+
+
 
 ## Delete Jan Data
 Uninstall guides: [Mac](/docs/desktop/mac#step-2-clean-up-data-optional),
