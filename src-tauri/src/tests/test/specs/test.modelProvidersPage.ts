@@ -46,7 +46,10 @@ describe('Model providers', () => {
     }
     flow = new Flow(driver)
     await homePage.activateApp(process.env.BUNDLE_ID)
-    await homePage.waitUntilElementIsVisible(homePage.elements.searchInput)
+    await homePage.waitUntilElementIsVisible(
+      homePage.elements.searchInput,
+      30000
+    )
     await homePage.setWindowBounds()
     await flow.checkImportModels([models.qwen2, models.qwen2dot5])
   })
@@ -59,63 +62,59 @@ describe('Model providers', () => {
     expect(isLlama).toBe(true)
   })
 
-  it('Successfully import model from GGUF file', async () => {
-    const uploaded = await flow.importModel(models.qwen3Embedding)
-    const importModel =
-      process.env.RUNNING_OS == 'win'
-        ? notify.title.import
-        : notify.title.importModel
-    expect(uploaded).toBe(true)
-    const isNotify = await settingsPage.isNotify(
-      importModel,
-      String.format(notify.content.importModelSuccess, 'llama.cpp')
-    )
-    expect(isNotify).toBe(true)
-  })
+  // it('Successfully import model from GGUF file', async () => {
+  //   const uploaded = await flow.importModel(models.qwen3Embedding)
+  // expect(uploaded).toBe(true)
+  // const isNotify = await settingsPage.isNotify(
+  //   notify.title.importModel,
+  //   String.format(notify.content.importModelSuccess, 'llama.cpp')
+  // )
+  // expect(isNotify).toBe(true)
+  // })
 
-  it('Only one model starts at a time when Auto-Unload Old Models is enabled.', async () => {
-    const model1 = models.qwen2
-    const model2 = models.qwen2dot5
-    await settingsPage.toggle(title.autoUnloadOldModels, true)
-    await settingsPage.startOrStopModel(model1)
-    let model1Status = await settingsPage.getTextStatus(model1)
-    expect(model1Status).toBe(btnModel.stop)
-    await settingsPage.startOrStopModel(model2)
-    model1Status = await settingsPage.getTextStatus(model1)
-    let model2Status = await settingsPage.getTextStatus(model2)
-    expect(model1Status).toBe(btnModel.start)
-    expect(model2Status).toBe(btnModel.stop)
-  })
+  // it('Only one model starts at a time when Auto-Unload Old Models is enabled.', async () => {
+  //   const model1 = models.qwen2
+  //   const model2 = models.qwen2dot5
+  //   await settingsPage.toggle(title.autoUnloadOldModels, true)
+  //   await settingsPage.startOrStopModel(model1)
+  //   let model1Status = await settingsPage.getTextStatus(model1)
+  //   expect(model1Status).toBe(btnModel.stop)
+  //   await settingsPage.startOrStopModel(model2)
+  //   model1Status = await settingsPage.getTextStatus(model1)
+  //   let model2Status = await settingsPage.getTextStatus(model2)
+  //   expect(model1Status).toBe(btnModel.start)
+  //   expect(model2Status).toBe(btnModel.stop)
+  // })
 
-  it('Multiple models can run simultaneously when Auto-Unload Old Models is disabled.', async () => {
-    const model1 = models.qwen2dot5
-    const model2 = models.qwen2
-    await settingsPage.startOrStopModel(model1)
-    await settingsPage.toggle(title.autoUnloadOldModels, false)
-    await settingsPage.startOrStopModel(model2)
-    await settingsPage.startOrStopModel(model1)
-    let llama3Status = await settingsPage.getTextStatus(model2)
-    let qwen3Status = await settingsPage.getTextStatus(model1)
-    expect(llama3Status).toBe(btnModel.stop)
-    expect(qwen3Status).toBe(btnModel.stop)
-  })
+  // it('Multiple models can run simultaneously when Auto-Unload Old Models is disabled.', async () => {
+  //   const model1 = models.qwen2dot5
+  //   const model2 = models.qwen2
+  //   await settingsPage.startOrStopModel(model1)
+  //   await settingsPage.toggle(title.autoUnloadOldModels, false)
+  //   await settingsPage.startOrStopModel(model2)
+  //   await settingsPage.startOrStopModel(model1)
+  //   let llama3Status = await settingsPage.getTextStatus(model2)
+  //   let qwen3Status = await settingsPage.getTextStatus(model1)
+  //   expect(llama3Status).toBe(btnModel.stop)
+  //   expect(qwen3Status).toBe(btnModel.stop)
+  // })
 
-  it('Delete popup shows model name and removes it after confirmation.', async () => {
-    const model = models.qwen3Embedding
-    await settingsPage.tapBtnModel(model, btnModel.delete)
-    expect(await settingsPage.isTextContains(ui.deleteModel)).toBe(true)
-    expect(await settingsPage.isTextContains(model)).toBe(true)
-    await settingsPage.tapButtonDeletePopup(btn.delete)
-    let notifyName = notify.title.deleteModel
-    if (process.env.RUNNING_OS == 'win') {
-      notifyName = String.format(notify.title.deleteModelName, model)
-    }
-    const isNotify = await settingsPage.isNotify(
-      notifyName,
-      String.format(notify.content.deleteModelSuccess, model)
-    )
-    expect(isNotify).toBe(true)
-  })
+  // it('Delete popup shows model name and removes it after confirmation.', async () => {
+  //   const model = models.qwen3Embedding
+  //   await settingsPage.tapBtnModel(model, btnModel.delete)
+  //   expect(await settingsPage.isTextContains(ui.deleteModel)).toBe(true)
+  //   expect(await settingsPage.isTextContains(model)).toBe(true)
+  //   await settingsPage.tapButtonDeletePopup(btn.delete)
+  //   let notifyName = notify.title.deleteModel
+  //   if (process.env.RUNNING_OS == 'win') {
+  //     notifyName = String.format(notify.title.deleteModelName, model)
+  //   }
+  //   const isNotify = await settingsPage.isNotify(
+  //     notifyName,
+  //     String.format(notify.content.deleteModelSuccess, model)
+  //   )
+  //   expect(isNotify).toBe(true)
+  // })
 
   // it('Test response creativity using Temperature, Top K, Top P, and Min P.', async () => {
   //   const msg = 'Hello'

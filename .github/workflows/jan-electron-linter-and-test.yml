@@ -8,38 +8,29 @@ on:
         type: boolean
         default: false
 
+      ENV:
+        description: 'Appium: Test environment (e.g. nightly, production, beta)'
+        required: true
+        default: 'nightly'
+
+      VERSION:
+        description: 'Version'
+        required: true
+        default: '0.6.3'
+
       RUNNING_OS:
-        description: 'OS running test (win, mac, linux)'
+        description: 'Appium: OS running test (win, mac, linux)'
         required: true
         default: 'win'
 
-      EXE_URL:
-        description: 'Enter EXE installer URL'
-        required: true
-        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.5.17-319_x64-setup.exe'
-
-      APP_PATH:
-        description: "Installed app path (e.g. C:\\Program Files\\Jan-nightly\\Jan-nightly.exe)"
-        required: true
-        default: "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe"
-
-      BUNDLE_ID:
-        description: 'App bundle ID or identifier'
-        required: false
-        default: "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe"
-
-      ENV:
-        description: 'Test environment (e.g. dev, staging)'
-        required: true
-        default: 'dev'
 
       TEST_FILES:
-        description: 'Test files to run'
+        description: 'Appium: Test files to run'
         required: true
         default: 'test/specs/test.homePage.ts'
 
       OPEN_AI:
-        description: 'OpenAI API Key'
+        description: 'Appium: OpenAI API Key'
         required: false
         default: ''
 
@@ -462,8 +453,20 @@ jobs:
       - name: Download and install the app
         run: |
           $installer = "$env:USERPROFILE\AppInstaller.exe"
-          Invoke-WebRequest "${{ github.event.inputs.EXE_URL }}" -OutFile $installer
+          $envValue = "${{ inputs.ENV }}"
+          $version = "${{ inputs.VERSION }}"
+          if ($envValue -eq "nightly") {
+            Invoke-WebRequest "https://delta.jan.ai/nightly/Jan-nightly_${version}_x64-setup.exe" -OutFile $installer
+          } elseif ($envValue -eq "production") {
+            Invoke-WebRequest "https://github.com/menloresearch/jan/releases/download/v${version}/Jan_${version}_x64-setup.exe" -OutFile $installer
+          } elseif ($envValue -eq "beta") {
+            Invoke-WebRequest "https://github.com/menloresearch/jan/releases/download/v${version}-beta/Jan-beta_${version}-beta_x64-setup.exe" -OutFile $installer
+          } else {
+            Write-Error "Unknown ENV: $envValue"
+            exit 1
+          }
           Start-Process -FilePath $installer -ArgumentList "/silent" -Wait
+        shell: pwsh
 
       - name: Enable Developer Mode (required for WinAppDriver)
         run: |
@@ -485,12 +488,28 @@ jobs:
 
       - name: Create .env for test
         run: |
-          echo "APP_PATH=${{ github.event.inputs.APP_PATH }}" > src-tauri/src/tests/.env
-          echo "BUNDLE_ID=${{ github.event.inputs.BUNDLE_ID }}" >> src-tauri/src/tests/.env
-          echo "RUNNING_OS=${{ github.event.inputs.RUNNING_OS }}" >> src-tauri/src/tests/.env
-          echo "TEST_FILES=${{ github.event.inputs.TEST_FILES }}" >> src-tauri/src/tests/.env
-          echo "ENV=${{ github.event.inputs.ENV }}" >> src-tauri/src/tests/.env
-          echo "OPENAI=${{ github.event.inputs.OPEN_AI }}" >> src-tauri/src/tests/.env
+          $envFile = "src-tauri/src/tests/.env"
+          $envValue = "${{ inputs.ENV }}"
+          if (Test-Path $envFile) { Remove-Item $envFile }
+          if ($envValue -eq "nightly") {
+            echo "APP_PATH=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe" >> $envFile
+          } elseif ($envValue -eq "production") {
+            echo "APP_PATH=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan\\Jan.exe" >> $envFile
+          } elseif ($envValue -eq "beta") {
+            echo "APP_PATH=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-beta\\Jan-beta.exe" >> $envFile
+          }
+          if ($envValue -eq "nightly") {
+            echo "BUNDLE_ID=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-nightly\\Jan-nightly.exe" >> $envFile
+          } elseif ($envValue -eq "production") {
+            echo "BUNDLE_ID=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan\\Jan.exe" >> $envFile
+          } elseif ($envValue -eq "beta") {
+            echo "BUNDLE_ID=C:\\Users\\runneradmin\\AppData\\Local\\Programs\\Jan-beta\\Jan-beta.exe" >> $envFile
+          }
+          echo "RUNNING_OS=${{ github.event.inputs.RUNNING_OS }}" >> $envFile
+          echo "TEST_FILES=${{ github.event.inputs.TEST_FILES }}" >> $envFile
+          echo "ENV=${{ github.event.inputs.ENV }}" >> $envFile
+          echo "OPENAI=${{ github.event.inputs.OPEN_AI }}" >> $envFile
+        shell: pwsh
 
       - name: Run WebdriverIO tests
         run: |

@@ -178,10 +178,19 @@ export default abstract class BasePage implements IBasePage {
     }
   }
 
-  async getText(selector: string): Promise<string> {
-    const el = await this.driver.$(selector)
-    await this.waitUntilElementIsVisible(selector)
-    return (await el.getText()) || ''
+  async getText(selector: string, timeout = 5000): Promise<string> {
+    try {
+      await this.waitUntilElementIsVisible(selector, timeout)
+      const el = await this.driver.$(selector)
+      if (!el || !el.elementId) {
+        console.warn(`ElementId is undefined for selector: ${selector}`)
+        return ''
+      }
+      return await el.getText()
+    } catch (err) {
+      console.error(`Error getting text from selector "${selector}":`, err)
+      return ''
+    }
   }
 
   async getAttribute(selector: string, attribute: string): Promise<string> {

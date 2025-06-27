@@ -15,7 +15,7 @@ export class SettingsPage extends BasePage implements ISettingsPage {
     this.elements = {
       menuSub1: `//*[@Name="{0}"]`,
       llamaTitle: `(//*[@Name="Llama.cpp"])[2]`,
-      model: `//*[@Name="Models"]/following-sibling::Text[@ClassName="font-medium"]`,
+      model: `//*[@Name="Models"]/following-sibling::Text`,
       modelItems: `//Text[@Name="{0}"]`,
       startBtn: `//Text[@Name="{0}"]/following-sibling::Button[1]`,
       deleteModelBtn: `//Text[@Name="{0}"]/following-sibling::Group[3]/Image[1]`,
@@ -24,7 +24,7 @@ export class SettingsPage extends BasePage implements ISettingsPage {
       cancelPopupBtn: `//Button[@Name="Cancel"]`,
       deletePopupBtn: `//Button[@Name="Delete"]`,
       closePopupBtn: `//Button[@Name="Close"]`,
-      importBtn: `//Button[@Name="Import"]`,
+      importBtn: `//*[@Name="Import"]`,
       toogle: `//*[@Name="{0}"]/following-sibling::Button[1]`,
       toogleItem: `//*[@Name="{0}"]/following-sibling::Button[1]`,
       inputRightSetting: `//*[@Name="{0}"]/following-sibling::Spinner[1]`,
@@ -47,12 +47,12 @@ export class SettingsPage extends BasePage implements ISettingsPage {
   }
 
   async getModels(): Promise<any> {
-    await this.waitForTimeout(1000)
+    await this.waitForTimeout(5000)
     const arr = new Array()
     const models = this.elements.model
     const count = await this.count(models)
     for (let i = 1; i <= count; i++) {
-      const locator = '(' + models + ')' + `[${i}]`
+      const locator = models + `[${i}]`
       const model = await this.getText(locator)
       arr.push(model)
     }

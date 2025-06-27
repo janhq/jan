@@ -116,9 +116,6 @@ export default class Flow {
     await homePage.openSettings()
     await settingsPage.selectSub1Menu(submenu1.modelProviders)
     const list = await settingsPage.getModels()
-    console.log(list)
-    console.log(models)
-
     const arr = new Array()
     for (let i = 0; i < models.length; i++) {
       const idx = list.indexOf(models[i])
@@ -126,8 +123,6 @@ export default class Flow {
         arr.push(models[i])
       }
     }
-    console.log(arr)
-
     for (let i = 0; i < arr.length; i++) {
       await this.importModel(arr[i])
     }
