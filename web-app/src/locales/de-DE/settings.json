@@ -162,7 +162,7 @@
     "openLogs": "Logs öffnen",
     "serverConfiguration": "Server Konfiguration",
     "serverHost": "Server Host",
-    "serverHostDesc": "Netzweraddresse für den Server.",
+    "serverHostDesc": "Netzwerkadresse für den Server.",
     "serverPort": "Server Port",
     "serverPortDesc": "Portnummer für den API Server.",
     "apiPrefix": "API Prefix",
