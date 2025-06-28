@@ -4,7 +4,7 @@
     "chooseProviderContent": "Wähle den Anbieter aus, den Du verwenden möchtest, und stelle sicher, daß Du Zugriff auf einen API-Schlüssel dafür hast.",
     "getApiKeyTitle": "Hole Dir Deinen API-Schlüssel",
     "getApiKeyContent": "Melde Dich bei dem Anbieter an, um Deinen API-Schlüssel zu finden oder zu generieren.",
-    "insertApiKeyTitle": "Gebe Deinen API Schlüssel ein",
+    "insertApiKeyTitle": "Gebe Deinen API-Schlüssel ein",
     "insertApiKeyContent": "Füge hier Deinen API-Schlüssel ein, um eine Verbindung zum Anbieter herzustellen und ihn zu aktivieren.",
     "back": "Zurück",
     "close": "Schließen",
