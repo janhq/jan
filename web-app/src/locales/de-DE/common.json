@@ -91,7 +91,7 @@
   "deleteAllThreadsConfirm": "Bist Du sicher, daß Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Gib einen Namen ein für dienn Anbieter",
+  "enterNameForProvider": "Gib einen Namen ein für den Anbieter",
   "providerAlreadyExists": "Ein Anbieter mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
   "adjustFontSize": "Schriftgröße einstellen",
   "changeLanguage": "Sprache wechseln",
