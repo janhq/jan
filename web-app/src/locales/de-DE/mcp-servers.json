@@ -25,7 +25,7 @@
     "placeholder": "JSON Konfiguration eingeben",
     "errorParse": "Fehler beim Parsen der initialen Daten",
     "errorPaste": "Ungültiges JSON Format in dem eingefügten Inhalt",
-    "errorFormat": "Ungültiges JSON format",
+    "errorFormat": "Ungültiges JSON Format",
     "save": "Speichern"
   },
   "checkParams": "Bitte überprüfe die Parameter gemäß dem Tutorial.",
