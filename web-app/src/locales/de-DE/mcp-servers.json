@@ -16,7 +16,7 @@
   "disconnected": "Nicht verbunden",
   "deleteServer": {
     "title": "MCP Server löschen",
-    "description": "Bist Du sicher, daß Du den MCP server {{serverName}} löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "description": "Bist Du sicher, dass Du den MCP Server {{serverName}} löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
     "delete": ""
   },
   "editJson": {
