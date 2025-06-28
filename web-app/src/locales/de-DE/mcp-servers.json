@@ -34,7 +34,7 @@
   "editAllJson": "JSON aller Server bearbeiten",
   "findMore": "Finde mehr MCP Server bei",
   "allowPermissions": "Erlaube allen MCP Werkzeugen den Zugriff",
-  "allowPermissionsDesc": "Wenn aktiviert, werden alle MCP-Werkzeug-Aufrufe automatisch genehmigt, ohne daß Berechtigungsdialoge angezeigt werden.",
+  "allowPermissionsDesc": "Wenn aktiviert, werden alle MCP-Werkzeug-Aufrufe automatisch genehmigt, ohne dass Berechtigungsdialoge angezeigt werden.",
   "noServers": "Keine MCP Server gefunden",
   "args": "Argumente",
   "env": "Umgebung",
