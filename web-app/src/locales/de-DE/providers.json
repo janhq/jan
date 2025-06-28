@@ -47,7 +47,7 @@
   "deleteProvider": {
     "title": "Anbieter löschen",
     "description": "Lösche diesen Anbieter und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "success": "Anbieter {{provider}} wurde permanent gelöscht .",
+    "success": "Anbieter {{provider}} wurde permanent gelöscht.",
     "confirmTitle": "Lösche Anbieter: {{provider}}",
     "confirmDescription": "Möchtest Du diesen Anbieter wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "cancel": "Abbrechen",
