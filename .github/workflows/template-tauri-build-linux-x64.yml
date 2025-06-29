@@ -96,7 +96,7 @@ jobs:
         run: |
           cargo install ctoml
 
-      - name: Install Tauri dependecies
+      - name: Install Tauri dependencies
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
