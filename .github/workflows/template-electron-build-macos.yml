@@ -53,7 +53,6 @@ jobs:
   build-macos:
     if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: macos-latest
-    environment: production
     permissions:
       contents: write
     steps:
@@ -61,7 +60,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
-      
+
       - name: Replace Icons for Beta Build
         if: inputs.beta == true && inputs.nightly != true
         shell: bash
@@ -161,7 +160,7 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
-      - name: Build and publish app to aws s3 r2 or github artifactory        
+      - name: Build and publish app to aws s3 r2 or github artifactory
         if: inputs.public_provider != 'github'
         run: |
           # check public_provider is true or not

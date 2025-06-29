@@ -55,7 +55,6 @@ jobs:
       DEB_SIG: ${{ steps.packageinfo.outputs.DEB_SIG }}
       APPIMAGE_SIG: ${{ steps.packageinfo.outputs.APPIMAGE_SIG }}
       APPIMAGE_FILE_NAME: ${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
-    environment: production
     permissions:
       contents: write
     steps:
