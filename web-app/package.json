@@ -75,7 +75,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
-    "@tanstack/router-plugin": "^1.116.1",
+    "@tanstack/router-plugin": "^1.122.1",
     "@types/culori": "^2.1.1",
     "@types/lodash.debounce": "^4",
     "@types/node": "^22.14.1",
