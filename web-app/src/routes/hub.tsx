@@ -259,11 +259,16 @@ function Hub() {
             </div>
           )}
           {isDownloaded ? (
-            <Button size="sm" onClick={() => handleUseModel(modelId)}>
+            <Button
+              size="sm"
+              onClick={() => handleUseModel(modelId)}
+              data-test-id={`hub-model-${modelId}`}
+            >
               {t('hub:use')}
             </Button>
           ) : (
             <Button
+              data-test-id={`hub-model-${modelId}`}
               size="sm"
               onClick={handleDownload}
               className={cn(isDownloading && 'hidden')}

@@ -43,7 +43,6 @@ jobs:
   build-linux-x64:
     if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       contents: write
     steps:
@@ -75,7 +74,6 @@ jobs:
           cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
           cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
           cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
-
 
       - name: Installing node
         uses: actions/setup-node@v1
@@ -131,7 +129,7 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      - name: Build and publish app to aws s3 r2 or github artifactory      
+      - name: Build and publish app to aws s3 r2 or github artifactory
         if: inputs.public_provider != 'github'
         run: |
           # check public_provider is true or not
