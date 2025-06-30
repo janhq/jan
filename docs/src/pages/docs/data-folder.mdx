@@ -158,38 +158,6 @@ The silicon brain collection. Each model has its own `model.json`.
 Full parameters: [here](/docs/model-parameters)
 </Callout>
 
-### `settings/`
-Control panel. Extension settings in `/settings/@janhq/`:
-
-| Parameter       | Description                                        |
-|----------------|----------------------------------------------------|
-| key            | Setting identifier                                 |
-| title          | Display name                                      |
-| description    | Setting explanation                               |
-| controllerType | UI component type                                 |
-| controllerProps| Component properties                              |
-| extensionName  | Parent extension link                             |
-
-GPU settings (`settings.json`):
-
-| Parameter             | Description                                |
-|----------------------|--------------------------------------------|
-| notify               | Notification status                        |
-| run_mode             | Operating mode                             |
-| nvidia_driver.exist  | NVIDIA driver presence                     |
-| nvidia_driver.version| Driver version                             |
-| cuda.exist          | CUDA availability                          |
-| cuda.version        | CUDA version                               |
-| gpus[0].id          | GPU identifier                             |
-| gpus[0].vram        | GPU memory (MB)                            |
-| gpus[0].name        | GPU model                                  |
-| gpus[0].arch        | GPU architecture                           |
-| gpu_highest_vram    | Most capable GPU                           |
-| gpus_in_use         | Active GPUs                                |
-| is_initial          | First run flag                             |
-| vulkan              | Vulkan support                             |
-
-
 ### `threads/`
 Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
 
