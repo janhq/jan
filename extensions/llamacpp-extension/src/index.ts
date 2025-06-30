@@ -205,9 +205,12 @@ export default class llamacpp_extension extends AIEngine {
     // Ensure the selected backend (either user's or default) is installed
     const selectedBackendSetting = this.config.version_backend
     if (selectedBackendSetting) {
-        const [selectedVersion, selectedBackend] = selectedBackendSetting.split('/')
+        const [selectedVersion, selectedBackend] = selectedBackendSetting.split('/').map(part => part?.trim())
         if (selectedVersion && selectedBackend) {
-            await downloadBackend(selectedBackend, selectedVersion)
+            const isinstalled = await isBackendInstalled(selectedBackend, selectedVersion)
+            if(!isinstalled) {
+                await downloadBackend(selectedBackend, selectedVersion)
+            }
         } else {
             console.warn(`Invalid backend setting format: ${selectedBackendSetting}`)
         }
