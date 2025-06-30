@@ -6,9 +6,9 @@ import { setActiveGpus } from '@/services/hardware'
 // Hardware data types
 export interface CPU {
   arch: string
-  cores: number
-  instructions: string[]
-  model: string
+  core_count: number
+  extensions: string[]
+  name: string
   usage: number
 }
 
@@ -18,14 +18,21 @@ export interface GPUAdditionalInfo {
 }
 
 export interface GPU {
-  activated: boolean
-  additional_information: GPUAdditionalInfo
-  free_vram: number
-  id: string
   name: string
-  total_vram: number
+  total_memory: number
+  vendor: string
   uuid: string
-  version: string
+  driver_version: string
+  nvidia_info: {
+    index: number
+    compute_capability: string
+  }
+  vulkan_info: {
+    index: number
+    device_id: number
+    device_type: string
+    api_version: string
+  }
 }
 
 export interface OS {
@@ -41,33 +48,48 @@ export interface RAM {
 export interface HardwareData {
   cpu: CPU
   gpus: GPU[]
-  os: OS
-  ram: RAM
+  os_type: string
+  os_name: string
+  total_memory: number
+}
+
+export interface SystemUsage {
+  cpu: number
+  used_memory: number
+  total_memory: number
+  gpus: {
+    uuid: string
+    used_memory: number
+    total_memory: number
+  }[]
 }
 
 // Default values
 const defaultHardwareData: HardwareData = {
   cpu: {
     arch: '',
-    cores: 0,
-    instructions: [],
-    model: '',
+    core_count: 0,
+    extensions: [],
+    name: '',
     usage: 0,
   },
   gpus: [],
-  os: {
-    name: '',
-    version: '',
-  },
-  ram: {
-    available: 0,
-    total: 0,
-  },
+  os_type: '',
+  os_name: '',
+  total_memory: 0,
+}
+
+const defaultSystemUsage: SystemUsage = {
+  cpu: 0,
+  used_memory: 0,
+  total_memory: 0,
+  gpus: [],
 }
 
 interface HardwareStore {
   // Hardware data
   hardwareData: HardwareData
+  systemUsage: SystemUsage
 
   // Update functions
   setCPU: (cpu: CPU) => void
@@ -81,11 +103,8 @@ interface HardwareStore {
   // Update individual GPU
   updateGPU: (index: number, gpu: GPU) => void
 
-  // Update CPU usage
-  updateCPUUsage: (usage: number) => void
-
   // Update RAM available
-  updateRAMAvailable: (available: number) => void
+  updateSystemUsage: (usage: SystemUsage) => void
 
   // Toggle GPU activation (async, with loading)
   toggleGPUActivation: (index: number) => Promise<void>
@@ -107,11 +126,15 @@ export const useHardware = create<HardwareStore>()(
   persist(
     (set, get) => ({
       hardwareData: defaultHardwareData,
+      systemUsage: defaultSystemUsage,
       gpuLoading: {},
       pollingPaused: false,
       setGpuLoading: (index, loading) =>
         set((state) => ({
-          gpuLoading: { ...state.gpuLoading, [state.hardwareData.gpus[index].uuid]: loading },
+          gpuLoading: {
+            ...state.gpuLoading,
+            [state.hardwareData.gpus[index].uuid]: loading,
+          },
         })),
       pausePolling: () => set({ pollingPaused: true }),
       resumePolling: () => set({ pollingPaused: false }),
@@ -167,56 +190,41 @@ export const useHardware = create<HardwareStore>()(
           }
         }),
 
-      updateCPUUsage: (usage) =>
-        set((state) => ({
-          hardwareData: {
-            ...state.hardwareData,
-            cpu: {
-              ...state.hardwareData.cpu,
-              usage,
-            },
-          },
-        })),
-
-      updateRAMAvailable: (available) =>
-        set((state) => ({
-          hardwareData: {
-            ...state.hardwareData,
-            ram: {
-              ...state.hardwareData.ram,
-              available,
-            },
-          },
+      updateSystemUsage: (systemUsage) =>
+        set(() => ({
+          systemUsage,
         })),
 
       toggleGPUActivation: async (index) => {
-        const { pausePolling, setGpuLoading, resumePolling } = get();
-        pausePolling();
-        setGpuLoading(index, true);
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 200)); // Simulate async, replace with real API if needed
-          set((state) => {
-            const newGPUs = [...state.hardwareData.gpus];
-            if (index >= 0 && index < newGPUs.length) {
-              newGPUs[index] = {
-                ...newGPUs[index],
-                activated: !newGPUs[index].activated,
-              };
-            }
-            setActiveGpus({
-              gpus: newGPUs.filter((e) => e.activated).map((e) => parseInt(e.id)),
-            });
-            return {
-              hardwareData: {
-                ...state.hardwareData,
-                gpus: newGPUs,
-              },
-            };
-          });
-        } finally {
-          setGpuLoading(index, false);
-          setTimeout(resumePolling, 1000); // Resume polling after 1s
-        }
+        const { pausePolling, setGpuLoading, resumePolling } = get()
+        pausePolling()
+        setGpuLoading(index, true)
+        // try {
+        //   await new Promise((resolve) => setTimeout(resolve, 200)) // Simulate async, replace with real API if needed
+        //   set((state) => {
+        //     const newGPUs = [...state.hardwareData.gpus]
+        //     if (index >= 0 && index < newGPUs.length) {
+        //       newGPUs[index] = {
+        //         ...newGPUs[index],
+        //         activated: !newGPUs[index].activated,
+        //       }
+        //     }
+        //     setActiveGpus({
+        //       gpus: newGPUs
+        //         .filter((e) => e.activated)
+        //         .map((e) => parseInt(e.id)),
+        //     })
+        //     return {
+        //       hardwareData: {
+        //         ...state.hardwareData,
+        //         gpus: newGPUs,
+        //       },
+        //     }
+        //   })
+        // } finally {
+        //   setGpuLoading(index, false)
+        //   setTimeout(resumePolling, 1000) // Resume polling after 1s
+        // }
       },
 
       reorderGPUs: (oldIndex, newIndex) =>
