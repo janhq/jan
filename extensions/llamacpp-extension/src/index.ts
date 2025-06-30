@@ -207,8 +207,8 @@ export default class llamacpp_extension extends AIEngine {
     if (selectedBackendSetting) {
         const [selectedVersion, selectedBackend] = selectedBackendSetting.split('/').map(part => part?.trim())
         if (selectedVersion && selectedBackend) {
-            const isinstalled = await isBackendInstalled(selectedBackend, selectedVersion)
-            if(!isinstalled) {
+            const isInstalled = await isBackendInstalled(selectedBackend, selectedVersion)
+            if(!isInstalled) {
                 await downloadBackend(selectedBackend, selectedVersion)
             }
         } else {
