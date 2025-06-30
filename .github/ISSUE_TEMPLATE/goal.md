@@ -1,16 +1,15 @@
 ---
 name: Goal
-about: Team-wide Quarterly Goals for Jan
+about: 
 title: 'goal: '
 labels: ''
+type: Goal
 assignees: freelerobot
 
 ---
 
 ## Goal
 
-## Motivation
+## Tasklist
 
-## Key Outcomes
-
-## Related Epics
+## Out of scope
