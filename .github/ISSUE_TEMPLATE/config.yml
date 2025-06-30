@@ -1,5 +1,5 @@
 ## To encourage contributors to use issue templates, we don't allow blank issues
-blank_issues_enabled: true
+blank_issues_enabled: false
 
 contact_links:
   - name: "\1F4AC Jan Discussions"
