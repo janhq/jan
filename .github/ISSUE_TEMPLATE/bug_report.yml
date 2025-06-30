@@ -1,7 +1,8 @@
 name: "\U0001F41B Bug Report"
+title: 'bug: '
 description: "If something isn't working as expected \U0001F914"
-title: 'bug: [DESCRIPTION]'
-
+type: "Bug"
+projects: ["menloresearch/30"]
 body:
   - type: input
     validations:
