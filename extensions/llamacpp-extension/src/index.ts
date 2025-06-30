@@ -126,12 +126,68 @@ export default class llamacpp_extension extends AIEngine {
         // NOTE: is there a race condition between when tauri IPC is available
         // and when the extension is loaded?
         const version_backends = await listSupportedBackends()
-        console.log('Available version/backends:', version_backends)
-        item.controllerProps.options = version_backends.map((b) => {
-          const { version, backend } = b
-          const key = `${version}/${backend}`
-          return { value: key, name: key }
-        })
+        let bestBackend: { version: string, backend: string } | undefined
+        const backendPriorities: string[] = ['cuda-cu12.0', 'cuda-cu11.7', 'vulkan', 'avx512', 'avx2', 'avx', 'noavx', 'arm64', 'x64']
+        const getBackendCategory = (backendString: string): string | undefined => {
+            if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
+            if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
+            if (backendString.includes('vulkan')) return 'vulkan'
+            // TODO: more GPU backends such as SYCL/HIP
+            if (backendString.includes('avx512')) return 'avx512'
+            if (backendString.includes('avx2')) return 'avx2'
+            if (backendString.includes('avx') && !backendString.includes('avx2') && !backendString.includes('avx512')) return 'avx'
+            if (backendString.includes('noavx')) return 'noavx'
+            // Fallback for OS/arch specific generics if no specific features mentioned
+            if (backendString.endsWith('arm64')) return 'arm64'
+            if (backendString.endsWith('x64')) return 'x64'
+            return undefined;
+        }
+        for (const priorityCategory of backendPriorities) {
+            const matchingBackends = version_backends.filter(vb => {
+                const category = getBackendCategory(vb.backend)
+                return category === priorityCategory
+            })
+             if (matchingBackends.length > 0) {
+                 // If matches found, find the newest version among them
+                 matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
+                 bestBackend = matchingBackends[0]
+                 console.log(`Found best backend in category "${priorityCategory}": ${bestBackend.version}/${bestBackend.backend}`) // for debugging
+                 break
+             }
+        }
+        let defaultBackendString = ''
+        if (bestBackend) {
+            defaultBackendString = `${bestBackend.version}/${bestBackend.backend}`
+        } else {
+            console.warn('No supported backend found for this system') // for debugging, this will never be reached unless severe bug in extension
+        }
+
+        // Update the version_backend setting definition and set default if needed
+        const backendSettingIndex = settings.findIndex(item => item.key === 'version_backend')
+        if (backendSettingIndex !== -1) {
+            const backendSetting = settings[backendSettingIndex]
+            backendSetting.controllerProps.options = version_backends.map((b) => {
+                const key = `${b.version}/${b.backend}`
+                return { value: key, name: key }
+            })
+            // Get the currently saved value for version_backend
+            const currentBackendSetting = await this.getSetting<string>('version_backend', backendSetting.controllerProps.value as string)
+            const originalDefaultValue = SETTINGS.find(s => s.key === 'version_backend')?.controllerProps.value;
+            if (!currentBackendSetting || currentBackendSetting === originalDefaultValue || currentBackendSetting === '') {
+                if (defaultBackendString) {
+                    backendSetting.controllerProps.value = defaultBackendString
+                    console.log(`Setting default backend to: ${defaultBackendString}`)
+                } else {
+                    console.warn('Cannot set a default backend as none were found.')
+                }
+            } else {
+                 console.log(`User-configured backend found: ${currentBackendSetting}`)
+            }
+        } else {
+            console.error("Version backend setting definition not found in SETTINGS.")
+        }
+
+
       }
     }
     this.autoUnload = await this.getSetting<boolean>('auto_unload_models', true)
@@ -146,6 +202,18 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
     this.config = config as LlamacppConfig
+    // Ensure the selected backend (either user's or default) is installed
+    const selectedBackendSetting = this.config.version_backend
+    if (selectedBackendSetting) {
+        const [selectedVersion, selectedBackend] = selectedBackendSetting.split('/')
+        if (selectedVersion && selectedBackend) {
+            await downloadBackend(selectedBackend, selectedVersion)
+        } else {
+            console.warn(`Invalid backend setting format: ${selectedBackendSetting}`)
+        }
+    } else {
+        console.warn('No backend selected or available to install.')
+    }
 
     // Initialize models base path - assuming this would be retrieved from settings
     this.providerPath = await joinPath([
