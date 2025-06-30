@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { setActiveGpus } from '@/services/hardware'
 
 // Hardware data types
 export interface CPU {
@@ -196,7 +195,7 @@ export const useHardware = create<HardwareStore>()(
         })),
 
       toggleGPUActivation: async (index) => {
-        const { pausePolling, setGpuLoading, resumePolling } = get()
+        const { pausePolling, setGpuLoading } = get()
         pausePolling()
         setGpuLoading(index, true)
         // try {
