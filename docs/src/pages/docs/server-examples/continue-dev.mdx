@@ -36,11 +36,15 @@ Follow this [guide](https://continue.dev/docs/quickstart) to install the Continu
 
 To set up Continue for use with Jan's Local Server, you must activate the Jan API Server with your chosen model.
 
-1. Press the `<>` button. Jan will take you to the **Local API Server** section.
+1. Press the `⚙️ Settings` button. 
 
-2. Setup the server, which includes the **IP Port**, **Cross-Origin-Resource-Sharing (CORS)** and **Verbose Server Logs**.
+2. Locate `Local API Server`.
 
-3. Press the **Start Server** button
+3. Setup the server, which includes the **IP Port**, **Cross-Origin-Resource-Sharing (CORS)** and **Verbose Server Logs**.
+
+4. Include your user-defined API Key. 
+
+5. Press the **Start Server** button
 
 ### Step 3: Configure Continue to Use Jan's Local Server
 
@@ -64,30 +68,35 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
     </Tabs.Tab>
 </Tabs>
 
-```json title="~/.continue/config.json"
-{
-  "models": [
-    {
-      "title": "Jan",
-      "provider": "openai",
-      "model": "mistral-ins-7b-q4",
-      "apiKey": "EMPTY",
-      "apiBase": "http://localhost:1337/v1"
-    }
-  ]
-}
+```yaml title="~/.continue/config.yaml"
+name: Local Assistant
+version: 1.0.0
+schema: v1
+models:
+  - name: Jan
+    provider: openai
+    model: #MODEL_NAME (e.g. qwen3:0.6b)
+    apiKey: #YOUR_USER_DEFINED_API_KEY_HERE (e.g. hello)
+    apiBase: http://localhost:1337/v1
+context: 
+  - provider: code
+  - provider: docs
+  - provider: diff
+  - provider: terminal
+  - provider: problems
+  - provider: folder
+  - provider: codebase
 ```
 
 2. Ensure the file has the following configurations:
   - Ensure `openai` is selected as the `provider`.
   - Match the `model` with the one enabled in the Jan API Server.
-  - Set `apiBase` to `http://localhost:1337`.
-  - Leave the `apiKey` field to `EMPTY`.
+  - Set `apiBase` to `http://localhost:1337/v1`.
 
 ### Step 4: Ensure the Using Model Is Activated in Jan
 
-1. Navigate to `Settings` > `My Models`.
-2. Click the **three dots (⋮)** button.
+1. Navigate to `Settings` > `Model Providers`.
+2. Under Llama.cpp, find the model that you would want to use.
 3. Select the **Start Model** button to activate the model.
 
 </Steps>
