@@ -1,7 +1,8 @@
 name: "\U0001F680 Feature Request"
+title: 'idea: '
 description: "Suggest an idea for this project \U0001F63B!"
-title: 'idea: [DESCRIPTION]'
 labels: 'feature request'
+projects: ["menloresearch/30"]
 body:
   - type: textarea
     validations:
