@@ -55,31 +55,31 @@ function Appareances() {
               <CardItem
                 title={t('settings:appearance.windowBackground')}
                 description={t('settings:appearance.windowBackgroundDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppBgColor />}
               />
               <CardItem
                 title={t('settings:appearance.appMainView')}
                 description={t('settings:appearance.appMainViewDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppMainView />}
               />
               <CardItem
                 title={t('settings:appearance.primary')}
                 description={t('settings:appearance.primaryDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppPrimaryColor />}
               />
               <CardItem
                 title={t('settings:appearance.accent')}
                 description={t('settings:appearance.accentDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppAccentColor />}
               />
               <CardItem
                 title={t('settings:appearance.destructive')}
                 description={t('settings:appearance.destructiveDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppDestructiveColor />}
               />
               <CardItem

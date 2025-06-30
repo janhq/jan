@@ -222,7 +222,7 @@ function General() {
               <CardItem
                 title={t('settings:general.checkForUpdates')}
                 description={t('settings:general.checkForUpdatesDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={
                   <Button
                     variant="link"
@@ -266,7 +266,7 @@ function General() {
                   ns: 'settings',
                 })}
                 align="start"
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 description={
                   <>
                     <span>
@@ -353,7 +353,7 @@ function General() {
                   ns: 'settings',
                 })}
                 description={t('settings:dataFolder.appLogsDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={
                   <div className="flex items-center gap-2">
                     <Button

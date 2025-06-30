@@ -229,7 +229,7 @@ function LocalAPIServer() {
                 title={t('settings:localApiServer.apiKey')}
                 description={t('settings:localApiServer.apiKeyDesc')}
                 className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2',
+                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
                   isServerRunning && 'opacity-50 pointer-events-none',
                   isApiKeyEmpty && showApiKeyError && 'pb-6'
                 )}
@@ -245,7 +245,7 @@ function LocalAPIServer() {
                 title={t('settings:localApiServer.trustedHosts')}
                 description={t('settings:localApiServer.trustedHostsDesc')}
                 className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2',
+                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"

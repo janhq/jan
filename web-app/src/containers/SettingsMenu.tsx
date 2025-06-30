@@ -115,6 +115,7 @@ const SettingsMenu = () => {
       <button
         className="fixed top-4 right-4 sm:hidden size-5 cursor-pointer items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10 z-20"
         onClick={toggleMenu}
+        aria-label="Toggle settings menu"
       >
         {isMenuOpen ? (
           <IconX size={18} className="text-main-view-fg relative z-20" />

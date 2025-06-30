@@ -1,10 +1,8 @@
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
-// import ProvidersMenu from '@/containers/ProvidersMenu'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
-// import { Switch } from '@/components/ui/switch'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   getActiveModels,
@@ -229,9 +227,6 @@ function ProviderDetail() {
           <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
         <div className="flex h-full w-full">
-          {/* <div className="flex">
-            <ProvidersMenu stepSetupRemoteProvider={isSetup} />
-          </div> */}
           <SettingsMenu />
           <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
@@ -239,14 +234,6 @@ function ProviderDetail() {
                 <h1 className="font-medium text-base">
                   {getProviderTitle(providerName)}
                 </h1>
-                {/* <Switch
-                  checked={provider?.active}
-                  onCheckedChange={(e) => {
-                    if (provider) {
-                      updateProvider(providerName, { ...provider, active: e })
-                    }
-                  }}
-                /> */}
               </div>
 
               <div
@@ -461,7 +448,7 @@ function ProviderDetail() {
                       return (
                         <CardItem
                           key={modelIndex}
-                          // className="flex-col sm:flex-row items-start sm:items-center sm:justify-beetween gap-y-2"
+                          // className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                           title={
                             <div className="flex items-center gap-2">
                               <h1
