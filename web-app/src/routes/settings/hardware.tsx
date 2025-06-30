@@ -151,10 +151,10 @@ function Hardware() {
     if (over && active.id !== over.id) {
       // Find the indices of the dragged item and the drop target
       const oldIndex = hardwareData.gpus.findIndex(
-        (gpu, index) => index === active.id
+        (_, index) => index === active.id
       )
       const newIndex = hardwareData.gpus.findIndex(
-        (gpu, index) => index === over.id
+        (_, index) => index === over.id
       )
 
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -388,7 +388,7 @@ function Hardware() {
                     onDragEnd={handleDragEnd}
                   >
                     <SortableContext
-                      items={hardwareData.gpus.map((gpu, index) => index)}
+                      items={hardwareData.gpus.map((_, index) => index)}
                       strategy={verticalListSortingStrategy}
                     >
                       {hardwareData.gpus.map((gpu, index) => (
