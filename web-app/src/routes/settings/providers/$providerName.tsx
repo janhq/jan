@@ -448,7 +448,6 @@ function ProviderDetail() {
                       return (
                         <CardItem
                           key={modelIndex}
-                          // className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                           title={
                             <div className="flex items-center gap-2">
                               <h1
