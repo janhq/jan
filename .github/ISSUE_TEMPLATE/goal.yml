@@ -1,15 +1,27 @@
----
-name: Goal
-about: "Communicate externally the roadmap/goal that Jan is heading toward"
+name: "Goal"
+description: "Communicate externally the roadmap/goal that Jan is heading toward"
 title: 'goal: '
 labels: ''
-type: Goal
+type: "Goal"
 assignees: freelerobot
+body:
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Goal"
+      description: "Describe the conten of the goal"
 
----
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Tasklist"
+      description: "List of task to complete to reach the goal"
 
-## Goal
-
-## Tasklist
-
-## Out of scope
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Out of scope"
+      description: "List of things that is out of scope for this goal"
