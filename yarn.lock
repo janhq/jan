@@ -2330,7 +2330,7 @@ __metadata:
     "@tauri-apps/plugin-http": "npm:^2.2.1"
     "@tauri-apps/plugin-opener": "npm:^2.2.7"
     "@tauri-apps/plugin-os": "npm:^2.2.1"
-    "@tauri-apps/plugin-updater": "npm:^2.7.1"
+    "@tauri-apps/plugin-updater": "npm:^2.9.0"
     "@types/culori": "npm:^2.1.1"
     "@types/lodash.debounce": "npm:^4"
     "@types/node": "npm:^22.14.1"
@@ -6148,12 +6148,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-updater@npm:^2.7.1":
-  version: 2.8.1
-  resolution: "@tauri-apps/plugin-updater@npm:2.8.1"
+"@tauri-apps/plugin-updater@npm:^2.9.0":
+  version: 2.9.0
+  resolution: "@tauri-apps/plugin-updater@npm:2.9.0"
   dependencies:
-    "@tauri-apps/api": "npm:^2.0.0"
-  checksum: 10c0/0f36fd7a2461ec793f2ee1b82b453c67f9d054db0236556f0cbfd256d6ca13bd19a7824db08aa8a45f47a9f015cb3aad1f193cb5cbf05347d8757410cbc27090
+    "@tauri-apps/api": "npm:^2.6.0"
+  checksum: 10c0/72ce83d1c241308a13b9929f0900e4d33453875877009166e3998e3e75a1003ac48c3641086b4d3230f0f18c64f475ad6c3556d1603fc641ca50dc9c18d61866
   languageName: node
   linkType: hard
 

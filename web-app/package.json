@@ -35,7 +35,7 @@
     "@tauri-apps/plugin-http": "^2.2.1",
     "@tauri-apps/plugin-opener": "^2.2.7",
     "@tauri-apps/plugin-os": "^2.2.1",
-    "@tauri-apps/plugin-updater": "^2.7.1",
+    "@tauri-apps/plugin-updater": "^2.9.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
     "@uiw/react-textarea-code-editor": "^3.1.1",
