@@ -29,10 +29,11 @@ import {
   IconGripVertical,
   IconDeviceDesktopAnalytics,
 } from '@tabler/icons-react'
-import { getHardwareInfo } from '@/services/hardware'
+import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { formatMegaBytes } from '@/lib/utils'
 import { windowKey } from '@/constants/windows'
+import { toNumber } from '@/utils/number'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -47,10 +48,11 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: gpu.id || index })
+  } = useSortable({ id: index })
   const { t } = useTranslation()
 
-  const { toggleGPUActivation, gpuLoading } = useHardware()
+  const { systemUsage, toggleGPUActivation, gpuLoading } = useHardware()
+  const usage = systemUsage.gpus[index]
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -78,7 +80,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
         actions={
           <div className="flex items-center gap-4">
             <Switch
-              checked={gpu.activated}
+              checked={true}
               disabled={!!gpuLoading[index]}
               onCheckedChange={() => toggleGPUActivation(index)}
             />
@@ -90,8 +92,9 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.vram')}
           actions={
             <span className="text-main-view-fg/80">
-              {formatMegaBytes(gpu.free_vram)} {t('settings:hardware.freeOf')}{' '}
-              {formatMegaBytes(gpu.total_vram)}
+              {formatMegaBytes(usage?.used_memory)}{' '}
+              {t('settings:hardware.freeOf')}{' '}
+              {formatMegaBytes(gpu.total_memory)}
             </span>
           }
         />
@@ -99,7 +102,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.driverVersion')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.driver_version || '-'}
+              {gpu.driver_version?.slice(0, 50) || '-'}
             </span>
           }
         />
@@ -107,7 +110,8 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.computeCapability')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.compute_cap || '-'}
+              {gpu.nvidia_info?.compute_capability ??
+                gpu.vulkan_info?.api_version}
             </span>
           }
         />
@@ -120,9 +124,9 @@ function Hardware() {
   const { t } = useTranslation()
   const {
     hardwareData,
+    systemUsage,
     setHardwareData,
-    updateCPUUsage,
-    updateRAMAvailable,
+    updateSystemUsage,
     reorderGPUs,
     pollingPaused,
   } = useHardware()
@@ -147,9 +151,11 @@ function Hardware() {
     if (over && active.id !== over.id) {
       // Find the indices of the dragged item and the drop target
       const oldIndex = hardwareData.gpus.findIndex(
-        (gpu) => gpu.id === active.id
+        (gpu, index) => index === active.id
       )
-      const newIndex = hardwareData.gpus.findIndex((gpu) => gpu.id === over.id)
+      const newIndex = hardwareData.gpus.findIndex(
+        (gpu, index) => index === over.id
+      )
 
       if (oldIndex !== -1 && newIndex !== -1) {
         reorderGPUs(oldIndex, newIndex)
@@ -160,14 +166,13 @@ function Hardware() {
   useEffect(() => {
     if (pollingPaused) return
     const intervalId = setInterval(() => {
-      getHardwareInfo().then((data) => {
-        updateCPUUsage(data.cpu.usage)
-        updateRAMAvailable(data.ram.available)
+      getSystemUsage().then((data) => {
+        updateSystemUsage(data)
       })
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, updateCPUUsage, updateRAMAvailable, pollingPaused])
+  }, [setHardwareData, updateSystemUsage, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {
@@ -229,8 +234,8 @@ function Hardware() {
               <CardItem
                 title={t('settings:hardware.name')}
                 actions={
-                  <span className="text-main-view-fg/80">
-                    {hardwareData.os?.name}
+                  <span className="text-main-view-fg/80 capitalize">
+                    {hardwareData.os_type}
                   </span>
                 }
               />
@@ -238,7 +243,7 @@ function Hardware() {
                 title={t('settings:hardware.version')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.os?.version}
+                    {hardwareData.os_name}
                   </span>
                 }
               />
@@ -250,7 +255,7 @@ function Hardware() {
                 title={t('settings:hardware.model')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu?.model}
+                    {hardwareData.cpu?.name}
                   </span>
                 }
               />
@@ -266,17 +271,17 @@ function Hardware() {
                 title={t('settings:hardware.cores')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu?.cores}
+                    {hardwareData.cpu?.core_count}
                   </span>
                 }
               />
-              {hardwareData.cpu?.instructions.join(', ').length > 0 && (
+              {hardwareData.cpu?.extensions?.join(', ').length > 0 && (
                 <CardItem
                   title={t('settings:hardware.instructions')}
-                  column={hardwareData.cpu?.instructions.length > 6}
+                  column={hardwareData.cpu?.extensions.length > 6}
                   actions={
                     <span className="text-main-view-fg/80 break-words">
-                      {hardwareData.cpu?.instructions?.join(', ')}
+                      {hardwareData.cpu?.extensions?.join(', ')}
                     </span>
                   }
                 />
@@ -285,14 +290,14 @@ function Hardware() {
                 title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
-                    {hardwareData.cpu?.usage > 0 && (
+                    {systemUsage.cpu > 0 && (
                       <>
                         <Progress
-                          value={hardwareData.cpu?.usage}
+                          value={systemUsage.cpu}
                           className="h-2 w-10"
                         />
                         <span className="text-main-view-fg/80">
-                          {hardwareData.cpu?.usage?.toFixed(2)}%
+                          {systemUsage.cpu?.toFixed(2)}%
                         </span>
                       </>
                     )}
@@ -307,7 +312,7 @@ function Hardware() {
                 title={t('settings:hardware.totalRam')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatMegaBytes(hardwareData.ram.total)}
+                    {formatMegaBytes(hardwareData.total_memory)}
                   </span>
                 }
               />
@@ -315,7 +320,9 @@ function Hardware() {
                 title={t('settings:hardware.availableRam')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatMegaBytes(hardwareData.ram?.available)}
+                    {formatMegaBytes(
+                      hardwareData.total_memory - systemUsage.used_memory
+                    )}
                   </span>
                 }
               />
@@ -323,23 +330,21 @@ function Hardware() {
                 title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
-                    {hardwareData.ram?.total > 0 && (
+                    {hardwareData.total_memory > 0 && (
                       <>
                         <Progress
                           value={
-                            ((hardwareData.ram?.total -
-                              hardwareData.ram?.available) /
-                              hardwareData.ram?.total) *
-                            100
+                            toNumber(
+                              systemUsage.used_memory / systemUsage.total_memory
+                            ) * 100
                           }
                           className="h-2 w-10"
                         />
                         <span className="text-main-view-fg/80">
                           {(
-                            ((hardwareData.ram?.total -
-                              hardwareData.ram?.available) /
-                              hardwareData.ram?.total) *
-                            100
+                            toNumber(
+                              systemUsage.used_memory / systemUsage.total_memory
+                            ) * 100
                           ).toFixed(2)}
                           %
                         </span>
@@ -383,15 +388,11 @@ function Hardware() {
                     onDragEnd={handleDragEnd}
                   >
                     <SortableContext
-                      items={hardwareData.gpus.map((gpu) => gpu.id)}
+                      items={hardwareData.gpus.map((gpu, index) => index)}
                       strategy={verticalListSortingStrategy}
                     >
                       {hardwareData.gpus.map((gpu, index) => (
-                        <SortableGPUItem
-                          key={gpu.id || index}
-                          gpu={gpu}
-                          index={index}
-                        />
+                        <SortableGPUItem key={index} gpu={gpu} index={index} />
                       ))}
                     </SortableContext>
                   </DndContext>

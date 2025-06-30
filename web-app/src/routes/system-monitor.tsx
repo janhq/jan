@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useHardware } from '@/hooks/useHardware'
-import { getHardwareInfo } from '@/services/hardware'
+import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
 import { Progress } from '@/components/ui/progress'
 import type { HardwareData } from '@/hooks/useHardware'
 import { route } from '@/constants/routes'
@@ -10,6 +10,7 @@ import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { getActiveModels, stopModel } from '@/services/models'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { toNumber } from '@/utils/number'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.systemMonitor as any)({
@@ -18,7 +19,7 @@ export const Route = createFileRoute(route.systemMonitor as any)({
 
 function SystemMonitor() {
   const { t } = useTranslation()
-  const { hardwareData, setHardwareData, updateCPUUsage, updateRAMAvailable } =
+  const { hardwareData, systemUsage, setHardwareData, updateSystemUsage } =
     useHardware()
   const [activeModels, setActiveModels] = useState<string[]>([])
 
@@ -31,16 +32,15 @@ function SystemMonitor() {
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      getHardwareInfo().then((data) => {
-        setHardwareData(data as unknown as HardwareData)
-        updateCPUUsage(data.cpu?.usage)
-        updateRAMAvailable(data.ram?.available)
+      getSystemUsage().then((data) => {
+        // setHardwareData(data as unknown as HardwareData)
+        updateSystemUsage(data)
       })
       getActiveModels().then(setActiveModels)
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, setActiveModels, updateCPUUsage, updateRAMAvailable])
+  }, [setHardwareData, setActiveModels, updateSystemUsage])
 
   const stopRunningModel = (modelId: string) => {
     stopModel(modelId)
@@ -56,9 +56,10 @@ function SystemMonitor() {
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
-    ((hardwareData.ram.total - hardwareData.ram.available) /
-      hardwareData.ram.total) *
-    100
+    toNumber(
+      (hardwareData.total_memory - systemUsage.used_memory) /
+        hardwareData.total_memory
+    ) * 100
 
   return (
     <div className="flex flex-col h-full bg-main-view overflow-y-auto p-6">
@@ -80,16 +81,14 @@ function SystemMonitor() {
               <span className="text-main-view-fg/70">
                 {t('system-monitor:model')}
               </span>
-              <span className="text-main-view-fg">
-                {hardwareData.cpu.model}
-              </span>
+              <span className="text-main-view-fg">{hardwareData.cpu.name}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-main-view-fg/70">
                 {t('system-monitor:cores')}
               </span>
               <span className="text-main-view-fg">
-                {hardwareData.cpu.cores}
+                {hardwareData.cpu.core_count}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -104,10 +103,10 @@ function SystemMonitor() {
                   {t('system-monitor:currentUsage')}
                 </span>
                 <span className="text-main-view-fg font-bold">
-                  {hardwareData.cpu.usage.toFixed(2)}%
+                  {systemUsage.cpu.toFixed(2)}%
                 </span>
               </div>
-              <Progress value={hardwareData.cpu.usage} className="h-3 w-full" />
+              <Progress value={systemUsage.cpu} className="h-3 w-full" />
             </div>
           </div>
         </div>
@@ -123,7 +122,7 @@ function SystemMonitor() {
                 {t('system-monitor:totalRam')}
               </span>
               <span className="text-main-view-fg">
-                {formatMegaBytes(hardwareData.ram.total)}
+                {formatMegaBytes(hardwareData.total_memory)}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -131,7 +130,9 @@ function SystemMonitor() {
                 {t('system-monitor:availableRam')}
               </span>
               <span className="text-main-view-fg">
-                {formatMegaBytes(hardwareData.ram.available)}
+                {formatMegaBytes(
+                  hardwareData.total_memory - systemUsage.used_memory
+                )}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -140,7 +141,7 @@ function SystemMonitor() {
               </span>
               <span className="text-main-view-fg">
                 {formatMegaBytes(
-                  hardwareData.ram.total - hardwareData.ram.available
+                  hardwareData.total_memory - systemUsage.used_memory
                 )}
               </span>
             </div>
@@ -222,10 +223,10 @@ function SystemMonitor() {
         {hardwareData.gpus.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {hardwareData.gpus
-              .filter((gpu) => gpu.activated)
+              // .filter((gpu) => gpu.activated)
               .map((gpu, index) => (
                 <div
-                  key={gpu.id || index}
+                  key={gpu.uuid || index}
                   className="bg-main-view-fg/3 rounded-lg p-4"
                 >
                   <div className="flex justify-between items-center mb-2">
@@ -242,8 +243,11 @@ function SystemMonitor() {
                         {t('system-monitor:vramUsage')}
                       </span>
                       <span className="text-main-view-fg">
-                        {formatMegaBytes(gpu.total_vram - gpu.free_vram)} /{' '}
-                        {formatMegaBytes(gpu.total_vram)}
+                        {formatMegaBytes(
+                          gpu.total_memory -
+                            systemUsage.gpus[index]?.used_memory
+                        )}{' '}
+                        / {formatMegaBytes(gpu.total_memory)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -251,7 +255,7 @@ function SystemMonitor() {
                         {t('system-monitor:driverVersion')}
                       </span>
                       <span className="text-main-view-fg">
-                        {gpu.additional_information?.driver_version || '-'}
+                        {gpu.driver_version || '-'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -259,13 +263,16 @@ function SystemMonitor() {
                         {t('system-monitor:computeCapability')}
                       </span>
                       <span className="text-main-view-fg">
-                        {gpu.additional_information?.compute_cap || '-'}
+                        {gpu.nvidia_info?.compute_capability ||
+                          gpu.vulkan_info.api_version}
                       </span>
                     </div>
                     <div className="mt-2">
                       <Progress
                         value={
-                          ((gpu.total_vram - gpu.free_vram) / gpu.total_vram) *
+                          ((gpu.total_memory -
+                            systemUsage.gpus[index]?.used_memory) /
+                            gpu.total_memory) *
                           100
                         }
                         className="h-2 w-full"
@@ -280,12 +287,6 @@ function SystemMonitor() {
             {t('system-monitor:noGpus')}
           </div>
         )}
-        {hardwareData.gpus.length > 0 &&
-          !hardwareData.gpus.some((gpu) => gpu.activated) && (
-            <div className="text-center text-main-view-fg/50 py-4">
-              {t('system-monitor:noActiveGpus')}
-            </div>
-          )}
       </div>
     </div>
   )
