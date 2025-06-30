@@ -202,7 +202,7 @@ function General() {
 
   return (
     <div className="flex flex-col h-full">
-      <HeaderPage hasSettingsLeftPanel>
+      <HeaderPage>
         <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full flex-col sm:flex-row">
