@@ -1,7 +1,6 @@
 name: "Goal"
 description: "Communicate externally the roadmap/goal that Jan is heading toward"
 title: 'goal: '
-labels: ''
 type: "Goal"
 assignees: freelerobot
 body:
