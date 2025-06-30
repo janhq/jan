@@ -1,7 +1,8 @@
-name: "Goal"
+name: "\U0001F3AF Goal"
 description: "Communicate externally the roadmap/goal that Jan is heading toward"
 title: 'goal: '
 type: "Goal"
+projects: "menloresearch/jan"
 assignees: freelerobot
 body:
   - type: textarea
@@ -19,8 +20,6 @@ body:
       description: "List of task to complete to reach the goal"
 
   - type: textarea
-    validations:
-      required: true
     attributes:
       label: "Out of scope"
       description: "List of things that is out of scope for this goal"
