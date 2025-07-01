@@ -50,6 +50,22 @@ export const normalizeValue = (key: string, value: any) => {
     // Convert to integer
     return Math.floor(Number(value))
   }
+  if (
+    key === 'temperature' ||
+    key === 'top_k' ||
+    key === 'top_p' ||
+    key === 'min_p' ||
+    key === 'repeat_penalty' ||
+    key === 'frequency_penalty' ||
+    key === 'presence_penalty' ||
+    key === 'repeat_last_n'
+  ) {
+    // Convert to float
+    const newValue = parseFloat(value)
+    if (newValue && !isNaN(newValue)) {
+      return newValue
+    }
+  }
   return value
 }
 
