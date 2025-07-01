@@ -1,0 +1,23 @@
+{
+  "id": "huggingface",
+  "type": "remote",
+  "engine": "huggingface",
+  "url": "https://endpoints.huggingface.co/",
+  "api_key": "",
+  "metadata": {
+    "get_models_url": "{{base_url}}/models",
+    "header_template": "Authorization: Bearer {{api_key}}",
+    "transform_req": {
+      "chat_completions": {
+        "url": "{{base_url}}/chat/completions",
+        "template": "{ {% set first = true %} {% for key, value in input_request %} {% if key == \"messages\" or key == \"model\" or key == \"temperature\" or key == \"store\" or key == \"max_tokens\" or key == \"stream\" or key == \"presence_penalty\" or key == \"metadata\" or key == \"frequency_penalty\" or key == \"tools\" or key == \"tool_choice\" or key == \"logprobs\" or key == \"top_logprobs\" or key == \"logit_bias\" or key == \"n\" or key == \"modalities\" or key == \"prediction\" or key == \"response_format\" or key == \"service_tier\" or key == \"seed\" or key == \"stop\" or key == \"stream_options\" or key == \"top_p\" or key == \"parallel_tool_calls\" or key == \"user\" %} {% if not first %},{% endif %} \"{{ key }}\": {{ tojson(value) }} {% set first = false %} {% endif %} {% endfor %} }"
+      }
+    },
+    "transform_resp": {
+      "chat_completions": {
+        "template": "{{tojson(input_request)}}"
+      }
+    },
+    "explore_models_url": "https://endpoints.huggingface.co/catalog"
+  }
+}

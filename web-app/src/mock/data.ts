@@ -281,4 +281,38 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://your-endpoint.endpoints.huggingface.cloud/v1',
+    explore_models_url: 'https://endpoints.huggingface.co/catalog',
+    provider: 'huggingface',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "Your Hugging Face token for authentication. Visit your [Access Tokens](https://huggingface.co/settings/tokens) page to retrieve the API key you'll use with your endpoints.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'hf_...',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Endpoint URL',
+        description:
+          'Your dedicated Inference Endpoint URL ending with /v1. Create and manage endpoints at [Hugging Face Inference Endpoints](https://ui.endpoints.huggingface.co/). Example: https://abc123.us-east-1.aws.endpoints.huggingface.cloud/v1',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://your-endpoint.endpoints.huggingface.cloud/v1',
+          value: 'https://your-endpoint.endpoints.huggingface.cloud/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]

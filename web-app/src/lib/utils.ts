@@ -31,6 +31,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/deepseek.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
+    case 'huggingface':
+      return '/images/model-provider/hugging-face.svg'
     default:
       return undefined
   }
@@ -46,6 +48,8 @@ export const getProviderTitle = (provider: string) => {
       return 'OpenRouter'
     case 'gemini':
       return 'Gemini'
+    case 'huggingface':
+      return 'Hugging Face'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
