@@ -1,5 +1,5 @@
 name: "\U0001F3AF Goal"
-description: "Communicate externally the roadmap/goal that Jan is heading toward"
+description: "External communication of Jan's roadmap and objectives"
 title: 'goal: '
 type: "Goal"
 projects: ["menloresearch/30"]
@@ -10,16 +10,14 @@ body:
       required: true
     attributes:
       label: "Goal"
-      description: "Describe the conten of the goal"
-
+      description: "Describe the objective and desired outcome"
   - type: textarea
     validations:
       required: true
     attributes:
       label: "Tasklist"
-      description: "List of task to complete to reach the goal"
-
+      description: "List the specific tasks needed to achieve this goal"
   - type: textarea
     attributes:
       label: "Out of scope"
-      description: "List of things that is out of scope for this goal"
+      description: "List items that are explicitly excluded from this goal"

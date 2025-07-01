@@ -1,6 +1,6 @@
 name: "\U0001F31F Epic"
-description: "Major building block that push us toward Jan Goal"
-title: 'goal: '
+description: "Major building block that advances Jan's goals"
+title: 'epic: '
 type: "Epic"
 projects: ["menloresearch/30"]
 body:
@@ -9,16 +9,14 @@ body:
       required: true
     attributes:
       label: "Goal"
-      description: "Describe the content of the goal"
-
+      description: "Describe the epic's objective and expected impact"
   - type: textarea
     validations:
       required: true
     attributes:
       label: "Tasklist"
-      description: "List of tasks to complete to reach the goal"
-
+      description: "List the key tasks required to complete this epic"
   - type: textarea
     attributes:
       label: "Out of scope"
-      description: "List of things that is out of scope for this goal"
+      description: "List items that are explicitly excluded from this epic"
