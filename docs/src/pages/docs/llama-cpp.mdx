@@ -33,7 +33,7 @@ import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-rea
 Jan uses **llama.cpp** for running local AI models. You can find its settings in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
 
 <br/>
-![llama.cpp](./_assets/llama.cpp-01.png)
+![llama.cpp](./_assets/llama.cpp-01-updated.png)
 <br/>
 
 These settings are for advanced users, you would want to check these settings when:
@@ -151,6 +151,7 @@ For detailed hardware compatibility, please visit our guide for [Mac](/docs/desk
 | **Caching** | - Enable to store recent prompts and responses<br></br>- Improves response time for repeated prompts | Enabled |
 | **KV Cache Type** | - KV cache implementation type; controls memory usage and precision trade-off<br></br>- Options:<br></br>• f16 (most stable)<br></br>• q8_0 (balanced)<br></br>• q4_0 (lowest memory) | f16 |
 | **mmap** | - Enables memory-mapped model loading<br></br>- Reduces memory usage<br></br>- Recommended for large models | Enabled |
+| **Context Shift** | - Automatically shifts the context window when the model is unable to process the entire prompt<br/> - Ensures that the most relevant information is always included <br/> - Recommended for long conversations and multiple tool calls | Disabled |
 
 
 ## Best Practices
