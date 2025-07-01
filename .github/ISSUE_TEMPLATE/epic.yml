@@ -9,7 +9,7 @@ body:
       required: true
     attributes:
       label: "Goal"
-      description: "Describe the conten of the goal"
+      description: "Describe the content of the goal"
 
   - type: textarea
     validations:
