@@ -16,7 +16,7 @@ body:
       required: true
     attributes:
       label: "Tasklist"
-      description: "List of task to complete to reach the goal"
+      description: "List of tasks to complete to reach the goal"
 
   - type: textarea
     attributes:
