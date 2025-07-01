@@ -4,7 +4,8 @@
   "workspaces": {
     "packages": [
       "core",
-      "web-app"
+      "web-app",
+      "tests-e2e-js"
     ]
   },
   "scripts": {
@@ -13,6 +14,11 @@
     "build": "yarn build:web && yarn build:tauri",
     "test": "yarn workspace @janhq/web-app test",
     "test:coverage": "yarn workspace @janhq/web-app test",
+    "test:prepare": "yarn build:icon && yarn copy:lib && yarn copy:assets:tauri && yarn build --no-bundle ",
+    "test:e2e:linux": "yarn test:prepare && xvfb-run yarn workspace tests-e2-js test",
+    "test:e2e:win32": "yarn test:prepare && yarn workspace tests-e2-js test",
+    "test:e2e:darwin": "echo 'E2E tests are not supported on macOS yet due to WebDriver limitations'",
+    "test:e2e": "run-script-os",
     "dev:web": "yarn workspace @janhq/web-app dev",
     "dev:tauri": "CLEAN=true yarn build:icon && yarn copy:assets:tauri && tauri dev",
     "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",
