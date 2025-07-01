@@ -49,4 +49,4 @@ src-tauri/resources/bin
 # Helper tools
 .opencode
 OpenCode.md
-archive/
+archive/flatpak/
