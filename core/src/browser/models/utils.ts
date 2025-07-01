@@ -62,7 +62,7 @@ export const normalizeValue = (key: string, value: any) => {
   ) {
     // Convert to float
     const newValue = parseFloat(value)
-    if (newValue && !isNaN(newValue)) {
+    if (newValue !== null && !isNaN(newValue)) {
       return newValue
     }
   }
