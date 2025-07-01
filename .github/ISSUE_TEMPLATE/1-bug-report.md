@@ -3,11 +3,9 @@ name: 🐛 Bug Report
 about: If something isn't working as expected 🤔
 title: 'bug: '
 type: Bug
-projects: ["menloresearch/30"]
+projects: menloresearch/30
 ---
 
-## Jan Version
-<!-- Tip: The version is in the app's bottom right corner -->
 **Version:** e.g. 0.5.x-xxx
 
 ## Describe the Bug
@@ -15,17 +13,13 @@ projects: ["menloresearch/30"]
 
 
 ## Steps to Reproduce
-<!-- Please list out steps to reproduce the issue -->
-1. Go to '...'
-2. Click on '...'
-3. 
+1.
 
 ## Screenshots / Logs
-<!-- You can find logs in: ~/jan/logs/app.logs -->
+<!-- You can find logs in: Setting -> General -> Data Folder -> App Logs -->
 
 
 ## Operating System
-<!-- Please check your OS -->
 - [ ] MacOS
 - [ ] Windows
 - [ ] Linux
