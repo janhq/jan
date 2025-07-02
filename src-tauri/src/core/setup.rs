@@ -277,7 +277,12 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 ]);
             #[cfg(target_os = "windows")]
             {
-                let resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
+                let mut resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
+                // If debug
+                #[cfg(debug_assertions)]
+                {
+                    resource_dir = resource_dir.join("binaries");
+                }
                 let normalized_path = resource_dir.to_string_lossy().replace(r"\\?\", "");
                 let normalized_pathbuf = PathBuf::from(normalized_path);
                 cmd = cmd.current_dir(normalized_pathbuf);
@@ -286,12 +291,12 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             #[cfg(not(target_os = "windows"))]
             {
                 cmd = cmd.env("LD_LIBRARY_PATH", {
-                    let current_app_data_dir = app_handle_for_spawn
-                        .path()
-                        .resource_dir()
-                        .unwrap()
-                        .join("binaries");
-                    let dest = current_app_data_dir.to_str().unwrap();
+                    let mut resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
+                    #[cfg(not(debug_assertions))]
+                    {
+                        resource_dir = resource_dir.join("binaries");
+                    }
+                    let dest = resource_dir.to_str().unwrap();
                     let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                     format!("{}{}{}", ld_path_env, ":", dest)
                 });
