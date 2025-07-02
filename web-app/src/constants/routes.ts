@@ -5,6 +5,7 @@ export const route = {
   assistant: '/assistant',
   settings: {
     index: '/settings',
+    model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',
     appearance: '/settings/appearance',

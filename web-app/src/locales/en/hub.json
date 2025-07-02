@@ -13,7 +13,6 @@
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "searchPlaceholder": "Search for models on Hugging Face...",
-  "editTheme": "Edit Theme",
   "joyride": {
     "recommendedModelTitle": "Recommended Model",
     "recommendedModelContent": "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-Nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",

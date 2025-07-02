@@ -8,18 +8,19 @@ import { ModelParams, ModelRuntimeParams, ModelSettingParams } from '../../types
 export const validationRules: { [key: string]: (value: any) => boolean } = {
   temperature: (value: any) => typeof value === 'number' && value >= 0 && value <= 2,
   token_limit: (value: any) => Number.isInteger(value) && value >= 0,
-  top_k: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
+  top_k: (value: any) => typeof value === 'number' && value >= 0,
   top_p: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   stream: (value: any) => typeof value === 'boolean',
   max_tokens: (value: any) => Number.isInteger(value) && value >= 0,
   stop: (value: any) => Array.isArray(value) && value.every((v) => typeof v === 'string'),
-  frequency_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
-  presence_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
+  frequency_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
+  presence_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
   repeat_last_n: (value: any) => typeof value === 'number',
   repeat_penalty: (value: any) => typeof value === 'number',
+  min_p: (value: any) => typeof value === 'number',
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
-  ngl: (value: any) => Number.isInteger(value),
+  ngl: (value: any) => Number.isInteger(value) && value >= 0,
   embedding: (value: any) => typeof value === 'boolean',
   n_parallel: (value: any) => Number.isInteger(value) && value >= 0,
   cpu_threads: (value: any) => Number.isInteger(value) && value >= 0,
@@ -48,6 +49,22 @@ export const normalizeValue = (key: string, value: any) => {
   ) {
     // Convert to integer
     return Math.floor(Number(value))
+  }
+  if (
+    key === 'temperature' ||
+    key === 'top_k' ||
+    key === 'top_p' ||
+    key === 'min_p' ||
+    key === 'repeat_penalty' ||
+    key === 'frequency_penalty' ||
+    key === 'presence_penalty' ||
+    key === 'repeat_last_n'
+  ) {
+    // Convert to float
+    const newValue = parseFloat(value)
+    if (newValue !== null && !isNaN(newValue)) {
+      return newValue
+    }
   }
   return value
 }
