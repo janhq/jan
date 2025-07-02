@@ -402,20 +402,21 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async waitForModelLoad(
-    port: number,
+    sInfo: SessionInfo,
     timeoutMs = 30_000
   ): Promise<void> {
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
       try {
-        const res = await fetch(`http://localhost:${port}/health`)
+        const res = await fetch(`http://localhost:${sInfo.port}/health`)
         if (res.ok) {
           return
         }
       } catch (e) {}
       await this.sleep(500) // 500 sec interval during rechecks
     }
-    throw new Error(`Timed out loading model after ${timeoutMs}`)
+    await this.unload(sInfo.pid)
+    throw new Error(`Timed out loading model after ${timeoutMs}... killing llamacpp`)
   }
 
   override async load(
@@ -482,7 +483,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Add remaining options from the interface
-    if (cfg.n_gpu_layers > 0) args.push('-ngl', String(cfg.n_gpu_layers))
+    args.push('-ngl', String(cfg.n_gpu_layers > 0 ? cfg.n_gpu_layers : 100))
     if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
     if (cfg.threads_batch > 0)
       args.push('--threads-batch', String(cfg.threads_batch))
@@ -496,7 +497,7 @@ export default class llamacpp_extension extends AIEngine {
     // Boolean flags
     if (cfg.flash_attn) args.push('--flash-attn')
     if (cfg.cont_batching) args.push('--cont-batching')
-    if (cfg.no_mmap) args.push('--no-mmap')
+    args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
@@ -528,10 +529,10 @@ export default class llamacpp_extension extends AIEngine {
         args,
       })
 
-      await this.waitForModelLoad(sInfo.port)
-
       // Store the session info for later use
       this.activeSessions.set(sInfo.pid, sInfo)
+      await this.waitForModelLoad(sInfo)
+
 
       return sInfo
     } catch (error) {
@@ -653,6 +654,10 @@ export default class llamacpp_extension extends AIEngine {
     const sessionInfo = this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
+    }
+    const result = invoke<boolean>('is_process_running', { pid: sessionInfo.pid })
+    if (!result) {
+        throw new Error("Model have crashed! Please reload!")
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`

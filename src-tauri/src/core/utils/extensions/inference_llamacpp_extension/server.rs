@@ -9,6 +9,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 use std::time::Duration;
 use tokio::time::timeout;
+use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::core::state::AppState;
 
@@ -243,4 +244,13 @@ pub fn generate_api_key(model_id: String, api_secret: String) -> Result<String, 
     let code_bytes = result.into_bytes();
     let hash = general_purpose::STANDARD.encode(code_bytes);
     Ok(hash)
+}
+
+// process aliveness check
+#[tauri::command]
+pub fn is_process_running(pid: u32) -> Result<bool, String> {
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::All, true);
+    let process_pid = Pid::from(pid as usize);
+    Ok(system.process(process_pid).is_some())
 }
