@@ -1,0 +1,24 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/lib/",
+      "binaries/**/*"
+    ],
+    "externalBin": [
+      "binaries/cortex-server",
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ]
+  }
+}

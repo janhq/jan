@@ -73,43 +73,5 @@
       }
     },
     "deep-link": { "schemes": ["jan"] }
-  },
-  "bundle": {
-    "active": true,
-    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
-    "createUpdaterArtifacts": false,
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "resources": [
-      "resources/pre-install/**/*",
-      "resources/lib/",
-      "binaries/**/*"
-    ],
-    "externalBin": [
-      "binaries/cortex-server",
-      "resources/bin/bun",
-      "resources/bin/uv"
-    ],
-    "linux": {
-      "appimage": {
-        "bundleMediaFramework": false,
-        "files": {}
-      },
-      "deb": {
-        "files": {
-          "usr/bin/bun": "resources/bin/bun",
-          "usr/lib/Jan/binaries": "binaries/deps",
-          "usr/lib/Jan/binaries/engines": "binaries/engines"
-        }
-      }
-    },
-    "windows": {
-      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
-    }
   }
 }
