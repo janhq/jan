@@ -19,6 +19,7 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -37,6 +38,7 @@ function ThreadDetail() {
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
   const { appMainViewBgColor, chatWidth } = useAppearance()
+  const isSmallScreen = useSmallScreen()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -213,7 +215,8 @@ function ThreadDetail() {
           <div
             className={cn(
               'w-4/6 mx-auto flex max-w-full flex-col grow',
-              chatWidth === 'compact' ? 'w-4/6' : 'w-full'
+              chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
+              isSmallScreen && 'w-full'
             )}
           >
             {messages &&
@@ -252,8 +255,9 @@ function ThreadDetail() {
         </div>
         <div
           className={cn(
-            ' mx-auto pt-2 pb-3 shrink-0 relative',
-            chatWidth === 'compact' ? 'w-4/6' : 'w-full px-3'
+            'mx-auto pt-2 pb-3 shrink-0 relative px-2',
+            chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
+            isSmallScreen && 'w-full'
           )}
         >
           <div

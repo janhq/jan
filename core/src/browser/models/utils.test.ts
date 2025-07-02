@@ -257,7 +257,7 @@ describe('extractInferenceParams', () => {
       max_tokens: 50.3,
       invalid_param: 'should_be_ignored',
     }
-
+    
     const result = extractInferenceParams(modelParams as any)
     expect(result).toEqual({
       temperature: 1.5,

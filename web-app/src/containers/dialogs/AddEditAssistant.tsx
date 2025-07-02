@@ -378,73 +378,27 @@ export default function AddEditAssistant({
             </div>
 
             {paramsKeys.map((key, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Input
-                  value={key}
-                  onChange={(e) =>
-                    handleParameterChange(index, e.target.value, 'key')
-                  }
-                  placeholder={t('assistants:key')}
-                  className="w-24"
-                />
+              <div key={index} className="flex items-center gap-4">
+                <div
+                  key={index}
+                  className="flex items-center flex-col sm:flex-row w-full gap-2"
+                >
+                  <Input
+                    value={key}
+                    onChange={(e) =>
+                      handleParameterChange(index, e.target.value, 'key')
+                    }
+                    placeholder={t('assistants:key')}
+                    className="w-full sm:w-24"
+                  />
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <div className="relative w-30">
-                      <Input
-                        value={
-                          paramsTypes[index].charAt(0).toUpperCase() +
-                          paramsTypes[index].slice(1)
-                        }
-                        readOnly
-                      />
-                      <IconChevronDown
-                        size={14}
-                        className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
-                      />
-                    </div>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-32" align="start">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        handleParameterChange(index, 'string', 'type')
-                      }
-                    >
-                      {t('assistants:stringValue')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        handleParameterChange(index, 'number', 'type')
-                      }
-                    >
-                      {t('assistants:numberValue')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        handleParameterChange(index, 'boolean', 'type')
-                      }
-                    >
-                      {t('assistants:booleanValue')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        handleParameterChange(index, 'json', 'type')
-                      }
-                    >
-                      {t('assistants:jsonValue')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {paramsTypes[index] === 'boolean' ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <div className="relative flex-1">
+                      <div className="relative w-full sm:w-30">
                         <Input
                           value={
-                            paramsValues[index]
-                              ? t('assistants:trueValue')
-                              : t('assistants:falseValue')
+                            paramsTypes[index].charAt(0).toUpperCase() +
+                            paramsTypes[index].slice(1)
                           }
                           readOnly
                         />
@@ -454,48 +408,98 @@ export default function AddEditAssistant({
                         />
                       </div>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-24" align="start">
+                    <DropdownMenuContent className="w-32" align="start">
                       <DropdownMenuItem
                         onClick={() =>
-                          handleParameterChange(index, true, 'value')
+                          handleParameterChange(index, 'string', 'type')
                         }
                       >
-                        {t('assistants:trueValue')}
+                        {t('assistants:stringValue')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() =>
-                          handleParameterChange(index, false, 'value')
+                          handleParameterChange(index, 'number', 'type')
                         }
                       >
-                        {t('assistants:falseValue')}
+                        {t('assistants:numberValue')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleParameterChange(index, 'boolean', 'type')
+                        }
+                      >
+                        {t('assistants:booleanValue')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleParameterChange(index, 'json', 'type')
+                        }
+                      >
+                        {t('assistants:jsonValue')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                ) : paramsTypes[index] === 'json' ? (
-                  <Input
-                    value={
-                      typeof paramsValues[index] === 'object'
-                        ? JSON.stringify(paramsValues[index], null, 2)
-                        : paramsValues[index]?.toString() || ''
-                    }
-                    onChange={(e) =>
-                      handleParameterChange(index, e.target.value, 'value')
-                    }
-                    placeholder={t('assistants:jsonValuePlaceholder')}
-                    className="flex-1"
-                  />
-                ) : (
-                  <Input
-                    value={paramsValues[index]?.toString() || ''}
-                    onChange={(e) =>
-                      handleParameterChange(index, e.target.value, 'value')
-                    }
-                    type={paramsTypes[index] === 'number' ? 'number' : 'text'}
-                    placeholder={t('assistants:value')}
-                    className="flex-1"
-                  />
-                )}
 
+                  {paramsTypes[index] === 'boolean' ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <div className="relative sm:flex-1 w-full">
+                          <Input
+                            value={
+                              paramsValues[index]
+                                ? t('assistants:trueValue')
+                                : t('assistants:falseValue')
+                            }
+                            readOnly
+                          />
+                          <IconChevronDown
+                            size={14}
+                            className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
+                          />
+                        </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-24" align="start">
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleParameterChange(index, true, 'value')
+                          }
+                        >
+                          {t('assistants:trueValue')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleParameterChange(index, false, 'value')
+                          }
+                        >
+                          {t('assistants:falseValue')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : paramsTypes[index] === 'json' ? (
+                    <Input
+                      value={
+                        typeof paramsValues[index] === 'object'
+                          ? JSON.stringify(paramsValues[index], null, 2)
+                          : paramsValues[index]?.toString() || ''
+                      }
+                      onChange={(e) =>
+                        handleParameterChange(index, e.target.value, 'value')
+                      }
+                      placeholder={t('assistants:jsonValuePlaceholder')}
+                      className="sm:flex-1 h-[36px] w-full"
+                    />
+                  ) : (
+                    <Input
+                      value={paramsValues[index]?.toString() || ''}
+                      onChange={(e) =>
+                        handleParameterChange(index, e.target.value, 'value')
+                      }
+                      type={paramsTypes[index] === 'number' ? 'number' : 'text'}
+                      placeholder={t('assistants:value')}
+                      className="sm:flex-1 h-[36px] w-full"
+                    />
+                  )}
+                </div>
                 <div
                   className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                   onClick={() => handleRemoveParameter(index)}

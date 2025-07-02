@@ -13,7 +13,6 @@
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
   "searchPlaceholder": "在 Hugging Face 上搜索模型...",
-  "editTheme": "编辑主题",
   "joyride": {
     "recommendedModelTitle": "推荐模型",
     "recommendedModelContent": "在一个地方浏览和下载来自不同提供商的强大 AI 模型。我们建议从 Jan-Nano 开始 - 这是一个针对函数调用、工具集成和研究功能进行优化的模型。它非常适合构建交互式 AI 代理。",
