@@ -95,6 +95,7 @@ pub fn run() {
             core::utils::extensions::inference_llamacpp_extension::server::load_llama_model,
             core::utils::extensions::inference_llamacpp_extension::server::unload_llama_model,
             core::utils::extensions::inference_llamacpp_extension::server::generate_api_key,
+            core::utils::extensions::inference_llamacpp_extension::server::is_process_running,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
