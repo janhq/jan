@@ -10,7 +10,6 @@ import { fetchModels } from './models'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
-
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = predefinedProviders.map((provider) => {
     let models = provider.models as Model[]
@@ -48,7 +47,6 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   const runtimeProviders: ModelProvider[] = []
   for (const [providerName, value] of EngineManager.instance().engines) {
     const models = (await fetchModels()) ?? []
-
     const provider: ModelProvider = {
       active: false,
       persist: true,
@@ -119,7 +117,6 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   return runtimeProviders.concat(builtinProviders as ModelProvider[])
 }
 
-
 /**
  * Fetches models from a provider's API endpoint
  * Always uses Tauri's HTTP client to bypass CORS issues
@@ -178,14 +175,14 @@ export const fetchModelsFromProvider = async (
     }
   } catch (error) {
     console.error('Error fetching models from provider:', error)
-    
+
     // Provide helpful error message
     if (error instanceof Error && error.message.includes('fetch')) {
       throw new Error(
         `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
       )
     }
-    
+
     throw error
   }
 }
