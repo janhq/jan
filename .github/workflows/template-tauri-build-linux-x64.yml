@@ -104,20 +104,15 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
                                            "usr/lib/Jan-${{ inputs.channel }}/binaries": "binaries/deps",  
                                            "usr/lib/Jan-${{ inputs.channel }}/binaries/engines": "binaries/engines", 
-                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          else
-            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun", 
-                                           "usr/lib/Jan/binaries": "binaries/deps",
-                                           "usr/lib/Jan/binaries/engines": "binaries/engines", 
-                                           "usr/lib/Jan/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
+            mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
