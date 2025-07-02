@@ -205,7 +205,7 @@ function General() {
       <HeaderPage>
         <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
-      <div className="flex h-full w-full">
+      <div className="flex h-full w-full flex-col sm:flex-row">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
@@ -222,6 +222,7 @@ function General() {
               <CardItem
                 title={t('settings:general.checkForUpdates')}
                 description={t('settings:general.checkForUpdatesDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={
                   <Button
                     variant="link"
@@ -265,6 +266,7 @@ function General() {
                   ns: 'settings',
                 })}
                 align="start"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 description={
                   <>
                     <span>
@@ -273,13 +275,15 @@ function General() {
                       })}
                       &nbsp;
                     </span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        title={janDataFolder}
-                        className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80"
-                      >
-                        {janDataFolder}
-                      </span>
+                    <div className="flex items-center gap-2 mt-1 ">
+                      <div className="">
+                        <span
+                          title={janDataFolder}
+                          className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
+                        >
+                          {janDataFolder}
+                        </span>
+                      </div>
                       <button
                         onClick={() =>
                           janDataFolder && copyToClipboard(janDataFolder)
@@ -349,6 +353,7 @@ function General() {
                   ns: 'settings',
                 })}
                 description={t('settings:dataFolder.appLogsDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={
                   <div className="flex items-center gap-2">
                     <Button

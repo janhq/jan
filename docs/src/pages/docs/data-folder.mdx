@@ -56,36 +56,37 @@ cd ~/.config/Jan/data         # Default install
 <Callout type="info">
 Root directory: `~/jan`
 </Callout>
+
 ```sh
-/assistants
-  /jan
+/assistants/
+  /jan/
     assistant.json
-/extensions
+/engines/
+  /llama.cpp/
+/extensions/
   extensions.json
-  /@janhq
-    /extension_A
-     package.json
-/logs
-  /app.txt
-/models
-  /model_A
-    model.yaml
-  model_A.yaml
-/settings
-  settings.json
-  /@janhq
-    /extension_A_Settings
-     settings.json
-/themes
-  /dark-dimmed
-  /joi-dark
-  /joi-light
-  /night-blue
-/threads
-  /jan_thread_A
-   messages.jsonl
-   thread.json
-  messages.jsonl
+/@janhq/
+  /assistant-extension/
+    /conversational-extension/
+    /download-extension/
+    /engine-management-extension/
+    /hardware-management-extension/
+    /inference-cortex-extension/
+    /model-extension/
+/files/
+/logs/
+  app.log
+/models/
+  /huggingface.co/
+    /Model_Provider_A/
+      /Model_A
+        model_A.gguf
+        model_A.yaml
+/threads/
+  /thread_A/
+    messages.jsonl
+    thread.json
+
 ```
 
 ### `assistants/`
@@ -93,14 +94,28 @@ Where AI personalities live. The default one (`/assistants/jan/`):
 
 ```json
 {
-  "avatar": "",
+  "avatar": "👋",
   "id": "jan",
   "object": "assistant",
-  "created_at": 1715132389207,
+  "created_at": 1750945742.536,
   "name": "Jan",
-  "description": "A default assistant that can use all downloaded models",
+  "description": "Jan is a helpful AI assistant that can use tools and help complete tasks for its users.",
   "model": "*",
-  "instructions": ""
+  "instructions": "You have access to a set of tools to help you answer the user’s question. You can use only one tool per message, and you’ll receive the result of that tool in the user’s next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.",
+  "tools": [
+    {
+      "type": "retrieval",
+      "enabled": false,
+      "useTimeWeightedRetriever": false,
+      "settings": {
+        "top_k": 2,
+        "chunk_size": 1024,
+        "chunk_overlap": 64,
+        "retrieval_template": "Use the following pieces of context to answer the question at the end.\n----------------\nCONTEXT: {CONTEXT}\n----------------\nQUESTION: {QUESTION}\n----------------\nHelpful Answer:"
+      }
+    }
+  ],
+  "file_ids": []
 }
 ```
 
@@ -140,88 +155,65 @@ Debugging headquarters (`/logs/app.txt`):
 The silicon brain collection. Each model has its own `model.json`.
 
 <Callout type="info">
-Full parameters: [here](/docs/models/model-parameters)
+Full parameters: [here](/docs/model-parameters)
 </Callout>
-
-### `settings/`
-Control panel. Extension settings in `/settings/@janhq/`:
-
-| Parameter       | Description                                        |
-|----------------|----------------------------------------------------|
-| key            | Setting identifier                                 |
-| title          | Display name                                      |
-| description    | Setting explanation                               |
-| controllerType | UI component type                                 |
-| controllerProps| Component properties                              |
-| extensionName  | Parent extension link                             |
-
-GPU settings (`settings.json`):
-
-| Parameter             | Description                                |
-|----------------------|--------------------------------------------|
-| notify               | Notification status                        |
-| run_mode             | Operating mode                             |
-| nvidia_driver.exist  | NVIDIA driver presence                     |
-| nvidia_driver.version| Driver version                             |
-| cuda.exist          | CUDA availability                          |
-| cuda.version        | CUDA version                               |
-| gpus[0].id          | GPU identifier                             |
-| gpus[0].vram        | GPU memory (MB)                            |
-| gpus[0].name        | GPU model                                  |
-| gpus[0].arch        | GPU architecture                           |
-| gpu_highest_vram    | Most capable GPU                           |
-| gpus_in_use         | Active GPUs                                |
-| is_initial          | First run flag                             |
-| vulkan              | Vulkan support                             |
-
-### `themes/`
-Visual wardrobe. Each theme's `theme.json`:
-
-| Parameter         | Description                               |
-|------------------|-------------------------------------------|
-| id               | Theme identifier                          |
-| displayName      | UI name                                   |
-| reduceTransparent| Transparency control                      |
-| nativeTheme      | OS theme sync                             |
-| variables        | Component settings                        |
 
 ### `threads/`
 Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
 
 - `messages.jsonl`:
 ```json
-    {
-      "id":"01J6Y6FH8PFTHQB5PNJTHEN27C",
-      "thread_id":"jan_1725437954",
-      "type":"Thread",
-      "role":"assistant",
-      "content":
-      [
-        {
-          "type": "text",
-          "text": {
-            "value": "Hello! Is there something I can help you with or would you like to chat?",
-            "annotations": []
-          }
-        }
-      ],
-      "status": "ready",
-      "created": 1725442802966,
-      "updated": 1725442802966,
-      "object": "thread.message"
-    }
+  {
+    "completed_at": 0,
+    "content": [
+      {
+        "text": {
+          "annotations": [],
+          "value": "Hello! I can help you with various tasks. I can search for information on the internet, including news, videos, images, shopping, and more. I can also scrape webpages to extract specific information. Let me know what you need!"
+        },
+        "type": "text"
+      }
+    ],
+    "created_at": 1751012639307,
+    "id": "01JYR7S0JB5ZBGMJV52KWMW5VW",
+    "metadata": {
+      "assistant": {
+        "avatar": "👋",
+        "id": "jan",
+        "instructions": "You have access to a set of tools to help you answer the user's question. You can use only one tool per message, and you'll receive the result of that tool in the user's next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.",
+        "name": "Jan",
+        "parameters": ""
+      },
+      "tokenSpeed": {
+        "lastTimestamp": 1751012637097,
+        "message": "01JYR7S0GW5M9PSHMRE7T8VQJM",
+        "tokenCount": 49,
+        "tokenSpeed": 22.653721682847895
+      }
+    },
+    "object": "thread.message",
+    "role": "assistant",
+    "status": "ready",
+    "thread_id": "8f2c9922-db49-4d1e-8620-279c05baf2d0",
+    "type": "text"
+  }
 ```
 
 - `thread.json`:
 
 | Parameter   | Description                                    |
 |------------|------------------------------------------------|
+| assistants | Assistant configuration clone                  |
+| created    | Creation timestamp                             |
 | id         | Thread identifier                              |
+| metadata   | Additional thread data                         |
+| model      | Active model settings                          |
 | object     | OpenAI compatibility marker                    |
 | title      | Thread name                                    |
-| assistants | Assistant configuration clone                  |
-| model      | Active model settings                          |
-| metadata   | Additional thread data                         |
+| updated    | Updated timestamp                              |
+
+
+
 
 ## Delete Jan Data
 Uninstall guides: [Mac](/docs/desktop/mac#step-2-clean-up-data-optional),

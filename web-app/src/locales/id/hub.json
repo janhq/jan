@@ -13,7 +13,6 @@
   "useModel": "Gunakan model ini",
   "downloadModel": "Unduh model",
   "searchPlaceholder": "Cari model di Hugging Face...",
-  "editTheme": "Edit Tema",
   "joyride": {
     "recommendedModelTitle": "Model yang Direkomendasikan",
     "recommendedModelContent": "Jelajahi dan unduh model AI yang kuat dari berbagai penyedia, semuanya di satu tempat. Kami sarankan memulai dengan Jan-Nano - model yang dioptimalkan untuk pemanggilan fungsi, integrasi alat, dan kemampuan penelitian. Ini ideal untuk membangun agen AI interaktif.",

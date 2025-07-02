@@ -20,8 +20,10 @@ import {
   IconStar,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import { route } from '@/constants/routes'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 import {
   DropdownMenu,
@@ -55,6 +57,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     isDragging,
   } = useSortable({ id: thread.id, disabled: true })
 
+  const isSmallScreen = useSmallScreen()
+  const { setLeftPanel } = useLeftPanel()
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -75,7 +80,11 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
 
   const handleClick = () => {
     if (!isDragging) {
-      navigate({ to: route.threadsDetail, params: { threadId: thread.id } })
+      // Only close panel and navigate if the thread is not already active
+      if (!isActive) {
+        if (isSmallScreen) setLeftPanel(false)
+        navigate({ to: route.threadsDetail, params: { threadId: thread.id } })
+      }
     }
   }
 
@@ -85,7 +94,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
   }, [thread.title])
 
-  const [title, setTitle] = useState(plainTitleForRename || t('common:newThread'))
+  const [title, setTitle] = useState(
+    plainTitleForRename || t('common:newThread')
+  )
 
   return (
     <div
@@ -185,7 +196,10 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                         setOpenDropdown(false)
                         toast.success(t('common:toast.renameThread.title'), {
                           id: 'rename-thread',
-                          description: t('common:toast.renameThread.description', { title }),
+                          description: t(
+                            'common:toast.renameThread.description',
+                            { title }
+                          ),
                         })
                       }}
                     >
@@ -231,7 +245,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                         setOpenDropdown(false)
                         toast.success(t('common:toast.deleteThread.title'), {
                           id: 'delete-thread',
-                          description: t('common:toast.deleteThread.description'),
+                          description: t(
+                            'common:toast.deleteThread.description'
+                          ),
                         })
                         setTimeout(() => {
                           navigate({ to: route.home })

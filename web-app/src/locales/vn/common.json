@@ -256,12 +256,5 @@
     "description": "Cortex không khởi động được. Vui lòng kiểm tra log để biết thêm chi tiết.",
     "contactSupport": "Liên hệ Hỗ trợ",
     "restartJan": "Khởi động lại Jan"
-  },
-  "outOfContextError": {
-    "title": "Lỗi ngoài ngữ cảnh",
-    "description": "Cuộc trò chuyện này đang đạt đến giới hạn bộ nhớ của AI, giống như một bảng trắng đang đầy. Chúng ta có thể mở rộng cửa sổ bộ nhớ (gọi là kích thước ngữ cảnh) để nó nhớ nhiều hơn, nhưng có thể sử dụng nhiều bộ nhớ máy tính của bạn hơn. Chúng ta cũng có thể cắt bớt đầu vào, có nghĩa là nó sẽ quên một phần lịch sử trò chuyện để nhường chỗ cho tin nhắn mới.",
-    "increaseContextSizeDescription": "Bạn có muốn tăng kích thước ngữ cảnh không?",
-    "truncateInput": "Cắt bớt Đầu vào",
-    "increaseContextSize": "Tăng Kích thước Ngữ cảnh"
   }
 }

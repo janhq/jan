@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 jobs:
   build-and-publish-plugins:
-    environment: production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

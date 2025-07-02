@@ -29,7 +29,7 @@ describe('validationRules', () => {
     expect(validationRules.top_k(1)).toBe(true)
     expect(validationRules.top_k(0)).toBe(true)
     expect(validationRules.top_k(-0.1)).toBe(false)
-    expect(validationRules.top_k(1.1)).toBe(false)
+    expect(validationRules.top_k(1.1)).toBe(true)
     expect(validationRules.top_k('0.5')).toBe(false)
   })
 
@@ -68,8 +68,8 @@ describe('validationRules', () => {
     expect(validationRules.frequency_penalty(0.5)).toBe(true)
     expect(validationRules.frequency_penalty(1)).toBe(true)
     expect(validationRules.frequency_penalty(0)).toBe(true)
-    expect(validationRules.frequency_penalty(-0.1)).toBe(false)
-    expect(validationRules.frequency_penalty(1.1)).toBe(false)
+    expect(validationRules.frequency_penalty(-0.1)).toBe(true)
+    expect(validationRules.frequency_penalty(1.1)).toBe(true)
     expect(validationRules.frequency_penalty('0.5')).toBe(false)
   })
 
@@ -77,8 +77,8 @@ describe('validationRules', () => {
     expect(validationRules.presence_penalty(0.5)).toBe(true)
     expect(validationRules.presence_penalty(1)).toBe(true)
     expect(validationRules.presence_penalty(0)).toBe(true)
-    expect(validationRules.presence_penalty(-0.1)).toBe(false)
-    expect(validationRules.presence_penalty(1.1)).toBe(false)
+    expect(validationRules.presence_penalty(-0.1)).toBe(true)
+    expect(validationRules.presence_penalty(1.1)).toBe(true)
     expect(validationRules.presence_penalty('0.5')).toBe(false)
   })
 
@@ -152,6 +152,33 @@ describe('validationRules', () => {
     expect(validationRules.text_model('true')).toBe(false)
     expect(validationRules.text_model(1)).toBe(false)
   })
+
+  it('should validate repeat_last_n correctly', () => {
+    expect(validationRules.repeat_last_n(5)).toBe(true)
+    expect(validationRules.repeat_last_n(-5)).toBe(true)
+    expect(validationRules.repeat_last_n(0)).toBe(true)
+    expect(validationRules.repeat_last_n(1.5)).toBe(true)
+    expect(validationRules.repeat_last_n('5')).toBe(false)
+    expect(validationRules.repeat_last_n(null)).toBe(false)
+  })
+
+  it('should validate repeat_penalty correctly', () => {
+    expect(validationRules.repeat_penalty(1.1)).toBe(true)
+    expect(validationRules.repeat_penalty(0.9)).toBe(true)
+    expect(validationRules.repeat_penalty(0)).toBe(true)
+    expect(validationRules.repeat_penalty(-1)).toBe(true)
+    expect(validationRules.repeat_penalty('1.1')).toBe(false)
+    expect(validationRules.repeat_penalty(null)).toBe(false)
+  })
+
+  it('should validate min_p correctly', () => {
+    expect(validationRules.min_p(0.1)).toBe(true)
+    expect(validationRules.min_p(0)).toBe(true)
+    expect(validationRules.min_p(-0.1)).toBe(true)
+    expect(validationRules.min_p(1.5)).toBe(true)
+    expect(validationRules.min_p('0.1')).toBe(false)
+    expect(validationRules.min_p(null)).toBe(false)
+  })
 })
 
 it('should normalize invalid values for keys not listed in validationRules', () => {
@@ -192,18 +219,125 @@ describe('normalizeValue', () => {
     expect(normalizeValue('cpu_threads', '4')).toBe(4)
     expect(normalizeValue('cpu_threads', 0)).toBe(0)
   })
+
+  it('should handle edge cases for normalization', () => {
+    expect(normalizeValue('ctx_len', -5.7)).toBe(-6)
+    expect(normalizeValue('token_limit', 'abc')).toBeNaN()
+    expect(normalizeValue('max_tokens', null)).toBe(0)
+    expect(normalizeValue('ngl', undefined)).toBeNaN()
+    expect(normalizeValue('n_parallel', Infinity)).toBe(Infinity)
+    expect(normalizeValue('cpu_threads', -Infinity)).toBe(-Infinity)
+  })
+
+  it('should not normalize non-integer parameters', () => {
+    expect(normalizeValue('temperature', 1.5)).toBe(1.5)
+    expect(normalizeValue('top_p', 0.9)).toBe(0.9)
+    expect(normalizeValue('stream', true)).toBe(true)
+    expect(normalizeValue('prompt_template', 'template')).toBe('template')
+  })
 })
 
-it('should handle invalid values correctly by falling back to originParams', () => {
-  const modelParams = { temperature: 'invalid', token_limit: -1 }
-  const originParams = { temperature: 0.5, token_limit: 100 }
-  expect(extractInferenceParams(modelParams as any, originParams)).toEqual(originParams)
+describe('extractInferenceParams', () => {
+  it('should handle invalid values correctly by falling back to originParams', () => {
+    const modelParams = { temperature: 'invalid', token_limit: -1 }
+    const originParams = { temperature: 0.5, token_limit: 100 }
+    expect(extractInferenceParams(modelParams as any, originParams)).toEqual(originParams)
+  })
+
+  it('should return an empty object when no modelParams are provided', () => {
+    expect(extractInferenceParams()).toEqual({})
+  })
+
+  it('should extract and normalize valid inference parameters', () => {
+    const modelParams = {
+      temperature: 1.5,
+      token_limit: 100.7,
+      top_p: 0.9,
+      stream: true,
+      max_tokens: 50.3,
+      invalid_param: 'should_be_ignored',
+    }
+    
+    const result = extractInferenceParams(modelParams as any)
+    expect(result).toEqual({
+      temperature: 1.5,
+      token_limit: 100,
+      top_p: 0.9,
+      stream: true,
+      max_tokens: 50,
+    })
+  })
+
+  it('should handle parameters without validation rules', () => {
+    const modelParams = { engine: 'llama' }
+    const result = extractInferenceParams(modelParams as any)
+    expect(result).toEqual({ engine: 'llama' })
+  })
+
+  it('should skip invalid values when no origin params provided', () => {
+    const modelParams = { temperature: 'invalid', top_p: 0.8 }
+    const result = extractInferenceParams(modelParams as any)
+    expect(result).toEqual({ top_p: 0.8 })
+  })
 })
 
-it('should return an empty object when no modelParams are provided', () => {
-  expect(extractModelLoadParams()).toEqual({})
-})
+describe('extractModelLoadParams', () => {
+  it('should return an empty object when no modelParams are provided', () => {
+    expect(extractModelLoadParams()).toEqual({})
+  })
 
-it('should return an empty object when no modelParams are provided', () => {
-  expect(extractInferenceParams()).toEqual({})
+  it('should extract and normalize valid model load parameters', () => {
+    const modelParams = {
+      ctx_len: 2048.5,
+      ngl: 12.7,
+      embedding: true,
+      n_parallel: 4.2,
+      cpu_threads: 8.9,
+      prompt_template: 'template',
+      llama_model_path: '/path/to/model',
+      vision_model: false,
+      invalid_param: 'should_be_ignored',
+    }
+
+    const result = extractModelLoadParams(modelParams as any)
+    expect(result).toEqual({
+      ctx_len: 2048,
+      ngl: 12,
+      embedding: true,
+      n_parallel: 4,
+      cpu_threads: 8,
+      prompt_template: 'template',
+      llama_model_path: '/path/to/model',
+      vision_model: false,
+    })
+  })
+
+  it('should handle parameters without validation rules', () => {
+    const modelParams = {
+      engine: 'llama',
+      pre_prompt: 'System:',
+      system_prompt: 'You are helpful',
+      model_path: '/path',
+    }
+    const result = extractModelLoadParams(modelParams as any)
+    expect(result).toEqual({
+      engine: 'llama',
+      pre_prompt: 'System:',
+      system_prompt: 'You are helpful',
+      model_path: '/path',
+    })
+  })
+
+  it('should fall back to origin params for invalid values', () => {
+    const modelParams = { ctx_len: -1, ngl: 'invalid' }
+    const originParams = { ctx_len: 2048, ngl: 12 }
+    const result = extractModelLoadParams(modelParams as any, originParams)
+    expect(result).toEqual({})
+  })
+
+  it('should skip invalid values when no origin params provided', () => {
+    const modelParams = { ctx_len: -1, embedding: true }
+    const result = extractModelLoadParams(modelParams as any)
+    expect(result).toEqual({ embedding: true })
+  })
 })

@@ -27,6 +27,7 @@ import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
+import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
 // Create/Update Routes
@@ -124,6 +125,12 @@ const SettingsAppearanceRoute = SettingsAppearanceImport.update({
 const LocalApiServerLogsRoute = LocalApiServerLogsImport.update({
   id: '/local-api-server/logs',
   path: '/local-api-server/logs',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsProvidersIndexRoute = SettingsProvidersIndexImport.update({
+  id: '/settings/providers/',
+  path: '/settings/providers/',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -257,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersProviderNameImport
       parentRoute: typeof rootRoute
     }
+    '/settings/providers/': {
+      id: '/settings/providers/'
+      path: '/settings/providers'
+      fullPath: '/settings/providers'
+      preLoaderRoute: typeof SettingsProvidersIndexImport
+      parentRoute: typeof rootRoute
+    }
   }
 }
 
@@ -280,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/providers': typeof SettingsProvidersIndexRoute
 }
 
 export interface FileRoutesByTo {
@@ -300,6 +315,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/providers': typeof SettingsProvidersIndexRoute
 }
 
 export interface FileRoutesById {
@@ -321,6 +337,7 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
 
 export interface FileRouteTypes {
@@ -343,6 +360,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
+    | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -362,6 +380,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
+    | '/settings/providers'
   id:
     | '__root__'
     | '/'
@@ -381,6 +400,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
+    | '/settings/providers/'
   fileRoutesById: FileRoutesById
 }
 
@@ -402,6 +422,7 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
+  SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -422,6 +443,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
+  SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
 
 export const routeTree = rootRoute
@@ -450,7 +472,8 @@ export const routeTree = rootRoute
         "/settings/privacy",
         "/settings/shortcuts",
         "/threads/$threadId",
-        "/settings/providers/$providerName"
+        "/settings/providers/$providerName",
+        "/settings/providers/"
       ]
     },
     "/": {
@@ -503,6 +526,9 @@ export const routeTree = rootRoute
     },
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"
+    },
+    "/settings/providers/": {
+      "filePath": "settings/providers/index.tsx"
     }
   }
 }

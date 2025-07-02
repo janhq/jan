@@ -55,7 +55,6 @@ jobs:
       DEB_SIG: ${{ steps.packageinfo.outputs.DEB_SIG }}
       APPIMAGE_SIG: ${{ steps.packageinfo.outputs.APPIMAGE_SIG }}
       APPIMAGE_FILE_NAME: ${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
-    environment: production
     permissions:
       contents: write
     steps:
@@ -96,7 +95,7 @@ jobs:
         run: |
           cargo install ctoml
 
-      - name: Install Tauri dependecies
+      - name: Install Tauri dependencies
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
@@ -151,6 +150,12 @@ jobs:
           fi
       - name: Build app
         run: |
+          # Pin linuxdeploy version to prevent @tauri-apps/cli-linux-x64-gnu from pulling in an outdated version
+          TAURI_TOOLKIT_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$TAURI_TOOLKIT_PATH"
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage -O "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
+          chmod +x "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
+
           make build-tauri
           # Copy engines and bun to appimage
            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool

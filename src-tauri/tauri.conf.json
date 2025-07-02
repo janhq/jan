@@ -17,6 +17,8 @@
         "label": "main",
         "title": "Jan",
         "width": 1024,
+        "minWidth": 375,
+        "minHeight": 667,
         "height": 800,
         "resizable": true,
         "fullscreen": false,
