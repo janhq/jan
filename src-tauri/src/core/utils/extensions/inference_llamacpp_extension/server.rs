@@ -3,13 +3,13 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::path::PathBuf;
+use std::time::Duration;
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::State; // Import Manager trait
 use thiserror;
 use tokio::process::Command;
-use uuid::Uuid;
-use std::time::Duration;
 use tokio::time::timeout;
-use sysinfo::{Pid, ProcessesToUpdate, System};
+use uuid::Uuid;
 
 use crate::core::state::AppState;
 
@@ -136,6 +136,8 @@ pub async fn load_llama_model(
     // command.stderr(Stdio::piped());
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
 
@@ -199,12 +201,14 @@ pub async fn unload_llama_model(
 
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
-            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
             use windows_sys::Win32::Foundation::BOOL;
+            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
 
             if let Some(raw_pid) = child.id() {
                 log::info!("Sending Ctrl-C to PID {}", raw_pid);
-                let ok: BOOL = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid) };
+                let ok: BOOL = unsafe {
+                    GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32)
+                };
                 if ok == 0 {
                     log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
                 }
@@ -216,7 +220,10 @@ pub async fn unload_llama_model(
                         log::warn!("Timed out; force-killing PID {}", raw_pid);
                         if let Err(e) = child.kill().await {
                             log::error!("Failed to kill process {}: {}", raw_pid, e);
-                            return Ok(UnloadResult { success: false, error: Some(format!("kill failed: {}", e)) });
+                            return Ok(UnloadResult {
+                                success: false,
+                                error: Some(format!("kill failed: {}", e)),
+                            });
                         }
                         if let Ok(s) = child.wait().await {
                             log::info!("Process finally exited: {}", s);
@@ -226,13 +233,18 @@ pub async fn unload_llama_model(
             }
         }
 
-        Ok(UnloadResult { success: true, error: None })
+        Ok(UnloadResult {
+            success: true,
+            error: None,
+        })
     } else {
         log::warn!("No server with PID '{}' found", pid);
-        Ok(UnloadResult { success: true, error: None })
+        Ok(UnloadResult {
+            success: true,
+            error: None,
+        })
     }
 }
-
 
 // crypto
 #[tauri::command]
