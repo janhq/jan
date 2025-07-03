@@ -486,14 +486,12 @@ function Hub() {
                             >
                               <h1
                                 className={cn(
-                                  'text-main-view-fg font-medium text-base capitalize truncate max-w-38 sm:max-w-none',
+                                  'text-main-view-fg font-medium text-base capitalize  sm:max-w-none',
                                   isRecommendedModel(model.model_name)
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
-                                title={
-                                  extractModelName(model.metadata?.id) || ''
-                                }
+                                title={extractModelName(model.model_name) || ''}
                               >
                                 {extractModelName(model.model_name) || ''}
                               </h1>
