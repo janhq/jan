@@ -149,6 +149,8 @@ jobs:
             cat ./package.json
           fi
       - name: Build app
+        env:
+          RELEASE_CHANNEL: "${inputs.channel}"
         run: |
           # Pin linuxdeploy version to prevent @tauri-apps/cli-linux-x64-gnu from pulling in an outdated version
           TAURI_TOOLKIT_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
@@ -157,39 +159,12 @@ jobs:
           chmod +x "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
 
           make build-tauri
-          # Copy engines and bun to appimage
-           wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool
-          chmod +x ./appimagetool
-          if [ "${{ inputs.channel }}" != "stable" ]; then
-            ls ./src-tauri/target/release/bundle/appimage/
-            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
-            mkdir -p ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/engines
-            cp -f ./src-tauri/binaries/deps/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep .AppImage | head -1)
-            echo $APP_IMAGE
-            rm -f $APP_IMAGE
-            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $APP_IMAGE
-            yarn tauri signer sign \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$APP_IMAGE"
-          else
-            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
-            mkdir -p ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
-            cp -f ./src-tauri/binaries/deps/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-            echo $APP_IMAGE
-            rm -f $APP_IMAGE
-            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
-            yarn tauri signer sign \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$APP_IMAGE"
-          fi
+
+          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
+          yarn tauri signer sign \
+          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+          "$APP_IMAGE"
 
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
