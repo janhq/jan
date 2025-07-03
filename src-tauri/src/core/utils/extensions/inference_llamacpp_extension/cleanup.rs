@@ -32,12 +32,11 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
             #[cfg(all(windows, target_arch = "x86_64"))]
             {
                 use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-                use windows_sys::Win32::Foundation::BOOL;
                 use tokio::time::{timeout, Duration};
 
                 if let Some(raw_pid) = child.id() {
                     log::info!("Sending Ctrl-C to PID {} during shutdown", raw_pid);
-                    let ok: BOOL = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid) };
+                    let ok: i32 = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid) };
                     if ok == 0 {
                         log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
                     }
