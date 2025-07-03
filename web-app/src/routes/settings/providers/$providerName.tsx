@@ -2,6 +2,7 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useHardware } from '@/hooks/useHardware'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
@@ -77,6 +78,7 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
+  const { updateGPUActivationFromDeviceString } = useHardware()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
@@ -282,6 +284,17 @@ function ProviderDetail() {
                               ) {
                                 updateObj.base_url = newValue
                               }
+
+                              // Special handling for device setting changes
+                              if (
+                                settingKey === 'device' &&
+                                typeof newValue === 'string' &&
+                                provider.provider === 'llamacpp'
+                              ) {
+                                console.log(`Device setting manually changed to: "${newValue}"`)
+                                updateGPUActivationFromDeviceString(newValue)
+                              }
+
                               updateSettings(
                                 providerName,
                                 updateObj.settings ?? []
