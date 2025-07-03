@@ -10,6 +10,13 @@
     }
   },
   {
+      "key": "auto_update_engine",
+      "title": "Auto update engine",
+      "description": "Automatically update llamacpp engine to latest version",
+      "controllerType": "checkbox",
+      "controllerProps": { "value": true }
+  },
+  {
     "key": "auto_unload_models",
     "title": "Auto-Unload Old Models",
     "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",

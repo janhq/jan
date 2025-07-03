@@ -25,11 +25,13 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
+  getBackendDir
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
   version_backend: string
+  auto_update_engine: boolean
   auto_unload: boolean
   n_gpu_layers: number
   ctx_size: number
@@ -118,113 +120,348 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
-    let settings = structuredClone(SETTINGS)
+    let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
-    // update backend settings
-    for (let item of settings) {
-      if (item.key === 'version_backend') {
-        // NOTE: is there a race condition between when tauri IPC is available
-        // and when the extension is loaded?
-        const version_backends = await listSupportedBackends()
-        let bestBackend: { version: string, backend: string } | undefined
-        const backendPriorities: string[] = ['cuda-cu12.0', 'cuda-cu11.7', 'vulkan', 'avx512', 'avx2', 'avx', 'noavx', 'arm64', 'x64']
-        const getBackendCategory = (backendString: string): string | undefined => {
-            if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
-            if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
-            if (backendString.includes('vulkan')) return 'vulkan'
-            // TODO: more GPU backends such as SYCL/HIP
-            if (backendString.includes('avx512')) return 'avx512'
-            if (backendString.includes('avx2')) return 'avx2'
-            if (backendString.includes('avx') && !backendString.includes('avx2') && !backendString.includes('avx512')) return 'avx'
-            if (backendString.includes('noavx')) return 'noavx'
-            // Fallback for OS/arch specific generics if no specific features mentioned
-            if (backendString.endsWith('arm64')) return 'arm64'
-            if (backendString.endsWith('x64')) return 'x64'
-            return undefined;
-        }
-        for (const priorityCategory of backendPriorities) {
-            const matchingBackends = version_backends.filter(vb => {
-                const category = getBackendCategory(vb.backend)
-                return category === priorityCategory
-            })
-             if (matchingBackends.length > 0) {
-                 // If matches found, find the newest version among them
-                 matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
-                 bestBackend = matchingBackends[0]
-                 console.log(`Found best backend in category "${priorityCategory}": ${bestBackend.version}/${bestBackend.backend}`) // for debugging
-                 break
-             }
-        }
-        let defaultBackendString = ''
-        if (bestBackend) {
-            defaultBackendString = `${bestBackend.version}/${bestBackend.backend}`
-        } else {
-            console.warn('No supported backend found for this system') // for debugging, this will never be reached unless severe bug in extension
-        }
-
-        // Update the version_backend setting definition and set default if needed
-        const backendSettingIndex = settings.findIndex(item => item.key === 'version_backend')
-        if (backendSettingIndex !== -1) {
-            const backendSetting = settings[backendSettingIndex]
-            backendSetting.controllerProps.options = version_backends.map((b) => {
-                const key = `${b.version}/${b.backend}`
-                return { value: key, name: key }
-            })
-            // Get the currently saved value for version_backend
-            const currentBackendSetting = await this.getSetting<string>('version_backend', backendSetting.controllerProps.value as string)
-            const originalDefaultValue = SETTINGS.find(s => s.key === 'version_backend')?.controllerProps.value;
-            if (!currentBackendSetting || currentBackendSetting === originalDefaultValue || currentBackendSetting === '') {
-                if (defaultBackendString) {
-                    backendSetting.controllerProps.value = defaultBackendString
-                    console.log(`Setting default backend to: ${defaultBackendString}`)
-                } else {
-                    console.warn('Cannot set a default backend as none were found.')
-                }
-            } else {
-                 console.log(`User-configured backend found: ${currentBackendSetting}`)
-            }
-        } else {
-            console.error("Version backend setting definition not found in SETTINGS.")
-        }
-
-
+    // 1. Fetch available backends early
+    // This is necessary to populate the backend version dropdown in settings
+    // and to determine the best available backend for auto-update/default selection.
+    let version_backends: { version: string; backend: string }[] = []
+    try {
+      version_backends = await listSupportedBackends()
+      if (version_backends.length === 0) {
+        console.warn(
+          'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
+        )
+        // Continue, but settings related to backend selection/update won't function fully.
+      } else {
+        // Sort backends by version descending for later default selection and auto-update
+        version_backends.sort((a, b) => b.version.localeCompare(a.version))
       }
+    } catch (error) {
+      console.error('Failed to fetch supported backends:', error)
+      // Continue, potentially with an empty list of backends.
     }
-    this.autoUnload = await this.getSetting<boolean>('auto_unload_models', true)
+
+    // 2. Determine the best available backend based on system features and priorities
+    // This logic helps select the most suitable backend if no specific backend is saved by the user,
+    // and also guides the auto-update process.
+    let bestAvailableBackendString = '' // Format: version/backend
+    if (version_backends.length > 0) {
+      // Priority list for backend types (more specific/performant ones first)
+      const backendPriorities: string[] = [
+        'cuda-cu12.0',
+        'cuda-cu11.7',
+        'vulkan',
+        'avx512',
+        'avx2',
+        'avx',
+        'noavx', // Prefer specific features over generic if available
+        'arm64', // Architecture-specific generic fallback
+        'x64', // Architecture-specific generic fallback
+      ]
+
+      // Helper to map backend string to a priority category
+      const getBackendCategory = (
+        backendString: string
+      ): string | undefined => {
+        if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
+        if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
+        if (backendString.includes('vulkan')) return 'vulkan'
+        if (backendString.includes('avx512')) return 'avx512'
+        if (backendString.includes('avx2')) return 'avx2'
+        if (
+          backendString.includes('avx') &&
+          !backendString.includes('avx2') &&
+          !backendString.includes('avx512')
+        )
+          return 'avx'
+        if (backendString.includes('noavx')) return 'noavx'
+        // Check architecture specific generics if no features matched
+        if (backendString.endsWith('arm64')) return 'arm64'
+        if (backendString.endsWith('x64')) return 'x64'
+        return undefined // Should not happen if listSupportedBackends returns valid types
+      }
+
+      let foundBestBackend: { version: string; backend: string } | undefined
+      for (const priorityCategory of backendPriorities) {
+        // Find backends that match the current priority category
+        const matchingBackends = version_backends.filter((vb) => {
+          const category = getBackendCategory(vb.backend)
+          return category === priorityCategory
+        })
+
+        if (matchingBackends.length > 0) {
+          // Since version_backends is already sorted by version descending,
+          // the first element in matchingBackends is the newest version
+          // for this priority category.
+          foundBestBackend = matchingBackends[0]
+          console.log(
+            `Determined best available backend based on priorities and versions: ${foundBestBackend.version}/${foundBestBackend.backend} (Category: "${priorityCategory}")`
+          )
+          break // Found the highest priority category available, stop
+        }
+      }
+
+      if (foundBestBackend) {
+        bestAvailableBackendString = `${foundBestBackend.version}/${foundBestBackend.backend}`
+      } else {
+        console.warn(
+          'Could not determine the best available backend from the supported list using priority logic.'
+        )
+        // Fallback: If no category matched, use the absolute newest version from the whole list
+        if (version_backends.length > 0) {
+          bestAvailableBackendString = `${version_backends[0].version}/${version_backends[0].backend}`
+          console.warn(
+            `Falling back to the absolute newest backend available: ${bestAvailableBackendString}`
+          )
+        } else {
+          console.warn('No backends available at all.')
+        }
+      }
+    } else {
+      console.warn(
+        'No supported backend list was retrieved. Cannot determine best available backend.'
+      )
+    }
+
+    // 3. Update the 'version_backend' setting definition in the cloned settings array
+    // This prepares the settings object that will be registered, influencing the UI default value.
+    const backendSettingIndex = settings.findIndex(
+      (item) => item.key === 'version_backend'
+    )
+
+    let originalDefaultBackendValue = ''
+    if (backendSettingIndex !== -1) {
+      const backendSetting = settings[backendSettingIndex]
+      originalDefaultBackendValue = backendSetting.controllerProps
+        .value as string // Get original hardcoded default from SETTINGS
+
+      // Populate dropdown options with available backends
+      backendSetting.controllerProps.options = version_backends.map((b) => {
+        const key = `${b.version}/${b.backend}`
+        return { value: key, name: key }
+      })
+
+      // Determine the initial value displayed in the UI dropdown.
+      // This should be the user's saved setting (if different from the original hardcoded default),
+      // or the best available if no specific setting is saved or the saved setting matches the default,
+      // or the original default as a final fallback if no backends are available.
+      const savedBackendSetting = await this.getSetting<string>(
+        'version_backend',
+        originalDefaultBackendValue // getSetting uses this if no saved value exists
+      )
+
+      // If the saved setting is present and differs from the original hardcoded default, use it.
+      // Otherwise, if a best available backend was determined, use that as the UI default.
+      // As a final fallback, use the original hardcoded default value.
+      const initialUiDefault =
+        savedBackendSetting &&
+        savedBackendSetting !== originalDefaultBackendValue
+          ? savedBackendSetting
+          : bestAvailableBackendString || originalDefaultBackendValue // Use bestAvailable if available, else original default
+
+      backendSetting.controllerProps.value = initialUiDefault // Set the default value for the UI component's initial display
+
+      console.log(
+        `Initial UI default for version_backend set to: ${initialUiDefault}`
+      )
+    } else {
+      console.error(
+        'Critical setting "version_backend" definition not found in SETTINGS.'
+      )
+      // Cannot proceed if this critical setting is missing
+      throw new Error('Critical setting "version_backend" not found.')
+    }
+
+    // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
 
-    let config = {}
-    for (const item of SETTINGS) {
+    // 5. Load all settings into this.config from the registered settings.
+    // This populates `this.config` with the *persisted* user settings, falling back
+    // to the *default* values specified in the settings definitions (which might have been
+    // updated in step 3 to reflect the best available backend).
+    let loadedConfig: any = {}
+    // Iterate over the cloned 'settings' array because its 'controllerProps.value'
+    // might have been updated in step 3 to define the UI default.
+    // 'getSetting' will retrieve the actual persisted user value if it exists, falling back
+    // to the 'defaultValue' passed (which is the 'controllerProps.value' from the cloned settings array).
+    for (const item of settings) {
       const defaultValue = item.controllerProps.value
-      config[item.key] = await this.getSetting<typeof defaultValue>(
+      // Use the potentially updated default value from the settings array as the fallback for getSetting
+      loadedConfig[item.key] = await this.getSetting<typeof defaultValue>(
         item.key,
         defaultValue
       )
     }
-    this.config = config as LlamacppConfig
-    // Ensure the selected backend (either user's or default) is installed
-    const selectedBackendSetting = this.config.version_backend
-    if (selectedBackendSetting) {
-        const [selectedVersion, selectedBackend] = selectedBackendSetting.split('/').map(part => part?.trim())
-        if (selectedVersion && selectedBackend) {
-            const isInstalled = await isBackendInstalled(selectedBackend, selectedVersion)
-            if(!isInstalled) {
-                await downloadBackend(selectedBackend, selectedVersion)
+    this.config = loadedConfig as LlamacppConfig
+    // At this point, this.config.version_backend holds the value that will be used
+    // UNLESS auto-update logic overrides it for the current session.
+
+    // If auto-update is enabled, the extension should try to use the *best available* backend
+    // determined earlier, for the *current session*, regardless of what the user has saved
+    // or what's set as the UI default in settings.
+    // The UI setting remains unchanged by this auto-update logic itself; it only affects
+    // which backend is used internally when `load()` is called.
+    let effectiveBackendString = this.config.version_backend // Start with the loaded config value
+
+    if (this.config.auto_update_engine) {
+      console.log(
+        `Auto-update engine is enabled. Current backend in config: ${this.config.version_backend}. Best available backend determined earlier: ${bestAvailableBackendString}`
+      )
+
+      // Always update to the latest version of the best available backend type
+      if (bestAvailableBackendString) {
+        const [currentVersion, currentBackend] = (
+          this.config.version_backend || ''
+        ).split('/')
+        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
+
+        // If backend type matches but version is different, or backend type is different, update
+        if (
+          bestBackend &&
+          bestVersion &&
+          (currentBackend !== bestBackend || currentVersion !== bestVersion)
+        ) {
+          console.log(
+            `Auto-updating effective backend for this session from ${this.config.version_backend} to ${bestAvailableBackendString} (best available)`
+          )
+          try {
+            await downloadBackend(bestBackend, bestVersion)
+            effectiveBackendString = bestAvailableBackendString
+            this.config.version_backend = effectiveBackendString
+            this.getSettings().then((settings) => {
+              this.updateSettings(
+                settings.map((item) => {
+                  if (item.key === 'version_backend') {
+                    item.controllerProps.value = bestAvailableBackendString
+                  }
+                  return item
+                })
+              )
+            })
+            console.log(
+              `Successfully updated internal config to use effective backend: ${this.config.version_backend} for this session.`
+            )
+
+            // --- Remove old backend files ---
+            // Get Jan's data folder and build the backends directory path
+            const janDataFolderPath = await getJanDataFolderPath()
+            const backendsDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends'])
+            if (await fs.existsSync(backendsDir)) {
+              const versionDirs = await fs.readdirSync(backendsDir)
+              for (const versionDir of versionDirs) {
+                const versionPath = await joinPath([backendsDir, versionDir])
+                console.log(`DEBUG: version path ${versionPath}`)
+                const backendTypeDirs = await fs.readdirSync(versionPath)
+                for (const backendTypeDir of backendTypeDirs) {
+                  // If this is NOT the current best version/backend, remove it
+                  if (
+                    versionDir !== bestVersion ||
+                    backendTypeDir !== bestBackend
+                  ) {
+                    const toRemove = await joinPath([
+                      versionPath,
+                      backendTypeDir,
+                    ])
+                    try {
+                      await fs.rm(toRemove)
+                      console.log(
+                        `Removed old backend: ${versionDir}/${backendTypeDir}`
+                      )
+                    } catch (e) {
+                      console.warn(
+                        `Failed to remove old backend: ${versionDir}/${backendTypeDir}`,
+                        e
+                      )
+                    }
+                  }
+                }
+              }
             }
+            // --- End remove old backend files ---
+          } catch (error) {
+            console.error(
+              'Failed to download or install the best available engine backend during auto-update:',
+              error
+            )
+            // If auto-update fails, continue using the backend that was originally loaded into this.config.
+            console.warn(
+              `Auto-update failed. Continuing with backend specified in config: ${this.config.version_backend}`
+            )
+          }
         } else {
-            console.warn(`Invalid backend setting format: ${selectedBackendSetting}`)
+          console.log(
+            `Auto-update enabled, and the configured backend is already the best available (${this.config.version_backend}). No update needed for this session.`
+          )
         }
+      } else {
+        console.warn(
+          'Auto-update enabled, but no best available backend was determined from the supported list.'
+        )
+        // The effective backend remains the one loaded from config (which might be default or saved)
+      }
     } else {
-        console.warn('No backend selected or available to install.')
+      // Auto-update is disabled. The extension will strictly use the backend specified by the user setting (or its fallback).
+      console.log(
+        `Auto-update engine is disabled. Using configured backend: ${this.config.version_backend}`
+      )
+      // effectiveBackendString is already this.config.version_backend
     }
 
-    // Initialize models base path - assuming this would be retrieved from settings
+    // This is a crucial step to guarantee that the backend executable exists before trying to load any models.
+    // This call acts as a fallback in case auto-update was disabled, or if the auto-updated backend failed to install.
+    const finalBackendToInstall = this.config.version_backend
+    if (finalBackendToInstall) {
+      const [selectedVersion, selectedBackend] = finalBackendToInstall
+        .split('/')
+        .map((part) => part?.trim())
+
+      if (selectedVersion && selectedBackend) {
+        try {
+          const isInstalled = await isBackendInstalled(
+            selectedBackend,
+            selectedVersion
+          )
+          if (!isInstalled) {
+            console.log(
+              `Ensuring effective backend (${finalBackendToInstall}) is installed...`
+            )
+            // downloadBackend is called again here to ensure the *currently active* backend
+            // is present, regardless of whether it was set by user config or auto-update.
+            // This call will do nothing if it was already downloaded during auto-update.
+            await downloadBackend(selectedBackend, selectedVersion)
+            console.log(
+              `Successfully installed effective backend: ${finalBackendToInstall}`
+            )
+          } else {
+            console.log(
+              `Effective backend (${finalBackendToInstall}) is already installed.`
+            )
+          }
+        } catch (error) {
+          console.error(
+            `Failed to ensure effective backend ${finalBackendToInstall} is installed:`,
+            error
+          )
+          // This is a significant issue. The extension might not be able to load models
+          // if the required backend is missing after this step. Consider throwing an error
+          // or emitting a fatal event if the essential backend is not available.
+        }
+      } else {
+        console.warn(
+          `Invalid final backend setting format in config: ${finalBackendToInstall}. Cannot ensure installation.`
+        )
+      }
+    } else {
+      console.warn('No backend selected or available in config to install.')
+    }
+
+    // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
       await getJanDataFolderPath(),
       this.providerId,
     ])
   }
-
   async getProviderPath(): Promise<string> {
     if (!this.providerPath) {
       this.providerPath = await joinPath([
@@ -487,7 +724,9 @@ export default class llamacpp_extension extends AIEngine {
       await this.sleep(500) // 500 sec interval during rechecks
     }
     await this.unload(sInfo.pid)
-    throw new Error(`Timed out loading model after ${timeoutMs}... killing llamacpp`)
+    throw new Error(
+      `Timed out loading model after ${timeoutMs}... killing llamacpp`
+    )
   }
 
   override async load(
@@ -603,7 +842,6 @@ export default class llamacpp_extension extends AIEngine {
       // Store the session info for later use
       this.activeSessions.set(sInfo.pid, sInfo)
       await this.waitForModelLoad(sInfo)
-
 
       return sInfo
     } catch (error) {
@@ -726,9 +964,11 @@ export default class llamacpp_extension extends AIEngine {
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    const result = invoke<boolean>('is_process_running', { pid: sessionInfo.pid })
+    const result = invoke<boolean>('is_process_running', {
+      pid: sessionInfo.pid,
+    })
     if (!result) {
-        throw new Error("Model have crashed! Please reload!")
+      throw new Error('Model have crashed! Please reload!')
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
