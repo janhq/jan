@@ -78,7 +78,7 @@ export function DataProvider() {
       const resource = params.slice(1).join('/')
       // return { action, provider, resource }
       navigate({
-        to: route.hub,
+        to: route.hub.index,
         search: {
           repo: resource,
         },

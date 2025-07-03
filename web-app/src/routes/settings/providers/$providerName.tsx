@@ -525,7 +525,7 @@ function ProviderDetail() {
                       <p className="text-main-view-fg/70 mt-1 text-xs leading-relaxed">
                         {t('providers:noModelFoundDesc')}
                         &nbsp;
-                        <Link to={route.hub}>{t('common:hub')}</Link>
+                        <Link to={route.hub.index}>{t('common:hub')}</Link>
                       </p>
                     </div>
                   )}

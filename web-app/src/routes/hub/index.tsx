@@ -1,10 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  createFileRoute,
-  Link,
-  useNavigate,
-  useSearch,
-} from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch } from '@/lib/utils'
@@ -46,7 +41,7 @@ type SearchParams = {
 }
 const defaultModelQuantizations = ['iq4_xs.gguf', 'q4_k_m.gguf']
 
-export const Route = createFileRoute(route.hub as any)({
+export const Route = createFileRoute(route.hub.index as any)({
   component: Hub,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
@@ -60,7 +55,7 @@ function Hub() {
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
   ]
   const { sources, fetchSources, addSource, loading } = useModelSources()
-  const search = useSearch({ from: route.hub as any })
+  const search = useSearch({ from: route.hub.index as any })
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
@@ -328,7 +323,7 @@ function Hub() {
 
     if (status === STATUS.FINISHED) {
       navigate({
-        to: route.hub,
+        to: route.hub.index,
       })
     }
 
@@ -473,16 +468,22 @@ function Hub() {
                   <div className="flex items-center gap-2 justify-end sm:hidden">
                     {renderFilter()}
                   </div>
-                  {filteredModels.map((model) => (
-                    <div key={model.model_name}>
+                  {filteredModels.map((model, i) => (
+                    <div key={`${model.model_name}-${i}`}>
                       <Card
                         header={
                           <div className="flex items-center justify-between gap-x-2">
-                            <Link
-                              to={
-                                `https://huggingface.co/${model.model_name}` as string
-                              }
-                              target="_blank"
+                            <div
+                              className="cursor-pointer"
+                              onClick={() => {
+                                console.log(model.model_name)
+                                navigate({
+                                  to: route.hub.model,
+                                  params: {
+                                    modelId: model.model_name,
+                                  },
+                                })
+                              }}
                             >
                               <h1
                                 className={cn(
@@ -495,7 +496,7 @@ function Hub() {
                               >
                                 {extractModelName(model.model_name) || ''}
                               </h1>
-                            </Link>
+                            </div>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-main-view-fg/70 font-medium text-xs">
                                 {
