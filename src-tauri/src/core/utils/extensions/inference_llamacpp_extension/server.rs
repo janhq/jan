@@ -201,12 +201,11 @@ pub async fn unload_llama_model(
 
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
-            use windows_sys::Win32::Foundation::BOOL;
             use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
 
             if let Some(raw_pid) = child.id() {
                 log::info!("Sending Ctrl-C to PID {}", raw_pid);
-                let ok: BOOL = unsafe {
+                let ok: i32 = unsafe {
                     GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32)
                 };
                 if ok == 0 {
