@@ -30,14 +30,14 @@
     "copy:lib:win32": "cpx \"./lib/windows/*.dll\" \"./src-tauri/resources/lib/\"",
     "copy:lib:darwin": "mkdir -p \"./src-tauri/resources/lib/\"",
     "download:bin": "node ./scripts/download-bin.mjs",
-    "build:tauri:linux:win32": "yarn download:bin && yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && yarn tauri build && yarn build:linux-packages",
-    "build:tauri:darwin": "yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && yarn tauri build --target universal-apple-darwin",
-    "build:tauri": "run-script-os",
+    "build:tauri:win32": "yarn download:bin && yarn tauri build",
+    "build:tauri:linux": "yarn download:bin && yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
+    "build:tauri:darwin": "yarn tauri build --target universal-apple-darwin",
+    "build:tauri": "yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && run-script-os",
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
-    "build:linux-packages": "./src-tauri/build-utils/buildAppImage.sh",
     "prepare": "husky"
   },
   "devDependencies": {

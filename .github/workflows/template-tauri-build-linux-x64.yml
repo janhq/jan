@@ -149,8 +149,6 @@ jobs:
             cat ./package.json
           fi
       - name: Build app
-        env:
-          RELEASE_CHANNEL: "${inputs.channel}"
         run: |
           # Pin linuxdeploy version to prevent @tauri-apps/cli-linux-x64-gnu from pulling in an outdated version
           TAURI_TOOLKIT_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
@@ -167,6 +165,7 @@ jobs:
           "$APP_IMAGE"
 
         env:
+          RELEASE_CHANNEL: "${{ inputs.channel }}"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
