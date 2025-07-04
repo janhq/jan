@@ -9,7 +9,6 @@ use tauri::State; // Import Manager trait
 use thiserror;
 use tokio::process::Command;
 use tokio::time::timeout;
-use uuid::Uuid;
 
 use crate::core::state::AppState;
 use crate::core::state::LLamaBackendSession;
@@ -44,8 +43,8 @@ type ServerResult<T> = Result<T, ServerError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
-    pub pid: String,  // opaque handle for unload/chat
-    pub port: String, // llama-server output port
+    pub pid: i32,  // opaque handle for unload/chat
+    pub port: i32, // llama-server output port
     pub model_id: String,
     pub model_path: String, // path of the loaded model
     pub api_key: String,
@@ -82,12 +81,19 @@ pub async fn load_llama_model(
         )));
     }
 
-    let port = args
+    let port_str = args
         .iter()
         .position(|arg| arg == "--port")
         .and_then(|i| args.get(i + 1))
         .cloned()
         .unwrap_or_default();
+    let port: i32 = match port_str.parse() {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("Invalid port value: '{}', using default 8080", port_str);
+            8080
+        }
+    };
 
     let model_path = args
         .iter()
@@ -146,10 +152,7 @@ pub async fn load_llama_model(
     let child = command.spawn().map_err(ServerError::Io)?;
 
     // Get the PID to use as session ID
-    let pid = child.id().map(|id| id.to_string()).unwrap_or_else(|| {
-        // Fallback in case we can't get the PID for some reason
-        format!("unknown_pid_{}", Uuid::new_v4())
-    });
+    let pid = child.id().map(|id| id as i32).unwrap_or(-1);
 
     log::info!("Server process started with PID: {}", pid);
     let session_info = SessionInfo {
@@ -175,7 +178,7 @@ pub async fn load_llama_model(
 // --- Unload Command ---
 #[tauri::command]
 pub async fn unload_llama_model(
-    pid: String,
+    pid: i32,
     state: State<'_, AppState>,
 ) -> ServerResult<UnloadResult> {
     let mut map = state.llama_server_process.lock().await;
@@ -212,9 +215,7 @@ pub async fn unload_llama_model(
 
             if let Some(raw_pid) = child.id() {
                 log::info!("Sending Ctrl-C to PID {}", raw_pid);
-                let ok: i32 = unsafe {
-                    GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32)
-                };
+                let ok: i32 = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32) };
                 if ok == 0 {
                     log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
                 }
@@ -266,9 +267,17 @@ pub fn generate_api_key(model_id: String, api_secret: String) -> Result<String, 
 
 // process aliveness check
 #[tauri::command]
-pub fn is_process_running(pid: u32) -> Result<bool, String> {
+pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<bool, String> {
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
     let process_pid = Pid::from(pid as usize);
-    Ok(system.process(process_pid).is_some())
+    let alive = system.process(process_pid).is_some();
+
+    if !alive {
+        let mut map = state.llama_server_process.lock().await;
+        map.remove(&pid);
+    }
+
+    Ok(alive)
 }
+

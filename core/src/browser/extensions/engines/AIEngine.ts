@@ -161,7 +161,7 @@ export interface modelInfo {
 export type listResult = modelInfo[]
 
 export interface SessionInfo {
-  pid: string // opaque handle for unload/chat
+  pid: number // opaque handle for unload/chat
   port: number // llama-server output port (corrected from portid)
   model_id: string, //name of the model
   model_path: string // path of the loaded model

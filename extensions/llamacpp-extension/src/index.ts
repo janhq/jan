@@ -114,7 +114,7 @@ export default class llamacpp_extension extends AIEngine {
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
-  private activeSessions: Map<string, SessionInfo> = new Map()
+  private activeSessions: Map<number, SessionInfo> = new Map()
   private providerPath!: string
   private apiSecret: string = 'Jan'
 
@@ -724,7 +724,7 @@ export default class llamacpp_extension extends AIEngine {
       } catch (e) {}
       await this.sleep(500) // 500 sec interval during rechecks
     }
-    await this.unload(sInfo.pid)
+    await this.unload(sInfo.model_id)
     throw new Error(
       `Timed out loading model after ${timeoutMs}... killing llamacpp`
     )
@@ -967,10 +967,12 @@ export default class llamacpp_extension extends AIEngine {
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    const result = invoke<boolean>('is_process_running', {
+    // check if the process is alive
+    const result = await invoke<boolean>('is_process_running', {
       pid: sessionInfo.pid,
     })
     if (!result) {
+      this.activeSessions.delete(sessionInfo.pid)
       throw new Error('Model have crashed! Please reload!')
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
