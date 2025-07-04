@@ -5,7 +5,8 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
     let mut map = state.llama_server_process.lock().await;
     let pids: Vec<String> = map.keys().cloned().collect();
     for pid in pids {
-        if let Some(mut child) = map.remove(&pid) {
+        if let Some(session) = map.remove(&pid) {
+            let mut child = session.child;
             #[cfg(unix)]
             {
                 use nix::sys::signal::{kill, Signal};

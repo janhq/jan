@@ -842,6 +842,7 @@ export default class llamacpp_extension extends AIEngine {
       })
 
       // Store the session info for later use
+      console.log(sInfo)
       this.activeSessions.set(sInfo.pid, sInfo)
       await this.waitForModelLoad(sInfo)
 

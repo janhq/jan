@@ -12,6 +12,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::core::state::AppState;
+use crate::core::state::LLamaBackendSession;
 
 type HmacSha256 = Hmac<Sha256>;
 // Error type for server commands
@@ -41,7 +42,7 @@ impl serde::Serialize for ServerError {
 
 type ServerResult<T> = Result<T, ServerError>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub pid: String,  // opaque handle for unload/chat
     pub port: String, // llama-server output port
@@ -151,17 +152,22 @@ pub async fn load_llama_model(
     });
 
     log::info!("Server process started with PID: {}", pid);
-
-    // Store the child process handle in the state
-    process_map.insert(pid.clone(), child);
-
     let session_info = SessionInfo {
-        pid: pid,
+        pid: pid.clone(),
         port: port,
         model_id: model_id,
         model_path: model_path,
         api_key: api_key,
     };
+
+    // insert sesinfo to process_map
+    process_map.insert(
+        pid.clone(),
+        LLamaBackendSession {
+            child,
+            info: session_info.clone(),
+        },
+    );
 
     Ok(session_info)
 }
@@ -173,7 +179,8 @@ pub async fn unload_llama_model(
     state: State<'_, AppState>,
 ) -> ServerResult<UnloadResult> {
     let mut map = state.llama_server_process.lock().await;
-    if let Some(mut child) = map.remove(&pid) {
+    if let Some(session) = map.remove(&pid) {
+        let mut child = session.child;
         #[cfg(unix)]
         {
             use nix::sys::signal::{kill, Signal};
