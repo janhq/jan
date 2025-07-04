@@ -320,7 +320,7 @@ function MCPServers() {
                         </h1>
                       </div>
                     }
-                    description={
+                    descriptionOutside={
                       <div className="text-sm text-main-view-fg/70">
                         <div>
                           {t('mcp-servers:command')}: {config.command}

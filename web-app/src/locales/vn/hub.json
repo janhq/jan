@@ -13,7 +13,6 @@
   "useModel": "Sử dụng mô hình này",
   "downloadModel": "Tải xuống mô hình",
   "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
-  "editTheme": "Chỉnh sửa chủ đề",
   "joyride": {
     "recommendedModelTitle": "Mô hình được đề xuất",
     "recommendedModelContent": "Duyệt và tải xuống các mô hình AI mạnh mẽ từ nhiều nhà cung cấp khác nhau, tất cả ở cùng một nơi. Chúng tôi khuyên bạn nên bắt đầu với Jan-Nano - một mô hình được tối ưu hóa cho các khả năng gọi hàm, tích hợp công cụ và nghiên cứu. Nó lý tưởng để xây dựng các tác nhân AI tương tác.",

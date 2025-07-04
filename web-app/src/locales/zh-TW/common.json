@@ -256,12 +256,5 @@
     "description": "Cortex 啟動失敗。請檢查日誌以獲取更多詳細信息。",
     "contactSupport": "聯繫支援",
     "restartJan": "重啟 Jan"
-  },
-  "outOfContextError": {
-    "title": "超出上下文錯誤",
-    "description": "此聊天正在達到AI的記憶體限制，就像白板填滿了一樣。我們可以擴展記憶體視窗（稱為上下文大小），使其記住更多內容，但可能會使用更多電腦記憶體。我們也可以截斷輸入，這意味著它會忘記一些聊天歷史記錄，為新訊息騰出空間。",
-    "increaseContextSizeDescription": "您想要增加上下文大小嗎？",
-    "truncateInput": "截斷輸入",
-    "increaseContextSize": "增加上下文大小"
   }
 }

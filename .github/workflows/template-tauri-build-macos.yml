@@ -63,7 +63,6 @@ jobs:
     outputs:
       MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
       TAR_NAME: ${{ steps.metadata.outputs.TAR_NAME }}
-    environment: production
     permissions:
       contents: write
     steps:

@@ -44,8 +44,8 @@ const AppLayout = () => {
           {/* Main content panel */}
           <div
             className={cn(
-              'h-full flex w-full p-1',
-              isLeftPanelOpen && 'w-[calc(100%-198px)]'
+              'h-full flex w-full p-1 ',
+              isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
             )}
           >
             <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
