@@ -62,7 +62,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.anthropic.com/v1',
+    base_url: 'https://api.anthropic.com',
     provider: 'anthropic',
     explore_models_url:
       'https://docs.anthropic.com/en/docs/about-claude/models',
@@ -87,8 +87,8 @@ export const predefinedProviders = [
           'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.anthropic.com/v1',
-          value: 'https://api.anthropic.com/v1',
+          placeholder: 'https://api.anthropic.com',
+          value: 'https://api.anthropic.com',
         },
       },
     ],
