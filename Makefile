@@ -82,6 +82,7 @@ else ifeq ($(shell uname -s),Linux)
 	rm -rf ./src-tauri/target
 	rm -rf "~/jan/extensions"
 	rm -rf "~/.cache/jan*"
+	rm -rf "./.cache"
 else
 	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
 	find . -name ".next" -type d -exec rm -rf '{}' +

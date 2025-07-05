@@ -150,12 +150,6 @@ jobs:
           fi
       - name: Build app
         run: |
-          # Pin linuxdeploy version to prevent @tauri-apps/cli-linux-x64-gnu from pulling in an outdated version
-          TAURI_TOOLKIT_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
-          mkdir -p "$TAURI_TOOLKIT_PATH"
-          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage -O "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
-          chmod +x "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
-
           make build-tauri
           # Copy engines and bun to appimage
            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool
