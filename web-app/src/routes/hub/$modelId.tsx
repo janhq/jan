@@ -116,7 +116,6 @@ function HubModelDetail() {
     })
   }, [modelData])
 
-  console.log(modelData?.readme)
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
