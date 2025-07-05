@@ -256,12 +256,5 @@
     "description": "Cortex gagal dimulai. Silakan periksa log untuk detail lebih lanjut.",
     "contactSupport": "Hubungi Dukungan",
     "restartJan": "Restart Jan"
-  },
-  "outOfContextError": {
-    "title": "Kesalahan di luar konteks",
-    "description": "Obrolan ini mencapai batas memori AI, seperti papan tulis yang penuh. Kami dapat memperluas jendela memori (disebut ukuran konteks) sehingga mengingat lebih banyak, tetapi mungkin menggunakan lebih banyak memori komputer Anda. Kami juga dapat memotong input, yang berarti akan melupakan sebagian riwayat obrolan untuk memberi ruang bagi pesan baru.",
-    "increaseContextSizeDescription": "Apakah Anda ingin meningkatkan ukuran konteks?",
-    "truncateInput": "Potong Input",
-    "increaseContextSize": "Tingkatkan Ukuran Konteks"
   }
 }

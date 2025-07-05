@@ -1,9 +1,8 @@
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
-import ProvidersMenu from '@/containers/ProvidersMenu'
+import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
-import { Switch } from '@/components/ui/switch'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   getActiveModels,
@@ -212,6 +211,7 @@ function ProviderDetail() {
         showSkipButton={true}
         hideCloseButton={true}
         spotlightClicks={true}
+        disableOverlay={IS_LINUX}
         disableOverlayClose={true}
         callback={handleJoyrideCallback}
         locale={{
@@ -227,23 +227,13 @@ function ProviderDetail() {
           <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
         <div className="flex h-full w-full">
-          <div className="flex">
-            <ProvidersMenu stepSetupRemoteProvider={isSetup} />
-          </div>
+          <SettingsMenu />
           <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
               <div className="flex items-center justify-between">
                 <h1 className="font-medium text-base">
                   {getProviderTitle(providerName)}
                 </h1>
-                <Switch
-                  checked={provider?.active}
-                  onCheckedChange={(e) => {
-                    if (provider) {
-                      updateProvider(providerName, { ...provider, active: e })
-                    }
-                  }}
-                />
               </div>
 
               <div
@@ -460,7 +450,12 @@ function ProviderDetail() {
                           key={modelIndex}
                           title={
                             <div className="flex items-center gap-2">
-                              <h1 className="font-medium">{model.id}</h1>
+                              <h1
+                                className="font-medium line-clamp-1"
+                                title={model.id}
+                              >
+                                {model.id}
+                              </h1>
                               <Capabilities capabilities={capabilities} />
                             </div>
                           }

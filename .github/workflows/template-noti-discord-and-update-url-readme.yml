@@ -26,7 +26,6 @@ on:
 
 jobs:
   noti-discord-and-update-url-readme:
-    environment: production
     runs-on: ubuntu-latest
     permissions:
       contents: write
