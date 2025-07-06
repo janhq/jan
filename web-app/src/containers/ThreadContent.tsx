@@ -147,7 +147,7 @@ export const ThreadContent = memo(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      updateMessage: (item: ThreadMessage, message: string) => void
+      updateMessage?: (item: ThreadMessage, message: string) => void
     }
   ) => {
     const { t } = useTranslation()
@@ -257,7 +257,9 @@ export const ThreadContent = memo(
               <EditDialog
                 message={item.content?.[0]?.text.value}
                 setMessage={(message) => {
-                  item.updateMessage(item, message)
+                  if (item.updateMessage) {
+                    item.updateMessage(item, message)
+                  }
                 }}
               />
               <Tooltip>
@@ -359,7 +361,7 @@ export const ThreadContent = memo(
                     <EditDialog
                       message={item.content?.[0]?.text.value}
                       setMessage={(message) =>
-                        item.updateMessage(item, message)
+                        item.updateMessage && item.updateMessage(item, message)
                       }
                     />
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
