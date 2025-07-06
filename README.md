@@ -89,7 +89,7 @@ For those who enjoy the scenic route:
 - Make ≥ 3.81
 - Rust (for Tauri)
 
-### Quick Start
+### Run with Make
 
 ```bash
 git clone https://github.com/menloresearch/jan
@@ -99,33 +99,43 @@ make dev
 
 This handles everything: installs dependencies, builds core components, and launches the app.
 
-### Alternative Commands
+**Available make targets:**
+- `make dev` - Full development setup and launch
+- `make build` - Production build
+- `make test` - Run tests and linting
+- `make clean` - Delete everything and start fresh
 
-If you prefer the verbose approach:
+### Run with Mise (easier)
+
+You can also run with [mise](https://mise.jdx.dev/), which is a bit easier as it ensures Node.js, Rust, and other dependency versions are automatically managed:
 
 ```bash
-# Setup and development
+git clone https://github.com/menloresearch/jan
+cd jan
+
+# Install mise (if not already installed)
+curl https://mise.run | sh
+
+# Install tools and start development
+mise install    # installs Node.js, Rust, and other tools
+mise dev        # runs the full development setup
+```
+
+**Available mise commands:**
+- `mise dev` - Full development setup and launch
+- `mise build` - Production build
+- `mise test` - Run tests and linting
+- `mise clean` - Delete everything and start fresh
+- `mise tasks` - List all available tasks
+
+### Manual Commands
+
+```bash
 yarn install
 yarn build:core
 yarn build:extensions
 yarn dev
-
-# Production build
-yarn build
-
-# Clean slate (when things inevitably break)
-make clean
 ```
-
-### Available Make Targets
-
-- `make dev` - Full development setup and launch (recommended)
-- `make dev-tauri` - Tauri development (deprecated, use `make dev`)
-- `make build` - Production build
-- `make install-and-build` - Install dependencies and build core/extensions
-- `make test` - Run tests and linting
-- `make lint` - Check your code doesn't offend the linters
-- `make clean` - Nuclear option: delete everything and start fresh
 
 ## System Requirements
 

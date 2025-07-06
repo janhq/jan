@@ -18,6 +18,8 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
+import { TranslationProvider } from '@/i18n/TranslationContext'
+import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -42,8 +44,8 @@ const AppLayout = () => {
           {/* Main content panel */}
           <div
             className={cn(
-              'h-full flex w-full p-1',
-              isLeftPanelOpen && 'w-[calc(100%-198px)]'
+              'h-full flex w-full p-1 ',
+              isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
             )}
           >
             <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
@@ -87,13 +89,16 @@ function RootLayout() {
       <ThemeProvider />
       <AppearanceProvider />
       <ToasterProvider />
-      <ExtensionProvider>
-        <DataProvider />
-      </ExtensionProvider>
-      {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-      {/* <TanStackRouterDevtools position="bottom-right" /> */}
-      <CortexFailureDialog />
-      <ToolApproval />
+      <TranslationProvider>
+        <ExtensionProvider>
+          <DataProvider />
+        </ExtensionProvider>
+        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+        {/* <TanStackRouterDevtools position="bottom-right" /> */}
+        <CortexFailureDialog />
+        <ToolApproval />
+        <OutOfContextPromiseModal />
+      </TranslationProvider>
     </Fragment>
   )
 }

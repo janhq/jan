@@ -1,0 +1,11 @@
+{
+  "title": "Tool Call Request",
+  "description": "The assistant wants to use the tool: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Security Notice:</strong> Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
+  "deny": "Deny",
+  "allowOnce": "Allow Once",
+  "alwaysAllow": "Always Allow",
+  "permissions": "Permissions",
+  "approve": "Approve",
+  "reject": "Reject"
+}

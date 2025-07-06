@@ -6,12 +6,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function ThemeSwitcher() {
+  const { t } = useTranslation()
+
   const themeOptions = [
-    { value: 'dark', label: 'Dark' },
-    { value: 'light', label: 'Light' },
-    { value: 'auto', label: 'System' },
+    { value: 'dark', label: t('common:dark') },
+    { value: 'light', label: t('common:light') },
+    { value: 'auto', label: t('common:system') },
   ]
 
   const { setTheme, activeTheme } = useTheme()
@@ -20,11 +23,11 @@ export function ThemeSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <span
-          title="Edit Theme"
+          title={t('common:editTheme')}
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
         >
           {themeOptions.find((item) => item.value === activeTheme)?.label ||
-            'Auto'}
+            t('common:auto')}
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-24">

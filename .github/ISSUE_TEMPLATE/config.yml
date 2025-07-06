@@ -1,7 +1,5 @@
-## To encourage contributors to use issue templates, we don't allow blank issues
 blank_issues_enabled: true
-
 contact_links:
-  - name: "\1F4AC Jan Discussions"
-    url: "https://github.com/orgs/menloresearch/discussions/categories/q-a"
-    about: "Get help, discuss features & roadmap, and share your projects"
+  - name: Jan Discussions
+    url: https://github.com/orgs/menloresearch/discussions/categories/q-a
+    about: Get help, discuss features & roadmap, and share your projects

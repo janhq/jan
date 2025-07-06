@@ -36,6 +36,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelProps = {
   model: {
@@ -58,12 +59,12 @@ export const Route = createFileRoute(route.hub as any)({
   }),
 })
 
-const sortOptions = [
-  { value: 'newest', name: 'Newest' },
-  { value: 'most-downloaded', name: 'Most downloaded' },
-]
-
 function Hub() {
+  const { t } = useTranslation()
+  const sortOptions = [
+    { value: 'newest', name: t('hub:sortNewest') },
+    { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
+  ]
   const { sources, fetchSources, loading } = useModelSources()
   const search = useSearch({ from: route.hub as any })
   const [searchValue, setSearchValue] = useState('')
@@ -258,17 +259,22 @@ function Hub() {
             </div>
           )}
           {isDownloaded ? (
-            <Button size="sm" onClick={() => handleUseModel(modelId)}>
-              Use
+            <Button
+              size="sm"
+              onClick={() => handleUseModel(modelId)}
+              data-test-id={`hub-model-${modelId}`}
+            >
+              {t('hub:use')}
             </Button>
           ) : (
             <Button
+              data-test-id={`hub-model-${modelId}`}
               size="sm"
               onClick={handleDownload}
               className={cn(isDownloading && 'hidden')}
               ref={isRecommended ? downloadButtonRef : undefined}
             >
-              Download
+              {t('hub:download')}
             </Button>
           )}
         </div>
@@ -277,11 +283,12 @@ function Hub() {
   }, [
     downloadProcesses,
     llamaProvider?.models,
-    handleUseModel,
     isRecommendedModel,
     downloadButtonRef,
     localDownloadingModels,
     addLocalDownloadingModel,
+    t,
+    handleUseModel,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -337,23 +344,64 @@ function Hub() {
   const steps = [
     {
       target: '.hub-model-card-step',
-      title: 'Recommended Model',
+      title: t('hub:joyride.recommendedModelTitle'),
       disableBeacon: true,
-      content:
-        "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-Nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
+      content: t('hub:joyride.recommendedModelContent'),
     },
     {
       target: '.hub-download-button-step',
-      title: isDownloading ? 'Download in Progress' : 'Download Model',
+      title: isDownloading
+        ? t('hub:joyride.downloadInProgressTitle')
+        : t('hub:joyride.downloadModelTitle'),
       disableBeacon: true,
       content: isDownloading
-        ? 'Your model is now downloading. Track progress here - once finished, it will be ready to use.'
-        : 'Click the Download button to begin downloading the model.',
+        ? t('hub:joyride.downloadInProgressContent')
+        : t('hub:joyride.downloadModelContent'),
     },
   ]
 
   // Check if we're on the last step
   const isLastStep = currentStepIndex === steps.length - 1
+
+  const renderFilter = () => {
+    return (
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger>
+            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+              {
+                sortOptions.find((option) => option.value === sortSelected)
+                  ?.name
+              }
+            </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end">
+            {sortOptions.map((option) => (
+              <DropdownMenuItem
+                className={cn(
+                  'cursor-pointer my-0.5',
+                  sortSelected === option.value && 'bg-main-view-fg/5'
+                )}
+                key={option.value}
+                onClick={() => setSortSelected(option.value)}
+              >
+                {option.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showOnlyDownloaded}
+            onCheckedChange={setShowOnlyDownloaded}
+          />
+          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+            {t('hub:downloaded')}
+          </span>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -369,14 +417,17 @@ function Hub() {
         showSkipButton={!isLastStep}
         hideCloseButton={true}
         spotlightClicks={true}
+        disableOverlay={IS_LINUX}
         disableOverlayClose={true}
         callback={handleJoyrideCallback}
         locale={{
-          back: 'Back',
-          close: 'Close',
-          last: !isDownloading ? 'Download' : 'Finish',
-          next: 'Next',
-          skip: 'Skip',
+          back: t('hub:joyride.back'),
+          close: t('hub:joyride.close'),
+          last: !isDownloading
+            ? t('hub:joyride.lastWithDownload')
+            : t('hub:joyride.last'),
+          next: t('hub:joyride.next'),
+          skip: t('hub:joyride.skip'),
         }}
       />
       <div className="flex h-full w-full">
@@ -385,74 +436,44 @@ function Hub() {
             <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
               <div className="flex items-center gap-2 w-full">
                 {isSearching ? (
-                  <Loader className="size-4 animate-spin text-main-view-fg/60" />
+                  <Loader className="shrink-0 size-4 animate-spin text-main-view-fg/60" />
                 ) : (
-                  <IconSearch className="text-main-view-fg/60" size={14} />
+                  <IconSearch
+                    className="shrink-0 text-main-view-fg/60"
+                    size={14}
+                  />
                 )}
                 <input
-                  placeholder="Search for models on Hugging Face..."
+                  placeholder={t('hub:searchPlaceholder')}
                   value={searchValue}
                   onChange={handleSearchChange}
                   className="w-full focus:outline-none"
                 />
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger>
-                    <span
-                      title="Edit Theme"
-                      className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-                    >
-                      {
-                        sortOptions.find(
-                          (option) => option.value === sortSelected
-                        )?.name
-                      }
-                    </span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent side="bottom" align="end">
-                    {sortOptions.map((option) => (
-                      <DropdownMenuItem
-                        className={cn(
-                          'cursor-pointer my-0.5',
-                          sortSelected === option.value && 'bg-main-view-fg/5'
-                        )}
-                        key={option.value}
-                        onClick={() => setSortSelected(option.value)}
-                      >
-                        {option.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={showOnlyDownloaded}
-                    onCheckedChange={setShowOnlyDownloaded}
-                  />
-                  <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-                    Downloaded
-                  </span>
-                </div>
+              <div className="sm:flex items-center gap-2 shrink-0 hidden">
+                {renderFilter()}
               </div>
             </div>
           </HeaderPage>
           <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
-            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
+            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 mx-auto">
               {loading ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
-                    Loading models...
+                    {t('hub:loadingModels')}
                   </div>
                 </div>
               ) : filteredModels.length === 0 ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
-                    No models found
+                    {t('hub:noModels')}
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col pb-2 mb-2 gap-2 ">
+                  <div className="flex items-center gap-2 justify-end sm:hidden">
+                    {renderFilter()}
+                  </div>
                   {filteredModels.map((model) => (
                     <div key={model.id}>
                       <Card
@@ -466,11 +487,14 @@ function Hub() {
                             >
                               <h1
                                 className={cn(
-                                  'text-main-view-fg font-medium text-base capitalize truncate',
+                                  'text-main-view-fg font-medium text-base capitalize truncate max-w-38 sm:max-w-none',
                                   isRecommendedModel(model.metadata?.id)
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
+                                title={
+                                  extractModelName(model.metadata?.id) || ''
+                                }
                               >
                                 {extractModelName(model.metadata?.id) || ''}
                               </h1>
@@ -513,14 +537,14 @@ function Hub() {
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-main-view-fg/80">
-                            By {model?.author}
+                            {t('hub:by')} {model?.author}
                           </span>
                           <div className="flex items-center gap-4 ml-2">
                             <div className="flex items-center gap-1">
                               <IconDownload
                                 size={18}
                                 className="text-main-view-fg/50"
-                                title="Downloads"
+                                title={t('hub:downloads')}
                               />
                               <span className="text-main-view-fg/80">
                                 {model.metadata?.downloads || 0}
@@ -530,7 +554,7 @@ function Hub() {
                               <IconFileCode
                                 size={20}
                                 className="text-main-view-fg/50"
-                                title="Variants"
+                                title={t('hub:variants')}
                               />
                               <span className="text-main-view-fg/80">
                                 {model.models?.length || 0}
@@ -545,7 +569,7 @@ function Hub() {
                                   }
                                 />
                                 <p className="text-main-view-fg/70">
-                                  Show variants
+                                  {t('hub:showVariants')}
                                 </p>
                               </div>
                             )}
@@ -603,7 +627,7 @@ function Hub() {
                                           return (
                                             <div
                                               className="flex items-center justify-center rounded bg-main-view-fg/10"
-                                              title="Use this model"
+                                              title={t('hub:useModel')}
                                             >
                                               <Button
                                                 variant="link"
@@ -612,7 +636,7 @@ function Hub() {
                                                   handleUseModel(variant.id)
                                                 }
                                               >
-                                                Use
+                                                {t('hub:use')}
                                               </Button>
                                             </div>
                                           )
@@ -621,7 +645,7 @@ function Hub() {
                                         return (
                                           <div
                                             className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                            title="Download model"
+                                            title={t('hub:downloadModel')}
                                             onClick={() => {
                                               addLocalDownloadingModel(
                                                 variant.id

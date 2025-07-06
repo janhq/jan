@@ -22,6 +22,7 @@ import {
   IconCodeCircle2,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // No need to define our own interface, we'll use the existing Model type
 type DialogEditModelProps = {
@@ -33,6 +34,7 @@ export const DialogEditModel = ({
   provider,
   modelId,
 }: DialogEditModelProps) => {
+  const { t } = useTranslation()
   const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
@@ -140,20 +142,24 @@ export const DialogEditModel = ({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="line-clamp-1" title={selectedModel.id}>
-            Edit Model: {selectedModel.id}
+            {t('providers:editModel.title', { modelId: selectedModel.id })}
           </DialogTitle>
           <DialogDescription>
-            Configure model capabilities by toggling the options below.
+            {t('providers:editModel.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-1">
-          <h3 className="text-sm font-medium mb-3">Capabilities</h3>
+          <h3 className="text-sm font-medium mb-3">
+            {t('providers:editModel.capabilities')}
+          </h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconTool className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Tools</span>
+                <span className="text-sm">
+                  {t('providers:editModel.tools')}
+                </span>
               </div>
               <Switch
                 id="tools-capability"
@@ -167,7 +173,9 @@ export const DialogEditModel = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconEye className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Vision</span>
+                <span className="text-sm">
+                  {t('providers:editModel.vision')}
+                </span>
               </div>
               <Tooltip>
                 <TooltipTrigger>
@@ -180,14 +188,18 @@ export const DialogEditModel = ({
                     }
                   />
                 </TooltipTrigger>
-                <TooltipContent>Not available yet</TooltipContent>
+                <TooltipContent>
+                  {t('providers:editModel.notAvailable')}
+                </TooltipContent>
               </Tooltip>
             </div>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Embeddings</span>
+                <span className="text-sm">
+                  {t('providers:editModel.embeddings')}
+                </span>
               </div>
               <Tooltip>
                 <TooltipTrigger>
@@ -200,7 +212,9 @@ export const DialogEditModel = ({
                     }
                   />
                 </TooltipTrigger>
-                <TooltipContent>Not available yet</TooltipContent>
+                <TooltipContent>
+                  {t('providers:editModel.notAvailable')}
+                </TooltipContent>
               </Tooltip>
             </div>
 
@@ -221,7 +235,7 @@ export const DialogEditModel = ({
             {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconAtom className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Reasoning</span>
+                <span className="text-sm">{t('reasoning')}</span>
               </div>
               <Switch
                 id="reasoning-capability"

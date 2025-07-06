@@ -4,7 +4,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -104,7 +104,7 @@ function HTTPSProxy() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
@@ -115,7 +115,7 @@ function HTTPSProxy() {
               header={
                 <div className="flex items-center justify-between">
                   <h1 className="text-main-view-fg font-medium text-base mb-2">
-                    Proxy
+                    {t('settings:httpsProxy.proxy')}
                   </h1>
                   <Switch
                     checked={proxyEnabled}
@@ -125,14 +125,14 @@ function HTTPSProxy() {
               }
             >
               <CardItem
-                title="Proxy URL"
+                title={t('settings:httpsProxy.proxyUrl')}
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>The URL and port of your proxy server.</p>
+                    <p>{t('settings:httpsProxy.proxyUrlDesc')}</p>
                     <Input
                       className="w-full"
-                      placeholder="http://<user>:<password>@<domain or IP>:<port>"
+                      placeholder={t('settings:httpsProxy.proxyUrlPlaceholder')}
                       value={proxyUrl}
                       onChange={(e) => setProxyUrl(e.target.value)}
                     />
@@ -140,21 +140,21 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="Authentication"
+                title={t('settings:httpsProxy.authentication')}
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>Credentials for the proxy server, if required.</p>
+                    <p>{t('settings:httpsProxy.authenticationDesc')}</p>
                     <div className="flex gap-2">
                       <Input
-                        placeholder="Username"
+                        placeholder={t('settings:httpsProxy.username')}
                         value={proxyUsername}
                         onChange={(e) => setProxyUsername(e.target.value)}
                       />
                       <div className="relative shrink-0 w-1/2">
                         <Input
                           type={showPassword ? 'text' : 'password'}
-                          placeholder="Password"
+                          placeholder={t('settings:httpsProxy.password')}
                           className="pr-16"
                           value={proxyPassword}
                           onChange={(e) => setProxyPassword(e.target.value)}
@@ -177,13 +177,13 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="No Proxy"
+                title={t('settings:httpsProxy.noProxy')}
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>A comma-separated list of hosts to bypass the proxy.</p>
+                    <p>{t('settings:httpsProxy.noProxyDesc')}</p>
                     <Input
-                      placeholder="localhost, 127.0.0.1"
+                      placeholder={t('settings:httpsProxy.noProxyPlaceholder')}
                       value={noProxy}
                       onChange={(e) => setNoProxy(e.target.value)}
                     />
@@ -193,10 +193,10 @@ function HTTPSProxy() {
             </Card>
 
             {/* SSL Verification */}
-            <Card title="SSL Verification">
+            <Card title={t('settings:httpsProxy.sslVerification')}>
               <CardItem
-                title="Ignore SSL Certificates"
-                description="Allow self-signed or unverified certificates. This may be required for some proxies but reduces security. Only enable if you trust your proxy."
+                title={t('settings:httpsProxy.ignoreSsl')}
+                description={t('settings:httpsProxy.ignoreSslDesc')}
                 actions={
                   <Switch
                     checked={proxyIgnoreSSL}
@@ -205,8 +205,8 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="Proxy SSL"
-                description="Validate the SSL certificate when connecting to the proxy."
+                title={t('settings:httpsProxy.proxySsl')}
+                description={t('settings:httpsProxy.proxySslDesc')}
                 actions={
                   <Switch
                     checked={verifyProxySSL}
@@ -215,8 +215,8 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="Proxy Host SSL"
-                description="Validate the SSL certificate of the proxy's host."
+                title={t('settings:httpsProxy.proxyHostSsl')}
+                description={t('settings:httpsProxy.proxyHostSslDesc')}
                 actions={
                   <Switch
                     checked={verifyProxyHostSSL}
@@ -227,8 +227,8 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="Peer SSL"
-                description="Validate the SSL certificates of peer connections."
+                title={t('settings:httpsProxy.peerSsl')}
+                description={t('settings:httpsProxy.peerSslDesc')}
                 actions={
                   <Switch
                     checked={verifyPeerSSL}
@@ -237,8 +237,8 @@ function HTTPSProxy() {
                 }
               />
               <CardItem
-                title="Host SSL"
-                description="Validate the SSL certificates of destination hosts."
+                title={t('settings:httpsProxy.hostSsl')}
+                description={t('settings:httpsProxy.hostSslDesc')}
                 actions={
                   <Switch
                     checked={verifyHostSSL}

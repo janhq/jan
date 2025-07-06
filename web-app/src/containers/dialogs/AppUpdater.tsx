@@ -8,8 +8,10 @@ import { useReleaseNotes } from '@/hooks/useReleaseNotes'
 import { RenderMarkdown } from '../RenderMarkdown'
 import { cn, isDev } from '@/lib/utils'
 import { isNightly, isBeta } from '@/lib/version'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const DialogAppUpdater = () => {
+  const { t } = useTranslation()
   const {
     updateState,
     downloadAndInstallUpdate,
@@ -67,10 +69,12 @@ const DialogAppUpdater = () => {
                 />
                 <div>
                   <div className="text-base font-medium">
-                    New Version: Jan {updateState.updateInfo?.version}
+                    {t('updater:newVersion', {
+                      version: updateState.updateInfo?.version,
+                    })}
                   </div>
                   <div className="mt-1 text-main-view-fg/70 font-normal mb-2">
-                    There's a new app update available to download.
+                    {t('updater:updateAvailable')}
                   </div>
                 </div>
               </div>
@@ -80,9 +84,7 @@ const DialogAppUpdater = () => {
               <div className="max-h-[500px] p-4 w-[400px] overflow-y-scroll  text-sm font-normal leading-relaxed">
                 {isNightly && !isBeta ? (
                   <p className="text-sm font-normal">
-                    You are using a nightly build. This version is built from
-                    the latest development branch and may not have release
-                    notes.
+                    {t('updater:nightlyBuild')}
                   </p>
                 ) : (
                   <RenderMarkdown
@@ -111,7 +113,9 @@ const DialogAppUpdater = () => {
                   className="px-0 text-main-view-fg/70"
                   onClick={() => setShowReleaseNotes(!showReleaseNotes)}
                 >
-                  {showReleaseNotes ? 'Hide' : 'Show'} release notes
+                  {showReleaseNotes
+                    ? t('updater:hideReleaseNotes')
+                    : t('updater:showReleaseNotes')}
                 </Button>
                 <div className="flex gap-x-5">
                   <Button
@@ -119,15 +123,15 @@ const DialogAppUpdater = () => {
                     className="px-0 text-main-view-fg/70 remind-me-later"
                     onClick={() => setRemindMeLater(true)}
                   >
-                    Remind me later
+                    {t('updater:remindMeLater')}
                   </Button>
                   <Button
                     onClick={handleUpdate}
                     disabled={updateState.isDownloading}
                   >
                     {updateState.isDownloading
-                      ? 'Downloading...'
-                      : 'Update Now'}
+                      ? t('updater:downloading')
+                      : t('updater:updateNow')}
                   </Button>
                 </div>
               </div>

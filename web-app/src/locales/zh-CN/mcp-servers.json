@@ -1,0 +1,43 @@
+{
+  "editServer": "编辑 MCP 服务器",
+  "addServer": "添加 MCP 服务器",
+  "serverName": "服务器名称",
+  "enterServerName": "输入服务器名称",
+  "command": "命令",
+  "enterCommand": "输入命令 (uvx 或 npx)",
+  "arguments": "参数",
+  "argument": "参数 {{index}}",
+  "envVars": "环境变量",
+  "key": "键",
+  "value": "值",
+  "save": "保存",
+  "status": "状态",
+  "connected": "已连接",
+  "disconnected": "已断开",
+  "deleteServer": {
+    "title": "删除 MCP 服务器",
+    "description": "您确定要删除 MCP 服务器 {{serverName}} 吗？此操作无法撤销。",
+    "delete": "删除"
+  },
+  "editJson": {
+    "title": "编辑 MCP 服务器的 JSON：{{serverName}}",
+    "titleAll": "编辑所有 MCP 服务器的 JSON",
+    "placeholder": "输入 JSON 配置",
+    "errorParse": "解析初始数据失败",
+    "errorPaste": "粘贴内容中的 JSON 格式无效",
+    "errorFormat": "JSON 格式无效",
+    "save": "保存"
+  },
+  "checkParams": "请根据教程检查参数。",
+  "title": "MCP 服务器",
+  "experimental": "实验性",
+  "editAllJson": "编辑所有服务器的 JSON",
+  "findMore": "在以下位置查找更多 MCP 服务器",
+  "allowPermissions": "允许所有 MCP 工具权限",
+  "allowPermissionsDesc": "启用后，所有 MCP 工具调用都将自动批准，而不会显示权限对话框。",
+  "noServers": "未找到 MCP 服务器",
+  "args": "参数",
+  "env": "环境",
+  "serverStatusActive": "服务器 {{serverKey}} 激活成功",
+  "serverStatusInactive": "服务器 {{serverKey}} 停用成功"
+}

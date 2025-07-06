@@ -39,9 +39,11 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
+  const { t } = useTranslation()
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text)
@@ -57,7 +59,7 @@ const CopyButton = ({ text }: { text: string }) => {
       {copied ? (
         <>
           <IconCopyCheck size={16} className="text-accent" />
-          <span className="opacity-100">Copied!</span>
+          <span className="opacity-100">{t('copied')}</span>
         </>
       ) : (
         <Tooltip>
@@ -65,7 +67,7 @@ const CopyButton = ({ text }: { text: string }) => {
             <IconCopy size={16} />
           </TooltipTrigger>
           <TooltipContent>
-            <p>Copy</p>
+            <p>{t('copy')}</p>
           </TooltipContent>
         </Tooltip>
       )}
@@ -83,10 +85,10 @@ export const ThreadContent = memo(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      showContextOverflowModal?: () => Promise<unknown>
     }
   ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
+    const { t } = useTranslation()
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -134,10 +136,7 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(
-          toSendMessage.content?.[0]?.text?.value || '',
-          item.showContextOverflowModal
-        )
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
@@ -179,16 +178,9 @@ export const ThreadContent = memo(
           deleteMessage(threadMessages[i].thread_id, threadMessages[i].id)
         }
 
-        sendMessage(message, item.showContextOverflowModal)
+        sendMessage(message)
       },
-      [
-        deleteMessage,
-        getMessages,
-        item.thread_id,
-        message,
-        sendMessage,
-        item.showContextOverflowModal,
-      ]
+      [deleteMessage, getMessages, item.thread_id, message, sendMessage]
     )
 
     const isToolCalls =
@@ -226,13 +218,13 @@ export const ThreadContent = memo(
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Edit</p>
+                      <p>{t('edit')}</p>
                     </TooltipContent>
                   </Tooltip>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Edit Message</DialogTitle>
+                    <DialogTitle>{t('common:dialogs.editMessage.title')}</DialogTitle>
                     <Textarea
                       value={message}
                       onChange={(e) => {
@@ -259,10 +251,9 @@ export const ThreadContent = memo(
                           disabled={!message}
                           onClick={() => {
                             editMessage(item.id)
-                            toast.success('Edit Message', {
+                            toast.success(t('common:toast.editMessage.title'), {
                               id: 'edit-message',
-                              description:
-                                'Message edited successfully. Please wait for the model to respond.',
+                              description: t('common:toast.editMessage.description'),
                             })
                           }}
                         >
@@ -285,7 +276,7 @@ export const ThreadContent = memo(
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Delete</p>
+                  <p>{t('delete')}</p>
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -382,7 +373,7 @@ export const ThreadContent = memo(
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Delete</p>
+                        <p>{t('delete')}</p>
                       </TooltipContent>
                     </Tooltip>
                     <Dialog>
@@ -394,13 +385,13 @@ export const ThreadContent = memo(
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Metadata</p>
+                            <p>{t('metadata')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Message Metadata</DialogTitle>
+                          <DialogTitle>{t('common:dialogs.messageMetadata.title')}</DialogTitle>
                           <div className="space-y-2">
                             <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
                               <CodeEditor
@@ -435,7 +426,7 @@ export const ThreadContent = memo(
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Regenerate</p>
+                          <p>{t('regenerate')}</p>
                         </TooltipContent>
                       </Tooltip>
                     )}

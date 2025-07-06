@@ -9,7 +9,6 @@ on:
 jobs:
   get-update-version:
     runs-on: ubuntu-latest
-    environment: production
     outputs:
       new_version: ${{ steps.version_update.outputs.new_version }}
     steps:

@@ -23,7 +23,7 @@ import {
   IconPlayerStopFilled,
   IconX,
 } from '@tabler/icons-react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
@@ -35,7 +35,6 @@ import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
 import { stopAllModels } from '@/services/models'
-import { useOutOfContextPromiseModal } from './dialogs/OutOfContextDialog'
 
 type ChatInputProps = {
   className?: string
@@ -55,8 +54,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
 
-  const { showModal, PromiseModal: OutOfContextModal } =
-    useOutOfContextPromiseModal()
   const maxRows = 10
 
   const { selectedModel } = useModelProvider()
@@ -107,7 +104,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       return
     }
     setMessage('')
-    sendMessage(prompt, showModal)
+    sendMessage(prompt)
   }
 
   useEffect(() => {
@@ -368,6 +365,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               rows={1}
               maxRows={10}
               value={prompt}
+              data-test-id={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows
@@ -382,7 +380,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
-              placeholder={t('common.placeholder.chatInput')}
+              placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
               data-gramm={spellCheckChatInput}
@@ -440,7 +438,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Vision</p>
+                        <p>{t('vision')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -457,7 +455,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Embeddings</p>
+                        <p>{t('embeddings')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -513,7 +511,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Tools</p>
+                          <p>{t('tools')}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -547,7 +545,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Reasoning</p>
+                        <p>{t('reasoning')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -570,6 +568,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 variant={!prompt.trim() ? null : 'default'}
                 size="icon"
                 disabled={!prompt.trim()}
+                data-test-id="send-message-button"
                 onClick={() => handleSendMesage(prompt)}
               >
                 {streamingContent ? (
@@ -599,7 +598,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       )}
-      <OutOfContextModal />
     </div>
   )
 }

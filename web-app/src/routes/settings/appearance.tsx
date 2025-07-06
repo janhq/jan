@@ -5,7 +5,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ColorPickerAppBgColor } from '@/containers/ColorPickerAppBgColor'
 import { ColorPickerAppMainView } from '@/containers/ColorPickerAppMainView'
 import { Card, CardItem } from '@/containers/Card'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
@@ -33,67 +33,76 @@ function Appareances() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
-      <div className="flex h-full w-full">
+      <div className="flex h-full w-full flex-col sm:flex-row">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Appearance */}
-            <Card title="Appearance">
+            <Card title={t('settings:appearance.title')}>
               <CardItem
-                title="Theme"
-                description="Match the OS theme."
+                title={t('settings:appearance.theme')}
+                description={t('settings:appearance.themeDesc')}
                 actions={<ThemeSwitcher />}
               />
               <CardItem
-                title="Font Size"
-                description="Adjust the app's font size."
+                title={t('settings:appearance.fontSize')}
+                description={t('settings:appearance.fontSizeDesc')}
                 actions={<FontSizeSwitcher />}
               />
 
               <CardItem
-                title="Window Background"
-                description="Set the app window's background color."
+                title={t('settings:appearance.windowBackground')}
+                description={t('settings:appearance.windowBackgroundDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppBgColor />}
               />
               <CardItem
-                title="App Main View"
-                description="Set the main content area's background color."
+                title={t('settings:appearance.appMainView')}
+                description={t('settings:appearance.appMainViewDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppMainView />}
               />
               <CardItem
-                title="Primary"
-                description="Set the primary color for UI components."
+                title={t('settings:appearance.primary')}
+                description={t('settings:appearance.primaryDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppPrimaryColor />}
               />
               <CardItem
-                title="Accent"
-                description="Set the accent color for UI highlights."
+                title={t('settings:appearance.accent')}
+                description={t('settings:appearance.accentDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppAccentColor />}
               />
               <CardItem
-                title="Destructive"
-                description="Set the color for destructive actions."
+                title={t('settings:appearance.destructive')}
+                description={t('settings:appearance.destructiveDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppDestructiveColor />}
               />
               <CardItem
-                title="Reset to Default"
-                description="Reset all appearance settings to default."
+                title={t('settings:appearance.resetToDefault')}
+                description={t('settings:appearance.resetToDefaultDesc')}
                 actions={
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
                       resetAppearance()
-                      toast.success('Appearance Reset', {
-                        id: 'reset-appearance',
-                        description:
-                          'Your appearance settings have been restored to default.',
-                      })
+                      toast.success(
+                        t('settings:appearance.resetAppearanceSuccess'),
+                        {
+                          id: 'reset-appearance',
+                          description: t(
+                            'settings:appearance.resetAppearanceSuccessDesc'
+                          ),
+                        }
+                      )
                     }}
                   >
-                    {t('common.reset')}
+                    {t('common:reset')}
                   </Button>
                 }
               />
@@ -102,8 +111,8 @@ function Appareances() {
             {/* Chat Message */}
             <Card>
               <CardItem
-                title="Chat Width"
-                description="Customize the width of the chat view."
+                title={t('settings:appearance.chatWidth')}
+                description={t('settings:appearance.chatWidthDesc')}
               />
               <ChatWidthSwitcher />
             </Card>
@@ -111,33 +120,37 @@ function Appareances() {
             {/* Codeblock */}
             <Card>
               <CardItem
-                title="Code Block"
-                description="Choose a syntax highlighting style."
+                title={t('settings:appearance.codeBlockTitle')}
+                description={t('settings:appearance.codeBlockDesc')}
                 actions={<CodeBlockStyleSwitcher />}
               />
               <CodeBlockExample />
               <CardItem
-                title="Show Line Numbers"
-                description="Display line numbers in code blocks."
+                title={t('settings:appearance.showLineNumbers')}
+                description={t('settings:appearance.showLineNumbersDesc')}
                 actions={<LineNumbersSwitcher />}
               />
               <CardItem
-                title="Reset Code Block Style"
-                description="Reset code block style to default."
+                title={t('settings:appearance.resetCodeBlockStyle')}
+                description={t('settings:appearance.resetCodeBlockStyleDesc')}
                 actions={
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
                       resetCodeBlockStyle()
-                      toast.success('Code Block Reset', {
-                        id: 'code-block-style',
-                        description:
-                          'Your Code Block style settings have been restored to default.',
-                      })
+                      toast.success(
+                        t('settings:appearance.resetCodeBlockSuccess'),
+                        {
+                          id: 'code-block-style',
+                          description: t(
+                            'settings:appearance.resetCodeBlockSuccessDesc'
+                          ),
+                        }
+                      )
                     }}
                   >
-                    {t('common.reset')}
+                    {t('common:reset')}
                   </Button>
                 }
               />

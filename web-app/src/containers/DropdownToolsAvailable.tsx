@@ -14,6 +14,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 import React from 'react'
 import { useAppState } from '@/hooks/useAppState'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
@@ -28,6 +29,7 @@ export default function DropdownToolsAvailable({
 }: DropdownToolsAvailableProps) {
   const { tools } = useAppState()
   const [isOpen, setIsOpen] = useState(false)
+  const { t } = useTranslation()
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
@@ -96,7 +98,7 @@ export default function DropdownToolsAvailable({
       <DropdownMenu onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-w-64">
-          <DropdownMenuItem disabled>No tools available</DropdownMenuItem>
+          <DropdownMenuItem disabled>{t('common:noToolsAvailable')}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     )

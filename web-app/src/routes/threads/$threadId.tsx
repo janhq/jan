@@ -18,7 +18,8 @@ import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
-import { useOutOfContextPromiseModal } from '@/containers/dialogs/OutOfContextDialog'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -26,6 +27,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 })
 
 function ThreadDetail() {
+  const { t } = useTranslation()
   const { threadId } = useParams({ from: Route.id })
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -36,6 +38,7 @@ function ThreadDetail() {
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
   const { appMainViewBgColor, chatWidth } = useAppearance()
+  const isSmallScreen = useSmallScreen()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -48,8 +51,6 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
   const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
-  const { showModal, PromiseModal: OutOfContextModal } =
-    useOutOfContextPromiseModal()
 
   // Function to check scroll position and scrollbar presence
   const checkScrollState = () => {
@@ -196,8 +197,6 @@ function ThreadDetail() {
 
   if (!messages || !threadModel) return null
 
-  const contextOverflowModalComponent = <OutOfContextModal />
-
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -216,7 +215,8 @@ function ThreadDetail() {
           <div
             className={cn(
               'w-4/6 mx-auto flex max-w-full flex-col grow',
-              chatWidth === 'compact' ? 'w-4/6' : 'w-full'
+              chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
+              isSmallScreen && 'w-full'
             )}
           >
             {messages &&
@@ -226,7 +226,7 @@ function ThreadDetail() {
                 return (
                   <div
                     key={item.id}
-                    data-test-id={`message-${item.id}`}
+                    data-test-id={`message-${item.role}-${item.id}`}
                     data-message-author-role={item.role}
                     className="mb-4"
                   >
@@ -243,19 +243,21 @@ function ThreadDetail() {
                           ))
                       }
                       index={index}
-                      showContextOverflowModal={showModal}
-                      contextOverflowModal={contextOverflowModalComponent}
                     />
                   </div>
                 )
               })}
-            <StreamingContent threadId={threadId} />
+            <StreamingContent
+              threadId={threadId}
+              data-test-id="thread-content-text"
+            />
           </div>
         </div>
         <div
           className={cn(
-            ' mx-auto pt-2 pb-3 shrink-0 relative',
-            chatWidth === 'compact' ? 'w-4/6' : 'w-full px-3'
+            'mx-auto pt-2 pb-3 shrink-0 relative px-2',
+            chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
+            isSmallScreen && 'w-full'
           )}
         >
           <div
@@ -274,7 +276,7 @@ function ThreadDetail() {
                 setIsUserScrolling(false)
               }}
             >
-              <p className="text-xs">Scroll to bottom</p>
+              <p className="text-xs">{t('scrollToBottom')}</p>
               <ArrowDown size={12} />
             </div>
           </div>

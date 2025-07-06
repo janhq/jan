@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useAppState } from '@/hooks/useAppState'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface Props {
   text: string
@@ -28,6 +29,7 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, toggleState } = useThinkingStore()
   const { streamingContent } = useAppState()
+  const { t } = useTranslation()
   const loading = !text.includes('</think>') && streamingContent
   const isExpanded = thinkingState[id] ?? false
   const handleClick = () => toggleState(id)
@@ -51,7 +53,7 @@ const ThinkingBlock = ({ id, text }: Props) => {
               <ChevronDown className="size-4 text-main-view-fg/60" />
             )}
             <span className="font-medium">
-              {loading ? 'Thinking...' : 'Thought'}
+              {loading ? t('common:thinking') : t('common:thought')}
             </span>
           </button>
         </div>

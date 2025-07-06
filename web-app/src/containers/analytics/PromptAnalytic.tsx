@@ -2,8 +2,10 @@ import { Button } from '@/components/ui/button'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { IconFileTextShield } from '@tabler/icons-react'
 import posthog from 'posthog-js'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function PromptAnalytic() {
+  const { t } = useTranslation()
   const { setProductAnalyticPrompt, setProductAnalytic } = useAnalytic()
 
   const handleProductAnalytics = (isAllowed: boolean) => {
@@ -23,7 +25,7 @@ export function PromptAnalytic() {
       <div className="flex items-center gap-2">
         <IconFileTextShield className="text-accent" />
         <h2 className="font-medium text-main-view-fg/80">
-          Help Us Improve Jan
+          {t('helpUsImproveJan')}
         </h2>
       </div>
       <p className="mt-2 text-sm text-main-view-fg/70">
@@ -41,9 +43,9 @@ export function PromptAnalytic() {
           className="text-main-view-fg/70"
           onClick={() => handleProductAnalytics(false)}
         >
-          Deny
+          {t('deny')}
         </Button>
-        <Button onClick={() => handleProductAnalytics(true)}>Allow</Button>
+        <Button onClick={() => handleProductAnalytics(true)}>{t('allow')}</Button>
       </div>
     </div>
   )

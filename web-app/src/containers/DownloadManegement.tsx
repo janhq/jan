@@ -14,8 +14,10 @@ import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function DownloadManagement() {
+  const { t } = useTranslation()
   const { setProviders } = useModelProvider()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
@@ -67,20 +69,20 @@ export function DownloadManagement() {
       isDownloading: false,
       downloadProgress: 1,
     }))
-    toast.success('App Update Downloaded', {
-      description: 'The app update has been downloaded successfully.',
+    toast.success(t('common:toast.appUpdateDownloaded.title'), {
+      description: t('common:toast.appUpdateDownloaded.description'),
     })
-  }, [])
+  }, [t])
 
   const onAppUpdateDownloadError = useCallback(() => {
     setAppUpdateState((prev) => ({
       ...prev,
       isDownloading: false,
     }))
-    toast.error('App Update Download Failed', {
-      description: 'Failed to download the app update. Please try again.',
+    toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
+      description: t('common:toast.appUpdateDownloadFailed.description'),
     })
-  }, [])
+  }, [t])
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
@@ -178,12 +180,12 @@ export function DownloadManagement() {
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       getProviders().then(setProviders)
-      toast.success('Download Complete', {
+      toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
-        description: `The model ${state.modelId} has been downloaded`,
+        description: t('common:toast.downloadComplete.description', { modelId: state.modelId }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, setProviders]
+    [removeDownload, removeLocalDownloadingModel, setProviders, t]
   )
 
   useEffect(() => {
@@ -238,7 +240,7 @@ export function DownloadManagement() {
                 <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
                   {downloadCount}
                 </div>
-                <p className="text-left-panel-fg/80 font-medium">Downloads</p>
+                <p className="text-left-panel-fg/80 font-medium">{t('downloads')}</p>
                 <div className="mt-2 flex items-center justify-between space-x-2">
                   <Progress value={overallProgress * 100} />
                   <span className="text-xs font-medium text-left-panel-fg/80 shrink-0">
@@ -270,7 +272,7 @@ export function DownloadManagement() {
           >
             <div className="flex flex-col">
               <div className="p-2 py-1.5 bg-main-view-fg/5 border-b border-main-view-fg/6">
-                <p className="text-xs text-main-view-fg/70">Downloading</p>
+                <p className="text-xs text-main-view-fg/70">{t('downloading')}</p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
                 {appUpdateState.isDownloading && (
@@ -307,10 +309,9 @@ export function DownloadManagement() {
                           title="Cancel download"
                           onClick={() => {
                             abortDownload(download.name).then(() => {
-                              toast.info('Download Cancelled', {
+                              toast.info(t('common:toast.downloadCancelled.title'), {
                                 id: 'cancel-download',
-                                description:
-                                  'The download process was cancelled',
+                                description: t('common:toast.downloadCancelled.description'),
                               })
                               if (downloadProcesses.length === 0) {
                                 setIsPopoverOpen(false)

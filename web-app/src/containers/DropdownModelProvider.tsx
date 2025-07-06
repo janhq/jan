@@ -16,7 +16,7 @@ import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
-import { isProd } from '@/lib/version'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -68,6 +68,7 @@ const DropdownModelProvider = ({
   const [displayModel, setDisplayModel] = useState<string>('')
   const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -118,9 +119,9 @@ const DropdownModelProvider = ({
     if (selectedProvider && selectedModel) {
       setDisplayModel(selectedModel.id)
     } else {
-      setDisplayModel('Select a model')
+      setDisplayModel(t('common:selectAModel'))
     }
-  }, [selectedProvider, selectedModel])
+  }, [selectedProvider, selectedModel, t])
 
   // Reset search value when dropdown closes
   const onOpenChange = useCallback((open: boolean) => {
@@ -307,7 +308,7 @@ const DropdownModelProvider = ({
               ref={searchInputRef}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Search models..."
+              placeholder={t('common:searchModels')}
               className="text-sm font-normal outline-0"
             />
             {searchValue.length > 0 && (
@@ -325,7 +326,7 @@ const DropdownModelProvider = ({
           <div className="max-h-[320px] overflow-y-auto">
             {Object.keys(groupedItems).length === 0 && searchValue ? (
               <div className="py-3 px-4 text-sm text-main-view-fg/60">
-                No models found for "{searchValue}"
+                {t('common:noModelsFoundFor', { searchValue })}
               </div>
             ) : (
               <div className="py-1">
@@ -396,7 +397,7 @@ const DropdownModelProvider = ({
                                 </span>
 
                                 <div className="flex-1"></div>
-                                {!isProd && capabilities.length > 0 && (
+                                {capabilities.length > 0 && (
                                   <div className="flex-shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>
