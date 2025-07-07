@@ -72,5 +72,13 @@ export default defineConfig(({ mode }) => {
         ignored: ['**/src-tauri/**'],
       },
     },
+    test: {
+      environment: 'jsdom',
+      coverage: {
+        provider: 'v8',
+        reporter: ['json', 'lcov'],
+        reportsDirectory: '../coverage/vitest',
+      },
+    },
   }
 })

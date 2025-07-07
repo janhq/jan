@@ -675,71 +675,71 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=0f88e7&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f2e0b5&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/0349a77caf5861e272f416b91ac34a68c1848ef4cd09451f16f064a82c32dd80394c85d44f4b146765acd8238796c0c2a80ff25a2afc8a11cdc98351e5339210
+  checksum: 10c0/6f085adb6211c2d0735c2ebccf38c26b90c78a786d6d327fab3e1a9e10380a522429e19f9b9752f7c5a42eb6d80f37c7022c5146b2e4ca1fada609dccbea4194
   languageName: node
   linkType: hard
 
