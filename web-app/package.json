@@ -74,7 +74,7 @@
     "ulidx": "^2.4.1",
     "unified": "^11.0.5",
     "uuid": "^11.1.0",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
