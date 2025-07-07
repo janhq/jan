@@ -636,15 +636,7 @@ Section Install
     SetOutPath "$INSTDIR\binaries\engines"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\binaries\engines\"
     SetOutPath $INSTDIR
-    File /a "/oname=cublas64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cublas64_12.dll"
-    File /a "/oname=cublasLt64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cublasLt64_12.dll"
-    File /a "/oname=cudart64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cudart64_12.dll"
-    File /a "/oname=msvcp140.dll" "D:\a\jan\jan\src-tauri\binaries\msvcp140.dll"
-    File /a "/oname=vcomp140.dll" "D:\a\jan\jan\src-tauri\binaries\vcomp140.dll"
-    File /a "/oname=msvcp140_codecvt_ids.dll" "D:\a\jan\jan\src-tauri\binaries\msvcp140_codecvt_ids.dll"
-    File /a "/oname=vcruntime140_1.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140_1.dll"
-    File /a "/oname=vcruntime140.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140.dll"
-    File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\binaries\vulkan-1.dll"
+    File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\resources\lib\vulkan-1.dll"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
     SetOutPath $INSTDIR

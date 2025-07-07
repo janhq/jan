@@ -8,7 +8,7 @@ mkdir -p "$TAURI_TOOLKIT_PATH"
 wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage -O "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
 chmod +x "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
 
-jq '.bundle.resources = ["resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+jq '.bundle.resources = ["resources/pre-install/**/*"] | .bundle.externalBin = ["resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
 mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
 
 make build-tauri

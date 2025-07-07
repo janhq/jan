@@ -37,43 +37,7 @@
     },
     {
       "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "args": [
-            "--start-server",
-            {
-              "validator": "\\S+"
-            },
-            "--port",
-            {
-              "validator": "\\S+"
-            },
-            "--config_file_path",
-            {
-              "validator": "\\S+"
-            },
-            "--data_folder_path",
-            {
-              "validator": "\\S+"
-            },
-            "--cors",
-            {
-              "validator": "\\S+"
-            },
-            "--allowed_origins",
-            {
-              "validator": "\\S+"
-            },
-            "config",
-            "--api_keys",
-            {
-              "validator": "\\S+"
-            }
-          ],
-          "name": "binaries/cortex-server",
-          "sidecar": true
-        }
-      ]
+      "allow": []
     },
     {
       "identifier": "opener:allow-open-url",
