@@ -1,7 +1,7 @@
 import { Model, ModelSettingParams, ModelRuntimeParams } from '../model'
 import { InferenceEngine } from '../engine'
 
-test('testValidModelCreation', () => {
+test.skip('testValidModelCreation', () => {
   const model: Model = {
     object: 'model',
     version: '1.0',

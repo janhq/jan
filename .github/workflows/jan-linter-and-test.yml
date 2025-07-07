@@ -42,12 +42,16 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.base_ref }}
       - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
+      - name: 'Cleanup cache'
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
 
       - name: Install dependencies
         run: |
@@ -55,9 +59,7 @@ jobs:
 
       - name: Run test coverage
         run: |
-          yarn test:coverage:jest
-          yarn test:coverage:vitest
-          yarn merge:coverage
+          yarn test:coverage
 
       - name: Upload code coverage for ref branch
         uses: actions/upload-artifact@v4
@@ -88,10 +90,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-
-      - name: Set IS_TEST environment variable
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        run: echo "IS_TEST=true" >> $GITHUB_ENV
 
       - name: 'Cleanup cache'
         continue-on-error: true

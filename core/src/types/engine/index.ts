@@ -51,13 +51,3 @@ export type EngineConfig = {
 export enum EngineEvent {
   OnEngineUpdate = 'OnEngineUpdate',
 }
-
-export enum InferenceEngine {
-  cortex = 'cortex',
-  nitro = 'nitro',
-  cortex_llamacpp = 'cortex_llamacpp',
-  cortex_onnx = 'cortex_onnx',
-  cortex_tensorrtllm = 'cortex_tensorrtllm',
-  anthropic = 'anthropic',
-  openai = 'openai',
-}
