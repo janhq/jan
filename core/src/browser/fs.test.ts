@@ -23,7 +23,7 @@ describe('fs module', () => {
   it('should call writeFileSync with correct arguments', () => {
     const args = ['path/to/file', 'data']
     fs.writeFileSync(...args)
-    expect(globalThis.core.api.writeFileSync).toHaveBeenCalledWith(...args)
+    expect(globalThis.core.api.writeFileSync).toHaveBeenCalledWith({ args })
   })
 
   it('should call writeBlob with correct arguments', async () => {
@@ -90,8 +90,7 @@ describe('fs module', () => {
 
   it('should call fileStat with correct arguments', async () => {
     const path = 'path/to/file'
-    const outsideJanDataFolder = true
-    await fs.fileStat(path, outsideJanDataFolder)
-    expect(globalThis.core.api.fileStat).toHaveBeenCalledWith(path, outsideJanDataFolder)
+    await fs.fileStat(path)
+    expect(globalThis.core.api.fileStat).toHaveBeenCalledWith({ args: path })
   })
 })

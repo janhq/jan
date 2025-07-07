@@ -1,3 +1,3 @@
 module.exports = {
-  projects: ['<rootDir>/core', '<rootDir>/web', '<rootDir>/joi'],
+  projects: ['<rootDir>/core'],
 }

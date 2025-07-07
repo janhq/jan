@@ -138,6 +138,14 @@ export const sendCompletion = async (
     baseURL: provider.base_url,
     // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
     ...(providerName === 'openai-compatible' && { fetch: fetchTauri }),
+    // OpenRouter identification headers for Jan
+    // ref: https://openrouter.ai/docs/api-reference/overview#headers
+    ...(provider.provider === 'openrouter' && {
+      defaultHeaders: {
+        'HTTP-Referer': 'https://jan.ai',
+        'X-Title': 'Jan',
+      },
+    }),
   } as ExtendedConfigOptions)
   if (
     thread.model.id &&
@@ -286,10 +294,10 @@ export const extractToolCall = (
  * @param calls
  * @param builder
  * @param message
- * @param content
- * @param approvedTools - Record of approved tools per thread
- * @param showModal - Function to show approval modal, returns true if approved
- * @param allowAllMCPPermissions - Global setting to allow all MCP permissions without modal
+ * @param abortController
+ * @param approvedTools
+ * @param showModal
+ * @param allowAllMCPPermissions
  */
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],

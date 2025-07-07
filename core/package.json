@@ -32,7 +32,7 @@
     "eslint-plugin-jest": "^27.9.0",
     "jest": "^30.0.3",
     "jest-junit": "^16.0.0",
-    "jest-runner": "^29.7.0",
+    "jest-runner": "^30.0.3",
     "pacote": "^21.0.0",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
