@@ -13,7 +13,7 @@ export const useLeftPanel = create<LeftPanelStoreState>()(
   persist(
     (set) => ({
       open: true,
-      size: 20, // Default size of 25%
+      size: 20, // Default size of 20%
       setLeftPanel: (value) => set({ open: value }),
       setLeftPanelSize: (value) => set({ size: value }),
     }),
