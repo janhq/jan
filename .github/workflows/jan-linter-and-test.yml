@@ -51,12 +51,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          make config-yarn
-          yarn
-          yarn build:core
+          make lint
 
       - name: Run test coverage
-        run: yarn test:coverage
+        run: |
+          yarn test:coverage:jest
+          yarn test:coverage:vitest
+          yarn merge:coverage
 
       - name: Upload code coverage for ref branch
         uses: actions/upload-artifact@v4
