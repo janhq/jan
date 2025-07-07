@@ -79,6 +79,9 @@ const LeftPanel = () => {
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const searchContainerMacRef = useRef<HTMLDivElement>(null)
 
+  // Determine if we're in a resizable context (large screen with panel open)
+  const isResizableContext = !isSmallScreen && open
+
   // Use click outside hook for panel with debugging
   useClickOutside(
     () => {
@@ -189,9 +192,17 @@ const LeftPanel = () => {
       <aside
         ref={panelRef}
         className={cn(
-          'w-48 shrink-0 rounded-lg m-1.5 mr-0 text-left-panel-fg overflow-hidden',
+          'text-left-panel-fg overflow-hidden',
+          // Resizable context: full height and width, no margins
+          isResizableContext && 'h-full w-full',
+          // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-main-view z-40 rounded-sm border border-left-panel-fg/10 m-2 px-1',
+            'fixed h-[calc(100%-16px)] bg-main-view z-40 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+          // Default context: original styling
+          !isResizableContext &&
+            !isSmallScreen &&
+            'w-48 shrink-0 rounded-lg m-1.5 mr-0',
+          // Visibility controls
           open
             ? 'opacity-100 visibility-visible'
             : 'w-0 absolute -top-100 -left-100 visibility-hidden'
@@ -209,7 +220,12 @@ const LeftPanel = () => {
           {!IS_MACOS && (
             <div
               ref={searchContainerRef}
-              className="relative top-1.5 mb-4 mx-1 mt-1 w-[calc(100%-32px)] z-50"
+              className={cn(
+                'relative top-1.5 mb-4 mt-1 z-50',
+                isResizableContext
+                  ? 'mx-2 w-[calc(100%-48px)]'
+                  : 'mx-1 w-[calc(100%-32px)]'
+              )}
               data-ignore-outside-clicks
             >
               <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
@@ -241,7 +257,10 @@ const LeftPanel = () => {
             {IS_MACOS && (
               <div
                 ref={searchContainerMacRef}
-                className="relative mb-4 mx-1 mt-1"
+                className={cn(
+                  'relative mb-4 mt-1',
+                  isResizableContext ? 'mx-2' : 'mx-1'
+                )}
                 data-ignore-outside-clicks
               >
                 <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
@@ -452,6 +471,7 @@ const LeftPanel = () => {
                   key={menu.title}
                   to={menu.route}
                   onClick={() => isSmallScreen && setLeftPanel(false)}
+                  data-test-id={`menu-${menu.title}`}
                   className={cn(
                     'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
                     isActive
