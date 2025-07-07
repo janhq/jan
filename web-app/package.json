@@ -56,6 +56,7 @@
     "react-i18next": "^15.5.1",
     "react-joyride": "^2.9.3",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^3.0.3",
     "react-syntax-highlighter": "^15.6.1",
     "react-syntax-highlighter-virtualized-renderer": "^1.1.0",
     "react-textarea-autosize": "^8.5.9",
