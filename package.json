@@ -55,7 +55,7 @@
     "jest": "^30.0.3",
     "jest-environment-jsdom": "^29.7.0",
     "nyc": "^17.1.0",
-    "rimraf": "^3.0.2",
+    "rimraf": "^6.0.1",
     "run-script-os": "^1.1.6",
     "tar": "^4.4.19",
     "unzipper": "^0.12.3",

@@ -2594,6 +2594,7 @@ __metadata:
     "@types/culori": "npm:^2.1.1"
     "@types/istanbul-lib-report": "npm:^3"
     "@types/istanbul-reports": "npm:^3"
+    "@types/lodash.clonedeep": "npm:^4"
     "@types/lodash.debounce": "npm:^4"
     "@types/node": "npm:^22.14.1"
     "@types/react": "npm:^19.0.10"
@@ -2618,6 +2619,7 @@ __metadata:
     istanbul-lib-report: "npm:^3.0.1"
     istanbul-reports: "npm:^3.1.7"
     katex: "npm:^0.16.22"
+    lodash.clonedeep: "npm:^4.5.0"
     lodash.debounce: "npm:^4.0.8"
     lucide-react: "npm:^0.522.0"
     motion: "npm:^12.10.5"
@@ -6994,6 +6996,15 @@ __metadata:
   dependencies:
     "@types/node": "npm:*"
   checksum: 10c0/ff8f54fc49621210291f815fe5b15d809fd7d032941b3180743440bd507ecdf08b9e844625fa346af568c84bf34114eb378dcdc3e921a08ba1e2a08d7e3c809c
+  languageName: node
+  linkType: hard
+
+"@types/lodash.clonedeep@npm:^4":
+  version: 4.5.9
+  resolution: "@types/lodash.clonedeep@npm:4.5.9"
+  dependencies:
+    "@types/lodash": "npm:*"
+  checksum: 10c0/2f224ce9578046bccd1cd9594fb73540600ebd3d59a45695166a6123e2c376b84ab106b005a00453f357907f25bc8bfd2271b822be76e8f5527eadb4690b5e96
   languageName: node
   linkType: hard
 
@@ -13422,7 +13433,7 @@ __metadata:
     jest: "npm:^30.0.3"
     jest-environment-jsdom: "npm:^29.7.0"
     nyc: "npm:^17.1.0"
-    rimraf: "npm:^3.0.2"
+    rimraf: "npm:^6.0.1"
     run-script-os: "npm:^1.1.6"
     tar: "npm:^4.4.19"
     unzipper: "npm:^0.12.3"
@@ -14600,6 +14611,13 @@ __metadata:
   dependencies:
     p-locate: "npm:^6.0.0"
   checksum: 10c0/139e8a7fe11cfbd7f20db03923cacfa5db9e14fa14887ea121345597472b4a63c1a42a8a5187defeeff6acf98fd568da7382aa39682d38f0af27433953a97751
+  languageName: node
+  linkType: hard
+
+"lodash.clonedeep@npm:^4.5.0":
+  version: 4.5.0
+  resolution: "lodash.clonedeep@npm:4.5.0"
+  checksum: 10c0/2caf0e4808f319d761d2939ee0642fa6867a4bbf2cfce43276698828380756b99d4c4fa226d881655e6ac298dd453fe12a5ec8ba49861777759494c534936985
   languageName: node
   linkType: hard
 
