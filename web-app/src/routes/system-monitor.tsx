@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useHardware } from '@/hooks/useHardware'
@@ -13,22 +14,28 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitor,
 })
 
 function SystemMonitor() {
   const { t } = useTranslation()
-  const { hardwareData, systemUsage, updateHardwareDataPreservingGpuOrder, updateSystemUsage, updateGPUActivationFromDeviceString } =
-    useHardware()
+  const {
+    hardwareData,
+    systemUsage,
+    updateHardwareDataPreservingGpuOrder,
+    updateSystemUsage,
+    updateGPUActivationFromDeviceString,
+  } = useHardware()
   const [activeModels, setActiveModels] = useState<string[]>([])
   const { providers, getProviderByName } = useModelProvider()
   const [isInitialized, setIsInitialized] = useState(false)
 
   // Determine backend type and filter GPUs accordingly (same logic as hardware.tsx)
   const llamacpp = providers.find((p) => p.provider === 'llamacpp')
-  const versionBackend = llamacpp?.settings.find((s) => s.key === "version_backend")?.controller_props.value
+  const versionBackend = llamacpp?.settings.find(
+    (s) => s.key === 'version_backend'
+  )?.controller_props.value
 
   useEffect(() => {
     // Initial data fetch - use updateHardwareDataPreservingGpuOrder like hardware.tsx
@@ -52,53 +59,74 @@ function SystemMonitor() {
   useEffect(() => {
     if (hardwareData.gpus.length > 0 && !isInitialized) {
       const llamacppProvider = getProviderByName('llamacpp')
-      const currentDeviceSetting = llamacppProvider?.settings.find(s => s.key === 'device')?.controller_props.value as string
-      
+      const currentDeviceSetting = llamacppProvider?.settings.find(
+        (s) => s.key === 'device'
+      )?.controller_props.value as string
+
       if (currentDeviceSetting) {
         updateGPUActivationFromDeviceString(currentDeviceSetting)
       }
-      
+
       setIsInitialized(true)
     }
-  }, [hardwareData.gpus.length, isInitialized, getProviderByName, updateGPUActivationFromDeviceString])
+  }, [
+    hardwareData.gpus.length,
+    isInitialized,
+    getProviderByName,
+    updateGPUActivationFromDeviceString,
+  ])
 
   // Sync device setting when GPU activations change (only after initialization) - same logic as hardware.tsx
   const { getActivatedDeviceString } = useHardware()
   const { updateProvider } = useModelProvider()
-  const gpuActivationStates = hardwareData.gpus.map(gpu => gpu.activated)
-  
+  const gpuActivationStates = hardwareData.gpus.map((gpu) => gpu.activated)
+
   useEffect(() => {
     if (isInitialized && hardwareData.gpus.length > 0) {
       const llamacppProvider = getProviderByName('llamacpp')
-      const backendType = llamacppProvider?.settings.find(s => s.key === 'version_backend')?.controller_props.value as string
+      const backendType = llamacppProvider?.settings.find(
+        (s) => s.key === 'version_backend'
+      )?.controller_props.value as string
       const deviceString = getActivatedDeviceString(backendType)
-      
+
       if (llamacppProvider) {
-        const currentDeviceSetting = llamacppProvider.settings.find(s => s.key === 'device')
-        
+        const currentDeviceSetting = llamacppProvider.settings.find(
+          (s) => s.key === 'device'
+        )
+
         // Sync device string when GPU activations change (only after initialization)
-        if (currentDeviceSetting && currentDeviceSetting.controller_props.value !== deviceString) {
-          
-          const updatedSettings = llamacppProvider.settings.map(setting => {
+        if (
+          currentDeviceSetting &&
+          currentDeviceSetting.controller_props.value !== deviceString
+        ) {
+          const updatedSettings = llamacppProvider.settings.map((setting) => {
             if (setting.key === 'device') {
               return {
                 ...setting,
                 controller_props: {
                   ...setting.controller_props,
-                  value: deviceString
-                }
+                  value: deviceString,
+                },
               }
             }
             return setting
           })
-          
+
           updateProvider('llamacpp', {
-            settings: updatedSettings
+            settings: updatedSettings,
           })
         }
       }
     }
-  }, [isInitialized, gpuActivationStates, versionBackend, getActivatedDeviceString, updateProvider, getProviderByName, hardwareData.gpus.length])
+  }, [
+    isInitialized,
+    gpuActivationStates,
+    versionBackend,
+    getActivatedDeviceString,
+    updateProvider,
+    getProviderByName,
+    hardwareData.gpus.length,
+  ])
 
   const stopRunningModel = (modelId: string) => {
     stopModel(modelId)
@@ -120,8 +148,10 @@ function SystemMonitor() {
     ) * 100
 
   // Determine backend type and filter GPUs accordingly
-  const isCudaBackend = typeof versionBackend === 'string' && versionBackend.includes('cuda')
-  const isVulkanBackend = typeof versionBackend === 'string' && versionBackend.includes('vulkan')
+  const isCudaBackend =
+    typeof versionBackend === 'string' && versionBackend.includes('cuda')
+  const isVulkanBackend =
+    typeof versionBackend === 'string' && versionBackend.includes('vulkan')
 
   // Check if GPU should be active based on backend compatibility
   const isGPUCompatible = (gpu: any) => {
@@ -144,7 +174,7 @@ function SystemMonitor() {
   }
 
   // Filter to show only active GPUs
-  const activeGPUs = hardwareData.gpus.filter(gpu => isGPUActive(gpu))
+  const activeGPUs = hardwareData.gpus.filter((gpu) => isGPUActive(gpu))
 
   return (
     <div className="flex flex-col h-full bg-main-view overflow-y-auto p-6">
@@ -313,9 +343,10 @@ function SystemMonitor() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeGPUs.map((gpu, index) => {
               // Find the corresponding system usage data for this GPU
-              const gpuUsage = systemUsage.gpus.find(usage => usage.uuid === gpu.uuid)
-              const gpuIndex = hardwareData.gpus.findIndex(hwGpu => hwGpu.uuid === gpu.uuid)
-              
+              const gpuUsage = systemUsage.gpus.find(
+                (usage) => usage.uuid === gpu.uuid
+              )
+
               return (
                 <div
                   key={gpu.uuid || index}
@@ -337,13 +368,13 @@ function SystemMonitor() {
                       <span className="text-main-view-fg">
                         {gpuUsage ? (
                           <>
-                            {formatMegaBytes(gpuUsage.used_memory)}{' '}
-                            / {formatMegaBytes(gpu.total_memory)}
+                            {formatMegaBytes(gpuUsage.used_memory)} /{' '}
+                            {formatMegaBytes(gpu.total_memory)}
                           </>
                         ) : (
                           <>
-                            {formatMegaBytes(0)}{' '}
-                            / {formatMegaBytes(gpu.total_memory)}
+                            {formatMegaBytes(0)} /{' '}
+                            {formatMegaBytes(gpu.total_memory)}
                           </>
                         )}
                       </span>
@@ -362,14 +393,16 @@ function SystemMonitor() {
                       </span>
                       <span className="text-main-view-fg">
                         {gpu.nvidia_info?.compute_capability ||
-                          gpu.vulkan_info?.api_version || '-'}
+                          gpu.vulkan_info?.api_version ||
+                          '-'}
                       </span>
                     </div>
                     <div className="mt-2">
                       <Progress
                         value={
-                          gpuUsage ? 
-                            ((gpuUsage.used_memory / gpu.total_memory) * 100) : 0
+                          gpuUsage
+                            ? (gpuUsage.used_memory / gpu.total_memory) * 100
+                            : 0
                         }
                         className="h-2 w-full"
                       />
@@ -385,7 +418,6 @@ function SystemMonitor() {
           </div>
         )}
       </div>
-
     </div>
   )
 }

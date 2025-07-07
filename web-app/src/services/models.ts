@@ -20,6 +20,7 @@ export interface CatalogModel {
   num_quants: number
   quants: ModelQuant[]
   created_at?: string
+  readme?: string
 }
 
 export type ModelCatalog = CatalogModel[]

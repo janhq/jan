@@ -10,7 +10,7 @@ import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { useEffect, useMemo, useCallback } from 'react'
+import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { pullModel } from '@/services/models'
@@ -30,6 +30,10 @@ function HubModelDetail() {
   const llamaProvider = getProviderByName('llamacpp')
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
+
+  // State for README content
+  const [readmeContent, setReadmeContent] = useState<string>('')
+  const [isLoadingReadme, setIsLoadingReadme] = useState(false)
 
   useEffect(() => {
     fetchSources()
@@ -111,6 +115,24 @@ function HubModelDetail() {
       return numA - numB
     })
   }, [modelData])
+
+
+  // Fetch README content when modelData.readme is available
+  useEffect(() => {
+    if (modelData?.readme) {
+      setIsLoadingReadme(true)
+      fetch(modelData.readme)
+        .then((response) => response.text())
+        .then((content) => {
+          setReadmeContent(content)
+          setIsLoadingReadme(false)
+        })
+        .catch((error) => {
+          console.error('Failed to fetch README:', error)
+          setIsLoadingReadme(false)
+        })
+    }
+  }, [modelData?.readme])
 
   if (!modelData) {
     return (
@@ -356,6 +378,49 @@ function HubModelDetail() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {/* README Section */}
+              {modelData.readme && (
+                <div className="mb-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <IconFileCode size={20} className="text-main-view-fg/50" />
+                    <h2 className="text-lg font-semibold text-main-view-fg">
+                      README
+                    </h2>
+                  </div>
+
+                  {isLoadingReadme ? (
+                    <div className="flex items-center justify-center py-8">
+                      <span className="text-main-view-fg/60">
+                        Loading README...
+                      </span>
+                    </div>
+                  ) : readmeContent ? (
+                    <div className="prose prose-invert max-w-none">
+                      <RenderMarkdown
+                        enableRawHtml={true}
+                        className="text-main-view-fg/80"
+                        components={{
+                          a: ({ ...props }) => (
+                            <a
+                              {...props}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            />
+                          ),
+                        }}
+                        content={readmeContent}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <span className="text-main-view-fg/60">
+                        Failed to load README
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
