@@ -159,7 +159,6 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             ls ./src-tauri/target/release/bundle/appimage/
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
             APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep .AppImage | head -1)
             echo $APP_IMAGE
             rm -f $APP_IMAGE
@@ -170,7 +169,6 @@ jobs:
             "$APP_IMAGE"
           else
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
             APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
             echo $APP_IMAGE
             rm -f $APP_IMAGE

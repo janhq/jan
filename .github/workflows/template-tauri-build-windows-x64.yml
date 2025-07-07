@@ -178,9 +178,6 @@ jobs:
       - name: Build app
         shell: bash
         run: |
-          curl -L -o ./src-tauri/binaries/vcomp140.dll https://catalog.jan.ai/vcomp140.dll
-          curl -L -o ./src-tauri/binaries/msvcp140_codecvt_ids.dll https://catalog.jan.ai/msvcp140_codecvt_ids.dll
-          ls ./src-tauri/binaries
           make build-tauri
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}

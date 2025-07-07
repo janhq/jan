@@ -85,7 +85,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/**/*", "binaries/**/*"],
+    "resources": ["resources/pre-install/**/*", "binaries/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "linux": {
       "appimage": {
