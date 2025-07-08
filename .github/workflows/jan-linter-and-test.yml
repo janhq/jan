@@ -38,6 +38,7 @@ on:
 
 jobs:
   base_branch_cov:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -225,6 +226,7 @@ jobs:
           retention-days: 2
 
   coverage-check:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: base_branch_cov
     continue-on-error: true
