@@ -34,7 +34,7 @@
     "copy:lib:darwin": "mkdir -p \"./src-tauri/resources/lib/\"",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:tauri:win32": "yarn download:bin && yarn tauri build",
-    "build:tauri:linux": "yarn download:bin && yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
+    "build:tauri:linux": "yarn download:bin && ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
     "build:tauri:darwin": "yarn tauri build --target universal-apple-darwin",
     "build:tauri": "yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && run-script-os",
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
