@@ -12,27 +12,30 @@ interface Props {
 // Zustand store for thinking block state
 type ThinkingBlockState = {
   thinkingState: { [id: string]: boolean }
-  toggleState: (id: string) => void
+  setThinkingState: (id: string, expanded: boolean) => void
 }
 
 const useThinkingStore = create<ThinkingBlockState>((set) => ({
   thinkingState: {},
-  toggleState: (id) =>
+  setThinkingState: (id, expanded) =>
     set((state) => ({
       thinkingState: {
         ...state.thinkingState,
-        [id]: !state.thinkingState[id],
+        [id]: expanded,
       },
     })),
 }))
 
 const ThinkingBlock = ({ id, text }: Props) => {
-  const { thinkingState, toggleState } = useThinkingStore()
+  const { thinkingState, setThinkingState } = useThinkingStore()
   const { streamingContent } = useAppState()
   const { t } = useTranslation()
   const loading = !text.includes('</think>') && streamingContent
-  const isExpanded = thinkingState[id] ?? false
-  const handleClick = () => toggleState(id)
+  const isExpanded = thinkingState[id] ?? (loading ? true : false)
+  const handleClick = () => {
+    const newExpandedState = !isExpanded
+    setThinkingState(id, newExpandedState)
+  }
 
   if (!text.replace(/<\/?think>/g, '').trim()) return null
 
