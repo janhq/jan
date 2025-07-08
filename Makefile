@@ -22,6 +22,8 @@ config-yarn:
 install-and-build: config-yarn
 ifeq ($(OS),Windows_NT)
 	echo "skip"
+else ifeq ($(shell uname -s),Linux)
+	chmod +x src-tauri/build-utils/*
 endif
 	yarn install
 	yarn build:core
