@@ -17,7 +17,7 @@
     "test:coverage:jest": "jest --coverage --coverageDirectory=coverage/jest",
     "test:coverage:vitest": "yarn workspace @janhq/web-app test:coverage",
     "merge:coverage": "node scripts/merge-coverage.js",
-    "test:prepare": "yarn build:icon && yarn copy:lib && yarn copy:assets:tauri && yarn build --no-bundle ",
+    "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
     "test:e2e:linux": "yarn test:prepare && xvfb-run yarn workspace tests-e2-js test",
     "test:e2e:win32": "yarn test:prepare && yarn workspace tests-e2-js test",
     "test:e2e:darwin": "echo 'E2E tests are not supported on macOS yet due to WebDriver limitations'",
