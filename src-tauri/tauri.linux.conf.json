@@ -12,8 +12,7 @@
         "files": {
           "usr/bin/bun": "resources/bin/bun",
           "usr/lib/Jan/binaries": "binaries/deps",
-          "usr/lib/Jan/binaries/engines": "binaries/engines",
-          "usr/lib/Jan/binaries/libvulkan.so": "binaries/libvulkan.so"
+          "usr/lib/Jan/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"
         }
       }
     }

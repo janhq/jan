@@ -109,8 +109,7 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
                                            "usr/lib/Jan-${{ inputs.channel }}/binaries": "binaries/deps",  
-                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/engines": "binaries/engines", 
-                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
+                                           "usr/lib/Jan-${{ inputs.channel }}/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
             mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
