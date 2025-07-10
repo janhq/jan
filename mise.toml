@@ -164,6 +164,7 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
   rm -rf ./src-tauri/target 2>/dev/null || true
   rm -rf ~/jan/extensions 2>/dev/null || true
   rm -rf "~/.cache/jan*" 2>/dev/null || true
+  rm -rf "./.cache" 2>/dev/null || true
 else
   # macOS cleanup (matches Makefile)
   find . -name "node_modules" -type d -prune -exec rm -rf '{}' + 2>/dev/null || true
