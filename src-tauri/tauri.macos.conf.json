@@ -1,11 +1,7 @@
 {
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": [
-      "resources/pre-install/**/*",
-      "resources/lib/",
-      "binaries/**/*"
-    ],
+    "resources": ["resources/pre-install/**/*", "binaries/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"]
   }
 }
