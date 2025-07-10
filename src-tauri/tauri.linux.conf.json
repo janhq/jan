@@ -1,13 +1,8 @@
 {
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": [
-      "resources/pre-install/**/*"
-    ],
-    "externalBin": [
-      "binaries/cortex-server",
-      "resources/bin/uv"
-    ],
+    "resources": ["resources/pre-install/**/*"],
+    "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

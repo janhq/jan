@@ -6,11 +6,7 @@
       "resources/lib/",
       "binaries/**/*"
     ],
-    "externalBin": [
-      "binaries/cortex-server",
-      "resources/bin/bun",
-      "resources/bin/uv"
-    ],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
     }
