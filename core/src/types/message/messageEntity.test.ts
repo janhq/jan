@@ -1,4 +1,5 @@
 
+import { it, expect } from 'vitest'
 import { MessageStatus } from './messageEntity';
 
 it('should have correct values', () => {

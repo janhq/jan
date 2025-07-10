@@ -1,3 +1,4 @@
+import { describe, test, expect } from 'vitest'
 import { ConversationalExtension } from './index';
 import { InferenceExtension } from './index';
 import { AssistantExtension } from './index';

@@ -1,21 +1,22 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fs } from './fs'
 
 describe('fs module', () => {
   beforeEach(() => {
     globalThis.core = {
       api: {
-        writeFileSync: jest.fn(),
-        writeBlob: jest.fn(),
-        readFileSync: jest.fn(),
-        existsSync: jest.fn(),
-        readdirSync: jest.fn(),
-        mkdir: jest.fn(),
-        rm: jest.fn(),
-        unlinkSync: jest.fn(),
-        appendFileSync: jest.fn(),
-        copyFile: jest.fn(),
-        getGgufFiles: jest.fn(),
-        fileStat: jest.fn(),
+        writeFileSync: vi.fn(),
+        writeBlob: vi.fn(),
+        readFileSync: vi.fn(),
+        existsSync: vi.fn(),
+        readdirSync: vi.fn(),
+        mkdir: vi.fn(),
+        rm: vi.fn(),
+        unlinkSync: vi.fn(),
+        appendFileSync: vi.fn(),
+        copyFile: vi.fn(),
+        getGgufFiles: vi.fn(),
+        fileStat: vi.fn(),
       },
     }
   })

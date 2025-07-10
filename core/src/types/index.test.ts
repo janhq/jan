@@ -1,4 +1,5 @@
 
+import { test, expect } from 'vitest'
 import * as assistant from './assistant';
 import * as model from './model';
 import * as thread from './thread';
@@ -10,7 +11,7 @@ import * as miscellaneous from './miscellaneous';
 import * as api from './api';
 import * as setting from './setting';
 
-    test('test_module_exports', () => {
+test('test_module_exports', () => {
       expect(assistant).toBeDefined();
       expect(model).toBeDefined();
       expect(thread).toBeDefined();

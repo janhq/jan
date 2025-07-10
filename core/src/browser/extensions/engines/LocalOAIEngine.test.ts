@@ -1,11 +1,9 @@
-/**
- * @jest-environment jsdom
- */
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
 import { LocalOAIEngine } from './LocalOAIEngine'
 import { events } from '../../events'
 import { Model, ModelEvent } from '../../../types'
 
-jest.mock('../../events')
+vi.mock('../../events')
 
 class TestLocalOAIEngine extends LocalOAIEngine {
   inferenceUrl = 'http://test-local-inference-url'
@@ -43,12 +41,12 @@ describe('LocalOAIEngine', () => {
 
   beforeEach(() => {
     engine = new TestLocalOAIEngine('', '')
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('onLoad', () => {
     it('should call super.onLoad and subscribe to model events', () => {
-      const superOnLoadSpy = jest.spyOn(Object.getPrototypeOf(Object.getPrototypeOf(engine)), 'onLoad')
+      const superOnLoadSpy = vi.spyOn(Object.getPrototypeOf(Object.getPrototypeOf(engine)), 'onLoad')
       
       engine.onLoad()
 
@@ -64,11 +62,11 @@ describe('LocalOAIEngine', () => {
     })
 
     it('should load model when OnModelInit event is triggered', () => {
-      const loadModelSpy = jest.spyOn(engine, 'loadModel')
+      const loadModelSpy = vi.spyOn(engine, 'loadModel')
       engine.onLoad()
 
       // Get the event handler for OnModelInit
-      const onModelInitCall = (events.on as jest.Mock).mock.calls.find(
+      const onModelInitCall = (events.on as Mock).mock.calls.find(
         call => call[0] === ModelEvent.OnModelInit
       )
       const onModelInitHandler = onModelInitCall[1]
@@ -80,11 +78,11 @@ describe('LocalOAIEngine', () => {
     })
 
     it('should unload model when OnModelStop event is triggered', () => {
-      const unloadModelSpy = jest.spyOn(engine, 'unloadModel')
+      const unloadModelSpy = vi.spyOn(engine, 'unloadModel')
       engine.onLoad()
 
       // Get the event handler for OnModelStop
-      const onModelStopCall = (events.on as jest.Mock).mock.calls.find(
+      const onModelStopCall = (events.on as Mock).mock.calls.find(
         call => call[0] === ModelEvent.OnModelStop
       )
       const onModelStopHandler = onModelStopCall[1]

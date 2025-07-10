@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import * as Core from './core'
 import * as Events from './events'
 import * as FileSystem from './fs'

@@ -1,10 +1,11 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { AIEngine } from './AIEngine'
 import { events } from '../../events'
 import { ModelEvent, Model } from '../../../types'
 
-jest.mock('../../events')
-jest.mock('./EngineManager')
-jest.mock('../../fs')
+vi.mock('../../events')
+vi.mock('./EngineManager')
+vi.mock('../../fs')
 
 class TestAIEngine extends AIEngine {
   onUnload(): void {}
@@ -52,7 +53,7 @@ describe('AIEngine', () => {
 
   beforeEach(() => {
     engine = new TestAIEngine('', '')
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('should load model successfully', async () => {

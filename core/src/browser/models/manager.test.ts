@@ -1,10 +1,11 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ModelManager } from './manager'
 import { Model, ModelEvent } from '../../types'
 import { events } from '../events'
 
-jest.mock('../events', () => ({
+vi.mock('../events', () => ({
   events: {
-    emit: jest.fn(),
+    emit: vi.fn(),
   },
 }))
 
@@ -20,7 +21,7 @@ describe('ModelManager', () => {
   let mockModel: Model
 
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     ;(global.window as any).core = {}
     modelManager = new ModelManager()
     mockModel = {

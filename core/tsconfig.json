@@ -13,7 +13,7 @@
     "declarationDir": "dist/types",
     "outDir": "dist",
     "importHelpers": true,
-    "types": ["jest", "node"]
+    "types": ["node"]
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

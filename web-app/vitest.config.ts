@@ -9,6 +9,11 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     css: true,
+    coverage: {
+      reporter: ['text', 'json', 'html', 'lcov'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['node_modules/', 'dist/', 'src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**/*']
+    },
   },
   resolve: {
     alias: {

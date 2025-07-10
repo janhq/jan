@@ -1,6 +1,4 @@
-/**
- * @jest-environment jsdom
- */
+import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { RemoteOAIEngine } from './'
 
 class TestRemoteOAIEngine extends RemoteOAIEngine {
@@ -16,8 +14,8 @@ describe('RemoteOAIEngine', () => {
   })
 
   test('should call onLoad and super.onLoad', () => {
-    const onLoadSpy = jest.spyOn(engine, 'onLoad')
-    const superOnLoadSpy = jest.spyOn(Object.getPrototypeOf(RemoteOAIEngine.prototype), 'onLoad')
+    const onLoadSpy = vi.spyOn(engine, 'onLoad')
+    const superOnLoadSpy = vi.spyOn(Object.getPrototypeOf(RemoteOAIEngine.prototype), 'onLoad')
     engine.onLoad()
 
     expect(onLoadSpy).toHaveBeenCalled()

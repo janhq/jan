@@ -1,3 +1,4 @@
+import { test, expect } from 'vitest'
 import { Model, ModelSettingParams, ModelRuntimeParams } from '../model'
 import { InferenceEngine } from '../engine'
 

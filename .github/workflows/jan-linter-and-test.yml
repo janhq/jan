@@ -68,7 +68,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ref-lcov.info
-          path: coverage/merged/lcov.info
+          path: coverage/lcov.info
 
   test-on-macos:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || 'macos-selfhosted-12-arm64' }}
@@ -263,7 +263,7 @@ jobs:
         uses: barecheck/code-coverage-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          lcov-file: './coverage/merged/lcov.info'
+          lcov-file: './coverage/lcov.info'
           base-lcov-file: './lcov.info'
           send-summary-comment: true
           show-annotations: 'warning'

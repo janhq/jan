@@ -108,7 +108,6 @@ jobs:
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
-                                           "usr/lib/Jan-${{ inputs.channel }}/binaries": "binaries/deps",  
                                            "usr/lib/Jan-${{ inputs.channel }}/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
             mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
