@@ -40,6 +40,8 @@ lint: install-and-build
 
 # Testing
 test: lint
+	yarn download:bin
+	yarn download:lib
 	yarn test
 	yarn test:e2e
 
