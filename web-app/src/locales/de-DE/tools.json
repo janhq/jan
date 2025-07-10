@@ -1,0 +1,10 @@
+{
+  "toolApproval": {
+    "title": "Werkzeuggenehmigung erforderlich",
+    "description": "Der Assistent möchte das Werkzeug <strong>{{toolName}}</strong> verwenden.",
+    "securityNotice": "Dieses Werkzeug möchte eine Aktion ausführen. Bitte überprüfen und genehmigen oder Ablehnen.",
+    "deny": "Ablehnen",
+    "allowOnce": "Einmal erlauben",
+    "alwaysAllow": "Immer erlauben"
+  }
+}

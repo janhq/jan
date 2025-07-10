@@ -7,8 +7,8 @@ module.exports = {
   },
   runner: './testRunner.js',
   transform: {
-    "^.+\\.tsx?$": [
-      "ts-jest",
+    '^.+\\.tsx?$': [
+      'ts-jest',
       {
         diagnostics: false,
       },

@@ -50,3 +50,4 @@ src-tauri/resources/bin
 .opencode
 OpenCode.md
 archive/
+.cache/
