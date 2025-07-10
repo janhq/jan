@@ -4,8 +4,6 @@ use crate::core::utils::normalize_path;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
-use std::path::Component;
-use std::path::Prefix;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tokio::fs::File;
@@ -165,25 +163,6 @@ async fn _download_files_internal(
     for item in items.iter() {
         let save_path = jan_data_folder.join(&item.save_path);
         let save_path = normalize_path(&save_path);
-
-        // enforce scope
-        // Remove \\?\ prefix on Windows for correct path comparison
-        #[cfg(windows)]
-        let save_path = {
-            let mut comps = save_path.components();
-            if let Some(Component::Prefix(prefix_comp)) = comps.next() {
-                if let Prefix::Verbatim(_) = prefix_comp.kind() {
-                    // Skip the \\?\ prefix
-                    comps.as_path().to_path_buf()
-                } else {
-                    save_path.clone()
-                }
-            } else {
-                save_path.clone()
-            }
-        };
-        #[cfg(not(windows))]
-        let save_path = save_path.clone();
 
         if !save_path.starts_with(&jan_data_folder) {
             return Err(format!(
