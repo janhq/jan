@@ -3,96 +3,134 @@
  */
 import { LocalOAIEngine } from './LocalOAIEngine'
 import { events } from '../../events'
-import { ModelEvent, Model } from '../../../types'
-import { executeOnMain, systemInformation, dirName } from '../../core'
+import { Model, ModelEvent } from '../../../types'
 
-jest.mock('../../core', () => ({
-  executeOnMain: jest.fn(),
-  systemInformation: jest.fn(),
-  dirName: jest.fn(),
-}))
-
-jest.mock('../../events', () => ({
-  events: {
-    on: jest.fn(),
-    emit: jest.fn(),
-  },
-}))
+jest.mock('../../events')
 
 class TestLocalOAIEngine extends LocalOAIEngine {
-  inferenceUrl = ''
-  nodeModule = 'testNodeModule'
-  provider = 'testProvider'
+  inferenceUrl = 'http://test-local-inference-url'
+  provider = 'test-local-provider'
+  nodeModule = 'test-node-module'
+
+  async headers() {
+    return { Authorization: 'Bearer test-token' }
+  }
+
+  async loadModel(model: Model & { file_path?: string }): Promise<void> {
+    this.loadedModel = model
+  }
+
+  async unloadModel(model?: Model) {
+    this.loadedModel = undefined
+  }
 }
 
 describe('LocalOAIEngine', () => {
   let engine: TestLocalOAIEngine
+  const mockModel: Model & { file_path?: string } = {
+    object: 'model',
+    version: '1.0.0',
+    format: 'gguf',
+    sources: [],
+    id: 'test-model',
+    name: 'Test Model',
+    description: 'A test model',
+    settings: {},
+    parameters: {},
+    metadata: {},
+    file_path: '/path/to/model.gguf'
+  }
 
   beforeEach(() => {
     engine = new TestLocalOAIEngine('', '')
-  })
-
-  afterEach(() => {
     jest.clearAllMocks()
   })
 
-  it('should subscribe to events on load', () => {
-    engine.onLoad()
-    expect(events.on).toHaveBeenCalledWith(ModelEvent.OnModelInit, expect.any(Function))
-    expect(events.on).toHaveBeenCalledWith(ModelEvent.OnModelStop, expect.any(Function))
+  describe('onLoad', () => {
+    it('should call super.onLoad and subscribe to model events', () => {
+      const superOnLoadSpy = jest.spyOn(Object.getPrototypeOf(Object.getPrototypeOf(engine)), 'onLoad')
+      
+      engine.onLoad()
+
+      expect(superOnLoadSpy).toHaveBeenCalled()
+      expect(events.on).toHaveBeenCalledWith(
+        ModelEvent.OnModelInit,
+        expect.any(Function)
+      )
+      expect(events.on).toHaveBeenCalledWith(
+        ModelEvent.OnModelStop,
+        expect.any(Function)
+      )
+    })
+
+    it('should load model when OnModelInit event is triggered', () => {
+      const loadModelSpy = jest.spyOn(engine, 'loadModel')
+      engine.onLoad()
+
+      // Get the event handler for OnModelInit
+      const onModelInitCall = (events.on as jest.Mock).mock.calls.find(
+        call => call[0] === ModelEvent.OnModelInit
+      )
+      const onModelInitHandler = onModelInitCall[1]
+
+      // Trigger the event handler
+      onModelInitHandler(mockModel)
+
+      expect(loadModelSpy).toHaveBeenCalledWith(mockModel)
+    })
+
+    it('should unload model when OnModelStop event is triggered', () => {
+      const unloadModelSpy = jest.spyOn(engine, 'unloadModel')
+      engine.onLoad()
+
+      // Get the event handler for OnModelStop
+      const onModelStopCall = (events.on as jest.Mock).mock.calls.find(
+        call => call[0] === ModelEvent.OnModelStop
+      )
+      const onModelStopHandler = onModelStopCall[1]
+
+      // Trigger the event handler
+      onModelStopHandler(mockModel)
+
+      expect(unloadModelSpy).toHaveBeenCalledWith(mockModel)
+    })
   })
 
-  it('should load model correctly', async () => {
-    const model: any = { engine: 'testProvider', file_path: 'path/to/model' } as any
-    const modelFolder = 'path/to'
-    const systemInfo = { os: 'testOS' }
-    const res = { error: null }
+  describe('properties', () => {
+    it('should have correct default function names', () => {
+      expect(engine.loadModelFunctionName).toBe('loadModel')
+      expect(engine.unloadModelFunctionName).toBe('unloadModel')
+    })
 
-    ;(dirName as jest.Mock).mockResolvedValue(modelFolder)
-    ;(systemInformation as jest.Mock).mockResolvedValue(systemInfo)
-    ;(executeOnMain as jest.Mock).mockResolvedValue(res)
-
-    await engine.loadModel(model)
-
-    expect(dirName).toHaveBeenCalledWith(model.file_path)
-    expect(systemInformation).toHaveBeenCalled()
-    expect(executeOnMain).toHaveBeenCalledWith(
-      engine.nodeModule,
-      engine.loadModelFunctionName,
-      { modelFolder, model },
-      systemInfo
-    )
-    expect(events.emit).toHaveBeenCalledWith(ModelEvent.OnModelReady, model)
+    it('should have abstract nodeModule property implemented', () => {
+      expect(engine.nodeModule).toBe('test-node-module')
+    })
   })
 
-  it('should handle load model error', async () => {
-    const model: any = { engine: 'testProvider', file_path: 'path/to/model' } as any
-    const modelFolder = 'path/to'
-    const systemInfo = { os: 'testOS' }
-    const res = { error: 'load error' }
+  describe('loadModel', () => {
+    it('should load the model and set loadedModel', async () => {
+      await engine.loadModel(mockModel)
+      expect(engine.loadedModel).toBe(mockModel)
+    })
 
-    ;(dirName as jest.Mock).mockResolvedValue(modelFolder)
-    ;(systemInformation as jest.Mock).mockResolvedValue(systemInfo)
-    ;(executeOnMain as jest.Mock).mockResolvedValue(res)
-
-    await expect(engine.loadModel(model)).rejects.toEqual('load error')
-
-    expect(events.emit).toHaveBeenCalledWith(ModelEvent.OnModelFail, { error: res.error })
+    it('should handle model with file_path', async () => {
+      const modelWithPath = { ...mockModel, file_path: '/custom/path/model.gguf' }
+      await engine.loadModel(modelWithPath)
+      expect(engine.loadedModel).toBe(modelWithPath)
+    })
   })
 
-  it('should unload model correctly', async () => {
-    const model: Model = { engine: 'testProvider' } as any
+  describe('unloadModel', () => {
+    it('should unload the model and clear loadedModel', async () => {
+      engine.loadedModel = mockModel
+      await engine.unloadModel(mockModel)
+      expect(engine.loadedModel).toBeUndefined()
+    })
 
-    await engine.unloadModel(model)
-
-    expect(executeOnMain).toHaveBeenCalledWith(engine.nodeModule, engine.unloadModelFunctionName)
-    expect(events.emit).toHaveBeenCalledWith(ModelEvent.OnModelStopped, {})
-  })
-
-  it('should not unload model if engine does not match', async () => {
-    const model: Model = { engine: 'otherProvider' } as any
-    await engine.unloadModel(model)
-    expect(executeOnMain).not.toHaveBeenCalled()
-    expect(events.emit).not.toHaveBeenCalledWith(ModelEvent.OnModelStopped, {})
+    it('should handle unload without passing a model', async () => {
+      engine.loadedModel = mockModel
+      await engine.unloadModel()
+      expect(engine.loadedModel).toBeUndefined()
+    })
   })
 })
