@@ -49,8 +49,6 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
     outputs:
       WIN_SIG:
         value: ${{ jobs.build-windows-x64.outputs.WIN_SIG }}
@@ -95,8 +93,10 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
@@ -195,10 +195,8 @@ jobs:
           AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -207,8 +205,8 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
 
-      ## create zip file and latest.yml for windows electron auto updater
-      - name: create zip file and latest.yml for windows electron auto updater
+      ## Set output filename for windows
+      - name: Set output filename for windows
         shell: bash
         run: |
           cd ./src-tauri/target/release/bundle/nsis
@@ -219,27 +217,6 @@ jobs:
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
           fi
-
-          FILE_SIZE=$(stat -c %s $FILE_NAME)
-          echo "size: $FILE_SIZE"
-
-          SH512_CHECKSUM=$(python3 ../../../../../.github/scripts/electron-checksum.py $FILE_NAME)
-          echo "sha512: $SH512_CHECKSUM"
-          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-          echo "releaseDate: $CURRENT_TIME"
-
-          # Create latest.yml file
-          echo "version: ${{ inputs.new_version }}" > latest.yml
-          echo "files:" >> latest.yml
-          echo "  - url: $FILE_NAME" >> latest.yml
-          echo "    sha512: $SH512_CHECKSUM" >> latest.yml
-          echo "    size: $FILE_SIZE" >> latest.yml
-          echo "path: $FILE_NAME" >> latest.yml
-          echo "sha512: $SH512_CHECKSUM" >> latest.yml
-          echo "releaseDate: $CURRENT_TIME" >> latest.yml
-
-          cat latest.yml
-          cp latest.yml beta.yml
 
           echo "::set-output name=WIN_SIG::$WIN_SIG"
           echo "::set-output name=FILE_NAME::$FILE_NAME"
@@ -252,10 +229,6 @@ jobs:
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
-          # Upload for electron updater for nightly
-          aws s3 cp ./latest.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest.yml
-          aws s3 cp ./beta.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta.yml
-
           # Upload for tauri updater
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
@@ -264,29 +237,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
-
-      ## Upload to github release for stable release
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'stable'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/nsis/latest.yml
-          asset_name: latest.yml
-          asset_content_type: text/yaml
-
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'beta'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/nsis/beta.yml
-          asset_name: beta.yml
-          asset_content_type: text/yaml
 
       - name: Upload release assert if public provider is github
         if: inputs.public_provider == 'github'
