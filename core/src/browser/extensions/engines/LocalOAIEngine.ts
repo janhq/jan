@@ -28,9 +28,14 @@ export abstract class LocalOAIEngine extends OAIEngine {
   /**
    * Load the model.
    */
-  async loadModel(model: Model & { file_path?: string }): Promise<void> {}
+  async loadModel(model: Model & { file_path?: string }): Promise<void> {
+    // Implementation of loading the model
+  }
+
   /**
    * Stops the model.
    */
-  async unloadModel(model?: Model) {}
+  async unloadModel(model?: Model) {
+    // Implementation of unloading the model
+  }
 }
