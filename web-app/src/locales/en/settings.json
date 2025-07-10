@@ -212,6 +212,8 @@
     "factoryResetDesc": "This will reset all app settings to their defaults. This can't be undone. We only recommend this if the app is corrupted.",
     "cancel": "Cancel",
     "reset": "Reset",
+    "huggingfaceToken": "HuggingFace Token",
+    "huggingfaceTokenDesc": "Your HuggingFace API token for accessing models.",
     "resources": "Resources",
     "documentation": "Documentation",
     "documentationDesc": "Learn how to use Jan and explore its features.",
