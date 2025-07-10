@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/lib/",
+      "binaries/**/*"
+    ],
+    "externalBin": [
+      "binaries/cortex-server",
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ]
+  }
+}
