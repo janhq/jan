@@ -9,14 +9,14 @@ export default defineConfig({
     coverage: {
       reporter: ['text', 'json', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['node_modules/', 'dist/', 'src/**/*.test.ts']
+      exclude: ['node_modules/', 'dist/', 'src/**/*.test.ts'],
     },
     include: ['src/**/*.test.ts'],
-    exclude: ['node_modules/', 'dist/']
+    exclude: ['node_modules/', 'dist/', 'coverage'],
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src')
-    }
-  }
+      '@': resolve(__dirname, './src'),
+    },
+  },
 })
