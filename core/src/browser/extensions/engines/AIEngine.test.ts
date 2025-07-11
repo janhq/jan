@@ -1,10 +1,11 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { AIEngine } from './AIEngine'
 import { events } from '../../events'
 import { ModelEvent, Model } from '../../../types'
 
-jest.mock('../../events')
-jest.mock('./EngineManager')
-jest.mock('../../fs')
+vi.mock('../../events')
+vi.mock('./EngineManager')
+vi.mock('../../fs')
 
 class TestAIEngine extends AIEngine {
   onUnload(): void {}
@@ -13,6 +14,38 @@ class TestAIEngine extends AIEngine {
   inference(data: any) {}
 
   stopInference() {}
+
+  async list(): Promise<any[]> {
+    return []
+  }
+
+  async load(modelId: string): Promise<any> {
+    return { pid: 1, port: 8080, model_id: modelId, model_path: '', api_key: '' }
+  }
+
+  async unload(sessionId: string): Promise<any> {
+    return { success: true }
+  }
+
+  async chat(opts: any): Promise<any> {
+    return { id: 'test', object: 'chat.completion', created: Date.now(), model: 'test', choices: [] }
+  }
+
+  async delete(modelId: string): Promise<void> {
+    return
+  }
+
+  async import(modelId: string, opts: any): Promise<void> {
+    return
+  }
+
+  async abortImport(modelId: string): Promise<void> {
+    return
+  }
+
+  async getLoadedModels(): Promise<string[]> {
+    return []
+  }
 }
 
 describe('AIEngine', () => {
@@ -20,38 +53,34 @@ describe('AIEngine', () => {
 
   beforeEach(() => {
     engine = new TestAIEngine('', '')
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
-  it('should load model if provider matches', async () => {
-    const model: any = { id: 'model1', engine: 'test-provider' } as any
+  it('should load model successfully', async () => {
+    const modelId = 'model1'
 
-    await engine.loadModel(model)
+    const result = await engine.load(modelId)
 
-    expect(events.emit).toHaveBeenCalledWith(ModelEvent.OnModelReady, model)
+    expect(result).toEqual({ pid: 1, port: 8080, model_id: modelId, model_path: '', api_key: '' })
   })
 
-  it('should not load model if provider does not match', async () => {
-    const model: any = { id: 'model1', engine: 'other-provider' } as any
+  it('should unload model successfully', async () => {
+    const sessionId = 'session1'
 
-    await engine.loadModel(model)
+    const result = await engine.unload(sessionId)
 
-    expect(events.emit).not.toHaveBeenCalledWith(ModelEvent.OnModelReady, model)
+    expect(result).toEqual({ success: true })
   })
 
-  it('should unload model if provider matches', async () => {
-    const model: Model = { id: 'model1', version: '1.0', engine: 'test-provider' } as any
+  it('should list models', async () => {
+    const result = await engine.list()
 
-    await engine.unloadModel(model)
-
-    expect(events.emit).toHaveBeenCalledWith(ModelEvent.OnModelStopped, model)
+    expect(result).toEqual([])
   })
 
-  it('should not unload model if provider does not match', async () => {
-    const model: Model = { id: 'model1', version: '1.0', engine: 'other-provider' } as any
+  it('should get loaded models', async () => {
+    const result = await engine.getLoadedModels()
 
-    await engine.unloadModel(model)
-
-    expect(events.emit).not.toHaveBeenCalledWith(ModelEvent.OnModelStopped, model)
+    expect(result).toEqual([])
   })
 })

@@ -1,7 +1,8 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { BaseExtension } from './extension'
 import { SettingComponentProps } from '../types'
-jest.mock('./core')
-jest.mock('./fs')
+vi.mock('./core')
+vi.mock('./fs')
 
 class TestBaseExtension extends BaseExtension {
   onLoad(): void {}
@@ -16,7 +17,7 @@ describe('BaseExtension', () => {
   })
 
   afterEach(() => {
-    jest.resetAllMocks()
+    vi.clearAllMocks()
   })
 
   it('should have the correct properties', () => {
@@ -56,7 +57,7 @@ describe('BaseExtension', () => {
   })
 
   afterEach(() => {
-    jest.resetAllMocks()
+    vi.clearAllMocks()
   })
 
   it('should have the correct properties', () => {
@@ -108,7 +109,7 @@ describe('BaseExtension', () => {
     Object.defineProperty(global, 'localStorage', {
       value: localStorageMock,
     })
-    const mock = jest.spyOn(localStorage, 'setItem')
+    const mock = vi.spyOn(localStorage, 'setItem')
     await baseExtension.registerSettings(settings)
 
     expect(mock).toHaveBeenCalledWith(
@@ -122,7 +123,7 @@ describe('BaseExtension', () => {
       { key: 'setting1', controllerProps: { value: 'value1' } } as any,
     ]
 
-    jest.spyOn(baseExtension, 'getSettings').mockResolvedValue(settings)
+    vi.spyOn(baseExtension, 'getSettings').mockResolvedValue(settings)
 
     const value = await baseExtension.getSetting('setting1', 'defaultValue')
     expect(value).toBe('value1')
@@ -136,8 +137,8 @@ describe('BaseExtension', () => {
       { key: 'setting1', controllerProps: { value: 'value1' } } as any,
     ]
 
-    jest.spyOn(baseExtension, 'getSettings').mockResolvedValue(settings)
-    const mockSetItem = jest.spyOn(localStorage, 'setItem')
+    vi.spyOn(baseExtension, 'getSettings').mockResolvedValue(settings)
+    const mockSetItem = vi.spyOn(localStorage, 'setItem')
 
     await baseExtension.updateSettings([
       { key: 'setting1', controllerProps: { value: 'newValue' } } as any,

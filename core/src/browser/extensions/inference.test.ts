@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach } from 'vitest'
 import { MessageRequest, ThreadMessage } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 import { InferenceExtension } from './'

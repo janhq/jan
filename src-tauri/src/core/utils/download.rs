@@ -164,7 +164,6 @@ async fn _download_files_internal(
         let save_path = jan_data_folder.join(&item.save_path);
         let save_path = normalize_path(&save_path);
 
-        // enforce scope
         if !save_path.starts_with(&jan_data_folder) {
             return Err(format!(
                 "Path {} is outside of Jan data folder {}",

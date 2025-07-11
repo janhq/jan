@@ -29,7 +29,7 @@ function SetupScreen() {
             <Card
               header={
                 <Link
-                  to={route.hub}
+                  to={route.hub.index}
                   search={{
                     ...(!isProd ? { step: 'setup_local_provider' } : {}),
                   }}

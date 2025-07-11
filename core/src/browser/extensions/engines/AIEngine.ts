@@ -1,24 +1,214 @@
-import { events } from '../../events'
 import { BaseExtension } from '../../extension'
-import { MessageRequest, Model, ModelEvent } from '../../../types'
 import { EngineManager } from './EngineManager'
+
+/* AIEngine class types */
+
+export interface chatCompletionRequestMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null | Content[] // Content can be a string OR an array of content parts
+  name?: string
+  tool_calls?: any[] // Simplified tool_call_id?: string
+}
+
+export interface Content {
+  type: 'text' | 'input_image' | 'input_audio'
+  text?: string
+  image_url?: string
+  input_audio?: InputAudio
+}
+
+export interface InputAudio {
+  data: string // Base64 encoded audio data
+  format: 'mp3' | 'wav' | 'ogg' | 'flac' // Add more formats as needed/llama-server seems to support mp3
+}
+
+export interface ToolFunction {
+  name: string; // Required: a-z, A-Z, 0-9, _, -, max length 64
+  description?: string;
+  parameters?: Record<string, unknown>; // JSON Schema object
+  strict?: boolean | null; // Defaults to false
+}
+
+export interface Tool {
+  type: 'function'; // Currently, only 'function' is supported
+  function: ToolFunction;
+}
+
+export interface ToolCallOptions {
+  tools?: Tool[];
+}
+
+// A specific tool choice to force the model to call
+export interface ToolCallSpec {
+  type: 'function';
+  function: {
+    name: string;
+  };
+}
+
+// tool_choice may be one of several modes or a specific call
+export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec;
+
+export interface chatCompletionRequest {
+  model: string; // Model ID, though for local it might be implicit via sessionInfo
+  messages: chatCompletionRequestMessage[];
+  tools?:  Tool[];
+  tool_choice?: ToolChoice;
+  // Core sampling parameters
+  temperature?: number | null
+  dynatemp_range?: number | null
+  dynatemp_exponent?: number | null
+  top_k?: number | null
+  top_p?: number | null
+  min_p?: number | null
+  typical_p?: number | null
+  repeat_penalty?: number | null
+  repeat_last_n?: number | null
+  presence_penalty?: number | null
+  frequency_penalty?: number | null
+  dry_multiplier?: number | null
+  dry_base?: number | null
+  dry_allowed_length?: number | null
+  dry_penalty_last_n?: number | null
+  dry_sequence_breakers?: string[] | null
+  xtc_probability?: number | null
+  xtc_threshold?: number | null
+  mirostat?: number | null // 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0
+  mirostat_tau?: number | null
+  mirostat_eta?: number | null
+
+  n_predict?: number | null
+  n_indent?: number | null
+  n_keep?: number | null
+  stream?: boolean | null
+  stop?: string | string[] | null
+  seed?: number | null // RNG seed
+
+  // Advanced sampling
+  logit_bias?: { [key: string]: number } | null
+  n_probs?: number | null
+  min_keep?: number | null
+  t_max_predict_ms?: number | null
+  image_data?: Array<{ data: string; id: number }> | null
+
+  // Internal/optimization parameters
+  id_slot?: number | null
+  cache_prompt?: boolean | null
+  return_tokens?: boolean | null
+  samplers?: string[] | null
+  timings_per_token?: boolean | null
+  post_sampling_probs?: boolean | null
+}
+
+export interface chatCompletionChunkChoiceDelta {
+  content?: string | null
+  role?: 'system' | 'user' | 'assistant' | 'tool'
+  tool_calls?: any[] // Simplified
+}
+
+export interface chatCompletionChunkChoice {
+  index: number
+  delta: chatCompletionChunkChoiceDelta
+  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | null
+}
+
+export interface chatCompletionChunk {
+  id: string
+  object: 'chat.completion.chunk'
+  created: number
+  model: string
+  choices: chatCompletionChunkChoice[]
+  system_fingerprint?: string
+}
+
+export interface chatCompletionChoice {
+  index: number
+  message: chatCompletionRequestMessage // Response message
+  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call'
+  logprobs?: any // Simplified
+}
+
+export interface chatCompletion {
+  id: string
+  object: 'chat.completion'
+  created: number
+  model: string // Model ID used
+  choices: chatCompletionChoice[]
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+  system_fingerprint?: string
+}
+// --- End OpenAI types ---
+
+// Shared model metadata
+export interface modelInfo {
+  id: string // e.g. "qwen3-4B" or "org/model/quant"
+  name: string // human‑readable, e.g., "Qwen3 4B Q4_0"
+  quant_type?: string // q4_0 (optional as it might be part of ID or name)
+  providerId: string // e.g. "llama.cpp"
+  port: number
+  sizeBytes: number
+  tags?: string[]
+  path?: string // Absolute path to the model file, if applicable
+  // Additional provider-specific metadata can be added here
+  [key: string]: any
+}
+
+// 1. /list
+export type listResult = modelInfo[]
+
+export interface SessionInfo {
+  pid: number // opaque handle for unload/chat
+  port: number // llama-server output port (corrected from portid)
+  model_id: string, //name of the model
+  model_path: string // path of the loaded model
+  api_key: string
+}
+
+export interface UnloadResult {
+  success: boolean
+  error?: string
+}
+
+// 5. /chat
+export interface chatOptions {
+  providerId: string
+  sessionId: string
+  /** Full OpenAI ChatCompletionRequest payload */
+  payload: chatCompletionRequest
+}
+// Output for /chat will be Promise<ChatCompletion> for non-streaming
+// or Promise<AsyncIterable<ChatCompletionChunk>> for streaming
+
+// 7. /import
+export interface ImportOptions {
+  modelPath: string
+  mmprojPath?: string
+}
+
+export interface importResult {
+  success: boolean
+  modelInfo?: modelInfo
+  error?: string
+}
 
 /**
  * Base AIEngine
  * Applicable to all AI Engines
  */
+
 export abstract class AIEngine extends BaseExtension {
-  // The inference engine
-  abstract provider: string
+  // The inference engine ID, implementing the readonly providerId from interface
+  abstract readonly provider: string
 
   /**
    * On extension load, subscribe to events.
    */
   override onLoad() {
     this.registerEngine()
-
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
-    events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
   }
 
   /**
@@ -29,29 +219,49 @@ export abstract class AIEngine extends BaseExtension {
   }
 
   /**
-   * Loads the model.
+   * Lists available models
    */
-  async loadModel(model: Partial<Model>, abortController?: AbortController): Promise<any> {
-    if (model?.engine?.toString() !== this.provider) return Promise.resolve()
-    events.emit(ModelEvent.OnModelReady, model)
-    return Promise.resolve()
-  }
-  /**
-   * Stops the model.
-   */
-  async unloadModel(model?: Partial<Model>): Promise<any> {
-    if (model?.engine && model.engine.toString() !== this.provider) return Promise.resolve()
-    events.emit(ModelEvent.OnModelStopped, model ?? {})
-    return Promise.resolve()
-  }
+  abstract list(): Promise<modelInfo[]>
 
   /**
-   * Inference request
+   * Loads a model into memory
    */
-  inference(data: MessageRequest) {}
+  abstract load(modelId: string): Promise<SessionInfo>
 
   /**
-   * Stop inference
+   * Unloads a model from memory
    */
-  stopInference() {}
+  abstract unload(sessionId: string): Promise<UnloadResult>
+
+  /**
+   * Sends a chat request to the model
+   */
+  abstract chat(
+    opts: chatCompletionRequest
+  ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>>
+
+  /**
+   * Deletes a model
+   */
+  abstract delete(modelId: string): Promise<void>
+
+  /**
+   * Imports a model
+   */
+  abstract import(modelId: string, opts: ImportOptions): Promise<void>
+
+  /**
+   * Aborts an ongoing model import
+   */
+  abstract abortImport(modelId: string): Promise<void>
+
+  /**
+    * Get currently loaded models
+  */
+  abstract getLoadedModels(): Promise<string[]>
+
+  /**
+   * Optional method to get the underlying chat client
+   */
+  getChatClient?(sessionId: string): any
 }

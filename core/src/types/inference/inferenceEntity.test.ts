@@ -1,8 +1,9 @@
 
 
-  import { ChatCompletionMessage, ChatCompletionRole } from './inferenceEntity';
-  
-  test('test_chatCompletionMessage_withStringContent_andSystemRole', () => {
+import { test, expect } from 'vitest'
+import { ChatCompletionMessage, ChatCompletionRole } from './inferenceEntity';
+
+test('test_chatCompletionMessage_withStringContent_andSystemRole', () => {
     const message: ChatCompletionMessage = {
       content: 'Hello, world!',
       role: ChatCompletionRole.System,

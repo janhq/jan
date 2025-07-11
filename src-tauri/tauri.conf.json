@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.5.16",
+  "version": "0.6.900",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeDevCommand": "cross-env IS_TAURI=true CLEAN=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {

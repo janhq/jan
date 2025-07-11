@@ -7,9 +7,9 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useHardware } from '@/hooks/useHardware'
-import { useVulkan } from '@/hooks/useVulkan'
+// import { useVulkan } from '@/hooks/useVulkan'
 import type { GPU, HardwareData } from '@/hooks/useHardware'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -29,17 +29,19 @@ import {
   IconGripVertical,
   IconDeviceDesktopAnalytics,
 } from '@tabler/icons-react'
-import { getHardwareInfo } from '@/services/hardware'
+import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { formatMegaBytes } from '@/lib/utils'
 import { windowKey } from '@/constants/windows'
+import { toNumber } from '@/utils/number'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
   component: Hardware,
 })
 
-function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
+function SortableGPUItem({ gpu, index, isCompatible, isActivated }: { gpu: GPU; index: number; isCompatible: boolean; isActivated: boolean }) {
   const {
     attributes,
     listeners,
@@ -47,10 +49,11 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: gpu.id || index })
+  } = useSortable({ id: index })
   const { t } = useTranslation()
 
-  const { toggleGPUActivation, gpuLoading } = useHardware()
+  const { systemUsage, toggleGPUActivation, gpuLoading } = useHardware()
+  const usage = systemUsage.gpus[index]
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -61,7 +64,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="mb-4 last:mb-0">
+    <div ref={setNodeRef} style={style} className={`mb-4 last:mb-0 ${!isCompatible ? 'opacity-60' : ''}`}>
       <CardItem
         title={
           <div className="flex items-center gap-2">
@@ -73,13 +76,18 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
               <IconGripVertical size={18} className="text-main-view-fg/60" />
             </div>
             <span className="text-main-view-fg/80">{gpu.name}</span>
+            {!isCompatible && (
+              <span className="text-xs bg-destructive/10 text-destructive px-2 py-1 rounded-sm">
+                Incompatible with current backend
+              </span>
+            )}
           </div>
         }
         actions={
           <div className="flex items-center gap-4">
             <Switch
-              checked={gpu.activated}
-              disabled={!!gpuLoading[index]}
+              checked={isActivated}
+              disabled={!!gpuLoading[index] || !isCompatible}
               onCheckedChange={() => toggleGPUActivation(index)}
             />
           </div>
@@ -90,8 +98,9 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.vram')}
           actions={
             <span className="text-main-view-fg/80">
-              {formatMegaBytes(gpu.free_vram)} {t('settings:hardware.freeOf')}{' '}
-              {formatMegaBytes(gpu.total_vram)}
+              {formatMegaBytes(usage?.used_memory)}{' '}
+              {t('settings:hardware.freeOf')}{' '}
+              {formatMegaBytes(gpu.total_memory)}
             </span>
           }
         />
@@ -99,7 +108,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.driverVersion')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.driver_version || '-'}
+              {gpu.driver_version?.slice(0, 50) || '-'}
             </span>
           }
         />
@@ -107,7 +116,8 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title={t('settings:hardware.computeCapability')}
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information?.compute_cap || '-'}
+              {gpu.nvidia_info?.compute_capability ??
+                gpu.vulkan_info?.api_version}
             </span>
           }
         />
@@ -120,19 +130,111 @@ function Hardware() {
   const { t } = useTranslation()
   const {
     hardwareData,
+    systemUsage,
     setHardwareData,
-    updateCPUUsage,
-    updateRAMAvailable,
+    updateHardwareDataPreservingGpuOrder,
+    updateSystemUsage,
     reorderGPUs,
     pollingPaused,
   } = useHardware()
-  const { vulkanEnabled, setVulkanEnabled } = useVulkan()
+  // const { vulkanEnabled, setVulkanEnabled } = useVulkan()
+
+  const { providers } = useModelProvider()
+  const llamacpp = providers.find((p) => p.provider === 'llamacpp')
+  const versionBackend = llamacpp?.settings.find((s) => s.key === "version_backend")?.controller_props.value
+
+  // Determine backend type and filter GPUs accordingly
+  const isCudaBackend = typeof versionBackend === 'string' && versionBackend.includes('cuda')
+  const isVulkanBackend = typeof versionBackend === 'string' && versionBackend.includes('vulkan')
+
+  // Filter and prepare GPUs based on backend
+  const getFilteredGPUs = () => {
+    // Always show all GPUs, but compatibility will be determined by isGPUActive
+    return hardwareData.gpus
+  }
+
+  const filteredGPUs = getFilteredGPUs()
+
+  // Check if GPU should be active based on backend compatibility
+  const isGPUCompatible = (gpu: GPU) => {
+    if (isCudaBackend) {
+      return gpu.nvidia_info !== null
+    } else if (isVulkanBackend) {
+      return gpu.vulkan_info !== null
+    } else {
+      // No valid backend - all GPUs are inactive
+      return false
+    }
+  }
+
+  // Check if GPU is actually activated
+  const isGPUActive = (gpu: GPU) => {
+    return isGPUCompatible(gpu) && (gpu.activated ?? false)
+  }
 
   useEffect(() => {
-    getHardwareInfo().then((data) =>
-      setHardwareData(data as unknown as HardwareData)
-    )
-  }, [setHardwareData])
+    getHardwareInfo().then((freshData) => {
+      const data = freshData as unknown as HardwareData
+      updateHardwareDataPreservingGpuOrder(data)
+    })
+  }, [updateHardwareDataPreservingGpuOrder])
+
+  // Hardware and provider sync logic
+  const { getActivatedDeviceString, updateGPUActivationFromDeviceString } = useHardware()
+  const { updateProvider, getProviderByName } = useModelProvider()
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // Initialize GPU activations from device setting on first load
+  useEffect(() => {
+    if (hardwareData.gpus.length > 0 && !isInitialized) {
+      const llamacppProvider = getProviderByName('llamacpp')
+      const currentDeviceSetting = llamacppProvider?.settings.find(s => s.key === 'device')?.controller_props.value as string
+      
+      if (currentDeviceSetting) {
+        console.log(`Initializing GPU activations from device setting: "${currentDeviceSetting}"`)
+        updateGPUActivationFromDeviceString(currentDeviceSetting)
+      }
+      
+      setIsInitialized(true)
+    }
+  }, [hardwareData.gpus.length, isInitialized, getProviderByName, updateGPUActivationFromDeviceString])
+
+  // Sync device setting when GPU activations change (only after initialization)
+  const gpuActivationStates = hardwareData.gpus.map(gpu => gpu.activated)
+  
+  useEffect(() => {
+    if (isInitialized && hardwareData.gpus.length > 0) {
+      const llamacppProvider = getProviderByName('llamacpp')
+      const backendType = llamacppProvider?.settings.find(s => s.key === 'version_backend')?.controller_props.value as string
+      const deviceString = getActivatedDeviceString(backendType)
+      
+      if (llamacppProvider) {
+        const currentDeviceSetting = llamacppProvider.settings.find(s => s.key === 'device')
+        
+        // Sync device string when GPU activations change (only after initialization)
+        if (currentDeviceSetting && currentDeviceSetting.controller_props.value !== deviceString) {
+          console.log(`Syncing device string from "${currentDeviceSetting.controller_props.value}" to "${deviceString}"`)
+          
+          const updatedSettings = llamacppProvider.settings.map(setting => {
+            if (setting.key === 'device') {
+              return {
+                ...setting,
+                controller_props: {
+                  ...setting.controller_props,
+                  value: deviceString
+                }
+              }
+            }
+            return setting
+          })
+          
+          updateProvider('llamacpp', {
+            settings: updatedSettings
+          })
+        }
+      }
+    }
+  }, [isInitialized, gpuActivationStates, versionBackend, getActivatedDeviceString, updateProvider, getProviderByName, hardwareData.gpus.length])
 
   // Set up DnD sensors
   const sensors = useSensors(
@@ -145,11 +247,12 @@ function Hardware() {
     const { active, over } = event
 
     if (over && active.id !== over.id) {
-      // Find the indices of the dragged item and the drop target
-      const oldIndex = hardwareData.gpus.findIndex(
-        (gpu) => gpu.id === active.id
-      )
-      const newIndex = hardwareData.gpus.findIndex((gpu) => gpu.id === over.id)
+      // Find the actual indices in the original hardwareData.gpus array
+      const activeGpu = filteredGPUs[active.id as number]
+      const overGpu = filteredGPUs[over.id as number]
+      
+      const oldIndex = hardwareData.gpus.findIndex(gpu => gpu.uuid === activeGpu.uuid)
+      const newIndex = hardwareData.gpus.findIndex(gpu => gpu.uuid === overGpu.uuid)
 
       if (oldIndex !== -1 && newIndex !== -1) {
         reorderGPUs(oldIndex, newIndex)
@@ -160,14 +263,13 @@ function Hardware() {
   useEffect(() => {
     if (pollingPaused) return
     const intervalId = setInterval(() => {
-      getHardwareInfo().then((data) => {
-        updateCPUUsage(data.cpu.usage)
-        updateRAMAvailable(data.ram.available)
+      getSystemUsage().then((data) => {
+        updateSystemUsage(data)
       })
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, updateCPUUsage, updateRAMAvailable, pollingPaused])
+  }, [setHardwareData, updateSystemUsage, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {
@@ -229,8 +331,8 @@ function Hardware() {
               <CardItem
                 title={t('settings:hardware.name')}
                 actions={
-                  <span className="text-main-view-fg/80">
-                    {hardwareData.os?.name}
+                  <span className="text-main-view-fg/80 capitalize">
+                    {hardwareData.os_type}
                   </span>
                 }
               />
@@ -238,7 +340,7 @@ function Hardware() {
                 title={t('settings:hardware.version')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.os?.version}
+                    {hardwareData.os_name}
                   </span>
                 }
               />
@@ -250,7 +352,7 @@ function Hardware() {
                 title={t('settings:hardware.model')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu?.model}
+                    {hardwareData.cpu?.name}
                   </span>
                 }
               />
@@ -266,17 +368,17 @@ function Hardware() {
                 title={t('settings:hardware.cores')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu?.cores}
+                    {hardwareData.cpu?.core_count}
                   </span>
                 }
               />
-              {hardwareData.cpu?.instructions.join(', ').length > 0 && (
+              {hardwareData.cpu?.extensions?.join(', ').length > 0 && (
                 <CardItem
                   title={t('settings:hardware.instructions')}
-                  column={hardwareData.cpu?.instructions.length > 6}
+                  column={hardwareData.cpu?.extensions.length > 6}
                   actions={
                     <span className="text-main-view-fg/80 break-words">
-                      {hardwareData.cpu?.instructions?.join(', ')}
+                      {hardwareData.cpu?.extensions?.join(', ')}
                     </span>
                   }
                 />
@@ -285,14 +387,14 @@ function Hardware() {
                 title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
-                    {hardwareData.cpu?.usage > 0 && (
+                    {systemUsage.cpu > 0 && (
                       <>
                         <Progress
-                          value={hardwareData.cpu?.usage}
+                          value={systemUsage.cpu}
                           className="h-2 w-10"
                         />
                         <span className="text-main-view-fg/80">
-                          {hardwareData.cpu?.usage?.toFixed(2)}%
+                          {systemUsage.cpu?.toFixed(2)}%
                         </span>
                       </>
                     )}
@@ -307,7 +409,7 @@ function Hardware() {
                 title={t('settings:hardware.totalRam')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatMegaBytes(hardwareData.ram.total)}
+                    {formatMegaBytes(hardwareData.total_memory)}
                   </span>
                 }
               />
@@ -315,7 +417,9 @@ function Hardware() {
                 title={t('settings:hardware.availableRam')}
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatMegaBytes(hardwareData.ram?.available)}
+                    {formatMegaBytes(
+                      hardwareData.total_memory - systemUsage.used_memory
+                    )}
                   </span>
                 }
               />
@@ -323,23 +427,21 @@ function Hardware() {
                 title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
-                    {hardwareData.ram?.total > 0 && (
+                    {hardwareData.total_memory > 0 && (
                       <>
                         <Progress
                           value={
-                            ((hardwareData.ram?.total -
-                              hardwareData.ram?.available) /
-                              hardwareData.ram?.total) *
-                            100
+                            toNumber(
+                              systemUsage.used_memory / systemUsage.total_memory
+                            ) * 100
                           }
                           className="h-2 w-10"
                         />
                         <span className="text-main-view-fg/80">
                           {(
-                            ((hardwareData.ram?.total -
-                              hardwareData.ram?.available) /
-                              hardwareData.ram?.total) *
-                            100
+                            toNumber(
+                              systemUsage.used_memory / systemUsage.total_memory
+                            ) * 100
                           ).toFixed(2)}
                           %
                         </span>
@@ -351,7 +453,7 @@ function Hardware() {
             </Card>
 
             {/* Vulkan Settings */}
-            {hardwareData.gpus.length > 0 && (
+            {/* {hardwareData.gpus.length > 0 && (
               <Card title={t('settings:hardware.vulkan')}>
                 <CardItem
                   title={t('settings:hardware.enableVulkan')}
@@ -371,11 +473,13 @@ function Hardware() {
                   }
                 />
               </Card>
-            )}
+            )} */}
 
             {/* GPU Information */}
             {!IS_MACOS ? (
               <Card title={t('settings:hardware.gpus')}>
+             
+                
                 {hardwareData.gpus.length > 0 ? (
                   <DndContext
                     sensors={sensors}
@@ -383,14 +487,16 @@ function Hardware() {
                     onDragEnd={handleDragEnd}
                   >
                     <SortableContext
-                      items={hardwareData.gpus.map((gpu) => gpu.id)}
+                      items={filteredGPUs.map((_, index) => index)}
                       strategy={verticalListSortingStrategy}
                     >
-                      {hardwareData.gpus.map((gpu, index) => (
-                        <SortableGPUItem
-                          key={gpu.id || index}
-                          gpu={gpu}
-                          index={index}
+                      {filteredGPUs.map((gpu, index) => (
+                        <SortableGPUItem 
+                          key={index} 
+                          gpu={gpu} 
+                          index={index} 
+                          isCompatible={isGPUCompatible(gpu)} 
+                          isActivated={isGPUActive(gpu)} 
                         />
                       ))}
                     </SortableContext>

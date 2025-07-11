@@ -1,4 +1,5 @@
 
+import { it, expect } from 'vitest'
 import { AssistantExtension } from './assistant';
 import { ExtensionTypeEnum } from '../extension';
 

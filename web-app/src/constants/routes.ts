@@ -17,7 +17,10 @@ export const route = {
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
   },
-  hub: '/hub',
+  hub: {
+    index: '/hub/',
+    model: '/hub/$modelId',
+  },
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
   threadsDetail: '/threads/$threadId',

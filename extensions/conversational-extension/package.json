@@ -7,7 +7,6 @@
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
   "scripts": {
-    "test": "jest",
     "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },

@@ -52,10 +52,21 @@ ash = "0.38.0"
 nvml-wrapper = "0.10.0"
 tauri-plugin-deep-link = "2"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+serde_yaml = "0.9.34"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+base64 = "0.22.1"
+libloading = "0.8.7"
+thiserror = "2.0.12"
+nix = "=0.30.1"
 
 [target.'cfg(windows)'.dependencies]
-libloading = "0.8.7"
 libc = "0.2.172"
+windows-sys = { version = "0.60.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_System_Threading" # for using CreateProcess flags like CREATE_NEW_PROCESS_GROUP
+] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

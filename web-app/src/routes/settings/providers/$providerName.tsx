@@ -2,11 +2,12 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useHardware } from '@/hooks/useHardware'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   getActiveModels,
-  importModel,
+  pullModel,
   startModel,
   stopAllModels,
   stopModel,
@@ -35,7 +36,6 @@ import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
-import { ActiveModel } from '@/types/models'
 import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/mock/data'
 
@@ -73,11 +73,12 @@ function ProviderDetail() {
     },
   ]
   const { step } = useSearch({ from: Route.id })
-  const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
+  const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
+  const { updateGPUActivationFromDeviceString } = useHardware()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
@@ -171,10 +172,7 @@ function ProviderDetail() {
     if (provider)
       startModel(provider, modelId)
         .then(() => {
-          setActiveModels((prevModels) => [
-            ...prevModels,
-            { id: modelId } as ActiveModel,
-          ])
+          setActiveModels((prevModels) => [...prevModels, modelId])
         })
         .catch((error) => {
           console.error('Error starting model:', error)
@@ -189,7 +187,7 @@ function ProviderDetail() {
     stopModel(modelId)
       .then(() => {
         setActiveModels((prevModels) =>
-          prevModels.filter((model) => model.id !== modelId)
+          prevModels.filter((model) => model !== modelId)
         )
       })
       .catch((error) => {
@@ -240,7 +238,7 @@ function ProviderDetail() {
                 className={cn(
                   'flex flex-col gap-3',
                   provider &&
-                    provider.provider === 'llama.cpp' &&
+                    provider.provider === 'llamacpp' &&
                     'flex-col-reverse'
                 )}
               >
@@ -286,6 +284,17 @@ function ProviderDetail() {
                               ) {
                                 updateObj.base_url = newValue
                               }
+
+                              // Special handling for device setting changes
+                              if (
+                                settingKey === 'device' &&
+                                typeof newValue === 'string' &&
+                                provider.provider === 'llamacpp'
+                              ) {
+                                console.log(`Device setting manually changed to: "${newValue}"`)
+                                updateGPUActivationFromDeviceString(newValue)
+                              }
+
                               updateSettings(
                                 providerName,
                                 updateObj.settings ?? []
@@ -353,7 +362,7 @@ function ProviderDetail() {
                         {t('providers:models')}
                       </h1>
                       <div className="flex items-center gap-2">
-                        {provider && provider.provider !== 'llama.cpp' && (
+                        {provider && provider.provider !== 'llamacpp' && (
                           <>
                             {!predefinedProviders.some(
                               (p) => p.provider === provider.provider
@@ -388,7 +397,7 @@ function ProviderDetail() {
                             <DialogAddModel provider={provider} />
                           </>
                         )}
-                        {provider && provider.provider === 'llama.cpp' && (
+                        {provider && provider.provider === 'llamacpp' && (
                           <Button
                             variant="link"
                             size="sm"
@@ -404,10 +413,15 @@ function ProviderDetail() {
                                   },
                                 ],
                               })
+                              // If the dialog returns a file path, extract just the file name
+                              const fileName =
+                                typeof selectedFile === 'string'
+                                  ? selectedFile.split(/[\\/]/).pop()
+                                  : undefined
 
-                              if (selectedFile) {
+                              if (selectedFile && fileName) {
                                 try {
-                                  await importModel(selectedFile)
+                                  await pullModel(fileName, selectedFile)
                                 } catch (error) {
                                   console.error(
                                     t('providers:importModelError'),
@@ -475,46 +489,40 @@ function ProviderDetail() {
                                 provider={provider}
                                 modelId={model.id}
                               />
-                              {provider &&
-                                provider.provider === 'llama.cpp' && (
-                                  <div className="ml-2">
-                                    {activeModels.some(
-                                      (activeModel) =>
-                                        activeModel.id === model.id
-                                    ) ? (
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          handleStopModel(model.id)
-                                        }
-                                      >
-                                        {t('providers:stop')}
-                                      </Button>
-                                    ) : (
-                                      <Button
-                                        size="sm"
-                                        disabled={loadingModels.includes(
-                                          model.id
-                                        )}
-                                        onClick={() =>
-                                          handleStartModel(model.id)
-                                        }
-                                      >
-                                        {loadingModels.includes(model.id) ? (
-                                          <div className="flex items-center gap-2">
-                                            <IconLoader
-                                              size={16}
-                                              className="animate-spin"
-                                            />
-                                          </div>
-                                        ) : (
-                                          t('providers:start')
-                                        )}
-                                      </Button>
-                                    )}
-                                  </div>
-                                )}
+                              {provider && provider.provider === 'llamacpp' && (
+                                <div className="ml-2">
+                                  {activeModels.some(
+                                    (activeModel) => activeModel === model.id
+                                  ) ? (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleStopModel(model.id)}
+                                    >
+                                      {t('providers:stop')}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      disabled={loadingModels.includes(
+                                        model.id
+                                      )}
+                                      onClick={() => handleStartModel(model.id)}
+                                    >
+                                      {loadingModels.includes(model.id) ? (
+                                        <div className="flex items-center gap-2">
+                                          <IconLoader
+                                            size={16}
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        t('providers:start')
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           }
                         />
@@ -530,7 +538,7 @@ function ProviderDetail() {
                       <p className="text-main-view-fg/70 mt-1 text-xs leading-relaxed">
                         {t('providers:noModelFoundDesc')}
                         &nbsp;
-                        <Link to={route.hub}>{t('common:hub')}</Link>
+                        <Link to={route.hub.index}>{t('common:hub')}</Link>
                       </p>
                     </div>
                   )}

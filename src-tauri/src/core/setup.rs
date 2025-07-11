@@ -3,16 +3,15 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
-    sync::Arc,
 };
 use tar::Archive;
 use tauri::{App, Emitter, Listener, Manager};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
                                     // MCP
+
+// MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
@@ -200,22 +199,18 @@ pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle: tauri::AppHandle = app.handle().clone();
-    
     // Setup kill-mcp-servers event listener (similar to cortex kill-sidecar)
     let app_handle_for_kill = app_handle.clone();
     app_handle.listen("kill-mcp-servers", move |_event| {
         let app_handle = app_handle_for_kill.clone();
         tauri::async_runtime::spawn(async move {
             log::info!("Received kill-mcp-servers event - cleaning up MCP servers");
-            
             let app_state = app_handle.state::<AppState>();
-            
             // Stop all running MCP servers
             if let Err(e) = super::mcp::stop_mcp_servers(app_state.mcp_servers.clone()).await {
                 log::error!("Failed to stop MCP servers: {}", e);
                 return;
             }
-            
             // Clear active servers and restart counts
             {
                 let mut active_servers = app_state.mcp_active_servers.lock().await;
@@ -225,11 +220,9 @@ pub fn setup_mcp(app: &App) {
                 let mut restart_counts = app_state.mcp_restart_counts.lock().await;
                 restart_counts.clear();
             }
-            
             log::info!("MCP servers cleaned up successfully");
         });
     });
-    
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
@@ -238,298 +231,4 @@ pub fn setup_mcp(app: &App) {
             .emit("mcp-update", "MCP servers updated")
             .unwrap();
     });
-}
-
-pub fn setup_sidecar(app: &App) -> Result<(), String> {
-    clean_up();
-    let app_handle = app.handle().clone();
-    let app_handle_for_spawn = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
-        const MAX_RESTARTS: u32 = 5;
-        const RESTART_DELAY_MS: u64 = 5000;
-
-        let app_state = app_handle_for_spawn.state::<AppState>();
-        let cortex_restart_count_state = app_state.cortex_restart_count.clone();
-        let cortex_killed_intentionally_state = app_state.cortex_killed_intentionally.clone();
-        let app_data_dir = get_jan_data_folder_path(app_handle_for_spawn.clone());
-
-        let sidecar_command_builder = || {
-            let mut cmd = app_handle_for_spawn
-                .shell()
-                .sidecar("cortex-server")
-
-                .expect("Failed to get sidecar command")
-                .args([
-                    "--start-server",
-                    "--port",
-                    "39291",
-                    "--config_file_path",
-                    app_data_dir.join(".janrc").to_str().unwrap(),
-                    "--data_folder_path",
-                    app_data_dir.to_str().unwrap(),
-                    "--cors",
-                    "ON",
-                    "--allowed_origins",
-                    "http://localhost:3000,http://localhost:1420,tauri://localhost,http://tauri.localhost",
-                    "config",
-                    "--api_keys",
-                    app_state.inner().app_token.as_deref().unwrap_or(""),
-                ]);
-            #[cfg(target_os = "windows")]
-            {
-                let mut resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
-                // If debug
-                #[cfg(debug_assertions)]
-                {
-                    resource_dir = resource_dir.join("binaries");
-                }
-                let normalized_path = resource_dir.to_string_lossy().replace(r"\\?\", "");
-                let normalized_pathbuf = PathBuf::from(normalized_path);
-                cmd = cmd.current_dir(normalized_pathbuf);
-            }
-
-            #[cfg(not(target_os = "windows"))]
-            {
-                cmd = cmd.env("LD_LIBRARY_PATH", {
-                    let mut resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
-                    #[cfg(not(debug_assertions))]
-                    {
-                        resource_dir = resource_dir.join("binaries");
-                    }
-                    let dest = resource_dir.to_str().unwrap();
-                    let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                    format!("{}{}{}", ld_path_env, ":", dest)
-                });
-            }
-            cmd
-        };
-
-        let child_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
-
-        let child_process_clone_for_kill = child_process.clone();
-        let app_handle_for_kill = app_handle.clone();
-        app_handle.listen("kill-sidecar", move |_event| {
-            let app_handle = app_handle_for_kill.clone();
-            let child_to_kill_arc = child_process_clone_for_kill.clone();
-            tauri::async_runtime::spawn(async move {
-                let app_state = app_handle.state::<AppState>();
-                // Mark as intentionally killed to prevent restart
-                let mut killed_intentionally = app_state.cortex_killed_intentionally.lock().await;
-                *killed_intentionally = true;
-                drop(killed_intentionally);
-
-                log::info!("Received kill-sidecar event (processing async).");
-                if let Some(child) = child_to_kill_arc.lock().await.take() {
-                    log::info!("Attempting to kill sidecar process...");
-                    if let Err(e) = child.kill() {
-                        log::error!("Failed to kill sidecar process: {}", e);
-                    } else {
-                        log::info!("Sidecar process killed successfully via event.");
-                    }
-                } else {
-                    log::warn!("Kill event received, but no active sidecar process found to kill.");
-                }
-                clean_up()
-            });
-        });
-
-        loop {
-            let current_restart_count = *cortex_restart_count_state.lock().await;
-            if current_restart_count >= MAX_RESTARTS {
-                log::error!(
-                    "Cortex server reached maximum restart attempts ({}). Giving up.",
-                    current_restart_count
-                );
-                if let Err(e) = app_handle_for_spawn.emit("cortex_max_restarts_reached", ()) {
-                    log::error!("Failed to emit cortex_max_restarts_reached event: {}", e);
-                }
-                break;
-            }
-
-            log::info!(
-                "Spawning cortex-server (Attempt {}/{})",
-                current_restart_count + 1,
-                MAX_RESTARTS
-            );
-
-            let current_command = sidecar_command_builder();
-            log::debug!("Sidecar command: {:?}", current_command);
-            match current_command.spawn() {
-                Ok((mut rx, child_instance)) => {
-                    log::info!(
-                        "Cortex server spawned successfully. PID: {:?}",
-                        child_instance.pid()
-                    );
-                    *child_process.lock().await = Some(child_instance);
-
-                    {
-                        let mut count = cortex_restart_count_state.lock().await;
-                        if *count > 0 {
-                            log::info!(
-                                "Cortex server started successfully, resetting restart count from {} to 0.",
-                                *count
-                            );
-                            *count = 0;
-                        }
-                        drop(count);
-
-                        // Only reset the intentionally killed flag if it wasn't set during spawn
-                        // This prevents overriding a concurrent kill event
-                        let mut killed_intentionally =
-                            cortex_killed_intentionally_state.lock().await;
-                        if !*killed_intentionally {
-                            // Flag wasn't set during spawn, safe to reset for future cycles
-                            *killed_intentionally = false;
-                        } else {
-                            log::info!("Kill intent detected during spawn, preserving kill flag");
-                        }
-                        drop(killed_intentionally);
-                    }
-
-                    let mut process_terminated_unexpectedly = false;
-                    while let Some(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(line_bytes) => {
-                                log::info!(
-                                    "[Cortex STDOUT]: {}",
-                                    String::from_utf8_lossy(&line_bytes)
-                                );
-                            }
-                            CommandEvent::Stderr(line_bytes) => {
-                                log::error!(
-                                    "[Cortex STDERR]: {}",
-                                    String::from_utf8_lossy(&line_bytes)
-                                );
-                            }
-                            CommandEvent::Error(message) => {
-                                log::error!("[Cortex ERROR]: {}", message);
-                                process_terminated_unexpectedly = true;
-                                break;
-                            }
-                            CommandEvent::Terminated(payload) => {
-                                log::info!(
-                                    "[Cortex Terminated]: Signal {:?}, Code {:?}",
-                                    payload.signal,
-                                    payload.code
-                                );
-                                if child_process.lock().await.is_some() {
-                                    if payload.code.map_or(true, |c| c != 0) {
-                                        process_terminated_unexpectedly = true;
-                                    }
-                                }
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if child_process.lock().await.is_some() {
-                        *child_process.lock().await = None;
-                        log::info!("Cleared child process lock after termination.");
-                    }
-
-                    // Check if the process was killed intentionally
-                    let killed_intentionally = *cortex_killed_intentionally_state.lock().await;
-
-                    if killed_intentionally {
-                        log::info!("Cortex server was killed intentionally. Not restarting.");
-                        break;
-                    } else if process_terminated_unexpectedly {
-                        log::warn!("Cortex server terminated unexpectedly.");
-                        let mut count = cortex_restart_count_state.lock().await;
-                        *count += 1;
-                        log::info!(
-                            "Waiting {}ms before attempting restart {}/{}...",
-                            RESTART_DELAY_MS,
-                            *count,
-                            MAX_RESTARTS
-                        );
-                        drop(count);
-                        sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
-                        continue;
-                    } else {
-                        log::info!("Cortex server terminated normally. Not restarting.");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to spawn cortex-server: {}", e);
-                    let mut count = cortex_restart_count_state.lock().await;
-                    *count += 1;
-                    log::info!(
-                        "Waiting {}ms before attempting restart {}/{} due to spawn failure...",
-                        RESTART_DELAY_MS,
-                        *count,
-                        MAX_RESTARTS
-                    );
-                    drop(count);
-                    sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
-                }
-            }
-        }
-    });
-    Ok(())
-}
-
-//
-// Clean up function to kill the sidecar process
-//
-pub fn clean_up() {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("taskkill")
-            .args(["-f", "-im", "llama-server.exe"])
-            .creation_flags(0x08000000)
-            .spawn();
-        let _ = std::process::Command::new("taskkill")
-            .args(["-f", "-im", "cortex-server.exe"])
-            .creation_flags(0x08000000)
-            .spawn();
-    }
-    #[cfg(unix)]
-    {
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "llama-server"])
-            .spawn();
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "cortex-server"])
-            .spawn();
-    }
-    log::info!("Clean up function executed, sidecar processes killed.");
-}
-
-fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
-    fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
-    log::info!("Copying from {:?} to {:?}", src, dst);
-    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let ty = entry.file_type().map_err(|e| e.to_string())?;
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst.join(entry.file_name())).map_err(|e| e.to_string())?;
-        } else {
-            fs::copy(entry.path(), dst.join(entry.file_name())).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
-    // Copy engine binaries to app_data
-    let app_data_dir = get_jan_data_folder_path(app.handle().clone());
-    let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
-    let resources_dir = app
-        .handle()
-        .path()
-        .resource_dir()
-        .unwrap()
-        .join("resources");
-
-    if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
-        log::error!("Failed to copy binaries: {}", e);
-    }
-    if let Err(e) = copy_dir_all(resources_dir, app_data_dir.clone()) {
-        log::error!("Failed to copy resources: {}", e);
-    }
-    Ok(())
 }

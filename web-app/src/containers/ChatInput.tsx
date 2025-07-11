@@ -404,7 +404,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
-                {model?.provider === 'llama.cpp' && loadingModel ? (
+                {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider

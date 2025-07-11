@@ -17,7 +17,6 @@ import { EngineManager } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { normalizeProvider } from '@/lib/models'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type Props = {
@@ -30,7 +29,7 @@ const DeleteProvider = ({ provider }: Props) => {
   if (
     !provider ||
     Object.keys(models).includes(provider.provider) ||
-    EngineManager.instance().get(normalizeProvider(provider.provider))
+    EngineManager.instance().get(provider.provider)
   )
     return null
 

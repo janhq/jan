@@ -1,11 +1,6 @@
 import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/mock/data'
-import {
-  EngineManagementExtension,
-  EngineManager,
-  ExtensionTypeEnum,
-  SettingComponentProps,
-} from '@janhq/core'
+import { EngineManager, SettingComponentProps } from '@janhq/core'
 import {
   DefaultToolUseSupportedModels,
   ModelCapabilities,
@@ -15,42 +10,13 @@ import { fetchModels } from './models'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
-
 export const getProviders = async (): Promise<ModelProvider[]> => {
-  const engines = !localStorage.getItem('migration_completed')
-    ? await ExtensionManager.getInstance()
-        .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
-        ?.getEngines()
-    : {}
   const builtinProviders = predefinedProviders.map((provider) => {
     let models = provider.models as Model[]
     if (Object.keys(providerModels).includes(provider.provider)) {
       const builtInModels = providerModels[
         provider.provider as unknown as keyof typeof providerModels
       ].models as unknown as string[]
-
-      if (engines && Object.keys(engines).length > 0) {
-        for (const [key, value] of Object.entries(engines)) {
-          const providerName = key.replace('google_gemini', 'gemini')
-          if (provider.provider !== providerName) continue
-          const engine = value[0] as
-            | {
-                api_key?: string
-                url?: string
-                engine?: string
-              }
-            | undefined
-          if (engine && 'api_key' in engine) {
-            const settings = provider?.settings.map((e) => {
-              if (e.key === 'api-key')
-                e.controller_props.value = (engine.api_key as string) ?? ''
-              return e
-            })
-
-            provider.settings = settings
-          }
-        }
-      }
 
       if (Array.isArray(builtInModels))
         models = builtInModels.map((model) => {
@@ -77,24 +43,10 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
       models,
     }
   })
-  if (engines && Object.keys(engines).length > 0) {
-    localStorage.setItem('migration_completed', 'true')
-  }
 
   const runtimeProviders: ModelProvider[] = []
-
-  for (const [key, value] of EngineManager.instance().engines) {
-    // TODO: Remove this when the cortex extension is removed
-    const providerName = key === 'cortex' ? 'llama.cpp' : key
-
-    const models =
-      ((await fetchModels()) ?? []).filter(
-        (model) =>
-          (model.engine === 'llama-cpp' ? 'llama.cpp' : model.engine) ===
-            providerName &&
-          'status' in model &&
-          model.status === 'downloaded'
-      ) ?? []
+  for (const [providerName, value] of EngineManager.instance().engines) {
+    const models = (await fetchModels()) ?? []
     const provider: ModelProvider = {
       active: false,
       persist: true,
@@ -165,7 +117,6 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   return runtimeProviders.concat(builtinProviders as ModelProvider[])
 }
 
-
 /**
  * Fetches models from a provider's API endpoint
  * Always uses Tauri's HTTP client to bypass CORS issues
@@ -224,14 +175,14 @@ export const fetchModelsFromProvider = async (
     }
   } catch (error) {
     console.error('Error fetching models from provider:', error)
-    
+
     // Provide helpful error message
     if (error instanceof Error && error.message.includes('fetch')) {
       throw new Error(
         `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
       )
     }
-    
+
     throw error
   }
 }
@@ -246,9 +197,8 @@ export const updateSettings = async (
   providerName: string,
   settings: ProviderSetting[]
 ): Promise<void> => {
-  const provider = providerName === 'llama.cpp' ? 'cortex' : providerName
   return ExtensionManager.getInstance()
-    .getEngine(provider)
+    .getEngine(providerName)
     ?.updateSettings(
       settings.map((setting) => ({
         ...setting,

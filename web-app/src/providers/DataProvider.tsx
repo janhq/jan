@@ -3,10 +3,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { fetchMessages } from '@/services/messages'
-import { fetchModels } from '@/services/models'
 import { getProviders } from '@/services/providers'
 import { fetchThreads } from '@/services/threads'
-import { ModelManager } from '@janhq/core'
 import { useEffect } from 'react'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
@@ -31,10 +29,8 @@ export function DataProvider() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetchModels().then((models) => {
-      models?.forEach((model) => ModelManager.instance().register(model))
-      getProviders().then(setProviders)
-    })
+    console.log('Initializing DataProvider...')
+    getProviders().then(setProviders)
     getMCPConfig().then((data) => setServers(data.mcpServers ?? []))
     getAssistants()
       .then((data) => {
@@ -82,7 +78,7 @@ export function DataProvider() {
       const resource = params.slice(1).join('/')
       // return { action, provider, resource }
       navigate({
-        to: route.hub,
+        to: route.hub.index,
         search: {
           repo: resource,
         },

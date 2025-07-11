@@ -5,6 +5,10 @@ import {
   MessageStatus,
   EngineManager,
   ModelManager,
+  chatCompletionRequestMessage,
+  chatCompletion,
+  chatCompletionChunk,
+  Tool,
 } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
@@ -24,11 +28,17 @@ type ExtendedConfigOptions = ConfigOptions & {
   fetch?: typeof fetch
 }
 import { ulid } from 'ulidx'
-import { normalizeProvider } from './models'
 import { MCPTool } from '@/types/completion'
 import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { callTool } from '@/services/mcp'
+import { ExtensionManager } from './extension'
+
+export type ChatCompletionResponse =
+  | chatCompletion
+  | AsyncIterable<chatCompletionChunk>
+  | StreamCompletionResponse
+  | CompletionResponse
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -124,7 +134,7 @@ export const sendCompletion = async (
   tools: MCPTool[] = [],
   stream: boolean = true,
   params: Record<string, object> = {}
-): Promise<StreamCompletionResponse | CompletionResponse | undefined> => {
+): Promise<ChatCompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
   let providerName = provider.provider as unknown as keyof typeof models
@@ -152,7 +162,7 @@ export const sendCompletion = async (
     !(thread.model.id in Object.values(models).flat()) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     !tokenJS.extendedModelExist(providerName as any, thread.model?.id) &&
-    provider.provider !== 'llama.cpp'
+    provider.provider !== 'llamacpp'
   ) {
     try {
       tokenJS.extendModelList(
@@ -171,38 +181,48 @@ export const sendCompletion = async (
     }
   }
 
-  // TODO: Add message history
-  const completion = stream
-    ? await tokenJS.chat.completions.create(
-        {
-          stream: true,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          provider: providerName as any,
+  const engine = ExtensionManager.getInstance().getEngine(provider.provider)
+
+  const completion = engine
+    ? await engine.chat({
+        messages: messages as chatCompletionRequestMessage[],
+        model: thread.model?.id,
+        tools: normalizeTools(tools),
+        tool_choice: tools.length ? 'auto' : undefined,
+        stream: true,
+        ...params,
+      })
+    : stream
+      ? await tokenJS.chat.completions.create(
+          {
+            stream: true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            provider: providerName as any,
+            model: thread.model?.id,
+            messages,
+            tools: normalizeTools(tools),
+            tool_choice: tools.length ? 'auto' : undefined,
+            ...params,
+          },
+          {
+            signal: abortController.signal,
+          }
+        )
+      : await tokenJS.chat.completions.create({
+          stream: false,
+          provider: providerName,
           model: thread.model?.id,
           messages,
           tools: normalizeTools(tools),
           tool_choice: tools.length ? 'auto' : undefined,
           ...params,
-        },
-        {
-          signal: abortController.signal,
-        }
-      )
-    : await tokenJS.chat.completions.create({
-        stream: false,
-        provider: providerName,
-        model: thread.model?.id,
-        messages,
-        tools: normalizeTools(tools),
-        tool_choice: tools.length ? 'auto' : undefined,
-        ...params,
-      })
+        })
   return completion
 }
 
 export const isCompletionResponse = (
-  response: StreamCompletionResponse | CompletionResponse
-): response is CompletionResponse => {
+  response: ChatCompletionResponse
+): response is CompletionResponse | chatCompletion => {
   return 'choices' in response
 }
 
@@ -217,9 +237,9 @@ export const stopModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
-  const providerObj = EngineManager.instance().get(normalizeProvider(provider))
+  const providerObj = EngineManager.instance().get(provider)
   const modelObj = ModelManager.instance().get(model)
-  if (providerObj && modelObj) return providerObj?.unloadModel(modelObj)
+  if (providerObj && modelObj) return providerObj?.unload(model).then(() => {})
 }
 
 /**
@@ -230,7 +250,7 @@ export const stopModel = async (
  */
 export const normalizeTools = (
   tools: MCPTool[]
-): ChatCompletionTool[] | undefined => {
+): ChatCompletionTool[] | Tool[] | undefined => {
   if (tools.length === 0) return undefined
   return tools.map((tool) => ({
     type: 'function',
@@ -249,7 +269,7 @@ export const normalizeTools = (
  * @param calls
  */
 export const extractToolCall = (
-  part: CompletionResponseChunk,
+  part: chatCompletionChunk | CompletionResponseChunk,
   currentCall: ChatCompletionMessageToolCall | null,
   calls: ChatCompletionMessageToolCall[]
 ) => {

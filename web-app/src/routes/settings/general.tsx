@@ -45,6 +45,7 @@ import { isDev } from '@/lib/utils'
 import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
+import { Input } from '@/components/ui/input'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -58,6 +59,8 @@ function General() {
     setSpellCheckChatInput,
     experimentalFeatures,
     setExperimentalFeatures,
+    huggingfaceToken,
+    setHuggingfaceToken,
   } = useGeneralSetting()
 
   const openFileTitle = (): string => {
@@ -245,20 +248,6 @@ function General() {
               />
             </Card>
 
-            {/* Advanced */}
-            <Card title="Advanced">
-              <CardItem
-                title="Experimental Features"
-                description="Enable experimental features. They may be unstable or change at any time."
-                actions={
-                  <Switch
-                    checked={experimentalFeatures}
-                    onCheckedChange={(e) => setExperimentalFeatures(e)}
-                  />
-                }
-              />
-            </Card>
-
             {/* Data folder */}
             <Card title={t('common:dataFolder')}>
               <CardItem
@@ -399,20 +388,15 @@ function General() {
                 }
               />
             </Card>
-
-            {/* Other */}
-            <Card title={t('common:others')}>
+            {/* Advanced */}
+            <Card title="Advanced">
               <CardItem
-                title={t('settings:others.spellCheck', {
-                  ns: 'settings',
-                })}
-                description={t('settings:others.spellCheckDesc', {
-                  ns: 'settings',
-                })}
+                title="Experimental Features"
+                description="Enable experimental features. They may be unstable or change at any time."
                 actions={
                   <Switch
-                    checked={spellCheckChatInput}
-                    onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                    checked={experimentalFeatures}
+                    onCheckedChange={(e) => setExperimentalFeatures(e)}
                   />
                 }
               />
@@ -460,6 +444,41 @@ function General() {
                       </DialogHeader>
                     </DialogContent>
                   </Dialog>
+                }
+              />
+            </Card>
+
+            {/* Other */}
+            <Card title={t('common:others')}>
+              <CardItem
+                title={t('settings:others.spellCheck', {
+                  ns: 'settings',
+                })}
+                description={t('settings:others.spellCheckDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <Switch
+                    checked={spellCheckChatInput}
+                    onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:general.huggingfaceToken', {
+                  ns: 'settings',
+                })}
+                description={t('settings:general.huggingfaceTokenDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <Input
+                    id="hf-token"
+                    value={huggingfaceToken || ''}
+                    onChange={(e) => setHuggingfaceToken(e.target.value)}
+                    placeholder={'hf_xxx'}
+                    required
+                  />
                 }
               />
             </Card>

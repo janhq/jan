@@ -284,14 +284,6 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
 }
 
 #[tauri::command]
-pub async fn reset_cortex_restart_count(state: State<'_, AppState>) -> Result<(), String> {
-    let mut count = state.cortex_restart_count.lock().await;
-    *count = 0;
-    log::info!("Cortex server restart count reset to 0.");
-    Ok(())
-}
-
-#[tauri::command]
 pub fn change_app_data_folder(
     app_handle: tauri::AppHandle,
     new_data_folder: String,
@@ -341,25 +333,24 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
 
 #[tauri::command]
 pub async fn start_server(
-    app: AppHandle,
+    state: State<'_, AppState>,
     host: String,
     port: u16,
     prefix: String,
     api_key: String,
     trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
-    let state = app.state::<AppState>();
-    let auth_token = state.app_token.clone().unwrap_or_default();
     let server_handle = state.server_handle.clone();
+    let sessions = state.llama_server_process.clone();
 
     server::start_server(
         server_handle,
+        sessions,
         host,
         port,
         prefix,
-        auth_token,
         api_key,
-        trusted_hosts,
+        vec![trusted_hosts],
     )
     .await
     .map_err(|e| e.to_string())?;
