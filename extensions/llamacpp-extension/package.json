@@ -10,14 +10,21 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@vitest/ui": "^3.2.4",
     "cpx": "^1.5.0",
+    "jsdom": "^26.1.0",
     "rimraf": "^3.0.2",
     "rolldown": "1.0.0-beta.1",
     "ts-loader": "^9.5.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
