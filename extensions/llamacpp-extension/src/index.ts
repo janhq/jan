@@ -117,7 +117,7 @@ export default class llamacpp_extension extends AIEngine {
   private config: LlamacppConfig
   private activeSessions: Map<number, SessionInfo> = new Map()
   private providerPath!: string
-  private apiSecret: string = 'Jan'
+  private apiSecret: string = 'JustAskNow'
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -713,7 +713,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private async waitForModelLoad(
     sInfo: SessionInfo,
-    timeoutMs = 30_000
+    timeoutMs = 240_000
   ): Promise<void> {
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
