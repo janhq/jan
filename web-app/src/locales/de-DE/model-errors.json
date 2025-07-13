@@ -1,0 +1,7 @@
+{
+  "title": "Out of context error",
+  "description": "Dieser Chat erreicht das KI Speicher Limit. Wir können das Speicherfenster vergrößern (auch Kontextgröße genannt), so dass sich die KI an mehr erinnern kann, aber dies erfordert es mehr Speicher zu verwenden. Um Platz zu schaffen können wir auch den Input verkleinern, was bedeutet, dass die KI einen Teil seiner Chat-Historie vergisst.",
+  "increaseContextSizeDescription": "Möchtest Du die Kontextgröße erhöhen?",
+  "truncateInput": "Input verkleinern",
+  "increaseContextSize": "Kontextgröße erhöhen"
+}

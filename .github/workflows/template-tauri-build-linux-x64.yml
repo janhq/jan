@@ -39,8 +39,6 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
     outputs:
       DEB_SIG:
         value: ${{ jobs.build-linux-x64.outputs.DEB_SIG }}
@@ -104,20 +102,15 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
                                            "usr/lib/Jan-${{ inputs.channel }}/binaries": "binaries/deps",  
                                            "usr/lib/Jan-${{ inputs.channel }}/binaries/engines": "binaries/engines", 
-                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          else
-            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun", 
-                                           "usr/lib/Jan/binaries": "binaries/deps",
-                                           "usr/lib/Jan/binaries/engines": "binaries/engines", 
-                                           "usr/lib/Jan/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+                                           "usr/lib/Jan-${{ inputs.channel }}/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
+            mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
@@ -150,55 +143,21 @@ jobs:
           fi
       - name: Build app
         run: |
-          # Pin linuxdeploy version to prevent @tauri-apps/cli-linux-x64-gnu from pulling in an outdated version
-          TAURI_TOOLKIT_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
-          mkdir -p "$TAURI_TOOLKIT_PATH"
-          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage -O "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
-          chmod +x "$TAURI_TOOLKIT_PATH/linuxdeploy-x86_64.AppImage"
-
           make build-tauri
-          # Copy engines and bun to appimage
-           wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool
-          chmod +x ./appimagetool
-          if [ "${{ inputs.channel }}" != "stable" ]; then
-            ls ./src-tauri/target/release/bundle/appimage/
-            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
-            mkdir -p ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/engines
-            cp -f ./src-tauri/binaries/deps/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
-            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep .AppImage | head -1)
-            echo $APP_IMAGE
-            rm -f $APP_IMAGE
-            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $APP_IMAGE
-            yarn tauri signer sign \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$APP_IMAGE"
-          else
-            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
-            mkdir -p ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
-            cp -f ./src-tauri/binaries/deps/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
-            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-            echo $APP_IMAGE
-            rm -f $APP_IMAGE
-            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
-            yarn tauri signer sign \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$APP_IMAGE"
-          fi
+
+          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
+          yarn tauri signer sign \
+          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+          "$APP_IMAGE"
 
         env:
+          RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       # Publish app
 
@@ -217,8 +176,8 @@ jobs:
           name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
-      ## create zip file and latest-linux.yml for linux electron auto updater
-      - name: Create zip file and latest-linux.yml for linux electron auto updater
+      ## Set output filename for linux
+      - name: Set output filename for linux
         id: packageinfo
         run: |
           cd ./src-tauri/target/release/bundle
@@ -235,35 +194,6 @@ jobs:
             APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
           fi
 
-          DEB_FILE_SIZE=$(stat -c%s deb/$DEB_FILE_NAME)
-          APPIMAGE_FILE_SIZE=$(stat -c%s appimage/$APPIMAGE_FILE_NAME)
-          echo "deb file size: $DEB_FILE_SIZE"
-          echo "appimage file size: $APPIMAGE_FILE_SIZE"
-
-          DEB_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py deb/$DEB_FILE_NAME)
-          APPIMAGE_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py appimage/$APPIMAGE_FILE_NAME)
-          echo "deb sh512 checksum: $DEB_SH512_CHECKSUM"
-          echo "appimage sh512 checksum: $APPIMAGE_SH512_CHECKSUM"
-
-          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-          echo "releaseDate: $CURRENT_TIME"
-
-          # Create latest-linux.yml file
-          echo "version: ${{ inputs.new_version }}" > latest-linux.yml
-          echo "files:" >> latest-linux.yml
-          echo "  - url: $DEB_FILE_NAME" >> latest-linux.yml
-          echo "    sha512: $DEB_SH512_CHECKSUM" >> latest-linux.yml
-          echo "    size: $DEB_FILE_SIZE" >> latest-linux.yml
-          echo "  - url: $APPIMAGE_FILE_NAME" >> latest-linux.yml
-          echo "    sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
-          echo "    size: $APPIMAGE_FILE_SIZE" >> latest-linux.yml
-          echo "path: $APPIMAGE_FILE_NAME" >> latest-linux.yml
-          echo "sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
-          echo "releaseDate: $CURRENT_TIME" >> latest-linux.yml
-
-          cat latest-linux.yml
-          cp latest-linux.yml beta-linux.yml
-
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
           echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
@@ -274,10 +204,6 @@ jobs:
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
         run: |
           cd ./src-tauri/target/release/bundle
-
-          # Upload for electron updater for nightly
-          aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
-          aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
 
           # Upload for tauri updater
           aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
@@ -290,28 +216,6 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
 
-      ## Upload to github release for stable release
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'stable'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/latest-linux.yml
-          asset_name: latest-linux.yml
-          asset_content_type: text/yaml
-
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'beta'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/beta-linux.yml
-          asset_name: beta-linux.yml
-          asset_content_type: text/yaml
       - name: Upload release assert if public provider is github
         if: inputs.public_provider == 'github'
         env:

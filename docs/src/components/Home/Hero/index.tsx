@@ -94,7 +94,7 @@ const Hero = () => {
         </p>
         <div className="w-4/5 mx-auto mt-10 relative">
           <ThemeImage
-            className="absolute object-cover w-full object-center mx-auto h-full top-0 left-0 scale-150"
+            className="absolute object-cover w-full object-center mx-auto h-full top-0 left-0 scale-125"
             source={{
               light: '/assets/images/homepage/glow.png',
               dark: '/assets/images/homepage/glow.png',

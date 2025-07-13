@@ -49,11 +49,13 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
     outputs:
       MAC_UNIVERSAL_SIG:
         value: ${{ jobs.build-macos.outputs.MAC_UNIVERSAL_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-macos.outputs.FILE_NAME }}
+      DMG_NAME:
+        value: ${{ jobs.build-macos.outputs.DMG_NAME }}
       TAR_NAME:
         value: ${{ jobs.build-macos.outputs.TAR_NAME }}
 
@@ -62,6 +64,8 @@ jobs:
     runs-on: macos-latest
     outputs:
       MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
+      DMG_NAME: ${{ steps.metadata.outputs.DMG_NAME }}
       TAR_NAME: ${{ steps.metadata.outputs.TAR_NAME }}
     permissions:
       contents: write
@@ -170,7 +174,6 @@ jobs:
           APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
           APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
           APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
@@ -178,7 +181,6 @@ jobs:
           APPLE_API_KEY_PATH: /tmp/notary-key.p8
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       # Publish app
 
@@ -191,8 +193,8 @@ jobs:
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
-      ## create zip file and latest-mac.yml for mac electron auto updater
-      - name: create zip file and latest-mac.yml for mac electron auto updater
+      ## Set output filename for mac
+      - name: Set output filename for mac
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
           if [ "${{ inputs.channel }}" != "stable" ]; then
@@ -209,27 +211,6 @@ jobs:
             TAR_NAME=Jan.app.tar.gz
           fi
 
-          FILE_SIZE=$(stat -f%z $FILE_NAME)
-          echo "size: $FILE_SIZE"
-
-          SH512_CHECKSUM=$(python3 ../../../../../../.github/scripts/electron-checksum.py $FILE_NAME)
-          echo "sha512: $SH512_CHECKSUM"
-          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-          echo "releaseDate: $CURRENT_TIME"
-
-          # Create latest-mac.yml file
-          echo "version: ${{ inputs.new_version }}" > latest-mac.yml
-          echo "files:" >> latest-mac.yml
-          echo "  - url: $FILE_NAME" >> latest-mac.yml
-          echo "    sha512: $SH512_CHECKSUM" >> latest-mac.yml
-          echo "    size: $FILE_SIZE" >> latest-mac.yml
-          echo "path: $FILE_NAME" >> latest-mac.yml
-          echo "sha512: $SH512_CHECKSUM" >> latest-mac.yml
-          echo "releaseDate: $CURRENT_TIME" >> latest-mac.yml
-
-          cat latest-mac.yml
-          cp latest-mac.yml beta-mac.yml
-
           echo "::set-output name=MAC_UNIVERSAL_SIG::$MAC_UNIVERSAL_SIG"
           echo "::set-output name=FILE_NAME::$FILE_NAME"
           echo "::set-output name=DMG_NAME::$DMG_NAME"
@@ -242,12 +223,6 @@ jobs:
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle
 
-          # Upload for electron updater for nightly
-          aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
-          aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
-          aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-          # aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig
-
           # Upload for tauri updater
           aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
           aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}.app.tar.gz
@@ -257,29 +232,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
-
-      ## Upload to github release for stable release
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'stable'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/latest-mac.yml
-          asset_name: latest-mac.yml
-          asset_content_type: text/yaml
-
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'beta'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/beta-mac.yml
-          asset_name: beta-mac.yml
-          asset_content_type: text/yaml
 
       - name: Upload release assert if public provider is github
         if: inputs.public_provider == 'github'

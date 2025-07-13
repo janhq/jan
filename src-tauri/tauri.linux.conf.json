@@ -1,0 +1,21 @@
+{
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "resources": ["resources/pre-install/**/*"],
+    "externalBin": ["binaries/cortex-server", "resources/bin/uv"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false,
+        "files": {}
+      },
+      "deb": {
+        "files": {
+          "usr/bin/bun": "resources/bin/bun",
+          "usr/lib/Jan/binaries": "binaries/deps",
+          "usr/lib/Jan/binaries/engines": "binaries/engines",
+          "usr/lib/Jan/binaries/libvulkan.so": "binaries/libvulkan.so"
+        }
+      }
+    }
+  }
+}
