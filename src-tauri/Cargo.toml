@@ -19,8 +19,10 @@ tauri-build = { version = "2.0.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.5.0", features = [ "protocol-asset", "macos-private-api",
-    "test"
+tauri = { version = "2.5.0", features = [
+    "protocol-asset",
+    "macos-private-api",
+    "test",
 ] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"
@@ -34,8 +36,9 @@ tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 tokio = { version = "1", features = ["full"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "3196c95f1dfafbffbdcdd6d365c94969ac975e6a", features = [
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
     "client",
+    "transport-streamable-http-client",
     "transport-sse-client",
     "transport-child-process",
     "tower",
@@ -65,7 +68,7 @@ libc = "0.2.172"
 windows-sys = { version = "0.60.2", features = [
     "Win32_Foundation",
     "Win32_System_Console",
-    "Win32_System_Threading" # for using CreateProcess flags like CREATE_NEW_PROCESS_GROUP
+    "Win32_System_Threading", # for using CreateProcess flags like CREATE_NEW_PROCESS_GROUP
 ] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

@@ -2,13 +2,20 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::core::utils::download::DownloadManagerState;
 use rand::{distributions::Alphanumeric, Rng};
-use rmcp::{service::RunningService, RoleClient};
+use rmcp::model::InitializeRequestParam;
+use rmcp::service::RunningService;
+use rmcp::RoleClient;
 use tokio::task::JoinHandle;
 
 /// Server handle type for managing the proxy server lifecycle
 pub type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
-use tokio::{process::Child, sync::Mutex};
+pub enum RunningServiceEnum {
+    NoInit(RunningService<RoleClient, ()>),
+    WithInit(RunningService<RoleClient, InitializeRequestParam>),
+}
+pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
 use crate::core::utils::extensions::inference_llamacpp_extension::server::SessionInfo;
+use tokio::{process::Child, sync::Mutex};
 
 pub struct LLamaBackendSession {
     pub child: Child,
@@ -18,7 +25,7 @@ pub struct LLamaBackendSession {
 #[derive(Default)]
 pub struct AppState {
     pub app_token: Option<String>,
-    pub mcp_servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    pub mcp_servers: SharedMcpServers,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
     pub mcp_restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
