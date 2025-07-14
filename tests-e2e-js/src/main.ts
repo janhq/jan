@@ -13,7 +13,6 @@ process.env.TAURI_WEBDRIVER_BINARY = await e2e.install.PlatformDriver()
 process.env.TAURI_SELENIUM_BINARY = '../src-tauri/target/release/Jan.exe'
 process.env.SELENIUM_REMOTE_URL = 'http://127.0.0.1:6655'
 
-//@ts-ignore fuck you javascript
 e2e.setLogger(logger)
 
 describe('Tauri E2E tests', async () => {
