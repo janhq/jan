@@ -243,6 +243,7 @@ describe('models service', () => {
       mockEngine.getLoadedModels.mockResolvedValue({
         includes: () => true,
       })
+      expect(mockEngine.load).toBeCalledTimes(0)
       await expect(startModel(provider, model)).resolves.toBe(undefined)
     })
   })
