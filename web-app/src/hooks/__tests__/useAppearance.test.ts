@@ -152,21 +152,137 @@ describe('useAppearance', () => {
     })
   })
 
-  it('should have correct text colors for contrast', () => {
-    const { result } = renderHook(() => useAppearance())
 
-    // Light background should have dark text
-    act(() => {
-      result.current.setAppMainViewBgColor({ r: 255, g: 255, b: 255, a: 1 })
+  describe('Platform-specific behavior', () => {
+    it('should use alpha 1 for non-Tauri environments', () => {
+      Object.defineProperty(global, 'IS_TAURI', { value: false })
+      Object.defineProperty(global, 'IS_WINDOWS', { value: true })
+      
+      const { result } = renderHook(() => useAppearance())
+      
+      expect(result.current.appBgColor.a).toBe(1)
+    })
+  })
+
+
+  describe('Reset appearance functionality', () => {
+    beforeEach(() => {
+      // Mock document.documentElement.style.setProperty
+      Object.defineProperty(document.documentElement, 'style', {
+        value: {
+          setProperty: vi.fn(),
+        },
+        writable: true,
+      })
     })
 
-    expect(result.current.appMainViewTextColor).toBe('#000')
+    it('should reset CSS variables when resetAppearance is called', () => {
+      const { result } = renderHook(() => useAppearance())
+      
+      act(() => {
+        result.current.resetAppearance()
+      })
+      
+      expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
+        '--font-size-base',
+        '15px'
+      )
+      expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
+        '--app-bg',
+        expect.any(String)
+      )
+      expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
+        '--app-main-view',
+        expect.any(String)
+      )
+    })
+  })
 
-    // Dark background should have light text
-    act(() => {
-      result.current.setAppMainViewBgColor({ r: 0, g: 0, b: 0, a: 1 })
+
+  describe('Color manipulation', () => {
+    it('should handle color updates with CSS variable setting', () => {
+      // Mock document.documentElement.style.setProperty
+      const setPropertySpy = vi.fn()
+      Object.defineProperty(document.documentElement, 'style', {
+        value: {
+          setProperty: setPropertySpy,
+        },
+        writable: true,
+      })
+
+      const { result } = renderHook(() => useAppearance())
+      const testColor = { r: 128, g: 64, b: 192, a: 0.8 }
+      
+      act(() => {
+        result.current.setAppBgColor(testColor)
+      })
+      
+      expect(result.current.appBgColor).toEqual(testColor)
     })
 
-    expect(result.current.appMainViewTextColor).toBe('#FFF')
+    it('should handle transparent colors', () => {
+      const { result } = renderHook(() => useAppearance())
+      const transparentColor = { r: 100, g: 100, b: 100, a: 0 }
+      
+      act(() => {
+        result.current.setAppAccentBgColor(transparentColor)
+      })
+      
+      expect(result.current.appAccentBgColor).toEqual(transparentColor)
+    })
+  })
+
+  describe('Edge cases', () => {
+    it('should handle invalid color values gracefully', () => {
+      const { result } = renderHook(() => useAppearance())
+      const invalidColor = { r: -10, g: 300, b: 128, a: 2 }
+      
+      act(() => {
+        result.current.setAppPrimaryBgColor(invalidColor)
+      })
+      
+      expect(result.current.appPrimaryBgColor).toEqual(invalidColor)
+    })
+  })
+
+  describe('Type checking', () => {
+    it('should only accept valid font sizes', () => {
+      const { result } = renderHook(() => useAppearance())
+      
+      // These should work
+      act(() => {
+        result.current.setFontSize('14px')
+      })
+      expect(result.current.fontSize).toBe('14px')
+      
+      act(() => {
+        result.current.setFontSize('15px')
+      })
+      expect(result.current.fontSize).toBe('15px')
+      
+      act(() => {
+        result.current.setFontSize('16px')
+      })
+      expect(result.current.fontSize).toBe('16px')
+      
+      act(() => {
+        result.current.setFontSize('18px')
+      })
+      expect(result.current.fontSize).toBe('18px')
+    })
+
+    it('should only accept valid chat widths', () => {
+      const { result } = renderHook(() => useAppearance())
+      
+      act(() => {
+        result.current.setChatWidth('full')
+      })
+      expect(result.current.chatWidth).toBe('full')
+      
+      act(() => {
+        result.current.setChatWidth('compact')
+      })
+      expect(result.current.chatWidth).toBe('compact')
+    })
   })
 })

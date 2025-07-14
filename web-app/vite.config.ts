@@ -14,7 +14,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
+      TanStackRouterVite({
+        target: 'react',
+        autoCodeSplitting: true,
+        routeFileIgnorePattern: '.((test).ts)|test-page',
+      }),
       react(),
       tailwindcss(),
       nodePolyfills({
@@ -73,14 +77,6 @@ export default defineConfig(({ mode }) => {
       watch: {
         // 3. tell vite to ignore watching `src-tauri`
         ignored: ['**/src-tauri/**'],
-      },
-    },
-    test: {
-      environment: 'jsdom',
-      coverage: {
-        provider: 'v8',
-        reporter: ['json', 'lcov'],
-        reportsDirectory: '../coverage/vitest',
       },
     },
   }
