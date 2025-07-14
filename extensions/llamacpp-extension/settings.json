@@ -74,7 +74,7 @@
   {
       "key": "context_shift",
       "title": "Context Shift",
-      "description": "Allow model to cut model in the beginning to accomodate new text in its memory",
+      "description": "Allow model to cut model in the beginning to accommodate new text in its memory",
       "controllerType": "checkbox",
       "controllerProps":{
           "value": false
