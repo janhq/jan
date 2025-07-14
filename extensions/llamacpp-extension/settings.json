@@ -72,6 +72,15 @@
     }
   },
   {
+      "key": "context_shift",
+      "title": "Context Shift",
+      "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
+      "controllerType": "checkbox",
+      "controllerProps":{
+          "value": false
+      }
+  },
+  {
     "key": "n_predict",
     "title": "Max Tokens to Predict",
     "description": "Maximum number of tokens to generate (-1 = infinity).",

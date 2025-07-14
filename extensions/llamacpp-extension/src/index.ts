@@ -57,6 +57,7 @@ type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   reasoning_budget: number
+  ctx_shift: boolean
 }
 
 interface DownloadItem {
@@ -807,6 +808,8 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
+    if (!cfg.ctx_shift)
+        args.push('--no-context-shift')
     if (cfg.flash_attn) args.push('--flash-attn')
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
