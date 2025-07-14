@@ -34,7 +34,7 @@ tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 tokio = { version = "1", features = ["full"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "c1c4c9a0c9afbfbbf9eb42d6f8b00d8546fbdc2c", features = [
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "3196c95f1dfafbffbdcdd6d365c94969ac975e6a", features = [
     "client",
     "transport-sse-client",
     "transport-child-process",
