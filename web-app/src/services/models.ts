@@ -146,11 +146,7 @@ export const startModel = async (
   provider: ProviderObject,
   model: string
 ): Promise<SessionInfo | undefined> => {
-  if (
-    (await getEngine(provider.provider).getLoadedModels()).some(
-      (e) => e === model
-    )
-  )
+  if ((await getEngine(provider.provider).getLoadedModels()).includes(model))
     return undefined
   return getEngine(provider.provider)
     .load(model)

@@ -214,7 +214,7 @@ describe('models service', () => {
       const mockSession = { id: 'session1' }
 
       mockEngine.getLoadedModels.mockResolvedValue({
-        some: () => false,
+        includes: () => false,
       })
       mockEngine.load.mockResolvedValue(mockSession)
 
@@ -230,7 +230,7 @@ describe('models service', () => {
       const error = new Error('Failed to start model')
 
       mockEngine.getLoadedModels.mockResolvedValue({
-        some: () => false,
+        includes: () => false,
       })
       mockEngine.load.mockRejectedValue(error)
 
@@ -241,7 +241,7 @@ describe('models service', () => {
       const model = 'model1'
 
       mockEngine.getLoadedModels.mockResolvedValue({
-        some: () => true,
+        includes: () => true,
       })
       await expect(startModel(provider, model)).resolves.toBe(undefined)
     })
