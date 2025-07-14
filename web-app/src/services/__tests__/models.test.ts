@@ -97,13 +97,17 @@ describe('models service', () => {
         statusText: 'Not Found',
       })
 
-      await expect(fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog: 404 Not Found')
+      await expect(fetchModelCatalog()).rejects.toThrow(
+        'Failed to fetch model catalog: 404 Not Found'
+      )
     })
 
     it('should handle network error', async () => {
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
-      await expect(fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog: Network error')
+      await expect(fetchModelCatalog()).rejects.toThrow(
+        'Failed to fetch model catalog: Network error'
+      )
     })
   })
 
@@ -209,6 +213,9 @@ describe('models service', () => {
       const model = 'model1'
       const mockSession = { id: 'session1' }
 
+      mockEngine.getLoadedModels.mockResolvedValue({
+        includes: () => false,
+      })
       mockEngine.load.mockResolvedValue(mockSession)
 
       const result = await startModel(provider, model)
@@ -222,9 +229,22 @@ describe('models service', () => {
       const model = 'model1'
       const error = new Error('Failed to start model')
 
+      mockEngine.getLoadedModels.mockResolvedValue({
+        includes: () => false,
+      })
       mockEngine.load.mockRejectedValue(error)
 
       await expect(startModel(provider, model)).rejects.toThrow(error)
+    })
+    it('should not load model again', async () => {
+      const provider = { provider: 'openai', models: [] } as ProviderObject
+      const model = 'model1'
+
+      mockEngine.getLoadedModels.mockResolvedValue({
+        includes: () => true,
+      })
+      expect(mockEngine.load).toBeCalledTimes(0)
+      await expect(startModel(provider, model)).resolves.toBe(undefined)
     })
   })
 
@@ -248,7 +268,10 @@ describe('models service', () => {
 
       await configurePullOptions(proxyOptions)
 
-      expect(consoleSpy).toHaveBeenCalledWith('Configuring proxy options:', proxyOptions)
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Configuring proxy options:',
+        proxyOptions
+      )
       consoleSpy.mockRestore()
     })
   })

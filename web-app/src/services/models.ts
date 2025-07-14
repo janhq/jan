@@ -145,7 +145,9 @@ export const stopAllModels = async () => {
 export const startModel = async (
   provider: ProviderObject,
   model: string
-): Promise<SessionInfo> => {
+): Promise<SessionInfo | undefined> => {
+  if ((await getEngine(provider.provider).getLoadedModels()).includes(model))
+    return undefined
   return getEngine(provider.provider)
     .load(model)
     .catch((error) => {

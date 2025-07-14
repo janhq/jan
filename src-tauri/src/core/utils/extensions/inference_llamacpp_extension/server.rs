@@ -3,10 +3,12 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::Duration;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::State; // Import Manager trait
 use thiserror;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -17,10 +19,8 @@ type HmacSha256 = Hmac<Sha256>;
 // Error type for server commands
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
-    // #[error("Server is already running")]
-    // AlreadyRunning,
-    //  #[error("Server is not running")]
-    //  NotRunning,
+    #[error("llamacpp error: {0}")]
+    LlamacppError(String),
     #[error("Failed to locate server binary: {0}")]
     BinaryNotFound(String),
     #[error("IO error: {0}")]
@@ -54,6 +54,17 @@ pub struct SessionInfo {
 pub struct UnloadResult {
     success: bool,
     error: Option<String>,
+}
+
+async fn capture_stderr(stderr: impl tokio::io::AsyncRead + Unpin) -> String {
+    let mut reader = BufReader::new(stderr).lines();
+    let mut buf = String::new();
+    while let Ok(Some(line)) = reader.next_line().await {
+        log::info!("[llamacpp] {}", line); // Don't use log::error!
+        buf.push_str(&line);
+        buf.push('\n');
+    }
+    buf
 }
 
 // --- Load Command ---
@@ -138,9 +149,8 @@ pub async fn load_llama_model(
         }
     }
 
-    // Optional: Redirect stdio if needed (e.g., for logging within Jan)
-    // command.stdout(Stdio::piped());
-    // command.stderr(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
         use std::os::windows::process::CommandExt;
@@ -149,7 +159,28 @@ pub async fn load_llama_model(
     }
 
     // Spawn the child process
-    let child = command.spawn().map_err(ServerError::Io)?;
+    let mut child = command.spawn().map_err(ServerError::Io)?;
+
+    let stderr = child.stderr.take().expect("stderr was piped");
+    let stderr_task = tokio::spawn(capture_stderr(stderr));
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            log::info!("[llamacpp stdout] {}", line);
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    if let Some(status) = child.try_wait()? {
+        if !status.success() {
+            let stderr_output = stderr_task.await.unwrap_or_default();
+            log::error!("llama.cpp exited early with code {status:?}");
+            log::error!("--- stderr ---\n{}", stderr_output);
+            return Err(ServerError::LlamacppError(stderr_output.trim().to_string()));
+        }
+    }
 
     // Get the PID to use as session ID
     let pid = child.id().map(|id| id as i32).unwrap_or(-1);
@@ -280,4 +311,3 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
 
     Ok(alive)
 }
-
