@@ -78,7 +78,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
-    "@tanstack/router-plugin": "^1.116.1",
+    "@tanstack/router-plugin": "^1.127.5",
     "@types/culori": "^2.1.1",
     "@types/istanbul-lib-report": "^3",
     "@types/istanbul-reports": "^3",
