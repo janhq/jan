@@ -258,7 +258,7 @@ export function DownloadManagement() {
               <div className="fixed bottom-4 left-4 z-50 size-10 bg-main-view border-2 border-main-view-fg/10 rounded-full shadow-md cursor-pointer flex items-center justify-center">
                 <div className="relative">
                   <IconDownload
-                    className="text-left-panel-fg/50 -mt-1"
+                    className="text-main-view-fg/50 -mt-1"
                     size={20}
                   />
                   <div className="bg-primary font-bold size-5 rounded-full absolute -top-4 -right-4 flex items-center justify-center text-primary-fg">

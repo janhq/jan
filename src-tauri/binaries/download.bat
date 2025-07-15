@@ -1,7 +1,7 @@
 @echo off
 
 set CORTEX_VERSION=1.0.14
-set ENGINE_VERSION=b5509
+set ENGINE_VERSION=b5857
 set ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
 set ENGINE_DOWNLOAD_GGML_URL=https://github.com/ggml-org/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
 set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%
@@ -35,7 +35,7 @@ for %%F in (%SUBFOLDERS%) do (
 
     @REM Move cu*.dll files
     for %%D in (.\engines\engines\llama.cpp\%%F\%ENGINE_VERSION%\cu*.dll) do (
-        move "%%D" "%BIN_PATH%"        
+        move "%%D" "%BIN_PATH%"
     )
 )
 
