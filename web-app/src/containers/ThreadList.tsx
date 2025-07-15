@@ -111,7 +111,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
         setOpenDropdown(true)
       }}
       className={cn(
-        'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5  transition-all',
+        'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list transition-all',
         isDragging ? 'cursor-move' : 'cursor-pointer',
         isActive && 'bg-left-panel-fg/10'
       )}
@@ -127,7 +127,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
           <DropdownMenuTrigger asChild>
             <IconDots
               size={14}
-              className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded size-5"
+              className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
