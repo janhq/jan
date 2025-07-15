@@ -1,8 +1,8 @@
 {
   "toolApproval": {
     "title": "Tool Approval Required",
-    "description": "The assistant wants to use <strong>{{toolName}}</strong>",
-    "securityNotice": "This tool wants to perform an action. Please review and approve.",
+    "description": "The assistant wants to use",
+    "securityNotice": "Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
     "deny": "Deny",
     "allowOnce": "Allow Once",
     "alwaysAllow": "Always Allow"
