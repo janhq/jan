@@ -20,6 +20,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                                      enable_reportportal=False):
     """
     Run a single test case with turn count monitoring, forced stop, and screen recording
+    Returns dict with test result: {"success": bool, "status": str, "message": str}
     """
     path = test_data['path']
     prompt = test_data['prompt']
@@ -46,6 +47,15 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     safe_test_name = trajectory_name.replace('/', '_').replace('\\', '_')
     video_filename = f"{safe_test_name}_{current_time}.mp4"
     video_path = os.path.join(recordings_dir, video_filename)
+    
+    # Initialize result tracking
+    test_result_data = {
+        "success": False,
+        "status": "UNKNOWN",
+        "message": "Test execution incomplete",
+        "trajectory_dir": None,
+        "video_path": video_path
+    }
     
     logger.info(f"Starting test: {path}")
     logger.info(f"Trajectory base directory: {trajectory_base_dir}")
@@ -174,6 +184,13 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
         logger.error(f"Error running test {path}: {e}")
         test_execution_success = False
         monitor_stop_event.set()
+        # Update result data for exception case
+        test_result_data.update({
+            "success": False,
+            "status": "ERROR",
+            "message": f"Test execution failed with exception: {str(e)}",
+            "trajectory_dir": None
+        })
     
     finally:
         # Step 7: Stop screen recording
@@ -242,21 +259,48 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                 if force_stopped_due_to_turns:
                     final_status = "FAILED"
                     status_message = "exceeded maximum turn limit (30 turns)"
+                    test_result_data.update({
+                        "success": False,
+                        "status": final_status,
+                        "message": status_message,
+                        "trajectory_dir": trajectory_dir
+                    })
                 else:
                     test_result = extract_test_result_from_trajectory(trajectory_dir)
                     if test_result is True:
                         final_status = "PASSED" 
                         status_message = "completed successfully with positive result"
+                        test_result_data.update({
+                            "success": True,
+                            "status": final_status,
+                            "message": status_message,
+                            "trajectory_dir": trajectory_dir
+                        })
                     else:
                         final_status = "FAILED"
                         status_message = "no valid success result found"
+                        test_result_data.update({
+                            "success": False,
+                            "status": final_status,
+                            "message": status_message,
+                            "trajectory_dir": trajectory_dir
+                        })
                 
                 logger.info(f"🏠 LOCAL RESULT: {path} - {final_status} ({status_message})")
                 logger.info(f"📹 Video saved: {video_path}")
                 logger.info(f"📁 Trajectory: {trajectory_dir}")
             else:
                 logger.warning(f"🏠 LOCAL RESULT: {path} - FAILED (no trajectory found)")
+                test_result_data.update({
+                    "success": False,
+                    "status": "FAILED",
+                    "message": "no trajectory found",
+                    "trajectory_dir": None
+                })
         
         # Step 9: Always force close Jan app after test completion
         logger.info(f"Cleaning up after test: {path}")
         force_close_jan(jan_process_name)
+        
+        # Return test result
+        return test_result_data

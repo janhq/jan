@@ -108,6 +108,7 @@ def start_jan_app(jan_app_path=r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.e
         # Wait a bit more after maximizing
         time.sleep(2)
         logger.info("Jan application should be ready")
+        time.sleep(20)  # Additional wait to ensure everything is ready
         
     except Exception as e:
         logger.error(f"Error starting Jan application: {e}")

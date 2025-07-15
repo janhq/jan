@@ -52,10 +52,17 @@ def start_computer_server():
         
         # Import computer_server module
         import computer_server
+        import sys
         
         # Start server in a separate thread
         def run_server():
             try:
+                # Save original sys.argv to avoid argument conflicts
+                original_argv = sys.argv.copy()
+                
+                # Override sys.argv for computer_server to use default args
+                sys.argv = ['computer_server']  # Reset to minimal args
+                
                 # Use the proper entry point
                 logger.info("Calling computer_server.run_cli()...")
                 computer_server.run_cli()
@@ -66,6 +73,12 @@ def start_computer_server():
                 logger.error(f"Computer server error: {e}")
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
+            finally:
+                # Restore original sys.argv
+                try:
+                    sys.argv = original_argv
+                except:
+                    pass
         
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
@@ -152,6 +165,11 @@ Examples:
         default=os.getenv('RP_TOKEN'),
         help='ReportPortal API token (env: RP_TOKEN, required when --enable-reportportal is used)'
     )
+    rp_group.add_argument(
+        '--launch-name',
+        default=os.getenv('LAUNCH_NAME'),
+        help='Custom launch name for ReportPortal (env: LAUNCH_NAME, default: auto-generated with timestamp)'
+    )
     
     # Jan app arguments
     jan_group = parser.add_argument_group('Jan Application Configuration')
@@ -224,6 +242,9 @@ async def main():
     # Parse command line arguments
     args = parse_arguments()
     
+    # Initialize final exit code
+    final_exit_code = 0
+    
     # Start computer server if not skipped
     server_thread = None
     if not args.skip_server_start:
@@ -260,6 +281,7 @@ async def main():
             logger.info(f"ReportPortal endpoint: {args.rp_endpoint}")
             logger.info(f"ReportPortal project: {args.rp_project}")
             logger.info(f"ReportPortal token: {'SET' if args.rp_token else 'NOT SET'}")
+            logger.info(f"Launch name: {args.launch_name if args.launch_name else 'AUTO-GENERATED'}")
         logger.info("======================")
         
         # Scan all test files
@@ -270,6 +292,9 @@ async def main():
             return
         
         logger.info(f"Found {len(test_files)} test files")
+        
+        # Track test results for final exit code
+        test_results = {"passed": 0, "failed": 0, "total": len(test_files)}
         
         # Initialize ReportPortal client only if enabled
         rp_client = None
@@ -285,7 +310,14 @@ async def main():
                 
                 # Start ReportPortal launch
                 current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-                launch_name = f"E2E Test Run - {current_time}"
+                
+                # Use custom launch name if provided, otherwise generate default
+                if args.launch_name:
+                    launch_name = args.launch_name
+                    logger.info(f"Using custom launch name: {launch_name}")
+                else:
+                    launch_name = f"E2E Test Run - {current_time}"
+                    logger.info(f"Using auto-generated launch name: {launch_name}")
                 
                 launch_id = rp_client.start_launch(
                     name=launch_name,
@@ -313,30 +345,61 @@ async def main():
         # Run each test sequentially with turn monitoring
         for i, test_data in enumerate(test_files, 1):
             logger.info(f"Running test {i}/{len(test_files)}: {test_data['path']}")
-            # Pass all configs to test runner
-            await run_single_test_with_timeout(
-                computer=computer, 
-                test_data=test_data, 
-                rp_client=rp_client,  # Can be None
-                launch_id=launch_id,  # Can be None
-                max_turns=args.max_turns,
-                jan_app_path=args.jan_app_path,
-                jan_process_name=args.jan_process_name,
-                agent_config=agent_config,
-                enable_reportportal=args.enable_reportportal
-            )
+            
+            try:
+                # Pass all configs to test runner
+                test_result = await run_single_test_with_timeout(
+                    computer=computer, 
+                    test_data=test_data, 
+                    rp_client=rp_client,  # Can be None
+                    launch_id=launch_id,  # Can be None
+                    max_turns=args.max_turns,
+                    jan_app_path=args.jan_app_path,
+                    jan_process_name=args.jan_process_name,
+                    agent_config=agent_config,
+                    enable_reportportal=args.enable_reportportal
+                )
+                
+                # Track test result (assuming test_result contains success status)
+                if test_result and test_result.get('success', False):
+                    test_results["passed"] += 1
+                    logger.info(f"✅ Test {i} PASSED: {test_data['path']}")
+                else:
+                    test_results["failed"] += 1
+                    logger.error(f"❌ Test {i} FAILED: {test_data['path']}")
+                    
+            except Exception as e:
+                test_results["failed"] += 1
+                logger.error(f"❌ Test {i} FAILED with exception: {test_data['path']} - {e}")
             
             # Add delay between tests
             if i < len(test_files):
                 logger.info(f"Waiting {args.delay_between_tests} seconds before next test...")
                 await asyncio.sleep(args.delay_between_tests)
         
-        logger.info("All tests completed successfully!")
+        # Log final test results summary
+        logger.info("=" * 50)
+        logger.info("TEST EXECUTION SUMMARY")
+        logger.info("=" * 50)
+        logger.info(f"Total tests: {test_results['total']}")
+        logger.info(f"Passed: {test_results['passed']}")
+        logger.info(f"Failed: {test_results['failed']}")
+        logger.info(f"Success rate: {(test_results['passed']/test_results['total']*100):.1f}%")
+        logger.info("=" * 50)
+        
+        if test_results["failed"] > 0:
+            logger.error(f"❌ Test execution completed with {test_results['failed']} failures!")
+            final_exit_code = 1
+        else:
+            logger.info("✅ All tests completed successfully!")
+            final_exit_code = 0
         
     except KeyboardInterrupt:
         logger.info("Test execution interrupted by user")
+        final_exit_code = 1
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
+        final_exit_code = 1
     finally:
         # Finish ReportPortal launch only if it was started
         if args.enable_reportportal and rp_client and launch_id:
@@ -353,6 +416,10 @@ async def main():
         # Note: daemon thread will automatically terminate when main program ends
         if server_thread:
             logger.info("Computer server will stop when main program exits (daemon thread)")
+    
+    # Exit with appropriate code based on test results
+    logger.info(f"Exiting with code: {final_exit_code}")
+    exit(final_exit_code)
 
 if __name__ == "__main__":
     asyncio.run(main())
