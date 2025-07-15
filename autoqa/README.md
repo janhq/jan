@@ -5,18 +5,20 @@
 ## Features
 
 - ✅ **Automated Jan App Testing**: Automatically starts/stops Jan application
+- 🖥️ **Auto Computer Server**: Automatically starts computer server in background
 - 📹 **Screen Recording**: Records test execution for debugging
 - 📊 **ReportPortal Integration**: Optional test results upload to ReportPortal
 - 🔄 **Turn Monitoring**: Prevents infinite loops with configurable turn limits
 - 🎯 **Flexible Configuration**: Command-line arguments and environment variables
-- 🖥️ **Cross-platform**: Windows, macOS, and Linux support
+- 🌐 **Cross-platform**: Windows, macOS, and Linux support
 - 📁 **Test Discovery**: Automatically scans test files from directory
 
 ## Prerequisites
 
-- Python 3.13+
+- Python 3.8+
 - Jan application installed
 - Windows Sandbox (for computer provider)
+- Computer server package installed
 - Required Python packages (see requirements.txt)
 
 ## Installation
@@ -48,7 +50,7 @@ pip install -r requirements-mac.txt
 ### Local Development (No ReportPortal)
 
 ```bash
-# Run all tests in ./tests directory
+# Run all tests in ./tests directory (auto-starts computer server)
 python main.py
 
 # Run with custom test directory
@@ -56,6 +58,9 @@ python main.py --tests-dir "my_tests"
 
 # Run with custom Jan app path
 python main.py --jan-app-path "C:/Custom/Path/Jan.exe"
+
+# Skip auto computer server start (if already running)
+python main.py --skip-server-start
 ```
 
 ### With ReportPortal Integration
@@ -78,16 +83,22 @@ python main.py \
 
 | Argument                | Environment Variable  | Default                         | Description                                       |
 | ----------------------- | --------------------- | ------------------------------- | ------------------------------------------------- |
+| **Computer Server**     |
+| `--skip-server-start`   | `SKIP_SERVER_START`   | `false`                         | Skip automatic computer server startup            |
+| **ReportPortal**        |
 | `--enable-reportportal` | `ENABLE_REPORTPORTAL` | `false`                         | Enable ReportPortal integration                   |
 | `--rp-endpoint`         | `RP_ENDPOINT`         | `https://reportportal.menlo.ai` | ReportPortal endpoint URL                         |
 | `--rp-project`          | `RP_PROJECT`          | `default_personal`              | ReportPortal project name                         |
 | `--rp-token`            | `RP_TOKEN`            | -                               | ReportPortal API token (required when RP enabled) |
+| **Jan Application**     |
 | `--jan-app-path`        | `JAN_APP_PATH`        | _auto-detected_                 | Path to Jan application executable                |
 | `--jan-process-name`    | `JAN_PROCESS_NAME`    | `Jan.exe`                       | Jan process name for monitoring                   |
+| **Model Configuration** |
 | `--model-name`          | `MODEL_NAME`          | `ByteDance-Seed/UI-TARS-1.5-7B` | AI model name                                     |
 | `--model-base-url`      | `MODEL_BASE_URL`      | `http://10.200.108.58:1234/v1`  | Model API endpoint                                |
 | `--model-provider`      | `MODEL_PROVIDER`      | `oaicompat`                     | Model provider type                               |
 | `--model-loop`          | `MODEL_LOOP`          | `uitars`                        | Agent loop type                                   |
+| **Test Execution**      |
 | `--max-turns`           | `MAX_TURNS`           | `30`                            | Maximum turns per test                            |
 | `--tests-dir`           | `TESTS_DIR`           | `tests`                         | Directory containing test files                   |
 | `--delay-between-tests` | `DELAY_BETWEEN_TESTS` | `3`                             | Delay between tests (seconds)                     |
@@ -97,6 +108,9 @@ python main.py \
 Create a `.env` file or set environment variables:
 
 ```bash
+# Computer Server
+SKIP_SERVER_START=false
+
 # ReportPortal Configuration
 ENABLE_REPORTPORTAL=true
 RP_ENDPOINT=https://reportportal.example.com
@@ -111,6 +125,7 @@ JAN_PROCESS_NAME=Jan.exe
 MODEL_NAME=gpt-4
 MODEL_BASE_URL=https://api.openai.com/v1
 MODEL_PROVIDER=openai
+MODEL_LOOP=uitars
 
 # Test Settings
 MAX_TURNS=50
@@ -158,11 +173,14 @@ autoqa/
 ### Basic Usage
 
 ```bash
-# Run all tests locally
+# Run all tests locally (auto-starts computer server)
 python main.py
 
 # Get help
 python main.py --help
+
+# Run without auto-starting computer server
+python main.py --skip-server-start
 ```
 
 ### Advanced Usage
@@ -183,6 +201,9 @@ python main.py \
   --model-provider "openai" \
   --model-name "gpt-4" \
   --model-base-url "https://api.openai.com/v1"
+
+# External computer server (skip auto-start)
+SKIP_SERVER_START=true python main.py
 ```
 
 ### CI/CD Usage
@@ -193,7 +214,37 @@ ENABLE_REPORTPORTAL=true \
 RP_TOKEN=${{ secrets.RP_TOKEN }} \
 MODEL_NAME=production-model \
 MAX_TURNS=40 \
+SKIP_SERVER_START=false \
 python main.py
+```
+
+## Computer Server Management
+
+The test runner automatically manages the computer server:
+
+### Automatic Server Management (Default)
+
+- **Auto-start**: Computer server starts automatically in background thread
+- **Auto-cleanup**: Server stops when main program exits (daemon thread)
+- **Error handling**: Graceful fallback if server fails to start
+
+### Manual Server Management
+
+```bash
+# If you prefer to manage computer server manually:
+python -m computer_server  # In separate terminal
+
+# Then run tests without auto-start:
+python main.py --skip-server-start
+```
+
+### Server Logs
+
+```
+2025-07-15 15:30:45 - INFO - Starting computer server in background...
+2025-07-15 15:30:45 - INFO - Calling computer_server.run_cli()...
+2025-07-15 15:30:45 - INFO - Computer server thread started
+2025-07-15 15:30:50 - INFO - Computer server is running successfully
 ```
 
 ## Output
@@ -218,25 +269,45 @@ When enabled, results are uploaded to ReportPortal including:
 
 ### Common Issues
 
-1. **Jan app not found**:
+1. **Computer server startup failed**:
+
+   ```bash
+   # Install required dependencies
+   pip install computer_server
+
+   # Check if computer_server is available
+   python -c "import computer_server; print('OK')"
+
+   # Use manual server if auto-start fails
+   python main.py --skip-server-start
+   ```
+
+2. **Jan app not found**:
 
    ```bash
    # Specify custom path
    python main.py --jan-app-path "D:/Apps/Jan/Jan.exe"
    ```
 
-2. **ReportPortal connection failed**:
+3. **Windows dependencies missing**:
+
+   ```bash
+   # Install Windows-specific packages
+   pip install pywin32 psutil
+   ```
+
+4. **ReportPortal connection failed**:
 
    - Verify endpoint URL and token
    - Check network connectivity
    - Ensure project exists
 
-3. **Screen recording issues**:
+5. **Screen recording issues**:
 
    - Check disk space in `recordings/` directory
    - Verify screen recording permissions
 
-4. **Test timeouts**:
+6. **Test timeouts**:
    ```bash
    # Increase turn limit
    python main.py --max-turns 50

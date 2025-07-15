@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import argparse
+import threading
+import time
 from datetime import datetime
 from computer import Computer
 from reportportal_client import RPClient
@@ -43,6 +45,54 @@ def get_default_jan_path():
         # macOS/Linux defaults
         return os.path.expanduser("~/Applications/Jan.app/Contents/MacOS/Jan") if os.name == 'posix' else "jan"
 
+def start_computer_server():
+    """Start computer server in background thread"""
+    try:
+        logger.info("Starting computer server in background...")
+        
+        # Import computer_server module
+        import computer_server
+        
+        # Start server in a separate thread
+        def run_server():
+            try:
+                # Use the proper entry point
+                logger.info("Calling computer_server.run_cli()...")
+                computer_server.run_cli()
+                logger.info("Computer server.run_cli() completed")
+            except KeyboardInterrupt:
+                logger.info("Computer server interrupted")
+            except Exception as e:
+                logger.error(f"Computer server error: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        
+        logger.info("Computer server thread started")
+        
+        # Give server more time to start up
+        time.sleep(5)
+        
+        # Check if thread is still alive (server is running)
+        if server_thread.is_alive():
+            logger.info("Computer server is running successfully")
+            return server_thread
+        else:
+            logger.error("Computer server thread died unexpectedly")
+            return None
+        
+    except ImportError as e:
+        logger.error(f"Cannot import computer_server module: {e}")
+        logger.error("Please install computer_server package")
+        return None
+    except Exception as e:
+        logger.error(f"Error starting computer server: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return None
+
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
@@ -69,6 +119,15 @@ Examples:
     
     # Get default Jan path
     default_jan_path = get_default_jan_path()
+    
+    # Computer server arguments
+    server_group = parser.add_argument_group('Computer Server Configuration')
+    server_group.add_argument(
+        '--skip-server-start',
+        action='store_true',
+        default=os.getenv('SKIP_SERVER_START', 'false').lower() == 'true',
+        help='Skip automatic computer server startup (env: SKIP_SERVER_START, default: false)'
+    )
     
     # ReportPortal arguments
     rp_group = parser.add_argument_group('ReportPortal Configuration')
@@ -165,75 +224,86 @@ async def main():
     # Parse command line arguments
     args = parse_arguments()
     
-    # Build agent config from arguments
-    agent_config = {
-        "loop": args.model_loop,
-        "model_provider": args.model_provider,
-        "model_name": args.model_name,
-        "model_base_url": args.model_base_url
-    }
-    
-    # Log configuration
-    logger.info("=== Configuration ===")
-    logger.info(f"Tests directory: {args.tests_dir}")
-    logger.info(f"Max turns per test: {args.max_turns}")
-    logger.info(f"Delay between tests: {args.delay_between_tests}s")
-    logger.info(f"Jan app path: {args.jan_app_path}")
-    logger.info(f"Jan app exists: {os.path.exists(args.jan_app_path)}")
-    logger.info(f"Jan process name: {args.jan_process_name}")
-    logger.info(f"Model: {args.model_name}")
-    logger.info(f"Model URL: {args.model_base_url}")
-    logger.info(f"Model provider: {args.model_provider}")
-    logger.info(f"ReportPortal integration: {'ENABLED' if args.enable_reportportal else 'DISABLED'}")
-    if args.enable_reportportal:
-        logger.info(f"ReportPortal endpoint: {args.rp_endpoint}")
-        logger.info(f"ReportPortal project: {args.rp_project}")
-        logger.info(f"ReportPortal token: {'SET' if args.rp_token else 'NOT SET'}")
-    logger.info("======================")
-    
-    # Scan all test files
-    test_files = scan_test_files(args.tests_dir)
-    
-    if not test_files:
-        logger.warning(f"No test files found in directory: {args.tests_dir}")
-        return
-    
-    logger.info(f"Found {len(test_files)} test files")
-    
-    # Initialize ReportPortal client only if enabled
-    rp_client = None
-    launch_id = None
-    
-    if args.enable_reportportal:
-        try:
-            rp_client = RPClient(
-                endpoint=args.rp_endpoint,
-                project=args.rp_project,
-                api_key=args.rp_token
-            )
-            
-            # Start ReportPortal launch
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            launch_name = f"E2E Test Run - {current_time}"
-            
-            launch_id = rp_client.start_launch(
-                name=launch_name,
-                start_time=timestamp(),
-                description=f"Automated E2E test run with {len(test_files)} test cases\n"
-                           f"Model: {args.model_name}\n"
-                           f"Max turns: {args.max_turns}"
-            )
-            
-            logger.info(f"Started ReportPortal launch: {launch_name}")
-        except Exception as e:
-            logger.error(f"Failed to initialize ReportPortal: {e}")
-            logger.warning("Continuing without ReportPortal integration...")
-            rp_client = None
-            launch_id = None
+    # Start computer server if not skipped
+    server_thread = None
+    if not args.skip_server_start:
+        server_thread = start_computer_server()
+        if server_thread is None:
+            logger.error("Failed to start computer server. Exiting...")
+            return
     else:
-        logger.info("Running in local development mode - results will not be uploaded to ReportPortal")
+        logger.info("Skipping computer server startup (assuming it's already running)")
     
     try:
+        # Build agent config from arguments
+        agent_config = {
+            "loop": args.model_loop,
+            "model_provider": args.model_provider,
+            "model_name": args.model_name,
+            "model_base_url": args.model_base_url
+        }
+        
+        # Log configuration
+        logger.info("=== Configuration ===")
+        logger.info(f"Computer server: {'STARTED' if server_thread else 'EXTERNAL'}")
+        logger.info(f"Tests directory: {args.tests_dir}")
+        logger.info(f"Max turns per test: {args.max_turns}")
+        logger.info(f"Delay between tests: {args.delay_between_tests}s")
+        logger.info(f"Jan app path: {args.jan_app_path}")
+        logger.info(f"Jan app exists: {os.path.exists(args.jan_app_path)}")
+        logger.info(f"Jan process name: {args.jan_process_name}")
+        logger.info(f"Model: {args.model_name}")
+        logger.info(f"Model URL: {args.model_base_url}")
+        logger.info(f"Model provider: {args.model_provider}")
+        logger.info(f"ReportPortal integration: {'ENABLED' if args.enable_reportportal else 'DISABLED'}")
+        if args.enable_reportportal:
+            logger.info(f"ReportPortal endpoint: {args.rp_endpoint}")
+            logger.info(f"ReportPortal project: {args.rp_project}")
+            logger.info(f"ReportPortal token: {'SET' if args.rp_token else 'NOT SET'}")
+        logger.info("======================")
+        
+        # Scan all test files
+        test_files = scan_test_files(args.tests_dir)
+        
+        if not test_files:
+            logger.warning(f"No test files found in directory: {args.tests_dir}")
+            return
+        
+        logger.info(f"Found {len(test_files)} test files")
+        
+        # Initialize ReportPortal client only if enabled
+        rp_client = None
+        launch_id = None
+        
+        if args.enable_reportportal:
+            try:
+                rp_client = RPClient(
+                    endpoint=args.rp_endpoint,
+                    project=args.rp_project,
+                    api_key=args.rp_token
+                )
+                
+                # Start ReportPortal launch
+                current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+                launch_name = f"E2E Test Run - {current_time}"
+                
+                launch_id = rp_client.start_launch(
+                    name=launch_name,
+                    start_time=timestamp(),
+                    description=f"Automated E2E test run with {len(test_files)} test cases\n"
+                               f"Model: {args.model_name}\n"
+                               f"Max turns: {args.max_turns}"
+                )
+                
+                logger.info(f"Started ReportPortal launch: {launch_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize ReportPortal: {e}")
+                logger.warning("Continuing without ReportPortal integration...")
+                rp_client = None
+                launch_id = None
+        else:
+            logger.info("Running in local development mode - results will not be uploaded to ReportPortal")
+        
         # Start computer environment
         logger.info("Initializing computer environment...")
         computer = Computer(provider_type="winsandbox", os_type="windows", use_host_computer_server=True)
@@ -263,9 +333,10 @@ async def main():
         
         logger.info("All tests completed successfully!")
         
+    except KeyboardInterrupt:
+        logger.info("Test execution interrupted by user")
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
-    
     finally:
         # Finish ReportPortal launch only if it was started
         if args.enable_reportportal and rp_client and launch_id:
@@ -278,6 +349,10 @@ async def main():
                 logger.info("ReportPortal launch finished and session closed")
             except Exception as e:
                 logger.error(f"Error finishing ReportPortal launch: {e}")
+        
+        # Note: daemon thread will automatically terminate when main program ends
+        if server_thread:
+            logger.info("Computer server will stop when main program exits (daemon thread)")
 
 if __name__ == "__main__":
     asyncio.run(main())
