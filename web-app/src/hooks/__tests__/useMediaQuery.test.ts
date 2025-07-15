@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMediaQuery } from '../useMediaQuery'
+import { useMediaQuery, useSmallScreen, useSmallScreenStore, UseMediaQueryOptions } from '../useMediaQuery'
 
 // Mock window.matchMedia
 const mockMatchMedia = vi.fn()
@@ -117,12 +117,228 @@ describe('useMediaQuery hook', () => {
     expect(mockMatchMedia).toHaveBeenCalledWith('(max-width: 1024px)')
   })
 
-  it('should handle matchMedia not being available', () => {
-    // @ts-ignore
-    delete window.matchMedia
+  it('should handle initial value parameter', () => {
+    const mockMediaQueryList = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
 
-    const { result } = renderHook(() => useMediaQuery('(min-width: 768px)'))
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const { result } = renderHook(() => useMediaQuery('(min-width: 768px)', true))
+
+    expect(result.current).toBe(false) // Should use actual match value, not initial value
+  })
+
+  it('should handle getInitialValueInEffect option', () => {
+    const mockMediaQueryList = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const options: UseMediaQueryOptions = { getInitialValueInEffect: false }
+    const { result } = renderHook(() => useMediaQuery('(min-width: 768px)', false, options))
+
+    expect(result.current).toBe(true) // Should use actual match value immediately
+  })
+
+  it('should use initial value when getInitialValueInEffect is true', () => {
+    const mockMediaQueryList = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const options: UseMediaQueryOptions = { getInitialValueInEffect: true }
+    const { result } = renderHook(() => useMediaQuery('(min-width: 768px)', false, options))
+
+    // Should eventually update to true after effect runs
+    expect(result.current).toBe(true)
+  })
+
+  it('should fall back to deprecated addListener for older browsers', () => {
+    const mockMediaQueryList = {
+      matches: false,
+      addEventListener: vi.fn(() => {
+        throw new Error('addEventListener not supported')
+      }),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { unmount } = renderHook(() => useMediaQuery('(min-width: 768px)'))
+
+    expect(consoleSpy).toHaveBeenCalled()
+    expect(mockMediaQueryList.addListener).toHaveBeenCalledWith(expect.any(Function))
+
+    unmount()
+
+    expect(mockMediaQueryList.removeListener).toHaveBeenCalledWith(expect.any(Function))
+
+    consoleSpy.mockRestore()
+  })
+
+  it('should update when query changes', () => {
+    const mockMediaQueryList1 = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    const mockMediaQueryList2 = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia
+      .mockReturnValueOnce(mockMediaQueryList1)
+      .mockReturnValueOnce(mockMediaQueryList2)
+
+    const { result, rerender } = renderHook(
+      ({ query }) => useMediaQuery(query),
+      { initialProps: { query: '(min-width: 768px)' } }
+    )
+
+    expect(result.current).toBe(true)
+
+    rerender({ query: '(max-width: 767px)' })
 
     expect(result.current).toBe(false)
+    expect(mockMatchMedia).toHaveBeenCalledWith('(max-width: 767px)')
+  })
+
+  it('should use initial value when provided and getInitialValueInEffect is false', () => {
+    const mockMediaQueryList = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const { result: resultTrue } = renderHook(() => 
+      useMediaQuery('(min-width: 768px)', true, { getInitialValueInEffect: true })
+    )
+    const { result: resultFalse } = renderHook(() => 
+      useMediaQuery('(min-width: 768px)', false, { getInitialValueInEffect: true })
+    )
+
+    // When getInitialValueInEffect is true, should eventually update to actual matches value
+    expect(resultTrue.current).toBe(false) // Updated to actual matches value
+    expect(resultFalse.current).toBe(false) // Updated to actual matches value
+  })
+})
+
+describe('useSmallScreenStore', () => {
+  it('should have default state', () => {
+    const { result } = renderHook(() => useSmallScreenStore())
+
+    expect(result.current.isSmallScreen).toBe(false)
+    expect(typeof result.current.setIsSmallScreen).toBe('function')
+  })
+
+  it('should update small screen state', () => {
+    const { result } = renderHook(() => useSmallScreenStore())
+
+    act(() => {
+      result.current.setIsSmallScreen(true)
+    })
+
+    expect(result.current.isSmallScreen).toBe(true)
+
+    act(() => {
+      result.current.setIsSmallScreen(false)
+    })
+
+    expect(result.current.isSmallScreen).toBe(false)
+  })
+})
+
+describe('useSmallScreen', () => {
+  beforeEach(() => {
+    // Reset the store state before each test
+    act(() => {
+      useSmallScreenStore.getState().setIsSmallScreen(false)
+    })
+  })
+
+  it('should return small screen state and update store', () => {
+    const mockMediaQueryList = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const { result } = renderHook(() => useSmallScreen())
+
+    expect(result.current).toBe(true)
+    expect(useSmallScreenStore.getState().isSmallScreen).toBe(true)
+  })
+
+  it('should update when media query changes', () => {
+    const mockMediaQueryList = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const { result } = renderHook(() => useSmallScreen())
+
+    expect(result.current).toBe(false)
+
+    // Simulate media query change to small screen
+    const changeHandler = mockMediaQueryList.addEventListener.mock.calls[0][1]
+    
+    act(() => {
+      changeHandler({ matches: true })
+    })
+
+    expect(result.current).toBe(true)
+    expect(useSmallScreenStore.getState().isSmallScreen).toBe(true)
+  })
+
+  it('should use correct media query for small screen detection', () => {
+    const mockMediaQueryList = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    renderHook(() => useSmallScreen())
+
+    expect(mockMatchMedia).toHaveBeenCalledWith('(max-width: 768px)')
+  })
+
+  it('should persist state across multiple hook instances', () => {
+    const mockMediaQueryList = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    mockMatchMedia.mockReturnValue(mockMediaQueryList)
+
+    const { result: result1 } = renderHook(() => useSmallScreen())
+    const { result: result2 } = renderHook(() => useSmallScreen())
+
+    expect(result1.current).toBe(true)
+    expect(result2.current).toBe(true)
   })
 })

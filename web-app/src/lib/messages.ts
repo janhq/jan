@@ -25,8 +25,8 @@ export class CompletionMessagesBuilder {
               role: msg.role,
               content:
                 msg.role === 'assistant'
-                  ? this.normalizeContent(msg.content[0]?.text?.value ?? '.')
-                  : (msg.content[0]?.text?.value ?? '.'),
+                  ? this.normalizeContent(msg.content[0]?.text?.value || '.')
+                  : (msg.content[0]?.text?.value || '.'),
             }) as ChatCompletionMessageParam
         )
     )
