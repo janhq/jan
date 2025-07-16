@@ -1003,9 +1003,7 @@ export default class llamacpp_extension extends AIEngine {
     console.log(`is_process_running result: ${result}`)
     if (result) {
       try {
-        const res = await fetch(`http://localhost:${sessionInfo.port}/health`)
-        if (res.ok) {
-        } // do nothing
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
       } catch (e) {
         this.unload(sessionInfo.model_id)
         throw new Error('Model appears to have crashed! Please reload!')
