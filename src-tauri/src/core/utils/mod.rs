@@ -6,7 +6,8 @@ use std::path::{Component, Path, PathBuf};
 use tauri::Runtime;
 
 use super::cmd::get_jan_data_folder_path;
-// use std::path::Prefix;
+#[cfg(windows)]
+use std::path::Prefix;
 
 pub const THREADS_DIR: &str = "threads";
 pub const THREADS_FILE: &str = "thread.json";
