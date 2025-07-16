@@ -1,0 +1,200 @@
+---
+title: Exa Search MCP
+description: Connect Jan to real-time web search with Exa's AI-powered search engine.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Exa,
+    web search,
+    real-time search,
+    research,
+    AI search,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Using Exa Search MCP with Jan
+
+Exa MCP turns your AI into a research powerhouse. Instead of hallucinating facts or working with stale training data, your model gets real-time access to the web through Exa's AI-powered search engine.
+
+## What You Get
+
+Exa MCP provides eight specialized search tools that actually work:
+
+- **web_search_exa**: General web search with content extraction
+- **research_paper_search**: Academic papers and research content
+- **company_research**: Deep company analysis and intelligence
+- **crawling**: Extract content from specific URLs
+- **competitor_finder**: Find business competitors
+- **linkedin_search**: Search LinkedIn profiles and companies
+- **wikipedia_search_exa**: Wikipedia content retrieval
+- **github_search**: Repository and code search
+
+Think of it as giving your AI a PhD in Google-fu.
+
+## Prerequisites
+
+You'll need:
+- Jan installed and running
+- An Exa API key ([get yours here](https://dashboard.exa.ai/api-keys))
+- A model with tool calling capabilities (Claude, GPT-4, or compatible local models)
+- Node.js installed on your machine
+
+<Callout type="info">
+  **Model Compatibility**: Not all models play nice with tools. Claude models work exceptionally well. For local models, ensure tool calling is enabled in Jan's model parameters.
+</Callout>
+
+## Setup
+
+### Step 1: Enable MCP in Jan
+
+Navigate to **Settings** > **MCP Servers** and toggle **Allow All MCP Tool Permission** ON.
+
+*[Screenshot placeholder: MCP settings page with toggle enabled]*
+
+### Step 2: Get Your Exa API Key
+
+1. Go to [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys)
+2. Sign up or log in
+3. Generate a new API key
+4. Copy it somewhere safe
+
+*[Screenshot placeholder: Exa dashboard showing API key generation]*
+
+### Step 3: Add Exa MCP Server
+
+Click the `+` button in the MCP Servers section.
+
+*[Screenshot placeholder: MCP server addition dialog]*
+
+Enter the following configuration:
+
+- **Server Name**: `exa`
+- **Command**: `npx`
+- **Arguments**: `-y exa-mcp-server`
+- **Environment Variables**: 
+  - Key: `EXA_API_KEY`
+  - Value: `your-actual-api-key-here`
+
+*[Screenshot placeholder: Filled MCP server configuration form]*
+
+### Step 4: Verify Connection
+
+Check that the server shows as active in your MCP Servers list.
+
+*[Screenshot placeholder: Active Exa MCP server in the list]*
+
+### Step 5: Configure Your Model
+
+Use a model provider that supports tool calling. For cloud models:
+
+- **Anthropic**: Ensure tool calling is enabled in Model Providers settings
+- **OpenAI**: Tool calling should work by default
+- **OpenRouter**: Works with tool-capable models like Claude
+
+*[Screenshot placeholder: Model provider settings with tool calling enabled]*
+
+For local models, enable tool calling in **Model Parameters** > **Model Capabilities**.
+
+## Using Exa MCP
+
+Once configured, start a new chat with your tool-enabled model. The available Exa tools will appear in the tools section.
+
+*[Screenshot placeholder: Chat interface showing Exa MCP tools available]*
+
+### Example Queries
+
+Try these to see Exa MCP in action:
+
+**Research Query:**
+```
+Find recent research papers about transformer model optimization published in 2024
+```
+
+**Company Intelligence:**
+```
+Research the company Anthropic - their business model, recent funding, and key competitors
+```
+
+**Technical Search:**
+```
+Find GitHub repositories for modern React state management libraries with good TypeScript support
+```
+
+**Content Analysis:**
+```
+Extract and summarize the content from this article: [URL]
+```
+
+*[Screenshot placeholder: Example of Exa MCP performing a search with results]*
+
+## Advanced Configuration
+
+### Selective Tool Enabling
+
+If you don't want all eight tools (and who needs that much power?), you can enable specific ones:
+
+- **Command**: `npx`
+- **Arguments**: `-y exa-mcp-server --tools=web_search_exa,research_paper_search,company_research`
+
+### Remote MCP Option
+
+For the truly lazy, use Exa's hosted MCP server instead of running it locally:
+
+- **Server Name**: `exa-remote`
+- **Command**: `npx`
+- **Arguments**: `-y mcp-remote https://mcp.exa.ai/mcp?exaApiKey=your-api-key`
+
+## Use Cases That Actually Matter
+
+### Academic Research
+Perfect for literature reviews, finding recent papers, and staying current with research trends. No more sifting through Google Scholar's ancient interface.
+
+### Competitive Intelligence
+Research competitors, analyze market positioning, and gather business intelligence without manual browsing.
+
+### Technical Discovery
+Find libraries, tools, and solutions on GitHub. Better than hoping Stack Overflow has the answer.
+
+### Content Curation
+Extract and analyze content from specific URLs for research or content creation.
+
+### Professional Networking
+Search LinkedIn for potential collaborators, industry experts, or business connections.
+
+## Troubleshooting
+
+**Server won't connect?**
+- Verify your API key is correct (no extra spaces or quotes)
+- Ensure Node.js is installed
+- Restart Jan completely
+
+**Model not using tools?**
+- Check that tool calling is enabled for your model
+- Try a different model (Claude works best)
+- Verify the MCP server is active
+
+**Search results seem off?**
+- Exa's AI search is context-aware - be specific in your queries
+- Use natural language rather than keyword stuffing
+
+**API key errors?**
+- Double-check your key at [dashboard.exa.ai](https://dashboard.exa.ai)
+- Ensure you haven't hit rate limits
+- Try regenerating the key if issues persist
+
+<Callout type="warning">
+  **Rate Limits**: Exa has API rate limits. If you're planning to go full researcher mode, check your plan limits to avoid surprises.
+</Callout>
+
+## What's Next
+
+Once you've got Exa MCP running, you'll wonder how you ever did research without it. The combination of Jan's privacy-focused approach with Exa's real-time search capabilities creates a research environment that's both powerful and under your control.
+
+No more tab explosions. No more bookmark chaos. Just ask, and get answers backed by current, relevant sources.
+
+*[Screenshot placeholder: Final example showing a complex research query with multiple Exa tools being used]*

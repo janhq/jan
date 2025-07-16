@@ -75,13 +75,13 @@ const config: DocsThemeConfig = {
             {[
               { title: 'Jan', path: '/docs', Icon: LibraryBig },
               {
-                title: 'Jan Web',
-                path: '/platforms',
+                title: 'Jan Local Server',
+                path: '/local-server',
                 Icon: BrainCircuit,
               },
-              { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
+              // { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
               {
-                title: 'API Platform',
+                title: 'Jan API Platform',
                 path: '/platforms',
                 Icon: Computer,
               },
@@ -131,14 +131,14 @@ const config: DocsThemeConfig = {
           name="description"
           content={
             frontMatter?.description ||
-            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
+            `Run LLMs like Qwen3 or Llama3 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
           }
         />
         <meta
           name="og:description"
           content={
             frontMatter?.description ||
-            `Run LLMs like Mistral or Llama2 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
+            `Run LLMs like Qwen3 or Llama3 locally and offline on your computer, or connect to remote AI APIs like OpenAI's GPT-4 or Groq.`
           }
         />
         <link

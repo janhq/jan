@@ -1,0 +1,38 @@
+{
+  "-- Switcher": {
+    "type": "separator",
+    "title": "Switcher"
+  },
+  "index": "Overview",
+
+  "getting-started-separator": {
+    "title": "GETTING STARTED",
+    "type": "separator"
+  },
+  "api-server": "Server Setup",
+
+  "tutorials-separator": {
+    "title": "TUTORIALS",
+    "type": "separator"
+  },
+  "server-examples": "Integrations",
+
+  "explanation-separator": {
+    "title": "EXPLANATION",
+    "type": "separator"
+  },
+  "llama-cpp": "Local AI Engine",
+  "data-folder": "Jan Data Folder",
+
+  "advanced-separator": {
+    "title": "ADVANCED",
+    "type": "separator"
+  },
+  "mcp": "Model Context Protocol",
+  "reference-separator": {
+    "title": "REFERENCE",
+    "type": "separator"
+  },
+  "settings": "Server Settings",
+  "troubleshooting": "Troubleshooting"
+}
