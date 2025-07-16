@@ -309,9 +309,9 @@ async fn proxy_request(
         return Ok(error_response.body(Body::from("Not Found")).unwrap());
     }
 
-    let mut target_port: Option<i32> = None;
-    let mut session_api_key: Option<String> = None;
-    let mut buffered_body: Option<Bytes> = None;
+    let target_port: Option<i32>;
+    let session_api_key: Option<String>;
+    let buffered_body: Option<Bytes>;
     let original_path = parts.uri.path();
     let destination_path = get_destination_path(original_path, &config.prefix);
 

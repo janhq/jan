@@ -731,26 +731,27 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
     Ok(())
 }
 
-/// Handle app quit - stop all MCP servers cleanly (like cortex cleanup)
-pub async fn handle_app_quit(state: &AppState) -> Result<(), String> {
-    log::info!("App quitting - stopping all MCP servers cleanly");
-    
-    // Stop all running MCP servers
-    stop_mcp_servers(state.mcp_servers.clone()).await?;
-    
-    // Clear active servers and restart counts
-    {
-        let mut active_servers = state.mcp_active_servers.lock().await;
-        active_servers.clear();
-    }
-    {
-        let mut restart_counts = state.mcp_restart_counts.lock().await;
-        restart_counts.clear();
-    }
-    
-    log::info!("All MCP servers stopped cleanly");
-    Ok(())
-}
+// /// Handle app quit - stop all MCP servers cleanly (like cortex cleanup)
+// UNUSED FUNCTION---
+// pub async fn handle_app_quit(state: &AppState) -> Result<(), String> {
+//     log::info!("App quitting - stopping all MCP servers cleanly");
+//     
+//     // Stop all running MCP servers
+//     stop_mcp_servers(state.mcp_servers.clone()).await?;
+//     
+//     // Clear active servers and restart counts
+//     {
+//         let mut active_servers = state.mcp_active_servers.lock().await;
+//         active_servers.clear();
+//     }
+//     {
+//         let mut restart_counts = state.mcp_restart_counts.lock().await;
+//         restart_counts.clear();
+//     }
+//     
+//     log::info!("All MCP servers stopped cleanly");
+//     Ok(())
+// }
 
 /// Reset MCP restart count for a specific server (like cortex reset)
 #[tauri::command]

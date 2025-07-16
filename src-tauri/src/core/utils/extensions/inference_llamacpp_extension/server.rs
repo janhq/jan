@@ -10,7 +10,8 @@ use tauri::State; // Import Manager trait
 use thiserror;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::time::timeout;
+use tokio::sync::mpsc;
+use tokio::time::{timeout, Instant};
 
 use crate::core::state::AppState;
 use crate::core::state::LLamaBackendSession;
@@ -56,24 +57,13 @@ pub struct UnloadResult {
     error: Option<String>,
 }
 
-async fn capture_stderr(stderr: impl tokio::io::AsyncRead + Unpin) -> String {
-    let mut reader = BufReader::new(stderr).lines();
-    let mut buf = String::new();
-    while let Ok(Some(line)) = reader.next_line().await {
-        log::info!("[llamacpp] {}", line); // Don't use log::error!
-        buf.push_str(&line);
-        buf.push('\n');
-    }
-    buf
-}
-
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
-    state: State<'_, AppState>, // Access the shared state
+    state: State<'_, AppState>,
     backend_path: &str,
     library_path: Option<&str>,
-    args: Vec<String>, // Arguments from the frontend
+    args: Vec<String>,
 ) -> ServerResult<SessionInfo> {
     let mut process_map = state.llama_server_process.lock().await;
 
@@ -162,17 +152,52 @@ pub async fn load_llama_model(
     let mut child = command.spawn().map_err(ServerError::Io)?;
 
     let stderr = child.stderr.take().expect("stderr was piped");
-    let stderr_task = tokio::spawn(capture_stderr(stderr));
-
     let stdout = child.stdout.take().expect("stdout was piped");
-    tokio::spawn(async move {
+
+    // Create channels for communication between tasks
+    let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
+    let (error_tx, mut error_rx) = mpsc::channel::<String>(1);
+
+    // Spawn task to monitor stdout for readiness
+    let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             log::info!("[llamacpp stdout] {}", line);
         }
     });
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Spawn task to capture stderr and monitor for errors
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        let mut stderr_buffer = String::new();
+        while let Ok(Some(line)) = reader.next_line().await {
+            log::info!("[llamacpp] {}", line); // Using your log format
+            stderr_buffer.push_str(&line);
+            stderr_buffer.push('\n');
+            // Check for critical error indicators that should stop the process
+            // TODO: check for different errors
+            if line.to_lowercase().contains("error")
+                || line.to_lowercase().contains("failed")
+                || line.to_lowercase().contains("fatal")
+                || line.contains("CUDA error")
+                || line.contains("out of memory")
+                || line.contains("failed to load")
+            {
+                let _ = error_tx.send(line.clone()).await;
+            }
+            // Check for readiness indicator - llama-server outputs this when ready
+            else if line.contains("server is listening on")
+                || line.contains("starting the main loop")
+                || line.contains("server listening on")
+            {
+                log::info!("Server appears to be ready based on stdout: '{}'", line);
+                let _ = ready_tx.send(true).await;
+            }
+        }
+        stderr_buffer
+    });
+
+    // Check if process exited early
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_default();
@@ -182,10 +207,48 @@ pub async fn load_llama_model(
         }
     }
 
+    // Wait for server to be ready or timeout
+    let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+    let start_time = Instant::now();
+    log::info!("Waiting for server to be ready...");
+    loop {
+        tokio::select! {
+            // Server is ready
+            Some(true) = ready_rx.recv() => {
+                log::info!("Server is ready to accept requests!");
+                break;
+            }
+            // Error occurred
+            Some(error_msg) = error_rx.recv() => {
+                log::error!("Server encountered an error: {}", error_msg);
+                let _ = child.kill().await;
+                // Get full stderr output
+                let stderr_output = stderr_task.await.unwrap_or_default();
+                return Err(ServerError::LlamacppError(format!("Error: {}\n\nFull stderr:\n{}", error_msg, stderr_output)));
+            }
+            // Timeout
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                if start_time.elapsed() > timeout_duration {
+                    log::error!("Timeout waiting for server to be ready");
+                    let _ = child.kill().await;
+                    return Err(ServerError::LlamacppError("Server startup timeout".to_string()));
+                }
+                // Check if process is still alive
+                if let Some(status) = child.try_wait()? {
+                    if !status.success() {
+                        let stderr_output = stderr_task.await.unwrap_or_default();
+                        log::error!("llama.cpp exited during startup with code {status:?}");
+                        return Err(ServerError::LlamacppError(format!("Process exited with code {status:?}\n\nStderr:\n{}", stderr_output)));
+                    }
+                }
+            }
+        }
+    }
+
     // Get the PID to use as session ID
     let pid = child.id().map(|id| id as i32).unwrap_or(-1);
 
-    log::info!("Server process started with PID: {}", pid);
+    log::info!("Server process started with PID: {} and is ready", pid);
     let session_info = SessionInfo {
         pid: pid.clone(),
         port: port,
@@ -194,7 +257,7 @@ pub async fn load_llama_model(
         api_key: api_key,
     };
 
-    // insert sesinfo to process_map
+    // Insert session info to process_map
     process_map.insert(
         pid.clone(),
         LLamaBackendSession {
