@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
+import LoadModelErrorDialog from '@/containers/dialogs/LoadModelErrorDialog'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -97,6 +98,7 @@ function RootLayout() {
         {/* <TanStackRouterDevtools position="bottom-right" /> */}
         <CortexFailureDialog />
         <ToolApproval />
+        <LoadModelErrorDialog />
         <OutOfContextPromiseModal />
       </TranslationProvider>
     </Fragment>
