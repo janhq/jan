@@ -1008,7 +1008,7 @@ export default class llamacpp_extension extends AIEngine {
         } // do nothing
       } catch (e) {
         this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have been crashed!! Please reload!')
+        throw new Error('Model appears to have crashed! Please reload!')
       }
     } else {
       this.activeSessions.delete(sessionInfo.pid)
