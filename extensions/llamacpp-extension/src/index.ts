@@ -878,7 +878,7 @@ export default class llamacpp_extension extends AIEngine {
       return sInfo
     } catch (error) {
       console.error('Error loading llama-server:\n', error)
-      throw new Error(`Failed to load llama-server\n: ${error}`)
+      throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
 
