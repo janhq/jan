@@ -80,6 +80,8 @@ function RenderMarkdownComponent({
         return !isInline && !isUser ? (
           <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
             <style>
+              {/* Disable selection of line numbers. React Syntax Highlighter currently has
+              unfixed bug so we can't use the lineNumberContainerStyleProp */}
               {`
               .react-syntax-highlighter-line-number {
                 user-select: none;
