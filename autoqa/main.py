@@ -244,7 +244,7 @@ Examples:
     )
     jan_group.add_argument(
         '--jan-process-name',
-        default=os.getenv('JAN_PROCESS_NAME', 'Jan.exe' if IS_WINDOWS else 'Jan-nightly'),
+        default=os.getenv('JAN_PROCESS_NAME', 'Jan.exe' if IS_WINDOWS else ('Jan' if IS_MACOS else 'Jan-nightly')),
         help='Jan process name for monitoring (env: JAN_PROCESS_NAME, default: platform-specific)'
     )
     

@@ -203,7 +203,6 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
         # Step 8: Upload results to ReportPortal only if enabled
         if enable_reportportal and rp_client and launch_id:
             try:
-                trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
                 if trajectory_dir:
                     logger.info(f"Uploading results to ReportPortal for: {path}")
                     upload_test_results_to_rp(rp_client, launch_id, path, trajectory_dir, force_stopped_due_to_turns, video_path)
@@ -249,54 +248,62 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                     )
             except Exception as upload_error:
                 logger.error(f"Error uploading results for {path}: {upload_error}")
-        else:
-            # Local development mode - just log results
-            trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
-            if trajectory_dir:
-                # Extract test result for local logging
-                from reportportal_handler import extract_test_result_from_trajectory
-                
-                if force_stopped_due_to_turns:
+
+        # Always process results for consistency (both RP and local mode)
+                logger.error(f"Error uploading results for {path}: {upload_error}")
+        # Always process results for consistency (both RP and local mode)
+        trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
+        if trajectory_dir:
+            # Extract test result for processing
+            from reportportal_handler import extract_test_result_from_trajectory
+            
+            if force_stopped_due_to_turns:
+                final_status = "FAILED"
+                status_message = "exceeded maximum turn limit (30 turns)"
+                test_result_data.update({
+                    "success": False,
+                    "status": final_status,
+                    "message": status_message,
+                    "trajectory_dir": trajectory_dir
+                })
+            else:
+                test_result = extract_test_result_from_trajectory(trajectory_dir)
+                if test_result is True:
+                    final_status = "PASSED" 
+                    status_message = "completed successfully with positive result"
+                    test_result_data.update({
+                        "success": True,
+                        "status": final_status,
+                        "message": status_message,
+                        "trajectory_dir": trajectory_dir
+                    })
+                else:
                     final_status = "FAILED"
-                    status_message = "exceeded maximum turn limit (30 turns)"
+                    status_message = "no valid success result found"
                     test_result_data.update({
                         "success": False,
                         "status": final_status,
                         "message": status_message,
                         "trajectory_dir": trajectory_dir
                     })
-                else:
-                    test_result = extract_test_result_from_trajectory(trajectory_dir)
-                    if test_result is True:
-                        final_status = "PASSED" 
-                        status_message = "completed successfully with positive result"
-                        test_result_data.update({
-                            "success": True,
-                            "status": final_status,
-                            "message": status_message,
-                            "trajectory_dir": trajectory_dir
-                        })
-                    else:
-                        final_status = "FAILED"
-                        status_message = "no valid success result found"
-                        test_result_data.update({
-                            "success": False,
-                            "status": final_status,
-                            "message": status_message,
-                            "trajectory_dir": trajectory_dir
-                        })
-                
+            
+            if not enable_reportportal:
+                # Local development mode - log results
                 logger.info(f"🏠 LOCAL RESULT: {path} - {final_status} ({status_message})")
                 logger.info(f"📹 Video saved: {video_path}")
                 logger.info(f"📁 Trajectory: {trajectory_dir}")
-            else:
-                logger.warning(f"🏠 LOCAL RESULT: {path} - FAILED (no trajectory found)")
-                test_result_data.update({
-                    "success": False,
-                    "status": "FAILED",
-                    "message": "no trajectory found",
-                    "trajectory_dir": None
-                })
+        else:
+            final_status = "FAILED"
+            status_message = "no trajectory found"
+            test_result_data.update({
+                "success": False,
+                "status": final_status,
+                "message": status_message,
+                "trajectory_dir": None
+            })
+            
+            if not enable_reportportal:
+                logger.warning(f"🏠 LOCAL RESULT: {path} - {final_status} ({status_message})")
         
         # Step 9: Always force close Jan app after test completion
         logger.info(f"Cleaning up after test: {path}")

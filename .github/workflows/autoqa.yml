@@ -13,6 +13,11 @@ on:
         required: true
         type: string
         default: 'https://catalog.jan.ai/linux/Jan-nightly_0.6.4-726_amd64.deb'
+      jan_app_url_macos:
+        description: 'URL to download Jan app for macOS (.dmg)'
+        required: true
+        type: string
+        default: 'https://catalog.jan.ai/macos/Jan-nightly-0.6.4-726.dmg'
       is_nightly:
         description: 'Is this a nightly build?'
         required: true
@@ -517,5 +522,276 @@ jobs:
 
           # Clean up downloaded installer
           rm -f "/tmp/jan-installer.deb"
+
+          echo "Cleanup completed"
+
+  macos:
+    runs-on: macos-selfhosted-15-arm64
+    timeout-minutes: 60
+
+    env:
+      # Default Jan app URL - can be overridden by repository variable JAN_APP_URL
+      DEFAULT_JAN_APP_URL: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_universal.dmg'
+      DEFAULT_IS_NIGHTLY: 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Clean existing Jan installations
+        run: |
+          echo "Cleaning existing Jan installations..."
+
+          # Kill any running Jan processes (both regular and nightly)
+          pkill -f "Jan" || true
+          pkill -f "jan" || true
+          pkill -f "Jan-nightly" || true
+          pkill -f "jan-nightly" || true
+
+          # Remove Jan app directories
+          rm -rf /Applications/Jan.app
+          rm -rf /Applications/Jan-nightly.app
+          rm -rf ~/Applications/Jan.app
+          rm -rf ~/Applications/Jan-nightly.app
+
+          # Remove Jan data folders (both regular and nightly)
+          rm -rf ~/Library/Application\ Support/Jan
+          rm -rf ~/Library/Application\ Support/Jan-nightly
+          rm -rf ~/Library/Preferences/jan.*
+          rm -rf ~/Library/Preferences/jan-nightly.*
+          rm -rf ~/Library/Caches/jan.*
+          rm -rf ~/Library/Caches/jan-nightly.*
+
+          echo "Jan cleanup completed"
+
+      - name: Download Jan app
+        run: |
+          # Determine Jan app URL and nightly flag from multiple sources (priority order):
+          # 1. Workflow dispatch input (manual trigger)
+          # 2. Repository variable JAN_APP_URL
+          # 3. Default URL from env
+
+          JAN_APP_URL=""
+          IS_NIGHTLY="false"
+
+          if [ -n "${{ github.event.inputs.jan_app_url_macos }}" ]; then
+            JAN_APP_URL="${{ github.event.inputs.jan_app_url_macos }}"
+            IS_NIGHTLY="${{ github.event.inputs.is_nightly }}"
+            echo "Using Jan app URL from workflow input: $JAN_APP_URL"
+            echo "Is nightly build: $IS_NIGHTLY"
+          elif [ -n "${{ vars.JAN_APP_URL }}" ]; then
+            JAN_APP_URL="${{ vars.JAN_APP_URL }}"
+            IS_NIGHTLY="${{ vars.IS_NIGHTLY }}"
+            echo "Using Jan app URL from repository variable: $JAN_APP_URL"
+            echo "Is nightly build: $IS_NIGHTLY"
+          else
+            JAN_APP_URL="$DEFAULT_JAN_APP_URL"
+            IS_NIGHTLY="$DEFAULT_IS_NIGHTLY"
+            echo "Using default Jan app URL: $JAN_APP_URL"
+            echo "Is nightly build: $IS_NIGHTLY"
+          fi
+
+          # Export for later steps
+          echo "JAN_APP_URL=$JAN_APP_URL" >> $GITHUB_ENV
+          echo "IS_NIGHTLY=$IS_NIGHTLY" >> $GITHUB_ENV
+
+          echo "Downloading Jan app from: $JAN_APP_URL"
+          curl -L -o "/tmp/jan-installer.dmg" "$JAN_APP_URL"
+
+          if [ ! -f "/tmp/jan-installer.dmg" ]; then
+            echo "❌ Failed to download Jan app"
+            exit 1
+          fi
+
+          echo "✅ Successfully downloaded Jan app"
+          ls -la "/tmp/jan-installer.dmg"
+
+      - name: Install Jan app
+        run: |
+          echo "Installing Jan app from DMG..."
+
+          # Mount the DMG
+          hdiutil attach "/tmp/jan-installer.dmg" -mountpoint "/tmp/jan-mount"
+
+          # Find the .app file in the mounted DMG
+          APP_FILE=$(find "/tmp/jan-mount" -name "*.app" -type d | head -1)
+
+          if [ -z "$APP_FILE" ]; then
+            echo "❌ No .app file found in DMG"
+            hdiutil detach "/tmp/jan-mount" || true
+            exit 1
+          fi
+
+          echo "Found app file: $APP_FILE"
+
+          # Copy to Applications directory
+          cp -R "$APP_FILE" /Applications/
+
+          # Unmount the DMG
+          hdiutil detach "/tmp/jan-mount"
+
+          # Determine app name and executable path
+          APP_NAME=$(basename "$APP_FILE")
+
+          echo "App name: $APP_NAME"
+
+          # First, check what's actually in the MacOS folder
+          echo "Contents of MacOS folder:"
+          ls -la "/Applications/$APP_NAME/Contents/MacOS/"          # Find all executable files in MacOS folder
+          echo "Looking for executable files..."
+          find "/Applications/$APP_NAME/Contents/MacOS/" -type f -perm +111 -ls
+
+          # Try to find the main executable - it's usually the one with the same name as the app (without .app)
+          APP_BASE_NAME=$(basename "$APP_NAME" .app)
+          POTENTIAL_EXECUTABLES=(
+            "/Applications/$APP_NAME/Contents/MacOS/$APP_BASE_NAME"
+            "/Applications/$APP_NAME/Contents/MacOS/Jan"
+            "/Applications/$APP_NAME/Contents/MacOS/Jan-nightly"
+          )
+
+          APP_PATH=""
+          for potential_exec in "${POTENTIAL_EXECUTABLES[@]}"; do
+            echo "Checking: $potential_exec"
+            if [ -f "$potential_exec" ] && [ -x "$potential_exec" ]; then
+              APP_PATH="$potential_exec"
+              echo "Found executable: $APP_PATH"
+              break
+            fi
+          done
+
+          # If still not found, get any executable file
+          if [ -z "$APP_PATH" ]; then
+            echo "No predefined executable found, searching for any executable..."
+            APP_PATH=$(find "/Applications/$APP_NAME/Contents/MacOS/" -type f -perm +111 | head -1)
+          fi
+
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No executable found in MacOS folder"
+            ls -la "/Applications/$APP_NAME/Contents/MacOS/"
+            exit 1
+          fi
+
+          PROCESS_NAME=$(basename "$APP_PATH")
+
+          echo "App installed at: /Applications/$APP_NAME"
+          echo "Executable path: $APP_PATH"
+          echo "Process name: $PROCESS_NAME"
+
+          # Export for test step
+          echo "JAN_APP_PATH=$APP_PATH" >> $GITHUB_ENV
+          echo "PROCESS_NAME=$PROCESS_NAME" >> $GITHUB_ENV
+
+          # Verify installation
+          if [ -f "$APP_PATH" ]; then
+            echo "✅ Jan app installed successfully"
+            ls -la "/Applications/$APP_NAME"
+          else
+            echo "❌ Jan app installation failed - executable not found"
+            exit 1
+          fi
+
+      - name: Install system dependencies
+        run: |
+          echo "Installing system dependencies for macOS..."
+
+          # Check if Homebrew is available
+          if command -v brew >/dev/null 2>&1; then
+            echo "Homebrew is available"
+            
+            # Install python-tk if not available
+            python3 -c "import tkinter" 2>/dev/null || {
+              echo "Installing python-tk via Homebrew..."
+              brew install python-tk || true
+            }
+          else
+            echo "Homebrew not available, checking if tkinter works..."
+            python3 -c "import tkinter" || {
+              echo "⚠️ tkinter not available and Homebrew not found"
+              echo "This may cause issues with mouse control"
+            }
+          fi
+
+          echo "System dependencies check completed"
+
+      - name: Install Python dependencies
+        run: |
+          cd autoqa
+          echo "Installing Python dependencies..."
+          pip install --upgrade pip
+          pip install -r requirements-mac.txt
+          echo "✅ Python dependencies installed"
+
+      - name: Setup ReportPortal environment
+        run: |
+          echo "Setting up ReportPortal environment..."
+
+          # Set ReportPortal token from secret
+          echo "RP_TOKEN=${{ secrets.RP_TOKEN }}" >> $GITHUB_ENV
+
+          echo "ReportPortal environment configured"
+
+      - name: Run E2E tests
+        run: |
+          cd autoqa
+          echo "Starting E2E test execution..."
+
+          echo "Environment variables:"
+          echo "JAN_APP_PATH: $JAN_APP_PATH"
+          echo "PROCESS_NAME: $PROCESS_NAME"
+          echo "IS_NIGHTLY: $IS_NIGHTLY"
+
+          # Verify Jan app path
+          if [ ! -f "$JAN_APP_PATH" ]; then
+            echo "❌ Jan app not found at: $JAN_APP_PATH"
+            echo "Available files in /Applications:"
+            ls -la /Applications/ | grep -i jan || echo "No Jan apps found"
+            exit 1
+          fi
+
+          echo "Jan app path: $JAN_APP_PATH"
+          echo "Process name: $PROCESS_NAME"
+
+          # Run the main test with proper arguments
+          if [ -n "$JAN_APP_PATH" ] && [ -n "$PROCESS_NAME" ]; then
+            python main.py --enable-reportportal --rp-token "$RP_TOKEN" --jan-app-path "$JAN_APP_PATH" --jan-process-name "$PROCESS_NAME"
+          elif [ -n "$JAN_APP_PATH" ]; then
+            python main.py --enable-reportportal --rp-token "$RP_TOKEN" --jan-app-path "$JAN_APP_PATH"
+          else
+            python main.py --enable-reportportal --rp-token "$RP_TOKEN"
+          fi
+
+      - name: Cleanup after tests
+        if: always()
+        run: |
+          echo "Cleaning up after tests..."
+
+          # Kill any running Jan processes (both regular and nightly)
+          pkill -f "Jan" || true
+          pkill -f "jan" || true
+          pkill -f "Jan-nightly" || true
+          pkill -f "jan-nightly" || true
+
+          # Remove Jan app directories
+          rm -rf /Applications/Jan.app
+          rm -rf /Applications/Jan-nightly.app
+          rm -rf ~/Applications/Jan.app
+          rm -rf ~/Applications/Jan-nightly.app
+
+          # Remove Jan data folders (both regular and nightly)
+          rm -rf ~/Library/Application\ Support/Jan
+          rm -rf ~/Library/Application\ Support/Jan-nightly
+          rm -rf ~/Library/Preferences/jan.*
+          rm -rf ~/Library/Preferences/jan-nightly.*
+          rm -rf ~/Library/Caches/jan.*
+          rm -rf ~/Library/Caches/jan-nightly.*
+
+          # Clean up downloaded installer
+          rm -f "/tmp/jan-installer.dmg"
+          rm -rf "/tmp/jan-mount"
 
           echo "Cleanup completed"

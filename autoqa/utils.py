@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 # Cross-platform window management
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
+IS_MACOS = platform.system() == "Darwin"
 
 if IS_WINDOWS:
     try:
@@ -101,6 +102,69 @@ def maximize_jan_window_linux():
     
     return False
 
+def find_jan_window_macos():
+    """
+    Find Jan window on macOS using AppleScript
+    """
+    try:
+        # AppleScript to find Jan window
+        script = '''
+        tell application "System Events"
+            set janApps to (every process whose name contains "Jan")
+            if length of janApps > 0 then
+                return name of first item of janApps
+            else
+                return ""
+            end if
+        end tell
+        '''
+        result = subprocess.run(['osascript', '-e', script], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            app_name = result.stdout.strip()
+            logger.info(f"Found Jan app: {app_name}")
+            return app_name
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError) as e:
+        logger.warning(f"AppleScript command failed: {e}")
+    return None
+
+def maximize_jan_window_macos():
+    """
+    Maximize Jan window on macOS using AppleScript
+    """
+    app_name = find_jan_window_macos()
+    if app_name:
+        try:
+            # AppleScript to maximize window
+            script = f'''
+            tell application "System Events"
+                tell process "{app_name}"
+                    set frontmost to true
+                    tell window 1
+                        set value of attribute "AXFullScreen" to true
+                    end tell
+                end tell
+            end tell
+            '''
+            result = subprocess.run(['osascript', '-e', script], timeout=10)
+            if result.returncode == 0:
+                logger.info("Jan window maximized using AppleScript")
+                return True
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+            logger.warning(f"Failed to maximize with AppleScript: {e}")
+    
+    # Fallback: Try Command+M (fullscreen hotkey on macOS)
+    try:
+        logger.info("Trying Cmd+Ctrl+F hotkey to maximize")
+        pyautogui.hotkey('cmd', 'ctrl', 'f')
+        time.sleep(1)
+        logger.info("Attempted to maximize using Cmd+Ctrl+F")
+        return True
+    except Exception as e:
+        logger.warning(f"Hotkey maximize failed: {e}")
+    
+    return False
+
 def maximize_jan_window():
     """
     Find and maximize Jan window (cross-platform)
@@ -111,6 +175,9 @@ def maximize_jan_window():
         
         if IS_LINUX:
             return maximize_jan_window_linux()
+        
+        elif IS_MACOS:
+            return maximize_jan_window_macos()
         
         elif IS_WINDOWS and gw:
             # Method 1: Try to find window by title containing "Jan"
@@ -142,6 +209,10 @@ def maximize_jan_window():
             elif IS_LINUX:
                 logger.info("Trying Alt+F10 to maximize")
                 pyautogui.hotkey('alt', 'F10')
+            elif IS_MACOS:
+                logger.info("Trying macOS specific maximize")
+                pyautogui.hotkey('cmd', 'tab')  # Switch to Jan if it's running
+                time.sleep(0.5)
             return True
         except Exception as e2:
             logger.warning(f"All maximize methods failed: {e2}")
@@ -157,6 +228,8 @@ def start_jan_app(jan_app_path=None):
             jan_app_path = r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.exe"
         elif IS_LINUX:
             jan_app_path = "/usr/bin/Jan-nightly"  # or "/usr/bin/Jan" for regular
+        elif IS_MACOS:
+            jan_app_path = "/Applications/Jan.app/Contents/MacOS/Jan"  # Default macOS path
         else:
             raise NotImplementedError(f"Platform {platform.system()} not supported")
     
@@ -174,7 +247,24 @@ def start_jan_app(jan_app_path=None):
             # On Linux, start with DISPLAY environment variable
             env = os.environ.copy()
             subprocess.Popen([jan_app_path], env=env)
-        
+        elif IS_MACOS:
+            # On macOS, use 'open' command to launch .app bundle properly
+            if jan_app_path.endswith('.app/Contents/MacOS/Jan'):
+                # Use the .app bundle path instead
+                app_bundle = jan_app_path.replace('/Contents/MacOS/Jan', '')
+                subprocess.Popen(['open', app_bundle])
+            elif jan_app_path.endswith('.app'):
+                # Direct .app bundle
+                subprocess.Popen(['open', jan_app_path])
+            elif '/Contents/MacOS/' in jan_app_path:
+                # Extract app bundle from full executable path
+                app_bundle = jan_app_path.split('/Contents/MacOS/')[0]
+                subprocess.Popen(['open', app_bundle])
+            else:
+                # Fallback: try to execute directly
+                subprocess.Popen([jan_app_path])
+        else:
+            raise NotImplementedError(f"Platform {platform.system()} not supported")
         logger.info("Jan application started")
         
         # Wait for app to fully load
