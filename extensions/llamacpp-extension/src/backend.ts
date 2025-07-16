@@ -1,16 +1,14 @@
-import {
-  getJanDataFolderPath,
-  fs,
-  joinPath,
-  events,
-} from '@janhq/core'
+import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { getProxyConfig } from './util'
 
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
 // what should be available to the user for selection?
-export async function listSupportedBackends(): Promise<{ version: string, backend: string }[]> {
+export async function listSupportedBackends(): Promise<
+  { version: string; backend: string }[]
+> {
   const sysInfo = await window.core.api.getSystemInfo()
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
@@ -35,8 +33,7 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
   // not available yet, placeholder for future
   else if (sysType == 'windows-aarch64') {
     supportedBackends.push('win-arm64')
-  }
-  else if (sysType == 'linux-x86_64') {
+  } else if (sysType == 'linux-x86_64') {
     supportedBackends.push('linux-noavx-x64')
     if (features.avx) supportedBackends.push('linux-avx-x64')
     if (features.avx2) supportedBackends.push('linux-avx2-x64')
@@ -48,11 +45,9 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
   // not available yet, placeholder for future
   else if (sysType === 'linux-aarch64') {
     supportedBackends.push('linux-arm64')
-  }
-  else if (sysType === 'macos-x86_64') {
+  } else if (sysType === 'macos-x86_64') {
     supportedBackends.push('macos-x64')
-  }
-  else if (sysType === 'macos-aarch64') {
+  } else if (sysType === 'macos-aarch64') {
     supportedBackends.push('macos-arm64')
   }
 
@@ -82,39 +77,64 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
   return backendVersions
 }
 
-export async function getBackendDir(backend: string, version: string): Promise<string> {
+export async function getBackendDir(
+  backend: string,
+  version: string
+): Promise<string> {
   const janDataFolderPath = await getJanDataFolderPath()
-  const backendDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends', version, backend])
+  const backendDir = await joinPath([
+    janDataFolderPath,
+    'llamacpp',
+    'backends',
+    version,
+    backend,
+  ])
   return backendDir
 }
 
-export async function getBackendExePath(backend: string, version: string): Promise<string> {
+export async function getBackendExePath(
+  backend: string,
+  version: string
+): Promise<string> {
   const sysInfo = await window.core.api.getSystemInfo()
-  const exe_name = sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
+  const exe_name =
+    sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
   const exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
   return exePath
 }
 
-export async function isBackendInstalled(backend: string, version: string): Promise<boolean> {
+export async function isBackendInstalled(
+  backend: string,
+  version: string
+): Promise<boolean> {
   const exePath = await getBackendExePath(backend, version)
   const result = await fs.existsSync(exePath)
   return result
 }
 
-export async function downloadBackend(backend: string, version: string): Promise<void> {
+export async function downloadBackend(
+  backend: string,
+  version: string
+): Promise<void> {
   const janDataFolderPath = await getJanDataFolderPath()
   const llamacppPath = await joinPath([janDataFolderPath, 'llamacpp'])
   const backendDir = await getBackendDir(backend, version)
   const libDir = await joinPath([llamacppPath, 'lib'])
 
-  const downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
+  const downloadManager = window.core.extensionManager.getByName(
+    '@janhq/download-extension'
+  )
+
+  // Get proxy configuration from localStorage
+  const proxyConfig = getProxyConfig()
 
   const downloadItems = [
     {
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`,
       save_path: await joinPath([backendDir, 'backend.tar.gz']),
-    }
+      proxy: proxyConfig,
+    },
   ]
 
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
@@ -122,18 +142,24 @@ export async function downloadBackend(backend: string, version: string): Promise
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu11.7-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda11.tar.gz']),
+      proxy: proxyConfig,
     })
   } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.0-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda12.tar.gz']),
+      proxy: proxyConfig,
     })
   }
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
-  console.log(`Downloading backend ${backend} version ${version}: ${JSON.stringify(downloadItems)}`)
+  console.log(
+    `Downloading backend ${backend} version ${version}: ${JSON.stringify(
+      downloadItems
+    )}`
+  )
   let downloadCompleted = false
   try {
     const onProgress = (transferred: number, total: number) => {
@@ -212,13 +238,15 @@ async function _getSupportedFeatures() {
 
 async function _fetchGithubReleases(
   owner: string,
-  repo: string,
+  repo: string
 ): Promise<any[]> {
   // by default, it's per_page=30 and page=1 -> the latest 30 releases
   const url = `https://api.github.com/repos/${owner}/${repo}/releases`
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Failed to fetch releases from ${url}: ${response.statusText}`)
+    throw new Error(
+      `Failed to fetch releases from ${url}: ${response.statusText}`
+    )
   }
   return response.json()
 }
@@ -257,21 +285,25 @@ async function _isCudaInstalled(version: string): Promise<boolean> {
 
   // check for libraries shipped with Jan's llama.cpp extension
   const janDataFolderPath = await getJanDataFolderPath()
-  const cudartPath = await joinPath([janDataFolderPath, 'llamacpp', 'lib', libname])
+  const cudartPath = await joinPath([
+    janDataFolderPath,
+    'llamacpp',
+    'lib',
+    libname,
+  ])
   return await fs.existsSync(cudartPath)
 }
 
 function compareVersions(a: string, b: string): number {
-  const aParts = a.split('.').map(Number);
-  const bParts = b.split('.').map(Number);
-  const len = Math.max(aParts.length, bParts.length);
+  const aParts = a.split('.').map(Number)
+  const bParts = b.split('.').map(Number)
+  const len = Math.max(aParts.length, bParts.length)
 
   for (let i = 0; i < len; i++) {
-    const x = aParts[i] || 0;
-    const y = bParts[i] || 0;
-    if (x > y) return 1;
-    if (x < y) return -1;
+    const x = aParts[i] || 0
+    const y = bParts[i] || 0
+    if (x > y) return 1
+    if (x < y) return -1
   }
-  return 0;
+  return 0
 }
-

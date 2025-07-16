@@ -25,9 +25,9 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
-  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
+import { getProxyConfig } from './util'
 
 type LlamacppConfig = {
   version_backend: string
@@ -63,6 +63,7 @@ type LlamacppConfig = {
 interface DownloadItem {
   url: string
   save_path: string
+  proxy?: Record<string, string | string[] | boolean>
 }
 
 interface ModelConfig {
@@ -609,7 +610,11 @@ export default class llamacpp_extension extends AIEngine {
       // if URL, add to downloadItems, and return local path
       if (path.startsWith('https://')) {
         const localPath = `${modelDir}/${saveName}`
-        downloadItems.push({ url: path, save_path: localPath })
+        downloadItems.push({
+          url: path,
+          save_path: localPath,
+          proxy: getProxyConfig(),
+        })
         return localPath
       }
 

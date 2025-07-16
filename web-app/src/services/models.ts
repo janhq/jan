@@ -158,33 +158,3 @@ export const startModel = async (
       throw error
     })
 }
-
-/**
- * Configures the proxy options for model downloads.
- * @param param0
- */
-export const configurePullOptions = async ({
-  proxyEnabled,
-  proxyUrl,
-  proxyUsername,
-  proxyPassword,
-  proxyIgnoreSSL,
-  verifyProxySSL,
-  verifyProxyHostSSL,
-  verifyPeerSSL,
-  verifyHostSSL,
-  noProxy,
-}: ProxyOptions) => {
-  console.log('Configuring proxy options:', {
-    proxyEnabled,
-    proxyUrl,
-    proxyUsername,
-    proxyPassword,
-    proxyIgnoreSSL,
-    verifyProxySSL,
-    verifyProxyHostSSL,
-    verifyPeerSSL,
-    verifyHostSSL,
-    noProxy,
-  })
-}
