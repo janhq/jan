@@ -25,7 +25,7 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
-  getBackendDir
+  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -348,7 +348,11 @@ export default class llamacpp_extension extends AIEngine {
             // --- Remove old backend files ---
             // Get Jan's data folder and build the backends directory path
             const janDataFolderPath = await getJanDataFolderPath()
-            const backendsDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends'])
+            const backendsDir = await joinPath([
+              janDataFolderPath,
+              'llamacpp',
+              'backends',
+            ])
             if (await fs.existsSync(backendsDir)) {
               const versionDirs = await fs.readdirSync(backendsDir)
               for (const versionDir of versionDirs) {
@@ -715,16 +719,34 @@ export default class llamacpp_extension extends AIEngine {
     sInfo: SessionInfo,
     timeoutMs = 240_000
   ): Promise<void> {
+    await this.sleep(500) // Wait before first check
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
       try {
         const res = await fetch(`http://localhost:${sInfo.port}/health`)
-        if (res.ok) {
-          return
+
+        if (res.status === 503) {
+          const body = await res.json()
+          const msg = body?.error?.message ?? 'Model loading'
+          console.log(`waiting for model load... (${msg})`)
+        } else if (res.ok) {
+          const body = await res.json()
+          if (body.status === 'ok') {
+            return
+          } else {
+            console.warn('Unexpected OK response from /health:', body)
+          }
+        } else {
+          console.warn(`Unexpected status ${res.status} from /health`)
         }
-      } catch (e) {}
-      await this.sleep(500) // 500 sec interval during rechecks
+      } catch (e) {
+        await this.unload(sInfo.model_id)
+        throw new Error(`Model appears to have crashed: ${e}`)
+      }
+
+      await this.sleep(800) // Retry interval
     }
+
     await this.unload(sInfo.model_id)
     throw new Error(
       `Timed out loading model after ${timeoutMs}... killing llamacpp`
@@ -808,8 +830,7 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (!cfg.ctx_shift)
-        args.push('--no-context-shift')
+    if (!cfg.ctx_shift) args.push('--no-context-shift')
     if (cfg.flash_attn) args.push('--flash-attn')
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
@@ -822,7 +843,12 @@ export default class llamacpp_extension extends AIEngine {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
       args.push('--cache-type-k', cfg.cache_type_k)
-      args.push('--cache-type-v', cfg.cache_type_v)
+      if (
+        (cfg.flash_attn && cfg.cache_type_v != 'f16') ||
+        cfg.cache_type_v != 'f32'
+      ) {
+        args.push('--cache-type-v', cfg.cache_type_v)
+      }
       args.push('--defrag-thold', String(cfg.defrag_thold))
 
       args.push('--rope-scaling', cfg.rope_scaling)
@@ -851,7 +877,7 @@ export default class llamacpp_extension extends AIEngine {
 
       return sInfo
     } catch (error) {
-      console.error('Error loading llama-server:', error)
+      console.error('Error loading llama-server:\n', error)
       throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
@@ -974,7 +1000,15 @@ export default class llamacpp_extension extends AIEngine {
     const result = await invoke<boolean>('is_process_running', {
       pid: sessionInfo.pid,
     })
-    if (!result) {
+    console.log(`is_process_running result: ${result}`)
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
+      }
+    } else {
       this.activeSessions.delete(sessionInfo.pid)
       throw new Error('Model have crashed! Please reload!')
     }
