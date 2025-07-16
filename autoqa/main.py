@@ -4,6 +4,7 @@ import os
 import argparse
 import threading
 import time
+import platform
 from datetime import datetime
 from computer import Computer
 from reportportal_client import RPClient
@@ -22,10 +23,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Platform detection
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+IS_MACOS = platform.system() == "Darwin"
+
+def get_computer_config():
+    """Get computer configuration based on platform"""
+    if IS_WINDOWS:
+        return {
+            "provider_type": "winsandbox",
+            "os_type": "windows"
+        }
+    elif IS_LINUX:
+        return {
+            "provider_type": "nixsandbox", 
+            "os_type": "linux"
+        }
+    elif IS_MACOS:
+        return {
+            "provider_type": "nixsandbox",  # or "macsandbox" if available
+            "os_type": "macos"
+        }
+    else:
+        # Default fallback
+        logger.warning(f"Unknown platform {platform.system()}, using Linux config as fallback")
+        return {
+            "provider_type": "nixsandbox",
+            "os_type": "linux"
+        }
+
 def get_default_jan_path():
     """Get default Jan app path based on OS"""
-    if os.name == 'nt':  # Windows
-        # Try multiple common locations
+    if IS_WINDOWS:
+        # Try multiple common locations on Windows
         possible_paths = [
             os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan.exe"),
             os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'jan', 'Jan.exe'),
@@ -41,9 +72,42 @@ def get_default_jan_path():
         
         # If none exist, return the most likely default
         return possible_paths[0]
+    
+    elif IS_LINUX:
+        # Linux possible locations
+        possible_paths = [
+            "/usr/bin/Jan-nightly",
+            "/usr/bin/Jan", 
+            "/usr/local/bin/Jan-nightly",
+            "/usr/local/bin/Jan",
+            os.path.expanduser("~/Applications/Jan/Jan"),
+            "/opt/Jan/Jan"
+        ]
+        
+        # Return first existing path, or first option as default
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        # Default to nightly build path
+        return "/usr/bin/Jan-nightly"
+    
+    elif IS_MACOS:
+        # macOS defaults
+        possible_paths = [
+            "/Applications/Jan.app/Contents/MacOS/Jan",
+            os.path.expanduser("~/Applications/Jan.app/Contents/MacOS/Jan")
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return possible_paths[0]
+    
     else:
-        # macOS/Linux defaults
-        return os.path.expanduser("~/Applications/Jan.app/Contents/MacOS/Jan") if os.name == 'posix' else "jan"
+        # Unknown platform
+        return "jan"
 
 def start_computer_server():
     """Start computer server in background thread"""
@@ -180,8 +244,8 @@ Examples:
     )
     jan_group.add_argument(
         '--jan-process-name',
-        default=os.getenv('JAN_PROCESS_NAME', 'Jan.exe'),
-        help='Jan process name for monitoring (env: JAN_PROCESS_NAME, default: %(default)s)'
+        default=os.getenv('JAN_PROCESS_NAME', 'Jan.exe' if IS_WINDOWS else 'Jan-nightly'),
+        help='Jan process name for monitoring (env: JAN_PROCESS_NAME, default: platform-specific)'
     )
     
     # Model/Agent arguments
@@ -338,7 +402,16 @@ async def main():
         
         # Start computer environment
         logger.info("Initializing computer environment...")
-        computer = Computer(provider_type="winsandbox", os_type="windows", use_host_computer_server=True)
+        
+        # Get platform-specific computer configuration
+        computer_config = get_computer_config()
+        logger.info(f"Using computer config: {computer_config}")
+        
+        computer = Computer(
+            provider_type=computer_config["provider_type"], 
+            os_type=computer_config["os_type"], 
+            use_host_computer_server=True
+        )
         await computer.run()
         logger.info("Computer environment ready")
         
@@ -360,13 +433,36 @@ async def main():
                     enable_reportportal=args.enable_reportportal
                 )
                 
-                # Track test result (assuming test_result contains success status)
-                if test_result and test_result.get('success', False):
+                # Track test result - properly handle different return formats
+                test_passed = False
+                
+                if test_result:
+                    # Check different possible return formats
+                    if isinstance(test_result, dict):
+                        # Dictionary format: check 'success' key
+                        test_passed = test_result.get('success', False)
+                    elif isinstance(test_result, bool):
+                        # Boolean format: direct boolean value
+                        test_passed = test_result
+                    elif hasattr(test_result, 'success'):
+                        # Object format: check success attribute
+                        test_passed = getattr(test_result, 'success', False)
+                    else:
+                        # Any truthy value is considered success
+                        test_passed = bool(test_result)
+                else:
+                    test_passed = False
+                
+                # Update counters and log result
+                if test_passed:
                     test_results["passed"] += 1
                     logger.info(f"✅ Test {i} PASSED: {test_data['path']}")
                 else:
                     test_results["failed"] += 1
                     logger.error(f"❌ Test {i} FAILED: {test_data['path']}")
+                    
+                # Debug log for troubleshooting
+                logger.info(f"🔍 Debug - Test result: type={type(test_result)}, value={test_result}, success_field={test_result.get('success', 'N/A') if isinstance(test_result, dict) else 'N/A'}, final_passed={test_passed}")
                     
             except Exception as e:
                 test_results["failed"] += 1

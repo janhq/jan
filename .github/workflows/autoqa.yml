@@ -28,250 +28,250 @@ on:
       - '.github/workflows/autoqa.yml'
 
 jobs:
-  # windows:
-  #   runs-on: windows-11-nvidia-gpu
-  #   timeout-minutes: 60
+  windows:
+    runs-on: windows-11-nvidia-gpu
+    timeout-minutes: 60
 
-  #   env:
-  #     # Default Jan app URL - can be overridden by repository variable JAN_APP_URL
-  #     DEFAULT_JAN_APP_URL: 'https://catalog.jan.ai/windows/Jan-nightly_0.6.4-726_x64-setup.exe'
-  #     DEFAULT_IS_NIGHTLY: 'true'
+    env:
+      # Default Jan app URL - can be overridden by repository variable JAN_APP_URL
+      DEFAULT_JAN_APP_URL: 'https://catalog.jan.ai/windows/Jan-nightly_0.6.4-726_x64-setup.exe'
+      DEFAULT_IS_NIGHTLY: 'true'
 
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  #     - name: Setup Python 3.13
-  #       uses: actions/setup-python@v4
-  #       with:
-  #         python-version: '3.13'
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
 
-  #     - name: Clean existing Jan installations
-  #       shell: powershell
-  #       run: |
-  #         Write-Host "Cleaning existing Jan installations..."
+      - name: Clean existing Jan installations
+        shell: powershell
+        run: |
+          Write-Host "Cleaning existing Jan installations..."
 
-  #         # Remove Jan data folders (both regular and nightly)
-  #         $janAppData = "$env:APPDATA\Jan"
-  #         $janNightlyAppData = "$env:APPDATA\Jan-nightly"
+          # Remove Jan data folders (both regular and nightly)
+          $janAppData = "$env:APPDATA\Jan"
+          $janNightlyAppData = "$env:APPDATA\Jan-nightly"
 
-  #         if (Test-Path $janAppData) {
-  #           Write-Host "Removing $janAppData"
-  #           Remove-Item -Path $janAppData -Recurse -Force -ErrorAction SilentlyContinue
-  #         }
+          if (Test-Path $janAppData) {
+            Write-Host "Removing $janAppData"
+            Remove-Item -Path $janAppData -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-  #         if (Test-Path $janNightlyAppData) {
-  #           Write-Host "Removing $janNightlyAppData"
-  #           Remove-Item -Path $janNightlyAppData -Recurse -Force -ErrorAction SilentlyContinue
-  #         }
+          if (Test-Path $janNightlyAppData) {
+            Write-Host "Removing $janNightlyAppData"
+            Remove-Item -Path $janNightlyAppData -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-  #         # Kill any running Jan processes (both regular and nightly)
-  #         Get-Process -Name "Jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "Jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # Kill any running Jan processes (both regular and nightly)
+          Get-Process -Name "Jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "Jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-  #         Write-Host "Jan cleanup completed"
+          Write-Host "Jan cleanup completed"
 
-  #     - name: Download Jan app
-  #       shell: powershell
-  #       run: |
-  #         # Determine Jan app URL and nightly flag from multiple sources (priority order):
-  #         # 1. Workflow dispatch input (manual trigger)
-  #         # 2. Repository variable JAN_APP_URL
-  #         # 3. Default URL from env
+      - name: Download Jan app
+        shell: powershell
+        run: |
+          # Determine Jan app URL and nightly flag from multiple sources (priority order):
+          # 1. Workflow dispatch input (manual trigger)
+          # 2. Repository variable JAN_APP_URL
+          # 3. Default URL from env
 
-  #         $janAppUrl = ""
-  #         $isNightly = $false
+          $janAppUrl = ""
+          $isNightly = $false
 
-  #         if ("${{ github.event.inputs.jan_app_url_windows }}" -ne "") {
-  #           $janAppUrl = "${{ github.event.inputs.jan_app_url_windows }}"
-  #           $isNightly = [System.Convert]::ToBoolean("${{ github.event.inputs.is_nightly }}")
-  #           Write-Host "Using Jan app URL from workflow input: $janAppUrl"
-  #           Write-Host "Is nightly build: $isNightly"
-  #         }
-  #         elseif ("${{ vars.JAN_APP_URL }}" -ne "") {
-  #           $janAppUrl = "${{ vars.JAN_APP_URL }}"
-  #           $isNightly = [System.Convert]::ToBoolean("${{ vars.IS_NIGHTLY }}")
-  #           Write-Host "Using Jan app URL from repository variable: $janAppUrl"
-  #           Write-Host "Is nightly build: $isNightly"
-  #         }
-  #         else {
-  #           $janAppUrl = "$env:DEFAULT_JAN_APP_URL"
-  #           $isNightly = [System.Convert]::ToBoolean("$env:DEFAULT_IS_NIGHTLY")
-  #           Write-Host "Using default Jan app URL: $janAppUrl"
-  #           Write-Host "Is nightly build: $isNightly"
-  #         }
+          if ("${{ github.event.inputs.jan_app_url_windows }}" -ne "") {
+            $janAppUrl = "${{ github.event.inputs.jan_app_url_windows }}"
+            $isNightly = [System.Convert]::ToBoolean("${{ github.event.inputs.is_nightly }}")
+            Write-Host "Using Jan app URL from workflow input: $janAppUrl"
+            Write-Host "Is nightly build: $isNightly"
+          }
+          elseif ("${{ vars.JAN_APP_URL }}" -ne "") {
+            $janAppUrl = "${{ vars.JAN_APP_URL }}"
+            $isNightly = [System.Convert]::ToBoolean("${{ vars.IS_NIGHTLY }}")
+            Write-Host "Using Jan app URL from repository variable: $janAppUrl"
+            Write-Host "Is nightly build: $isNightly"
+          }
+          else {
+            $janAppUrl = "$env:DEFAULT_JAN_APP_URL"
+            $isNightly = [System.Convert]::ToBoolean("$env:DEFAULT_IS_NIGHTLY")
+            Write-Host "Using default Jan app URL: $janAppUrl"
+            Write-Host "Is nightly build: $isNightly"
+          }
 
-  #         # Set environment variables for later steps
-  #         echo "JAN_APP_URL=$janAppUrl" >> $env:GITHUB_ENV
-  #         echo "IS_NIGHTLY=$isNightly" >> $env:GITHUB_ENV
+          # Set environment variables for later steps
+          echo "JAN_APP_URL=$janAppUrl" >> $env:GITHUB_ENV
+          echo "IS_NIGHTLY=$isNightly" >> $env:GITHUB_ENV
 
-  #         Write-Host "Downloading Jan app from: $janAppUrl"
+          Write-Host "Downloading Jan app from: $janAppUrl"
 
-  #         $downloadPath = "$env:TEMP\jan-installer.exe"
+          $downloadPath = "$env:TEMP\jan-installer.exe"
 
-  #         try {
-  #           # Use wget for better performance
-  #           wget.exe "$janAppUrl" -O "$downloadPath"
+          try {
+            # Use wget for better performance
+            wget.exe "$janAppUrl" -O "$downloadPath"
 
-  #           if (Test-Path $downloadPath) {
-  #             $fileSize = (Get-Item $downloadPath).Length
-  #             Write-Host "Downloaded Jan app successfully. Size: $fileSize bytes"
-  #             Write-Host "File saved to: $downloadPath"
-  #           } else {
-  #             throw "Downloaded file not found"
-  #           }
-  #         }
-  #         catch {
-  #           Write-Error "Failed to download Jan app: $_"
-  #           exit 1
-  #         }
+            if (Test-Path $downloadPath) {
+              $fileSize = (Get-Item $downloadPath).Length
+              Write-Host "Downloaded Jan app successfully. Size: $fileSize bytes"
+              Write-Host "File saved to: $downloadPath"
+            } else {
+              throw "Downloaded file not found"
+            }
+          }
+          catch {
+            Write-Error "Failed to download Jan app: $_"
+            exit 1
+          }
 
-  #     - name: Install Jan app
-  #       shell: powershell
-  #       run: |
-  #         $installerPath = "$env:TEMP\jan-installer.exe"
-  #         $isNightly = [System.Convert]::ToBoolean("$env:IS_NIGHTLY")
+      - name: Install Jan app
+        shell: powershell
+        run: |
+          $installerPath = "$env:TEMP\jan-installer.exe"
+          $isNightly = [System.Convert]::ToBoolean("$env:IS_NIGHTLY")
 
-  #         Write-Host "Installing Jan app..."
-  #         Write-Host "Is nightly build: $isNightly"
+          Write-Host "Installing Jan app..."
+          Write-Host "Is nightly build: $isNightly"
 
-  #         # Try silent installation first
-  #         try {
-  #           Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait -NoNewWindow
-  #           Write-Host "Jan app installed silently"
-  #         }
-  #         catch {
-  #           Write-Host "Silent installation failed, trying normal installation..."
-  #           Start-Process -FilePath $installerPath -Wait -NoNewWindow
-  #         }
+          # Try silent installation first
+          try {
+            Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait -NoNewWindow
+            Write-Host "Jan app installed silently"
+          }
+          catch {
+            Write-Host "Silent installation failed, trying normal installation..."
+            Start-Process -FilePath $installerPath -Wait -NoNewWindow
+          }
 
-  #         # Wait a bit for installation to complete
-  #         Start-Sleep -Seconds 10
+          # Wait a bit for installation to complete
+          Start-Sleep -Seconds 10
 
-  #         # Verify installation based on nightly flag
-  #         if ($isNightly) {
-  #           $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan-nightly\Jan-nightly.exe"
-  #           $processName = "Jan-nightly.exe"
-  #         } else {
-  #           $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan\Jan.exe"
-  #           $processName = "Jan.exe"
-  #         }
+          # Verify installation based on nightly flag
+          if ($isNightly) {
+            $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan-nightly\Jan-nightly.exe"
+            $processName = "Jan-nightly.exe"
+          } else {
+            $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan\Jan.exe"
+            $processName = "Jan.exe"
+          }
 
-  #         if (Test-Path $defaultJanPath) {
-  #           Write-Host "Jan app installed successfully at: $defaultJanPath"
-  #           echo "JAN_APP_PATH=$defaultJanPath" >> $env:GITHUB_ENV
-  #           echo "JAN_PROCESS_NAME=$processName" >> $env:GITHUB_ENV
-  #         } else {
-  #           Write-Warning "Jan app not found at expected location: $defaultJanPath"
-  #           Write-Host "Will auto-detect during test run"
-  #         }
+          if (Test-Path $defaultJanPath) {
+            Write-Host "Jan app installed successfully at: $defaultJanPath"
+            echo "JAN_APP_PATH=$defaultJanPath" >> $env:GITHUB_ENV
+            echo "JAN_PROCESS_NAME=$processName" >> $env:GITHUB_ENV
+          } else {
+            Write-Warning "Jan app not found at expected location: $defaultJanPath"
+            Write-Host "Will auto-detect during test run"
+          }
 
-  #     - name: Install Python dependencies
-  #       working-directory: autoqa
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install -r requirements.txt
+      - name: Install Python dependencies
+        working-directory: autoqa
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-  #     - name: Run Auto QA Tests
-  #       working-directory: autoqa
-  #       shell: powershell
-  #       env:
-  #         RP_TOKEN: ${{ secrets.RP_TOKEN }}
-  #         ENABLE_REPORTPORTAL: 'true'
-  #         RP_ENDPOINT: 'https://reportportal.menlo.ai'
-  #         RP_PROJECT: 'default_personal'
-  #         MAX_TURNS: '50'
-  #         DELAY_BETWEEN_TESTS: '3'
-  #         LAUNCH_NAME: 'CI AutoQA Run - ${{ github.run_number }} - ${{ github.ref_name }}'
-  #       run: |
-  #         Write-Host "Starting Auto QA Tests..."
+      - name: Run Auto QA Tests
+        working-directory: autoqa
+        shell: powershell
+        env:
+          RP_TOKEN: ${{ secrets.RP_TOKEN }}
+          ENABLE_REPORTPORTAL: 'true'
+          RP_ENDPOINT: 'https://reportportal.menlo.ai'
+          RP_PROJECT: 'default_personal'
+          MAX_TURNS: '50'
+          DELAY_BETWEEN_TESTS: '3'
+          LAUNCH_NAME: 'CI AutoQA Run Windows - ${{ github.run_number }} - ${{ github.ref_name }}'
+        run: |
+          Write-Host "Starting Auto QA Tests..."
 
-  #         # Determine parameters based on detected Jan app
-  #         $janAppPath = $env:JAN_APP_PATH
-  #         $processName = $env:JAN_PROCESS_NAME
+          # Determine parameters based on detected Jan app
+          $janAppPath = $env:JAN_APP_PATH
+          $processName = $env:JAN_PROCESS_NAME
 
-  #         Write-Host "Jan app path: $janAppPath"
-  #         Write-Host "Process name: $processName"
+          Write-Host "Jan app path: $janAppPath"
+          Write-Host "Process name: $processName"
 
-  #         # Run the main test with proper arguments
-  #         if ($janAppPath -and $processName) {
-  #           python main.py --enable-reportportal --rp-token "$env:RP_TOKEN" --jan-app-path "$janAppPath" --jan-process-name "$processName"
-  #         } elseif ($janAppPath) {
-  #           python main.py --enable-reportportal --rp-token "$env:RP_TOKEN" --jan-app-path "$janAppPath"
-  #         } else {
-  #           python main.py --enable-reportportal --rp-token "$env:RP_TOKEN"
-  #         }
+          # Run the main test with proper arguments
+          if ($janAppPath -and $processName) {
+            python main.py --enable-reportportal --rp-token "$env:RP_TOKEN" --jan-app-path "$janAppPath" --jan-process-name "$processName"
+          } elseif ($janAppPath) {
+            python main.py --enable-reportportal --rp-token "$env:RP_TOKEN" --jan-app-path "$janAppPath"
+          } else {
+            python main.py --enable-reportportal --rp-token "$env:RP_TOKEN"
+          }
 
-  #     - name: Cleanup after tests
-  #       if: always()
-  #       shell: powershell
-  #       run: |
-  #         Write-Host "Cleaning up after tests..."
+      - name: Cleanup after tests
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Cleaning up after tests..."
 
-  #         # Kill any running Jan processes (both regular and nightly)
-  #         Get-Process -Name "Jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "Jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  #         Get-Process -Name "jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # Kill any running Jan processes (both regular and nightly)
+          Get-Process -Name "Jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "jan" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "Jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "jan-nightly" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-  #         # Remove Jan data folders (both regular and nightly)
-  #         $janAppData = "$env:APPDATA\Jan"
-  #         $janNightlyAppData = "$env:APPDATA\Jan-nightly"
+          # Remove Jan data folders (both regular and nightly)
+          $janAppData = "$env:APPDATA\Jan"
+          $janNightlyAppData = "$env:APPDATA\Jan-nightly"
 
-  #         if (Test-Path $janAppData) {
-  #           Write-Host "Removing $janAppData"
-  #           Remove-Item -Path $janAppData -Recurse -Force -ErrorAction SilentlyContinue
-  #         }
+          if (Test-Path $janAppData) {
+            Write-Host "Removing $janAppData"
+            Remove-Item -Path $janAppData -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-  #         if (Test-Path $janNightlyAppData) {
-  #           Write-Host "Removing $janNightlyAppData"
-  #           Remove-Item -Path $janNightlyAppData -Recurse -Force -ErrorAction SilentlyContinue
-  #         }
+          if (Test-Path $janNightlyAppData) {
+            Write-Host "Removing $janNightlyAppData"
+            Remove-Item -Path $janNightlyAppData -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-  #         # Try to uninstall Jan app silently
-  #         try {
-  #           $isNightly = [System.Convert]::ToBoolean("$env:IS_NIGHTLY")
+          # Try to uninstall Jan app silently
+          try {
+            $isNightly = [System.Convert]::ToBoolean("$env:IS_NIGHTLY")
 
-  #           # Determine uninstaller path based on nightly flag
-  #           if ($isNightly) {
-  #             $uninstallerPath = "$env:LOCALAPPDATA\Programs\jan-nightly\uninstall.exe"
-  #             $installPath = "$env:LOCALAPPDATA\Programs\jan-nightly"
-  #           } else {
-  #             $uninstallerPath = "$env:LOCALAPPDATA\Programs\jan\uninstall.exe"
-  #             $installPath = "$env:LOCALAPPDATA\Programs\jan"
-  #           }
+            # Determine uninstaller path based on nightly flag
+            if ($isNightly) {
+              $uninstallerPath = "$env:LOCALAPPDATA\Programs\jan-nightly\uninstall.exe"
+              $installPath = "$env:LOCALAPPDATA\Programs\jan-nightly"
+            } else {
+              $uninstallerPath = "$env:LOCALAPPDATA\Programs\jan\uninstall.exe"
+              $installPath = "$env:LOCALAPPDATA\Programs\jan"
+            }
 
-  #           Write-Host "Looking for uninstaller at: $uninstallerPath"
+            Write-Host "Looking for uninstaller at: $uninstallerPath"
 
-  #           if (Test-Path $uninstallerPath) {
-  #             Write-Host "Found uninstaller, attempting silent uninstall..."
-  #             Start-Process -FilePath $uninstallerPath -ArgumentList "/S" -Wait -NoNewWindow -ErrorAction SilentlyContinue
-  #             Write-Host "Uninstall completed"
-  #           } else {
-  #             Write-Host "No uninstaller found, attempting manual cleanup..."
+            if (Test-Path $uninstallerPath) {
+              Write-Host "Found uninstaller, attempting silent uninstall..."
+              Start-Process -FilePath $uninstallerPath -ArgumentList "/S" -Wait -NoNewWindow -ErrorAction SilentlyContinue
+              Write-Host "Uninstall completed"
+            } else {
+              Write-Host "No uninstaller found, attempting manual cleanup..."
 
-  #             if (Test-Path $installPath) {
-  #               Write-Host "Removing installation directory: $installPath"
-  #               Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
-  #             }
-  #           }
+              if (Test-Path $installPath) {
+                Write-Host "Removing installation directory: $installPath"
+                Remove-Item -Path $installPath -Recurse -Force -ErrorAction SilentlyContinue
+              }
+            }
 
-  #           Write-Host "Jan app cleanup completed"
-  #         }
-  #         catch {
-  #           Write-Warning "Failed to uninstall Jan app cleanly: $_"
-  #           Write-Host "Manual cleanup may be required"
-  #         }
+            Write-Host "Jan app cleanup completed"
+          }
+          catch {
+            Write-Warning "Failed to uninstall Jan app cleanly: $_"
+            Write-Host "Manual cleanup may be required"
+          }
 
-  #         # Clean up downloaded installer
-  #         $installerPath = "$env:TEMP\jan-installer.exe"
-  #         if (Test-Path $installerPath) {
-  #           Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
-  #         }
+          # Clean up downloaded installer
+          $installerPath = "$env:TEMP\jan-installer.exe"
+          if (Test-Path $installerPath) {
+            Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
+          }
 
-  #         Write-Host "Cleanup completed"
+          Write-Host "Cleanup completed"
 
   ubuntu:
     runs-on: ubuntu-22-04-nvidia-gpu
@@ -298,6 +298,8 @@ jobs:
             x11-utils \
             python3-tk \
             python3-dev \
+            wmctrl \
+            xdotool \
             libnss3-dev \
             libgconf-2-4 \
             libxss1 \
@@ -310,7 +312,8 @@ jobs:
             libpangocairo-1.0-0 \
             libatk1.0-0 \
             libcairo-gobject2 \
-            libgdk-pixbuf2.0-0
+            libgdk-pixbuf2.0-0 \
+            gnome-screenshot
 
       - name: Clean existing Jan installations
         run: |
@@ -429,6 +432,8 @@ jobs:
           MAX_TURNS: '50'
           DELAY_BETWEEN_TESTS: '3'
           LAUNCH_NAME: 'CI AutoQA Run Ubuntu - ${{ github.run_number }} - ${{ github.ref_name }}'
+          LINUX_MODE: 'true'
+          USE_WINDOW_DETECTION: 'false'
         run: |
           echo "Starting Auto QA Tests..."
 

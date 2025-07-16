@@ -21,7 +21,7 @@ contourpy==1.3.2
 cryptography==45.0.5
 cua-agent==0.3.1
 cua-computer==0.3.5
-cua-computer-server==0.1.13
+cua-computer-server==0.1.19
 cua-core==0.1.5
 cua-som==0.1.3
 cycler==0.12.1

@@ -4,10 +4,21 @@ import subprocess
 import psutil
 import time
 import pyautogui
-import pygetwindow as gw
+import platform
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Cross-platform window management
+IS_LINUX = platform.system() == "Linux"
+IS_WINDOWS = platform.system() == "Windows"
+
+if IS_WINDOWS:
+    try:
+        import pygetwindow as gw
+    except ImportError:
+        gw = None
+        logger.warning("pygetwindow not available on this system")
 
 def is_jan_running(jan_process_name="Jan.exe"):
     """
@@ -43,25 +54,77 @@ def force_close_jan(jan_process_name="Jan.exe"):
     else:
         logger.info("No Jan processes found running")
 
+def find_jan_window_linux():
+    """
+    Find Jan window on Linux using wmctrl
+    """
+    try:
+        result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if 'jan' in line.lower() or 'Jan' in line:
+                    # Extract window ID (first column)
+                    window_id = line.split()[0]
+                    logger.info(f"Found Jan window with ID: {window_id}")
+                    return window_id
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError) as e:
+        logger.warning(f"wmctrl command failed: {e}")
+    return None
+
+def maximize_jan_window_linux():
+    """
+    Maximize Jan window on Linux using wmctrl
+    """
+    window_id = find_jan_window_linux()
+    if window_id:
+        try:
+            # Maximize window using wmctrl
+            subprocess.run(['wmctrl', '-i', '-r', window_id, '-b', 'add,maximized_vert,maximized_horz'], 
+                         timeout=5)
+            logger.info("Jan window maximized using wmctrl")
+            return True
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+            logger.warning(f"Failed to maximize with wmctrl: {e}")
+    
+    # Fallback: Try xdotool
+    try:
+        result = subprocess.run(['xdotool', 'search', '--name', 'Jan'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            window_id = result.stdout.strip().split('\n')[0]
+            subprocess.run(['xdotool', 'windowactivate', window_id], timeout=5)
+            subprocess.run(['xdotool', 'key', 'alt+F10'], timeout=5)  # Maximize shortcut
+            logger.info("Jan window maximized using xdotool")
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError) as e:
+        logger.warning(f"xdotool command failed: {e}")
+    
+    return False
+
 def maximize_jan_window():
     """
-    Find and maximize Jan window
+    Find and maximize Jan window (cross-platform)
     """
     try:
         # Wait a bit for window to appear
         time.sleep(2)
         
-        # Method 1: Try to find window by title containing "Jan"
-        windows = gw.getWindowsWithTitle("Jan")
-        if windows:
-            jan_window = windows[0]
-            logger.info(f"Found Jan window: {jan_window.title}")
-            jan_window.maximize()
-            logger.info("Jan window maximized using pygetwindow")
-            return True
+        if IS_LINUX:
+            return maximize_jan_window_linux()
         
-        # Method 2: If not found, try Alt+Space then X (maximize hotkey)
-        logger.info("Jan window not found by title, trying Alt+Space+X hotkey")
+        elif IS_WINDOWS and gw:
+            # Method 1: Try to find window by title containing "Jan"
+            windows = gw.getWindowsWithTitle("Jan")
+            if windows:
+                jan_window = windows[0]
+                logger.info(f"Found Jan window: {jan_window.title}")
+                jan_window.maximize()
+                logger.info("Jan window maximized using pygetwindow")
+                return True
+        
+        # Fallback methods for both platforms
+        # Method 2: Try Alt+Space then X (maximize hotkey) - works on both platforms
+        logger.info("Trying Alt+Space+X hotkey to maximize")
         pyautogui.hotkey('alt', 'space')
         time.sleep(0.5)
         pyautogui.press('x')
@@ -71,19 +134,32 @@ def maximize_jan_window():
     except Exception as e:
         logger.warning(f"Could not maximize Jan window: {e}")
         
-        # Method 3: Try Windows+Up arrow (maximize current window)
+        # Method 3: Platform-specific fallback
         try:
-            logger.info("Trying Windows+Up arrow to maximize")
-            pyautogui.hotkey('win', 'up')
+            if IS_WINDOWS:
+                logger.info("Trying Windows+Up arrow to maximize")
+                pyautogui.hotkey('win', 'up')
+            elif IS_LINUX:
+                logger.info("Trying Alt+F10 to maximize")
+                pyautogui.hotkey('alt', 'F10')
             return True
         except Exception as e2:
             logger.warning(f"All maximize methods failed: {e2}")
             return False
 
-def start_jan_app(jan_app_path=r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.exe"):
+def start_jan_app(jan_app_path=None):
     """
-    Start Jan application in maximized window
+    Start Jan application in maximized window (cross-platform)
     """
+    # Set default path based on platform
+    if jan_app_path is None:
+        if IS_WINDOWS:
+            jan_app_path = r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.exe"
+        elif IS_LINUX:
+            jan_app_path = "/usr/bin/Jan-nightly"  # or "/usr/bin/Jan" for regular
+        else:
+            raise NotImplementedError(f"Platform {platform.system()} not supported")
+    
     logger.info(f"Starting Jan application from: {jan_app_path}")
     
     if not os.path.exists(jan_app_path):
@@ -92,7 +168,13 @@ def start_jan_app(jan_app_path=r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.e
     
     try:
         # Start the Jan application
-        subprocess.Popen([jan_app_path], shell=True)
+        if IS_WINDOWS:
+            subprocess.Popen([jan_app_path], shell=True)
+        elif IS_LINUX:
+            # On Linux, start with DISPLAY environment variable
+            env = os.environ.copy()
+            subprocess.Popen([jan_app_path], env=env)
+        
         logger.info("Jan application started")
         
         # Wait for app to fully load
