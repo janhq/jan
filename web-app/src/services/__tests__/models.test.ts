@@ -247,32 +247,4 @@ describe('models service', () => {
       await expect(startModel(provider, model)).resolves.toBe(undefined)
     })
   })
-
-  describe('configurePullOptions', () => {
-    it('should configure proxy options', async () => {
-      const proxyOptions = {
-        proxyEnabled: true,
-        proxyUrl: 'http://proxy.com',
-        proxyUsername: 'user',
-        proxyPassword: 'pass',
-        proxyIgnoreSSL: false,
-        verifyProxySSL: true,
-        verifyProxyHostSSL: true,
-        verifyPeerSSL: true,
-        verifyHostSSL: true,
-        noProxy: '',
-      }
-
-      // Mock console.log to avoid output during tests
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-      await configurePullOptions(proxyOptions)
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Configuring proxy options:',
-        proxyOptions
-      )
-      consoleSpy.mockRestore()
-    })
-  })
 })

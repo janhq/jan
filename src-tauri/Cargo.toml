@@ -45,6 +45,7 @@ uuid = { version = "1.7", features = ["v4"] }
 env = "1.0.1"
 futures-util = "0.3.31"
 tokio-util = "0.7.14"
+url = "2.5"
 tauri-plugin-dialog = "2.2.1"
 dirs = "6.0.0"
 sysinfo = "0.34.2"

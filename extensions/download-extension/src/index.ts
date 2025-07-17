@@ -9,6 +9,7 @@ export enum Settings {
 interface DownloadItem {
   url: string
   save_path: string
+  proxy?: Record<string, string | string[] | boolean>
 }
 
 type DownloadEvent = {
@@ -30,10 +31,11 @@ export default class DownloadManager extends BaseExtension {
     url: string,
     savePath: string,
     taskId: string,
+    proxyConfig: Record<string, string | string[] | boolean> = {},
     onProgress?: (transferred: number, total: number) => void
   ) {
     return await this.downloadFiles(
-      [{ url, save_path: savePath }],
+      [{ url, save_path: savePath, proxy: proxyConfig }],
       taskId,
       onProgress
     )

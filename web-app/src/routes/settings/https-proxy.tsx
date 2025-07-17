@@ -7,9 +7,8 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
-import { configurePullOptions } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
@@ -45,61 +44,9 @@ function HTTPSProxy() {
   const toggleProxy = useCallback(
     (checked: boolean) => {
       setProxyEnabled(checked)
-      configurePullOptions({
-        proxyUrl,
-        proxyEnabled: checked,
-        proxyUsername,
-        proxyPassword,
-        proxyIgnoreSSL,
-        verifyProxySSL,
-        verifyProxyHostSSL,
-        verifyPeerSSL,
-        verifyHostSSL,
-        noProxy,
-      })
     },
-    [
-      noProxy,
-      proxyIgnoreSSL,
-      proxyPassword,
-      proxyUrl,
-      proxyUsername,
-      setProxyEnabled,
-      verifyHostSSL,
-      verifyPeerSSL,
-      verifyProxyHostSSL,
-      verifyProxySSL,
-    ]
+    [setProxyEnabled]
   )
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      configurePullOptions({
-        proxyUrl,
-        proxyEnabled,
-        proxyUsername,
-        proxyPassword,
-        proxyIgnoreSSL,
-        verifyProxySSL,
-        verifyProxyHostSSL,
-        verifyPeerSSL,
-        verifyHostSSL,
-        noProxy,
-      })
-    }, 300)
-    return () => clearTimeout(handler)
-  }, [
-    noProxy,
-    proxyEnabled,
-    proxyIgnoreSSL,
-    proxyPassword,
-    proxyUrl,
-    proxyUsername,
-    verifyHostSSL,
-    verifyPeerSSL,
-    verifyProxyHostSSL,
-    verifyProxySSL,
-  ])
 
   return (
     <div className="flex flex-col h-full">
