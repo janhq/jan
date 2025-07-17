@@ -404,8 +404,6 @@ export const useChat = () => {
             ? error.message
             : error
         setModelLoadError(`${errorMessage}`)
-        // toast.error(`Error sending message: ${errorMessage}`)
-        // console.error('Error sending message:', error)
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)

@@ -4,10 +4,6 @@ import { ThreadMessage } from '@janhq/core'
 
 import { CheckIcon, ClipboardIcon, SearchCodeIcon } from 'lucide-react'
 
-// import ModalTroubleShooting, {
-//   modalTroubleShootingAtom,
-// } from '@/containers/ModalTroubleShoot'
-
 const ErrorMessage = ({ message }: { message?: ThreadMessage }) => {
   // const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const errorDivRef = useRef<HTMLDivElement>(null)
