@@ -24,6 +24,8 @@
     "type": "separator"
   },
   "llama-cpp": "Local AI Engine",
+  "model-parameters": "Model Parameters",
+
   "privacy-policy": {
     "type": "page",
     "display": "hidden",
@@ -45,6 +47,5 @@
   "settings": "Settings",
   "data-folder": "Jan Data Folder",
   "troubleshooting": "Troubleshooting",
-  "model-parameters": "Model Parameters",
   "privacy": "Privacy"
 }

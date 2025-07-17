@@ -15,7 +15,10 @@
     "title": "TUTORIALS",
     "type": "separator"
   },
-  "server-examples": "Integrations",
+  "continue-dev": "Continue.dev",
+  "llmcord": "LLMCord (Discord)",
+  "n8n": "n8n",
+  "tabby": "Tabby",
 
   "explanation-separator": {
     "title": "EXPLANATION",
@@ -24,11 +27,6 @@
   "llama-cpp": "Local AI Engine",
   "data-folder": "Jan Data Folder",
 
-  "advanced-separator": {
-    "title": "ADVANCED",
-    "type": "separator"
-  },
-  "mcp": "Model Context Protocol",
   "reference-separator": {
     "title": "REFERENCE",
     "type": "separator"
