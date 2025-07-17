@@ -98,6 +98,11 @@ export interface chatCompletionRequest {
   samplers?: string[] | null
   timings_per_token?: boolean | null
   post_sampling_probs?: boolean | null
+  chat_template_kwargs?: chat_template_kdict | null
+}
+
+export interface chat_template_kdict {
+  enable_thinking: false
 }
 
 export interface chatCompletionChunkChoiceDelta {

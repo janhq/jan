@@ -25,7 +25,6 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
-  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -56,7 +55,6 @@ type LlamacppConfig = {
   rope_scale: number
   rope_freq_base: number
   rope_freq_scale: number
-  reasoning_budget: number
   ctx_shift: boolean
 }
 
