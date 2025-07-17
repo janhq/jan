@@ -62,6 +62,13 @@ const config: DocsThemeConfig = {
         <a href="https://github.com/menloresearch/jan" target="_blank">
           <AiOutlineGithub className="text-xl text-black/60 dark:text-white/60" />
         </a>
+
+        <Link
+          href={'/download'}
+          className="hidden md:inline-block mx-2 bg-black dark:bg-white text-white dark:text-black font-medium px-3 py-1 rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm"
+        >
+          Download
+        </Link>
       </div>
     ),
   },
@@ -113,9 +120,7 @@ const config: DocsThemeConfig = {
     defaultMenuCollapseLevel: 1,
     toggleButton: true,
   },
-  toc: {
-    backToTop: true,
-  },
+
   head: function useHead() {
     const { title, frontMatter } = useConfig()
     const titleTemplate = (frontMatter?.title || title) + ' - ' + 'Jan'

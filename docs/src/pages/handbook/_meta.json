@@ -1,0 +1,23 @@
+{
+  "index": {
+    "title": "Handbook"
+  },
+  "strategy": {
+    "title": "Strategy"
+  },
+  "project-management": {
+    "title": "Project Management"
+  },
+  "engineering": {
+    "title": "Engineering"
+  },
+  "product-design": {
+    "title": "Product Design"
+  },
+  "analytics": {
+    "title": "Analytics"
+  },
+  "website-docs": {
+    "title": "Website & Docs"
+  }
+}

@@ -47,7 +47,8 @@
   // tweaks some class nextra
   .nextra-banner-container {
     padding-left: 8px !important;
-    background: radial-gradient(
+    background:
+      radial-gradient(
         58.83% 95.12% at 62.37% 97.91%,
         rgba(238, 203, 255, 0.59) 0%,
         rgba(255, 255, 255, 0) 100%
@@ -77,7 +78,7 @@
     > a:nth-child(2) {
       margin-left: 16px;
     }
-    > a:nth-child(4) {
+    > a:nth-child(3) {
       margin-right: auto !important;
     }
   }

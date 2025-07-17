@@ -7,9 +7,9 @@
       "layout": "raw"
     }
   },
-  "docs": {
+  "models": {
     "type": "page",
-    "title": "Documentation"
+    "title": "Models"
   },
   "local-server": {
     "type": "page",
@@ -40,11 +40,22 @@
   },
   "about": {
     "type": "page",
-    "title": "About"
+    "title": "About",
+    "display": "hidden"
   },
+  "docs": {
+    "type": "page",
+    "title": "Documentation"
+  },
+  "handbook": {
+    "type": "page",
+    "title": "Handbook"
+  },
+
   "blog": {
     "type": "page",
     "title": "Blog",
+    "display": "hidden",
     "theme": {
       "layout": "raw"
     }
@@ -57,6 +68,7 @@
 
   "download": {
     "type": "page",
+    "display": "hidden",
     "theme": {
       "layout": "raw"
     }
