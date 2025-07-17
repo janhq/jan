@@ -105,6 +105,11 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       {...attributes}
       {...listeners}
       onClick={handleClick}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setOpenDropdown(true)
+      }}
       className={cn(
         'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list transition-all',
         isDragging ? 'cursor-move' : 'cursor-pointer',

@@ -17,17 +17,15 @@
     "title": "TUTORIALS",
     "type": "separator"
   },
-  "quickstart": "Quickstart",
   "remote-models": "Connect to Remote Models",
-  "server-examples": "Integrations",
 
   "explanation-separator": {
     "title": "EXPLANATION",
     "type": "separator"
   },
   "llama-cpp": "Local AI Engine",
-  "api-server": "Server Overview",
-  "data-folder": "Jan Data Folder",
+  "model-parameters": "Model Parameters",
+
   "privacy-policy": {
     "type": "page",
     "display": "hidden",
@@ -40,13 +38,14 @@
   },
   "manage-models": "Manage Models",
   "mcp": "Model Context Protocol",
+  "mcp-examples": "MCP Examples",
 
   "reference-separator": {
     "title": "REFERENCE",
     "type": "separator"
   },
   "settings": "Settings",
+  "data-folder": "Jan Data Folder",
   "troubleshooting": "Troubleshooting",
-  "model-parameters": "Model Parameters",
   "privacy": "Privacy"
 }

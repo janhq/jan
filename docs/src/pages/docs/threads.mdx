@@ -1,86 +1,145 @@
 ---
 title: Start Chatting
-description: Manage your interaction with AI models locally.
+description: Download models and manage your conversations with AI models locally.
 keywords:
   [
     Jan,
-    Customizable Intelligence, LLM,
     local AI,
-    privacy focus,
-    free and open source,
-    private and offline,
-    conversational AI,
-    no-subscription fee,
-    large language models,
+    LLM,
+    chat,
     threads,
-    chat history,
-    thread history,
+    models,
+    download,
+    installation,
+    conversations,
   ]
 ---
 
-import { Callout } from 'nextra/components'
-import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2 } from 'lucide-react'
+import { Callout, Steps } from 'nextra/components'
+import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2, Settings } from 'lucide-react'
 
+# Start Chatting
 
-# Chat with a Model
+<Steps>
 
-Jan organizes your conversations with a model into chats or threads, making it easy to track and revisit
-your interactions. This guide will help you effectively manage your chat history.
+### Step 1: Install Jan
 
-## Creating New Conversation/Thread
-1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon on the
-bottom left of Jan.
-2. Select your preferred model in **Model Selector** in input field & start chatting.
+1. [Download Jan](/download)
+2. Install the app ([Mac](/docs/desktop/mac), [Windows](/docs/desktop/windows), [Linux](/docs/desktop/linux))
+3. Launch Jan
 
-<br/>
-![Create New Thread](./_assets/threads-new-chat-updated.png)
+### Step 2: Download a Model
 
-## View Your Chat History
+Jan requires a model to chat. Download one from the Hub:
 
-1. Once you open Jan, the default screen is **Chat**
-2. On the **left sidebar**, you can:
-  - View your **Conversations** and scroll through your history
-  - Click any chat to open the full conversation
+1. Go to the **Hub Tab**
+2. Browse available models (must be GGUF format)
+3. Select one matching your hardware specs
+4. Click **Download**
 
-## Favorites and Recents
-
-Jan helps you quickly access important and recent conversations with **Favorites** and **Recents**
-in the left sidebar:
-- **Favorites**: Pin threads you use often for instant access. Click the three dots icon on the right of the
-thread and a context menu will pop up with the favorite option for you to click on.
-- **Recents**: See your most recently accessed threads for quick navigation.
-
-<br/>
-![Favorites and Recents](./_assets/threads-favorites-and-recents-updated.png)
-
-
-## Edit a Chat Title
-1. Navigate to the **Conversation** that you want to edit title on the sidebar to your left
-2. Hover on the conversation and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Click <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename**
-4. Add new title & save
-
-<br/>
-![Context Menu](./_assets/threads-context-menu-updated.png)
-
-## Delete Thread
+![Download a Model](./_assets/model-management-01.png)
 
 <Callout type="warning">
-There's no undo for chat deletion, so make sure you REALLY want to remove it permanently.
+Models consume memory and processing power. Choose based on your hardware specs.
 </Callout>
 
-When you want to completely remove a thread:
+**HuggingFace models:** Some require an access token. Add yours in **Settings > Model Providers > Llama.cpp > Hugging Face Access Token**.
 
-1. Navigate to the **Thread** that you want to delete in left sidebar
-2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+![Add HF Token](./_assets/hf_token.png)
+
+### Step 3: Enable GPU Acceleration (Optional)
+
+For Windows/Linux with compatible graphics cards:
+
+1. Go to **(<Settings width={16} height={16} style={{display:"inline"}}/>) Settings** > **Hardware**
+2. Toggle **GPUs** to ON
+
+![Turn on GPU acceleration](./_assets/gpu_accl.png)
+
+<Callout type="info">
+Install required drivers before enabling GPU acceleration. See setup guides for [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration).
+</Callout>
+
+### Step 4: Start Chatting
+
+1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon
+2. Select your model in the input field dropdown
+3. Type your message and start chatting
+
+![Create New Thread](./_assets/threads-new-chat-updated.png)
+
+</Steps>
+
+## Managing Conversations
+
+Jan organizes conversations into threads for easy tracking and revisiting.
+
+### View Chat History
+
+- **Left sidebar** shows all conversations
+- Click any chat to open the full conversation
+- **Favorites**: Pin important threads for quick access
+- **Recents**: Access recently used threads
+
+![Favorites and Recents](./_assets/threads-favorites-and-recents-updated.png)
+
+### Edit Chat Titles
+
+1. Hover over a conversation in the sidebar
+2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+3. Click <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename**
+4. Enter new title and save
+
+![Context Menu](./_assets/threads-context-menu-updated.png)
+
+### Delete Threads
+
+<Callout type="warning">
+Thread deletion is permanent. No undo available.
+</Callout>
+
+**Single thread:**
+1. Hover over thread in sidebar
+2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
 3. Click <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete**
 
+**All threads:**
+1. Hover over `Recents` category
+2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon  
+3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All**
 
-<br/>
-![Delete Thread](./_assets/threads-context-menu-updated.png)
+## Advanced Features
 
-### Delete all threads at once
+### Custom Assistant Instructions
 
-In case you need to remove all conversations at once:
-1. Hover on the `Recents` category and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-2. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All**
+Customize how models respond:
+
+1. Use the assistant dropdown in the input field
+2. Or go to the **Assistant tab** to create custom instructions
+3. Instructions work across all models
+
+![Assistant Instruction](./_assets/assistant-dropdown.png)
+
+![Add an Assistant Instruction](./_assets/assistant-edit-dialog.png)
+
+### Model Parameters
+
+Fine-tune model behavior:
+- Click the **Gear icon** next to your model
+- Adjust parameters in **Assistant Settings**
+- Switch models via the **model selector**
+
+![Chat with a Model](./_assets/model-parameters.png)
+
+### Connect Cloud Models (Optional)
+
+Connect to OpenAI, Anthropic, Groq, Mistral, and others:
+
+1. Open any thread
+2. Select a cloud model from the dropdown
+3. Click the **Gear icon** beside the provider
+4. Add your API key (ensure sufficient credits)
+
+![Connect Remote APIs](./_assets/quick-start-03.png)
+
+For detailed setup, see [Remote APIs](/docs/remote-models/openai).

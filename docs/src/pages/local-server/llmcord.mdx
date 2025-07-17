@@ -1,0 +1,78 @@
+---
+title: llmcord (Discord)
+description: A step-by-step guide on integrating Jan with a Discord bot.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Discord integration,
+    Discord,
+    bot,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# llmcord (Discord)
+
+## Integrate llmcord.py with Jan
+
+[llmcord.py](https://github.com/jakobdylanc/discord-llm-chatbot) lets you and your friends chat with LLMs directly in your Discord server.
+
+To integrate Jan with llmcord.py, follow the steps below:
+
+<Steps>
+
+### Step 1: Clone the Repository
+
+Clone the discord bot's [repository](https://github.com/jakobdylanc/discord-llm-chatbot) by using the following command:
+```bash
+git clone https://github.com/jakobdylanc/discord-llm-chatbot.git
+```
+
+### Step 2: Install the Required Libraries
+
+After cloning the repository, run the following command:
+
+```bash
+pip install -r requirements.txt
+```
+
+<Callout type="info">
+  A valid Python installation is required.
+</Callout>
+
+### Step 3: Set the Environment
+
+1. Create a copy of `.env.example`.
+2. Change the name to `.env`.
+3. Set the environment with the following options:
+
+| Setting                 | Instructions                                                                                                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`     | Create a new Discord bot at [discord.com/developers/applications](https://discord.com/developers/applications), obtain a token from the Bot tab, and enable MESSAGE CONTENT INTENT. |
+| `DISCORD_CLIENT_ID`     | Found under the OAuth2 tab of the Discord bot you just made. |
+| `LLM`                   | For Jan, set to `local/openai/(MODEL_NAME)`, where `(MODEL_NAME)` is your loaded model's name. |
+| `LLM_SYSTEM_PROMPT`  | Adjust the bot's behavior as needed. |
+| `LOCAL_SERVER_URL`      | URL of your local API server. For Jan, set it to `http://localhost:1337/v1`. |
+
+For more configuration options, refer to llmcord.py's [README](https://github.com/jakobdylanc/discord-llm-chatbot/tree/main?tab=readme-ov-file#instructions).
+
+### Step 4: Run the Bot
+
+Run the bot by using the following command in your command prompt:
+
+```bash
+python llmcord.py
+```
+
+The bot's invite URL will be printed in the console. Use it to add the bot to your server.
+
+</Steps>
