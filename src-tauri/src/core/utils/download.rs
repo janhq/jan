@@ -752,4 +752,93 @@ mod tests {
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
     }
+    
+    #[test]
+    fn test_download_item_creation() {
+        let item = DownloadItem {
+            url: "https://example.com/file.tar.gz".to_string(),
+            save_path: "models/test.tar.gz".to_string(),
+        };
+        
+        assert_eq!(item.url, "https://example.com/file.tar.gz");
+        assert_eq!(item.save_path, "models/test.tar.gz");
+    }
+    
+    #[test]
+    fn test_download_event_creation() {
+        let event = DownloadEvent {
+            transferred: 1024,
+            total: 2048,
+        };
+        
+        assert_eq!(event.transferred, 1024);
+        assert_eq!(event.total, 2048);
+    }
+    
+    #[test]
+    fn test_err_to_string() {
+        let error = "Test error";
+        let result = err_to_string(error);
+        assert_eq!(result, "Error: Test error");
+    }
+    
+    #[test]
+    fn test_convert_headers_valid() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers.insert("Authorization".to_string(), "Bearer token123".to_string());
+        
+        let result = _convert_headers(&headers);
+        assert!(result.is_ok());
+        
+        let header_map = result.unwrap();
+        assert_eq!(header_map.len(), 2);
+        assert_eq!(header_map.get("Content-Type").unwrap(), "application/json");
+        assert_eq!(header_map.get("Authorization").unwrap(), "Bearer token123");
+    }
+    
+    #[test]
+    fn test_convert_headers_invalid_header_name() {
+        let mut headers = HashMap::new();
+        headers.insert("Invalid\nHeader".to_string(), "value".to_string());
+        
+        let result = _convert_headers(&headers);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_convert_headers_invalid_header_value() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "invalid\nvalue".to_string());
+        
+        let result = _convert_headers(&headers);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_download_manager_state_default() {
+        let state = DownloadManagerState::default();
+        assert!(state.cancel_tokens.is_empty());
+    }
+    
+    #[test]
+    fn test_download_event_serialization() {
+        let event = DownloadEvent {
+            transferred: 512,
+            total: 1024,
+        };
+        
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"transferred\":512"));
+        assert!(json.contains("\"total\":1024"));
+    }
+    
+    #[test]
+    fn test_download_item_deserialization() {
+        let json = r#"{"url":"https://example.com/file.zip","save_path":"downloads/file.zip"}"#;
+        let item: DownloadItem = serde_json::from_str(json).unwrap();
+        
+        assert_eq!(item.url, "https://example.com/file.zip");
+        assert_eq!(item.save_path, "downloads/file.zip");
+    }
 }
