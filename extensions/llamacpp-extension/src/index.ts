@@ -25,7 +25,6 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
-  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -56,7 +55,6 @@ type LlamacppConfig = {
   rope_scale: number
   rope_freq_base: number
   rope_freq_scale: number
-  reasoning_budget: number
   ctx_shift: boolean
 }
 
@@ -855,7 +853,6 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--rope-scale', String(cfg.rope_scale))
       args.push('--rope-freq-base', String(cfg.rope_freq_base))
       args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
-      args.push('--reasoning-budget', String(cfg.reasoning_budget))
     }
 
     console.log('Calling Tauri command llama_load with args:', args)
