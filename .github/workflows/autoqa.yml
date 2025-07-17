@@ -723,7 +723,7 @@ jobs:
           cd autoqa
           echo "Installing Python dependencies..."
           pip install --upgrade pip
-          pip install -r requirements-mac.txt
+          pip install -r requirements.txt
           echo "✅ Python dependencies installed"
 
       - name: Setup ReportPortal environment

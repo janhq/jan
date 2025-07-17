@@ -5,7 +5,7 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from computer import Computer
+# from computer import Computer
 from agent import ComputerAgent, LLM
 
 from utils import is_jan_running, force_close_jan, start_jan_app, get_latest_trajectory_folder
@@ -64,7 +64,6 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     logger.info(f"ReportPortal upload: {'ENABLED' if enable_reportportal else 'DISABLED'}")
     
     trajectory_dir = None
-    test_execution_success = False
     agent_task = None
     monitor_stop_event = threading.Event()
     force_stopped_due_to_turns = False  # Track if test was force stopped
@@ -161,20 +160,16 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
             try:
                 await asyncio.wait_for(agent_task, timeout=600)  # 10 minute timeout as backup
                 if not monitor_stop_event.is_set():
-                    test_execution_success = True
                     logger.info(f"Successfully completed test execution: {path}")
                 else:
                     logger.warning(f"Test {path} was stopped due to turn limit")
-                    test_execution_success = False
                     
             except asyncio.TimeoutError:
                 logger.warning(f"Test {path} timed out after 10 minutes")
                 agent_task.cancel()
-                test_execution_success = False
                 
             except asyncio.CancelledError:
                 logger.warning(f"Test {path} was cancelled due to turn limit")
-                test_execution_success = False
                 
         finally:
             # Stop monitoring
@@ -182,7 +177,6 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
             
     except Exception as e:
         logger.error(f"Error running test {path}: {e}")
-        test_execution_success = False
         monitor_stop_event.set()
         # Update result data for exception case
         test_result_data.update({
@@ -250,8 +244,6 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                 logger.error(f"Error uploading results for {path}: {upload_error}")
 
         # Always process results for consistency (both RP and local mode)
-                logger.error(f"Error uploading results for {path}: {upload_error}")
-        # Always process results for consistency (both RP and local mode)
         trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
         if trajectory_dir:
             # Extract test result for processing
@@ -259,7 +251,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
             
             if force_stopped_due_to_turns:
                 final_status = "FAILED"
-                status_message = "exceeded maximum turn limit (30 turns)"
+                status_message = "exceeded maximum turn limit ({} turns)".format(max_turns)
                 test_result_data.update({
                     "success": False,
                     "status": final_status,

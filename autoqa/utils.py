@@ -225,9 +225,9 @@ def start_jan_app(jan_app_path=None):
     # Set default path based on platform
     if jan_app_path is None:
         if IS_WINDOWS:
-            jan_app_path = r"C:\Users\tomin\AppData\Local\Programs\jan\Jan.exe"
+            jan_app_path = os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan.exe")
         elif IS_LINUX:
-            jan_app_path = "/usr/bin/Jan-nightly"  # or "/usr/bin/Jan" for regular
+            jan_app_path = "/usr/bin/Jan"  # or "/usr/bin/Jan" for regular
         elif IS_MACOS:
             jan_app_path = "/Applications/Jan.app/Contents/MacOS/Jan"  # Default macOS path
         else:
@@ -278,9 +278,9 @@ def start_jan_app(jan_app_path=None):
             logger.warning("Could not maximize Jan application window")
         
         # Wait a bit more after maximizing
-        time.sleep(2)
+        time.sleep(10)
         logger.info("Jan application should be ready")
-        time.sleep(20)  # Additional wait to ensure everything is ready
+        time.sleep(10)  # Additional wait to ensure everything is ready
         
     except Exception as e:
         logger.error(f"Error starting Jan application: {e}")

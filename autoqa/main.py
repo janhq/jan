@@ -32,24 +32,20 @@ def get_computer_config():
     """Get computer configuration based on platform"""
     if IS_WINDOWS:
         return {
-            "provider_type": "winsandbox",
             "os_type": "windows"
         }
     elif IS_LINUX:
         return {
-            "provider_type": "nixsandbox", 
             "os_type": "linux"
         }
     elif IS_MACOS:
         return {
-            "provider_type": "nixsandbox",  # or "macsandbox" if available
             "os_type": "macos"
         }
     else:
         # Default fallback
         logger.warning(f"Unknown platform {platform.system()}, using Linux config as fallback")
         return {
-            "provider_type": "nixsandbox",
             "os_type": "linux"
         }
 
@@ -76,9 +72,7 @@ def get_default_jan_path():
     elif IS_LINUX:
         # Linux possible locations
         possible_paths = [
-            "/usr/bin/Jan-nightly",
-            "/usr/bin/Jan", 
-            "/usr/local/bin/Jan-nightly",
+            "/usr/bin/Jan",
             "/usr/local/bin/Jan",
             os.path.expanduser("~/Applications/Jan/Jan"),
             "/opt/Jan/Jan"
@@ -90,7 +84,7 @@ def get_default_jan_path():
                 return path
         
         # Default to nightly build path
-        return "/usr/bin/Jan-nightly"
+        return "/usr/bin/Jan"
     
     elif IS_MACOS:
         # macOS defaults
@@ -408,7 +402,6 @@ async def main():
         logger.info(f"Using computer config: {computer_config}")
         
         computer = Computer(
-            provider_type=computer_config["provider_type"], 
             os_type=computer_config["os_type"], 
             use_host_computer_server=True
         )

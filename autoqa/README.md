@@ -35,9 +35,6 @@ cd autoqa
 ```bash
 ## For Windows and Linux
 pip install -r requirements.txt
-
-## For macOS
-pip install -r requirements-mac.txt
 ```
 
 3. Ensure Jan application is installed in one of the default locations:
