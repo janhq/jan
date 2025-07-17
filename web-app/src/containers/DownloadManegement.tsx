@@ -182,7 +182,9 @@ export function DownloadManagement() {
       getProviders().then(setProviders)
       toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
-        description: t('common:toast.downloadComplete.description', { modelId: state.modelId }),
+        description: t('common:toast.downloadComplete.description', {
+          modelId: state.modelId,
+        }),
       })
     },
     [removeDownload, removeLocalDownloadingModel, setProviders, t]
@@ -237,10 +239,14 @@ export function DownloadManagement() {
           <PopoverTrigger asChild>
             {isLeftPanelOpen ? (
               <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md my-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
-                <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
-                  {downloadCount}
+                <div className="text-left-panel-fg/80 font-medium flex gap-2">
+                  <span>{t('downloads')}</span>
+                  <span>
+                    <div className="bg-primary font-bold size-5 rounded-full  flex items-center justify-center text-primary-fg">
+                      {downloadCount}
+                    </div>
+                  </span>
                 </div>
-                <p className="text-left-panel-fg/80 font-medium">{t('downloads')}</p>
                 <div className="mt-2 flex items-center justify-between space-x-2">
                   <Progress value={overallProgress * 100} />
                   <span className="text-xs font-medium text-left-panel-fg/80 shrink-0">
@@ -252,7 +258,7 @@ export function DownloadManagement() {
               <div className="fixed bottom-4 left-4 z-50 size-10 bg-main-view border-2 border-main-view-fg/10 rounded-full shadow-md cursor-pointer flex items-center justify-center">
                 <div className="relative">
                   <IconDownload
-                    className="text-left-panel-fg/50 -mt-1"
+                    className="text-main-view-fg/50 -mt-1"
                     size={20}
                   />
                   <div className="bg-primary font-bold size-5 rounded-full absolute -top-4 -right-4 flex items-center justify-center text-primary-fg">
@@ -272,7 +278,9 @@ export function DownloadManagement() {
           >
             <div className="flex flex-col">
               <div className="p-2 py-1.5 bg-main-view-fg/5 border-b border-main-view-fg/6">
-                <p className="text-xs text-main-view-fg/70">{t('downloading')}</p>
+                <p className="text-xs text-main-view-fg/70">
+                  {t('downloading')}
+                </p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
                 {appUpdateState.isDownloading && (
@@ -309,10 +317,15 @@ export function DownloadManagement() {
                           title="Cancel download"
                           onClick={() => {
                             abortDownload(download.name).then(() => {
-                              toast.info(t('common:toast.downloadCancelled.title'), {
-                                id: 'cancel-download',
-                                description: t('common:toast.downloadCancelled.description'),
-                              })
+                              toast.info(
+                                t('common:toast.downloadCancelled.title'),
+                                {
+                                  id: 'cancel-download',
+                                  description: t(
+                                    'common:toast.downloadCancelled.description'
+                                  ),
+                                }
+                              )
                               if (downloadProcesses.length === 0) {
                                 setIsPopoverOpen(false)
                               }

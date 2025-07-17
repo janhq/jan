@@ -38,7 +38,7 @@ function ModelProviders() {
   const [name, setName] = useState('')
 
   const createProvider = useCallback(() => {
-    if (providers.some((e) => e.provider === name)) {
+    if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
       toast.error(t('providerAlreadyExists', { name }))
       return
     }

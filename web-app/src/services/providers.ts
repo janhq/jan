@@ -210,7 +210,9 @@ export const fetchModelsFromProvider = async (
       return data.data.map((model: { id: string }) => model.id).filter(Boolean)
     } else if (Array.isArray(data)) {
       // Direct array format: ["model-id1", "model-id2", ...]
-      return data.filter(Boolean)
+      return data
+        .filter(Boolean)
+        .map((model) => ('id' in model ? model.id : model))
     } else if (data.models && Array.isArray(data.models)) {
       // Alternative format: { models: [...] }
       return data.models
