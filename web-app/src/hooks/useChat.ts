@@ -367,7 +367,7 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'cortex')
+            await stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -433,6 +433,7 @@ export const useChat = () => {
       showIncreaseContextSizeModal,
       increaseModelContextSize,
       toggleOnContextShifting,
+      setModelLoadError,
     ]
   )
 
