@@ -223,3 +223,49 @@ jobs:
           RUN_ID=${{ github.run_id }}
           COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
           gh pr comment $PR_URL --body "$COMMENT"
+
+  # AutoQA trigger for S3 builds
+  trigger-autoqa-s3:
+    needs:
+      [
+        build-macos,
+        build-windows-x64,
+        build-linux-x64,
+        get-update-version,
+        set-public-provider,
+        sync-temp-to-latest,
+      ]
+    if: needs.set-public-provider.outputs.public_provider == 'aws-s3'
+    uses: ./.github/workflows/autoqa-template.yml
+    with:
+      jan_app_windows_source: 'https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}_x64-setup.exe'
+      jan_app_ubuntu_source: 'https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}_amd64.deb'
+      jan_app_macos_source: 'https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}_universal.dmg'
+      is_nightly: true
+      source_type: 'url'
+    secrets:
+      RP_TOKEN: ${{ secrets.RP_TOKEN }}
+
+  # AutoQA trigger for artifact builds
+  trigger-autoqa-artifacts:
+    needs:
+      [
+        build-macos,
+        build-windows-x64,
+        build-linux-x64,
+        get-update-version,
+        set-public-provider,
+      ]
+    if: needs.set-public-provider.outputs.public_provider == 'none'
+    uses: ./.github/workflows/autoqa-template.yml
+    with:
+      jan_app_windows_source: '' # Not needed for artifacts
+      jan_app_ubuntu_source: '' # Not needed for artifacts
+      jan_app_macos_source: '' # Not needed for artifacts
+      is_nightly: true
+      source_type: 'local'
+      artifact_name_windows: 'jan-windows-${{ needs.get-update-version.outputs.new_version }}'
+      artifact_name_ubuntu: 'jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}-deb'
+      artifact_name_macos: 'jan-nightly-mac-universal-${{ needs.get-update-version.outputs.new_version }}.dmg'
+    secrets:
+      RP_TOKEN: ${{ secrets.RP_TOKEN }}
