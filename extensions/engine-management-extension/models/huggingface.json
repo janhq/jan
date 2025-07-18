@@ -4,7 +4,7 @@
     "object": "model",
     "name": "Kimi-K2-Instruct",
     "version": "1.0",
-    "description": "Moonshot's Kimi K2 model with 131k context and tool calling support",
+    "description": "1T parameters Moonshot chat model tuned for tool-aware, nuanced responses.",
     "inference_params": {
       "temperature": 0.6,
       "top_p": 1.0,
@@ -19,7 +19,7 @@
     "object": "model",
     "name": "DeepSeek-R1-0528",
     "version": "1.0",
-    "description": "DeepSeek's reasoning model with 163k context, tool calling support, and open weights",
+    "description": "DeepSeek's flagship reasoning engine with open weights and advanced tool control.",
     "inference_params": {
       "temperature": 0.6,
       "top_p": 0.95,
@@ -34,7 +34,7 @@
     "object": "model",
     "name": "DeepSeek-V3-0324",
     "version": "1.0",
-    "description": "DeepSeek V3 with 16k context, tool calling support, and open weights",
+    "description": "Streamlined DeepSeek model focused on fast, high-quality completions and tool use.",
     "inference_params": {
       "temperature": 0.3,
       "top_p": 0.95,
