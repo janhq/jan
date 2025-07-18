@@ -875,7 +875,6 @@ export default class llamacpp_extension extends AIEngine {
       })
 
       // Store the session info for later use
-      console.log(sInfo)
       this.activeSessions.set(sInfo.pid, sInfo)
       await this.waitForModelLoad(sInfo)
 
@@ -970,17 +969,18 @@ export default class llamacpp_extension extends AIEngine {
           if (!trimmedLine || trimmedLine === 'data: [DONE]') {
             continue
           }
-          console.log(trimmedLine)
 
           if (trimmedLine.startsWith('data: ')) {
             jsonStr = trimmedLine.slice(6)
           } else if (trimmedLine.startsWith('error: ')) {
-              jsonStr = trimmedLine.slice(7)
-              const error = JSON.parse(jsonStr)
-              throw new Error(error.message)
+            jsonStr = trimmedLine.slice(7)
+            const error = JSON.parse(jsonStr)
+            throw new Error(error.message)
+          } else {
+            // it should not normally reach here
+            throw new Error('Malformed chunk')
           }
           try {
-            console.log(jsonStr)
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
             yield chunk
