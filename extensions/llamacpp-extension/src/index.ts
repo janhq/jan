@@ -805,6 +805,7 @@ export default class llamacpp_extension extends AIEngine {
       modelConfig.model_path,
     ])
     args.push('--jinja')
+    args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
     args.push('-a', modelId)
     args.push('--port', String(port))
