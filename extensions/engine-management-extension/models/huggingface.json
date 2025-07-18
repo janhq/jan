@@ -1,0 +1,47 @@
+[
+  {
+    "model": "moonshotai/Kimi-K2-Instruct:groq",
+    "object": "model",
+    "name": "Kimi-K2-Instruct",
+    "version": "1.0",
+    "description": "Moonshot's Kimi K2 model with 131k context and tool calling support",
+    "inference_params": {
+      "temperature": 0.6,
+      "top_p": 1.0,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  },
+  {
+    "model": "deepseek-ai/DeepSeek-R1-0528",
+    "object": "model",
+    "name": "DeepSeek-R1-0528",
+    "version": "1.0",
+    "description": "DeepSeek's reasoning model with 163k context, tool calling support, and open weights",
+    "inference_params": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  },
+  {
+    "model": "deepseek-ai/DeepSeek-V3-0324",
+    "object": "model",
+    "name": "DeepSeek-V3-0324",
+    "version": "1.0",
+    "description": "DeepSeek V3 with 16k context, tool calling support, and open weights",
+    "inference_params": {
+      "temperature": 0.3,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  }
+]
