@@ -875,7 +875,6 @@ export default class llamacpp_extension extends AIEngine {
       })
 
       // Store the session info for later use
-      console.log(sInfo)
       this.activeSessions.set(sInfo.pid, sInfo)
       await this.waitForModelLoad(sInfo)
 
@@ -950,6 +949,7 @@ export default class llamacpp_extension extends AIEngine {
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
+    let jsonStr = ''
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -971,13 +971,23 @@ export default class llamacpp_extension extends AIEngine {
           }
 
           if (trimmedLine.startsWith('data: ')) {
-            const jsonStr = trimmedLine.slice(6)
-            try {
-              const chunk = JSON.parse(jsonStr) as chatCompletionChunk
-              yield chunk
-            } catch (e) {
-              console.error('Error parsing JSON from stream:', e)
-            }
+            jsonStr = trimmedLine.slice(6)
+          } else if (trimmedLine.startsWith('error: ')) {
+            jsonStr = trimmedLine.slice(7)
+            const error = JSON.parse(jsonStr)
+            throw new Error(error.message)
+          } else {
+            // it should not normally reach here
+            throw new Error('Malformed chunk')
+          }
+          try {
+            const data = JSON.parse(jsonStr)
+            const chunk = data as chatCompletionChunk
+            yield chunk
+          } catch (e) {
+            console.error('Error parsing JSON from stream or server error:', e)
+            // re‑throw so the async iterator terminates with an error
+            throw e
           }
         }
       }
@@ -1004,7 +1014,6 @@ export default class llamacpp_extension extends AIEngine {
     const result = await invoke<boolean>('is_process_running', {
       pid: sessionInfo.pid,
     })
-    console.log(`is_process_running result: ${result}`)
     if (result) {
       try {
         await fetch(`http://localhost:${sessionInfo.port}/health`)
