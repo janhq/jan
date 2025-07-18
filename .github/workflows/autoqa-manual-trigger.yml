@@ -7,17 +7,17 @@ on:
         description: 'URL to download Jan app for Windows (.exe)'
         required: true
         type: string
-        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-739_x64-setup.exe'
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.5-758_x64-setup.exe'
       jan_app_url_ubuntu:
         description: 'URL to download Jan app for Ubuntu (.deb)'
         required: true
         type: string
-        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-739_amd64.deb'
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.5-758_amd64.deb'
       jan_app_url_macos:
         description: 'URL to download Jan app for macOS (.dmg)'
         required: true
         type: string
-        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-739_universal.dmg'
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.5-758_universal.dmg'
       is_nightly:
         description: 'Is this a nightly build?'
         required: true

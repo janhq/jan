@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      DEFAULT_JAN_APP_URL: 'https://catalog.jan.ai/windows/Jan-nightly_0.6.4-739_x64-setup.exe'
+      DEFAULT_JAN_APP_URL: 'https://catalog.jan.ai/windows/Jan-nightly_0.6.5-758_x64-setup.exe'
       DEFAULT_IS_NIGHTLY: 'true'
 
     steps:

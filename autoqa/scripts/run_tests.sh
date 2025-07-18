@@ -51,6 +51,14 @@ if [ "$PLATFORM" = "macos" ]; then
     fi
 fi
 
+# Change to autoqa directory to ensure correct working directory
+cd "$(dirname "$0")/.."
+echo "Current working directory: $(pwd)"
+echo "Contents of current directory:"
+ls -la
+echo "Contents of trajectories directory (if exists):"
+ls -la trajectories/ 2>/dev/null || echo "trajectories directory not found"
+
 # Run the main test with proper arguments
 if [ -n "$JAN_APP_PATH" ] && [ -n "$PROCESS_NAME" ]; then
     python main.py --enable-reportportal --rp-token "$RP_TOKEN" --jan-app-path "$JAN_APP_PATH" --jan-process-name "$PROCESS_NAME"

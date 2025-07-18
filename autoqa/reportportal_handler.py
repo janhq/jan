@@ -246,8 +246,12 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
         
         # Upload screen recording video first
         if video_path and os.path.exists(video_path):
+            logger.info(f"Attempting to upload video: {video_path}")
+            logger.info(f"Video file size: {os.path.getsize(video_path)} bytes")
             try:
                 with open(video_path, "rb") as video_file:
+                    video_data = video_file.read()
+                    logger.info(f"Read video data: {len(video_data)} bytes")
                     client.log(
                         time=timestamp(),
                         level="INFO",
@@ -255,11 +259,11 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
                         item_id=test_item_id,
                         attachment={
                             "name": f"test_recording_{formatted_test_path}.mp4",
-                            "data": video_file.read(),
+                            "data": video_data,
                             "mime": "video/x-msvideo"
                         }
                     )
-                logger.info(f"Uploaded screen recording: {video_path}")
+                logger.info(f"Successfully uploaded screen recording: {video_path}")
             except Exception as e:
                 logger.error(f"Error uploading screen recording: {e}")
                 client.log(
@@ -269,6 +273,7 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
                     item_id=test_item_id
                 )
         else:
+            logger.warning(f"Video upload skipped - video_path: {video_path}, exists: {os.path.exists(video_path) if video_path else 'N/A'}")
             client.log(
                 time=timestamp(),
                 level="WARNING",

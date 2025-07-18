@@ -36,7 +36,10 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     
     # Create trajectory_dir from path (remove .txt extension)
     trajectory_name = str(Path(path).with_suffix(''))
-    trajectory_base_dir = f"trajectories/{trajectory_name.replace(os.sep, '/')}"
+    trajectory_base_dir = os.path.abspath(f"trajectories/{trajectory_name.replace(os.sep, '/')}")
+    
+    # Ensure trajectories directory exists
+    os.makedirs(os.path.dirname(trajectory_base_dir), exist_ok=True)
     
     # Create recordings directory
     recordings_dir = "recordings"
@@ -46,7 +49,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_test_name = trajectory_name.replace('/', '_').replace('\\', '_')
     video_filename = f"{safe_test_name}_{current_time}.mp4"
-    video_path = os.path.join(recordings_dir, video_filename)
+    video_path = os.path.abspath(os.path.join(recordings_dir, video_filename))
     
     # Initialize result tracking
     test_result_data = {
@@ -58,6 +61,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     }
     
     logger.info(f"Starting test: {path}")
+    logger.info(f"Current working directory: {os.getcwd()}")
     logger.info(f"Trajectory base directory: {trajectory_base_dir}")
     logger.info(f"Screen recording will be saved to: {video_path}")
     logger.info(f"Using model: {agent_config['model_name']} from {agent_config['model_base_url']}")
@@ -196,9 +200,16 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
         
         # Step 8: Upload results to ReportPortal only if enabled
         if enable_reportportal and rp_client and launch_id:
+            # Get trajectory folder first
+            trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
+            
             try:
                 if trajectory_dir:
                     logger.info(f"Uploading results to ReportPortal for: {path}")
+                    logger.info(f"Video path for upload: {video_path}")
+                    logger.info(f"Video exists: {os.path.exists(video_path)}")
+                    if os.path.exists(video_path):
+                        logger.info(f"Video file size: {os.path.getsize(video_path)} bytes")
                     upload_test_results_to_rp(rp_client, launch_id, path, trajectory_dir, force_stopped_due_to_turns, video_path)
                 else:
                     logger.warning(f"Test completed but no trajectory found for: {path}")
@@ -242,9 +253,12 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                     )
             except Exception as upload_error:
                 logger.error(f"Error uploading results for {path}: {upload_error}")
+        else:
+            # For non-ReportPortal mode, still get trajectory for final results
+            trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
 
         # Always process results for consistency (both RP and local mode)
-        trajectory_dir = get_latest_trajectory_folder(trajectory_base_dir)
+        # trajectory_dir is already set above, no need to call get_latest_trajectory_folder again
         if trajectory_dir:
             # Extract test result for processing
             from reportportal_handler import extract_test_result_from_trajectory
