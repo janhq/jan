@@ -1,6 +1,6 @@
 ---
-title: llama.cpp
-description: A step-by-step guide on how to customize the llama.cpp engine.
+title: llama.cpp Engine
+description: Understand and configure Jan's local AI engine for running models on your hardware.
 keywords:
   [
     Jan,
@@ -27,106 +27,105 @@ import { Tabs } from 'nextra/components'
 import { Callout, Steps } from 'nextra/components'
 import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
 
-# Local Model Management
+# Local AI Engine (llama.cpp)
 
-## Overview
-Jan uses **llama.cpp** for running local AI models. You can find its settings in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
+## What is llama.cpp?
 
-<br/>
+llama.cpp is the engine that runs AI models locally on your computer. Think of it as the software that takes an AI model file and makes it actually work on your hardware - whether that's your CPU, graphics card, or Apple's M-series chips.
+
+Originally created by Georgi Gerganov, llama.cpp is designed to run large language models efficiently on consumer hardware without requiring specialized AI accelerators or cloud connections.
+
+## Why This Matters
+
+**Privacy**: Your conversations never leave your computer
+**Cost**: No monthly subscription fees or API costs
+**Speed**: No internet required once models are downloaded
+**Control**: Choose exactly which models to run and how they behave
+
+## Accessing Engine Settings
+
+Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
+
 ![llama.cpp](./_assets/llama.cpp-01-updated.png)
-<br/>
 
-These settings are for advanced users, you would want to check these settings when:
-- Your AI models are running slowly or not working
-- You've installed new hardware (like a graphics card)
-- You want to tinker & test performance with different [backends](/docs/local-engines/llama-cpp#available-backends)
+<Callout type="info">
+These are advanced settings. You typically only need to adjust them if models aren't working properly or you want to optimize performance for your specific hardware.
+</Callout>
 
-## Engine Version and Updates
-- **Engine Version**: View current version of llama.cpp engine
-- **Check Updates**: Verify if a newer version is available & install available updates when it's available
+## Engine Management
 
+| Feature | What It Does | When You Need It |
+|---------|-------------|------------------|
+| **Engine Version** | Shows which version of llama.cpp you're running | Check compatibility with newer models |
+| **Check Updates** | Downloads newer engine versions | When new models require updated engine |
+| **Backend Selection** | Choose the version optimized for your hardware | After installing new graphics cards or when performance is poor |
 
-## Available Backends
+## Hardware Backends
 
-Jan offers different backend variants for **llama.cpp** based on your operating system, you can:
-- Download different backends as needed
-- Switch between backends for different hardware configurations
-- View currently installed backends in the list
+Jan offers different backend versions optimized for your specific hardware. Think of these as different "drivers" - each one is tuned for particular processors or graphics cards.
 
 <Callout type="warning">
-Choose the backend that matches your hardware. Using the wrong variant may cause performance issues or prevent models from loading.
+Using the wrong backend can make models run slowly or fail to load. Pick the one that matches your hardware.
 </Callout>
 
 <Tabs items={['Windows', 'Linux', 'macOS']}>
 
 <Tabs.Tab>
-### CUDA Support (NVIDIA GPUs)
-- `llama.cpp-avx-cuda-11-7`
-- `llama.cpp-avx-cuda-12-0`
-- `llama.cpp-avx2-cuda-11-7`
-- `llama.cpp-avx2-cuda-12-0`
-- `llama.cpp-avx512-cuda-11-7`
-- `llama.cpp-avx512-cuda-12-0`
-- `llama.cpp-noavx-cuda-11-7`
-- `llama.cpp-noavx-cuda-12-0`
 
-### CPU Only
-- `llama.cpp-avx`
-- `llama.cpp-avx2`
-- `llama.cpp-avx512`
-- `llama.cpp-noavx`
+### NVIDIA Graphics Cards (Recommended for Speed)
+Choose based on your CUDA version (check NVIDIA Control Panel):
 
-### Other Accelerators
-- `llama.cpp-vulkan`
+**For CUDA 12.0:**
+- `llama.cpp-avx2-cuda-12-0` (most common)
+- `llama.cpp-avx512-cuda-12-0` (newer Intel/AMD CPUs)
+
+**For CUDA 11.7:**
+- `llama.cpp-avx2-cuda-11-7` (most common)
+- `llama.cpp-avx512-cuda-11-7` (newer Intel/AMD CPUs)
+
+### CPU Only (No Graphics Card Acceleration)
+- `llama.cpp-avx2` (most modern CPUs)
+- `llama.cpp-avx512` (newer Intel/AMD CPUs)
+- `llama.cpp-avx` (older CPUs)
+- `llama.cpp-noavx` (very old CPUs)
+
+### Other Graphics Cards
+- `llama.cpp-vulkan` (AMD, Intel Arc, some others)
 
 <Callout type="info">
-- For detailed hardware compatibility, please visit our guide for [Windows](/docs/desktop/windows#compatibility).
-- AVX, AVX2, and AVX-512 are CPU instruction sets. For best performance, use the most advanced instruction set your CPU supports.
-- CUDA versions should match your installed NVIDIA drivers.
+**Quick Test**: Start with `avx2-cuda-12-0` if you have an NVIDIA card, or `avx2` for CPU-only. If it doesn't work, try the `avx` variant.
 </Callout>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
-### CUDA Support (NVIDIA GPUs)
-- `llama.cpp-avx-cuda-11-7`
-- `llama.cpp-avx-cuda-12-0`
-- `llama.cpp-avx2-cuda-11-7`
-- `llama.cpp-avx2-cuda-12-0`
-- `llama.cpp-avx512-cuda-11-7`
-- `llama.cpp-avx512-cuda-12-0`
-- `llama.cpp-noavx-cuda-11-7`
-- `llama.cpp-noavx-cuda-12-0`
+
+### NVIDIA Graphics Cards
+Same CUDA options as Windows:
+- `llama.cpp-avx2-cuda-12-0` (most common)
+- `llama.cpp-avx2-cuda-11-7` (older drivers)
 
 ### CPU Only
-- `llama.cpp-avx`
-- `llama.cpp-avx2`
-- `llama.cpp-avx512`
-- `llama.cpp-noavx`
+- `llama.cpp-avx2` (most modern CPUs)
+- `llama.cpp-avx512` (newer Intel/AMD CPUs)
+- `llama.cpp-arm64` (ARM processors like Raspberry Pi)
 
-### Other Accelerators
-- `llama.cpp-vulkan`
-- `llama.cpp-arm64`
-
-<Callout type="info">
-- For detailed hardware compatibility, please visit our guide for [Linux](docs/desktop/linux).
-- AVX, AVX2, and AVX-512 are CPU instruction sets. For best performance, use the most advanced instruction set your CPU supports.
-- CUDA versions should match your installed NVIDIA drivers.
-</Callout>
+### Other Graphics Cards
+- `llama.cpp-vulkan` (AMD, Intel graphics)
 
 </Tabs.Tab>
 
 <Tabs.Tab>
-### Apple Silicon
-- `llama.cpp-mac-arm64`: For M1/M2/M3 Macs
 
-### Intel
-- `llama.cpp-mac-amd64`: For Intel-based Macs
+### Apple Silicon (M1/M2/M3/M4)
+- `llama.cpp-mac-arm64` (recommended)
+
+### Intel Macs
+- `llama.cpp-mac-amd64`
 
 <Callout type="info">
-For detailed hardware compatibility, please visit our guide for [Mac](/docs/desktop/mac#compatibility).
+Apple Silicon Macs automatically use the GPU through Metal - no additional setup needed.
 </Callout>
-
 
 </Tabs.Tab>
 
@@ -134,32 +133,75 @@ For detailed hardware compatibility, please visit our guide for [Mac](/docs/desk
 
 ## Performance Settings
 
+These control how efficiently models run:
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Continuous Batching** | - Enables processing multiple requests simultaneously<br></br>- Improves throughput for concurrent operations | Enabled |
-| **Parallel Operations** | - Number of prompts to run in parallel<br></br>- Affects model inference speed | 4 |
-| **CPU Threads** | - Number of CPU cores to use when running without GPU<br></br>- Higher thread counts may improve performance but increase CPU usage | Auto-detected based on your system's capabilities |
-
-
+| Setting | What It Does | Recommended Value | Impact |
+|---------|-------------|------------------|---------|
+| **Continuous Batching** | Process multiple requests at once | Enabled | Faster when using multiple tools or having multiple conversations |
+| **Parallel Operations** | How many requests to handle simultaneously | 4 | Higher = more multitasking, but uses more memory |
+| **CPU Threads** | How many processor cores to use | Auto-detected | More threads can speed up CPU processing |
 
 ## Memory Settings
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Flash Attention** | - Optimizes attention computation<br></br>- Reduces memory usage<br></br>- Recommended for most cases | Enabled |
-| **Caching** | - Enable to store recent prompts and responses<br></br>- Improves response time for repeated prompts | Enabled |
-| **KV Cache Type** | - KV cache implementation type; controls memory usage and precision trade-off<br></br>- Options:<br></br>• f16 (most stable)<br></br>• q8_0 (balanced)<br></br>• q4_0 (lowest memory) | f16 |
-| **mmap** | - Enables memory-mapped model loading<br></br>- Reduces memory usage<br></br>- Recommended for large models | Enabled |
-| **Context Shift** | - Automatically shifts the context window when the model is unable to process the entire prompt<br/> - Ensures that the most relevant information is always included <br/> - Recommended for long conversations and multiple tool calls | Disabled |
+These control how models use your computer's memory:
 
+| Setting | What It Does | Recommended Value | When to Change |
+|---------|-------------|------------------|----------------|
+| **Flash Attention** | More efficient memory usage | Enabled | Leave enabled unless you have problems |
+| **Caching** | Remember recent conversations | Enabled | Speeds up follow-up questions |
+| **KV Cache Type** | Memory precision trade-off | f16 | Change to q8_0 or q4_0 if running out of memory |
+| **mmap** | Load models more efficiently | Enabled | Helps with large models |
+| **Context Shift** | Handle very long conversations | Disabled | Enable for very long chats or multiple tool calls |
 
-## Best Practices
-- Start with default settings
-- Adjust based on your hardware capabilities
-- Monitor system performance
-- Test changes with your specific use case
+### KV Cache Types Explained
+- **f16**: Most stable, uses more memory
+- **q8_0**: Balanced memory usage and quality  
+- **q4_0**: Uses least memory, slight quality loss
+
+## Troubleshooting Common Issues
+
+**Models won't load:**
+- Try a different backend (switch from CUDA to CPU or vice versa)
+- Check if you have enough RAM/VRAM
+- Update to latest engine version
+
+**Very slow performance:**
+- Make sure you're using GPU acceleration (CUDA/Metal/Vulkan backend)
+- Increase GPU Layers in model settings
+- Close other memory-intensive programs
+
+**Out of memory errors:**
+- Reduce Context Size in model settings
+- Switch KV Cache Type to q8_0 or q4_0
+- Try a smaller model variant
+
+**Random crashes:**
+- Switch to a more stable backend (try avx instead of avx2)
+- Disable overclocking if you have it enabled
+- Update graphics drivers
+
+## Quick Setup Guide
+
+**For most users:**
+1. Use the default backend that Jan installs
+2. Leave all performance settings at defaults
+3. Only adjust if you experience problems
+
+**If you have an NVIDIA graphics card:**
+1. Download the appropriate CUDA backend
+2. Make sure GPU Layers is set high in model settings
+3. Enable Flash Attention
+
+**If models are too slow:**
+1. Check you're using GPU acceleration
+2. Try enabling Continuous Batching
+3. Close other applications using memory
+
+**If running out of memory:**
+1. Change KV Cache Type to q8_0
+2. Reduce Context Size in model settings
+3. Try a smaller model
 
 <Callout type="info">
-Performance impact varies by hardware, model size, and usage patterns.
+Most users can run Jan successfully without changing any of these settings. The defaults are chosen to work well on typical hardware.
 </Callout>

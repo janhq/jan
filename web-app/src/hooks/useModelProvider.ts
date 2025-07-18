@@ -36,7 +36,16 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
-          const existingProviders = state.providers
+          const existingProviders = state.providers.map((provider) => {
+            return {
+              ...provider,
+              models: provider.models.filter(
+                (e) =>
+                  ('id' in e || 'model' in e) &&
+                  typeof (e.id ?? e.model) === 'string'
+              ),
+            }
+          })
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
             ? state.deletedModels
@@ -46,11 +55,17 @@ export const useModelProvider = create<ModelProviderState>()(
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
             )
-            const models = existingProvider?.models || []
+            const models = (existingProvider?.models || []).filter(
+              (e) =>
+                ('id' in e || 'model' in e) &&
+                typeof (e.id ?? e.model) === 'string'
+            )
             const mergedModels = [
               ...models,
               ...(provider?.models ?? []).filter(
                 (e) =>
+                  ('id' in e || 'model' in e) &&
+                  typeof (e.id ?? e.model) === 'string' &&
                   !models.some((m) => m.id === e.id) &&
                   !currentDeletedModels.includes(e.id)
               ),

@@ -39,8 +39,6 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
     outputs:
       DEB_SIG:
         value: ${{ jobs.build-linux-x64.outputs.DEB_SIG }}
@@ -152,14 +150,12 @@ jobs:
           "$APP_IMAGE"
 
         env:
-          RELEASE_CHANNEL: "${{ inputs.channel }}"
+          RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       # Publish app
 
@@ -178,8 +174,8 @@ jobs:
           name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
-      ## create zip file and latest-linux.yml for linux electron auto updater
-      - name: Create zip file and latest-linux.yml for linux electron auto updater
+      ## Set output filename for linux
+      - name: Set output filename for linux
         id: packageinfo
         run: |
           cd ./src-tauri/target/release/bundle
@@ -196,35 +192,6 @@ jobs:
             APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
           fi
 
-          DEB_FILE_SIZE=$(stat -c%s deb/$DEB_FILE_NAME)
-          APPIMAGE_FILE_SIZE=$(stat -c%s appimage/$APPIMAGE_FILE_NAME)
-          echo "deb file size: $DEB_FILE_SIZE"
-          echo "appimage file size: $APPIMAGE_FILE_SIZE"
-
-          DEB_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py deb/$DEB_FILE_NAME)
-          APPIMAGE_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py appimage/$APPIMAGE_FILE_NAME)
-          echo "deb sh512 checksum: $DEB_SH512_CHECKSUM"
-          echo "appimage sh512 checksum: $APPIMAGE_SH512_CHECKSUM"
-
-          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-          echo "releaseDate: $CURRENT_TIME"
-
-          # Create latest-linux.yml file
-          echo "version: ${{ inputs.new_version }}" > latest-linux.yml
-          echo "files:" >> latest-linux.yml
-          echo "  - url: $DEB_FILE_NAME" >> latest-linux.yml
-          echo "    sha512: $DEB_SH512_CHECKSUM" >> latest-linux.yml
-          echo "    size: $DEB_FILE_SIZE" >> latest-linux.yml
-          echo "  - url: $APPIMAGE_FILE_NAME" >> latest-linux.yml
-          echo "    sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
-          echo "    size: $APPIMAGE_FILE_SIZE" >> latest-linux.yml
-          echo "path: $APPIMAGE_FILE_NAME" >> latest-linux.yml
-          echo "sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
-          echo "releaseDate: $CURRENT_TIME" >> latest-linux.yml
-
-          cat latest-linux.yml
-          cp latest-linux.yml beta-linux.yml
-
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
           echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
@@ -235,10 +202,6 @@ jobs:
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
         run: |
           cd ./src-tauri/target/release/bundle
-
-          # Upload for electron updater for nightly
-          aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
-          aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
 
           # Upload for tauri updater
           aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
@@ -251,28 +214,6 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
 
-      ## Upload to github release for stable release
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'stable'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/latest-linux.yml
-          asset_name: latest-linux.yml
-          asset_content_type: text/yaml
-
-      - name: Upload release assert if public provider is github
-        if: inputs.channel == 'beta'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/beta-linux.yml
-          asset_name: beta-linux.yml
-          asset_content_type: text/yaml
       - name: Upload release assert if public provider is github
         if: inputs.public_provider == 'github'
         env:

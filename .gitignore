@@ -51,3 +51,8 @@ src-tauri/resources/bin
 OpenCode.md
 archive/
 .cache/
+
+# auto qa
+autoqa/trajectories
+autoqa/recordings
+autoqa/__pycache__

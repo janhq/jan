@@ -21,6 +21,13 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import LoadModelErrorDialog from '@/containers/dialogs/LoadModelErrorDialog'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable'
+import { useCallback } from 'react'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -28,7 +35,33 @@ export const Route = createRootRoute({
 
 const AppLayout = () => {
   const { productAnalyticPrompt } = useAnalytic()
-  const { open: isLeftPanelOpen } = useLeftPanel()
+  const {
+    open: isLeftPanelOpen,
+    setLeftPanel,
+    size: leftPanelSize,
+    setLeftPanelSize,
+  } = useLeftPanel()
+  const isSmallScreen = useSmallScreen()
+
+  // Minimum width threshold for auto-close (10% of screen width)
+  const MIN_PANEL_WIDTH_THRESHOLD = 14
+
+  // Handle panel size changes
+  const handlePanelLayout = useCallback(
+    (sizes: number[]) => {
+      if (sizes.length > 0) {
+        const newSize = sizes[0]
+
+        // Close panel if resized below minimum threshold
+        if (newSize < MIN_PANEL_WIDTH_THRESHOLD) {
+          setLeftPanel(false)
+        } else {
+          setLeftPanelSize(newSize)
+        }
+      }
+    },
+    [setLeftPanelSize, setLeftPanel]
+  )
 
   return (
     <Fragment>
@@ -38,22 +71,56 @@ const AppLayout = () => {
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
-        <div className="flex h-full">
-          {/* left content panel - only show if not logs route */}
-          <LeftPanel />
 
-          {/* Main content panel */}
-          <div
-            className={cn(
-              'h-full flex w-full p-1 ',
-              isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
-            )}
+        {/* Use ResizablePanelGroup only on larger screens */}
+        {!isSmallScreen && isLeftPanelOpen ? (
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="h-full"
+            onLayout={handlePanelLayout}
           >
-            <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
-              <Outlet />
+            {/* Left Panel */}
+            <ResizablePanel
+              defaultSize={leftPanelSize}
+              minSize={MIN_PANEL_WIDTH_THRESHOLD}
+              maxSize={40}
+              collapsible
+            >
+              <div className="h-full p-1">
+                <LeftPanel />
+              </div>
+            </ResizablePanel>
+
+            {/* Resize Handle */}
+            <ResizableHandle withHandle />
+
+            {/* Main Content Panel */}
+            <ResizablePanel defaultSize={100 - leftPanelSize} minSize={60}>
+              <div className="h-full p-1 pl-0">
+                <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full h-full rounded-lg overflow-hidden">
+                  <Outlet />
+                </div>
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <div className="flex h-full">
+            {/* left content panel - only show if not logs route */}
+            <LeftPanel />
+
+            {/* Main content panel */}
+            <div
+              className={cn(
+                'h-full flex w-full p-1 ',
+                isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
+              )}
+            >
+              <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
+                <Outlet />
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </main>
       {productAnalyticPrompt && <PromptAnalytic />}
     </Fragment>

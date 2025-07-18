@@ -5,7 +5,6 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
-import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
@@ -242,10 +241,10 @@ function General() {
                   </Button>
                 }
               />
-              <CardItem
+              {/* <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
-              />
+              /> */}
             </Card>
 
             {/* Data folder */}
