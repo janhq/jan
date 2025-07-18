@@ -19,7 +19,6 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
-import { toast } from 'sonner'
 import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
@@ -31,6 +30,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
+import { useModelLoad } from './useModelLoad'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -61,6 +61,7 @@ export const useChat = () => {
     updateThreadTimestamp,
   } = useThreads()
   const { getMessages, addMessage } = useMessages()
+  const { setModelLoadError } = useModelLoad()
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -232,9 +233,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(activeProvider, selectedModel.id).catch(
-            console.error
-          )
+          await startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
 
@@ -368,7 +367,7 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'cortex')
+            await stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -404,9 +403,7 @@ export const useChat = () => {
           error && typeof error === 'object' && 'message' in error
             ? error.message
             : error
-
-        toast.error(`Error sending message: ${errorMessage}`)
-        console.error('Error sending message:', error)
+        setModelLoadError(`${errorMessage}`)
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
@@ -436,6 +433,7 @@ export const useChat = () => {
       showIncreaseContextSizeModal,
       increaseModelContextSize,
       toggleOnContextShifting,
+      setModelLoadError,
     ]
   )
 

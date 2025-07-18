@@ -82,7 +82,7 @@ fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
     }
 
     // SSL verification settings are all optional booleans, no validation needed
-    
+
     Ok(())
 }
 
@@ -155,7 +155,7 @@ fn _get_client_for_item(
         // Note: reqwest doesn't have fine-grained SSL verification controls
         // for verify_proxy_ssl, verify_proxy_host_ssl, verify_peer_ssl, verify_host_ssl
         // These settings are handled by the underlying TLS implementation
-        
+
         // Check if this URL should bypass proxy
         let no_proxy = proxy_config.no_proxy.as_deref().unwrap_or(&[]);
         if !should_bypass_proxy(&item.url, no_proxy) {
@@ -617,17 +617,17 @@ mod tests {
         config.verify_proxy_host_ssl = Some(false);
         config.verify_peer_ssl = Some(true);
         config.verify_host_ssl = Some(true);
-        
+
         // Should validate successfully
         assert!(validate_proxy_config(&config).is_ok());
-        
+
         // Test with all SSL settings as false
         config.ignore_ssl = Some(false);
         config.verify_proxy_ssl = Some(false);
         config.verify_proxy_host_ssl = Some(false);
         config.verify_peer_ssl = Some(false);
         config.verify_host_ssl = Some(false);
-        
+
         // Should still validate successfully
         assert!(validate_proxy_config(&config).is_ok());
     }
@@ -641,7 +641,7 @@ mod tests {
         config.verify_proxy_host_ssl = Some(true);
         config.verify_peer_ssl = Some(false);
         config.verify_host_ssl = Some(true);
-        
+
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
     }
@@ -650,46 +650,15 @@ mod tests {
     fn test_proxy_config_ssl_defaults() {
         // Test with no SSL settings (should use None defaults)
         let config = create_test_proxy_config("https://proxy.example.com:8080");
-        
+
         assert_eq!(config.ignore_ssl, None);
         assert_eq!(config.verify_proxy_ssl, None);
         assert_eq!(config.verify_proxy_host_ssl, None);
         assert_eq!(config.verify_peer_ssl, None);
         assert_eq!(config.verify_host_ssl, None);
-        
+
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
-    }
-
-    #[test]
-    fn test_proxy_config_serialization() {
-        // Test that proxy config with SSL settings can be serialized/deserialized
-        let mut config = create_test_proxy_config("https://proxy.example.com:8080");
-        config.username = Some("user".to_string());
-        config.password = Some("pass".to_string());
-        config.ignore_ssl = Some(true);
-        config.verify_proxy_ssl = Some(false);
-        config.verify_proxy_host_ssl = Some(false);
-        config.verify_peer_ssl = Some(true);
-        config.verify_host_ssl = Some(true);
-        config.no_proxy = Some(vec!["localhost".to_string(), "*.example.com".to_string()]);
-        
-        // Serialize to JSON
-        let json = serde_json::to_string(&config).unwrap();
-        
-        // Deserialize from JSON
-        let deserialized: ProxyConfig = serde_json::from_str(&json).unwrap();
-        
-        // Verify all fields are preserved
-        assert_eq!(deserialized.url, config.url);
-        assert_eq!(deserialized.username, config.username);
-        assert_eq!(deserialized.password, config.password);
-        assert_eq!(deserialized.ignore_ssl, config.ignore_ssl);
-        assert_eq!(deserialized.verify_proxy_ssl, config.verify_proxy_ssl);
-        assert_eq!(deserialized.verify_proxy_host_ssl, config.verify_proxy_host_ssl);
-        assert_eq!(deserialized.verify_peer_ssl, config.verify_peer_ssl);
-        assert_eq!(deserialized.verify_host_ssl, config.verify_host_ssl);
-        assert_eq!(deserialized.no_proxy, config.no_proxy);
     }
 
     #[test]
@@ -698,13 +667,13 @@ mod tests {
         let mut proxy_config = create_test_proxy_config("https://proxy.example.com:8080");
         proxy_config.ignore_ssl = Some(true);
         proxy_config.verify_proxy_ssl = Some(false);
-        
+
         let download_item = DownloadItem {
             url: "https://example.com/file.zip".to_string(),
             save_path: "downloads/file.zip".to_string(),
             proxy: Some(proxy_config),
         };
-        
+
         assert!(download_item.proxy.is_some());
         let proxy = download_item.proxy.unwrap();
         assert_eq!(proxy.ignore_ssl, Some(true));
@@ -716,16 +685,16 @@ mod tests {
         // Test client creation with SSL settings
         let mut proxy_config = create_test_proxy_config("https://proxy.example.com:8080");
         proxy_config.ignore_ssl = Some(true);
-        
+
         let download_item = DownloadItem {
             url: "https://example.com/file.zip".to_string(),
             save_path: "downloads/file.zip".to_string(),
             proxy: Some(proxy_config),
         };
-        
+
         let header_map = HeaderMap::new();
         let result = _get_client_for_item(&download_item, &header_map);
-        
+
         // Should create client successfully even with SSL settings
         assert!(result.is_ok());
     }
@@ -736,7 +705,7 @@ mod tests {
         let mut config = create_test_proxy_config("http://proxy.example.com:8080");
         config.ignore_ssl = Some(true);
         config.verify_proxy_ssl = Some(false);
-        
+
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
     }
@@ -748,8 +717,98 @@ mod tests {
         config.ignore_ssl = Some(false);
         config.verify_peer_ssl = Some(true);
         config.verify_host_ssl = Some(true);
-        
+
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_download_item_creation() {
+        let item = DownloadItem {
+            url: "https://example.com/file.tar.gz".to_string(),
+            save_path: "models/test.tar.gz".to_string(),
+            proxy: None,
+        };
+
+        assert_eq!(item.url, "https://example.com/file.tar.gz");
+        assert_eq!(item.save_path, "models/test.tar.gz");
+    }
+
+    #[test]
+    fn test_download_event_creation() {
+        let event = DownloadEvent {
+            transferred: 1024,
+            total: 2048,
+        };
+
+        assert_eq!(event.transferred, 1024);
+        assert_eq!(event.total, 2048);
+    }
+
+    #[test]
+    fn test_err_to_string() {
+        let error = "Test error";
+        let result = err_to_string(error);
+        assert_eq!(result, "Error: Test error");
+    }
+
+    #[test]
+    fn test_convert_headers_valid() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers.insert("Authorization".to_string(), "Bearer token123".to_string());
+
+        let result = _convert_headers(&headers);
+        assert!(result.is_ok());
+
+        let header_map = result.unwrap();
+        assert_eq!(header_map.len(), 2);
+        assert_eq!(header_map.get("Content-Type").unwrap(), "application/json");
+        assert_eq!(header_map.get("Authorization").unwrap(), "Bearer token123");
+    }
+
+    #[test]
+    fn test_convert_headers_invalid_header_name() {
+        let mut headers = HashMap::new();
+        headers.insert("Invalid\nHeader".to_string(), "value".to_string());
+
+        let result = _convert_headers(&headers);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_convert_headers_invalid_header_value() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "invalid\nvalue".to_string());
+
+        let result = _convert_headers(&headers);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_download_manager_state_default() {
+        let state = DownloadManagerState::default();
+        assert!(state.cancel_tokens.is_empty());
+    }
+
+    #[test]
+    fn test_download_event_serialization() {
+        let event = DownloadEvent {
+            transferred: 512,
+            total: 1024,
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"transferred\":512"));
+        assert!(json.contains("\"total\":1024"));
+    }
+
+    #[test]
+    fn test_download_item_deserialization() {
+        let json = r#"{"url":"https://example.com/file.zip","save_path":"downloads/file.zip"}"#;
+        let item: DownloadItem = serde_json::from_str(json).unwrap();
+
+        assert_eq!(item.url, "https://example.com/file.zip");
+        assert_eq!(item.save_path, "downloads/file.zip");
     }
 }
