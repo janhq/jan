@@ -320,7 +320,7 @@ export const predefinedProviders = [
         name: 'Kimi-K2-Instruct',
         version: '1.0',
         description:
-          "Moonshot's Kimi K2 model with 131k context and tool calling support",
+          '1T parameters Moonshot chat model tuned for tool-aware, nuanced responses.',
         capabilities: ['completion', 'tools'],
       },
       {
@@ -328,7 +328,7 @@ export const predefinedProviders = [
         name: 'DeepSeek-R1-0528',
         version: '1.0',
         description:
-          "DeepSeek's reasoning model with 163k context, tool calling support, and open weights",
+          "DeepSeek's flagship reasoning engine with open weights and advanced tool control.",
         capabilities: ['completion', 'tools'],
       },
       {
@@ -336,7 +336,7 @@ export const predefinedProviders = [
         name: 'DeepSeek-V3-0324',
         version: '1.0',
         description:
-          'DeepSeek V3 with 16k context, tool calling support, and open weights',
+          'Streamlined DeepSeek model focused on fast, high-quality completions and tool use.',
         capabilities: ['completion', 'tools'],
       },
     ],
