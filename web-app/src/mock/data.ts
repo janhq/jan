@@ -281,4 +281,64 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://router.huggingface.co/v1',
+    explore_models_url:
+      'https://huggingface.co/models?pipeline_tag=text-generation&inference_provider=all',
+    provider: 'huggingface',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Hugging Face API uses tokens for authentication. Visit your [Access Tokens](https://huggingface.co/settings/tokens) page to retrieve the token you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Token',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Hugging Face Inference Providers documentation](https://huggingface.co/docs/inference-providers) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://router.huggingface.co/v1',
+          value: 'https://router.huggingface.co/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'moonshotai/Kimi-K2-Instruct:groq',
+        name: 'Kimi-K2-Instruct',
+        version: '1.0',
+        description:
+          "Moonshot's Kimi K2 model with 131k context and tool calling support",
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek-ai/DeepSeek-R1-0528',
+        name: 'DeepSeek-R1-0528',
+        version: '1.0',
+        description:
+          "DeepSeek's reasoning model with 163k context, tool calling support, and open weights",
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek-ai/DeepSeek-V3-0324',
+        name: 'DeepSeek-V3-0324',
+        version: '1.0',
+        description:
+          'DeepSeek V3 with 16k context, tool calling support, and open weights',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
 ]
