@@ -42,14 +42,14 @@ function SystemMonitor() {
     getHardwareInfo().then((data) => {
       updateHardwareDataPreservingGpuOrder(data as unknown as HardwareData)
     })
-    getActiveModels().then(setActiveModels)
+    getActiveModels().then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
       getSystemUsage().then((data) => {
         updateSystemUsage(data)
       })
-      getActiveModels().then(setActiveModels)
+      getActiveModels().then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)

@@ -157,18 +157,19 @@ export const sendCompletion = async (
       },
     }),
   } as ExtendedConfigOptions)
+
   if (
     thread.model.id &&
-    !(thread.model.id in Object.values(models).flat()) &&
+    !Object.values(models[providerName]).flat().includes(thread.model.id) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    !tokenJS.extendedModelExist(providerName as any, thread.model?.id) &&
+    !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
     provider.provider !== 'llamacpp'
   ) {
     try {
       tokenJS.extendModelList(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerName as any,
-        thread.model?.id,
+        thread.model.id,
         // This is to inherit the model capabilities from another built-in model
         // Can be anything that support all model capabilities
         models.anthropic.models[0]
