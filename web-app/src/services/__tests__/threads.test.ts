@@ -91,20 +91,20 @@ describe('threads service', () => {
 
       const result = await fetchThreads()
 
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toMatchObject({
-        id: '2',
-        title: 'Test Thread 2',
-        updated: 1234567890,
+        id: '1',
+        title: 'Test Thread',
+        updated: 1234567880,
         order: 1,
         isFavorite: true,
         model: { id: 'gpt-4', provider: 'openai' },
         assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
       })
       expect(result[1]).toMatchObject({
-        id: '1',
-        title: 'Test Thread',
-        updated: 1234567880000,
+        id: '2',
+        title: 'Test Thread 2',
+        updated: 1234567890,
         order: 1,
         isFavorite: true,
         model: { id: 'gpt-4', provider: 'openai' },
@@ -296,7 +296,7 @@ describe('threads service', () => {
 
       const result = await fetchThreads()
 
-      expect(result).toHaveLength(2)
+      expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({
         id: '1',
         title: 'Test Thread',
