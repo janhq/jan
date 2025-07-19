@@ -629,12 +629,8 @@ Section Install
   File "${MAINBINARYSRCPATH}"
 
   ; Copy resources
-    CreateDirectory "$INSTDIR\binaries"
-    CreateDirectory "$INSTDIR\binaries\engines"
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
-    SetOutPath "$INSTDIR\binaries\engines"
-    File /nonfatal /a /r "D:\a\jan\jan\src-tauri\binaries\engines\"
     SetOutPath $INSTDIR
     File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\resources\lib\vulkan-1.dll"
     SetOutPath "$INSTDIR\resources\pre-install"
@@ -769,7 +765,6 @@ Section Uninstall
     Delete "$INSTDIR\resources\pre-install\janhq-model-extension-1.0.36.tgz"
 
   ; Delete external binaries
-    Delete "$INSTDIR\cortex-server.exe"
     Delete "$INSTDIR\bun.exe"
     Delete "$INSTDIR\uv.exe"
 
@@ -781,9 +776,7 @@ Section Uninstall
   ; Delete uninstaller
   Delete "$INSTDIR\uninstall.exe"
 
-  RMDir /r /REBOOTOK "$INSTDIR\binaries\engines"
   RMDir /REBOOTOK "$INSTDIR\resources\pre-install"
-  RMDir /r /REBOOTOK "$INSTDIR\binaries"
   RMDir /r /REBOOTOK "$INSTDIR\resources"
   RMDir /r "$INSTDIR"
 
