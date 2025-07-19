@@ -1,0 +1,47 @@
+[
+  {
+    "model": "moonshotai/Kimi-K2-Instruct:groq",
+    "object": "model",
+    "name": "Kimi-K2-Instruct",
+    "version": "1.0",
+    "description": "1T parameters Moonshot chat model tuned for tool-aware, nuanced responses.",
+    "inference_params": {
+      "temperature": 0.6,
+      "top_p": 1.0,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  },
+  {
+    "model": "deepseek-ai/DeepSeek-R1-0528",
+    "object": "model",
+    "name": "DeepSeek-R1-0528",
+    "version": "1.0",
+    "description": "DeepSeek's flagship reasoning engine with open weights and advanced tool control.",
+    "inference_params": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  },
+  {
+    "model": "deepseek-ai/DeepSeek-V3-0324",
+    "object": "model",
+    "name": "DeepSeek-V3-0324",
+    "version": "1.0",
+    "description": "Streamlined DeepSeek model focused on fast, high-quality completions and tool use.",
+    "inference_params": {
+      "temperature": 0.3,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "huggingface"
+  }
+]
