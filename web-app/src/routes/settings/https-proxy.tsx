@@ -24,19 +24,11 @@ function HTTPSProxy() {
     proxyUsername,
     proxyPassword,
     proxyIgnoreSSL,
-    verifyProxySSL,
-    verifyProxyHostSSL,
-    verifyPeerSSL,
-    verifyHostSSL,
     noProxy,
     setProxyEnabled,
     setProxyUsername,
     setProxyPassword,
     setProxyIgnoreSSL,
-    setVerifyProxySSL,
-    setVerifyProxyHostSSL,
-    setVerifyPeerSSL,
-    setVerifyHostSSL,
     setNoProxy,
     setProxyUrl,
   } = useProxyConfig()
@@ -137,10 +129,6 @@ function HTTPSProxy() {
                   </div>
                 }
               />
-            </Card>
-
-            {/* SSL Verification */}
-            <Card title={t('settings:httpsProxy.sslVerification')}>
               <CardItem
                 title={t('settings:httpsProxy.ignoreSsl')}
                 description={t('settings:httpsProxy.ignoreSslDesc')}
@@ -148,48 +136,6 @@ function HTTPSProxy() {
                   <Switch
                     checked={proxyIgnoreSSL}
                     onCheckedChange={(checked) => setProxyIgnoreSSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.proxySsl')}
-                description={t('settings:httpsProxy.proxySslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyProxySSL}
-                    onCheckedChange={(checked) => setVerifyProxySSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.proxyHostSsl')}
-                description={t('settings:httpsProxy.proxyHostSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyProxyHostSSL}
-                    onCheckedChange={(checked) =>
-                      setVerifyProxyHostSSL(checked)
-                    }
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.peerSsl')}
-                description={t('settings:httpsProxy.peerSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyPeerSSL}
-                    onCheckedChange={(checked) => setVerifyPeerSSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.hostSsl')}
-                description={t('settings:httpsProxy.hostSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyHostSSL}
-                    onCheckedChange={(checked) => setVerifyHostSSL(checked)}
                   />
                 }
               />

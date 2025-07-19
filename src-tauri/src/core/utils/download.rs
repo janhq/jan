@@ -23,10 +23,6 @@ pub struct ProxyConfig {
     pub password: Option<String>,
     pub no_proxy: Option<Vec<String>>, // List of domains to bypass proxy
     pub ignore_ssl: Option<bool>,      // Ignore SSL certificate verification
-    pub verify_proxy_ssl: Option<bool>, // Verify proxy SSL certificate
-    pub verify_proxy_host_ssl: Option<bool>, // Verify proxy host SSL certificate
-    pub verify_peer_ssl: Option<bool>, // Verify peer SSL certificate
-    pub verify_host_ssl: Option<bool>, // Verify host SSL certificate
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -456,10 +452,6 @@ mod tests {
             password: None,
             no_proxy: None,
             ignore_ssl: None,
-            verify_proxy_ssl: None,
-            verify_proxy_host_ssl: None,
-            verify_peer_ssl: None,
-            verify_host_ssl: None,
         }
     }
 
@@ -472,10 +464,6 @@ mod tests {
             password: Some("pass".to_string()),
             no_proxy: Some(vec!["localhost".to_string(), "*.example.com".to_string()]),
             ignore_ssl: Some(true),
-            verify_proxy_ssl: Some(false),
-            verify_proxy_host_ssl: Some(false),
-            verify_peer_ssl: Some(false),
-            verify_host_ssl: Some(false),
         };
         assert!(validate_proxy_config(&config).is_ok());
 
@@ -486,10 +474,6 @@ mod tests {
             password: None,
             no_proxy: None,
             ignore_ssl: None,
-            verify_proxy_ssl: None,
-            verify_proxy_host_ssl: None,
-            verify_peer_ssl: None,
-            verify_host_ssl: None,
         };
         assert!(validate_proxy_config(&config).is_ok());
 
@@ -500,10 +484,6 @@ mod tests {
             password: None,
             no_proxy: None,
             ignore_ssl: None,
-            verify_proxy_ssl: None,
-            verify_proxy_host_ssl: None,
-            verify_peer_ssl: None,
-            verify_host_ssl: None,
         };
         assert!(validate_proxy_config(&config).is_ok());
 
@@ -613,20 +593,12 @@ mod tests {
         // Test proxy config with SSL verification settings
         let mut config = create_test_proxy_config("https://proxy.example.com:8080");
         config.ignore_ssl = Some(true);
-        config.verify_proxy_ssl = Some(false);
-        config.verify_proxy_host_ssl = Some(false);
-        config.verify_peer_ssl = Some(true);
-        config.verify_host_ssl = Some(true);
 
         // Should validate successfully
         assert!(validate_proxy_config(&config).is_ok());
 
         // Test with all SSL settings as false
         config.ignore_ssl = Some(false);
-        config.verify_proxy_ssl = Some(false);
-        config.verify_proxy_host_ssl = Some(false);
-        config.verify_peer_ssl = Some(false);
-        config.verify_host_ssl = Some(false);
 
         // Should still validate successfully
         assert!(validate_proxy_config(&config).is_ok());
@@ -637,10 +609,6 @@ mod tests {
         // Test with mixed SSL settings - ignore_ssl true, others false
         let mut config = create_test_proxy_config("https://proxy.example.com:8080");
         config.ignore_ssl = Some(true);
-        config.verify_proxy_ssl = Some(false);
-        config.verify_proxy_host_ssl = Some(true);
-        config.verify_peer_ssl = Some(false);
-        config.verify_host_ssl = Some(true);
 
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
@@ -652,10 +620,6 @@ mod tests {
         let config = create_test_proxy_config("https://proxy.example.com:8080");
 
         assert_eq!(config.ignore_ssl, None);
-        assert_eq!(config.verify_proxy_ssl, None);
-        assert_eq!(config.verify_proxy_host_ssl, None);
-        assert_eq!(config.verify_peer_ssl, None);
-        assert_eq!(config.verify_host_ssl, None);
 
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
@@ -666,7 +630,6 @@ mod tests {
         // Test that DownloadItem can be created with SSL proxy configuration
         let mut proxy_config = create_test_proxy_config("https://proxy.example.com:8080");
         proxy_config.ignore_ssl = Some(true);
-        proxy_config.verify_proxy_ssl = Some(false);
 
         let download_item = DownloadItem {
             url: "https://example.com/file.zip".to_string(),
@@ -677,7 +640,6 @@ mod tests {
         assert!(download_item.proxy.is_some());
         let proxy = download_item.proxy.unwrap();
         assert_eq!(proxy.ignore_ssl, Some(true));
-        assert_eq!(proxy.verify_proxy_ssl, Some(false));
     }
 
     #[test]
@@ -704,7 +666,6 @@ mod tests {
         // Test that SSL settings work with HTTP proxy (though not typically used)
         let mut config = create_test_proxy_config("http://proxy.example.com:8080");
         config.ignore_ssl = Some(true);
-        config.verify_proxy_ssl = Some(false);
 
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
@@ -715,8 +676,6 @@ mod tests {
         // Test that SSL settings work with SOCKS proxy
         let mut config = create_test_proxy_config("socks5://proxy.example.com:1080");
         config.ignore_ssl = Some(false);
-        config.verify_peer_ssl = Some(true);
-        config.verify_host_ssl = Some(true);
 
         assert!(validate_proxy_config(&config).is_ok());
         assert!(create_proxy_from_config(&config).is_ok());
