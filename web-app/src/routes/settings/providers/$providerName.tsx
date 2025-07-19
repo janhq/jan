@@ -85,11 +85,11 @@ function ProviderDetail() {
 
   useEffect(() => {
     // Initial data fetch
-    getActiveModels().then(setActiveModels)
+    getActiveModels().then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      getActiveModels().then(setActiveModels)
+      getActiveModels().then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)
@@ -291,7 +291,9 @@ function ProviderDetail() {
                                 typeof newValue === 'string' &&
                                 provider.provider === 'llamacpp'
                               ) {
-                                console.log(`Device setting manually changed to: "${newValue}"`)
+                                console.log(
+                                  `Device setting manually changed to: "${newValue}"`
+                                )
                                 updateGPUActivationFromDeviceString(newValue)
                               }
 
