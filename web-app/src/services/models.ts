@@ -29,14 +29,14 @@ export type ModelCatalog = CatalogModel[]
 const defaultProvider = 'llamacpp'
 
 const getEngine = (provider: string = defaultProvider) => {
-  return EngineManager.instance().get(provider) as AIEngine
+  return EngineManager.instance().get(provider) as AIEngine | undefined
 }
 /**
  * Fetches all available models.
  * @returns A promise that resolves to the models.
  */
 export const fetchModels = async () => {
-  return getEngine().list()
+  return getEngine()?.list()
 }
 
 /**
@@ -73,7 +73,7 @@ export const updateModel = async (
   // provider: string,
 ) => {
   if (model.settings)
-    getEngine().updateSettings(model.settings as SettingComponentProps[])
+    getEngine()?.updateSettings(model.settings as SettingComponentProps[])
 }
 
 /**
@@ -82,7 +82,7 @@ export const updateModel = async (
  * @returns A promise that resolves when the model download task is created.
  */
 export const pullModel = async (id: string, modelPath: string) => {
-  return getEngine().import(id, {
+  return getEngine()?.import(id, {
     modelPath,
   })
 }
@@ -93,7 +93,7 @@ export const pullModel = async (id: string, modelPath: string) => {
  * @returns
  */
 export const abortDownload = async (id: string) => {
-  return getEngine().abortImport(id)
+  return getEngine()?.abortImport(id)
 }
 
 /**
@@ -102,7 +102,7 @@ export const abortDownload = async (id: string) => {
  * @returns
  */
 export const deleteModel = async (id: string) => {
-  return getEngine().delete(id)
+  return getEngine()?.delete(id)
 }
 
 /**
@@ -112,7 +112,7 @@ export const deleteModel = async (id: string) => {
  */
 export const getActiveModels = async (provider?: string) => {
   // getEngine(provider)
-  return getEngine(provider).getLoadedModels()
+  return getEngine(provider)?.getLoadedModels()
 }
 
 /**
@@ -122,7 +122,7 @@ export const getActiveModels = async (provider?: string) => {
  * @returns
  */
 export const stopModel = async (model: string, provider?: string) => {
-  getEngine(provider).unload(model)
+  getEngine(provider)?.unload(model)
 }
 
 /**
@@ -146,15 +146,15 @@ export const startModel = async (
   provider: ProviderObject,
   model: string
 ): Promise<SessionInfo | undefined> => {
-  if ((await getEngine(provider.provider).getLoadedModels()).includes(model))
-    return undefined
-  return getEngine(provider.provider)
-    .load(model)
-    .catch((error) => {
-      console.error(
-        `Failed to start model ${model} for provider ${provider.provider}:`,
-        error
-      )
-      throw error
-    })
+  const engine = getEngine(provider.provider)
+  if (!engine) return undefined
+
+  if ((await engine.getLoadedModels()).includes(model)) return undefined
+  return engine.load(model).catch((error) => {
+    console.error(
+      `Failed to start model ${model} for provider ${provider.provider}:`,
+      error
+    )
+    throw error
+  })
 }
