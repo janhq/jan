@@ -1,13 +1,13 @@
 prompt = """
-You are going to test the Jan application by downloading and chatting with a model (qwen2.5).
+You are going to test the Jan application by downloading and chatting with a model (bitcpm4).
 
 Step-by-step instructions:
 1. Given the Jan application is already opened.
 2. In the **bottom-left corner**, click the **“Hub”** menu item.
-3. Scroll through the model list or use the search bar to find **qwen2.5**.
-4. Click **“Use”** on the qwen2.5 model.
+3. Scroll through the model list or use the search bar to find **bitcpm4**.
+4. Click **“Use”** on the bitcpm4 model.
 5. Wait for the model to finish downloading and become ready.
-6. Once redirected to the chat screen, type any message into the input box (e.g. `Hello qwen2.5`).
+6. Once redirected to the chat screen, type any message into the input box (e.g. `Tell me 5 words about you`).
 7. Press **Enter** to send the message.
 8. Wait for the model’s response.
 
