@@ -28,7 +28,7 @@ tauri-plugin-os = "2.2.1"
 tauri-plugin-opener = "2.2.7"
 flate2 = "1.0"
 tar = "0.4"
-rand = "0.8"
+rand = "0.9"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
