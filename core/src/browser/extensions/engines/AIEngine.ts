@@ -23,37 +23,37 @@ export interface InputAudio {
 }
 
 export interface ToolFunction {
-  name: string; // Required: a-z, A-Z, 0-9, _, -, max length 64
-  description?: string;
-  parameters?: Record<string, unknown>; // JSON Schema object
-  strict?: boolean | null; // Defaults to false
+  name: string // Required: a-z, A-Z, 0-9, _, -, max length 64
+  description?: string
+  parameters?: Record<string, unknown> // JSON Schema object
+  strict?: boolean | null // Defaults to false
 }
 
 export interface Tool {
-  type: 'function'; // Currently, only 'function' is supported
-  function: ToolFunction;
+  type: 'function' // Currently, only 'function' is supported
+  function: ToolFunction
 }
 
 export interface ToolCallOptions {
-  tools?: Tool[];
+  tools?: Tool[]
 }
 
 // A specific tool choice to force the model to call
 export interface ToolCallSpec {
-  type: 'function';
+  type: 'function'
   function: {
-    name: string;
-  };
+    name: string
+  }
 }
 
 // tool_choice may be one of several modes or a specific call
-export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec;
+export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec
 
 export interface chatCompletionRequest {
-  model: string; // Model ID, though for local it might be implicit via sessionInfo
-  messages: chatCompletionRequestMessage[];
-  tools?:  Tool[];
-  tool_choice?: ToolChoice;
+  model: string // Model ID, though for local it might be implicit via sessionInfo
+  messages: chatCompletionRequestMessage[]
+  tools?: Tool[]
+  tool_choice?: ToolChoice
   // Core sampling parameters
   temperature?: number | null
   dynatemp_range?: number | null
@@ -168,7 +168,7 @@ export type listResult = modelInfo[]
 export interface SessionInfo {
   pid: number // opaque handle for unload/chat
   port: number // llama-server output port (corrected from portid)
-  model_id: string, //name of the model
+  model_id: string //name of the model
   model_path: string // path of the loaded model
   api_key: string
 }
@@ -242,7 +242,8 @@ export abstract class AIEngine extends BaseExtension {
    * Sends a chat request to the model
    */
   abstract chat(
-    opts: chatCompletionRequest
+    opts: chatCompletionRequest,
+    abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>>
 
   /**
@@ -261,8 +262,8 @@ export abstract class AIEngine extends BaseExtension {
   abstract abortImport(modelId: string): Promise<void>
 
   /**
-    * Get currently loaded models
-  */
+   * Get currently loaded models
+   */
   abstract getLoadedModels(): Promise<string[]>
 
   /**

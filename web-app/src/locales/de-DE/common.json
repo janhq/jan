@@ -251,7 +251,7 @@
     },
     "downloadComplete": {
       "title": "Download abgeschlossen",
-      "description": "Das Modell {{modelId}} wurde heruntergeladen"
+      "description": "{{item}} wurde heruntergeladen"
     },
     "downloadCancelled": {
       "title": "Download abgebrochen",

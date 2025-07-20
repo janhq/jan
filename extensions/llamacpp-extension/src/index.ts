@@ -926,12 +926,14 @@ export default class llamacpp_extension extends AIEngine {
   private async *handleStreamingResponse(
     url: string,
     headers: HeadersInit,
-    body: string
+    body: string,
+    abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
     const response = await fetch(url, {
       method: 'POST',
       headers,
       body,
+      signal: abortController?.signal,
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
@@ -1035,7 +1037,7 @@ export default class llamacpp_extension extends AIEngine {
 
     const body = JSON.stringify(opts)
     if (opts.stream) {
-      return this.handleStreamingResponse(url, headers, body)
+      return this.handleStreamingResponse(url, headers, body, abortController)
     }
     // Handle non-streaming response
     const response = await fetch(url, {
