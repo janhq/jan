@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { 
-  listSupportedBackends, 
-  getBackendDir, 
-  getBackendExePath, 
+import {
+  listSupportedBackends,
+  getBackendDir,
+  getBackendExePath,
   isBackendInstalled,
-  downloadBackend 
+  downloadBackend,
 } from '../backend'
 
 // Mock the global fetch function
@@ -22,9 +22,9 @@ describe('Backend functions', () => {
         os_type: 'windows',
         cpu: {
           arch: 'x86_64',
-          extensions: ['avx', 'avx2']
+          extensions: ['avx', 'avx2'],
         },
-        gpus: []
+        gpus: [],
       })
 
       // Mock GitHub releases
@@ -33,21 +33,21 @@ describe('Backend functions', () => {
           tag_name: 'v1.0.0',
           assets: [
             { name: 'llama-v1.0.0-bin-win-avx2-x64.tar.gz' },
-            { name: 'llama-v1.0.0-bin-win-avx-x64.tar.gz' }
-          ]
-        }
+            { name: 'llama-v1.0.0-bin-win-avx-x64.tar.gz' },
+          ],
+        },
       ]
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockReleases)
+        json: () => Promise.resolve(mockReleases),
       })
 
       const result = await listSupportedBackends()
-      
+
       expect(result).toEqual([
         { version: 'v1.0.0', backend: 'win-avx2-x64' },
-        { version: 'v1.0.0', backend: 'win-avx-x64' }
+        { version: 'v1.0.0', backend: 'win-avx-x64' },
       ])
     })
 
@@ -56,101 +56,117 @@ describe('Backend functions', () => {
         os_type: 'macos',
         cpu: {
           arch: 'aarch64',
-          extensions: []
+          extensions: [],
         },
-        gpus: []
+        gpus: [],
       })
 
       const mockReleases = [
         {
           tag_name: 'v1.0.0',
-          assets: [
-            { name: 'llama-v1.0.0-bin-macos-arm64.tar.gz' }
-          ]
-        }
+          assets: [{ name: 'llama-v1.0.0-bin-macos-arm64.tar.gz' }],
+        },
       ]
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockReleases)
+        json: () => Promise.resolve(mockReleases),
       })
 
       const result = await listSupportedBackends()
-      
-      expect(result).toEqual([
-        { version: 'v1.0.0', backend: 'macos-arm64' }
-      ])
+
+      expect(result).toEqual([{ version: 'v1.0.0', backend: 'macos-arm64' }])
     })
   })
 
   describe('getBackendDir', () => {
     it('should return correct backend directory path', async () => {
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64')
+      vi.mocked(joinPath).mockResolvedValue(
+        '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64'
+      )
 
       const result = await getBackendDir('win-avx2-x64', 'v1.0.0')
-      
+
       expect(result).toBe('/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64')
-      expect(joinPath).toHaveBeenCalledWith(['/path/to/jan', 'llamacpp', 'backends', 'v1.0.0', 'win-avx2-x64'])
+      expect(joinPath).toHaveBeenCalledWith([
+        '/path/to/jan',
+        'llamacpp',
+        'backends',
+        'v1.0.0',
+        'win-avx2-x64',
+      ])
     })
   })
 
   describe('getBackendExePath', () => {
     it('should return correct exe path for Windows', async () => {
       window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'windows'
+        os_type: 'windows',
       })
 
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
-        .mockResolvedValueOnce('/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64')
-        .mockResolvedValueOnce('/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server.exe')
+        .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64'
+        )
+        .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server.exe'
+        )
 
       const result = await getBackendExePath('win-avx2-x64', 'v1.0.0')
-      
-      expect(result).toBe('/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server.exe')
+
+      expect(result).toBe(
+        '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server.exe'
+      )
     })
 
     it('should return correct exe path for Linux/macOS', async () => {
       window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'linux'
+        os_type: 'linux',
       })
 
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
-        .mockResolvedValueOnce('/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64')
-        .mockResolvedValueOnce('/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build/bin/llama-server')
+        .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64'
+        )
+        .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build/bin/llama-server'
+        )
 
       const result = await getBackendExePath('linux-avx2-x64', 'v1.0.0')
-      
-      expect(result).toBe('/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build/bin/llama-server')
+
+      expect(result).toBe(
+        '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build/bin/llama-server'
+      )
     })
   })
 
   describe('isBackendInstalled', () => {
     it('should return true when backend is installed', async () => {
       const { fs } = await import('@janhq/core')
-      
+
       vi.mocked(fs.existsSync).mockResolvedValue(true)
 
       const result = await isBackendInstalled('win-avx2-x64', 'v1.0.0')
-      
+
       expect(result).toBe(true)
     })
 
     it('should return false when backend is not installed', async () => {
       const { fs } = await import('@janhq/core')
-      
+
       vi.mocked(fs.existsSync).mockResolvedValue(false)
 
       const result = await isBackendInstalled('win-avx2-x64', 'v1.0.0')
-      
+
       expect(result).toBe(false)
     })
   })
@@ -158,20 +174,28 @@ describe('Backend functions', () => {
   describe('downloadBackend', () => {
     it('should download backend successfully', async () => {
       const mockDownloadManager = {
-        downloadFiles: vi.fn().mockImplementation((items, taskId, onProgress) => {
-          // Simulate successful download
-          onProgress(100, 100)
-          return Promise.resolve()
-        })
+        downloadFiles: vi
+          .fn()
+          .mockImplementation((items, taskId, onProgress) => {
+            // Simulate successful download
+            onProgress(100, 100)
+            return Promise.resolve()
+          }),
       }
 
-      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
 
-      const { getJanDataFolderPath, joinPath, fs, events } = await import('@janhq/core')
+      const { getJanDataFolderPath, joinPath, fs, events } = await import(
+        '@janhq/core'
+      )
       const { invoke } = await import('@tauri-apps/api/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
       vi.mocked(fs.rm).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
 
@@ -180,24 +204,118 @@ describe('Backend functions', () => {
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
       expect(events.emit).toHaveBeenCalledWith('onFileDownloadSuccess', {
         modelId: 'llamacpp-v1-0-0-win-avx2-x64',
-        downloadType: 'Engine'
+        downloadType: 'Engine',
       })
     })
 
     it('should handle download errors', async () => {
       const mockDownloadManager = {
-        downloadFiles: vi.fn().mockRejectedValue(new Error('Download failed'))
+        downloadFiles: vi.fn().mockRejectedValue(new Error('Download failed')),
       }
 
-      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
 
       const { events } = await import('@janhq/core')
 
-      await expect(downloadBackend('win-avx2-x64', 'v1.0.0')).rejects.toThrow('Download failed')
-      
+      await expect(downloadBackend('win-avx2-x64', 'v1.0.0')).rejects.toThrow(
+        'Download failed'
+      )
+
       expect(events.emit).toHaveBeenCalledWith('onFileDownloadError', {
         modelId: 'llamacpp-v1-0-0-win-avx2-x64',
-        downloadType: 'Engine'
+        downloadType: 'Engine',
+      })
+    })
+
+    it('should correctly extract parent directory from Windows paths', async () => {
+      const { dirname } = await import('@tauri-apps/api/path')
+
+      // Mock dirname to simulate Windows path handling
+      vi.mocked(dirname).mockResolvedValue('C:\\path\\to\\backend')
+
+      const mockDownloadManager = {
+        downloadFiles: vi
+          .fn()
+          .mockImplementation((items, taskId, onProgress) => {
+            onProgress(100, 100)
+            return Promise.resolve()
+          }),
+      }
+
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      const { getJanDataFolderPath, joinPath, fs, events } = await import(
+        '@janhq/core'
+      )
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('C:\\path\\to\\jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('\\'))
+      )
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+
+      await downloadBackend('win-avx2-x64', 'v1.0.0')
+
+      // Verify that dirname was called for path extraction
+      expect(dirname).toHaveBeenCalledWith(
+        'C:\\path\\to\\jan\\llamacpp\\backends\\v1.0.0\\win-avx2-x64\\backend.tar.gz'
+      )
+
+      // Verify decompress was called with correct parent directory
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: 'C:\\path\\to\\jan\\llamacpp\\backends\\v1.0.0\\win-avx2-x64\\backend.tar.gz',
+        outputDir: 'C:\\path\\to\\backend',
+      })
+    })
+
+    it('should correctly extract parent directory from Unix paths', async () => {
+      const { dirname } = await import('@tauri-apps/api/path')
+
+      // Mock dirname to simulate Unix path handling
+      vi.mocked(dirname).mockResolvedValue('/path/to/backend')
+
+      const mockDownloadManager = {
+        downloadFiles: vi
+          .fn()
+          .mockImplementation((items, taskId, onProgress) => {
+            onProgress(100, 100)
+            return Promise.resolve()
+          }),
+      }
+
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      const { getJanDataFolderPath, joinPath, fs, events } = await import(
+        '@janhq/core'
+      )
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+
+      await downloadBackend('linux-avx2-x64', 'v1.0.0')
+
+      // Verify that dirname was called for path extraction
+      expect(dirname).toHaveBeenCalledWith(
+        '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/backend.tar.gz'
+      )
+
+      // Verify decompress was called with correct parent directory
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/backend.tar.gz',
+        outputDir: '/path/to/backend',
       })
     })
   })

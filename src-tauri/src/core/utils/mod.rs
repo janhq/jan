@@ -169,7 +169,7 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
         let mut archive = tar::Archive::new(tar);
         // NOTE: unpack() will not write files outside of output_dir
         // -> prevent path traversal
-        archive.unpack(output_dir).map_err(|e| e.to_string())?;
+        archive.unpack(&output_dir_buf).map_err(|e| e.to_string())?;
     } else {
         return Err("Unsupported file format. Only .tar.gz is supported.".to_string());
     }
