@@ -118,6 +118,7 @@ export default class llamacpp_extension extends AIEngine {
   private activeSessions: Map<number, SessionInfo> = new Map()
   private providerPath!: string
   private apiSecret: string = 'JustAskNow'
+  private pendingDownloads: Map<string, Promise<void>> = new Map()
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -328,7 +329,7 @@ export default class llamacpp_extension extends AIEngine {
             `Auto-updating effective backend for this session from ${this.config.version_backend} to ${bestAvailableBackendString} (best available)`
           )
           try {
-            await downloadBackend(bestBackend, bestVersion)
+            await this.ensureBackendReady(bestBackend, bestVersion)
             effectiveBackendString = bestAvailableBackendString
             this.config.version_backend = effectiveBackendString
             this.getSettings().then((settings) => {
@@ -435,7 +436,7 @@ export default class llamacpp_extension extends AIEngine {
             // downloadBackend is called again here to ensure the *currently active* backend
             // is present, regardless of whether it was set by user config or auto-update.
             // This call will do nothing if it was already downloaded during auto-update.
-            await downloadBackend(selectedBackend, selectedVersion)
+            await this.ensureBackendReady(selectedBackend, selectedVersion)
             console.log(
               `Successfully installed effective backend: ${finalBackendToInstall}`
             )
@@ -500,10 +501,7 @@ export default class llamacpp_extension extends AIEngine {
       const [version, backend] = valueStr.split('/')
 
       const closure = async () => {
-        const isInstalled = await isBackendInstalled(backend, version)
-        if (!isInstalled) {
-          await downloadBackend(backend, version)
-        }
+        await this.ensureBackendReady(backend, version)
       }
       closure()
     }
@@ -781,6 +779,9 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    // Ensure backend is downloaded and ready before proceeding
+    await this.ensureBackendReady(backend, version)
+
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
       this.providerPath,
@@ -921,6 +922,33 @@ export default class llamacpp_extension extends AIEngine {
       ? modelId.slice(0, modelId.indexOf('.'))
       : modelId
     return `${this.provider}/${cleanModelId}`
+  }
+
+  private async ensureBackendReady(backend: string, version: string): Promise<void> {
+    const backendKey = `${version}/${backend}`
+    
+    // Check if backend is already installed
+    const isInstalled = await isBackendInstalled(backend, version)
+    if (isInstalled) {
+      return
+    }
+
+    // Check if download is already in progress
+    if (this.pendingDownloads.has(backendKey)) {
+      console.log(`Backend ${backendKey} download already in progress, waiting...`)
+      await this.pendingDownloads.get(backendKey)
+      return
+    }
+
+    // Start new download
+    console.log(`Backend ${backendKey} not installed, downloading...`)
+    const downloadPromise = downloadBackend(backend, version).finally(() => {
+      this.pendingDownloads.delete(backendKey)
+    })
+    
+    this.pendingDownloads.set(backendKey, downloadPromise)
+    await downloadPromise
+    console.log(`Backend ${backendKey} download completed`)
   }
 
   private async *handleStreamingResponse(
