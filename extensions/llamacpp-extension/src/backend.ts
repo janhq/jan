@@ -1,6 +1,7 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
+import { dirname } from '@tauri-apps/api/path'
 
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
@@ -100,7 +101,13 @@ export async function getBackendExePath(
   const exe_name =
     sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
-  const exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
+  let exePath: string
+  const buildDir = await joinPath([backendDir, 'build'])
+  if (await fs.existsSync(buildDir)) {
+    exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
+  } else {
+    exePath = await joinPath([backendDir, exe_name])
+  }
   return exePath
 }
 
@@ -183,7 +190,7 @@ export async function downloadBackend(
     // decompress the downloaded tar.gz files
     for (const { save_path } of downloadItems) {
       if (save_path.endsWith('.tar.gz')) {
-        const parentDir = save_path.substring(0, save_path.lastIndexOf('/'))
+        const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })
         await fs.rm(save_path)
       }
