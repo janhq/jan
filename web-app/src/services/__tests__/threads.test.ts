@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchThreads, createThread, updateThread, deleteThread } from '../threads'
+import {
+  fetchThreads,
+  createThread,
+  updateThread,
+  deleteThread,
+} from '../threads'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import { defaultAssistant } from '@/hooks/useAssistant'
@@ -64,6 +69,49 @@ describe('threads service', () => {
       })
     })
 
+    it('should migrate old threads properly', async () => {
+      const mockThreads = [
+        {
+          id: '1',
+          title: 'Test Thread',
+          updated: 1234567880000,
+          metadata: { order: 1, is_favorite: true },
+          assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+        },
+        {
+          id: '2',
+          title: 'Test Thread 2',
+          updated: 1234567890,
+          metadata: { order: 1, is_favorite: true },
+          assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+        },
+      ]
+
+      mockConversationalExtension.listThreads.mockResolvedValue(mockThreads)
+
+      const result = await fetchThreads()
+
+      expect(result).toHaveLength(2)
+      expect(result[0]).toMatchObject({
+        id: '1',
+        title: 'Test Thread',
+        updated: 1234567880,
+        order: 1,
+        isFavorite: true,
+        model: { id: 'gpt-4', provider: 'openai' },
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+      })
+      expect(result[1]).toMatchObject({
+        id: '2',
+        title: 'Test Thread 2',
+        updated: 1234567890,
+        order: 1,
+        isFavorite: true,
+        model: { id: 'gpt-4', provider: 'openai' },
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+      })
+    })
+
     it('should handle empty threads array', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue([])
 
@@ -73,7 +121,9 @@ describe('threads service', () => {
     })
 
     it('should handle error and return empty array', async () => {
-      mockConversationalExtension.listThreads.mockRejectedValue(new Error('API Error'))
+      mockConversationalExtension.listThreads.mockRejectedValue(
+        new Error('API Error')
+      )
 
       const result = await fetchThreads()
 
@@ -107,7 +157,9 @@ describe('threads service', () => {
         metadata: { order: 1 },
       }
 
-      mockConversationalExtension.createThread.mockResolvedValue(mockCreatedThread)
+      mockConversationalExtension.createThread.mockResolvedValue(
+        mockCreatedThread
+      )
 
       const result = await createThread(inputThread as Thread)
 
@@ -128,7 +180,9 @@ describe('threads service', () => {
         model: { id: 'gpt-4', provider: 'openai' },
       }
 
-      mockConversationalExtension.createThread.mockRejectedValue(new Error('Creation failed'))
+      mockConversationalExtension.createThread.mockRejectedValue(
+        new Error('Creation failed')
+      )
 
       const result = await createThread(inputThread as Thread)
 
@@ -170,14 +224,16 @@ describe('threads service', () => {
 
       deleteThread(threadId)
 
-      expect(mockConversationalExtension.deleteThread).toHaveBeenCalledWith(threadId)
+      expect(mockConversationalExtension.deleteThread).toHaveBeenCalledWith(
+        threadId
+      )
     })
   })
 
   describe('edge cases and error handling', () => {
     it('should handle fetchThreads when extension manager returns null', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
-        get: vi.fn().mockReturnValue(null)
+        get: vi.fn().mockReturnValue(null),
       })
 
       const result = await fetchThreads()
@@ -187,7 +243,7 @@ describe('threads service', () => {
 
     it('should handle createThread when extension manager returns null', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
-        get: vi.fn().mockReturnValue(null)
+        get: vi.fn().mockReturnValue(null),
       })
 
       const inputThread = {
@@ -203,7 +259,7 @@ describe('threads service', () => {
 
     it('should handle updateThread when extension manager returns null', () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
-        get: vi.fn().mockReturnValue(null)
+        get: vi.fn().mockReturnValue(null),
       })
 
       const thread = {
@@ -219,7 +275,7 @@ describe('threads service', () => {
 
     it('should handle deleteThread when extension manager returns null', () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
-        get: vi.fn().mockReturnValue(null)
+        get: vi.fn().mockReturnValue(null),
       })
 
       const result = deleteThread('test-id')
@@ -294,7 +350,9 @@ describe('threads service', () => {
         metadata: { order: 1 },
       }
 
-      mockConversationalExtension.createThread.mockResolvedValue(mockCreatedThread)
+      mockConversationalExtension.createThread.mockResolvedValue(
+        mockCreatedThread
+      )
 
       const result = await createThread(inputThread as Thread)
 
@@ -326,7 +384,9 @@ describe('threads service', () => {
         metadata: { order: 1 },
       }
 
-      mockConversationalExtension.createThread.mockResolvedValue(mockCreatedThread)
+      mockConversationalExtension.createThread.mockResolvedValue(
+        mockCreatedThread
+      )
 
       const result = await createThread(inputThread as Thread)
 
@@ -414,7 +474,9 @@ describe('threads service', () => {
         // missing metadata
       }
 
-      mockConversationalExtension.createThread.mockResolvedValue(mockCreatedThread)
+      mockConversationalExtension.createThread.mockResolvedValue(
+        mockCreatedThread
+      )
 
       const result = await createThread(inputThread as Thread)
 

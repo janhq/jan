@@ -17,7 +17,10 @@ export const fetchThreads = async (): Promise<Thread[]> => {
         return threads.map((e) => {
           return {
             ...e,
-            updated: e.updated ?? 0,
+            updated:
+              typeof e.updated === 'number' && e.updated > 1e12
+                ? Math.floor(e.updated / 1000)
+                : (e.updated ?? 0),
             order: e.metadata?.order,
             isFavorite: e.metadata?.is_favorite,
             model: {
