@@ -200,5 +200,79 @@ describe('Backend functions', () => {
         downloadType: 'Engine'
       })
     })
+
+    it('should correctly extract parent directory from Windows paths', async () => {
+      const { dirname } = await import('@tauri-apps/api/path')
+      
+      // Mock dirname to simulate Windows path handling
+      vi.mocked(dirname).mockResolvedValue('C:\\path\\to\\backend')
+
+      const mockDownloadManager = {
+        downloadFiles: vi.fn().mockImplementation((items, taskId, onProgress) => {
+          onProgress(100, 100)
+          return Promise.resolve()
+        })
+      }
+
+      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+
+      const { getJanDataFolderPath, joinPath, fs, events } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('C:\\path\\to\\jan')
+      vi.mocked(joinPath).mockImplementation((paths) => 
+        Promise.resolve(paths.join('\\'))
+      )
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+
+      await downloadBackend('win-avx2-x64', 'v1.0.0')
+
+      // Verify that dirname was called for path extraction
+      expect(dirname).toHaveBeenCalledWith('C:\\path\\to\\jan\\llamacpp\\backends\\v1.0.0\\win-avx2-x64\\backend.tar.gz')
+      
+      // Verify decompress was called with correct parent directory
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: 'C:\\path\\to\\jan\\llamacpp\\backends\\v1.0.0\\win-avx2-x64\\backend.tar.gz',
+        outputDir: 'C:\\path\\to\\backend'
+      })
+    })
+
+    it('should correctly extract parent directory from Unix paths', async () => {
+      const { dirname } = await import('@tauri-apps/api/path')
+      
+      // Mock dirname to simulate Unix path handling
+      vi.mocked(dirname).mockResolvedValue('/path/to/backend')
+
+      const mockDownloadManager = {
+        downloadFiles: vi.fn().mockImplementation((items, taskId, onProgress) => {
+          onProgress(100, 100)
+          return Promise.resolve()
+        })
+      }
+
+      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+
+      const { getJanDataFolderPath, joinPath, fs, events } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) => 
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+
+      await downloadBackend('linux-avx2-x64', 'v1.0.0')
+
+      // Verify that dirname was called for path extraction
+      expect(dirname).toHaveBeenCalledWith('/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/backend.tar.gz')
+      
+      // Verify decompress was called with correct parent directory
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/backend.tar.gz',
+        outputDir: '/path/to/backend'
+      })
+    })
   })
 })
