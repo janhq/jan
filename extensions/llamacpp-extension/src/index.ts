@@ -1027,7 +1027,6 @@ export default class llamacpp_extension extends AIEngine {
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
-    console.log('Session Info:', sessionInfo, sessionInfo.api_key)
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,

@@ -102,12 +102,7 @@ export async function getBackendExePath(
     sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
   let exePath: string
-  const buildDir = await joinPath([backendDir, 'build'])
-  if (await fs.existsSync(buildDir)) {
-    exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
-  } else {
-    exePath = await joinPath([backendDir, exe_name])
-  }
+  exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
   return exePath
 }
 
