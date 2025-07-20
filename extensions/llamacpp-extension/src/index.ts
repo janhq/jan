@@ -125,6 +125,38 @@ export default class llamacpp_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
+    // This makes the settings (including the backend options and initial value) available to the Jan UI.
+    this.registerSettings(settings)
+
+    // 5. Load all settings into this.config from the registered settings.
+    // This populates `this.config` with the *persisted* user settings, falling back
+    // to the *default* values specified in the settings definitions (which might have been
+    // updated in step 3 to reflect the best available backend).
+    let loadedConfig: any = {}
+    // Iterate over the cloned 'settings' array because its 'controllerProps.value'
+    // might have been updated in step 3 to define the UI default.
+    // 'getSetting' will retrieve the actual persisted user value if it exists, falling back
+    // to the 'defaultValue' passed (which is the 'controllerProps.value' from the cloned settings array).
+    for (const item of settings) {
+      const defaultValue = item.controllerProps.value
+      // Use the potentially updated default value from the settings array as the fallback for getSetting
+      loadedConfig[item.key] = await this.getSetting<typeof defaultValue>(
+        item.key,
+        defaultValue
+      )
+    }
+    this.config = loadedConfig as LlamacppConfig
+
+    // This sets the base directory where model files for this provider are stored.
+    this.providerPath = await joinPath([
+      await getJanDataFolderPath(),
+      this.providerId,
+    ])
+
+    this.configureBackends()
+  }
+
+  async configureBackends(): Promise<void> {
     // 1. Fetch available backends early
     // This is necessary to populate the backend version dropdown in settings
     // and to determine the best available backend for auto-update/default selection.
@@ -227,6 +259,8 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
+
     // 3. Update the 'version_backend' setting definition in the cloned settings array
     // This prepares the settings object that will be registered, influencing the UI default value.
     const backendSettingIndex = settings.findIndex(
@@ -275,28 +309,6 @@ export default class llamacpp_extension extends AIEngine {
       // Cannot proceed if this critical setting is missing
       throw new Error('Critical setting "version_backend" not found.')
     }
-
-    // This makes the settings (including the backend options and initial value) available to the Jan UI.
-    this.registerSettings(settings)
-
-    // 5. Load all settings into this.config from the registered settings.
-    // This populates `this.config` with the *persisted* user settings, falling back
-    // to the *default* values specified in the settings definitions (which might have been
-    // updated in step 3 to reflect the best available backend).
-    let loadedConfig: any = {}
-    // Iterate over the cloned 'settings' array because its 'controllerProps.value'
-    // might have been updated in step 3 to define the UI default.
-    // 'getSetting' will retrieve the actual persisted user value if it exists, falling back
-    // to the 'defaultValue' passed (which is the 'controllerProps.value' from the cloned settings array).
-    for (const item of settings) {
-      const defaultValue = item.controllerProps.value
-      // Use the potentially updated default value from the settings array as the fallback for getSetting
-      loadedConfig[item.key] = await this.getSetting<typeof defaultValue>(
-        item.key,
-        defaultValue
-      )
-    }
-    this.config = loadedConfig as LlamacppConfig
     // At this point, this.config.version_backend holds the value that will be used
     // UNLESS auto-update logic overrides it for the current session.
 
@@ -462,13 +474,8 @@ export default class llamacpp_extension extends AIEngine {
     } else {
       console.warn('No backend selected or available in config to install.')
     }
-
-    // This sets the base directory where model files for this provider are stored.
-    this.providerPath = await joinPath([
-      await getJanDataFolderPath(),
-      this.providerId,
-    ])
   }
+
   async getProviderPath(): Promise<string> {
     if (!this.providerPath) {
       this.providerPath = await joinPath([
@@ -924,9 +931,12 @@ export default class llamacpp_extension extends AIEngine {
     return `${this.provider}/${cleanModelId}`
   }
 
-  private async ensureBackendReady(backend: string, version: string): Promise<void> {
+  private async ensureBackendReady(
+    backend: string,
+    version: string
+  ): Promise<void> {
     const backendKey = `${version}/${backend}`
-    
+
     // Check if backend is already installed
     const isInstalled = await isBackendInstalled(backend, version)
     if (isInstalled) {
@@ -935,7 +945,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // Check if download is already in progress
     if (this.pendingDownloads.has(backendKey)) {
-      console.log(`Backend ${backendKey} download already in progress, waiting...`)
+      console.log(
+        `Backend ${backendKey} download already in progress, waiting...`
+      )
       await this.pendingDownloads.get(backendKey)
       return
     }
@@ -945,7 +957,7 @@ export default class llamacpp_extension extends AIEngine {
     const downloadPromise = downloadBackend(backend, version).finally(() => {
       this.pendingDownloads.delete(backendKey)
     })
-    
+
     this.pendingDownloads.set(backendKey, downloadPromise)
     await downloadPromise
     console.log(`Backend ${backendKey} download completed`)
