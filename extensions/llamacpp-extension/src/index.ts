@@ -759,8 +759,8 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
-    isEmbedding: boolean = false,
     overrideSettings?: Partial<LlamacppConfig>,
+    isEmbedding: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = this.findSessionByModel(modelId)
     if (sInfo) {
