@@ -11,7 +11,7 @@ use thiserror;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::time::Instant;
+use tokio::time::{timeout, Instant};
 
 use crate::core::state::AppState;
 use crate::core::state::LLamaBackendSession;
