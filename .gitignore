@@ -39,7 +39,8 @@ docs/yarn.lock
 electron/.version.bak
 src-tauri/binaries/engines/cortex.llamacpp
 src-tauri/resources/themes
-src-tauri/resources/lib
+src-tauri/resources/lib/*
+!src-tauri/resources/lib/.gitkeep
 src-tauri/Cargo.lock
 src-tauri/icons
 !src-tauri/icons/icon.png
