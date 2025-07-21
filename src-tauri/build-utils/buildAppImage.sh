@@ -5,7 +5,7 @@ RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 # pull in AppImageTool if it's not pre cached
 mkdir -p ./.cache/build-tools
 if [ ! -f "${APPIMAGETOOL}" ]; then
-    wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}"
+    wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}"
     chmod +x "${APPIMAGETOOL}"
 fi
 
