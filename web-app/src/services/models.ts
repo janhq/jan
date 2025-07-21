@@ -150,7 +150,39 @@ export const startModel = async (
   if (!engine) return undefined
 
   if ((await engine.getLoadedModels()).includes(model)) return undefined
-  return engine.load(model).catch((error) => {
+
+  // Find the model configuration to get settings
+  const modelConfig = provider.models.find((m) => m.id === model)
+
+  // Key mapping function to transform setting keys
+  const mapSettingKey = (key: string): string => {
+    const keyMappings: Record<string, string> = {
+      ctx_len: 'ctx_size',
+      temperature: 'temp',
+      ngl: 'n_gpu_layers',
+    }
+    return keyMappings[key] || key
+  }
+
+  const settings = modelConfig?.settings
+    ? Object.fromEntries(
+        Object.entries(modelConfig.settings)
+          .filter(
+            ([, value]) =>
+              value.controller_props?.value !== undefined &&
+              value.controller_props?.value !== null &&
+              value.controller_props?.value !== ''
+          )
+          .map(([key, value]) => [
+            mapSettingKey(key),
+            value.controller_props?.value,
+          ])
+      )
+    : undefined
+
+  console.log(settings)
+
+  return engine.load(model, settings).catch((error) => {
     console.error(
       `Failed to start model ${model} for provider ${provider.provider}:`,
       error
