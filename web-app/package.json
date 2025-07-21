@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "0.5.18",
+  "version": "0.6.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -69,7 +69,7 @@
     "remark-math": "^6.0.0",
     "sonner": "^2.0.3",
     "tailwindcss": "^4.1.4",
-    "token.js": "npm:token.js-fork@0.7.16",
+    "token.js": "npm:token.js-fork@0.7.20",
     "tw-animate-css": "^1.2.7",
     "ulidx": "^2.4.1",
     "unified": "^11.0.5",
