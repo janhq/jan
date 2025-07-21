@@ -55,7 +55,7 @@ export default function GlobalError({ error }: GlobalErrorProps) {
           >
             contact us
           </a>{' '}
-          if the problem presists.
+          if the problem persists.
         </p>
         <div
           className="mt-5 w-full md:w-4/5 mx-auto rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 "

@@ -92,7 +92,7 @@ describe('GlobalError Component', () => {
     expect(errorContainer).toHaveClass(
       'mt-5',
       'w-full',
-      ' md:w-4/5',
+      'md:w-4/5',
       'mx-auto',
       'rounded',
       'border',
