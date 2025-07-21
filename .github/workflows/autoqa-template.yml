@@ -258,7 +258,7 @@ jobs:
           ./autoqa/scripts/ubuntu_post_cleanup.sh "$IS_NIGHTLY"
 
   macos:
-    runs-on: macos-selfhosted-15-arm64
+    runs-on: macos-selfhosted-14
     timeout-minutes: 60
 
     env:
@@ -269,10 +269,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.13
+      - name: Setup Python 3.11
         uses: actions/setup-python@v4
         with:
-          python-version: '3.13'
+          python-version: '3.11'
 
       - name: Download artifact (if source_type is local)
         if: inputs.source_type == 'local'
@@ -361,7 +361,7 @@ jobs:
           cd autoqa
           echo "Installing Python dependencies..."
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-macintel.txt
           echo "✅ Python dependencies installed"
 
       - name: Setup ReportPortal environment
