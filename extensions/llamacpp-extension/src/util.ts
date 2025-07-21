@@ -24,10 +24,11 @@ export function getProxyConfig(): Record<
     }
 
     const proxyConfigData = JSON.parse(proxyConfigString)
-    const proxyState: ProxyState = proxyConfigData.state
+
+    const proxyState: ProxyState = proxyConfigData?.state
 
     // Only return proxy config if proxy is enabled
-    if (!proxyState.proxyEnabled || !proxyState.proxyUrl) {
+    if (!proxyState || !proxyState.proxyEnabled || !proxyState.proxyUrl) {
       return null
     }
 
@@ -60,9 +61,28 @@ export function getProxyConfig(): Record<
     proxyConfig.verify_peer_ssl = proxyState.verifyPeerSSL
     proxyConfig.verify_host_ssl = proxyState.verifyHostSSL
 
+    // Log proxy configuration for debugging
+    console.log('Using proxy configuration:', {
+      url: proxyState.proxyUrl,
+      hasAuth: !!(proxyState.proxyUsername && proxyState.proxyPassword),
+      noProxyCount: proxyConfig.no_proxy
+        ? (proxyConfig.no_proxy as string[]).length
+        : 0,
+      ignoreSSL: proxyState.proxyIgnoreSSL,
+      verifyProxySSL: proxyState.verifyProxySSL,
+      verifyProxyHostSSL: proxyState.verifyProxyHostSSL,
+      verifyPeerSSL: proxyState.verifyPeerSSL,
+      verifyHostSSL: proxyState.verifyHostSSL,
+    })
+
     return proxyConfig
   } catch (error) {
     console.error('Failed to parse proxy configuration:', error)
-    return null
+    if (error instanceof SyntaxError) {
+      // JSON parsing error - return null
+      return null
+    }
+    // Other errors (like missing state) - throw
+    throw error
   }
 }
