@@ -180,8 +180,6 @@ export const startModel = async (
       )
     : undefined
 
-  console.log(settings)
-
   return engine.load(model, settings).catch((error) => {
     console.error(
       `Failed to start model ${model} for provider ${provider.provider}:`,
