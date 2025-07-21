@@ -178,7 +178,7 @@ jobs:
       - name: Build app
         shell: bash
         run: |
-          make build-tauri
+          make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
