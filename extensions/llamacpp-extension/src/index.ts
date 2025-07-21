@@ -855,6 +855,7 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
+    overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = this.findSessionByModel(modelId)
@@ -869,7 +870,7 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
     const args: string[] = []
-    const cfg = this.config
+    const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
