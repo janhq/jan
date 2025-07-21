@@ -185,10 +185,16 @@ pub async fn download_files(
             .cancel_tokens
             .insert(task_id.to_string(), cancel_token.clone());
     }
-
-    let result =
-        _download_files_internal(app.clone(), &items, &headers, task_id, cancel_token.clone())
-            .await;
+    // TODO: Support resuming downloads when FE is ready
+    let result = _download_files_internal(
+        app.clone(),
+        &items,
+        &headers,
+        task_id,
+        false,
+        cancel_token.clone(),
+    )
+    .await;
 
     // cleanup
     {
@@ -259,6 +265,7 @@ async fn _download_files_internal(
     items: &[DownloadItem],
     headers: &HashMap<String, String>,
     task_id: &str,
+    resume: bool,
     cancel_token: CancellationToken,
 ) -> Result<(), String> {
     log::info!("Start download task: {}", task_id);
@@ -318,7 +325,8 @@ async fn _download_files_internal(
         let tmp_save_path = save_path.with_extension(append_extension("tmp"));
         let url_save_path = save_path.with_extension(append_extension("url"));
 
-        let mut resume = tmp_save_path.exists()
+        let mut should_resume = resume
+            && tmp_save_path.exists()
             && tokio::fs::read_to_string(&url_save_path)
                 .await
                 .map(|url| url == item.url) // check if we resume the same URL
@@ -331,7 +339,7 @@ async fn _download_files_internal(
         log::info!("Started downloading: {}", item.url);
         let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
         let mut download_delta = 0u64;
-        let resp = if resume {
+        let resp = if should_resume {
             let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
             match _get_maybe_resume(&client, &item.url, downloaded_size).await {
                 Ok(resp) => {
@@ -346,7 +354,7 @@ async fn _download_files_internal(
                 Err(e) => {
                     // fallback to normal download
                     log::warn!("Failed to resume download: {}", e);
-                    resume = false;
+                    should_resume = false;
                     _get_maybe_resume(&client, &item.url, 0).await?
                 }
             }
@@ -355,7 +363,7 @@ async fn _download_files_internal(
         };
         let mut stream = resp.bytes_stream();
 
-        let file = if resume {
+        let file = if should_resume {
             // resume download, append to existing file
             tokio::fs::OpenOptions::new()
                 .write(true)
@@ -372,6 +380,11 @@ async fn _download_files_internal(
         // write chunk to file
         while let Some(chunk) = stream.next().await {
             if cancel_token.is_cancelled() {
+                if !should_resume {
+                    tokio::fs::remove_dir_all(&save_path.parent().unwrap())
+                        .await
+                        .ok();
+                }
                 log::info!("Download cancelled for task: {}", task_id);
                 app.emit(&evt_name, evt.clone()).unwrap();
                 return Ok(());
