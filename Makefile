@@ -49,10 +49,6 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
-	yarn build
-
-# Deprecated soon
-build-tauri: install-and-build
 	yarn copy:lib
 	yarn build
 
