@@ -61,7 +61,6 @@ export const useModelProvider = create<ModelProviderState>()(
                 typeof (e.id ?? e.model) === 'string'
             )
             const mergedModels = [
-              ...models,
               ...(provider?.models ?? []).filter(
                 (e) =>
                   ('id' in e || 'model' in e) &&
@@ -69,6 +68,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   !models.some((m) => m.id === e.id) &&
                   !currentDeletedModels.includes(e.id)
               ),
+              ...models,
             ]
             return {
               ...provider,
