@@ -244,7 +244,7 @@
     },
     "downloadComplete": {
       "title": "Tải xuống hoàn tất",
-      "description": "Mô hình {{modelId}} đã được tải xuống"
+      "description": "{{item}} đã được tải xuống"
     },
     "downloadCancelled": {
       "title": "Đã hủy tải xuống",

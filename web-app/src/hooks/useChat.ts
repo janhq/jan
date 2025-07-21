@@ -399,11 +399,13 @@ export const useChat = () => {
           if (!followUpWithToolUse) availableTools = []
         }
       } catch (error) {
-        const errorMessage =
-          error && typeof error === 'object' && 'message' in error
-            ? error.message
-            : error
-        setModelLoadError(`${errorMessage}`)
+        if (!abortController.signal.aborted) {
+          const errorMessage =
+            error && typeof error === 'object' && 'message' in error
+              ? error.message
+              : error
+          setModelLoadError(`${errorMessage}`)
+        }
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)

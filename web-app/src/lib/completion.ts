@@ -185,14 +185,17 @@ export const sendCompletion = async (
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
-    ? await engine.chat({
-        messages: messages as chatCompletionRequestMessage[],
-        model: thread.model?.id,
-        tools: normalizeTools(tools),
-        tool_choice: tools.length ? 'auto' : undefined,
-        stream: true,
-        ...params,
-      })
+    ? await engine.chat(
+        {
+          messages: messages as chatCompletionRequestMessage[],
+          model: thread.model?.id,
+          tools: normalizeTools(tools),
+          tool_choice: tools.length ? 'auto' : undefined,
+          stream: true,
+          ...params,
+        },
+        abortController
+      )
     : stream
       ? await tokenJS.chat.completions.create(
           {

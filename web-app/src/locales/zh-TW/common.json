@@ -244,7 +244,7 @@
     },
     "downloadComplete": {
       "title": "下載完成",
-      "description": "模型 {{modelId}} 已下載"
+      "description": "{{item}} 已下載"
     },
     "downloadCancelled": {
       "title": "下載已取消",
