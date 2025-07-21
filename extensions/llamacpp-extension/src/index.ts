@@ -178,7 +178,7 @@ export default class llamacpp_extension extends AIEngine {
     // Determine best available backend
     let bestAvailableBackendString = this.determineBestBackend(version_backends)
 
-    // Configure settings (keeping original logic)
+    // Configure settings
     let settings = structuredClone(SETTINGS)
     const backendSettingIndex = settings.findIndex(
       (item) => item.key === 'version_backend'
@@ -411,8 +411,8 @@ export default class llamacpp_extension extends AIEngine {
 
           // If this other backend is installed, remove it
           const isInstalled = await isBackendInstalled(
-            backendTypeDir,
-            versionDir
+            backendName,
+            versionName
           )
           if (isInstalled) {
             const toRemove = await joinPath([versionPath, backendTypeDir])
