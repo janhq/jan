@@ -2,6 +2,7 @@
 APPIMAGETOOL="./.cache/build-tools/appimagetool"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 
+mkdir -p ./.cache/build-tools
 wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}"
 chmod +x "${APPIMAGETOOL}"
 
