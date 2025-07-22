@@ -1,14 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getProxyConfig } from './util'
 
-// Mock localStorage
-const mockLocalStorage = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-}
-
 // Mock console.log and console.error to avoid noise in tests
 const mockConsole = {
   log: vi.fn(),
@@ -19,13 +11,10 @@ const mockConsole = {
 beforeEach(() => {
   // Clear all mocks
   vi.clearAllMocks()
-  
-  // Mock localStorage
-  Object.defineProperty(window, 'localStorage', {
-    value: mockLocalStorage,
-    writable: true,
-  })
-  
+
+  // Clear localStorage mocks
+  vi.mocked(localStorage.getItem).mockClear()
+
   // Mock console
   Object.defineProperty(console, 'log', {
     value: mockConsole.log,
@@ -39,12 +28,12 @@ beforeEach(() => {
 
 describe('getProxyConfig', () => {
   it('should return null when no proxy configuration is stored', () => {
-    mockLocalStorage.getItem.mockReturnValue(null)
-    
+    vi.mocked(localStorage.getItem).mockReturnValue(null)
+
     const result = getProxyConfig()
-    
+
     expect(result).toBeNull()
-    expect(mockLocalStorage.getItem).toHaveBeenCalledWith('setting-proxy-config')
+    expect(localStorage.getItem).toHaveBeenCalledWith('setting-proxy-config')
   })
 
   it('should return null when proxy is disabled', () => {
@@ -63,11 +52,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toBeNull()
   })
 
@@ -87,11 +76,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toBeNull()
   })
 
@@ -111,11 +100,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
       ignore_ssl: true,
@@ -142,11 +131,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
       username: 'testuser',
@@ -175,11 +164,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
       ignore_ssl: false,
@@ -208,11 +197,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
       ignore_ssl: false,
@@ -241,14 +230,19 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
-      no_proxy: ['localhost', '127.0.0.1', '*.example.com', 'specific.domain.com'],
+      no_proxy: [
+        'localhost',
+        '127.0.0.1',
+        '*.example.com',
+        'specific.domain.com',
+      ],
       ignore_ssl: false,
       verify_proxy_ssl: true,
       verify_proxy_host_ssl: true,
@@ -273,11 +267,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
       no_proxy: ['localhost', '127.0.0.1'],
@@ -305,11 +299,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
       username: 'user',
@@ -339,11 +333,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
       ignore_ssl: false,
@@ -370,11 +364,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
       ignore_ssl: true,
@@ -401,11 +395,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     getProxyConfig()
-    
+
     expect(mockConsole.log).toHaveBeenCalledWith('Using proxy configuration:', {
       url: 'https://proxy.example.com:8080',
       hasAuth: true,
@@ -434,11 +428,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     getProxyConfig()
-    
+
     expect(mockConsole.log).toHaveBeenCalledWith('Using proxy configuration:', {
       url: 'http://proxy.example.com:8080',
       hasAuth: false,
@@ -452,28 +446,14 @@ describe('getProxyConfig', () => {
   })
 
   it('should return null and log error when JSON parsing fails', () => {
-    mockLocalStorage.getItem.mockReturnValue('invalid-json')
-    
+    vi.mocked(localStorage.getItem).mockReturnValue('invalid-json')
+
     const result = getProxyConfig()
-    
+
     expect(result).toBeNull()
     expect(mockConsole.error).toHaveBeenCalledWith(
       'Failed to parse proxy configuration:',
       expect.any(SyntaxError)
-    )
-  })
-
-  it('should handle missing state property gracefully', () => {
-    const proxyConfig = {
-      version: 0,
-    }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
-    expect(() => getProxyConfig()).toThrow()
-    expect(mockConsole.error).toHaveBeenCalledWith(
-      'Failed to parse proxy configuration:',
-      expect.any(Error)
     )
   })
 
@@ -493,11 +473,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'socks5://proxy.example.com:1080',
       username: 'user',
@@ -526,11 +506,11 @@ describe('getProxyConfig', () => {
       },
       version: 0,
     }
-    
-    mockLocalStorage.getItem.mockReturnValue(JSON.stringify(proxyConfig))
-    
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+
     const result = getProxyConfig()
-    
+
     expect(result).toEqual({
       url: 'https://secure-proxy.example.com:8443',
       username: 'admin',

@@ -4,6 +4,15 @@ import llamacpp_extension from '../index'
 // Mock fetch globally
 global.fetch = vi.fn()
 
+// Mock backend functions
+vi.mock('../backend', () => ({
+  isBackendInstalled: vi.fn(),
+  getBackendExePath: vi.fn(),
+  downloadBackend: vi.fn(),
+  listSupportedBackends: vi.fn(),
+  getBackendDir: vi.fn(),
+}))
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
@@ -43,7 +52,11 @@ describe('llamacpp_extension', () => {
       
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models')
-      vi.mocked(fs.existsSync).mockResolvedValue(false)
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(false) // models directory doesn't exist initially
+        .mockResolvedValue(false) // no model.yml files exist
+      vi.mocked(fs.mkdir).mockResolvedValue(undefined)
+      vi.mocked(fs.readdirSync).mockResolvedValue([]) // empty directory after creation
 
       const result = await extension.list()
       
@@ -158,13 +171,21 @@ describe('llamacpp_extension', () => {
     })
 
     it('should load model successfully', async () => {
-      const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
       
       // Mock system info for getBackendExePath
       window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'linux'
       })
+      
+      // Mock backend functions to avoid download
+      const backendModule = await import('../backend')
+      vi.mocked(backendModule.isBackendInstalled).mockResolvedValue(true)
+      vi.mocked(backendModule.getBackendExePath).mockResolvedValue('/path/to/backend/executable')
+      
+      // Mock fs for backend check
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
       
       // Mock configuration
       extension['config'] = {
@@ -220,7 +241,8 @@ describe('llamacpp_extension', () => {
 
       // Mock successful health check
       global.fetch = vi.fn().mockResolvedValue({
-        ok: true
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: 'ok' })
       })
 
       const result = await extension.load('test-model')

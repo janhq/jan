@@ -107,7 +107,7 @@ describe('Backend functions', () => {
         os_type: 'windows',
       })
 
-      const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -115,8 +115,13 @@ describe('Backend functions', () => {
           '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64'
         )
         .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build'
+        )
+        .mockResolvedValueOnce(
           '/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server.exe'
         )
+      
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
 
       const result = await getBackendExePath('win-avx2-x64', 'v1.0.0')
 
@@ -130,7 +135,7 @@ describe('Backend functions', () => {
         os_type: 'linux',
       })
 
-      const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -138,8 +143,13 @@ describe('Backend functions', () => {
           '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64'
         )
         .mockResolvedValueOnce(
+          '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build'
+        )
+        .mockResolvedValueOnce(
           '/path/to/jan/llamacpp/backends/v1.0.0/linux-avx2-x64/build/bin/llama-server'
         )
+      
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
 
       const result = await getBackendExePath('linux-avx2-x64', 'v1.0.0')
 

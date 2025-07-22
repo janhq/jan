@@ -30,8 +30,8 @@ import {
   getBackendExePath,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
-import { basename } from '@tauri-apps/api/path'
 import { getProxyConfig } from './util'
+import { basename } from '@tauri-apps/api/path'
 
 type LlamacppConfig = {
   version_backend: string
@@ -538,8 +538,10 @@ export default class llamacpp_extension extends AIEngine {
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
     if (!(await fs.existsSync(modelsDir))) {
-      return []
+      await fs.mkdir(modelsDir)
     }
+
+    await this.migrateLegacyModels()
 
     let modelIds: string[] = []
 
@@ -587,6 +589,94 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     return modelInfos
+  }
+
+  private async migrateLegacyModels() {
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelsDir = await joinPath([janDataFolderPath, 'models'])
+    if (!(await fs.existsSync(modelsDir))) return
+
+    // DFS
+    let stack = [modelsDir]
+    while (stack.length > 0) {
+      const currentDir = stack.pop()
+
+      const files = await fs.readdirSync(currentDir)
+      for (const child of files) {
+        const childPath = await joinPath([currentDir, child])
+        const stat = await fs.fileStat(childPath)
+        if (
+          files.some((e) => e.endsWith('model.yml')) &&
+          !child.endsWith('model.yml')
+        )
+          continue
+        if (!stat.isDirectory && child.endsWith('.yml')) {
+          // check if model.yml exists
+          const modelConfigPath = child
+          if (await fs.existsSync(modelConfigPath)) {
+            const legacyModelConfig = await invoke<{
+              files: string[]
+              model: string
+            }>('read_yaml', {
+              path: modelConfigPath,
+            })
+            const legacyModelPath = legacyModelConfig.files?.[0]
+            if (!legacyModelPath) continue
+            // +1 to remove the leading slash
+            // NOTE: this does not handle Windows path \\
+            let modelId = currentDir.slice(modelsDir.length + 1)
+
+            modelId =
+              modelId !== 'imported'
+                ? modelId
+                : (await basename(child)).replace('.yml', '')
+
+            const modelName = legacyModelConfig.model ?? modelId
+            const configPath = await joinPath([
+              await this.getProviderPath(),
+              'models',
+              modelId,
+              'model.yml',
+            ])
+            if (await fs.existsSync(configPath)) continue // Don't reimport
+
+            // this is relative to Jan's data folder
+            const modelDir = `${this.providerId}/models/${modelId}`
+
+            let size_bytes = (
+              await fs.fileStat(
+                await joinPath([janDataFolderPath, legacyModelPath])
+              )
+            ).size
+
+            const modelConfig = {
+              model_path: legacyModelPath,
+              mmproj_path: undefined, // legacy models do not have mmproj
+              name: modelName,
+              size_bytes,
+            } as ModelConfig
+            await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
+            await invoke<void>('write_yaml', {
+              data: modelConfig,
+              savePath: configPath,
+            })
+            continue
+          }
+        }
+      }
+
+      // otherwise, look into subdirectories
+      const children = await fs.readdirSync(currentDir)
+      for (const child of children) {
+        // skip files
+        const dirInfo = await fs.fileStat(child)
+        if (!dirInfo.isDirectory) {
+          continue
+        }
+
+        stack.push(child)
+      }
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
