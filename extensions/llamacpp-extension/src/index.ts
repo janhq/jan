@@ -34,8 +34,8 @@ type LlamacppConfig = {
   auto_update_engine: boolean
   auto_unload: boolean
   chat_template: string
-  n_gpu_layers: number //ngl
-  ctx_size: number //ctx_len
+  n_gpu_layers: number
+  ctx_size: number
   threads: number
   threads_batch: number
   n_predict: number
