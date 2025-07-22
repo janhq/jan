@@ -329,7 +329,11 @@ export const postMessageProcessing = async (
   message: ThreadMessage,
   abortController: AbortController,
   approvedTools: Record<string, string[]> = {},
-  showModal?: (toolName: string, threadId: string) => Promise<boolean>,
+  showModal?: (
+    toolName: string,
+    threadId: string,
+    toolParameters?: object
+  ) => Promise<boolean>,
   allowAllMCPPermissions: boolean = false
 ) => {
   // Handle completed tool calls
@@ -358,11 +362,23 @@ export const postMessageProcessing = async (
       }
 
       // Check if tool is approved or show modal for approval
+      let toolParameters = {}
+      if (toolCall.function.arguments.length) {
+        try {
+          toolParameters = JSON.parse(toolCall.function.arguments)
+        } catch (error) {
+          console.error('Failed to parse tool arguments:', error)
+        }
+      }
       const approved =
         allowAllMCPPermissions ||
         approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
         (showModal
-          ? await showModal(toolCall.function.name, message.thread_id)
+          ? await showModal(
+              toolCall.function.name,
+              message.thread_id,
+              toolParameters
+            )
           : true)
 
       let result = approved

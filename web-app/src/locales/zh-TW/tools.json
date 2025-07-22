@@ -5,6 +5,7 @@
     "deny": "拒絕",
     "allowOnce": "允許一次",
     "alwaysAllow": "一律允許",
-    "description": "助理想要使用 <strong>{{toolName}}</strong>"
+    "description": "助理想要使用 <strong>{{toolName}}</strong>",
+    "parameters": "工具參數"
   }
 }

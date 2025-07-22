@@ -104,13 +104,13 @@ const EditDialog = ({
           </TooltipContent>
         </Tooltip>
       </DialogTrigger>
-      <DialogContent className="w-3/4 h-3/4">
+      <DialogContent className="w-3/4">
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.editMessage.title')}</DialogTitle>
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="mt-2 resize-none h-full w-full"
+            className="mt-2 resize-none w-full"
             onKeyDown={(e) => {
               // Prevent key from being captured by parent components
               e.stopPropagation()
