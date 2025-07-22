@@ -12,4 +12,6 @@ Step-by-step instructions:
 8. Wait for the model’s response.
 
 If the model responds correctly, return: {"result": True}, otherwise return: {"result": False}.
+
+In all your responses, use only plain ASCII characters. Do NOT use Unicode symbols
 """
