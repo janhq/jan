@@ -209,7 +209,14 @@ describe('models service', () => {
 
   describe('startModel', () => {
     it('should start model successfully', async () => {
-      const provider = { provider: 'openai', models: [] } as any
+      const mockSettings = {
+        ctx_len: { controller_props: { value: 4096 } },
+        ngl: { controller_props: { value: 32 } },
+      }
+      const provider = {
+        provider: 'openai',
+        models: [{ id: 'model1', settings: mockSettings }],
+      } as any
       const model = 'model1'
       const mockSession = { id: 'session1' }
 
@@ -221,11 +228,21 @@ describe('models service', () => {
       const result = await startModel(provider, model)
 
       expect(result).toEqual(mockSession)
-      expect(mockEngine.load).toHaveBeenCalledWith(model)
+      expect(mockEngine.load).toHaveBeenCalledWith(model, {
+        ctx_size: 4096,
+        n_gpu_layers: 32,
+      })
     })
 
     it('should handle start model error', async () => {
-      const provider = { provider: 'openai', models: [] } as any
+      const mockSettings = {
+        ctx_len: { controller_props: { value: 4096 } },
+        ngl: { controller_props: { value: 32 } },
+      }
+      const provider = {
+        provider: 'openai',
+        models: [{ id: 'model1', settings: mockSettings }],
+      } as any
       const model = 'model1'
       const error = new Error('Failed to start model')
 
@@ -237,7 +254,14 @@ describe('models service', () => {
       await expect(startModel(provider, model)).rejects.toThrow(error)
     })
     it('should not load model again', async () => {
-      const provider = { provider: 'openai', models: [] } as any
+      const mockSettings = {
+        ctx_len: { controller_props: { value: 4096 } },
+        ngl: { controller_props: { value: 32 } },
+      }
+      const provider = {
+        provider: 'openai',
+        models: [{ id: 'model1', settings: mockSettings }],
+      } as any
       const model = 'model1'
 
       mockEngine.getLoadedModels.mockResolvedValue({
