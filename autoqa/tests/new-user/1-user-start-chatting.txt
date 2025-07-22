@@ -3,11 +3,11 @@ You are going to test the Jan application by downloading and chatting with a mod
 
 Step-by-step instructions:
 1. Given the Jan application is already opened.
-2. In the **bottom-left corner**, click the **“Hub”** menu item.
+2. In the **bottom-left corner**, click the **Hub** menu item.
 3. Scroll through the model list or use the search bar to find **bitcpm4**.
-4. Click **“Use”** on the bitcpm4 model.
+4. Click **Use** on the bitcpm4 model.
 5. Wait for the model to finish downloading and become ready.
-6. Once redirected to the chat screen, type any message into the input box (e.g. `Tell me 5 words about you`).
+6. Once redirected to the chat screen, type any message into the input box (e.g. `Hello World`).
 7. Press **Enter** to send the message.
 8. Wait for the model’s response.
 
