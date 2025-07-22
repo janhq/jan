@@ -30,7 +30,6 @@ import {
   getBackendExePath,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
-import { basename } from '@tauri-apps/api/path'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 
