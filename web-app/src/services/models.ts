@@ -158,7 +158,6 @@ export const startModel = async (
   const mapSettingKey = (key: string): string => {
     const keyMappings: Record<string, string> = {
       ctx_len: 'ctx_size',
-      temperature: 'temp',
       ngl: 'n_gpu_layers',
     }
     return keyMappings[key] || key
@@ -166,17 +165,10 @@ export const startModel = async (
 
   const settings = modelConfig?.settings
     ? Object.fromEntries(
-        Object.entries(modelConfig.settings)
-          .filter(
-            ([, value]) =>
-              value.controller_props?.value !== undefined &&
-              value.controller_props?.value !== null &&
-              value.controller_props?.value !== ''
-          )
-          .map(([key, value]) => [
-            mapSettingKey(key),
-            value.controller_props?.value,
-          ])
+        Object.entries(modelConfig.settings).map(([key, value]) => [
+          mapSettingKey(key),
+          value.controller_props?.value,
+        ])
       )
     : undefined
 

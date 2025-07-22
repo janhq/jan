@@ -36,14 +36,6 @@ type LlamacppConfig = {
   chat_template: string
   n_gpu_layers: number //ngl
   ctx_size: number //ctx_len
-  temp: number // temp
-  top_k: number // top-k
-  top_p: number // top-p
-  min_p: number // min-p
-  repeat_last_n: number // repeat-last-n
-  repeat_penalty: number // repeat-penalty
-  presence_penalty: number // presence-penalty
-  frequency_penalty: number // frequency-penalty
   threads: number
   threads_batch: number
   n_predict: number
@@ -845,18 +837,6 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.threads_batch > 0)
       args.push('--threads-batch', String(cfg.threads_batch))
     if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
-    if (!!cfg.temp) args.push('--temp', String(cfg.temp))
-    if (!!cfg.top_k) args.push('--top-k', String(cfg.top_k))
-    if (!!cfg.top_p) args.push('--top-p', String(cfg.top_p))
-    if (!!cfg.min_p) args.push('--min-p', String(cfg.min_p))
-    if (!!cfg.repeat_last_n)
-      args.push('--repeat-last-n', String(cfg.repeat_last_n))
-    if (!!cfg.repeat_penalty)
-      args.push('--repeat-penalty', String(cfg.repeat_penalty))
-    if (!!cfg.presence_penalty)
-      args.push('--presence-penalty', String(cfg.presence_penalty))
-    if (!!cfg.frequency_penalty)
-      args.push('--frequency-penalty', String(cfg.frequency_penalty))
     if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
     if (cfg.device.length > 0) args.push('--device', cfg.device)
     if (cfg.split_mode.length > 0) args.push('--split-mode', cfg.split_mode)
