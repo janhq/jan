@@ -364,7 +364,7 @@ export default class llamacpp_extension extends AIEngine {
       await this.ensureBackendReady(bestBackend, bestVersion)
 
       // Add a small delay on Windows to ensure file operations complete
-      if (process.platform === 'win32') {
+      if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
@@ -387,7 +387,7 @@ export default class llamacpp_extension extends AIEngine {
       )
 
       // Clean up old backends (with additional delay on Windows)
-      if (process.platform === 'win32') {
+      if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
       await this.removeOldBackends(bestVersion, bestBackend)

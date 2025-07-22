@@ -97,9 +97,7 @@ export async function getBackendExePath(
   backend: string,
   version: string
 ): Promise<string> {
-  const sysInfo = await window.core.api.getSystemInfo()
-  const exe_name =
-    sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
+  const exe_name = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
   let exePath: string
   const buildDir = await joinPath([backendDir, 'build'])
@@ -136,8 +134,7 @@ export async function downloadBackend(
   // Get proxy configuration from localStorage
   const proxyConfig = getProxyConfig()
 
-  const sysInfo = await window.core.api.getSystemInfo()
-  const platformName = sysInfo.os_type === 'windows' ? 'win' : 'linux'
+  const platformName = IS_WINDOWS ? 'win' : 'linux'
 
   const downloadItems = [
     {
