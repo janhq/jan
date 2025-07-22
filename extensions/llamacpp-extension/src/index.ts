@@ -165,16 +165,14 @@ export default class llamacpp_extension extends AIEngine {
       try {
         version_backends = await listSupportedBackends()
         if (version_backends.length === 0) {
-          console.warn(
+          throw new Error(
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
           )
-          return
         } else {
           version_backends.sort((a, b) => b.version.localeCompare(a.version))
         }
       } catch (error) {
-        console.error('Failed to fetch supported backends:', error)
-        return
+        throw new Error(`Failed to fetch supported backends: {error}`)
       }
 
       let bestAvailableBackendString =
