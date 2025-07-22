@@ -15,10 +15,10 @@ sudo apt-get install -f -y
 # Wait for installation to complete
 sleep 10
 
-echo "⏳ Waiting for Jan app first initialization (120 seconds)..."
+echo "[INFO] Waiting for Jan app first initialization (120 seconds)..."
 echo "This allows Jan to complete its initial setup and configuration"
 sleep 120
-echo "✅ Initialization wait completed"
+echo "[SUCCESS] Initialization wait completed"
 
 # Verify installation based on nightly flag
 if [ "$IS_NIGHTLY" = "true" ]; then

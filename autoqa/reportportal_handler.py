@@ -212,7 +212,7 @@ def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
         client.log(
             time=timestamp(),
             level="WARNING",
-            message=f"📝 No Jan {app_type} application logs found",
+            message=f"[INFO] No Jan {app_type} application logs found",
             item_id=test_item_id
         )
         return
@@ -236,7 +236,7 @@ def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
                     client.log(
                         time=timestamp(),
                         level="WARNING",
-                        message=f"📝 Log file {file_name} skipped (size: {file_size} bytes > 50MB limit)",
+                        message=f"[INFO] Log file {file_name} skipped (size: {file_size} bytes > 50MB limit)",
                         item_id=test_item_id
                     )
                     continue
@@ -251,7 +251,7 @@ def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
                 client.log(
                     time=timestamp(),
                     level="INFO",
-                    message=f"📝 Jan {app_type} application log: {file_name}",
+                    message=f"[INFO] Jan {app_type} application log: {file_name}",
                     item_id=test_item_id,
                     attachment={
                         "name": f"jan_{app_type}_log_{i}_{file_name}",
@@ -275,7 +275,7 @@ def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
         client.log(
             time=timestamp(),
             level="INFO",
-            message=f"📝 Uploaded {len(log_files_to_upload)} Jan {app_type} log files (total available: {len(all_log_files)})",
+            message=f"[INFO] Uploaded {len(log_files_to_upload)} Jan {app_type} log files (total available: {len(all_log_files)})",
             item_id=test_item_id
         )
         
@@ -305,7 +305,7 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
         client.log(
             time=timestamp(),
             level="ERROR",
-            message="❌ TEST FAILED ❌\nNo trajectory directory found",
+            message="[FAILED] TEST FAILED [FAILED]\nNo trajectory directory found",
             item_id=test_item_id
         )
         
@@ -364,7 +364,7 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
                        if os.path.isdir(os.path.join(trajectory_dir, f)) and f.startswith("turn_")]
         
         # Add clear status log
-        status_emoji = "✅" if final_status == "PASSED" else "❌"
+        status_emoji = "[SUCCESS]" if final_status == "PASSED" else "[FAILED]"
         client.log(
             time=timestamp(),
             level="INFO" if final_status == "PASSED" else "ERROR",
@@ -383,7 +383,7 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
                     client.log(
                         time=timestamp(),
                         level="INFO",
-                        message="🎥 Screen recording of test execution",
+                        message="[INFO] Screen recording of test execution",
                         item_id=test_item_id,
                         attachment={
                             "name": f"test_recording_{formatted_test_path}.mp4",

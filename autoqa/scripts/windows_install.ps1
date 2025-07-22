@@ -24,10 +24,10 @@ catch {
 # Wait a bit for installation to complete
 Start-Sleep -Seconds 10
 
-Write-Host "⏳ Waiting for Jan app first initialization (120 seconds)..."
+Write-Host "[INFO] Waiting for Jan app first initialization (120 seconds)..."
 Write-Host "This allows Jan to complete its initial setup and configuration"
 Start-Sleep -Seconds 120
-Write-Host "✅ Initialization wait completed"
+Write-Host "[SUCCESS] Initialization wait completed"
 
 # Verify installation based on nightly flag
 if ($isNightly) {
