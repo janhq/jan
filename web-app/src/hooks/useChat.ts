@@ -261,6 +261,25 @@ export const useChat = () => {
           !abortController.signal.aborted &&
           activeProvider
         ) {
+          const modelConfig = activeProvider.models.find(
+            (m) => m.id === selectedModel?.id
+          )
+
+          const modelSettings = modelConfig?.settings
+            ? Object.fromEntries(
+                Object.entries(modelConfig.settings)
+                  .filter(
+                    ([key, value]) =>
+                      key !== 'ctx_len' &&
+                      key !== 'ngl' &&
+                      value.controller_props?.value !== undefined &&
+                      value.controller_props?.value !== null &&
+                      value.controller_props?.value !== ''
+                  )
+                  .map(([key, value]) => [key, value.controller_props?.value])
+              )
+            : undefined
+
           const completion = await sendCompletion(
             activeThread,
             activeProvider,
@@ -268,7 +287,10 @@ export const useChat = () => {
             abortController,
             availableTools,
             currentAssistant.parameters?.stream === false ? false : true,
-            currentAssistant.parameters as unknown as Record<string, object>
+            {
+              ...modelSettings,
+              ...currentAssistant.parameters,
+            } as unknown as Record<string, object>
           )
 
           if (!completion) throw new Error('No completion received')

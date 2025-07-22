@@ -3,6 +3,8 @@ import json
 import mimetypes
 import re
 import logging
+import glob
+import platform
 from reportportal_client.helpers import timestamp
 
 logger = logging.getLogger(__name__)
@@ -160,7 +162,133 @@ def extract_test_result_from_trajectory(trajectory_dir):
         logger.error(f"Error extracting test result: {e}")
         return False
 
-def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, force_stopped=False, video_path=None):
+def get_jan_log_paths(is_nightly=False):
+    """
+    Get Jan application log file paths based on OS and version (nightly vs regular)
+    Returns list of glob patterns for log files
+    """
+    system = platform.system().lower()
+    app_name = "Jan-nightly" if is_nightly else "Jan"
+    
+    if system == "windows":
+        # Windows: %APPDATA%\Jan(-nightly)\data\logs\*.log
+        appdata = os.path.expandvars("%APPDATA%")
+        return [f"{appdata}\\{app_name}\\data\\logs\\*.log"]
+    
+    elif system == "darwin":  # macOS
+        # macOS: ~/Library/Application Support/Jan(-nightly)/data/logs/*.log
+        home_dir = os.path.expanduser("~")
+        return [f"{home_dir}/Library/Application Support/{app_name}/data/logs/*.log"]
+    
+    elif system == "linux":
+        # Linux: ~/.local/share/Jan(-nightly)/data/logs/*.log
+        home_dir = os.path.expanduser("~")
+        return [f"{home_dir}/.local/share/{app_name}/data/logs/*.log"]
+    
+    else:
+        logger.warning(f"Unsupported OS: {system}")
+        return []
+
+def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
+    """
+    Upload Jan application log files to ReportPortal
+    """
+    log_patterns = get_jan_log_paths(is_nightly)
+    app_type = "nightly" if is_nightly else "regular"
+    
+    logger.info(f"Looking for Jan {app_type} logs...")
+    
+    all_log_files = []
+    for pattern in log_patterns:
+        try:
+            log_files = glob.glob(pattern)
+            all_log_files.extend(log_files)
+            logger.info(f"Found {len(log_files)} log files matching pattern: {pattern}")
+        except Exception as e:
+            logger.error(f"Error searching for logs with pattern {pattern}: {e}")
+    
+    if not all_log_files:
+        logger.warning(f"No Jan {app_type} log files found")
+        client.log(
+            time=timestamp(),
+            level="WARNING",
+            message=f"📝 No Jan {app_type} application logs found",
+            item_id=test_item_id
+        )
+        return
+    
+    # Sort by modification time (newest first) and limit to max_log_files
+    try:
+        all_log_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        log_files_to_upload = all_log_files[:max_log_files]
+        
+        logger.info(f"Uploading {len(log_files_to_upload)} most recent Jan {app_type} log files")
+        
+        for i, log_file in enumerate(log_files_to_upload, 1):
+            try:
+                file_size = os.path.getsize(log_file)
+                file_name = os.path.basename(log_file)
+                
+                # Check file size limit (50MB = 50 * 1024 * 1024 bytes)
+                max_file_size = 50 * 1024 * 1024  # 50MB
+                if file_size > max_file_size:
+                    logger.warning(f"Log file {file_name} is too large ({file_size} bytes > {max_file_size} bytes), skipping upload")
+                    client.log(
+                        time=timestamp(),
+                        level="WARNING",
+                        message=f"📝 Log file {file_name} skipped (size: {file_size} bytes > 50MB limit)",
+                        item_id=test_item_id
+                    )
+                    continue
+                
+                logger.info(f"Uploading log file {i}/{len(log_files_to_upload)}: {file_name} ({file_size} bytes)")
+                
+                # Read log file content (safe to read since we checked size)
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    log_content = f.read()
+                
+                # Upload as text attachment
+                client.log(
+                    time=timestamp(),
+                    level="INFO",
+                    message=f"📝 Jan {app_type} application log: {file_name}",
+                    item_id=test_item_id,
+                    attachment={
+                        "name": f"jan_{app_type}_log_{i}_{file_name}",
+                        "data": log_content.encode('utf-8'),
+                        "mime": "text/plain"
+                    }
+                )
+                
+                logger.info(f"Successfully uploaded log: {file_name}")
+                
+            except Exception as e:
+                logger.error(f"Error uploading log file {log_file}: {e}")
+                client.log(
+                    time=timestamp(),
+                    level="ERROR",
+                    message=f"Failed to upload log file {os.path.basename(log_file)}: {str(e)}",
+                    item_id=test_item_id
+                )
+        
+        # Add summary log
+        client.log(
+            time=timestamp(),
+            level="INFO",
+            message=f"📝 Uploaded {len(log_files_to_upload)} Jan {app_type} log files (total available: {len(all_log_files)})",
+            item_id=test_item_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing Jan logs: {e}")
+        client.log(
+            time=timestamp(),
+            level="ERROR",
+            message=f"Error processing Jan {app_type} logs: {str(e)}",
+            item_id=test_item_id
+        )
+
+def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, force_stopped=False, video_path=None, is_nightly=False):
     """
     Upload test results to ReportPortal with proper status based on test result
     """
@@ -280,6 +408,10 @@ def upload_test_results_to_rp(client, launch_id, test_path, trajectory_dir, forc
                 message="No screen recording available for this test",
                 item_id=test_item_id
             )
+        
+        # Upload Jan application logs
+        logger.info("Uploading Jan application logs...")
+        upload_jan_logs(client, test_item_id, is_nightly=is_nightly, max_log_files=5)
         
         # Upload all turn data with appropriate status
         # If test failed, mark all turns as failed

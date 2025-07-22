@@ -76,6 +76,11 @@ echo "Process name: $PROCESS_NAME"
 echo "JAN_APP_PATH=$APP_PATH" >> $GITHUB_ENV
 echo "PROCESS_NAME=$PROCESS_NAME" >> $GITHUB_ENV
 
+echo "⏳ Waiting for Jan app first initialization (120 seconds)..."
+echo "This allows Jan to complete its initial setup and configuration"
+sleep 120
+echo "✅ Initialization wait completed"
+
 # Verify installation
 if [ -f "$APP_PATH" ]; then
     echo "✅ Jan app installed successfully"

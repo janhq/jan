@@ -25,6 +25,9 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
     path = test_data['path']
     prompt = test_data['prompt']
     
+    # Detect if using nightly version based on process name
+    is_nightly = "nightly" in jan_process_name.lower() if jan_process_name else False
+    
     # Default agent config if not provided
     if agent_config is None:
         agent_config = {
@@ -210,7 +213,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                     logger.info(f"Video exists: {os.path.exists(video_path)}")
                     if os.path.exists(video_path):
                         logger.info(f"Video file size: {os.path.getsize(video_path)} bytes")
-                    upload_test_results_to_rp(rp_client, launch_id, path, trajectory_dir, force_stopped_due_to_turns, video_path)
+                    upload_test_results_to_rp(rp_client, launch_id, path, trajectory_dir, force_stopped_due_to_turns, video_path, is_nightly)
                 else:
                     logger.warning(f"Test completed but no trajectory found for: {path}")
                     # Handle case where test completed but no trajectory found
