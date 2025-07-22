@@ -189,7 +189,6 @@ export async function downloadBackend(
 
     // decompress the downloaded tar.gz files
     for (const { save_path } of downloadItems) {
-        console.log(`save_path for decompress: ${save_path}`)
       if (save_path.endsWith('.tar.gz')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })

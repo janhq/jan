@@ -146,7 +146,6 @@ export default class llamacpp_extension extends AIEngine {
       await getJanDataFolderPath(),
       this.providerId,
     ])
-
     this.configureBackends()
   }
 
@@ -158,6 +157,9 @@ export default class llamacpp_extension extends AIEngine {
       )
       return
     }
+
+    // set isConfiguringBackends to true
+    this.isConfiguringBackends = true
     let version_backends: { version: string; backend: string }[] = []
     try {
       version_backends = await listSupportedBackends()
@@ -165,6 +167,7 @@ export default class llamacpp_extension extends AIEngine {
         console.warn(
           'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
         )
+        this.isConfiguringBackends = false
         return // Early return if no backends available
       } else {
         // Sort backends by version descending for later default selection and auto-update
@@ -172,6 +175,7 @@ export default class llamacpp_extension extends AIEngine {
       }
     } catch (error) {
       console.error('Failed to fetch supported backends:', error)
+      this.isConfiguringBackends = false
       return // Early return on error
     }
 
@@ -217,6 +221,7 @@ export default class llamacpp_extension extends AIEngine {
       console.error(
         'Critical setting "version_backend" definition not found in SETTINGS.'
       )
+      this.isConfiguringBackends = false
       throw new Error('Critical setting "version_backend" not found.')
     }
 
@@ -245,6 +250,7 @@ export default class llamacpp_extension extends AIEngine {
         'Skipping final installation check - backend was just downloaded during auto-update'
       )
     }
+    this.isConfiguringBackends = false
   }
 
   private determineBestBackend(
