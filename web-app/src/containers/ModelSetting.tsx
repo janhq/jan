@@ -87,8 +87,10 @@ export function ModelSetting({
         ...(params as unknown as object),
       })
 
-      // Call debounced stopModel after updating the model
-      debouncedStopModel(model.id)
+      // Call debounced stopModel only when updating ctx_len or ngl
+      if (key === 'ctx_len' || key === 'ngl') {
+        debouncedStopModel(model.id)
+      }
     }
   }
 
@@ -106,7 +108,9 @@ export function ModelSetting({
       </SheetTrigger>
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{t('common:modelSettings.title', { modelId: model.id })}</SheetTitle>
+          <SheetTitle>
+            {t('common:modelSettings.title', { modelId: model.id })}
+          </SheetTitle>
           <SheetDescription>
             {t('common:modelSettings.description')}
           </SheetDescription>

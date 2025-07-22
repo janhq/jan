@@ -109,12 +109,32 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   deleteAllThreads: () => {
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
-      allThreadIds.forEach((threadId) => {
+      const favoriteThreadIds = allThreadIds.filter(
+        (threadId) => state.threads[threadId].isFavorite
+      )
+      const nonFavoriteThreadIds = allThreadIds.filter(
+        (threadId) => !state.threads[threadId].isFavorite
+      )
+
+      // Only delete non-favorite threads
+      nonFavoriteThreadIds.forEach((threadId) => {
         deleteThread(threadId)
       })
+
+      // Keep only favorite threads
+      const remainingThreads = favoriteThreadIds.reduce(
+        (acc, threadId) => {
+          acc[threadId] = state.threads[threadId]
+          return acc
+        },
+        {} as Record<string, Thread>
+      )
+
       return {
-        threads: {},
-        searchIndex: null, // Or new Fzf([], {selector...})
+        threads: remainingThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+          selector: (item: Thread) => item.title,
+        }),
       }
     })
   },

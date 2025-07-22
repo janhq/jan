@@ -134,11 +134,25 @@ pub async fn load_llama_model(
                 Err(_) => lib_path.to_string(),
             };
             command.env("PATH", new_path);
+
+            // Normalize the path by removing UNC prefix if present
+            let normalized_path = lib_path.trim_start_matches(r"\\?\").to_string();
+            log::info!("Library path:\n{}", &normalized_path);
+
+            // Only set current_dir if the normalized path exists and is a directory
+            let path = std::path::Path::new(&normalized_path);
+            if path.exists() && path.is_dir() {
+                command.current_dir(&normalized_path);
+            } else {
+                log::warn!(
+                    "Library path '{}' does not exist or is not a directory",
+                    normalized_path
+                );
+            }
         } else {
             log::warn!("Library path setting is not supported on this OS");
         }
     }
-
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     #[cfg(all(windows, target_arch = "x86_64"))]

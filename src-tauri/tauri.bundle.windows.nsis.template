@@ -58,6 +58,8 @@ ${StrLoc}
 !define UNINSTALLERSIGNCOMMAND "$\"powershell$\" $\"-ExecutionPolicy$\" $\"Bypass$\" $\"-File$\" $\"./sign.ps1$\" $\"%1$\""
 !define ESTIMATEDSIZE "793795"
 !define STARTMENUFOLDER ""
+!define VCREDIST_URL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+!define VCREDIST_FILENAME "vc_redist.x64.exe"
 
 Var PassiveMode
 Var UpdateMode
@@ -612,6 +614,63 @@ Section WebView2
           ${EndIf}
       ${EndIf}
     !endif
+  ${EndIf}
+SectionEnd
+
+Section VCRedist
+  ; Check if VC++ Redistributable is already installed
+  ; Check for Visual Studio 2015-2022 redistributable (14.0 or higher)
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Version"
+  ${If} $0 == ""
+    ; Try alternative registry location
+    ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Version"
+  ${EndIf}
+  ${If} $0 == ""
+    ; Try checking for any version of Visual C++ 2015-2022 Redistributable
+    ReadRegStr $0 HKLM "SOFTWARE\Classes\Installer\Dependencies\Microsoft.VS.VC_RuntimeMinimumVSU_amd64,v14" "Version"
+  ${EndIf}
+
+  ${If} $0 == ""
+    ; VC++ Redistributable not found, need to install
+    DetailPrint "Visual C++ Redistributable not found, downloading and installing..."
+    
+    ; Download VC++ Redistributable
+    Delete "$TEMP\${VCREDIST_FILENAME}"
+    DetailPrint "Downloading Visual C++ Redistributable..."
+    NSISdl::download "${VCREDIST_URL}" "$TEMP\${VCREDIST_FILENAME}"
+    Pop $1
+    
+    ${If} $1 == "success"
+      DetailPrint "Visual C++ Redistributable download successful"
+      
+      ; Install VC++ Redistributable silently
+      DetailPrint "Installing Visual C++ Redistributable..."
+      ExecWait '"$TEMP\${VCREDIST_FILENAME}" /quiet /norestart' $2
+      
+      ${If} $2 == 0
+        DetailPrint "Visual C++ Redistributable installed successfully"
+      ${ElseIf} $2 == 1638
+        DetailPrint "Visual C++ Redistributable already installed (newer version)"
+      ${ElseIf} $2 == 3010
+        DetailPrint "Visual C++ Redistributable installed successfully (restart required)"
+        ; You might want to handle restart requirement here
+      ${Else}
+        DetailPrint "Visual C++ Redistributable installation failed with exit code: $2"
+        MessageBox MB_ICONEXCLAMATION|MB_YESNO "Visual C++ Redistributable installation failed. Continue anyway?" IDYES continue_install
+        Abort "Installation cancelled due to Visual C++ Redistributable failure"
+        continue_install:
+      ${EndIf}
+      
+      ; Clean up downloaded file
+      Delete "$TEMP\${VCREDIST_FILENAME}"
+    ${Else}
+      DetailPrint "Failed to download Visual C++ Redistributable: $1"
+      MessageBox MB_ICONEXCLAMATION|MB_YESNO "Failed to download Visual C++ Redistributable. Continue anyway?" IDYES continue_install_download_fail
+      Abort "Installation cancelled due to download failure"
+      continue_install_download_fail:
+    ${EndIf}
+  ${Else}
+    DetailPrint "Visual C++ Redistributable already installed (version: $0)"
   ${EndIf}
 SectionEnd
 
