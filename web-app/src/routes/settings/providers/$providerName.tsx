@@ -37,7 +37,7 @@ import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
-import { predefinedProviders } from '@/mock/data'
+import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 
 // as route.threadsDetail

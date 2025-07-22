@@ -1,5 +1,5 @@
 import { models as providerModels } from 'token.js'
-import { predefinedProviders } from '@/mock/data'
+import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import {
   DefaultToolUseSupportedModels,
