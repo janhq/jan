@@ -134,6 +134,10 @@ pub async fn load_llama_model(
                 Err(_) => lib_path.to_string(),
             };
             command.env("PATH", new_path);
+            let normalized_path = lib_path
+                .to_string_lossy()
+                .trim_start_matches(r"\\?\")
+                .to_string();
             log::info!("Library path:\n{}", &lib_path);
             command.current_dir(lib_path);
         } else {
