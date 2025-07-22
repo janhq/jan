@@ -5,6 +5,7 @@
     "securityNotice": "Dieses Werkzeug möchte eine Aktion ausführen. Bitte überprüfen und genehmigen oder Ablehnen.",
     "deny": "Ablehnen",
     "allowOnce": "Einmal erlauben",
-    "alwaysAllow": "Immer erlauben"
+    "alwaysAllow": "Immer erlauben",
+    "parameters": "Werkzeug-Parameter"
   }
 }

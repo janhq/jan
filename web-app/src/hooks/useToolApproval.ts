@@ -5,6 +5,7 @@ import { localStorageKey } from '@/constants/localStorage'
 export type ToolApprovalModalProps = {
   toolName: string
   threadId: string
+  toolParameters?: object
   onApprove: (allowOnce: boolean) => void
   onDeny: () => void
 }
@@ -21,7 +22,7 @@ type ToolApprovalState = {
   // Actions
   approveToolForThread: (threadId: string, toolName: string) => void
   isToolApproved: (threadId: string, toolName: string) => boolean
-  showApprovalModal: (toolName: string, threadId: string) => Promise<boolean>
+  showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
   closeModal: () => void
   setModalOpen: (open: boolean) => void
   setAllowAllMCPPermissions: (allow: boolean) => void
@@ -52,7 +53,7 @@ export const useToolApproval = create<ToolApprovalState>()(
         return state.approvedTools[threadId]?.includes(toolName) || false
       },
 
-      showApprovalModal: (toolName: string, threadId: string) => {
+      showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => {
         return new Promise<boolean>((resolve) => {
           // Check if tool is already approved for this thread
           const state = get()
@@ -66,6 +67,7 @@ export const useToolApproval = create<ToolApprovalState>()(
             modalProps: {
               toolName,
               threadId,
+              toolParameters,
               onApprove: (allowOnce: boolean) => {
                 if (!allowOnce) {
                   // If not "allow once", add to approved tools for this thread

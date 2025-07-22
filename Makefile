@@ -43,9 +43,6 @@ test: lint
 	yarn download:bin
 	yarn download:lib
 	yarn test
-# 	yarn build:icon
-# 	yarn copy:assets:tauri
-# 	cargo test --manifest-path src-tauri/Cargo.toml
 
 # Builds and publishes the app
 build-and-publish: install-and-build
