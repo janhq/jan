@@ -136,6 +136,9 @@ export async function downloadBackend(
   // Get proxy configuration from localStorage
   const proxyConfig = getProxyConfig()
 
+  const sysInfo = await window.core.api.getSystemInfo()
+  const platformName = sysInfo.os_type === 'windows' ? 'win' : 'linux'
+
   const downloadItems = [
     {
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`,
@@ -147,13 +150,13 @@ export async function downloadBackend(
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
   if (backend.includes('cu11.7') && !(await _isCudaInstalled('11.7'))) {
     downloadItems.push({
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu11.7-x64.tar.gz`,
+      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda11.tar.gz']),
       proxy: proxyConfig,
     })
   } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.0-x64.tar.gz`,
+      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda12.tar.gz']),
       proxy: proxyConfig,
     })
