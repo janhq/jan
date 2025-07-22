@@ -17,7 +17,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { predefinedProviders } from '@/mock/data'
+import { predefinedProviders } from '@/consts/providers'
 
 type Props = {
   provider?: ProviderObject
