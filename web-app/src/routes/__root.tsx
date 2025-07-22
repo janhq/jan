@@ -28,9 +28,11 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable'
 import { useCallback } from 'react'
+import GlobalError from '@/containers/GlobalError'
 
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: ({ error }) => <GlobalError error={error} />,
 })
 
 const AppLayout = () => {
