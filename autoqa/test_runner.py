@@ -238,7 +238,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
                                 rp_client.log(
                                     time=timestamp(),
                                     level="INFO",
-                                    message="🎥 Screen recording of failed test",
+                                    message="[INFO] Screen recording of failed test",
                                     item_id=test_item_id,
                                     attachment={
                                         "name": f"failed_test_recording_{formatted_test_path}.mp4",
@@ -298,9 +298,9 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
             
             if not enable_reportportal:
                 # Local development mode - log results
-                logger.info(f"🏠 LOCAL RESULT: {path} - {final_status} ({status_message})")
-                logger.info(f"📹 Video saved: {video_path}")
-                logger.info(f"📁 Trajectory: {trajectory_dir}")
+                logger.info(f"[INFO] LOCAL RESULT: {path} - {final_status} ({status_message})")
+                logger.info(f"[INFO] Video saved: {video_path}")
+                logger.info(f"[INFO] Trajectory: {trajectory_dir}")
         else:
             final_status = "FAILED"
             status_message = "no trajectory found"
@@ -312,7 +312,7 @@ async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id
             })
             
             if not enable_reportportal:
-                logger.warning(f"🏠 LOCAL RESULT: {path} - {final_status} ({status_message})")
+                logger.warning(f"[INFO] LOCAL RESULT: {path} - {final_status} ({status_message})")
         
         # Step 9: Always force close Jan app after test completion
         logger.info(f"Cleaning up after test: {path}")

@@ -82,13 +82,13 @@ jobs:
             # Find the exe file in the artifact
             $exeFile = Get-ChildItem -Path "${{ runner.temp }}/windows-artifact" -Recurse -Filter "*.exe" | Select-Object -First 1
             if ($exeFile) {
-              Write-Host "✅ Found local installer: $($exeFile.FullName)"
+              Write-Host "[SUCCESS] Found local installer: $($exeFile.FullName)"
               Copy-Item -Path $exeFile.FullName -Destination "$env:TEMP\jan-installer.exe" -Force
-              Write-Host "✅ Installer copied to: $env:TEMP\jan-installer.exe"
+              Write-Host "[SUCCESS] Installer copied to: $env:TEMP\jan-installer.exe"
               # Don't set JAN_APP_PATH here - let the install script set it to the correct installed app path
               echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $env:GITHUB_ENV
             } else {
-              Write-Error "❌ No .exe file found in artifact"
+              Write-Error "[FAILED] No .exe file found in artifact"
               exit 1
             }
           } else {
@@ -196,9 +196,9 @@ jobs:
             # Find the deb file in the artifact
             DEB_FILE=$(find "${{ runner.temp }}/ubuntu-artifact" -name "*.deb" -type f | head -1)
             if [ -n "$DEB_FILE" ]; then
-              echo "✅ Found local installer: $DEB_FILE"
+              echo "[SUCCESS] Found local installer: $DEB_FILE"
               cp "$DEB_FILE" "/tmp/jan-installer.deb"
-              echo "✅ Installer copied to: /tmp/jan-installer.deb"
+              echo "[SUCCESS] Installer copied to: /tmp/jan-installer.deb"
               echo "JAN_APP_PATH=/tmp/jan-installer.deb" >> $GITHUB_ENV
               echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $GITHUB_ENV
               if [ "${{ inputs.is_nightly }}" = "true" ]; then
@@ -207,7 +207,7 @@ jobs:
                 echo "JAN_PROCESS_NAME=Jan" >> $GITHUB_ENV
               fi
             else
-              echo "❌ No .deb file found in artifact"
+              echo "[FAILED] No .deb file found in artifact"
               exit 1
             fi
           else
@@ -296,9 +296,9 @@ jobs:
             # Find the dmg file in the artifact
             DMG_FILE=$(find "${{ runner.temp }}/macos-artifact" -name "*.dmg" -type f | head -1)
             if [ -n "$DMG_FILE" ]; then
-              echo "✅ Found local installer: $DMG_FILE"
+              echo "[SUCCESS] Found local installer: $DMG_FILE"
               cp "$DMG_FILE" "/tmp/jan-installer.dmg"
-              echo "✅ Installer copied to: /tmp/jan-installer.dmg"
+              echo "[SUCCESS] Installer copied to: /tmp/jan-installer.dmg"
               echo "JAN_APP_PATH=/tmp/jan-installer.dmg" >> $GITHUB_ENV
               echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $GITHUB_ENV
               if [ "${{ inputs.is_nightly }}" = "true" ]; then
@@ -307,7 +307,7 @@ jobs:
                 echo "PROCESS_NAME=Jan" >> $GITHUB_ENV
               fi
             else
-              echo "❌ No .dmg file found in artifact"
+              echo "[FAILED] No .dmg file found in artifact"
               exit 1
             fi
           else
@@ -349,7 +349,7 @@ jobs:
           else
             echo "Homebrew not available, checking if tkinter works..."
             python3 -c "import tkinter" || {
-              echo "⚠️ tkinter not available and Homebrew not found"
+              echo "[WARNING] tkinter not available and Homebrew not found"
               echo "This may cause issues with mouse control"
             }
           fi
@@ -362,7 +362,7 @@ jobs:
           echo "Installing Python dependencies..."
           pip install --upgrade pip
           pip install -r requirements.txt
-          echo "✅ Python dependencies installed"
+          echo "[SUCCESS] Python dependencies installed"
 
       - name: Setup ReportPortal environment
         run: |
