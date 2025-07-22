@@ -168,7 +168,7 @@ jobs:
       - name: Build app
         run: |
           rustup target add x86_64-apple-darwin
-          make build-tauri
+          make build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_PATH: '.'

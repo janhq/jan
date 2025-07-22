@@ -56,11 +56,6 @@ build: install-and-build
 	yarn download:lib
 	yarn build
 
-# Deprecated soon
-build-tauri: install-and-build
-	yarn download:lib
-	yarn build
-
 clean:
 ifeq ($(OS),Windows_NT)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"

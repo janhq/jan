@@ -141,7 +141,7 @@ jobs:
           fi
       - name: Build app
         run: |
-          make build-tauri
+          make build
 
           APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
           yarn tauri signer sign \
