@@ -20,6 +20,9 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
+
+import { error, info, warn } from '@tauri-apps/plugin-log'
+
 import {
   listSupportedBackends,
   downloadBackend,
@@ -89,6 +92,24 @@ interface EmbeddingData {
   index: number
   object: string
 }
+/**
+ * Override the default app.log function to use Jan's logging system.
+ * @param args
+ */
+const logger = {
+  info: function (...args: any[]) {
+    console.log(...args)
+    info(args.map((arg) => ` ${arg}`).join(` `))
+  },
+  warn: function (...args: any[]) {
+    console.warn(...args)
+    warn(args.map((arg) => ` ${arg}`).join(` `))
+  },
+  error: function (...args: any[]) {
+    console.error(...args)
+    error(args.map((arg) => ` ${arg}`).join(` `))
+  },
+}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -151,7 +172,7 @@ export default class llamacpp_extension extends AIEngine {
 
   async configureBackends(): Promise<void> {
     if (this.isConfiguringBackends) {
-      console.log(
+      logger.info(
         'configureBackends already in progress, skipping duplicate call'
       )
       return
@@ -165,16 +186,18 @@ export default class llamacpp_extension extends AIEngine {
       try {
         version_backends = await listSupportedBackends()
         if (version_backends.length === 0) {
-          console.warn(
+          throw new Error(
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
           )
-          return
         } else {
           version_backends.sort((a, b) => b.version.localeCompare(a.version))
         }
       } catch (error) {
-        console.error('Failed to fetch supported backends:', error)
-        return
+        throw new Error(
+          `Failed to fetch supported backends: ${
+            error instanceof Error ? error.message : error
+          }`
+        )
       }
 
       let bestAvailableBackendString =
@@ -208,11 +231,11 @@ export default class llamacpp_extension extends AIEngine {
             : bestAvailableBackendString || originalDefaultBackendValue
 
         backendSetting.controllerProps.value = initialUiDefault
-        console.log(
+        logger.info(
           `Initial UI default for version_backend set to: ${initialUiDefault}`
         )
       } else {
-        console.error(
+        logger.error(
           'Critical setting "version_backend" definition not found in SETTINGS.'
         )
         throw new Error('Critical setting "version_backend" not found.')
@@ -236,7 +259,7 @@ export default class llamacpp_extension extends AIEngine {
       if (!backendWasDownloaded) {
         await this.ensureFinalBackendInstallation(effectiveBackendString)
       } else {
-        console.log(
+        logger.info(
           'Skipping final installation check - backend was just downloaded during auto-update'
         )
       }
@@ -291,7 +314,7 @@ export default class llamacpp_extension extends AIEngine {
 
       if (matchingBackends.length > 0) {
         foundBestBackend = matchingBackends[0]
-        console.log(
+        logger.info(
           `Determined best available backend: ${foundBestBackend.version}/${foundBestBackend.backend} (Category: "${priorityCategory}")`
         )
         break
@@ -309,12 +332,12 @@ export default class llamacpp_extension extends AIEngine {
   private async handleAutoUpdate(
     bestAvailableBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    console.log(
+    logger.info(
       `Auto-update engine is enabled. Current backend: ${this.config.version_backend}. Best available: ${bestAvailableBackendString}`
     )
 
     if (!bestAvailableBackendString) {
-      console.warn(
+      logger.warn(
         'Auto-update enabled, but no best available backend determined'
       )
       return { wasUpdated: false, newBackend: this.config.version_backend }
@@ -327,13 +350,13 @@ export default class llamacpp_extension extends AIEngine {
 
     // Check if update is needed
     if (currentBackend === bestBackend && currentVersion === bestVersion) {
-      console.log('Auto-update: Already using the best available backend')
+      logger.info('Auto-update: Already using the best available backend')
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
     // Perform update
     try {
-      console.log(
+      logger.info(
         `Auto-updating from ${this.config.version_backend} to ${bestAvailableBackendString}`
       )
 
@@ -341,7 +364,7 @@ export default class llamacpp_extension extends AIEngine {
       await this.ensureBackendReady(bestBackend, bestVersion)
 
       // Add a small delay on Windows to ensure file operations complete
-      if (process.platform === 'win32') {
+      if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
@@ -359,19 +382,19 @@ export default class llamacpp_extension extends AIEngine {
         })
       )
 
-      console.log(
+      logger.info(
         `Successfully updated to backend: ${bestAvailableBackendString}`
       )
 
       // Clean up old backends (with additional delay on Windows)
-      if (process.platform === 'win32') {
+      if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
       await this.removeOldBackends(bestVersion, bestBackend)
 
       return { wasUpdated: true, newBackend: bestAvailableBackendString }
     } catch (error) {
-      console.error('Auto-update failed:', error)
+      logger.error('Auto-update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
   }
@@ -413,15 +436,15 @@ export default class llamacpp_extension extends AIEngine {
             const toRemove = await joinPath([versionPath, backendTypeDir])
             try {
               await fs.rm(toRemove)
-              console.log(`Removed old backend: ${toRemove}`)
+              logger.info(`Removed old backend: ${toRemove}`)
             } catch (e) {
-              console.warn(`Failed to remove old backend: ${toRemove}`, e)
+              logger.warn(`Failed to remove old backend: ${toRemove}`, e)
             }
           }
         }
       }
     } catch (error) {
-      console.error('Error during old backend cleanup:', error)
+      logger.error('Error during old backend cleanup:', error)
     }
   }
 
@@ -429,7 +452,7 @@ export default class llamacpp_extension extends AIEngine {
     backendString: string
   ): Promise<void> {
     if (!backendString) {
-      console.warn('No backend specified for final installation check')
+      logger.warn('No backend specified for final installation check')
       return
     }
 
@@ -438,7 +461,7 @@ export default class llamacpp_extension extends AIEngine {
       .map((part) => part?.trim())
 
     if (!selectedVersion || !selectedBackend) {
-      console.warn(`Invalid backend format: ${backendString}`)
+      logger.warn(`Invalid backend format: ${backendString}`)
       return
     }
 
@@ -448,16 +471,16 @@ export default class llamacpp_extension extends AIEngine {
         selectedVersion
       )
       if (!isInstalled) {
-        console.log(`Final check: Installing backend ${backendString}`)
+        logger.info(`Final check: Installing backend ${backendString}`)
         await this.ensureBackendReady(selectedBackend, selectedVersion)
-        console.log(`Successfully installed backend: ${backendString}`)
+        logger.info(`Successfully installed backend: ${backendString}`)
       } else {
-        console.log(
+        logger.info(
           `Final check: Backend ${backendString} is already installed`
         )
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `Failed to ensure backend ${backendString} installation:`,
         error
       )
@@ -481,7 +504,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         await this.unload(sInfo.model_id)
       } catch (error) {
-        console.error(`Failed to unload model ${sInfo.model_id}:`, error)
+        logger.error(`Failed to unload model ${sInfo.model_id}:`, error)
       }
     }
 
@@ -651,7 +674,7 @@ export default class llamacpp_extension extends AIEngine {
           : 'onFileDownloadStopped'
         events.emit(eventName, { modelId, downloadType: 'Model' })
       } catch (error) {
-        console.error('Error downloading model:', modelId, opts, error)
+        logger.error('Error downloading model:', modelId, opts, error)
         events.emit('onFileDownloadError', { modelId, downloadType: 'Model' })
         throw error
       }
@@ -726,16 +749,16 @@ export default class llamacpp_extension extends AIEngine {
         if (res.status === 503) {
           const body = await res.json()
           const msg = body?.error?.message ?? 'Model loading'
-          console.log(`waiting for model load... (${msg})`)
+          logger.info(`waiting for model load... (${msg})`)
         } else if (res.ok) {
           const body = await res.json()
           if (body.status === 'ok') {
             return
           } else {
-            console.warn('Unexpected OK response from /health:', body)
+            logger.warn('Unexpected OK response from /health:', body)
           }
         } else {
-          console.warn(`Unexpected status ${res.status} from /health`)
+          logger.warn(`Unexpected status ${res.status} from /health`)
         }
       } catch (e) {
         await this.unload(sInfo.model_id)
@@ -860,7 +883,7 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
     }
 
-    console.log('Calling Tauri command llama_load with args:', args)
+    logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
     const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
 
@@ -878,7 +901,7 @@ export default class llamacpp_extension extends AIEngine {
 
       return sInfo
     } catch (error) {
-      console.error('Error loading llama-server:\n', error)
+      logger.error('Error loading llama-server:\n', error)
       throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
@@ -898,14 +921,14 @@ export default class llamacpp_extension extends AIEngine {
       // If successful, remove from active sessions
       if (result.success) {
         this.activeSessions.delete(pid)
-        console.log(`Successfully unloaded model with PID ${pid}`)
+        logger.info(`Successfully unloaded model with PID ${pid}`)
       } else {
-        console.warn(`Failed to unload model: ${result.error}`)
+        logger.warn(`Failed to unload model: ${result.error}`)
       }
 
       return result
     } catch (error) {
-      console.error('Error in unload command:', error)
+      logger.error('Error in unload command:', error)
       return {
         success: false,
         error: `Failed to unload model: ${error}`,
@@ -935,7 +958,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Check if download is already in progress
     if (this.pendingDownloads.has(backendKey)) {
-      console.log(
+      logger.info(
         `Backend ${backendKey} download already in progress, waiting...`
       )
       await this.pendingDownloads.get(backendKey)
@@ -943,14 +966,14 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Start new download
-    console.log(`Backend ${backendKey} not installed, downloading...`)
+    logger.info(`Backend ${backendKey} not installed, downloading...`)
     const downloadPromise = downloadBackend(backend, version).finally(() => {
       this.pendingDownloads.delete(backendKey)
     })
 
     this.pendingDownloads.set(backendKey, downloadPromise)
     await downloadPromise
-    console.log(`Backend ${backendKey} download completed`)
+    logger.info(`Backend ${backendKey} download completed`)
   }
 
   private async *handleStreamingResponse(
@@ -1017,7 +1040,7 @@ export default class llamacpp_extension extends AIEngine {
             const chunk = data as chatCompletionChunk
             yield chunk
           } catch (e) {
-            console.error('Error parsing JSON from stream or server error:', e)
+            logger.error('Error parsing JSON from stream or server error:', e)
             // re‑throw so the async iterator terminates with an error
             throw e
           }
