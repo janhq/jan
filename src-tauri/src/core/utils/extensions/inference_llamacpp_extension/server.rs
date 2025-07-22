@@ -134,7 +134,7 @@ pub async fn load_llama_model(
                 Err(_) => lib_path.to_string(),
             };
             command.env("PATH", &new_path);
-            command.current_dir(new_path);
+            command.current_dir(lib_path);
         } else {
             log::warn!("Library path setting is not supported on this OS");
         }
