@@ -39,7 +39,7 @@ type ModelProps = {
 type SearchParams = {
   repo: string
 }
-const defaultModelQuantizations = ['iq4_xs.gguf', 'q4_k_m.gguf']
+const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: Hub,
