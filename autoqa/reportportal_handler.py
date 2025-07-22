@@ -229,17 +229,23 @@ def upload_jan_logs(client, test_item_id, is_nightly=False, max_log_files=5):
                 file_size = os.path.getsize(log_file)
                 file_name = os.path.basename(log_file)
                 
+                # Check file size limit (50MB = 50 * 1024 * 1024 bytes)
+                max_file_size = 50 * 1024 * 1024  # 50MB
+                if file_size > max_file_size:
+                    logger.warning(f"Log file {file_name} is too large ({file_size} bytes > {max_file_size} bytes), skipping upload")
+                    client.log(
+                        time=timestamp(),
+                        level="WARNING",
+                        message=f"📝 Log file {file_name} skipped (size: {file_size} bytes > 50MB limit)",
+                        item_id=test_item_id
+                    )
+                    continue
+                
                 logger.info(f"Uploading log file {i}/{len(log_files_to_upload)}: {file_name} ({file_size} bytes)")
                 
-                # Read log file content
+                # Read log file content (safe to read since we checked size)
                 with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
                     log_content = f.read()
-                
-                # If log is too large, truncate it
-                max_log_size = 1024 * 1024  # 1MB limit
-                if len(log_content) > max_log_size:
-                    truncated_content = log_content[-max_log_size:]  # Keep last 1MB
-                    log_content = f"[LOG TRUNCATED - showing last {max_log_size} characters]\n\n{truncated_content}"
                 
                 # Upload as text attachment
                 client.log(
