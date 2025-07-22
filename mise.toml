@@ -73,12 +73,8 @@ run = [
 [tasks.build]
 description = "Build complete application (matches Makefile)"
 depends = ["install-and-build"]
-run = "yarn build"
-
-[tasks.build-tauri]
-description = "Build Tauri application (DEPRECATED - matches Makefile)"
-depends = ["install-and-build"]
 run = [
+  "yarn copy:lib",
   "yarn build"
 ]
 
