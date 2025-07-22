@@ -172,7 +172,7 @@ export default class llamacpp_extension extends AIEngine {
           version_backends.sort((a, b) => b.version.localeCompare(a.version))
         }
       } catch (error) {
-        throw new Error(`Failed to fetch supported backends: ${error}`)
+        throw new Error(`Failed to fetch supported backends: ${error instanceof Error ? error.message : error}`)
       }
 
       let bestAvailableBackendString =
