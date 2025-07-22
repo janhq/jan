@@ -150,7 +150,6 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async configureBackends(): Promise<void> {
-    // Guard against multiple simultaneous executions
     if (this.isConfiguringBackends) {
       console.log(
         'configureBackends already in progress, skipping duplicate call'
@@ -158,99 +157,92 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
 
-    // set isConfiguringBackends to true
     this.isConfiguringBackends = true
-    let version_backends: { version: string; backend: string }[] = []
+
     try {
-      version_backends = await listSupportedBackends()
-      if (version_backends.length === 0) {
-        console.warn(
-          'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
+      let version_backends: { version: string; backend: string }[] = []
+
+      try {
+        version_backends = await listSupportedBackends()
+        if (version_backends.length === 0) {
+          console.warn(
+            'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
+          )
+          return
+        } else {
+          version_backends.sort((a, b) => b.version.localeCompare(a.version))
+        }
+      } catch (error) {
+        console.error('Failed to fetch supported backends:', error)
+        return
+      }
+
+      let bestAvailableBackendString =
+        this.determineBestBackend(version_backends)
+
+      let settings = structuredClone(SETTINGS)
+      const backendSettingIndex = settings.findIndex(
+        (item) => item.key === 'version_backend'
+      )
+
+      let originalDefaultBackendValue = ''
+      if (backendSettingIndex !== -1) {
+        const backendSetting = settings[backendSettingIndex]
+        originalDefaultBackendValue = backendSetting.controllerProps
+          .value as string
+
+        backendSetting.controllerProps.options = version_backends.map((b) => {
+          const key = `${b.version}/${b.backend}`
+          return { value: key, name: key }
+        })
+
+        const savedBackendSetting = await this.getSetting<string>(
+          'version_backend',
+          originalDefaultBackendValue
         )
-        this.isConfiguringBackends = false
-        return // Early return if no backends available
+
+        const initialUiDefault =
+          savedBackendSetting &&
+          savedBackendSetting !== originalDefaultBackendValue
+            ? savedBackendSetting
+            : bestAvailableBackendString || originalDefaultBackendValue
+
+        backendSetting.controllerProps.value = initialUiDefault
+        console.log(
+          `Initial UI default for version_backend set to: ${initialUiDefault}`
+        )
       } else {
-        // Sort backends by version descending for later default selection and auto-update
-        version_backends.sort((a, b) => b.version.localeCompare(a.version))
+        console.error(
+          'Critical setting "version_backend" definition not found in SETTINGS.'
+        )
+        throw new Error('Critical setting "version_backend" not found.')
       }
-    } catch (error) {
-      console.error('Failed to fetch supported backends:', error)
-      this.isConfiguringBackends = false
-      return // Early return on error
-    }
 
-    // Determine best available backend
-    let bestAvailableBackendString = this.determineBestBackend(version_backends)
+      this.registerSettings(settings)
 
-    // Configure settings
-    let settings = structuredClone(SETTINGS)
-    const backendSettingIndex = settings.findIndex(
-      (item) => item.key === 'version_backend'
-    )
+      let effectiveBackendString = this.config.version_backend
+      let backendWasDownloaded = false
 
-    let originalDefaultBackendValue = ''
-    if (backendSettingIndex !== -1) {
-      const backendSetting = settings[backendSettingIndex]
-      originalDefaultBackendValue = backendSetting.controllerProps
-        .value as string
-
-      // Populate dropdown options with available backends
-      backendSetting.controllerProps.options = version_backends.map((b) => {
-        const key = `${b.version}/${b.backend}`
-        return { value: key, name: key }
-      })
-
-      // Get saved backend setting
-      const savedBackendSetting = await this.getSetting<string>(
-        'version_backend',
-        originalDefaultBackendValue
-      )
-
-      // Determine initial UI default
-      const initialUiDefault =
-        savedBackendSetting &&
-        savedBackendSetting !== originalDefaultBackendValue
-          ? savedBackendSetting
-          : bestAvailableBackendString || originalDefaultBackendValue
-
-      backendSetting.controllerProps.value = initialUiDefault
-      console.log(
-        `Initial UI default for version_backend set to: ${initialUiDefault}`
-      )
-    } else {
-      console.error(
-        'Critical setting "version_backend" definition not found in SETTINGS.'
-      )
-      this.isConfiguringBackends = false
-      throw new Error('Critical setting "version_backend" not found.')
-    }
-
-    // Register the modified settings with populated dropdown options
-    this.registerSettings(settings)
-
-    // Handle auto-update logic
-    let effectiveBackendString = this.config.version_backend
-    let backendWasDownloaded = false // Track if we downloaded during auto-update
-
-    if (this.config.auto_update_engine) {
-      const updateResult = await this.handleAutoUpdate(
-        bestAvailableBackendString
-      )
-      if (updateResult.wasUpdated) {
-        effectiveBackendString = updateResult.newBackend
-        backendWasDownloaded = true
+      if (this.config.auto_update_engine) {
+        const updateResult = await this.handleAutoUpdate(
+          bestAvailableBackendString
+        )
+        if (updateResult.wasUpdated) {
+          effectiveBackendString = updateResult.newBackend
+          backendWasDownloaded = true
+        }
       }
-    }
 
-    // Final installation check - but skip if we just downloaded it
-    if (!backendWasDownloaded) {
-      await this.ensureFinalBackendInstallation(effectiveBackendString)
-    } else {
-      console.log(
-        'Skipping final installation check - backend was just downloaded during auto-update'
-      )
+      if (!backendWasDownloaded) {
+        await this.ensureFinalBackendInstallation(effectiveBackendString)
+      } else {
+        console.log(
+          'Skipping final installation check - backend was just downloaded during auto-update'
+        )
+      }
+    } finally {
+      this.isConfiguringBackends = false
     }
-    this.isConfiguringBackends = false
   }
 
   private determineBestBackend(
@@ -407,8 +399,8 @@ export default class llamacpp_extension extends AIEngine {
         const backendTypeDirs = await fs.readdirSync(versionPath)
 
         for (const backendTypeDir of backendTypeDirs) {
-            const versionName = await basename(versionDir);
-            const backendName = await basename(backendTypeDir);
+          const versionName = await basename(versionDir)
+          const backendName = await basename(backendTypeDir)
 
           // Skip if it's the best version/backend
           if (versionName === bestVersion && backendName === bestBackend) {
@@ -416,10 +408,7 @@ export default class llamacpp_extension extends AIEngine {
           }
 
           // If this other backend is installed, remove it
-          const isInstalled = await isBackendInstalled(
-            backendName,
-            versionName
-          )
+          const isInstalled = await isBackendInstalled(backendName, versionName)
           if (isInstalled) {
             const toRemove = await joinPath([versionPath, backendTypeDir])
             try {
