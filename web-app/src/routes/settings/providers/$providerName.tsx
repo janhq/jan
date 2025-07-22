@@ -38,6 +38,7 @@ import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/mock/data'
+import { useModelLoad } from '@/hooks/useModelLoad'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -52,6 +53,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const { setModelLoadError } = useModelLoad()
   const steps = [
     {
       target: '.first-step-setup-remote-provider',
@@ -176,6 +178,7 @@ function ProviderDetail() {
         })
         .catch((error) => {
           console.error('Error starting model:', error)
+          setModelLoadError(`${error.message}`)
         })
         .finally(() => {
           // Remove model from loading state
