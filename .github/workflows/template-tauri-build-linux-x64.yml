@@ -164,7 +164,7 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-${{ inputs.channel }}-linux-amd64-${{ inputs.new_version }}.deb
+          name: jan${{ inputs.channel == 'stable' && '' || '-${{ inputs.channel }}' }}-linux-amd64-${{ inputs.new_version }}.deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
       - name: Upload Artifact
