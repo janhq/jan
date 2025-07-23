@@ -145,14 +145,14 @@ jobs:
 
       - name: Upload screen recordings
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: screen-recordings-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jan-logs-${{ runner.os }}
           path: autoqa/jan-logs/
@@ -291,14 +291,14 @@ jobs:
 
       - name: Upload screen recordings
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: screen-recordings-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jan-logs-${{ runner.os }}
           path: autoqa/jan-logs/
@@ -450,14 +450,14 @@ jobs:
 
       - name: Upload screen recordings
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: screen-recordings-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jan-logs-${{ runner.os }}
           path: autoqa/jan-logs/
