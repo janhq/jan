@@ -1,0 +1,6 @@
+{
+  "welcome": "Witaj w Jan",
+  "description": "Aby rozpocząć, musisz albo pobrać lokalny model SI, albo połączyć się z modelem w chmurze przy użyciu klucza API",
+  "localModel": "Ustaw lokalny model",
+  "remoteProvider": "Ustaw dostawcę modeli zdalnych"
+}
