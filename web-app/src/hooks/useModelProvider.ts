@@ -36,16 +36,20 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
-          const existingProviders = state.providers.map((provider) => {
-            return {
-              ...provider,
-              models: provider.models.filter(
-                (e) =>
-                  ('id' in e || 'model' in e) &&
-                  typeof (e.id ?? e.model) === 'string'
-              ),
-            }
-          })
+          const existingProviders = state.providers
+            // Filter out legacy llama.cpp provider for migration
+            // Can remove after a couple of releases
+            .filter((e) => e.provider !== 'llama.cpp')
+            .map((provider) => {
+              return {
+                ...provider,
+                models: provider.models.filter(
+                  (e) =>
+                    ('id' in e || 'model' in e) &&
+                    typeof (e.id ?? e.model) === 'string'
+                ),
+              }
+            })
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
             ? state.deletedModels

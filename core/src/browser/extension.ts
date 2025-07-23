@@ -128,6 +128,10 @@ export abstract class BaseExtension implements ExtensionType {
             setting.controllerProps.value = oldSettings.find(
               (e: any) => e.key === setting.key
             )?.controllerProps?.value
+          if ('options' in setting.controllerProps)
+            setting.controllerProps.options = setting.controllerProps.options?.length
+              ? setting.controllerProps.options
+              : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
         })
       }
       localStorage.setItem(this.name, JSON.stringify(settings))
