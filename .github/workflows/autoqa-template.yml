@@ -147,7 +147,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screen-recordings-${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-${{ github.run_number }}-${{ runner.os }}
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
@@ -293,7 +293,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screen-recordings-${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-${{ github.run_number }}-${{ runner.os }}
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
@@ -452,7 +452,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screen-recordings-${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-${{ github.run_number }}-${{ runner.os }}
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
 
       - name: Upload Jan logs
