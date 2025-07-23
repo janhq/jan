@@ -127,6 +127,36 @@ jobs:
         run: |
           .\scripts\run_tests.ps1 -JanAppPath "$env:JAN_APP_PATH" -ProcessName "$env:JAN_PROCESS_NAME" -RpToken "$env:RP_TOKEN"
 
+      - name: Collect Jan logs for artifact upload
+        if: always()
+        shell: powershell
+        run: |
+          $logDirs = @(
+            "$env:APPDATA\Jan-nightly\data\logs",
+            "$env:APPDATA\Jan\data\logs"
+          )
+          $dest = "autoqa\jan-logs"
+          mkdir $dest -Force | Out-Null
+          foreach ($dir in $logDirs) {
+            if (Test-Path $dir) {
+              Copy-Item "$dir\*.log" $dest -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Upload screen recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/recordings/
+
+      - name: Upload Jan logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-logs-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/jan-logs/
+
       - name: Cleanup after tests
         if: always()
         shell: powershell
@@ -251,6 +281,27 @@ jobs:
           LAUNCH_NAME: 'CI AutoQA Run Ubuntu - ${{ github.run_number }} - ${{ github.ref_name }}'
         run: |
           ./scripts/run_tests.sh "$JAN_APP_PATH" "$JAN_PROCESS_NAME" "$RP_TOKEN" "ubuntu"
+
+      - name: Collect Jan logs for artifact upload
+        if: always()
+        run: |
+          mkdir -p autoqa/jan-logs
+          cp ~/.local/share/Jan-nightly/data/logs/*.log autoqa/jan-logs/ 2>/dev/null || true
+          cp ~/.local/share/Jan/data/logs/*.log autoqa/jan-logs/ 2>/dev/null || true
+
+      - name: Upload screen recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/recordings/
+
+      - name: Upload Jan logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-logs-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/jan-logs/
 
       - name: Cleanup after tests
         if: always()
@@ -389,6 +440,27 @@ jobs:
           echo "IS_NIGHTLY: $IS_NIGHTLY"
 
           ./scripts/run_tests.sh "$JAN_APP_PATH" "$PROCESS_NAME" "$RP_TOKEN" "macos"
+
+      - name: Collect Jan logs for artifact upload
+        if: always()
+        run: |
+          mkdir -p autoqa/jan-logs
+          cp ~/Library/Application\ Support/Jan-nightly/data/logs/*.log autoqa/jan-logs/ 2>/dev/null || true
+          cp ~/Library/Application\ Support/Jan/data/logs/*.log autoqa/jan-logs/ 2>/dev/null || true
+
+      - name: Upload screen recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/recordings/
+
+      - name: Upload Jan logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-logs-${{ github.run_number }}-${{ runner.os }}
+          path: autoqa/jan-logs/
 
       - name: Cleanup after tests
         if: always()
