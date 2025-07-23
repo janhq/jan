@@ -1,0 +1,249 @@
+---
+title: Search
+description: Privacy-respecting web search for AI assistants
+sidebar:
+  order: 1
+---
+
+import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+
+Jan Search provides web search capabilities while maintaining user privacy. It offers local crawling, anonymized cloud search, and intelligent routing.
+
+## Architecture
+
+Jan Search operates in three modes:
+
+| Mode | Description | Privacy | Speed |
+|------|-------------|---------|--------|
+| Local | Direct web crawling from your device | Maximum | Slower |
+| Cloud | Anonymized search via Jan API | High | Fast |
+| Hybrid | Automatic routing based on query | Variable | Optimal |
+
+## Implementation
+
+<Tabs>
+  <TabItem label="Local Search">
+    Everything happens on your machine using Crawl4AI.
+
+    ```javascript
+    const results = await jan.tools.search({
+      query: "your search query",
+      mode: "local",
+      maxResults: 10
+    });
+    ```
+
+    **Characteristics:**
+    - No data leaves your device
+    - Direct website crawling
+    - Limited to public content
+    - 2-5 seconds per query
+  </TabItem>
+
+  <TabItem label="Cloud Search">
+    Anonymized queries through Jan's search infrastructure.
+
+    ```javascript
+    const results = await jan.tools.search({
+      query: "your search query",
+      mode: "cloud"
+    });
+    ```
+
+    **Characteristics:**
+    - No user accounts required
+    - Cached common queries
+    - Sub-second response time
+    - No search history stored
+  </TabItem>
+
+  <TabItem label="Hybrid Mode">
+    Intelligent routing based on query sensitivity.
+
+    ```javascript
+    const results = await jan.tools.search({
+      query: userQuery,
+      mode: "auto"
+    });
+    ```
+
+    **Routing logic:**
+    - Medical/financial → Local only
+    - General queries → Cloud for speed
+    - User preferences → Configurable
+  </TabItem>
+</Tabs>
+
+## MCP Integration
+
+Search functions as a Model Context Protocol tool, enabling:
+
+### Basic Usage
+```
+User: "What's the latest on AI regulations?"
+Jan: [searches web] → [reads articles] → [summarizes findings]
+```
+
+### Advanced Workflows
+```
+User: "Compare Python web frameworks from 2024"
+Jan: [searches multiple sources] → [analyzes documentation] →
+     [creates comparison table] → [provides recommendations]
+```
+
+### Developer Integration
+```python
+async def research_topic(topic):
+    # Search for information
+    results = await jan.search(topic)
+
+    # Read top results
+    content = await jan.read_urls(results[:5])
+
+    # Generate analysis
+    summary = await jan.analyze(content)
+
+    return summary
+```
+
+<Aside type="note">
+Search results include proper attribution with direct links to sources.
+</Aside>
+
+## Features
+
+<CardGrid>
+  <Card title="Real-time Access" icon="rocket">
+    - Current information, not training data
+    - JavaScript rendering support
+    - Dynamic content handling
+    - Multi-page crawling
+  </Card>
+
+  <Card title="Privacy Protection" icon="shield">
+    - No user tracking
+    - Anonymous queries
+    - Local storage only
+    - No cookies or fingerprinting
+  </Card>
+
+  <Card title="Smart Processing" icon="brain">
+    - Semantic understanding
+    - Result ranking
+    - Content extraction
+    - Source verification
+  </Card>
+</CardGrid>
+
+## Search Types
+
+### Quick Answer
+Fast factual responses for simple queries.
+```
+Input: "weather tokyo"
+Output: "18°C, cloudy, 70% humidity"
+Time: < 1 second
+```
+
+### Deep Research
+Comprehensive analysis with multiple sources.
+```
+Input: "impact of LLMs on software development"
+Output: Multi-page report with citations
+Time: 30-60 seconds
+```
+
+### Continuous Monitoring
+Track topics over time (coming v0.8.0).
+```
+Input: "monitor AI model releases"
+Output: Daily summaries of new models
+```
+
+## Privacy Details
+
+### Local Mode Data
+| Data Type | Storage | Duration | Access |
+|-----------|---------|----------|--------|
+| Queries | ~/jan/search | Session | Local only |
+| Results | Memory | Temporary | Process only |
+| Cache | ~/jan/cache | 7 days | User controlled |
+
+### Cloud Mode Data
+| Data Type | Collection | Storage | Usage |
+|-----------|------------|---------|-------|
+| Query text | Anonymized | None | Processing only |
+| IP address | Country only | None | Rate limiting |
+| User ID | Not collected | N/A | N/A |
+
+<Aside type="caution">
+Sensitive queries automatically route to local mode. This includes medical symptoms, financial information, and personal identifiers.
+</Aside>
+
+## Performance Benchmarks
+
+| Query Type | Local Mode | Cloud Mode | Hybrid |
+|------------|------------|------------|--------|
+| Simple fact | 2-3s | < 0.5s | < 0.5s |
+| News search | 3-5s | < 1s | < 1s |
+| Deep research | 20-30s | 5-10s | 5-15s |
+| Multi-site | 30-60s | 10-20s | 10-30s |
+
+## Configuration
+
+### Basic Settings
+```json
+{
+  "search": {
+    "defaultMode": "hybrid",
+    "maxResults": 20,
+    "timeout": 30000,
+    "cacheEnabled": true
+  }
+}
+```
+
+### Advanced Options
+```json
+{
+  "search": {
+    "localOnly": ["medical", "finance", "personal"],
+    "preferCloud": ["news", "weather", "general"],
+    "customRouting": {
+      "enabled": true,
+      "rules": [...]
+    }
+  }
+}
+```
+
+## Roadmap
+
+### v0.6.7 (Current)
+- Basic search MCP
+- Local crawling
+- Simple cloud search
+
+### v0.7.0
+- Semantic search
+- Multi-source aggregation
+- Improved result ranking
+
+### v0.8.0
+- Visual search
+- Continuous monitoring
+- Custom search engines
+
+### v0.9.0
+- Federated search networks
+- User-contributed indices
+- Advanced filtering
+
+<Aside type="tip">
+For best results, use specific queries rather than broad topics. The search tool performs better with "Python async web frameworks comparison 2024" than "web frameworks".
+</Aside>
+
+---
+
+[API Reference](https://jan.ai/docs/api/search) | [MCP Documentation](https://jan.ai/docs/mcp) | [Privacy Policy](https://jan.ai/privacy)

@@ -1,0 +1,194 @@
+---
+title: Jan V1
+description: Our own family of AI models, not another wrapper
+sidebar:
+  order: 1
+---
+
+import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Jan V1 is our own model family designed to compete directly with Claude and GPT-4. We're not just fine-tuning someone else's work - we're building models that solve real problems.
+
+## Why Jan V1 Matters
+
+Most AI applications are just wrappers around Claude or OpenAI. We're different. Jan V1 models are:
+- Trained by us for real-world use cases
+- Optimized to run locally or in the cloud
+- Designed for both power and privacy
+
+<Aside type="note">
+Jan V1 models power everything in the Jan ecosystem. When you use Jan, you're using our models.
+</Aside>
+
+## Model Lineup
+
+| Model | Size | Best For | Availability |
+|-------|------|----------|--------------|
+| Jan V1-7B | 4-8GB | Quick tasks, older hardware | Now |
+| Jan V1-13B | 8-16GB | Daily use, good balance | Now |
+| Jan V1-70B | 40-64GB | Professional work | Now |
+| Jan V1-180B | 100GB+ | Research, complex tasks | Coming 2026 |
+
+## Three Ways to Run
+
+<Tabs>
+  <TabItem label="Local">
+    Run on your own hardware for complete privacy.
+
+    ```bash
+    # In Jan Desktop
+    # Models download automatically when needed
+    ```
+
+    **Requirements:**
+    - 7B: Any modern computer
+    - 13B: 16GB RAM
+    - 70B: 64GB RAM + GPU
+  </TabItem>
+
+  <TabItem label="jan.ai Cloud">
+    Access via our API for maximum convenience.
+
+    ```python
+    # Same API, cloud power
+    response = client.chat.completions.create(
+        model="jan-v1-70b",
+        messages=[...]
+    )
+    ```
+
+    **Benefits:**
+    - No hardware requirements
+    - Always latest version
+    - Scale as needed
+  </TabItem>
+
+  <TabItem label="Self-Hosted">
+    Deploy on your infrastructure for teams.
+
+    ```yaml
+    # Your server, your rules
+    jan-server:
+      model: jan-v1-70b
+      users: 50
+      gpu: A100
+    ```
+
+    **Perfect for:**
+    - Compliance requirements
+    - Team collaboration
+    - Custom deployments
+  </TabItem>
+</Tabs>
+
+## What Makes V1 Different
+
+### Actually Understands Context
+Jan V1 maintains conversation context better than most open models. No more repeating yourself every few messages.
+
+### Trained for Real Work
+- Writing that sounds human
+- Code that actually runs
+- Analysis that makes sense
+- Answers that help
+
+### Optimized for Deployment
+- Quantized versions (Q4, Q5, Q8) for different needs
+- Hardware acceleration support
+- Efficient memory usage
+- Fast inference
+
+<Aside type="tip">
+Most users should start with V1-13B. It's the sweet spot of performance and hardware requirements.
+</Aside>
+
+## Performance Reality
+
+| Task | V1-7B | V1-13B | V1-70B | GPT-3.5 | GPT-4 |
+|------|-------|--------|--------|---------|-------|
+| General Chat | Good | Great | Excellent | Great | Excellent |
+| Coding | Basic | Good | Great | Good | Excellent |
+| Analysis | Basic | Good | Excellent | Good | Excellent |
+| Speed (local) | Very Fast | Fast | Slower | N/A | N/A |
+| Privacy | Complete | Complete | Complete | None | None |
+
+## Common Use Cases
+
+<CardGrid>
+  <Card title="Professional Writing" icon="document">
+    V1-13B and above handle emails, reports, and documentation with natural language.
+  </Card>
+
+  <Card title="Code Assistant" icon="code">
+    All V1 models understand code. Larger models can handle complex refactoring.
+  </Card>
+
+  <Card title="Research & Analysis" icon="chart">
+    V1-70B excels at synthesizing information and drawing insights.
+  </Card>
+
+  <Card title="Customer Support" icon="support">
+    V1 models can be fine-tuned for your specific domain and terminology.
+  </Card>
+</CardGrid>
+
+## For Developers
+
+### Local Inference
+```python
+# Runs on your machine
+from jan import Client
+client = Client(base_url="http://localhost:1337")
+
+response = client.chat.completions.create(
+    model="jan-v1-13b",
+    messages=[{"role": "user", "content": "Explain async/await"}]
+)
+```
+
+### Fine-Tuning
+```python
+# Make it yours
+jan.finetune(
+    base_model="jan-v1-13b",
+    dataset="your-data.jsonl",
+    output="custom-model"
+)
+```
+
+### Model Switching
+```python
+# Use the right tool for the job
+simple_query → "jan-v1-7b"    # Fast
+normal_work → "jan-v1-13b"     # Balanced
+complex_task → "jan-v1-70b"    # Powerful
+```
+
+## The Future
+
+### V1 Series Roadmap
+- **Now**: 7B, 13B, 70B models
+- **2025**: Improved versions with better tool use
+- **2026**: 180B+ models competing with GPT-4
+- **Beyond**: Agentic capabilities built-in
+
+### Our Commitment
+We're building models that:
+- Respect user privacy
+- Run where you need them
+- Solve real problems
+- Keep improving
+
+<Aside type="caution">
+Jan V1 models are not toys. They're production-ready AI that happens to respect your privacy.
+</Aside>
+
+## Why We Built This
+
+Every major AI lab keeps their best models locked in the cloud. We believe you should be able to run competitive AI on your own terms. Jan V1 is our answer to that belief.
+
+We're not trying to win benchmarks. We're trying to build AI that actually helps.
+
+---
+
+[Try Jan V1](https://jan.ai/download) | [Model Benchmarks](https://jan.ai/benchmarks) | [API Documentation](https://jan.ai/docs/api)
