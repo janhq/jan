@@ -37,7 +37,6 @@ export function DynamicControllerSetting({
   controllerType,
   controllerProps,
   onChange,
-  readonly = false,
 }: DynamicControllerProps) {
   if (controllerType === 'input') {
     return (
@@ -51,7 +50,6 @@ export function DynamicControllerSetting({
         }
         inputActions={controllerProps.input_actions}
         className={className}
-        readonly={readonly}
         onChange={(newValue) => onChange(newValue)}
       />
     )
