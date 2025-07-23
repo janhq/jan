@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   fetchModels,
   fetchModelCatalog,
+  fetchHuggingFaceRepo,
   updateModel,
   pullModel,
   abortDownload,
@@ -269,6 +270,261 @@ describe('models service', () => {
       })
       expect(mockEngine.load).toBeCalledTimes(0)
       await expect(startModel(provider, model)).resolves.toBe(undefined)
+    })
+  })
+
+  describe('fetchHuggingFaceRepo', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it('should fetch HuggingFace repository successfully with blobs=true', async () => {
+      const mockRepoData = {
+        id: 'microsoft/DialoGPT-medium',
+        modelId: 'microsoft/DialoGPT-medium',
+        sha: 'abc123',
+        downloads: 5000,
+        likes: 100,
+        tags: ['conversational', 'pytorch'],
+        pipeline_tag: 'text-generation',
+        created_at: '2023-01-01T00:00:00Z',
+        last_modified: '2023-12-01T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'microsoft',
+        siblings: [
+          {
+            rfilename: 'model-Q4_K_M.gguf',
+            size: 2147483648,
+            blobId: 'blob123',
+          },
+          {
+            rfilename: 'model-Q8_0.gguf',
+            size: 4294967296,
+            blobId: 'blob456',
+          },
+          {
+            rfilename: 'README.md',
+            size: 1024,
+            blobId: 'blob789',
+          },
+        ],
+        readme: '# DialoGPT Model\nThis is a conversational AI model.',
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockRepoData),
+      })
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toEqual(mockRepoData)
+      expect(fetch).toHaveBeenCalledWith(
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true'
+      )
+    })
+
+    it('should clean repository ID from various input formats', async () => {
+      const mockRepoData = { modelId: 'microsoft/DialoGPT-medium' }
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockRepoData),
+      })
+
+      // Test with full URL
+      await fetchHuggingFaceRepo('https://huggingface.co/microsoft/DialoGPT-medium')
+      expect(fetch).toHaveBeenCalledWith(
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true'
+      )
+
+      // Test with domain prefix
+      await fetchHuggingFaceRepo('huggingface.co/microsoft/DialoGPT-medium')
+      expect(fetch).toHaveBeenCalledWith(
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true'
+      )
+
+      // Test with trailing slash
+      await fetchHuggingFaceRepo('microsoft/DialoGPT-medium/')
+      expect(fetch).toHaveBeenCalledWith(
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true'
+      )
+    })
+
+    it('should return null for invalid repository IDs', async () => {
+      // Test empty string
+      expect(await fetchHuggingFaceRepo('')).toBeNull()
+
+      // Test string without slash
+      expect(await fetchHuggingFaceRepo('invalid-repo')).toBeNull()
+
+      // Test whitespace only
+      expect(await fetchHuggingFaceRepo('   ')).toBeNull()
+    })
+
+    it('should return null for 404 responses', async () => {
+      ;(fetch as any).mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      })
+
+      const result = await fetchHuggingFaceRepo('nonexistent/model')
+
+      expect(result).toBeNull()
+      expect(fetch).toHaveBeenCalledWith(
+        'https://huggingface.co/api/models/nonexistent/model?blobs=true'
+      )
+    })
+
+    it('should handle other HTTP errors', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      
+      ;(fetch as any).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      })
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toBeNull()
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Error fetching HuggingFace repository:',
+        expect.any(Error)
+      )
+      
+      consoleSpy.mockRestore()
+    })
+
+    it('should handle network errors', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      
+      ;(fetch as any).mockRejectedValue(new Error('Network error'))
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toBeNull()
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Error fetching HuggingFace repository:',
+        expect.any(Error)
+      )
+      
+      consoleSpy.mockRestore()
+    })
+
+    it('should handle repository with no siblings', async () => {
+      const mockRepoData = {
+        id: 'microsoft/DialoGPT-medium',
+        modelId: 'microsoft/DialoGPT-medium',
+        sha: 'abc123',
+        downloads: 5000,
+        likes: 100,
+        tags: ['conversational'],
+        pipeline_tag: 'text-generation',
+        created_at: '2023-01-01T00:00:00Z',
+        last_modified: '2023-12-01T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'microsoft',
+        siblings: undefined,
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockRepoData),
+      })
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toEqual(mockRepoData)
+    })
+
+    it('should handle repository with no GGUF files', async () => {
+      const mockRepoData = {
+        id: 'microsoft/DialoGPT-medium',
+        modelId: 'microsoft/DialoGPT-medium',
+        sha: 'abc123',
+        downloads: 5000,
+        likes: 100,
+        tags: ['conversational'],
+        pipeline_tag: 'text-generation',
+        created_at: '2023-01-01T00:00:00Z',
+        last_modified: '2023-12-01T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'microsoft',
+        siblings: [
+          {
+            rfilename: 'README.md',
+            size: 1024,
+            blobId: 'blob789',
+          },
+          {
+            rfilename: 'config.json',
+            size: 512,
+            blobId: 'blob101',
+          },
+        ],
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockRepoData),
+      })
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toEqual(mockRepoData)
+    })
+
+    it('should handle repository with mixed file types including GGUF', async () => {
+      const mockRepoData = {
+        id: 'microsoft/DialoGPT-medium',
+        modelId: 'microsoft/DialoGPT-medium',
+        sha: 'abc123',
+        downloads: 5000,
+        likes: 100,
+        tags: ['conversational'],
+        pipeline_tag: 'text-generation',
+        created_at: '2023-01-01T00:00:00Z',
+        last_modified: '2023-12-01T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'microsoft',
+        siblings: [
+          {
+            rfilename: 'model-Q4_K_M.gguf',
+            size: 2147483648, // 2GB
+            blobId: 'blob123',
+          },
+          {
+            rfilename: 'README.md',
+            size: 1024,
+            blobId: 'blob789',
+          },
+          {
+            rfilename: 'config.json',
+            size: 512,
+            blobId: 'blob101',
+          },
+        ],
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockRepoData),
+      })
+
+      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+
+      expect(result).toEqual(mockRepoData)
+      // Verify the GGUF file is present in siblings
+      expect(result?.siblings?.some(s => s.rfilename.endsWith('.gguf'))).toBe(true)
     })
   })
 })

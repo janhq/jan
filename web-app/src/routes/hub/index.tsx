@@ -100,8 +100,8 @@ function Hub() {
           return `${(size / 1024 ** 3).toFixed(1)} GB`
         }
 
-        // Generate model_id from filename (remove .gguf extension)
-        const modelId = file.rfilename.replace('.gguf', '')
+        // Generate model_id from filename (remove .gguf extension, case-insensitive)
+        const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
         return {
           model_id: modelId,

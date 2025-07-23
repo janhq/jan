@@ -234,61 +234,149 @@ describe('useModelSources', () => {
   })
 
   describe('addSource', () => {
-    it('should log the source parameter', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    it('should add a new source to the store', () => {
       const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.addSource('test-source')
-      })
-
-      expect(consoleSpy).toHaveBeenCalledWith('test-source')
-      consoleSpy.mockRestore()
-    })
-
-    it('should set loading state during addSource', async () => {
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.addSource('test-source')
-      })
-
-      expect(result.current.loading).toBe(true)
-      expect(result.current.error).toBe(null)
-    })
-
-    it('should handle different source types', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      const { result } = renderHook(() => useModelSources())
-
-      const sources = [
-        'http://example.com/source1',
-        'https://secure.example.com/source2',
-        'file:///local/path/source3',
-        'custom-source-name',
-      ]
-
-      for (const source of sources) {
-        await act(async () => {
-          await result.current.addSource(source)
-        })
-
-        expect(consoleSpy).toHaveBeenCalledWith(source)
+      
+      const testModel: CatalogModel = {
+        model_name: 'test-model',
+        description: 'Test model description',
+        developer: 'test-developer',
+        downloads: 100,
+        num_quants: 2,
+        quants: [
+          {
+            model_id: 'test-model-q4',
+            path: 'https://example.com/test-model-q4.gguf',
+            file_size: '2.0 GB',
+          },
+        ],
+        created_at: '2023-01-01T00:00:00Z',
       }
 
-      consoleSpy.mockRestore()
-    })
-
-    it('should handle empty source string', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.addSource('')
+      act(() => {
+        result.current.addSource(testModel)
       })
 
-      expect(consoleSpy).toHaveBeenCalledWith('')
-      consoleSpy.mockRestore()
+      expect(result.current.sources).toHaveLength(1)
+      expect(result.current.sources[0]).toEqual(testModel)
+    })
+
+    it('should replace existing source with same model_name', () => {
+      const { result } = renderHook(() => useModelSources())
+      
+      const originalModel: CatalogModel = {
+        model_name: 'duplicate-model',
+        description: 'Original description',
+        developer: 'original-developer',
+        downloads: 50,
+        num_quants: 1,
+        quants: [],
+        created_at: '2023-01-01T00:00:00Z',
+      }
+
+      const updatedModel: CatalogModel = {
+        model_name: 'duplicate-model',
+        description: 'Updated description',
+        developer: 'updated-developer',
+        downloads: 150,
+        num_quants: 2,
+        quants: [
+          {
+            model_id: 'duplicate-model-q4',
+            path: 'https://example.com/duplicate-model-q4.gguf',
+            file_size: '3.0 GB',
+          },
+        ],
+        created_at: '2023-02-01T00:00:00Z',
+      }
+
+      act(() => {
+        result.current.addSource(originalModel)
+      })
+
+      expect(result.current.sources).toHaveLength(1)
+
+      act(() => {
+        result.current.addSource(updatedModel)
+      })
+
+      expect(result.current.sources).toHaveLength(1)
+      expect(result.current.sources[0]).toEqual(updatedModel)
+    })
+
+    it('should handle multiple different sources', () => {
+      const { result } = renderHook(() => useModelSources())
+      
+      const model1: CatalogModel = {
+        model_name: 'model-1',
+        description: 'First model',
+        developer: 'developer-1',
+        downloads: 100,
+        num_quants: 1,
+        quants: [],
+        created_at: '2023-01-01T00:00:00Z',
+      }
+
+      const model2: CatalogModel = {
+        model_name: 'model-2',
+        description: 'Second model',
+        developer: 'developer-2',
+        downloads: 200,
+        num_quants: 1,
+        quants: [],
+        created_at: '2023-01-02T00:00:00Z',
+      }
+
+      act(() => {
+        result.current.addSource(model1)
+      })
+
+      act(() => {
+        result.current.addSource(model2)
+      })
+
+      expect(result.current.sources).toHaveLength(2)
+      expect(result.current.sources).toContainEqual(model1)
+      expect(result.current.sources).toContainEqual(model2)
+    })
+
+    it('should handle CatalogModel with complete quants data', () => {
+      const { result } = renderHook(() => useModelSources())
+      
+      const modelWithQuants: CatalogModel = {
+        model_name: 'model-with-quants',
+        description: 'Model with quantizations',
+        developer: 'quant-developer',
+        downloads: 500,
+        num_quants: 3,
+        quants: [
+          {
+            model_id: 'model-q4_k_m',
+            path: 'https://example.com/model-q4_k_m.gguf',
+            file_size: '2.0 GB',
+          },
+          {
+            model_id: 'model-q8_0',
+            path: 'https://example.com/model-q8_0.gguf',
+            file_size: '4.0 GB',
+          },
+          {
+            model_id: 'model-f16',
+            path: 'https://example.com/model-f16.gguf',
+            file_size: '8.0 GB',
+          },
+        ],
+        created_at: '2023-01-01T00:00:00Z',
+        readme: 'https://example.com/readme.md',
+      }
+
+      act(() => {
+        result.current.addSource(modelWithQuants)
+      })
+
+      expect(result.current.sources).toHaveLength(1)
+      expect(result.current.sources[0]).toEqual(modelWithQuants)
+      expect(result.current.sources[0].quants).toHaveLength(3)
     })
   })
 
