@@ -21,6 +21,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
       if (Array.isArray(builtInModels))
         models = builtInModels.map((model) => {
           const modelManifest = models.find((e) => e.id === model)
+          // TODO: Check chat_template for tool call support
           const capabilities = [
             ModelCapabilities.COMPLETION,
             (

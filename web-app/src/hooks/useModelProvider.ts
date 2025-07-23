@@ -72,7 +72,7 @@ export const useModelProvider = create<ModelProviderState>()(
             ]
             return {
               ...provider,
-              models: mergedModels,
+              models: provider.persist ? provider?.models : mergedModels,
               settings: provider.settings.map((setting) => {
                 const existingSetting = provider.persist
                   ? undefined
