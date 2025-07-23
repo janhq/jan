@@ -51,6 +51,8 @@ export interface HardwareData {
   os_type: string
   os_name: string
   total_memory: number
+  os?: OS
+  ram?: RAM
 }
 
 export interface SystemUsage {
@@ -364,20 +366,20 @@ export const useHardware = create<HardwareStore>()(
               if (gpu.nvidia_info) {
                 return `cuda:${gpu.nvidia_info.index}`
               } else if (gpu.vulkan_info) {
-                return `vulkan:${gpu.vulkan_info.index}`
+                return `Vulkan${gpu.vulkan_info.index}`
               }
             } else if (isCudaBackend && gpu.nvidia_info) {
               // CUDA backend - only use CUDA-compatible GPUs
               return `cuda:${gpu.nvidia_info.index}`
             } else if (isVulkanBackend && gpu.vulkan_info) {
               // Vulkan backend - only use Vulkan-compatible GPUs
-              return `vulkan:${gpu.vulkan_info.index}`
+              return `Vulkan${gpu.vulkan_info.index}`
             } else if (!backendType) {
               // No backend specified, use GPU's preferred type
               if (gpu.nvidia_info) {
                 return `cuda:${gpu.nvidia_info.index}`
               } else if (gpu.vulkan_info) {
-                return `vulkan:${gpu.vulkan_info.index}`
+                return `Vulkan${gpu.vulkan_info.index}`
               }
             }
             return null
@@ -398,11 +400,19 @@ export const useHardware = create<HardwareStore>()(
             .map((device) => device.trim())
             .filter((device) => device.length > 0)
             .map((device) => {
-              const match = device.match(/^(cuda|vulkan):(\d+)$/)
-              if (match) {
+              // Handle both formats: "cuda:0" and "Vulkan1"
+              const cudaMatch = device.match(/^cuda:(\d+)$/)
+              const vulkanMatch = device.match(/^Vulkan(\d+)$/)
+
+              if (cudaMatch) {
                 return {
-                  type: match[1] as 'cuda' | 'vulkan',
-                  index: parseInt(match[2]),
+                  type: 'cuda' as const,
+                  index: parseInt(cudaMatch[1]),
+                }
+              } else if (vulkanMatch) {
+                return {
+                  type: 'vulkan' as const,
+                  index: parseInt(vulkanMatch[1]),
                 }
               }
               return null
