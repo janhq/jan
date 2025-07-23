@@ -164,14 +164,14 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.channel == 'stable' && 'jan' || format('jan-{0}', inputs.channel) }}-linux-amd64-${{ inputs.new_version }}.deb
+          name: jan-linux-amd64-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.channel == 'stable' && 'jan' || format('jan-{0}', inputs.channel) }}-linux-amd64-${{ inputs.new_version }}.AppImage
+          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
       ## Set output filename for linux
