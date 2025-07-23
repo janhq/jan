@@ -2,7 +2,6 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useHardware } from '@/hooks/useHardware'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
@@ -39,6 +38,7 @@ import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
+import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -80,7 +80,6 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
-  const { updateGPUActivationFromDeviceString } = useHardware()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
@@ -256,7 +255,8 @@ function ProviderDetail() {
                           controllerProps={setting.controller_props}
                           className={cn(
                             setting.key === 'api-key' &&
-                              'third-step-setup-remote-provider'
+                              'third-step-setup-remote-provider',
+                            setting.key === 'device' && 'hidden'
                           )}
                           onChange={(newValue) => {
                             if (provider) {
@@ -288,16 +288,28 @@ function ProviderDetail() {
                                 updateObj.base_url = newValue
                               }
 
-                              // Special handling for device setting changes
-                              if (
-                                settingKey === 'device' &&
-                                typeof newValue === 'string' &&
-                                provider.provider === 'llamacpp'
-                              ) {
-                                console.log(
-                                  `Device setting manually changed to: "${newValue}"`
-                                )
-                                updateGPUActivationFromDeviceString(newValue)
+                              // Reset device setting to empty when backend version changes
+                              if (settingKey === 'version_backend') {
+                                const deviceSettingIndex =
+                                  newSettings.findIndex(
+                                    (s) => s.key === 'device'
+                                  )
+
+                                if (deviceSettingIndex !== -1) {
+                                  ;(
+                                    newSettings[deviceSettingIndex]
+                                      .controller_props as {
+                                      value: string
+                                    }
+                                  ).value = ''
+                                }
+
+                                // Reset llamacpp device activations when backend version changes
+                                if (providerName === 'llamacpp') {
+                                  const { setActivatedDevices } =
+                                    useLlamacppDevices.getState()
+                                  setActivatedDevices([])
+                                }
                               }
 
                               updateSettings(

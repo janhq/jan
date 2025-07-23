@@ -7,124 +7,21 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useHardware } from '@/hooks/useHardware'
-// import { useVulkan } from '@/hooks/useVulkan'
-import type { GPU, HardwareData } from '@/hooks/useHardware'
-import { useEffect, useState } from 'react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
-  IconGripVertical,
-  IconDeviceDesktopAnalytics,
-} from '@tabler/icons-react'
-import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
+import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
+import { useEffect } from 'react'
+import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
+import { getSystemUsage } from '@/services/hardware'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { formatMegaBytes } from '@/lib/utils'
 import { windowKey } from '@/constants/windows'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { stopAllModels } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
   component: Hardware,
 })
-
-function SortableGPUItem({ gpu, index, isCompatible, isActivated }: { gpu: GPU; index: number; isCompatible: boolean; isActivated: boolean }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: index })
-  const { t } = useTranslation()
-
-  const { systemUsage, toggleGPUActivation, gpuLoading } = useHardware()
-  const usage = systemUsage.gpus[index]
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: 'relative' as const,
-    zIndex: isDragging ? 1 : 0,
-  }
-
-  return (
-    <div ref={setNodeRef} style={style} className={`mb-4 last:mb-0 ${!isCompatible ? 'opacity-60' : ''}`}>
-      <CardItem
-        title={
-          <div className="flex items-center gap-2">
-            <div
-              {...attributes}
-              {...listeners}
-              className="size-6 cursor-move flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-            >
-              <IconGripVertical size={18} className="text-main-view-fg/60" />
-            </div>
-            <span className="text-main-view-fg/80">{gpu.name}</span>
-            {!isCompatible && (
-              <span className="text-xs bg-destructive/10 text-destructive px-2 py-1 rounded-sm">
-                Incompatible with current backend
-              </span>
-            )}
-          </div>
-        }
-        actions={
-          <div className="flex items-center gap-4">
-            <Switch
-              checked={isActivated}
-              disabled={!!gpuLoading[index] || !isCompatible}
-              onCheckedChange={() => toggleGPUActivation(index)}
-            />
-          </div>
-        }
-      />
-      <div className="ml-8 mt-3">
-        <CardItem
-          title={t('settings:hardware.vram')}
-          actions={
-            <span className="text-main-view-fg/80">
-              {formatMegaBytes(usage?.used_memory)}{' '}
-              {t('settings:hardware.freeOf')}{' '}
-              {formatMegaBytes(gpu.total_memory)}
-            </span>
-          }
-        />
-        <CardItem
-          title={t('settings:hardware.driverVersion')}
-          actions={
-            <span className="text-main-view-fg/80">
-              {gpu.driver_version?.slice(0, 50) || '-'}
-            </span>
-          }
-        />
-        <CardItem
-          title={t('settings:hardware.computeCapability')}
-          actions={
-            <span className="text-main-view-fg/80">
-              {gpu.nvidia_info?.compute_capability ??
-                gpu.vulkan_info?.api_version}
-            </span>
-          }
-        />
-      </div>
-    </div>
-  )
-}
 
 function Hardware() {
   const { t } = useTranslation()
@@ -132,133 +29,65 @@ function Hardware() {
     hardwareData,
     systemUsage,
     setHardwareData,
-    updateHardwareDataPreservingGpuOrder,
     updateSystemUsage,
-    reorderGPUs,
     pollingPaused,
   } = useHardware()
-  // const { vulkanEnabled, setVulkanEnabled } = useVulkan()
 
   const { providers } = useModelProvider()
   const llamacpp = providers.find((p) => p.provider === 'llamacpp')
-  const versionBackend = llamacpp?.settings.find((s) => s.key === "version_backend")?.controller_props.value
 
-  // Determine backend type and filter GPUs accordingly
-  const isCudaBackend = typeof versionBackend === 'string' && versionBackend.includes('cuda')
-  const isVulkanBackend = typeof versionBackend === 'string' && versionBackend.includes('vulkan')
+  // Llamacpp devices hook
+  const {
+    devices: llamacppDevices,
+    loading: llamacppDevicesLoading,
+    error: llamacppDevicesError,
+    activatedDevices,
+    toggleDevice,
+    fetchDevices,
+  } = useLlamacppDevices()
 
-  // Filter and prepare GPUs based on backend
-  const getFilteredGPUs = () => {
-    // Always show all GPUs, but compatibility will be determined by isGPUActive
-    return hardwareData.gpus
-  }
-
-  const filteredGPUs = getFilteredGPUs()
-
-  // Check if GPU should be active based on backend compatibility
-  const isGPUCompatible = (gpu: GPU) => {
-    if (isCudaBackend) {
-      return gpu.nvidia_info !== null
-    } else if (isVulkanBackend) {
-      return gpu.vulkan_info !== null
-    } else {
-      // No valid backend - all GPUs are inactive
-      return false
-    }
-  }
-
-  // Check if GPU is actually activated
-  const isGPUActive = (gpu: GPU) => {
-    return isGPUCompatible(gpu) && (gpu.activated ?? false)
-  }
-
+  // Fetch llamacpp devices when component mounts
   useEffect(() => {
-    getHardwareInfo().then((freshData) => {
-      const data = freshData as unknown as HardwareData
-      updateHardwareDataPreservingGpuOrder(data)
-    })
-  }, [updateHardwareDataPreservingGpuOrder])
+    fetchDevices()
+  }, [fetchDevices])
 
-  // Hardware and provider sync logic
-  const { getActivatedDeviceString, updateGPUActivationFromDeviceString } = useHardware()
-  const { updateProvider, getProviderByName } = useModelProvider()
-  const [isInitialized, setIsInitialized] = useState(false)
+  const { getProviderByName } = useModelProvider()
 
-  // Initialize GPU activations from device setting on first load
+  // Initialize llamacpp device activations from provider settings
   useEffect(() => {
-    if (hardwareData.gpus.length > 0 && !isInitialized) {
+    if (llamacppDevices.length > 0 && activatedDevices.size === 0) {
       const llamacppProvider = getProviderByName('llamacpp')
-      const currentDeviceSetting = llamacppProvider?.settings.find(s => s.key === 'device')?.controller_props.value as string
-      
+      const currentDeviceSetting = llamacppProvider?.settings.find(
+        (s) => s.key === 'device'
+      )?.controller_props.value as string
+
       if (currentDeviceSetting) {
-        console.log(`Initializing GPU activations from device setting: "${currentDeviceSetting}"`)
-        updateGPUActivationFromDeviceString(currentDeviceSetting)
-      }
-      
-      setIsInitialized(true)
-    }
-  }, [hardwareData.gpus.length, isInitialized, getProviderByName, updateGPUActivationFromDeviceString])
+        const deviceIds = currentDeviceSetting
+          .split(',')
+          .map((device) => device.trim())
+          .filter((device) => device.length > 0)
 
-  // Sync device setting when GPU activations change (only after initialization)
-  const gpuActivationStates = hardwareData.gpus.map(gpu => gpu.activated)
-  
-  useEffect(() => {
-    if (isInitialized && hardwareData.gpus.length > 0) {
-      const llamacppProvider = getProviderByName('llamacpp')
-      const backendType = llamacppProvider?.settings.find(s => s.key === 'version_backend')?.controller_props.value as string
-      const deviceString = getActivatedDeviceString(backendType)
-      
-      if (llamacppProvider) {
-        const currentDeviceSetting = llamacppProvider.settings.find(s => s.key === 'device')
-        
-        // Sync device string when GPU activations change (only after initialization)
-        if (currentDeviceSetting && currentDeviceSetting.controller_props.value !== deviceString) {
-          console.log(`Syncing device string from "${currentDeviceSetting.controller_props.value}" to "${deviceString}"`)
-          
-          const updatedSettings = llamacppProvider.settings.map(setting => {
-            if (setting.key === 'device') {
-              return {
-                ...setting,
-                controller_props: {
-                  ...setting.controller_props,
-                  value: deviceString
-                }
-              }
-            }
-            return setting
-          })
-          
-          updateProvider('llamacpp', {
-            settings: updatedSettings
-          })
+        // Find matching devices by ID
+        const matchingDeviceIds = deviceIds.filter((deviceId) =>
+          llamacppDevices.some((device) => device.id === deviceId)
+        )
+
+        if (matchingDeviceIds.length > 0) {
+          console.log(
+            `Initializing llamacpp device activations from device setting: "${currentDeviceSetting}"`
+          )
+          // Update the activatedDevices in the hook
+          const { setActivatedDevices } = useLlamacppDevices.getState()
+          setActivatedDevices(matchingDeviceIds)
         }
       }
     }
-  }, [isInitialized, gpuActivationStates, versionBackend, getActivatedDeviceString, updateProvider, getProviderByName, hardwareData.gpus.length])
-
-  // Set up DnD sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor)
-  )
-
-  // Handle drag end event
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-
-    if (over && active.id !== over.id) {
-      // Find the actual indices in the original hardwareData.gpus array
-      const activeGpu = filteredGPUs[active.id as number]
-      const overGpu = filteredGPUs[over.id as number]
-      
-      const oldIndex = hardwareData.gpus.findIndex(gpu => gpu.uuid === activeGpu.uuid)
-      const newIndex = hardwareData.gpus.findIndex(gpu => gpu.uuid === overGpu.uuid)
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        reorderGPUs(oldIndex, newIndex)
-      }
-    }
-  }
+  }, [
+    llamacppDevices.length,
+    activatedDevices.size,
+    getProviderByName,
+    llamacppDevices,
+  ])
 
   useEffect(() => {
     if (pollingPaused) return
@@ -452,64 +281,64 @@ function Hardware() {
               />
             </Card>
 
-            {/* Vulkan Settings */}
-            {/* {hardwareData.gpus.length > 0 && (
-              <Card title={t('settings:hardware.vulkan')}>
-                <CardItem
-                  title={t('settings:hardware.enableVulkan')}
-                  description={t('settings:hardware.enableVulkanDesc')}
-                  actions={
-                    <div className="flex items-center gap-4">
-                      <Switch
-                        checked={vulkanEnabled}
-                        onCheckedChange={(checked) => {
-                          setVulkanEnabled(checked)
-                          setTimeout(() => {
-                            window.location.reload()
-                          }, 500) // Reload after 500ms to apply changes
-                        }}
-                      />
-                    </div>
-                  }
-                />
-              </Card>
-            )} */}
-
-            {/* GPU Information */}
-            {!IS_MACOS ? (
-              <Card title={t('settings:hardware.gpus')}>
-             
-                
-                {hardwareData.gpus.length > 0 ? (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={filteredGPUs.map((_, index) => index)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {filteredGPUs.map((gpu, index) => (
-                        <SortableGPUItem 
-                          key={index} 
-                          gpu={gpu} 
-                          index={index} 
-                          isCompatible={isGPUCompatible(gpu)} 
-                          isActivated={isGPUActive(gpu)} 
-                        />
-                      ))}
-                    </SortableContext>
-                  </DndContext>
-                ) : (
+            {/* Llamacpp Devices Information */}
+            {!IS_MACOS && llamacpp && (
+              <Card title="GPUs">
+                {llamacppDevicesLoading ? (
+                  <CardItem title="Loading devices..." actions={<></>} />
+                ) : llamacppDevicesError ? (
                   <CardItem
-                    title={t('settings:hardware.noGpus')}
-                    actions={<></>}
+                    title="Error loading devices"
+                    actions={
+                      <span className="text-destructive text-sm">
+                        {llamacppDevicesError}
+                      </span>
+                    }
                   />
+                ) : llamacppDevices.length > 0 ? (
+                  llamacppDevices.map((device, index) => (
+                    <Card key={index}>
+                      <CardItem
+                        title={device.name}
+                        actions={
+                          <div className="flex items-center gap-4">
+                            {/* <div className="flex flex-col items-end gap-1">
+                            <span className="text-main-view-fg/80 text-sm">
+                              ID: {device.id}
+                            </span>
+                            <span className="text-main-view-fg/80 text-sm">
+                              Memory: {formatMegaBytes(device.mem)} /{' '}
+                              {formatMegaBytes(device.free)} free
+                            </span>
+                          </div> */}
+                            <Switch
+                              checked={activatedDevices.has(device.id)}
+                              onCheckedChange={() => {
+                                toggleDevice(device.id)
+                                stopAllModels()
+                              }}
+                            />
+                          </div>
+                        }
+                      />
+                      <div className="mt-3">
+                        <CardItem
+                          title={t('settings:hardware.vram')}
+                          actions={
+                            <span className="text-main-view-fg/80">
+                              {formatMegaBytes(device.mem)}{' '}
+                              {t('settings:hardware.freeOf')}{' '}
+                              {formatMegaBytes(device.free)}
+                            </span>
+                          }
+                        />
+                      </div>
+                    </Card>
+                  ))
+                ) : (
+                  <CardItem title="No devices found" actions={<></>} />
                 )}
               </Card>
-            ) : (
-              <></>
             )}
           </div>
         </div>
