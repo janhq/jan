@@ -8,8 +8,8 @@ type ModelSourcesState = {
   sources: CatalogModel[]
   error: Error | null
   loading: boolean
+  addSource: (source: CatalogModel) => void
   fetchSources: () => Promise<void>
-  addSource: (source: string) => Promise<void>
 }
 
 export const useModelSources = create<ModelSourcesState>()(
@@ -19,6 +19,14 @@ export const useModelSources = create<ModelSourcesState>()(
       error: null,
       loading: false,
 
+      addSource: (source: CatalogModel) => {
+        set((state) => ({
+          sources: [
+            ...state.sources.filter((e) => e.model_name !== source.model_name),
+            source,
+          ],
+        }))
+      },
       fetchSources: async () => {
         set({ loading: true, error: null })
         try {
@@ -37,24 +45,6 @@ export const useModelSources = create<ModelSourcesState>()(
         } catch (error) {
           set({ error: error as Error, loading: false })
         }
-      },
-
-      addSource: async (source: string) => {
-        set({ loading: true, error: null })
-        console.log(source)
-        // try {
-        //   await addModelSource(source)
-        //   const newSources = await fetchModelSources()
-        //   const currentSources = get().sources
-
-        //   if (!deepCompareModelSources(currentSources, newSources)) {
-        //     set({ sources: newSources, loading: false })
-        //   } else {
-        //     set({ loading: false })
-        //   }
-        // } catch (error) {
-        //   set({ error: error as Error, loading: false })
-        // }
       },
     }),
     {

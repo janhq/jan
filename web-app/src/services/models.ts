@@ -25,6 +25,36 @@ export interface CatalogModel {
 
 export type ModelCatalog = CatalogModel[]
 
+// HuggingFace repository information
+export interface HuggingFaceRepo {
+  id: string
+  modelId: string
+  sha: string
+  downloads: number
+  likes: number
+  library_name?: string
+  tags: string[]
+  pipeline_tag?: string
+  created_at: string
+  last_modified: string
+  private: boolean
+  disabled: boolean
+  gated: boolean | string
+  author: string
+  cardData?: {
+    license?: string
+    language?: string[]
+    datasets?: string[]
+    metrics?: string[]
+  }
+  siblings?: Array<{
+    rfilename: string
+    size?: number
+    blobId?: string
+  }>
+  readme?: string
+}
+
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
 
@@ -60,6 +90,47 @@ export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
     throw new Error(
       `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
     )
+  }
+}
+
+/**
+ * Fetches HuggingFace repository information.
+ * @param repoId The repository ID (e.g., "microsoft/DialoGPT-medium")
+ * @returns A promise that resolves to the repository information.
+ */
+export const fetchHuggingFaceRepo = async (
+  repoId: string
+): Promise<HuggingFaceRepo | null> => {
+  try {
+    // Clean the repo ID to handle various input formats
+    const cleanRepoId = repoId
+      .replace(/^https?:\/\/huggingface\.co\//, '')
+      .replace(/^huggingface\.co\//, '')
+      .replace(/\/$/, '') // Remove trailing slash
+      .trim()
+
+    if (!cleanRepoId || !cleanRepoId.includes('/')) {
+      return null
+    }
+
+    const response = await fetch(
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`
+    )
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null // Repository not found
+      }
+      throw new Error(
+        `Failed to fetch HuggingFace repository: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const repoData: HuggingFaceRepo = await response.json()
+    return repoData
+  } catch (error) {
+    console.error('Error fetching HuggingFace repository:', error)
+    return null
   }
 }
 
