@@ -92,6 +92,13 @@ interface EmbeddingData {
   index: number
   object: string
 }
+
+interface DeviceList {
+  id: string
+  name: string
+  mem: number
+  free: number
+}
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -1221,6 +1228,32 @@ export default class llamacpp_extension extends AIEngine {
       lmodels.push(sInfo.model_id)
     }
     return lmodels
+  }
+
+  async getDevices(): Promise<DeviceList[]> {
+    const cfg = this.config
+    const [version, backend] = cfg.version_backend.split('/')
+    if (!version || !backend) {
+      throw new Error(
+        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+      )
+    }
+
+    // Ensure backend is downloaded and ready before proceeding
+    await this.ensureBackendReady(backend, version)
+    logger.info('Calling Tauri command getDevices with arg --list-devices')
+    const backendPath = await getBackendExePath(backend, version)
+    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
+    try {
+      const dList = await invoke<DeviceList[]>('get_devices', {
+        backendPath,
+        libraryPath,
+      })
+      return dList
+    } catch (error) {
+      logger.error('Failed to query devices:\n', error)
+      throw new Error(`Failed to load llama-server: ${error}`)
+    }
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
