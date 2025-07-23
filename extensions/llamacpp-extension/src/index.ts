@@ -1251,7 +1251,7 @@ export default class llamacpp_extension extends AIEngine {
       })
       return dList
     } catch (error) {
-      logger.error('Error loading llama-server:\n', error)
+      logger.error('Failed to query devices:\n', error)
       throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
