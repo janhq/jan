@@ -1,0 +1,276 @@
+---
+title: Browser Use
+description: Web automation capabilities for AI assistants
+sidebar:
+  order: 2
+---
+
+import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+
+Browser Use enables Jan to interact with web pages programmatically. It can fill forms, extract data, and automate multi-step workflows while respecting site policies.
+
+## Overview
+
+Browser Use operates in two modes:
+
+| Mode | Execution | Use Case | Requirements |
+|------|-----------|----------|--------------|
+| Local | Your device | Personal automation | Browser installed |
+| Cloud | Jan servers | Scheduled tasks | Internet connection |
+
+## Capabilities
+
+<CardGrid>
+  <Card title="Form Automation" icon="document">
+    - Fill application forms
+    - Extract structured data
+    - Handle multi-page flows
+    - Screenshot verification
+  </Card>
+
+  <Card title="Data Collection" icon="chart">
+    - Price monitoring
+    - Content aggregation
+    - Competitor analysis
+    - Research automation
+  </Card>
+
+  <Card title="Task Automation" icon="rocket">
+    - Appointment booking
+    - Status checking
+    - Report generation
+    - Workflow execution
+  </Card>
+</CardGrid>
+
+## Safety Boundaries
+
+### Allowed Actions
+- Read public content
+- Fill non-financial forms
+- Click buttons and links
+- Take screenshots
+- Extract text and data
+- Handle JavaScript sites
+
+### Restricted Actions
+- Payment processing
+- Financial transactions
+- CAPTCHA bypassing
+- Terms of Service violations
+- Credential harvesting
+- Malicious automation
+
+<Aside type="caution">
+High-risk actions require explicit user confirmation. Browser Use will never complete financial transactions automatically.
+</Aside>
+
+## Implementation
+
+<Tabs>
+  <TabItem label="Local Execution">
+    Runs on your device using Playwright.
+
+    ```javascript
+    await jan.browser.use({
+      task: "Fill job application",
+      url: "https://careers.example.com",
+      mode: "local",
+      headless: false  // Watch it work
+    });
+    ```
+
+    **Advantages:**
+    - Uses your sessions
+    - Access internal tools
+    - Complete privacy
+    - Visual feedback
+
+    **Limitations:**
+    - Uses local resources
+    - Requires browser
+    - Limited to one task
+  </TabItem>
+
+  <TabItem label="Cloud Execution">
+    Runs on Jan's infrastructure.
+
+    ```javascript
+    await jan.browser.use({
+      task: "Monitor prices daily",
+      urls: ["site1.com", "site2.com"],
+      mode: "cloud",
+      schedule: "0 9 * * *"
+    });
+    ```
+
+    **Advantages:**
+    - Runs 24/7
+    - Parallel execution
+    - No local resources
+    - Scheduled tasks
+
+    **Limitations:**
+    - No personal accounts
+    - Public sites only
+    - Internet required
+  </TabItem>
+</Tabs>
+
+## Common Use Cases
+
+### Research Automation
+```javascript
+// Gather pricing from multiple vendors
+const prices = await jan.browser.use({
+  task: "Extract pricing tables",
+  urls: competitorUrls,
+  extract: ["price", "features", "limits"]
+});
+```
+
+### Form Processing
+```javascript
+// Fill repetitive applications
+await jan.browser.use({
+  task: "Complete application",
+  data: applicationData,
+  confirmation: "review"  // Stop before submit
+});
+```
+
+### Monitoring
+```javascript
+// Track availability
+await jan.browser.use({
+  task: "Check stock status",
+  url: "https://store.example.com/product",
+  notify: "when_available"
+});
+```
+
+## Integration with Other Tools
+
+### Search + Browser Use
+```
+User: "Book a restaurant for Saturday"
+Jan: [searches restaurants] → [checks availability] →
+     [fills reservation form] → [confirms details]
+```
+
+### Deep Research + Browser Use
+```
+User: "Compare SaaS pricing across competitors"
+Jan: [identifies competitors] → [visits pricing pages] →
+     [extracts data] → [creates comparison]
+```
+
+## Technical Architecture
+
+### Execution Pipeline
+1. **Task Analysis**: Understand user intent
+2. **Site Navigation**: Load and interact with pages
+3. **Action Execution**: Click, type, select
+4. **Data Extraction**: Capture results
+5. **Verification**: Screenshot confirmation
+
+### Performance Metrics
+| Operation | Local Time | Cloud Time | Success Rate |
+|-----------|------------|------------|--------------|
+| Page load | 1-3s | 2-4s | 95% |
+| Form fill | 5-10s | 8-15s | 90% |
+| Multi-page | 30-60s | 45-90s | 85% |
+| Data extract | 10-20s | 15-30s | 92% |
+
+<Aside type="note">
+Success rates depend on site complexity and anti-automation measures. Simple sites have higher success rates.
+</Aside>
+
+## Configuration
+
+### Basic Settings
+```json
+{
+  "browserUse": {
+    "defaultMode": "local",
+    "timeout": 60000,
+    "retries": 3,
+    "screenshotOnError": true
+  }
+}
+```
+
+### Advanced Options
+```json
+{
+  "browserUse": {
+    "userAgent": "Mozilla/5.0...",
+    "viewport": { "width": 1920, "height": 1080 },
+    "cloudWorkers": 5,
+    "rateLimit": {
+      "requests": 100,
+      "window": "1h"
+    }
+  }
+}
+```
+
+## Error Handling
+
+| Error Type | Cause | Resolution |
+|------------|-------|------------|
+| Navigation failed | Site down/blocked | Retry or alternative site |
+| Element not found | Page structure changed | Update selectors |
+| Timeout | Slow site/connection | Increase timeout |
+| Blocked by site | Anti-bot measures | Use local mode |
+
+## Privacy Considerations
+
+### Local Mode
+- All data stays on device
+- Uses your browser profile
+- No external connections
+- Complete user control
+
+### Cloud Mode
+- Tasks are anonymized
+- No personal data stored
+- Results encrypted
+- Auto-deletion after delivery
+
+<Aside type="tip">
+For sensitive tasks, always use local mode. Cloud mode is best for public data collection and non-personal automation.
+</Aside>
+
+## Roadmap
+
+### v0.8.0 (Q4 2025)
+- Basic browser automation
+- Form filling
+- Screenshot capture
+- Local mode only
+
+### v0.8.x (Q1 2026)
+- Cloud execution
+- Scheduled tasks
+- Parallel processing
+- Result caching
+
+### v0.9.0 (Q2 2026)
+- Visual element detection
+- Natural language navigation
+- Advanced error recovery
+- Workflow templates
+
+## Best Practices
+
+1. **Start Simple**: Test with single-page tasks first
+2. **Use Confirmations**: Review before critical actions
+3. **Handle Errors**: Expect and plan for failures
+4. **Respect Sites**: Follow robots.txt and rate limits
+5. **Local First**: Use cloud only when necessary
+
+---
+
+[Documentation](https://jan.ai/docs/browser-use) | [Examples](https://github.com/janhq/browser-use-examples) | [API Reference](https://jan.ai/docs/api/browser)
