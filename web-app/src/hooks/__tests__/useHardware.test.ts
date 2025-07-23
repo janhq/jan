@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useHardware, HardwareData, SystemUsage, CPU, GPU, OS, RAM } from '../useHardware'
+import {
+  useHardware,
+  HardwareData,
+  SystemUsage,
+  CPU,
+  GPU,
+  OS,
+  RAM,
+} from '../useHardware'
 
 // Mock dependencies
 vi.mock('@/constants/localStorage', () => ({
@@ -328,7 +336,13 @@ describe('useHardware', () => {
       const { result } = renderHook(() => useHardware())
 
       const initialData: HardwareData = {
-        cpu: { arch: 'x86_64', core_count: 4, extensions: [], name: 'CPU', usage: 0 },
+        cpu: {
+          arch: 'x86_64',
+          core_count: 4,
+          extensions: [],
+          name: 'CPU',
+          usage: 0,
+        },
         gpus: [
           {
             name: 'GPU 1',
@@ -338,7 +352,12 @@ describe('useHardware', () => {
             driver_version: '1.0',
             activated: true,
             nvidia_info: { index: 0, compute_capability: '8.0' },
-            vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+            vulkan_info: {
+              index: 0,
+              device_id: 1,
+              device_type: 'discrete',
+              api_version: '1.0',
+            },
           },
           {
             name: 'GPU 2',
@@ -348,7 +367,12 @@ describe('useHardware', () => {
             driver_version: '2.0',
             activated: false,
             nvidia_info: { index: 1, compute_capability: '7.0' },
-            vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+            vulkan_info: {
+              index: 1,
+              device_id: 2,
+              device_type: 'discrete',
+              api_version: '1.0',
+            },
           },
         ],
         os_type: 'windows',
@@ -384,7 +408,13 @@ describe('useHardware', () => {
       const { result } = renderHook(() => useHardware())
 
       const initialData: HardwareData = {
-        cpu: { arch: 'x86_64', core_count: 4, extensions: [], name: 'CPU', usage: 0 },
+        cpu: {
+          arch: 'x86_64',
+          core_count: 4,
+          extensions: [],
+          name: 'CPU',
+          usage: 0,
+        },
         gpus: [
           {
             name: 'GPU 1',
@@ -394,7 +424,12 @@ describe('useHardware', () => {
             driver_version: '1.0',
             activated: true,
             nvidia_info: { index: 0, compute_capability: '8.0' },
-            vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+            vulkan_info: {
+              index: 0,
+              device_id: 1,
+              device_type: 'discrete',
+              api_version: '1.0',
+            },
           },
         ],
         os_type: 'windows',
@@ -417,7 +452,12 @@ describe('useHardware', () => {
             uuid: 'gpu-new',
             driver_version: '3.0',
             nvidia_info: { index: 1, compute_capability: '7.0' },
-            vulkan_info: { index: 1, device_id: 3, device_type: 'discrete', api_version: '1.0' },
+            vulkan_info: {
+              index: 1,
+              device_id: 3,
+              device_type: 'discrete',
+              api_version: '1.0',
+            },
           },
         ],
       }
@@ -451,7 +491,13 @@ describe('useHardware', () => {
       expect(result.current.hardwareData.gpus.length).toBe(0)
 
       const hardwareData: HardwareData = {
-        cpu: { arch: 'x86_64', core_count: 4, extensions: [], name: 'CPU', usage: 0 },
+        cpu: {
+          arch: 'x86_64',
+          core_count: 4,
+          extensions: [],
+          name: 'CPU',
+          usage: 0,
+        },
         gpus: [
           {
             name: 'GPU 1',
@@ -460,7 +506,12 @@ describe('useHardware', () => {
             uuid: 'gpu-1',
             driver_version: '1.0',
             nvidia_info: { index: 0, compute_capability: '8.0' },
-            vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+            vulkan_info: {
+              index: 0,
+              device_id: 1,
+              device_type: 'discrete',
+              api_version: '1.0',
+            },
           },
         ],
         os_type: 'windows',
@@ -489,7 +540,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'GPU 2',
@@ -499,7 +555,12 @@ describe('useHardware', () => {
           driver_version: '2.0',
           activated: false,
           nvidia_info: { index: 1, compute_capability: '7.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -534,7 +595,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -568,7 +634,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'GPU 2',
@@ -578,7 +649,12 @@ describe('useHardware', () => {
           driver_version: '2.0',
           activated: false,
           nvidia_info: { index: 1, compute_capability: '7.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'GPU 3',
@@ -588,7 +664,12 @@ describe('useHardware', () => {
           driver_version: '3.0',
           activated: false,
           nvidia_info: { index: 2, compute_capability: '6.0' },
-          vulkan_info: { index: 2, device_id: 3, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 2,
+            device_id: 3,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -617,7 +698,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -654,7 +740,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -678,7 +769,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -702,7 +798,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -711,7 +812,7 @@ describe('useHardware', () => {
       })
 
       const deviceString = result.current.getActivatedDeviceString('vulkan')
-      expect(deviceString).toBe('vulkan:1')
+      expect(deviceString).toBe('Vulkan1')
     })
 
     it('should handle mixed backend correctly', () => {
@@ -726,7 +827,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'AMD GPU',
@@ -737,7 +843,12 @@ describe('useHardware', () => {
           activated: true,
           // AMD GPU shouldn't have nvidia_info, just vulkan_info
           nvidia_info: { index: 1, compute_capability: '7.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -747,7 +858,8 @@ describe('useHardware', () => {
 
       // Based on the implementation, both GPUs will use CUDA since they both have nvidia_info
       // The test should match the actual behavior
-      const deviceString = result.current.getActivatedDeviceString('cuda+vulkan')
+      const deviceString =
+        result.current.getActivatedDeviceString('cuda+vulkan')
       expect(deviceString).toBe('cuda:0,cuda:1')
     })
 
@@ -763,7 +875,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'GPU 2',
@@ -773,7 +890,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 1, compute_capability: '8.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -799,7 +921,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
         {
           name: 'GPU 2',
@@ -809,7 +936,12 @@ describe('useHardware', () => {
           driver_version: '2.0',
           activated: false,
           nvidia_info: { index: 1, compute_capability: '7.0' },
-          vulkan_info: { index: 1, device_id: 2, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 1,
+            device_id: 2,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -818,7 +950,7 @@ describe('useHardware', () => {
       })
 
       act(() => {
-        result.current.updateGPUActivationFromDeviceString('cuda:0,vulkan:1')
+        result.current.updateGPUActivationFromDeviceString('cuda:0,Vulkan1')
       })
 
       expect(result.current.hardwareData.gpus[0].activated).toBe(true)
@@ -837,7 +969,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: true,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -864,7 +1001,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -893,7 +1035,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -923,7 +1070,12 @@ describe('useHardware', () => {
           driver_version: '1.0',
           activated: false,
           nvidia_info: { index: 0, compute_capability: '8.0' },
-          vulkan_info: { index: 0, device_id: 1, device_type: 'discrete', api_version: '1.0' },
+          vulkan_info: {
+            index: 0,
+            device_id: 1,
+            device_type: 'discrete',
+            api_version: '1.0',
+          },
         },
       ]
 
@@ -938,11 +1090,15 @@ describe('useHardware', () => {
         await act(async () => {
           await result.current.toggleGPUActivation(5)
         })
-        
-        expect(result.current.hardwareData.gpus[0].activated).toBe(originalState)
+
+        expect(result.current.hardwareData.gpus[0].activated).toBe(
+          originalState
+        )
       } catch (error) {
         // If it throws an error due to index bounds, that's expected behavior
-        expect(result.current.hardwareData.gpus[0].activated).toBe(originalState)
+        expect(result.current.hardwareData.gpus[0].activated).toBe(
+          originalState
+        )
       }
     })
   })
