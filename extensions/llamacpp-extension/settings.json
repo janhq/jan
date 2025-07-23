@@ -10,11 +10,11 @@
     }
   },
   {
-      "key": "auto_update_engine",
-      "title": "Auto update engine",
-      "description": "Automatically update llamacpp engine to latest version",
-      "controllerType": "checkbox",
-      "controllerProps": { "value": true }
+    "key": "auto_update_engine",
+    "title": "Auto update engine",
+    "description": "Automatically update llamacpp engine to latest version",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
   },
   {
     "key": "auto_unload_models",
@@ -24,16 +24,16 @@
     "controllerProps": { "value": true }
   },
   {
-      "key": "chat_template",
-      "title": "Custom Jinja Chat template",
-      "description": "Custom Jinja chat_template to be used for the model",
-      "controllerType": "input",
-      "controllerProps": {
-          "value": "",
-          "placeholder": "e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)",
-          "type": "text",
-          "textAlign": "right"
-      }
+    "key": "chat_template",
+    "title": "Custom Jinja Chat template",
+    "description": "Custom Jinja chat_template to be used for the model",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)",
+      "type": "text",
+      "textAlign": "right"
+    }
   },
   {
     "key": "threads",
@@ -72,13 +72,13 @@
     }
   },
   {
-      "key": "context_shift",
-      "title": "Context Shift",
-      "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
-      "controllerType": "checkbox",
-      "controllerProps":{
-          "value": false
-      }
+    "key": "context_shift",
+    "title": "Context Shift",
+    "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
   },
   {
     "key": "n_predict",
@@ -311,118 +311,6 @@
     "controllerProps": {
       "value": 1.0,
       "placeholder": "1.0",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "temp",
-    "title": "Temperature",
-    "description": "Temperature for sampling (higher = more random).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.8,
-      "placeholder": "0.8",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "top_k",
-    "title": "Top K",
-    "description": "Top-K sampling (0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 40,
-      "placeholder": "40",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0
-    }
-  },
-  {
-    "key": "top_p",
-    "title": "Top P",
-    "description": "Top-P sampling (1.0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.9,
-      "placeholder": "0.9",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "max": 1.0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "min_p",
-    "title": "Min P",
-    "description": "Min-P sampling (0.0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.1,
-      "placeholder": "0.1",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "max": 1.0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "repeat_last_n",
-    "title": "Repeat Last N",
-    "description": "Number of tokens to consider for repeat penalty (0 = disabled, -1 = ctx_size).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 64,
-      "placeholder": "64",
-      "type": "number",
-      "textAlign": "right",
-      "min": -1
-    }
-  },
-  {
-    "key": "repeat_penalty",
-    "title": "Repeat Penalty",
-    "description": "Penalize repeating token sequences (1.0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 1.0,
-      "placeholder": "1.0",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "presence_penalty",
-    "title": "Presence Penalty",
-    "description": "Repeat alpha presence penalty (0.0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.0,
-      "placeholder": "0.0",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "frequency_penalty",
-    "title": "Frequency Penalty",
-    "description": "Repeat alpha frequency penalty (0.0 = disabled).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.0,
-      "placeholder": "0.0",
       "type": "number",
       "textAlign": "right",
       "min": 0,
