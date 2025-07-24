@@ -1,0 +1,371 @@
+---
+export interface Props {
+  variant?: 'light' | 'dark' | 'colorful';
+  density?: 'sparse' | 'medium' | 'dense';
+  animated?: boolean;
+  pattern?: 'robots' | 'shapes' | 'mixed' | 'tech';
+}
+
+const {
+  variant = 'light',
+  density = 'medium',
+  animated = true,
+  pattern = 'mixed'
+} = Astro.props;
+
+// Generate random positions for doodles
+const doodleCount = density === 'sparse' ? 8 : density === 'medium' ? 15 : 25;
+const doodles = Array.from({ length: doodleCount }, (_, i) => ({
+  id: i,
+  x: Math.random() * 100,
+  y: Math.random() * 100,
+  type: ['squiggle', 'dot', 'star', 'heart', 'robot', 'circle', 'triangle', 'zigzag'][Math.floor(Math.random() * 8)],
+  size: Math.random() * 0.5 + 0.5,
+  rotation: Math.random() * 360,
+  delay: Math.random() * 5
+}));
+---
+
+<div class={`doodle-background ${variant} ${density} ${animated ? 'animated' : ''}`} data-pattern={pattern}>
+  <svg class="doodle-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <defs>
+      <!-- Define reusable doodle shapes -->
+      <g id="squiggle">
+        <path d="M0,0 Q5,5 10,0 T20,0" stroke="currentColor" fill="none" stroke-width="0.5" stroke-linecap="round"/>
+      </g>
+
+      <g id="star">
+        <path d="M5,0 L6,4 L10,4 L7,6 L8,10 L5,7 L2,10 L3,6 L0,4 L4,4 Z" fill="currentColor"/>
+      </g>
+
+      <g id="heart">
+        <path d="M5,3 C5,1 3,0 2,1 C1,0 0,1 0,2 C0,3 1,5 5,8 C9,5 10,3 10,2 C10,1 9,0 8,1 C7,0 5,1 5,3 Z" fill="currentColor"/>
+      </g>
+
+      <g id="robot-mini">
+        <rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor"/>
+        <circle cx="3.5" cy="4" r="0.5" fill="white"/>
+        <circle cx="6.5" cy="4" r="0.5" fill="white"/>
+        <path d="M3,6 Q5,7 7,6" stroke="white" fill="none" stroke-width="0.5"/>
+      </g>
+
+      <g id="zigzag">
+        <path d="M0,5 L5,0 L10,5 L15,0 L20,5" stroke="currentColor" fill="none" stroke-width="0.5" stroke-linecap="round"/>
+      </g>
+
+      <g id="dots">
+        <circle cx="0" cy="0" r="0.5" fill="currentColor"/>
+        <circle cx="3" cy="0" r="0.5" fill="currentColor"/>
+        <circle cx="6" cy="0" r="0.5" fill="currentColor"/>
+      </g>
+
+      <g id="triangle">
+        <path d="M5,0 L10,8 L0,8 Z" fill="currentColor" opacity="0.3"/>
+        <path d="M5,0 L10,8 L0,8 Z" stroke="currentColor" fill="none" stroke-width="0.5"/>
+      </g>
+
+      <g id="circle">
+        <circle cx="5" cy="5" r="4" stroke="currentColor" fill="none" stroke-width="0.5" stroke-dasharray="1,1"/>
+      </g>
+    </defs>
+
+    {doodles.map(doodle => (
+      <g
+        transform={`translate(${doodle.x}, ${doodle.y}) rotate(${doodle.rotation} 5 5) scale(${doodle.size})`}
+        class={`doodle doodle-${doodle.type}`}
+        style={`animation-delay: ${doodle.delay}s`}
+      >
+        <use href={`#${doodle.type === 'dot' ? 'dots' : doodle.type === 'robot' ? 'robot-mini' : doodle.type}`} />
+      </g>
+    ))}
+  </svg>
+
+  <!-- Additional hand-drawn elements -->
+  <div class="doodle-extras">
+    <div class="floating-annotation">
+      <span class="annotation-text">AI magic happens here!</span>
+      <svg class="annotation-arrow" width="50" height="30">
+        <path d="M5,25 Q25,5 45,15" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="currentColor"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="corner-doodle top-left">
+      <svg width="100" height="100" viewBox="0 0 100 100">
+        <path d="M10,10 Q50,20 40,60 T20,90" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+        <circle cx="20" cy="20" r="3" fill="currentColor" opacity="0.5"/>
+        <circle cx="35" cy="40" r="2" fill="currentColor" opacity="0.5"/>
+        <circle cx="25" cy="70" r="4" fill="currentColor" opacity="0.5"/>
+      </svg>
+    </div>
+
+    <div class="corner-doodle bottom-right">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <g transform="rotate(180 60 60)">
+          <path d="M20,20 L30,10 L40,20 L50,10 L60,20" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+          <rect x="25" y="30" width="10" height="10" rx="2" stroke="currentColor" fill="none" opacity="0.5"/>
+          <rect x="45" y="35" width="8" height="8" rx="1" stroke="currentColor" fill="none" opacity="0.5"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<style>
+  .doodle-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .doodle-svg {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+  }
+
+  /* Color variants */
+  .doodle-background.light .doodle {
+    color: var(--medium-gray);
+  }
+
+  .doodle-background.dark .doodle {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .doodle-background.colorful .doodle:nth-child(4n) {
+    color: var(--robot-pink);
+  }
+
+  .doodle-background.colorful .doodle:nth-child(4n + 1) {
+    color: var(--robot-blue);
+  }
+
+  .doodle-background.colorful .doodle:nth-child(4n + 2) {
+    color: var(--robot-green);
+  }
+
+  .doodle-background.colorful .doodle:nth-child(4n + 3) {
+    color: var(--robot-yellow);
+  }
+
+  /* Animations */
+  .doodle-background.animated .doodle {
+    animation: doodleFloat 20s ease-in-out infinite;
+  }
+
+  .doodle-background.animated .doodle-squiggle {
+    animation: squiggleWave 15s ease-in-out infinite;
+  }
+
+  .doodle-background.animated .doodle-star {
+    animation: starTwinkle 10s ease-in-out infinite;
+  }
+
+  .doodle-background.animated .doodle-heart {
+    animation: heartPulse 8s ease-in-out infinite;
+  }
+
+  .doodle-background.animated .doodle-robot {
+    animation: robotDance 12s ease-in-out infinite;
+  }
+
+  @keyframes doodleFloat {
+    0%, 100% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    33% {
+      transform: translate(5px, -10px) rotate(5deg);
+    }
+    66% {
+      transform: translate(-5px, 5px) rotate(-5deg);
+    }
+  }
+
+  @keyframes squiggleWave {
+    0%, 100% {
+      transform: scaleX(1) scaleY(1);
+    }
+    50% {
+      transform: scaleX(1.1) scaleY(0.9);
+    }
+  }
+
+  @keyframes starTwinkle {
+    0%, 100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.2);
+    }
+  }
+
+  @keyframes heartPulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    25%, 75% {
+      transform: scale(1.1);
+    }
+    50% {
+      transform: scale(0.9);
+    }
+  }
+
+  @keyframes robotDance {
+    0%, 100% {
+      transform: rotate(0deg);
+    }
+    25% {
+      transform: rotate(-10deg) translateY(-2px);
+    }
+    75% {
+      transform: rotate(10deg) translateY(-2px);
+    }
+  }
+
+  /* Extra decorative elements */
+  .doodle-extras {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+
+  .floating-annotation {
+    position: absolute;
+    top: 15%;
+    right: 10%;
+    color: var(--robot-pink);
+    font-family: 'Caveat', 'Comic Sans MS', cursive;
+    font-size: 1.2rem;
+    transform: rotate(-5deg);
+    opacity: 0;
+    animation: annotationAppear 15s ease-in-out infinite;
+  }
+
+  .annotation-arrow {
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  @keyframes annotationAppear {
+    0%, 70%, 100% {
+      opacity: 0;
+      transform: rotate(-5deg) scale(0.8);
+    }
+    80%, 90% {
+      opacity: 1;
+      transform: rotate(-5deg) scale(1);
+    }
+  }
+
+  .corner-doodle {
+    position: absolute;
+    opacity: 0.3;
+  }
+
+  .corner-doodle.top-left {
+    top: 20px;
+    left: 20px;
+  }
+
+  .corner-doodle.bottom-right {
+    bottom: 20px;
+    right: 20px;
+  }
+
+  /* Pattern-specific styles */
+  .doodle-background[data-pattern="robots"] .doodle:not(.doodle-robot) {
+    display: none;
+  }
+
+  .doodle-background[data-pattern="shapes"] .doodle-robot {
+    display: none;
+  }
+
+  .doodle-background[data-pattern="tech"] .doodle-heart,
+  .doodle-background[data-pattern="tech"] .doodle-star {
+    display: none;
+  }
+
+  /* Density adjustments */
+  .doodle-background.sparse .doodle-svg {
+    opacity: 0.3;
+  }
+
+  .doodle-background.dense .doodle-svg {
+    opacity: 0.7;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .floating-annotation {
+      font-size: 1rem;
+      top: 10%;
+      right: 5%;
+    }
+
+    .corner-doodle {
+      transform: scale(0.7);
+    }
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .doodle-background.animated .doodle,
+    .floating-annotation {
+      animation: none !important;
+    }
+  }
+
+  /* Dark mode adjustments */
+  @media (prefers-color-scheme: dark) {
+    .doodle-background.light .doodle {
+      color: rgba(255, 255, 255, 0.2);
+    }
+  }
+</style>
+
+<script>
+  // Add interactive easter eggs
+  document.addEventListener('DOMContentLoaded', () => {
+    const doodleBackground = document.querySelector('.doodle-background');
+
+    if (doodleBackground) {
+      // Random annotation messages
+      const annotations = [
+        "AI magic happens here!",
+        "Robots working hard!",
+        "← This is where the fun begins",
+        "100% locally powered!",
+        "No clouds were harmed",
+        "Beep boop beep! 🤖"
+      ];
+
+      const annotationText = doodleBackground.querySelector('.annotation-text');
+      if (annotationText) {
+        setInterval(() => {
+          const randomMessage = annotations[Math.floor(Math.random() * annotations.length)];
+          annotationText.textContent = randomMessage;
+        }, 15000);
+      }
+    }
+  });
+</script>
