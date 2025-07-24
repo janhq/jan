@@ -10,6 +10,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { getSystemUsage } from '@/services/hardware'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitor,
@@ -33,6 +34,21 @@ function SystemMonitor() {
     // Fetch llamacpp devices
     fetchDevices()
   }, [updateSystemUsage, fetchDevices])
+
+  // Poll system usage every 5 seconds
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      getSystemUsage()
+        .then((data) => {
+          updateSystemUsage(data)
+        })
+        .catch((error) => {
+          console.error('Failed to get system usage:', error)
+        })
+    }, 5000)
+
+    return () => clearInterval(intervalId)
+  }, [updateSystemUsage])
 
   // Initialize when hardware data and llamacpp devices are available
   useEffect(() => {
