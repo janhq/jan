@@ -79,6 +79,18 @@ function RenderMarkdownComponent({
 
         return !isInline && !isUser ? (
           <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
+            <style>
+              {/* Disable selection of line numbers. React Syntax Highlighter currently has
+              unfixed bug so we can't use the lineNumberContainerStyleProp */}
+              {`
+              .react-syntax-highlighter-line-number {
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+              }
+            `}
+            </style>
             <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
               <span className="font-medium text-xs font-sans">
                 {getReadableLanguageName(language)}

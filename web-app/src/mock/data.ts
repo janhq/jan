@@ -62,7 +62,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.anthropic.com/v1',
+    base_url: 'https://api.anthropic.com',
     provider: 'anthropic',
     explore_models_url:
       'https://docs.anthropic.com/en/docs/about-claude/models',
@@ -87,8 +87,8 @@ export const predefinedProviders = [
           'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.anthropic.com/v1',
-          value: 'https://api.anthropic.com/v1',
+          placeholder: 'https://api.anthropic.com',
+          value: 'https://api.anthropic.com',
         },
       },
     ],
@@ -280,5 +280,65 @@ export const predefinedProviders = [
       },
     ],
     models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://router.huggingface.co/v1',
+    explore_models_url:
+      'https://huggingface.co/models?pipeline_tag=text-generation&inference_provider=all',
+    provider: 'huggingface',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Hugging Face API uses tokens for authentication. Visit your [Access Tokens](https://huggingface.co/settings/tokens) page to retrieve the token you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Token',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Hugging Face Inference Providers documentation](https://huggingface.co/docs/inference-providers) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://router.huggingface.co/v1',
+          value: 'https://router.huggingface.co/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'moonshotai/Kimi-K2-Instruct:groq',
+        name: 'Kimi-K2-Instruct',
+        version: '1.0',
+        description:
+          '1T parameters Moonshot chat model tuned for tool-aware, nuanced responses.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek-ai/DeepSeek-R1-0528',
+        name: 'DeepSeek-R1-0528',
+        version: '1.0',
+        description:
+          "DeepSeek's flagship reasoning engine with open weights and advanced tool control.",
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek-ai/DeepSeek-V3-0324',
+        name: 'DeepSeek-V3-0324',
+        version: '1.0',
+        description:
+          'Streamlined DeepSeek model focused on fast, high-quality completions and tool use.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
 ]

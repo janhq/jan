@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { Trans } from 'react-i18next'
 
 export default function ToolApproval() {
   const { t } = useTranslation()
@@ -52,11 +51,8 @@ export default function ToolApproval() {
             <div>
               <DialogTitle>{t('tools:toolApproval.title')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
-                <Trans
-                  i18nKey="tools:toolApproval.description"
-                  values={{ toolName }}
-                  components={{ strong: <strong className="font-semibold" /> }}
-                />
+                {t('tools:toolApproval.description')}{' '}
+                <span className="font-semibold">{toolName}</span>
               </DialogDescription>
             </div>
           </div>

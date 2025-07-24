@@ -10,9 +10,5 @@
   "linux": {
     "title": "Linux",
     "href": "/docs/desktop/linux"
-  },
-  "beta": {
-    "title": "BETA apps",
-    "href": "/docs/desktop/beta"
   }
 }

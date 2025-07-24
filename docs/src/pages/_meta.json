@@ -11,6 +11,11 @@
     "type": "page",
     "title": "Documentation"
   },
+  "local-server": {
+    "type": "page",
+    "title": "Jan Local Server",
+    "display": "hidden"
+  },
   "cortex": {
     "type": "page",
     "title": "Cortex",

@@ -1,7 +1,7 @@
 {
   "assistants": "Assistants",
   "hardware": "Hardware",
-  "mcp-servers": "Mcp Servers",
+  "mcp-servers": "MCP Servers",
   "local_api_server": "Local API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",

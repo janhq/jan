@@ -42,7 +42,6 @@ lint: install-and-build
 # Testing
 test: lint
 	yarn test
-	yarn test:e2e
 
 # Builds and publishes the app
 build-and-publish: install-and-build
@@ -50,10 +49,6 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
-	yarn build
-
-# Deprecated soon
-build-tauri: install-and-build
 	yarn copy:lib
 	yarn build
 

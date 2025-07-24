@@ -11,6 +11,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
+    case 'huggingface':
+      return '/images/model-provider/huggingface.svg'
     case 'mistral':
       return '/images/model-provider/mistral.svg'
     case 'martian':
@@ -46,6 +48,8 @@ export const getProviderTitle = (provider: string) => {
       return 'OpenRouter'
     case 'gemini':
       return 'Gemini'
+    case 'huggingface':
+      return 'Hugging Face'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
