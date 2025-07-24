@@ -1,0 +1,139 @@
+---
+title: Jan API Integration for Developers
+description: Learn to build applications using Jan's local server API
+video:
+  type: video
+  link: https://www.youtube.com/watch?v=L_jWHffIx5E
+  duration: 420
+---
+
+import { List } from 'starlight-videos/components';
+
+# Jan API Integration for Developers
+
+Ready to build applications powered by Jan? In this advanced course, you'll learn how to integrate Jan's local server API into your own applications, enabling you to create AI-powered tools and services.
+
+## What You'll Learn
+
+- Understanding Jan's OpenAI-compatible API
+- Setting up the local server for development
+- Making your first API calls
+- Authentication and security considerations
+- Building a simple AI-powered application
+- Best practices for production deployment
+
+## Prerequisites
+
+<List title="Developer Requirements" variant="caution" icon="warning">
+- Jan installed and working properly
+- Downloaded at least one model
+- Local server enabled in Jan settings
+- Basic programming knowledge (any language)
+- Understanding of REST APIs and HTTP requests
+- Familiarity with JSON data format
+</List>
+
+## Course Outline
+
+### 1. API Overview
+- Jan's local server architecture
+- OpenAI compatibility layer
+- Available endpoints and methods
+- Rate limiting and resource management
+
+### 2. Development Setup
+- Enabling the local server
+- Configuring ports and security
+- Testing connectivity with curl
+- Using API testing tools like Postman
+
+### 3. Core API Operations
+- Chat completions endpoint
+- Streaming responses
+- Model management
+- System monitoring
+
+### 4. Building Your First App
+We'll build a simple chat application that demonstrates:
+- Connecting to Jan's API
+- Sending messages and receiving responses
+- Handling streaming responses
+- Error handling and reconnection logic
+
+### 5. Advanced Integration Patterns
+- Async/await patterns for better performance
+- Caching strategies for repeated queries
+- Integration with popular frameworks (Express.js, FastAPI, etc.)
+- WebSocket integration for real-time apps
+
+## Code Examples
+
+### Basic Python Integration
+```python
+import requests
+import json
+
+def chat_with_jan(message):
+    url = "http://localhost:1337/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "model": "your-model-name",
+        "messages": [{"role": "user", "content": message}]
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+    return response.json()
+```
+
+### JavaScript/Node.js Example
+```javascript
+const axios = require('axios');
+
+async function chatWithJan(message) {
+    const response = await axios.post('http://localhost:1337/v1/chat/completions', {
+        model: 'your-model-name',
+        messages: [{ role: 'user', content: message }]
+    });
+    
+    return response.data.choices[0].message.content;
+}
+```
+
+## Security Considerations
+
+- Keeping API endpoints local and secure
+- Managing API keys and authentication
+- Rate limiting to prevent abuse
+- Monitoring resource usage
+- Backup and recovery strategies
+
+## Real-World Applications
+
+Examples of what you can build:
+- **Customer Service Bots**: Automated support using your data
+- **Content Generation Tools**: AI-powered writing assistants
+- **Code Analysis Tools**: Automated code review and suggestions
+- **Personal Assistants**: Custom AI helpers for specific tasks
+
+## Production Deployment
+
+- Scaling considerations for multiple users
+- Load balancing strategies
+- Monitoring and logging
+- Error handling and fallback mechanisms
+- Performance optimization techniques
+
+## Next Steps
+
+After completing this course, consider exploring:
+- **Custom Model Integration**: Adding your own fine-tuned models
+- **Multi-Modal Applications**: Integrating with vision and audio models
+- **Enterprise Scaling**: Deploying Jan for team use
+
+## Resources
+
+- [Jan API Documentation](https://jan.ai/api-reference)
+- [Example Applications GitHub Repository](https://github.com/menloresearch/jan-examples)
+- [Community Discord](https://discord.gg/qSwXFx6Krr) for developer support
+
+Ready to start building? Watch the video above and follow along with the code examples!
