@@ -1,0 +1,269 @@
+---
+title: Search Integration with Exa
+description: Connect real-time web search capabilities to your AI conversations
+video:
+  type: collection-video
+  link: https://www.youtube.com/watch?v=kJQP7kiw5Fk
+  duration: 360
+  collection: using-mcps
+  order: 3
+  difficulty: Intermediate
+---
+
+import { List, Quiz, QuizOption } from 'starlight-videos/components';
+
+# Search Integration with Exa
+
+Transform your AI conversations with real-time web search capabilities! This video shows you how to integrate Exa search into Jan, giving your AI access to current information from across the internet.
+
+<List title="Prerequisites" variant="caution" icon="warning">
+- Jan installed with MCP support enabled
+- Downloaded and activated at least one model
+- Exa API account and key (free tier available)
+- Basic understanding of API authentication
+</List>
+
+## What You'll Learn
+
+- **Exa Overview**: What makes Exa different from traditional search
+- **API Setup**: Getting your Exa account and API key
+- **MCP Installation**: Installing the Exa MCP server
+- **Configuration**: Setting up authentication and preferences
+- **Usage Patterns**: How to effectively use search in conversations
+- **Troubleshooting**: Common issues and solutions
+
+## About Exa Search
+
+### What is Exa?
+Exa is a search engine built specifically for AI applications. Unlike traditional search engines that return web pages, Exa provides:
+
+- **Semantic Search**: Understanding context and meaning
+- **Structured Results**: Clean, AI-friendly data formats
+- **Real-Time Information**: Current data and recent developments
+- **High-Quality Sources**: Curated, reliable information
+
+### Why Exa for AI?
+- **AI-Native Design**: Built for AI consumption
+- **Better Context**: More relevant results for AI reasoning
+- **Cleaner Data**: Less noise, more signal
+- **Developer-Friendly**: Easy integration with MCPs
+
+## Setting Up Exa
+
+### 1. Create Your Exa Account
+- Visit [Exa's website](https://exa.ai)
+- Sign up for a free developer account
+- Verify your email address
+- Access your dashboard
+
+### 2. Generate API Key
+- Navigate to API Keys section
+- Create a new API key
+- Copy and securely store your key
+- Note your usage limits and pricing
+
+<List title="Security Reminder" variant="danger" icon="warning">
+- Never share your API key publicly
+- Store it securely in Jan's configuration
+- Monitor your usage to avoid unexpected charges
+- Regenerate keys if compromised
+</List>
+
+### 3. Understand Usage Limits
+- **Free Tier**: Usually includes limited searches per month
+- **Rate Limits**: Requests per second/minute restrictions
+- **Data Limits**: Amount of data returned per search
+- **Commercial Use**: Check terms for business applications
+
+## Installing Exa MCP
+
+### Installation Process
+1. Open Jan settings
+2. Navigate to MCP/Extensions section
+3. Search for "Exa" in the MCP marketplace
+4. Click "Install" on the Exa Search MCP
+5. Wait for installation to complete
+
+### Configuration Steps
+1. **API Key Setup**:
+   - Enter your Exa API key
+   - Test the connection
+   - Save configuration
+
+2. **Search Preferences**:
+   - Default result count (5-10 recommended)
+   - Content types to include/exclude
+   - Language preferences
+   - Date range filters
+
+3. **Security Settings**:
+   - Enable/disable automatic searches
+   - Set conversation context limits
+   - Configure usage monitoring
+
+## Using Exa in Conversations
+
+### Basic Search Queries
+```
+"What are the latest developments in renewable energy?"
+"Find recent research on machine learning optimization"
+"Search for current news about Jan AI"
+```
+
+### Advanced Search Techniques
+```
+"Search for academic papers about transformer models published in 2024"
+"Find technical documentation for Python FastAPI framework"
+"Look up recent startup funding in the AI space"
+```
+
+### Search with Context
+```
+"I'm working on a climate change project. Search for the latest 
+IPCC report findings and recent renewable energy breakthroughs."
+```
+
+## Best Practices
+
+### Effective Search Strategies
+<List title="Search Tips" variant="tip" icon="star">
+- Be specific about what information you need
+- Include time constraints ("recent", "2024", etc.)
+- Specify source types (academic, news, documentation)
+- Ask for comparisons between multiple sources
+- Request summaries of complex topics
+</List>
+
+### Query Optimization
+- **Specific Keywords**: Use precise terminology
+- **Context Setting**: Provide background for better results
+- **Result Filtering**: Ask for specific types of content
+- **Follow-up Questions**: Build on previous search results
+
+## Real-World Use Cases
+
+### Research & Analysis
+```
+User: "Search for recent studies on the effectiveness of remote work"
+AI: [Searches and finds recent research papers and surveys]
+AI: "Based on recent studies I found, remote work effectiveness varies..."
+```
+
+### Current Events & News
+```
+User: "What's happening with AI regulation in the EU?"
+AI: [Searches for latest EU AI Act developments]
+AI: "The latest developments in EU AI regulation include..."
+```
+
+### Technical Documentation
+```
+User: "Find the latest API documentation for OpenAI's models"
+AI: [Searches for current API docs and changes]
+AI: "Here's what I found about OpenAI's latest API updates..."
+```
+
+### Market Research
+```
+User: "Search for recent funding rounds in the AI startup space"
+AI: [Finds recent investment news and startup funding data]
+AI: "Recent AI startup funding shows several interesting trends..."
+```
+
+## Monitoring and Management
+
+### Usage Tracking
+- Monitor your API usage in Exa dashboard
+- Set up alerts for usage limits
+- Track costs and billing
+- Optimize query frequency
+
+### Performance Optimization
+- **Cache Results**: Avoid duplicate searches
+- **Batch Queries**: Combine related searches
+- **Filter Results**: Request only needed information
+- **Rate Limiting**: Respect API limits
+
+## Troubleshooting Common Issues
+
+### Problem: Search Results Not Appearing
+**Solutions:**
+- Check API key configuration
+- Verify internet connection
+- Test API key in Exa dashboard
+- Review Jan logs for error messages
+
+### Problem: Poor Search Quality
+**Solutions:**
+- Refine search queries with more specific terms
+- Adjust result count settings
+- Try different search approaches
+- Provide more context in queries
+
+### Problem: API Limit Exceeded
+**Solutions:**
+- Monitor usage more closely
+- Upgrade to higher tier if needed
+- Optimize search frequency
+- Cache results to avoid duplicate searches
+
+## Advanced Features
+
+### Custom Search Domains
+- Restrict searches to specific websites
+- Academic database integration
+- News source filtering
+- Domain-specific search patterns
+
+### Result Processing
+- Automatic summarization
+- Fact checking and verification
+- Cross-referencing multiple sources
+- Citation and source tracking
+
+## What's Next?
+
+Now that you have real-time search capabilities, you're ready for **Data Analysis with E2B**, where we'll add code execution and data processing capabilities to your AI toolkit.
+
+Ready to give your AI real-time knowledge of the world? Let's connect Exa search to Jan!
+
+## Exa Integration Knowledge Check
+
+Test your understanding of Exa search integration:
+
+<Quiz title="What makes Exa different from traditional search engines?" variant="tip">
+  <QuizOption>It's faster than Google</QuizOption>
+  <QuizOption>It's completely free</QuizOption>
+  <QuizOption correct>It's built specifically for AI applications with semantic search</QuizOption>
+  <QuizOption>It doesn't require an API key</QuizOption>
+</Quiz>
+
+<Quiz title="What do you need to set up Exa search integration?" multiple variant="caution">
+  <QuizOption correct>Jan with MCP support enabled</QuizOption>
+  <QuizOption correct>Exa API account and key</QuizOption>
+  <QuizOption>Google API credentials</QuizOption>
+  <QuizOption correct>Downloaded and activated at least one model</QuizOption>
+  <QuizOption>Premium Jan subscription</QuizOption>
+</Quiz>
+
+<Quiz title="Which search query is most effective for getting recent information?" variant="note">
+  <QuizOption>"Tell me about renewable energy"</QuizOption>
+  <QuizOption correct>"Search for recent studies on renewable energy published in 2024"</QuizOption>
+  <QuizOption>"What is renewable energy?"</QuizOption>
+  <QuizOption>"Renewable energy information"</QuizOption>
+</Quiz>
+
+<Quiz title="What should you do to avoid API limit issues?" multiple variant="success">
+  <QuizOption correct>Monitor your API usage in Exa dashboard</QuizOption>
+  <QuizOption>Make as many searches as possible quickly</QuizOption>
+  <QuizOption correct>Cache results to avoid duplicate searches</QuizOption>
+  <QuizOption correct>Set up alerts for usage limits</QuizOption>
+  <QuizOption>Share your API key with others</QuizOption>
+</Quiz>
+
+<Quiz title="If search results are not appearing, what should you check first?" variant="caution">
+  <QuizOption>Your internet speed</QuizOption>
+  <QuizOption correct>API key configuration</QuizOption>
+  <QuizOption>Jan version number</QuizOption>
+  <QuizOption>Computer memory</QuizOption>
+</Quiz>
