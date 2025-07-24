@@ -325,7 +325,7 @@ function ThreadDetail() {
                 className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
                 onClick={generateAIResponse}
               >
-                <p className="text-xs">{t('Generate AI Response')}</p>
+                <p className="text-xs">{t('common:generateAiResponse')}</p>
                 <Play size={12} />
               </div>
             )}
