@@ -309,7 +309,7 @@ jobs:
           ./autoqa/scripts/ubuntu_post_cleanup.sh "$IS_NIGHTLY"
 
   macos:
-    runs-on: macos-selfhosted-15-arm64
+    runs-on: macos-selfhosted-15-arm64-cua
     timeout-minutes: 60
 
     env:
