@@ -102,17 +102,11 @@ interface HardwareStore {
   // Update entire hardware data at once
   setHardwareData: (data: HardwareData) => void
 
-  // Update hardware data while preserving GPU order
-  updateHardwareDataPreservingGpuOrder: (data: HardwareData) => void
-
   // Update individual GPU
   updateGPU: (index: number, gpu: GPU) => void
 
   // Update RAM available
   updateSystemUsage: (usage: SystemUsage) => void
-
-  // Toggle GPU activation (async, with loading)
-  toggleGPUActivation: (index: number) => Promise<void>
 
   // GPU loading state
   gpuLoading: { [index: number]: boolean }
@@ -122,20 +116,11 @@ interface HardwareStore {
   pollingPaused: boolean
   pausePolling: () => void
   resumePolling: () => void
-
-  // Reorder GPUs
-  reorderGPUs: (oldIndex: number, newIndex: number) => void
-
-  // Get activated GPU device string
-  getActivatedDeviceString: (backendType?: string) => string
-
-  // Update GPU activation states from device string
-  updateGPUActivationFromDeviceString: (deviceString: string) => void
 }
 
 export const useHardware = create<HardwareStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       hardwareData: defaultHardwareData,
       systemUsage: defaultSystemUsage,
       gpuLoading: {},
@@ -193,58 +178,6 @@ export const useHardware = create<HardwareStore>()(
           },
         }),
 
-      updateHardwareDataPreservingGpuOrder: (data) =>
-        set((state) => {
-          // If we have existing GPU data, preserve the order and activation state
-          if (state.hardwareData.gpus.length > 0) {
-            // Reorder fresh GPU data to match existing order, adding new GPUs at the end
-            const reorderedGpus: GPU[] = []
-            const processedUuids = new Set()
-
-            // First, add existing GPUs in their current order, preserving activation state
-            state.hardwareData.gpus.forEach((existingGpu) => {
-              const freshGpu = data.gpus.find(
-                (gpu) => gpu.uuid === existingGpu.uuid
-              )
-              if (freshGpu) {
-                reorderedGpus.push({
-                  ...freshGpu,
-                  activated: existingGpu.activated ?? false,
-                })
-                processedUuids.add(freshGpu.uuid)
-              }
-            })
-
-            // Then, add any new GPUs that weren't in the existing order (default to inactive)
-            data.gpus.forEach((freshGpu) => {
-              if (!processedUuids.has(freshGpu.uuid)) {
-                reorderedGpus.push({
-                  ...freshGpu,
-                  activated: false,
-                })
-              }
-            })
-
-            return {
-              hardwareData: {
-                ...data,
-                gpus: reorderedGpus,
-              },
-            }
-          } else {
-            // No existing GPU data, initialize all GPUs as inactive
-            return {
-              hardwareData: {
-                ...data,
-                gpus: data.gpus.map((gpu) => ({
-                  ...gpu,
-                  activated: false,
-                })),
-              },
-            }
-          }
-        }),
-
       updateGPU: (index, gpu) =>
         set((state) => {
           const newGPUs = [...state.hardwareData.gpus]
@@ -263,190 +196,6 @@ export const useHardware = create<HardwareStore>()(
         set(() => ({
           systemUsage,
         })),
-
-      toggleGPUActivation: async (index) => {
-        const { pausePolling, resumePolling, setGpuLoading } = get()
-        pausePolling()
-        setGpuLoading(index, true)
-
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 200)) // Simulate async operation
-
-          set((state) => {
-            const newGPUs = [...state.hardwareData.gpus]
-            if (index >= 0 && index < newGPUs.length) {
-              newGPUs[index] = {
-                ...newGPUs[index],
-                activated: !newGPUs[index].activated,
-              }
-            }
-
-            return {
-              hardwareData: {
-                ...state.hardwareData,
-                gpus: newGPUs,
-              },
-            }
-          })
-
-          // Update the device setting after state change
-          const updatedState = get()
-
-          // Import and get backend type
-          const { useModelProvider } = await import('./useModelProvider')
-          const { updateProvider, getProviderByName } =
-            useModelProvider.getState()
-
-          const llamacppProvider = getProviderByName('llamacpp')
-          const backendType = llamacppProvider?.settings.find(
-            (s) => s.key === 'version_backend'
-          )?.controller_props.value as string
-
-          const deviceString =
-            updatedState.getActivatedDeviceString(backendType)
-
-          if (llamacppProvider) {
-            const updatedSettings = llamacppProvider.settings.map((setting) => {
-              if (setting.key === 'device') {
-                return {
-                  ...setting,
-                  controller_props: {
-                    ...setting.controller_props,
-                    value: deviceString,
-                  },
-                }
-              }
-              return setting
-            })
-
-            updateProvider('llamacpp', {
-              settings: updatedSettings,
-            })
-          }
-        } finally {
-          setGpuLoading(index, false)
-          setTimeout(resumePolling, 1000) // Resume polling after 1s
-        }
-      },
-
-      reorderGPUs: (oldIndex, newIndex) =>
-        set((state) => {
-          const newGPUs = [...state.hardwareData.gpus]
-          // Move the GPU from oldIndex to newIndex
-          if (
-            oldIndex >= 0 &&
-            oldIndex < newGPUs.length &&
-            newIndex >= 0 &&
-            newIndex < newGPUs.length
-          ) {
-            const [removed] = newGPUs.splice(oldIndex, 1)
-            newGPUs.splice(newIndex, 0, removed)
-          }
-          return {
-            hardwareData: {
-              ...state.hardwareData,
-              gpus: newGPUs,
-            },
-          }
-        }),
-
-      getActivatedDeviceString: (backendType?: string) => {
-        const { hardwareData } = get()
-
-        // Get activated GPUs and generate appropriate device format based on backend
-        const activatedDevices = hardwareData.gpus
-          .filter((gpu) => gpu.activated)
-          .map((gpu) => {
-            const isCudaBackend = backendType?.includes('cuda')
-            const isVulkanBackend = backendType?.includes('vulkan')
-
-            // Handle different backend scenarios
-            if (isCudaBackend && isVulkanBackend) {
-              // Mixed backend - prefer CUDA for NVIDIA GPUs, Vulkan for others
-              if (gpu.nvidia_info) {
-                return `cuda:${gpu.nvidia_info.index}`
-              } else if (gpu.vulkan_info) {
-                return `Vulkan${gpu.vulkan_info.index}`
-              }
-            } else if (isCudaBackend && gpu.nvidia_info) {
-              // CUDA backend - only use CUDA-compatible GPUs
-              return `cuda:${gpu.nvidia_info.index}`
-            } else if (isVulkanBackend && gpu.vulkan_info) {
-              // Vulkan backend - only use Vulkan-compatible GPUs
-              return `Vulkan${gpu.vulkan_info.index}`
-            } else if (!backendType) {
-              // No backend specified, use GPU's preferred type
-              if (gpu.nvidia_info) {
-                return `cuda:${gpu.nvidia_info.index}`
-              } else if (gpu.vulkan_info) {
-                return `Vulkan${gpu.vulkan_info.index}`
-              }
-            }
-            return null
-          })
-          .filter((device) => device !== null) as string[]
-
-        const deviceString = activatedDevices.join(',')
-        return deviceString
-      },
-
-      updateGPUActivationFromDeviceString: (deviceString: string) => {
-        set((state) => {
-          const newGPUs = [...state.hardwareData.gpus]
-
-          // Parse device string to get active device indices
-          const activeDevices = deviceString
-            .split(',')
-            .map((device) => device.trim())
-            .filter((device) => device.length > 0)
-            .map((device) => {
-              // Handle both formats: "cuda:0" and "Vulkan1"
-              const cudaMatch = device.match(/^cuda:(\d+)$/)
-              const vulkanMatch = device.match(/^Vulkan(\d+)$/)
-
-              if (cudaMatch) {
-                return {
-                  type: 'cuda' as const,
-                  index: parseInt(cudaMatch[1]),
-                }
-              } else if (vulkanMatch) {
-                return {
-                  type: 'vulkan' as const,
-                  index: parseInt(vulkanMatch[1]),
-                }
-              }
-              return null
-            })
-            .filter((device) => device !== null) as Array<{
-            type: 'cuda' | 'vulkan'
-            index: number
-          }>
-
-          // Update GPU activation states
-          newGPUs.forEach((gpu, gpuIndex) => {
-            const shouldBeActive = activeDevices.some((device) => {
-              if (device.type === 'cuda' && gpu.nvidia_info) {
-                return gpu.nvidia_info.index === device.index
-              } else if (device.type === 'vulkan' && gpu.vulkan_info) {
-                return gpu.vulkan_info.index === device.index
-              }
-              return false
-            })
-
-            newGPUs[gpuIndex] = {
-              ...gpu,
-              activated: shouldBeActive,
-            }
-          })
-
-          return {
-            hardwareData: {
-              ...state.hardwareData,
-              gpus: newGPUs,
-            },
-          }
-        })
-      },
     }),
     {
       name: localStorageKey.settingHardware,

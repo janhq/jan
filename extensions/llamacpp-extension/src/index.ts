@@ -526,6 +526,9 @@ export default class llamacpp_extension extends AIEngine {
       const valueStr = value as string
       const [version, backend] = valueStr.split('/')
 
+      // Reset device setting when backend changes
+      this.config.device = ''
+
       const closure = async () => {
         await this.ensureBackendReady(backend, version)
       }
