@@ -1,0 +1,671 @@
+---
+export interface Props {
+  className?: string;
+}
+
+const { className = '' } = Astro.props;
+---
+
+<div class={`release-database ${className}`}>
+  <table class="newspaper-table">
+    <caption>Release Database</caption>
+    <thead>
+      <tr>
+        <th>Release Version</th>
+        <th>Target Date</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- v0.6.7 - Released -->
+      <tr class="release-row" data-version="v0.6.7">
+        <td class="version-cell">
+          <strong>v0.6.7</strong>
+          <span class="version-name">Web Search</span>
+        </td>
+        <td>Released</td>
+        <td><span class="status released">Live</span></td>
+      </tr>
+      <tr class="release-details" data-for="v0.6.7">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a user, I want to search the web directly from Jan chat for real-time information</li>
+                <li>As a developer, I want better API documentation for integration</li>
+                <li>As a researcher, I want source attribution for all search results</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Privacy-respecting web search integration</li>
+                <li>Multiple search engine support</li>
+                <li>Improved model downloading experience</li>
+                <li>Enhanced error handling and user feedback</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Web Search API documentation</li>
+                <li>Privacy policy updates</li>
+                <li>Search configuration guide</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v0.6.5 - Released -->
+      <tr class="release-row" data-version="v0.6.5">
+        <td class="version-cell">
+          <strong>v0.6.5</strong>
+          <span class="version-name">Desktop Stability</span>
+        </td>
+        <td>Released</td>
+        <td><span class="status released">Live</span></td>
+      </tr>
+      <tr class="release-details" data-for="v0.6.5">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>Improvements</h5>
+              <ul>
+                <li>Enhanced memory management for large models</li>
+                <li>Improved GPU utilization</li>
+                <li>Better cross-platform compatibility</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Bug Fixes</h5>
+              <ul>
+                <li>Fixed model loading crashes on Windows</li>
+                <li>Resolved memory leaks in long conversations</li>
+                <li>Fixed UI freezing during model downloads</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Performance</h5>
+              <ul>
+                <li>30% faster model loading times</li>
+                <li>Reduced memory footprint by 25%</li>
+                <li>Improved response streaming</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v0.7.0 - In Development -->
+      <tr class="release-row" data-version="v0.7.0">
+        <td class="version-cell">
+          <strong>v0.7.0</strong>
+          <span class="version-name">Deep Research</span>
+        </td>
+        <td>January 2025</td>
+        <td><span class="status development">Building</span></td>
+      </tr>
+      <tr class="release-details" data-for="v0.7.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a researcher, I want to conduct deep research with multiple sources and citations</li>
+                <li>As a user, I want Jan Nano to work seamlessly on mobile devices</li>
+                <li>As a team lead, I want to preview jan.ai for my organization</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Deep research capabilities with multi-source analysis</li>
+                <li>jan.ai web platform beta launch</li>
+                <li>Improved Jan Nano performance and mobile optimization</li>
+                <li>Citation management and research reports</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Research methodology guide</li>
+                <li>jan.ai platform documentation</li>
+                <li>Mobile optimization best practices</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v0.8.0 - In Development -->
+      <tr class="release-row" data-version="v0.8.0">
+        <td class="version-cell">
+          <strong>v0.8.0</strong>
+          <span class="version-name">Browser Automation</span>
+        </td>
+        <td>March 2025</td>
+        <td><span class="status development">Building</span></td>
+      </tr>
+      <tr class="release-details" data-for="v0.8.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a user, I want Jan to automate web tasks for me safely and efficiently</li>
+                <li>As a business user, I want to automate repetitive web workflows</li>
+                <li>As a developer, I want browser automation APIs for custom integrations</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Browser automation capabilities (Beta)</li>
+                <li>Form filling and data extraction</li>
+                <li>Website navigation and interaction</li>
+                <li>Safety policies and user confirmation flows</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Browser automation safety guide</li>
+                <li>Web scraping best practices</li>
+                <li>API reference for automation tools</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v0.9.0 - Planned -->
+      <tr class="release-row" data-version="v0.9.0">
+        <td class="version-cell">
+          <strong>v0.9.0</strong>
+          <span class="version-name">Mobile Launch</span>
+        </td>
+        <td>Q1 2025</td>
+        <td><span class="status planned">Planned</span></td>
+      </tr>
+      <tr class="release-details" data-for="v0.9.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a mobile user, I want Jan AI available on my iOS/Android device</li>
+                <li>As a commuter, I want to seamlessly switch between desktop and mobile</li>
+                <li>As a privacy-conscious user, I want local AI on my phone</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>iOS and Android mobile applications</li>
+                <li>Three adaptive modes (Desktop, Server, Local)</li>
+                <li>Voice-first interface</li>
+                <li>Cross-device synchronization</li>
+                <li>Jan Nano on-device processing</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Mobile setup and configuration guide</li>
+                <li>Voice interaction best practices</li>
+                <li>Device syncing tutorial</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v1.0.0 - Planned -->
+      <tr class="release-row" data-version="v1.0.0">
+        <td class="version-cell">
+          <strong>v1.0.0</strong>
+          <span class="version-name">Server Edition</span>
+        </td>
+        <td>Q2 2025</td>
+        <td><span class="status planned">Planned</span></td>
+      </tr>
+      <tr class="release-details" data-for="v1.0.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As an IT admin, I want to deploy Jan for my entire organization</li>
+                <li>As a team lead, I want centralized AI with team collaboration features</li>
+                <li>As a CTO, I want enterprise-grade security and compliance</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Multi-user server deployment</li>
+                <li>Enterprise authentication (SSO, LDAP)</li>
+                <li>Team collaboration and shared conversations</li>
+                <li>Docker and Kubernetes deployment options</li>
+                <li>Admin dashboard and user management</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Enterprise deployment guide</li>
+                <li>Security and compliance documentation</li>
+                <li>Admin management tutorials</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v1.1.0 - Planned -->
+      <tr class="release-row" data-version="v1.1.0">
+        <td class="version-cell">
+          <strong>v1.1.0</strong>
+          <span class="version-name">AI Agents</span>
+        </td>
+        <td>Q1 2026</td>
+        <td><span class="status planned">Planned</span></td>
+      </tr>
+      <tr class="release-details" data-for="v1.1.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a user, I want autonomous agents to handle complex multi-step tasks</li>
+                <li>As a business owner, I want AI that can coordinate multiple tools automatically</li>
+                <li>As a power user, I want to create custom agent workflows</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Autonomous AI agents</li>
+                <li>Multi-step task planning and execution</li>
+                <li>Tool orchestration and coordination</li>
+                <li>Goal-oriented intelligent reasoning</li>
+                <li>Custom agent workflow builder</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Agent development guide</li>
+                <li>Workflow automation tutorials</li>
+                <li>Safety and oversight best practices</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- v1.2.0 - Planned -->
+      <tr class="release-row" data-version="v1.2.0">
+        <td class="version-cell">
+          <strong>v1.2.0</strong>
+          <span class="version-name">Lucy Multimodal</span>
+        </td>
+        <td>Q2 2025</td>
+        <td><span class="status planned">Planned</span></td>
+      </tr>
+      <tr class="release-details" data-for="v1.2.0">
+        <td colspan="3">
+          <div class="details-grid">
+            <div class="detail-section">
+              <h5>User Stories</h5>
+              <ul>
+                <li>As a content creator, I want AI that can understand and process images</li>
+                <li>As a researcher, I want to analyze documents with both text and visuals</li>
+                <li>As a designer, I want AI that can help with visual content creation</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>New Features</h5>
+              <ul>
+                <li>Lucy multimodal model release</li>
+                <li>Image understanding and analysis</li>
+                <li>Document processing with OCR</li>
+                <li>Visual reasoning capabilities</li>
+                <li>Audio processing (planned)</li>
+              </ul>
+            </div>
+            <div class="detail-section">
+              <h5>Documentation</h5>
+              <ul>
+                <li>Multimodal AI usage guide</li>
+                <li>Image processing tutorials</li>
+                <li>Visual reasoning examples</li>
+              </ul>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .release-database {
+    margin: 3rem 0;
+  }
+
+  /* Newspaper-style table */
+  .newspaper-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    margin: 2rem 0;
+  }
+
+  .newspaper-table caption {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .newspaper-table th,
+  .newspaper-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #000;
+  }
+
+  .newspaper-table th {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #f0f0f0;
+    border-top: 3px double #000;
+    border-bottom: 1px solid #000;
+    font-size: 0.8rem;
+  }
+
+  .newspaper-table tbody tr:last-child td {
+    border-bottom: 3px double #000;
+  }
+
+  /* Clickable rows */
+  .release-row {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+
+  .release-row:hover {
+    background: #f8f8f8;
+  }
+
+  .release-row.expanded {
+    background: #f0f0f0;
+    font-weight: 600;
+  }
+
+  /* Version cell styling */
+  .version-cell {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .version-name {
+    font-size: 0.85rem;
+    color: #333;
+    font-weight: normal;
+  }
+
+  /* Status badges */
+  .status {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .status.released {
+    background: #000;
+    color: #fff;
+  }
+
+  .status.development {
+    background: #666;
+    color: #fff;
+  }
+
+  .status.planned {
+    background: #fff;
+    color: #000;
+    border: 1px solid #000;
+  }
+
+  /* Details rows */
+  .release-details {
+    display: none;
+    background: #fafafa;
+  }
+
+  .release-details.expanded {
+    display: table-row;
+  }
+
+  .release-details td {
+    padding: 0;
+    border-bottom: 1px solid #000;
+  }
+
+  .details-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border-collapse: collapse;
+  }
+
+  .detail-section {
+    padding: 1rem;
+    border-right: 1px solid #ccc;
+  }
+
+  .detail-section:last-child {
+    border-right: none;
+  }
+
+  .detail-section h5 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 0.75rem 0;
+    color: #000;
+  }
+
+  .detail-section ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .detail-section li {
+    margin-bottom: 0.5rem;
+    padding-left: 1rem;
+    position: relative;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: #333;
+  }
+
+  .detail-section li::before {
+    content: '•';
+    position: absolute;
+    left: 0;
+    color: #666;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .newspaper-table {
+      font-size: 0.8rem;
+    }
+
+    .newspaper-table th,
+    .newspaper-table td {
+      padding: 0.5rem;
+    }
+
+    .version-cell {
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .details-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-section {
+      border-right: none;
+      border-bottom: 1px solid #ccc;
+    }
+
+    .detail-section:last-child {
+      border-bottom: none;
+    }
+  }
+
+  /* Print styles */
+  @media print {
+    .release-row {
+      page-break-inside: avoid;
+    }
+
+    .release-details {
+      display: table-row !important;
+    }
+  }
+
+  /* Dark mode styles */
+  html[data-theme="dark"] .newspaper-table {
+    background: #1a1a1a;
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .newspaper-table caption {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .newspaper-table th {
+    background: #2a2a2a;
+    border-color: #666;
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .newspaper-table td {
+    border-color: #666;
+    color: #ccc;
+  }
+
+  html[data-theme="dark"] .newspaper-table tbody tr:last-child td {
+    border-bottom-color: #666;
+  }
+
+  html[data-theme="dark"] .release-row:hover {
+    background: #2a2a2a;
+  }
+
+  html[data-theme="dark"] .release-row.expanded {
+    background: #333;
+  }
+
+  html[data-theme="dark"] .version-name {
+    color: #999;
+  }
+
+  /* Dark mode status badges */
+  html[data-theme="dark"] .status.released {
+    background: #fff;
+    color: #000;
+  }
+
+  html[data-theme="dark"] .status.development {
+    background: #999;
+    color: #000;
+  }
+
+  html[data-theme="dark"] .status.planned {
+    background: transparent;
+    color: #fff;
+    border-color: #fff;
+  }
+
+  /* Dark mode details */
+  html[data-theme="dark"] .release-details {
+    background: #252525;
+  }
+
+  html[data-theme="dark"] .release-details td {
+    border-color: #666;
+  }
+
+  html[data-theme="dark"] .detail-section {
+    border-right-color: #444;
+  }
+
+  html[data-theme="dark"] .detail-section h5 {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .detail-section li {
+    color: #ccc;
+  }
+
+  html[data-theme="dark"] .detail-section li::before {
+    color: #999;
+  }
+
+  @media (max-width: 768px) {
+    html[data-theme="dark"] .detail-section {
+      border-bottom-color: #444;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const releaseRows = document.querySelectorAll('.release-row');
+
+    releaseRows.forEach(row => {
+      row.addEventListener('click', () => {
+        const version = row.getAttribute('data-version');
+        const detailsRow = document.querySelector(`.release-details[data-for="${version}"]`);
+
+        if (detailsRow) {
+          // Toggle expanded state
+          const isExpanded = detailsRow.classList.contains('expanded');
+
+          // Close all other rows
+          document.querySelectorAll('.release-details').forEach(details => {
+            details.classList.remove('expanded');
+          });
+          document.querySelectorAll('.release-row').forEach(r => {
+            r.classList.remove('expanded');
+          });
+
+          // Toggle this row
+          if (!isExpanded) {
+            detailsRow.classList.add('expanded');
+            row.classList.add('expanded');
+          }
+        }
+      });
+    });
+  });
+</script>
