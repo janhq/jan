@@ -39,6 +39,7 @@ import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
+import { EngineManager } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -81,6 +82,7 @@ function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const [settings, setSettings] = useState<ProviderSetting[]>([])
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
 
@@ -105,6 +107,32 @@ function ProviderDetail() {
       })
     }
   }
+
+  useEffect(() => {
+    async function getSettings() {
+      // TODO: Replace this hardcoded check with engine check later (and the rest below)
+      if (provider?.provider === 'llamacpp') {
+        setSettings(
+          ((
+            await EngineManager.instance()
+              .get(provider?.provider)
+              ?.getSettings()
+          )?.map((setting) => {
+            return {
+              key: setting.key,
+              title: setting.title,
+              description: setting.description,
+              controller_type: setting.controllerType as unknown,
+              controller_props: setting.controllerProps as unknown,
+            }
+          }) as ProviderSetting[]) ?? []
+        )
+      } else {
+        setSettings(provider?.settings ?? [])
+      }
+    }
+    getSettings()
+  }, [provider])
 
   const handleRefreshModels = async () => {
     if (!provider || !provider.base_url) {
@@ -246,7 +274,7 @@ function ProviderDetail() {
               >
                 {/* Settings */}
                 <Card>
-                  {provider?.settings.map((setting, settingIndex) => {
+                  {settings.map((setting, settingIndex) => {
                     // Use the DynamicController component
                     const actionComponent = (
                       <div className="mt-2">
