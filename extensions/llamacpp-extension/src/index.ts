@@ -801,6 +801,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async migrateLegacyModels() {
+    // Attempt to migrate only once
+    if (localStorage.getItem('cortex_models_migrated') === 'true') return
+
     const janDataFolderPath = await getJanDataFolderPath()
     const modelsDir = await joinPath([janDataFolderPath, 'models'])
     if (!(await fs.existsSync(modelsDir))) return
@@ -886,6 +889,7 @@ export default class llamacpp_extension extends AIEngine {
         stack.push(child)
       }
     }
+    localStorage.setItem('cortex_models_migrated', 'true')
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
