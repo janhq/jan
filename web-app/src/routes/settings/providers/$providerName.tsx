@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -39,7 +40,6 @@ import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { EngineManager } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -82,9 +82,19 @@ function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
-  const [settings, setSettings] = useState<ProviderSetting[]>([])
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
+
+  // Check if llamacpp provider needs backend configuration
+  const needsBackendConfig =
+    provider?.provider === 'llamacpp' &&
+    provider.settings?.some(
+      (setting) =>
+        setting.key === 'version_backend' &&
+        (setting.controller_props.value === 'none' ||
+          setting.controller_props.value === '' ||
+          !setting.controller_props.value)
+    )
 
   useEffect(() => {
     // Initial data fetch
@@ -98,6 +108,44 @@ function ProviderDetail() {
     return () => clearInterval(intervalId)
   }, [setActiveModels])
 
+  // Auto-refresh provider settings to get updated backend configuration
+  const refreshSettings = async () => {
+    if (!provider) return
+
+    try {
+      // Refresh providers to get updated settings from the extension
+      const updatedProviders = await getProviders()
+      setProviders(updatedProviders)
+    } catch (error) {
+      console.error('Failed to refresh settings:', error)
+    }
+  }
+
+  // Auto-refresh settings when provider changes or when llamacpp needs backend config
+  useEffect(() => {
+    if (provider && needsBackendConfig) {
+      // Auto-refresh every 3 seconds when backend is being configured
+      const intervalId = setInterval(refreshSettings, 3000)
+      return () => clearInterval(intervalId)
+    }
+  }, [provider, needsBackendConfig])
+
+  // Auto-refresh models for non-predefined providers
+  useEffect(() => {
+    if (
+      provider &&
+      provider.provider !== 'llamacpp' &&
+      !predefinedProviders.some((p) => p.provider === provider.provider) &&
+      provider.base_url
+    ) {
+      // Auto-refresh models every 10 seconds for remote providers
+      const intervalId = setInterval(() => {
+        handleRefreshModels()
+      }, 10000)
+      return () => clearInterval(intervalId)
+    }
+  }, [provider])
+
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status } = data
 
@@ -107,32 +155,6 @@ function ProviderDetail() {
       })
     }
   }
-
-  useEffect(() => {
-    async function getSettings() {
-      // TODO: Replace this hardcoded check with engine check later (and the rest below)
-      if (provider?.provider === 'llamacpp') {
-        setSettings(
-          ((
-            await EngineManager.instance()
-              .get(provider?.provider)
-              ?.getSettings()
-          )?.map((setting) => {
-            return {
-              key: setting.key,
-              title: setting.title,
-              description: setting.description,
-              controller_type: setting.controllerType as unknown,
-              controller_props: setting.controllerProps as unknown,
-            }
-          }) as ProviderSetting[]) ?? []
-        )
-      } else {
-        setSettings(provider?.settings ?? [])
-      }
-    }
-    getSettings()
-  }, [provider])
 
   const handleRefreshModels = async () => {
     if (!provider || !provider.base_url) {
@@ -274,85 +296,94 @@ function ProviderDetail() {
               >
                 {/* Settings */}
                 <Card>
-                  {settings.map((setting, settingIndex) => {
+                  {provider?.settings.map((setting, settingIndex) => {
                     // Use the DynamicController component
                     const actionComponent = (
                       <div className="mt-2">
-                        <DynamicControllerSetting
-                          controllerType={setting.controller_type}
-                          controllerProps={setting.controller_props}
-                          className={cn(
-                            setting.key === 'api-key' &&
-                              'third-step-setup-remote-provider',
-                            setting.key === 'device' && 'hidden'
-                          )}
-                          onChange={(newValue) => {
-                            if (provider) {
-                              const newSettings = [...provider.settings]
-                              // Handle different value types by forcing the type
-                              // Use type assertion to bypass type checking
+                        {needsBackendConfig &&
+                        setting.key === 'version_backend' ? (
+                          <div className="flex items-center gap-1 text-sm text-main-view-fg/70">
+                            <IconLoader size={16} className="animate-spin" />
+                            <span>loading</span>
+                          </div>
+                        ) : (
+                          <DynamicControllerSetting
+                            controllerType={setting.controller_type}
+                            controllerProps={setting.controller_props}
+                            className={cn(
+                              setting.key === 'api-key' &&
+                                'third-step-setup-remote-provider',
+                              setting.key === 'device' && 'hidden'
+                            )}
+                            onChange={(newValue) => {
+                              if (provider) {
+                                const newSettings = [...provider.settings]
+                                // Handle different value types by forcing the type
+                                // Use type assertion to bypass type checking
 
-                              ;(
-                                newSettings[settingIndex].controller_props as {
-                                  value: string | boolean | number
+                                ;(
+                                  newSettings[settingIndex]
+                                    .controller_props as {
+                                    value: string | boolean | number
+                                  }
+                                ).value = newValue
+
+                                // Create update object with updated settings
+                                const updateObj: Partial<ModelProvider> = {
+                                  settings: newSettings,
                                 }
-                              ).value = newValue
-
-                              // Create update object with updated settings
-                              const updateObj: Partial<ModelProvider> = {
-                                settings: newSettings,
-                              }
-                              // Check if this is an API key or base URL setting and update the corresponding top-level field
-                              const settingKey = setting.key
-                              if (
-                                settingKey === 'api-key' &&
-                                typeof newValue === 'string'
-                              ) {
-                                updateObj.api_key = newValue
-                              } else if (
-                                settingKey === 'base-url' &&
-                                typeof newValue === 'string'
-                              ) {
-                                updateObj.base_url = newValue
-                              }
-
-                              // Reset device setting to empty when backend version changes
-                              if (settingKey === 'version_backend') {
-                                const deviceSettingIndex =
-                                  newSettings.findIndex(
-                                    (s) => s.key === 'device'
-                                  )
-
-                                if (deviceSettingIndex !== -1) {
-                                  ;(
-                                    newSettings[deviceSettingIndex]
-                                      .controller_props as {
-                                      value: string
-                                    }
-                                  ).value = ''
+                                // Check if this is an API key or base URL setting and update the corresponding top-level field
+                                const settingKey = setting.key
+                                if (
+                                  settingKey === 'api-key' &&
+                                  typeof newValue === 'string'
+                                ) {
+                                  updateObj.api_key = newValue
+                                } else if (
+                                  settingKey === 'base-url' &&
+                                  typeof newValue === 'string'
+                                ) {
+                                  updateObj.base_url = newValue
                                 }
 
-                                // Reset llamacpp device activations when backend version changes
-                                if (providerName === 'llamacpp') {
-                                  const { setActivatedDevices } =
-                                    useLlamacppDevices.getState()
-                                  setActivatedDevices([])
+                                // Reset device setting to empty when backend version changes
+                                if (settingKey === 'version_backend') {
+                                  const deviceSettingIndex =
+                                    newSettings.findIndex(
+                                      (s) => s.key === 'device'
+                                    )
+
+                                  if (deviceSettingIndex !== -1) {
+                                    ;(
+                                      newSettings[deviceSettingIndex]
+                                        .controller_props as {
+                                        value: string
+                                      }
+                                    ).value = ''
+                                  }
+
+                                  // Reset llamacpp device activations when backend version changes
+                                  if (providerName === 'llamacpp') {
+                                    const { setActivatedDevices } =
+                                      useLlamacppDevices.getState()
+                                    setActivatedDevices([])
+                                  }
                                 }
+
+                                updateSettings(
+                                  providerName,
+                                  updateObj.settings ?? []
+                                )
+                                updateProvider(providerName, {
+                                  ...provider,
+                                  ...updateObj,
+                                })
+
+                                stopAllModels()
                               }
-
-                              updateSettings(
-                                providerName,
-                                updateObj.settings ?? []
-                              )
-                              updateProvider(providerName, {
-                                ...provider,
-                                ...updateObj,
-                              })
-
-                              stopAllModels()
-                            }
-                          }}
-                        />
+                            }}
+                          />
+                        )}
                       </div>
                     )
 
@@ -360,6 +391,7 @@ function ProviderDetail() {
                       <CardItem
                         key={settingIndex}
                         title={setting.title}
+                        className={cn(setting.key === 'device' && 'hidden')}
                         column={
                           setting.controller_type === 'input' &&
                           setting.controller_props.type !== 'number'

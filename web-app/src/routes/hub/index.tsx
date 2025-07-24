@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -54,6 +55,8 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  const parentRef = useRef(null)
+
   const { t } = useTranslation()
   const sortOptions = [
     { value: 'newest', name: t('hub:sortNewest') },
@@ -173,7 +176,6 @@ function Hub() {
   // Filtered models
   const filteredModels = useMemo(() => {
     let filtered = sortedModels
-
     // Apply search filter
     if (searchValue.length) {
       filtered = filtered?.filter(
@@ -190,7 +192,6 @@ function Hub() {
           )
       )
     }
-
     // Apply downloaded filter
     if (showOnlyDownloaded) {
       filtered = filtered?.filter((model) =>
@@ -201,12 +202,10 @@ function Hub() {
         )
       )
     }
-
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
       filtered = [huggingFaceRepo, ...filtered]
     }
-
     return filtered
   }, [
     searchValue,
@@ -215,6 +214,13 @@ function Hub() {
     llamaProvider?.models,
     huggingFaceRepo,
   ])
+
+  // The virtualizer
+  const rowVirtualizer = useVirtualizer({
+    count: filteredModels.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 35,
+  })
 
   useEffect(() => {
     fetchSources()
@@ -566,213 +572,259 @@ function Hub() {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col pb-2 mb-2 gap-2 ">
+                <div className="flex flex-col pb-2 mb-2 gap-2" ref={parentRef}>
                   <div className="flex items-center gap-2 justify-end sm:hidden">
                     {renderFilter()}
                   </div>
-                  {filteredModels.map((model, i) => (
-                    <div key={`${model.model_name}-${i}`}>
-                      <Card
-                        header={
-                          <div className="flex items-center justify-between gap-x-2">
-                            <div
-                              className="cursor-pointer"
-                              onClick={() => {
-                                console.log(model.model_name)
-                                navigate({
-                                  to: route.hub.model,
-                                  params: {
-                                    modelId: model.model_name,
-                                  },
-                                })
-                              }}
-                            >
-                              <h1
-                                className={cn(
-                                  'text-main-view-fg font-medium text-base capitalize  sm:max-w-none',
-                                  isRecommendedModel(model.model_name)
-                                    ? 'hub-model-card-step'
-                                    : ''
-                                )}
-                                title={extractModelName(model.model_name) || ''}
+                  <div
+                    style={{
+                      height: `${rowVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualItem) => (
+                      <div key={virtualItem.key} className="mb-2">
+                        <Card
+                          header={
+                            <div className="flex items-center justify-between gap-x-2">
+                              <div
+                                className="cursor-pointer"
+                                onClick={() => {
+                                  navigate({
+                                    to: route.hub.model,
+                                    params: {
+                                      modelId:
+                                        filteredModels[virtualItem.index]
+                                          .model_name,
+                                    },
+                                  })
+                                }}
                               >
-                                {extractModelName(model.model_name) || ''}
-                              </h1>
-                            </div>
-                            <div className="shrink-0 space-x-3 flex items-center">
-                              <span className="text-main-view-fg/70 font-medium text-xs">
-                                {
-                                  (
-                                    model.quants.find((m) =>
-                                      defaultModelQuantizations.some((e) =>
-                                        m.model_id.toLowerCase().includes(e)
-                                      )
-                                    ) ?? model.quants?.[0]
-                                  )?.file_size
-                                }
-                              </span>
-                              <DownloadButtonPlaceholder model={model} />
-                            </div>
-                          </div>
-                        }
-                      >
-                        <div className="line-clamp-2 mt-3 text-main-view-fg/60">
-                          <RenderMarkdown
-                            enableRawHtml={true}
-                            className="select-none reset-heading"
-                            components={{
-                              a: ({ ...props }) => (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              ),
-                            }}
-                            content={
-                              extractDescription(model?.description) || ''
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="capitalize text-main-view-fg/80">
-                            {t('hub:by')} {model?.developer}
-                          </span>
-                          <div className="flex items-center gap-4 ml-2">
-                            <div className="flex items-center gap-1">
-                              <IconDownload
-                                size={18}
-                                className="text-main-view-fg/50"
-                                title={t('hub:downloads')}
-                              />
-                              <span className="text-main-view-fg/80">
-                                {model.downloads || 0}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <IconFileCode
-                                size={20}
-                                className="text-main-view-fg/50"
-                                title={t('hub:variants')}
-                              />
-                              <span className="text-main-view-fg/80">
-                                {model.quants?.length || 0}
-                              </span>
-                            </div>
-                            {model.quants.length > 1 && (
-                              <div className="flex items-center gap-2 hub-show-variants-step">
-                                <Switch
-                                  checked={!!expandedModels[model.model_name]}
-                                  onCheckedChange={() =>
-                                    toggleModelExpansion(model.model_name)
+                                <h1
+                                  className={cn(
+                                    'text-main-view-fg font-medium text-base capitalize  sm:max-w-none',
+                                    isRecommendedModel(
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    )
+                                      ? 'hub-model-card-step'
+                                      : ''
+                                  )}
+                                  title={
+                                    extractModelName(
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    ) || ''
                                   }
-                                />
-                                <p className="text-main-view-fg/70">
-                                  {t('hub:showVariants')}
-                                </p>
+                                >
+                                  {extractModelName(
+                                    filteredModels[virtualItem.index].model_name
+                                  ) || ''}
+                                </h1>
                               </div>
-                            )}
+                              <div className="shrink-0 space-x-3 flex items-center">
+                                <span className="text-main-view-fg/70 font-medium text-xs">
+                                  {
+                                    (
+                                      filteredModels[
+                                        virtualItem.index
+                                      ].quants.find((m) =>
+                                        defaultModelQuantizations.some((e) =>
+                                          m.model_id.toLowerCase().includes(e)
+                                        )
+                                      ) ??
+                                      filteredModels[virtualItem.index]
+                                        .quants?.[0]
+                                    )?.file_size
+                                  }
+                                </span>
+                                <DownloadButtonPlaceholder
+                                  model={filteredModels[virtualItem.index]}
+                                />
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div className="line-clamp-2 mt-3 text-main-view-fg/60">
+                            <RenderMarkdown
+                              enableRawHtml={true}
+                              className="select-none reset-heading"
+                              components={{
+                                a: ({ ...props }) => (
+                                  <a
+                                    {...props}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                ),
+                              }}
+                              content={
+                                extractDescription(
+                                  filteredModels[virtualItem.index]?.description
+                                ) || ''
+                              }
+                            />
                           </div>
-                        </div>
-                        {expandedModels[model.model_name] &&
-                          model.quants.length > 0 && (
-                            <div className="mt-5">
-                              {model.quants.map((variant) => (
-                                <CardItem
-                                  key={variant.model_id}
-                                  title={variant.model_id}
-                                  actions={
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-main-view-fg/70 font-medium text-xs">
-                                        {variant.file_size}
-                                      </p>
-                                      {(() => {
-                                        const isDownloading =
-                                          localDownloadingModels.has(
-                                            variant.model_id
-                                          ) ||
-                                          downloadProcesses.some(
-                                            (e) => e.id === variant.model_id
-                                          )
-                                        const downloadProgress =
-                                          downloadProcesses.find(
-                                            (e) => e.id === variant.model_id
-                                          )?.progress || 0
-                                        const isDownloaded =
-                                          llamaProvider?.models.some(
-                                            (m: { id: string }) =>
-                                              m.id === variant.model_id
-                                          )
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="capitalize text-main-view-fg/80">
+                              {t('hub:by')}{' '}
+                              {filteredModels[virtualItem.index]?.developer}
+                            </span>
+                            <div className="flex items-center gap-4 ml-2">
+                              <div className="flex items-center gap-1">
+                                <IconDownload
+                                  size={18}
+                                  className="text-main-view-fg/50"
+                                  title={t('hub:downloads')}
+                                />
+                                <span className="text-main-view-fg/80">
+                                  {filteredModels[virtualItem.index]
+                                    .downloads || 0}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <IconFileCode
+                                  size={20}
+                                  className="text-main-view-fg/50"
+                                  title={t('hub:variants')}
+                                />
+                                <span className="text-main-view-fg/80">
+                                  {filteredModels[virtualItem.index].quants
+                                    ?.length || 0}
+                                </span>
+                              </div>
+                              {filteredModels[virtualItem.index].quants.length >
+                                1 && (
+                                <div className="flex items-center gap-2 hub-show-variants-step">
+                                  <Switch
+                                    checked={
+                                      !!expandedModels[
+                                        filteredModels[virtualItem.index]
+                                          .model_name
+                                      ]
+                                    }
+                                    onCheckedChange={() =>
+                                      toggleModelExpansion(
+                                        filteredModels[virtualItem.index]
+                                          .model_name
+                                      )
+                                    }
+                                  />
+                                  <p className="text-main-view-fg/70">
+                                    {t('hub:showVariants')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {expandedModels[
+                            filteredModels[virtualItem.index].model_name
+                          ] &&
+                            filteredModels[virtualItem.index].quants.length >
+                              0 && (
+                              <div className="mt-5">
+                                {filteredModels[virtualItem.index].quants.map(
+                                  (variant) => (
+                                    <CardItem
+                                      key={variant.model_id}
+                                      title={variant.model_id}
+                                      actions={
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-main-view-fg/70 font-medium text-xs">
+                                            {variant.file_size}
+                                          </p>
+                                          {(() => {
+                                            const isDownloading =
+                                              localDownloadingModels.has(
+                                                variant.model_id
+                                              ) ||
+                                              downloadProcesses.some(
+                                                (e) => e.id === variant.model_id
+                                              )
+                                            const downloadProgress =
+                                              downloadProcesses.find(
+                                                (e) => e.id === variant.model_id
+                                              )?.progress || 0
+                                            const isDownloaded =
+                                              llamaProvider?.models.some(
+                                                (m: { id: string }) =>
+                                                  m.id === variant.model_id
+                                              )
 
-                                        if (isDownloading) {
-                                          return (
-                                            <>
-                                              <div className="flex items-center gap-2 w-20">
-                                                <Progress
-                                                  value={downloadProgress * 100}
-                                                />
-                                                <span className="text-xs text-center text-main-view-fg/70">
-                                                  {Math.round(
-                                                    downloadProgress * 100
-                                                  )}
-                                                  %
-                                                </span>
-                                              </div>
-                                            </>
-                                          )
-                                        }
+                                            if (isDownloading) {
+                                              return (
+                                                <>
+                                                  <div className="flex items-center gap-2 w-20">
+                                                    <Progress
+                                                      value={
+                                                        downloadProgress * 100
+                                                      }
+                                                    />
+                                                    <span className="text-xs text-center text-main-view-fg/70">
+                                                      {Math.round(
+                                                        downloadProgress * 100
+                                                      )}
+                                                      %
+                                                    </span>
+                                                  </div>
+                                                </>
+                                              )
+                                            }
 
-                                        if (isDownloaded) {
-                                          return (
-                                            <div
-                                              className="flex items-center justify-center rounded bg-main-view-fg/10"
-                                              title={t('hub:useModel')}
-                                            >
-                                              <Button
-                                                variant="link"
-                                                size="sm"
-                                                onClick={() =>
-                                                  handleUseModel(
+                                            if (isDownloaded) {
+                                              return (
+                                                <div
+                                                  className="flex items-center justify-center rounded bg-main-view-fg/10"
+                                                  title={t('hub:useModel')}
+                                                >
+                                                  <Button
+                                                    variant="link"
+                                                    size="sm"
+                                                    onClick={() =>
+                                                      handleUseModel(
+                                                        variant.model_id
+                                                      )
+                                                    }
+                                                  >
+                                                    {t('hub:use')}
+                                                  </Button>
+                                                </div>
+                                              )
+                                            }
+
+                                            return (
+                                              <div
+                                                className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                                                title={t('hub:downloadModel')}
+                                                onClick={() => {
+                                                  addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                }
+                                                  pullModel(
+                                                    variant.model_id,
+                                                    variant.path
+                                                  )
+                                                }}
                                               >
-                                                {t('hub:use')}
-                                              </Button>
-                                            </div>
-                                          )
-                                        }
-
-                                        return (
-                                          <div
-                                            className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                            title={t('hub:downloadModel')}
-                                            onClick={() => {
-                                              addLocalDownloadingModel(
-                                                variant.model_id
-                                              )
-                                              pullModel(
-                                                variant.model_id,
-                                                variant.path
-                                              )
-                                            }}
-                                          >
-                                            <IconDownload
-                                              size={16}
-                                              className="text-main-view-fg/80"
-                                            />
-                                          </div>
-                                        )
-                                      })()}
-                                    </div>
-                                  }
-                                />
-                              ))}
-                            </div>
-                          )}
-                      </Card>
-                    </div>
-                  ))}
+                                                <IconDownload
+                                                  size={16}
+                                                  className="text-main-view-fg/80"
+                                                />
+                                              </div>
+                                            )
+                                          })()}
+                                        </div>
+                                      }
+                                    />
+                                  )
+                                )}
+                              </div>
+                            )}
+                        </Card>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

@@ -60,19 +60,7 @@
     }
   },
   {
-    "key": "ctx_size",
-    "title": "Context Size",
-    "description": "Size of the prompt context (0 = loaded from model).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 8192,
-      "placeholder": "8192",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
-    "key": "context_shift",
+    "key": "ctx_shift",
     "title": "Context Shift",
     "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
     "controllerType": "checkbox",
@@ -112,18 +100,6 @@
     "controllerProps": {
       "value": 512,
       "placeholder": "512",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
-    "key": "n_gpu_layers",
-    "title": "GPU Layers",
-    "description": "Number of model layers to offload to the GPU (-1 for all layers, 0 for CPU only).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": -1,
-      "placeholder": "-1",
       "type": "number",
       "textAlign": "right"
     }

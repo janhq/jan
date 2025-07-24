@@ -177,6 +177,49 @@ export default class llamacpp_extension extends AIEngine {
     this.configureBackends()
   }
 
+  private getStoredBackendType(): string | null {
+    try {
+      return localStorage.getItem('llama_cpp_backend_type')
+    } catch (error) {
+      logger.warn('Failed to read backend type from localStorage:', error)
+      return null
+    }
+  }
+
+  private setStoredBackendType(backendType: string): void {
+    try {
+      localStorage.setItem('llama_cpp_backend_type', backendType)
+      logger.info(`Stored backend type preference: ${backendType}`)
+    } catch (error) {
+      logger.warn('Failed to store backend type in localStorage:', error)
+    }
+  }
+
+  private clearStoredBackendType(): void {
+    try {
+      localStorage.removeItem('llama_cpp_backend_type')
+      logger.info('Cleared stored backend type preference')
+    } catch (error) {
+      logger.warn('Failed to clear backend type from localStorage:', error)
+    }
+  }
+
+  private findLatestVersionForBackend(
+    version_backends: { version: string; backend: string }[],
+    backendType: string
+  ): string | null {
+    const matchingBackends = version_backends.filter(
+      (vb) => vb.backend === backendType
+    )
+    if (matchingBackends.length === 0) {
+      return null
+    }
+
+    // Sort by version (newest first) and get the latest
+    matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
+    return `${matchingBackends[0].version}/${matchingBackends[0].backend}`
+  }
+
   async configureBackends(): Promise<void> {
     if (this.isConfiguringBackends) {
       logger.info(
@@ -207,8 +250,33 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      let bestAvailableBackendString =
-        this.determineBestBackend(version_backends)
+      // Get stored backend preference
+      const storedBackendType = this.getStoredBackendType()
+      let bestAvailableBackendString = ''
+
+      if (storedBackendType) {
+        // Find the latest version of the stored backend type
+        const preferredBackendString = this.findLatestVersionForBackend(
+          version_backends,
+          storedBackendType
+        )
+        if (preferredBackendString) {
+          bestAvailableBackendString = preferredBackendString
+          logger.info(
+            `Using stored backend preference: ${bestAvailableBackendString}`
+          )
+        } else {
+          logger.warn(
+            `Stored backend type '${storedBackendType}' not available, falling back to best backend`
+          )
+          // Clear the invalid stored preference
+          this.clearStoredBackendType()
+          bestAvailableBackendString =
+            this.determineBestBackend(version_backends)
+        }
+      } else {
+        bestAvailableBackendString = this.determineBestBackend(version_backends)
+      }
 
       let settings = structuredClone(SETTINGS)
       const backendSettingIndex = settings.findIndex(
@@ -231,11 +299,42 @@ export default class llamacpp_extension extends AIEngine {
           originalDefaultBackendValue
         )
 
-        const initialUiDefault =
+        // Determine initial UI default based on priority:
+        // 1. Saved setting (if valid and not original default)
+        // 2. Best available for stored backend type
+        // 3. Original default
+        let initialUiDefault = originalDefaultBackendValue
+
+        if (
           savedBackendSetting &&
           savedBackendSetting !== originalDefaultBackendValue
-            ? savedBackendSetting
-            : bestAvailableBackendString || originalDefaultBackendValue
+        ) {
+          initialUiDefault = savedBackendSetting
+          // Store the backend type from the saved setting only if different
+          const [, backendType] = savedBackendSetting.split('/')
+          if (backendType) {
+            const currentStoredBackend = this.getStoredBackendType()
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
+              logger.info(
+                `Stored backend type preference from saved setting: ${backendType}`
+              )
+            }
+          }
+        } else if (bestAvailableBackendString) {
+          initialUiDefault = bestAvailableBackendString
+          // Store the backend type from the best available only if different
+          const [, backendType] = bestAvailableBackendString.split('/')
+          if (backendType) {
+            const currentStoredBackend = this.getStoredBackendType()
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
+              logger.info(
+                `Stored backend type preference from best available: ${backendType}`
+              )
+            }
+          }
+        }
 
         backendSetting.controllerProps.value = initialUiDefault
         logger.info(
@@ -253,6 +352,49 @@ export default class llamacpp_extension extends AIEngine {
       let effectiveBackendString = this.config.version_backend
       let backendWasDownloaded = false
 
+      // Handle fresh installation case where version_backend might be 'none' or invalid
+      if (
+        !effectiveBackendString ||
+        effectiveBackendString === 'none' ||
+        !effectiveBackendString.includes('/')
+      ) {
+        effectiveBackendString = bestAvailableBackendString
+        logger.info(
+          `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
+        )
+
+        // Update the config immediately
+        this.config.version_backend = effectiveBackendString
+
+        // Update the settings to reflect the change in UI
+        const updatedSettings = await this.getSettings()
+        await this.updateSettings(
+          updatedSettings.map((item) => {
+            if (item.key === 'version_backend') {
+              item.controllerProps.value = effectiveBackendString
+            }
+            return item
+          })
+        )
+        logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
+      }
+
+      // Download and install the backend if not already present
+      if (effectiveBackendString) {
+        const [version, backend] = effectiveBackendString.split('/')
+        if (version && backend) {
+          const isInstalled = await isBackendInstalled(backend, version)
+          if (!isInstalled) {
+            logger.info(`Installing initial backend: ${effectiveBackendString}`)
+            await this.ensureBackendReady(backend, version)
+            backendWasDownloaded = true
+            logger.info(
+              `Successfully installed initial backend: ${effectiveBackendString}`
+            )
+          }
+        }
+      }
+
       if (this.config.auto_update_engine) {
         const updateResult = await this.handleAutoUpdate(
           bestAvailableBackendString
@@ -263,12 +405,8 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      if (!backendWasDownloaded) {
+      if (!backendWasDownloaded && effectiveBackendString) {
         await this.ensureFinalBackendInstallation(effectiveBackendString)
-      } else {
-        logger.info(
-          'Skipping final installation check - backend was just downloaded during auto-update'
-        )
       }
     } finally {
       this.isConfiguringBackends = false
@@ -350,65 +488,149 @@ export default class llamacpp_extension extends AIEngine {
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
+    // If version_backend is empty, invalid, or 'none', use the best available backend
+    if (
+      !this.config.version_backend ||
+      this.config.version_backend === '' ||
+      this.config.version_backend === 'none' ||
+      !this.config.version_backend.includes('/')
+    ) {
+      logger.info(
+        'No valid backend currently selected, using best available backend'
+      )
+      try {
+        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
+
+        // Download new backend
+        await this.ensureBackendReady(bestBackend, bestVersion)
+
+        // Add delay on Windows
+        if (IS_WINDOWS) {
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+
+        // Update configuration
+        this.config.version_backend = bestAvailableBackendString
+
+        // Store the backend type preference only if it changed
+        const currentStoredBackend = this.getStoredBackendType()
+        if (currentStoredBackend !== bestBackend) {
+          this.setStoredBackendType(bestBackend)
+          logger.info(`Stored new backend type preference: ${bestBackend}`)
+        }
+
+        // Update settings
+        const settings = await this.getSettings()
+        await this.updateSettings(
+          settings.map((item) => {
+            if (item.key === 'version_backend') {
+              item.controllerProps.value = bestAvailableBackendString
+            }
+            return item
+          })
+        )
+
+        logger.info(
+          `Successfully set initial backend: ${bestAvailableBackendString}`
+        )
+        return { wasUpdated: true, newBackend: bestAvailableBackendString }
+      } catch (error) {
+        logger.error('Failed to set initial backend:', error)
+        return { wasUpdated: false, newBackend: this.config.version_backend }
+      }
+    }
+
+    // Parse current backend configuration
     const [currentVersion, currentBackend] = (
       this.config.version_backend || ''
     ).split('/')
-    const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
 
-    // Check if update is needed
-    if (currentBackend === bestBackend && currentVersion === bestVersion) {
-      logger.info('Auto-update: Already using the best available backend')
+    if (!currentVersion || !currentBackend) {
+      logger.warn(
+        `Invalid current backend format: ${this.config.version_backend}`
+      )
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
-    // Perform update
+    // Find the latest version for the currently selected backend type
+    const version_backends = await listSupportedBackends()
+    const targetBackendString = this.findLatestVersionForBackend(
+      version_backends,
+      currentBackend
+    )
+
+    if (!targetBackendString) {
+      logger.warn(
+        `No available versions found for current backend type: ${currentBackend}`
+      )
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+
+    const [latestVersion] = targetBackendString.split('/')
+
+    // Check if update is needed (only version comparison for same backend type)
+    if (currentVersion === latestVersion) {
+      logger.info(
+        'Auto-update: Already using the latest version of the selected backend'
+      )
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+
+    // Perform version update for the same backend type
     try {
       logger.info(
-        `Auto-updating from ${this.config.version_backend} to ${bestAvailableBackendString}`
+        `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
       )
 
-      // Download new backend first
-      await this.ensureBackendReady(bestBackend, bestVersion)
+      // Download new version of the same backend type
+      await this.ensureBackendReady(currentBackend, latestVersion)
 
-      // Add a small delay on Windows to ensure file operations complete
+      // Add delay on Windows
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
       // Update configuration
-      this.config.version_backend = bestAvailableBackendString
+      this.config.version_backend = targetBackendString
+
+      // Update stored backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== currentBackend) {
+        this.setStoredBackendType(currentBackend)
+        logger.info(`Updated stored backend type preference: ${currentBackend}`)
+      }
 
       // Update settings
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
           if (item.key === 'version_backend') {
-            item.controllerProps.value = bestAvailableBackendString
+            item.controllerProps.value = targetBackendString
           }
           return item
         })
       )
 
       logger.info(
-        `Successfully updated to backend: ${bestAvailableBackendString}`
+        `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
       )
 
-      // Clean up old backends (with additional delay on Windows)
+      // Clean up old versions of the same backend type
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
-      await this.removeOldBackends(bestVersion, bestBackend)
+      await this.removeOldBackend(latestVersion, currentBackend)
 
-      return { wasUpdated: true, newBackend: bestAvailableBackendString }
+      return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
       logger.error('Auto-update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
   }
 
-  private async removeOldBackends(
-    bestVersion: string,
-    bestBackend: string
+  private async removeOldBackend(
+    latestVersion: string,
+    backendType: string
   ): Promise<void> {
     try {
       const janDataFolderPath = await getJanDataFolderPath()
@@ -426,32 +648,35 @@ export default class llamacpp_extension extends AIEngine {
 
       for (const versionDir of versionDirs) {
         const versionPath = await joinPath([backendsDir, versionDir])
-        const backendTypeDirs = await fs.readdirSync(versionPath)
+        const versionName = await basename(versionDir)
 
-        for (const backendTypeDir of backendTypeDirs) {
-          const versionName = await basename(versionDir)
-          const backendName = await basename(backendTypeDir)
+        // Skip the latest version
+        if (versionName === latestVersion) {
+          continue
+        }
 
-          // Skip if it's the best version/backend
-          if (versionName === bestVersion && backendName === bestBackend) {
-            continue
-          }
+        // Check if this version has the specific backend type we're interested in
+        const backendTypePath = await joinPath([versionPath, backendType])
 
-          // If this other backend is installed, remove it
-          const isInstalled = await isBackendInstalled(backendName, versionName)
+        if (await fs.existsSync(backendTypePath)) {
+          const isInstalled = await isBackendInstalled(backendType, versionName)
           if (isInstalled) {
-            const toRemove = await joinPath([versionPath, backendTypeDir])
             try {
-              await fs.rm(toRemove)
-              logger.info(`Removed old backend: ${toRemove}`)
+              await fs.rm(backendTypePath)
+              logger.info(
+                `Removed old version of ${backendType}: ${backendTypePath}`
+              )
             } catch (e) {
-              logger.warn(`Failed to remove old backend: ${toRemove}`, e)
+              logger.warn(
+                `Failed to remove old backend version: ${backendTypePath}`,
+                e
+              )
             }
           }
         }
       }
     } catch (error) {
-      logger.error('Error during old backend cleanup:', error)
+      logger.error('Error during old backend version cleanup:', error)
     }
   }
 
@@ -525,6 +750,15 @@ export default class llamacpp_extension extends AIEngine {
     if (key === 'version_backend') {
       const valueStr = value as string
       const [version, backend] = valueStr.split('/')
+
+      // Store the backend type preference in localStorage only if it changed
+      if (backend) {
+        const currentStoredBackend = this.getStoredBackendType()
+        if (currentStoredBackend !== backend) {
+          this.setStoredBackendType(backend)
+          logger.info(`Updated backend type preference to: ${backend}`)
+        }
+      }
 
       // Reset device setting when backend changes
       this.config.device = ''
@@ -602,6 +836,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async migrateLegacyModels() {
+    // Attempt to migrate only once
+    if (localStorage.getItem('cortex_models_migrated') === 'true') return
+
     const janDataFolderPath = await getJanDataFolderPath()
     const modelsDir = await joinPath([janDataFolderPath, 'models'])
     if (!(await fs.existsSync(modelsDir))) return
@@ -687,6 +924,7 @@ export default class llamacpp_extension extends AIEngine {
         stack.push(child)
       }
     }
+    localStorage.setItem('cortex_models_migrated', 'true')
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {

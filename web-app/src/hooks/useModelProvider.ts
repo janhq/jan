@@ -74,9 +74,17 @@ export const useModelProvider = create<ModelProviderState>()(
               ),
               ...models,
             ]
+            const updatedModels = provider.models?.map((model) => {
+              return {
+                ...model,
+                settings:
+                  models.find((m) => m.id === model.id)?.settings ||
+                  model.settings,
+              }
+            })
             return {
               ...provider,
-              models: provider.persist ? provider?.models : mergedModels,
+              models: provider.persist ? updatedModels : mergedModels,
               settings: provider.settings.map((setting) => {
                 const existingSetting = provider.persist
                   ? undefined
