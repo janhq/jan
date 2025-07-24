@@ -1,0 +1,628 @@
+---
+// ProductsTOC.astro - Sticky table of contents navigation
+---
+
+<div class="products-toc">
+  <div class="toc-container">
+    <div class="toc-header">
+      <div class="toc-robot">
+        <div class="robot-head"></div>
+        <div class="robot-body">📋</div>
+      </div>
+      <h3>Navigate This Page</h3>
+    </div>
+
+    <nav class="toc-nav" role="navigation" aria-label="Table of Contents">
+      <ul class="toc-list">
+        <li class="toc-item">
+          <a href="#hero" class="toc-link" data-section="hero">
+            <div class="toc-icon hero-icon"></div>
+            <span>Product Overview</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#vision" class="toc-link" data-section="vision">
+            <div class="toc-icon vision-icon"></div>
+            <span>Product Vision</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#architecture" class="toc-link" data-section="architecture">
+            <div class="toc-icon architecture-icon"></div>
+            <span>How Jan Works</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#models" class="toc-link" data-section="models">
+            <div class="toc-icon models-icon"></div>
+            <span>AI Models</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#platforms" class="toc-link" data-section="platforms">
+            <div class="toc-icon platforms-icon"></div>
+            <span>Platforms</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#tools" class="toc-link" data-section="tools">
+            <div class="toc-icon tools-icon"></div>
+            <span>Tools</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#principles" class="toc-link" data-section="principles">
+            <div class="toc-icon principles-icon"></div>
+            <span>Why Jan</span>
+          </a>
+        </li>
+        <li class="toc-item">
+          <a href="#roadmap" class="toc-link" data-section="roadmap">
+            <div class="toc-icon roadmap-icon"></div>
+            <span>Roadmap</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+    <div class="toc-progress">
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <div class="progress-text">
+        <span class="current-section">Getting Started</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile TOC Toggle -->
+  <button class="toc-mobile-toggle" aria-label="Toggle Table of Contents">
+    <div class="toggle-icon">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </button>
+</div>
+
+<style>
+  .products-toc {
+    position: fixed;
+    top: 50%;
+    right: 2rem;
+    transform: translateY(-50%);
+    z-index: 1000;
+    transition: all 0.3s ease;
+  }
+
+  .toc-container {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    min-width: 280px;
+    max-height: 80vh;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+  }
+
+  .toc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .toc-robot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .toc-robot .robot-head {
+    width: 20px;
+    height: 20px;
+    background: #3b82f6;
+    border-radius: 6px;
+    border: 2px solid #1e293b;
+  }
+
+  .toc-robot .robot-body {
+    font-size: 1rem;
+  }
+
+  .toc-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .toc-nav {
+    margin-bottom: 1.5rem;
+  }
+
+  .toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .toc-item {
+    margin: 0;
+  }
+
+  .toc-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 10px;
+    text-decoration: none;
+    color: #64748b;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    position: relative;
+    border: 1px solid transparent;
+  }
+
+  .toc-link:hover {
+    background: #f1f5f9;
+    color: #3b82f6;
+    border-color: #e2e8f0;
+    transform: translateX(4px);
+  }
+
+  .toc-link.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  }
+
+  .toc-link.active .toc-icon {
+    background: white;
+  }
+
+  .toc-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 2px solid #1e293b;
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  /* Icon variations */
+  .hero-icon {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  }
+
+  .vision-icon {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  }
+
+  .architecture-icon {
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
+  }
+
+  .models-icon {
+    background: linear-gradient(135deg, #ec4899, #db2777);
+  }
+
+  .platforms-icon {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+  }
+
+  .tools-icon {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+  }
+
+  .principles-icon {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+  }
+
+  .roadmap-icon {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+  }
+
+  /* Icon symbols */
+  .toc-icon::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 2px;
+  }
+
+  .hero-icon::after {
+    border-radius: 50%;
+  }
+
+  .vision-icon::after {
+    width: 6px;
+    height: 10px;
+    border-radius: 1px;
+  }
+
+  .architecture-icon::after {
+    width: 10px;
+    height: 6px;
+  }
+
+  .models-icon::after {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .platforms-icon::after {
+    width: 8px;
+    height: 8px;
+  }
+
+  .tools-icon::after {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .principles-icon::after {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .roadmap-icon::after {
+    width: 10px;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  /* Progress section */
+  .toc-progress {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 1rem;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .progress-text {
+    text-align: center;
+  }
+
+  .current-section {
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  /* Mobile toggle button */
+  .toc-mobile-toggle {
+    display: none;
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    width: 50px;
+    height: 50px;
+    background: #3b82f6;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 1001;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    transition: all 0.3s ease;
+  }
+
+  .toc-mobile-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+  }
+
+  .toggle-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .toggle-icon span {
+    width: 16px;
+    height: 2px;
+    background: white;
+    border-radius: 1px;
+    transition: all 0.3s ease;
+  }
+
+  /* Mobile states */
+  .products-toc.mobile-hidden .toc-container {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .products-toc.mobile-visible .toggle-icon span:nth-child(1) {
+    transform: rotate(45deg) translate(6px, 6px);
+  }
+
+  .products-toc.mobile-visible .toggle-icon span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .products-toc.mobile-visible .toggle-icon span:nth-child(3) {
+    transform: rotate(-45deg) translate(6px, -6px);
+  }
+
+  /* Responsive Design */
+  @media (max-width: 1280px) {
+    .products-toc {
+      right: 1rem;
+    }
+
+    .toc-container {
+      min-width: 260px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .products-toc {
+      top: auto;
+      bottom: 2rem;
+      right: 2rem;
+      transform: none;
+    }
+
+    .toc-container {
+      min-width: 240px;
+      max-height: 60vh;
+    }
+
+    .toc-mobile-toggle {
+      display: flex;
+    }
+
+    .products-toc:not(.mobile-visible) .toc-container {
+      transform: translateX(100%);
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .toc-mobile-toggle {
+      width: 45px;
+      height: 45px;
+      top: 1.5rem;
+      right: 1.5rem;
+    }
+
+    .toc-container {
+      min-width: 220px;
+      padding: 1.25rem;
+    }
+
+    .toc-link {
+      padding: 0.65rem;
+      font-size: 0.85rem;
+    }
+
+    .toc-icon {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .products-toc {
+      bottom: 1rem;
+      right: 1rem;
+    }
+
+    .toc-container {
+      min-width: 200px;
+      max-height: 50vh;
+    }
+  }
+
+  /* High contrast mode */
+  @media (prefers-contrast: high) {
+    .toc-container {
+      border-width: 3px;
+      background: white;
+    }
+
+    .toc-link {
+      border-width: 2px;
+    }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .toc-link, .toc-container, .progress-fill, .toc-mobile-toggle, .toggle-icon span {
+      transition: none;
+    }
+  }
+
+  /* Scrollbar styling */
+  .toc-container::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .toc-container::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+  }
+
+  .toc-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .toc-container::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const toc = document.querySelector('.products-toc');
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const mobileToggle = document.querySelector('.toc-mobile-toggle');
+    const progressFill = document.querySelector('.progress-fill');
+    const currentSectionText = document.querySelector('.current-section');
+
+    // Mobile toggle functionality
+    if (mobileToggle) {
+      mobileToggle.addEventListener('click', () => {
+        toc?.classList.toggle('mobile-visible');
+      });
+    }
+
+    // Close TOC when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 1024 && toc && !toc.contains(e.target)) {
+        toc.classList.remove('mobile-visible');
+      }
+    });
+
+    // Smooth scrolling for TOC links
+    tocLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = link.getAttribute('href')?.substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const offset = 100; // Account for fixed headers
+          const elementPosition = targetElement.getBoundingClientRect().top + window.pageYOffset;
+          const offsetPosition = elementPosition - offset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+
+          // Close mobile TOC after navigation
+          if (window.innerWidth <= 1024) {
+            toc?.classList.remove('mobile-visible');
+          }
+        }
+      });
+    });
+
+    // Scroll progress and active section tracking
+    const sections = Array.from(document.querySelectorAll('[id]')).filter(el =>
+      ['hero', 'vision', 'architecture', 'models', 'platforms', 'tools', 'principles', 'roadmap'].includes(el.id)
+    );
+
+    const updateProgress = () => {
+      const scrollTop = window.pageYOffset;
+      const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const scrollProgress = Math.min(scrollTop / documentHeight, 1);
+
+      if (progressFill) {
+        progressFill.style.width = `${scrollProgress * 100}%`;
+      }
+    };
+
+    const updateActiveSection = () => {
+      const scrollTop = window.pageYOffset + 150; // Offset for better UX
+
+      let activeSection = sections[0]; // Default to first section
+
+      for (const section of sections) {
+        if (section.offsetTop <= scrollTop) {
+          activeSection = section;
+        } else {
+          break;
+        }
+      }
+
+      // Update active TOC link
+      tocLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === `#${activeSection.id}`) {
+          link.classList.add('active');
+        }
+      });
+
+      // Update current section text
+      if (currentSectionText) {
+        const sectionNames = {
+          hero: 'Product Overview',
+          vision: 'Product Vision',
+          architecture: 'How Jan Works',
+          models: 'AI Models',
+          platforms: 'Platforms',
+          tools: 'Tools',
+          principles: 'Why Jan',
+          roadmap: 'Roadmap'
+        };
+        currentSectionText.textContent = sectionNames[activeSection.id] || 'Getting Started';
+      }
+    };
+
+    // Throttled scroll handler
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          updateProgress();
+          updateActiveSection();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
+    // Initial call
+    updateProgress();
+    updateActiveSection();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 1024) {
+        toc?.classList.remove('mobile-visible');
+      }
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && toc?.classList.contains('mobile-visible')) {
+        toc.classList.remove('mobile-visible');
+      }
+    });
+  });
+</script>

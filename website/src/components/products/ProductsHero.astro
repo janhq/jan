@@ -1,0 +1,696 @@
+---
+// ProductsHero.astro - Hero section with blue-tinted background and friendly robot
+---
+
+<section id="hero" class="products-hero">
+  <div class="hero-background">
+    <div class="floating-clouds">
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+    </div>
+    <div class="floating-elements">
+      <div class="element element-1"></div>
+      <div class="element element-2"></div>
+      <div class="element element-3"></div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <div class="badge-robot">
+          <div class="badge-robot-head"></div>
+          <div class="badge-robot-body">AI</div>
+        </div>
+        <span>Full Stack AI Solution</span>
+      </div>
+
+      <h1 class="hero-title">
+        <span class="title-main">Jan's Product Roadmap</span>
+        <span class="title-sub">AI that runs where you need it, how you need it</span>
+      </h1>
+
+      <p class="hero-description">
+        Complete ecosystem of models, applications, and tools. Let's build the future of AI together!
+      </p>
+
+      <div class="hero-robot">
+        <div class="robot-container bounce">
+          <div class="robot-head">
+            <div class="robot-blush left"></div>
+            <div class="robot-blush right"></div>
+            <div class="robot-antenna">
+              <div class="antenna-light"></div>
+            </div>
+            <div class="robot-eyes">
+              <div class="robot-eye left-eye wink">
+                <div class="eye-shine"></div>
+              </div>
+              <div class="robot-eye right-eye excited">
+                <div class="eye-shine"></div>
+              </div>
+            </div>
+            <div class="robot-mouth happy"></div>
+          </div>
+          <div class="robot-body">
+            <div class="robot-panel">
+              <div class="panel-light green pulse"></div>
+              <div class="panel-light blue pulse" style="animation-delay: 0.5s;"></div>
+              <div class="panel-light amber pulse" style="animation-delay: 1s;"></div>
+            </div>
+            <div class="robot-screen">
+              <div class="screen-content">
+                <div class="code-line"></div>
+                <div class="code-line short"></div>
+                <div class="code-line"></div>
+              </div>
+            </div>
+          </div>
+          <div class="robot-arms">
+            <div class="arm left-arm wave"></div>
+            <div class="arm right-arm wave" style="animation-delay: 1s;"></div>
+          </div>
+          <div class="robot-sparkles">
+            <div class="sparkle"></div>
+            <div class="sparkle"></div>
+            <div class="sparkle"></div>
+            <div class="sparkle"></div>
+          </div>
+          <div class="speech-bubble">
+            <span>Ready to build amazing AI experiences?</span>
+            <div class="bubble-tail"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-number">3</div>
+          <div class="stat-label">AI Models</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">4</div>
+          <div class="stat-label">Platforms</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">4</div>
+          <div class="stat-label">Tools</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .products-hero {
+    background: linear-gradient(135deg, #8338EC 0%, #3A86FF 25%, #FF006E 50%, #FFB700 75%, #06FFA5 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    padding: 2rem 0;
+  }
+
+  .hero-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+
+  .floating-clouds {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+  }
+
+  .cloud {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50px;
+    opacity: 0.7;
+    animation: float 20s infinite ease-in-out;
+  }
+
+  .cloud-1 {
+    width: 120px;
+    height: 80px;
+    top: 15%;
+    left: 5%;
+    animation-delay: 0s;
+  }
+
+  .cloud-2 {
+    width: 100px;
+    height: 60px;
+    top: 25%;
+    right: 10%;
+    animation-delay: -5s;
+  }
+
+  .cloud-3 {
+    width: 80px;
+    height: 50px;
+    top: 60%;
+    left: 15%;
+    animation-delay: -10s;
+  }
+
+  .cloud-4 {
+    width: 140px;
+    height: 90px;
+    top: 70%;
+    right: 5%;
+    animation-delay: -15s;
+  }
+
+  .floating-elements {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+  }
+
+  .element {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    animation: elementFloat 15s infinite ease-in-out;
+  }
+
+  .element-1 {
+    top: 20%;
+    left: 20%;
+    animation-delay: 0s;
+  }
+
+  .element-2 {
+    top: 40%;
+    right: 25%;
+    animation-delay: -5s;
+  }
+
+  .element-3 {
+    top: 75%;
+    left: 60%;
+    animation-delay: -10s;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero-content {
+    text-align: center;
+    color: white;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    padding: 0.75rem 1.5rem;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .badge-robot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .badge-robot-head {
+    width: 16px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .badge-robot-body {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: white;
+  }
+
+  .hero-title {
+    margin-bottom: 2rem;
+  }
+
+  .title-main {
+    display: block;
+    font-size: clamp(2.5rem, 8vw, 4rem);
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+    line-height: 1.1;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  .title-sub {
+    display: block;
+    font-size: clamp(1.2rem, 4vw, 1.8rem);
+    font-weight: 500;
+    opacity: 0.9;
+    line-height: 1.3;
+  }
+
+  .hero-description {
+    font-size: clamp(1.1rem, 3vw, 1.3rem);
+    margin-bottom: 3rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+    opacity: 0.9;
+    line-height: 1.6;
+  }
+
+  /* Hero Robot */
+  .hero-robot {
+    margin: 3rem 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .robot-container {
+    position: relative;
+    display: inline-block;
+  }
+
+  .robot-head {
+    width: 100px;
+    height: 100px;
+    background: linear-gradient(135deg, #FFB700 0%, #FB5607 100%);
+    border-radius: 25px;
+    position: relative;
+    margin: 0 auto 15px;
+    border: 4px solid #1A1A2E;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .robot-antenna {
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 20px;
+    background: #1e293b;
+    border-radius: 2px;
+  }
+
+  .antenna-light {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 10px;
+    height: 10px;
+    background: #FF006E;
+    border-radius: 50%;
+    border: 2px solid #1A1A2E;
+    animation: antennaGlow 2s infinite;
+    box-shadow: 0 0 20px rgba(255, 0, 110, 0.6);
+  }
+
+  .robot-eyes {
+    display: flex;
+    justify-content: space-between;
+    padding: 20px 15px 10px;
+  }
+
+  .robot-eye {
+    width: 20px;
+    height: 20px;
+    background: #1A1A2E;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  .robot-eye.wink {
+    height: 2px;
+    border-radius: 0;
+    animation: winkAnimation 4s infinite;
+  }
+
+  .robot-eye.excited {
+    transform: scale(1.2);
+  }
+
+  .eye-shine {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    background: white;
+    border-radius: 50%;
+  }
+
+  .robot-mouth.happy {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 15px;
+    border: 4px solid #1e293b;
+    border-top: none;
+    border-radius: 0 0 30px 30px;
+  }
+
+  .robot-body {
+    width: 120px;
+    height: 140px;
+    background: linear-gradient(135deg, #06FFA5 0%, #00F5FF 100%);
+    border-radius: 20px;
+    margin: 0 auto;
+    border: 4px solid #1A1A2E;
+    position: relative;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .robot-panel {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 25px 0 15px;
+  }
+
+  .panel-light {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #1e293b;
+  }
+
+  .panel-light.green { background: #22c55e; }
+  .panel-light.blue { background: #3b82f6; }
+  .panel-light.amber { background: #f59e0b; }
+
+  .robot-screen {
+    width: 80px;
+    height: 50px;
+    background: #1e293b;
+    border-radius: 8px;
+    margin: 0 auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .screen-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .code-line {
+    height: 3px;
+    background: #22c55e;
+    border-radius: 2px;
+    animation: codeFlow 3s infinite ease-in-out;
+  }
+
+  .code-line.short {
+    width: 60%;
+    animation-delay: 0.5s;
+  }
+
+  .robot-arms {
+    display: flex;
+    justify-content: space-between;
+    margin-top: -70px;
+    padding: 0 25px;
+    position: relative;
+    z-index: -1;
+  }
+
+  .arm {
+    width: 15px;
+    height: 50px;
+    background: #fed7aa;
+    border-radius: 8px;
+    border: 3px solid #1e293b;
+    transform-origin: top center;
+  }
+
+  .speech-bubble {
+    position: absolute;
+    top: -50px;
+    left: 130%;
+    background: white;
+    color: #1e293b;
+    padding: 1rem 1.5rem;
+    border-radius: 20px;
+    border: 3px solid #1e293b;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    animation: bubbleBounce 4s infinite ease-in-out;
+  }
+
+  .bubble-tail {
+    position: absolute;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+    border-right: 12px solid white;
+  }
+
+  .bubble-tail::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: -12px;
+    width: 0;
+    height: 0;
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-right: 15px solid #1e293b;
+  }
+
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 4rem;
+    flex-wrap: wrap;
+    margin-top: 2rem;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stat-number {
+    font-size: 3rem;
+    font-weight: 800;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .stat-label {
+    font-size: 1.1rem;
+    font-weight: 500;
+    opacity: 0.9;
+  }
+
+  /* Animations */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) translateX(0px); }
+    25% { transform: translateY(-20px) translateX(10px); }
+    50% { transform: translateY(0px) translateX(20px); }
+    75% { transform: translateY(-10px) translateX(10px); }
+  }
+
+  @keyframes elementFloat {
+    0%, 100% { transform: translateY(0px) scale(1); opacity: 0.5; }
+    50% { transform: translateY(-30px) scale(1.2); opacity: 1; }
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+  }
+
+  @keyframes antennaGlow {
+    0%, 100% {
+      background: #FF006E;
+      box-shadow: 0 0 20px rgba(255, 0, 110, 0.6);
+    }
+    50% {
+      background: #06FFA5;
+      box-shadow: 0 0 30px rgba(6, 255, 165, 0.8);
+    }
+  }
+
+  @keyframes winkAnimation {
+    0%, 90%, 100% { height: 20px; border-radius: 50%; }
+    95% { height: 2px; border-radius: 0; }
+  }
+
+  .robot-blush {
+    position: absolute;
+    width: 15px;
+    height: 10px;
+    background: rgba(255, 0, 110, 0.3);
+    border-radius: 50%;
+    top: 45%;
+  }
+
+  .robot-blush.left {
+    left: 10px;
+  }
+
+  .robot-blush.right {
+    right: 10px;
+  }
+
+  .robot-sparkles {
+    position: absolute;
+    top: -30px;
+    left: -30px;
+    right: -30px;
+    bottom: -30px;
+    pointer-events: none;
+  }
+
+  .sparkle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #FFB700;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    animation: sparkleFloat 3s ease-in-out infinite;
+  }
+
+  .sparkle:nth-child(1) { top: 10%; left: 20%; animation-delay: 0s; }
+  .sparkle:nth-child(2) { top: 30%; right: 15%; animation-delay: 0.7s; }
+  .sparkle:nth-child(3) { bottom: 20%; left: 10%; animation-delay: 1.4s; }
+  .sparkle:nth-child(4) { bottom: 10%; right: 25%; animation-delay: 2.1s; }
+
+  @keyframes sparkleFloat {
+    0%, 100% {
+      opacity: 0;
+      transform: scale(0) rotate(0deg) translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1) rotate(180deg) translateY(-10px);
+    }
+  }
+
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-15deg); }
+    75% { transform: rotate(15deg); }
+  }
+
+  @keyframes codeFlow {
+    0% { width: 0%; opacity: 0; }
+    50% { width: 100%; opacity: 1; }
+    100% { width: 100%; opacity: 0.5; }
+  }
+
+  @keyframes bubbleBounce {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-5px); }
+  }
+
+  /* Responsive Design */
+  @media (max-width: 1024px) {
+    .speech-bubble {
+      display: none;
+    }
+
+    .hero-stats {
+      gap: 2rem;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .products-hero {
+      min-height: 80vh;
+      padding: 1rem 0;
+    }
+
+    .container {
+      padding: 0 1rem;
+    }
+
+    .hero-robot {
+      margin: 2rem 0;
+    }
+
+    .robot-head {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+    }
+
+    .robot-body {
+      width: 100px;
+      height: 120px;
+      border-radius: 16px;
+    }
+
+    .hero-stats {
+      gap: 1.5rem;
+    }
+
+    .stat-number {
+      font-size: 2.5rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .hero-description {
+      margin-bottom: 2rem;
+    }
+
+    .robot-arms {
+      padding: 0 20px;
+    }
+
+    .hero-stats {
+      gap: 1rem;
+    }
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .cloud, .element, .robot-container, .panel-light, .arm, .antenna-light, .code-line, .speech-bubble {
+      animation: none !important;
+    }
+  }
+</style>
