@@ -57,6 +57,7 @@
   },
   "packageManager": "yarn@4.5.3",
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.12",
     "download-cli": "^1.1.1"
   }
 }
