@@ -310,17 +310,29 @@ export default class llamacpp_extension extends AIEngine {
           savedBackendSetting !== originalDefaultBackendValue
         ) {
           initialUiDefault = savedBackendSetting
-          // Store the backend type from the saved setting
+          // Store the backend type from the saved setting only if different
           const [, backendType] = savedBackendSetting.split('/')
           if (backendType) {
-            this.setStoredBackendType(backendType)
+            const currentStoredBackend = this.getStoredBackendType()
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
+              logger.info(
+                `Stored backend type preference from saved setting: ${backendType}`
+              )
+            }
           }
         } else if (bestAvailableBackendString) {
           initialUiDefault = bestAvailableBackendString
-          // Store the backend type from the best available
+          // Store the backend type from the best available only if different
           const [, backendType] = bestAvailableBackendString.split('/')
           if (backendType) {
-            this.setStoredBackendType(backendType)
+            const currentStoredBackend = this.getStoredBackendType()
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
+              logger.info(
+                `Stored backend type preference from best available: ${backendType}`
+              )
+            }
           }
         }
 
@@ -353,6 +365,18 @@ export default class llamacpp_extension extends AIEngine {
 
         // Update the config immediately
         this.config.version_backend = effectiveBackendString
+
+        // Update the settings to reflect the change in UI
+        const updatedSettings = await this.getSettings()
+        await this.updateSettings(
+          updatedSettings.map((item) => {
+            if (item.key === 'version_backend') {
+              item.controllerProps.value = effectiveBackendString
+            }
+            return item
+          })
+        )
+        logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
       }
 
       // Download and install the backend if not already present
@@ -488,8 +512,12 @@ export default class llamacpp_extension extends AIEngine {
         // Update configuration
         this.config.version_backend = bestAvailableBackendString
 
-        // Store the backend type preference
-        this.setStoredBackendType(bestBackend)
+        // Store the backend type preference only if it changed
+        const currentStoredBackend = this.getStoredBackendType()
+        if (currentStoredBackend !== bestBackend) {
+          this.setStoredBackendType(bestBackend)
+          logger.info(`Stored new backend type preference: ${bestBackend}`)
+        }
 
         // Update settings
         const settings = await this.getSettings()
@@ -565,8 +593,12 @@ export default class llamacpp_extension extends AIEngine {
       // Update configuration
       this.config.version_backend = targetBackendString
 
-      // Update stored backend type preference (in case it changed)
-      this.setStoredBackendType(currentBackend)
+      // Update stored backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== currentBackend) {
+        this.setStoredBackendType(currentBackend)
+        logger.info(`Updated stored backend type preference: ${currentBackend}`)
+      }
 
       // Update settings
       const settings = await this.getSettings()
@@ -719,10 +751,13 @@ export default class llamacpp_extension extends AIEngine {
       const valueStr = value as string
       const [version, backend] = valueStr.split('/')
 
-      // Store the backend type preference in localStorage
+      // Store the backend type preference in localStorage only if it changed
       if (backend) {
-        this.setStoredBackendType(backend)
-        logger.info(`Updated backend type preference to: ${backend}`)
+        const currentStoredBackend = this.getStoredBackendType()
+        if (currentStoredBackend !== backend) {
+          this.setStoredBackendType(backend)
+          logger.info(`Updated backend type preference to: ${backend}`)
+        }
       }
 
       // Reset device setting when backend changes
