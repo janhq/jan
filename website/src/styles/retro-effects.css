@@ -1,0 +1,822 @@
+/* Retro-Tech Effects CSS */
+/* RadioShack meets PostHog aesthetic */
+
+:root {
+  /* Retro Color Palette */
+  --retro-green: #00ff41;
+  --retro-amber: #ffb000;
+  --retro-blue: #00bfff;
+  --retro-red: #ff0040;
+  --retro-cyan: #00ffff;
+  --retro-magenta: #ff00ff;
+
+  /* Terminal Colors */
+  --terminal-bg: #0a0a0a;
+  --terminal-fg: #00ff41;
+  --terminal-cursor: #ffffff;
+
+  /* Glow Effects */
+  --glow-green: rgba(0, 255, 65, 0.5);
+  --glow-amber: rgba(255, 176, 0, 0.5);
+  --glow-blue: rgba(0, 191, 255, 0.5);
+  --glow-red: rgba(255, 0, 64, 0.5);
+}
+
+/* CRT Monitor Effect */
+.crt-effect {
+  position: relative;
+  background: radial-gradient(ellipse at center, #0a0a0a 0%, #000000 100%);
+}
+
+.crt-effect::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 255, 65, 0.05) 0px,
+    rgba(0, 255, 65, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.crt-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+  pointer-events: none;
+  z-index: 1001;
+}
+
+/* Matrix Rain Effect */
+.matrix-rain {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.matrix-char {
+  position: absolute;
+  color: var(--retro-green);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  animation: matrixFall 3s linear infinite;
+  opacity: 0.7;
+}
+
+@keyframes matrixFall {
+  0% {
+    transform: translateY(-100vh);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+/* Glitch Text Effects */
+.glitch-text {
+  position: relative;
+  color: var(--retro-green);
+  font-weight: bold;
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.glitch-text::before {
+  animation: glitch-anim-1 0.3s infinite;
+  color: var(--retro-red);
+  z-index: -1;
+}
+
+.glitch-text::after {
+  animation: glitch-anim-2 0.3s infinite;
+  color: var(--retro-blue);
+  z-index: -2;
+}
+
+@keyframes glitch-anim-1 {
+  0% {
+    clip-path: inset(40% 0 61% 0);
+    transform: translate(-2px, -2px);
+  }
+  20% {
+    clip-path: inset(92% 0 1% 0);
+    transform: translate(2px, 2px);
+  }
+  40% {
+    clip-path: inset(43% 0 1% 0);
+    transform: translate(-2px, 2px);
+  }
+  60% {
+    clip-path: inset(25% 0 58% 0);
+    transform: translate(2px, -2px);
+  }
+  80% {
+    clip-path: inset(54% 0 7% 0);
+    transform: translate(-2px, -2px);
+  }
+  100% {
+    clip-path: inset(58% 0 43% 0);
+    transform: translate(2px, 2px);
+  }
+}
+
+@keyframes glitch-anim-2 {
+  0% {
+    clip-path: inset(25% 0 58% 0);
+    transform: translate(2px, 1px);
+  }
+  20% {
+    clip-path: inset(54% 0 7% 0);
+    transform: translate(-1px, 2px);
+  }
+  40% {
+    clip-path: inset(58% 0 43% 0);
+    transform: translate(1px, -1px);
+  }
+  60% {
+    clip-path: inset(40% 0 61% 0);
+    transform: translate(-1px, -2px);
+  }
+  80% {
+    clip-path: inset(92% 0 1% 0);
+    transform: translate(2px, 1px);
+  }
+  100% {
+    clip-path: inset(43% 0 1% 0);
+    transform: translate(-2px, -1px);
+  }
+}
+
+/* Neon Glow Effects */
+.neon-glow {
+  text-shadow:
+    0 0 5px currentColor,
+    0 0 10px currentColor,
+    0 0 15px currentColor,
+    0 0 20px currentColor;
+  animation: neonFlicker 2s infinite alternate;
+}
+
+@keyframes neonFlicker {
+  0%,
+  18%,
+  22%,
+  25%,
+  53%,
+  57%,
+  100% {
+    text-shadow:
+      0 0 5px currentColor,
+      0 0 10px currentColor,
+      0 0 15px currentColor,
+      0 0 20px currentColor;
+  }
+  20%,
+  24%,
+  55% {
+    text-shadow: none;
+  }
+}
+
+/* Terminal Cursor */
+.terminal-cursor {
+  display: inline-block;
+  background-color: var(--terminal-cursor);
+  color: var(--terminal-bg);
+  animation: cursorBlink 1s infinite;
+  margin-left: 2px;
+  width: 8px;
+  height: 1em;
+}
+
+@keyframes cursorBlink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Data Stream Animation */
+.data-stream {
+  position: relative;
+  overflow: hidden;
+}
+
+.data-stream::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 65, 0.1) 10%,
+    rgba(0, 255, 65, 0.3) 50%,
+    rgba(0, 255, 65, 0.1) 90%,
+    transparent
+  );
+  animation: dataStreamFlow 2s infinite;
+}
+
+@keyframes dataStreamFlow {
+  0% {
+    left: -100%;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* Circuit Board Traces */
+.circuit-trace {
+  position: relative;
+  overflow: hidden;
+}
+
+.circuit-trace::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--retro-green) 20%,
+    var(--retro-green) 80%,
+    transparent
+  );
+  transform: translateY(-50%);
+  animation: circuitPulse 3s infinite;
+}
+
+@keyframes circuitPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    box-shadow: 0 0 5px var(--retro-green);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 15px var(--retro-green);
+  }
+}
+
+/* Electronic Component Styles */
+.component-resistor {
+  display: inline-block;
+  width: 20px;
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--retro-amber) 20%,
+    var(--retro-red) 40%,
+    var(--retro-amber) 60%,
+    var(--retro-red) 80%,
+    transparent 100%
+  );
+  border-radius: 1px;
+  position: relative;
+}
+
+.component-resistor::before,
+.component-resistor::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  background: var(--retro-green);
+  transform: translateY(-50%);
+}
+
+.component-resistor::before {
+  left: -5px;
+}
+.component-resistor::after {
+  right: -5px;
+}
+
+.component-led {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--retro-red), transparent);
+  box-shadow: 0 0 10px var(--retro-red);
+  animation: ledBlink 2s infinite;
+}
+
+@keyframes ledBlink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    box-shadow: 0 0 5px var(--retro-red);
+  }
+  85%,
+  95% {
+    opacity: 1;
+    box-shadow: 0 0 15px var(--retro-red);
+  }
+}
+
+/* Retro Button Styles */
+.retro-button {
+  background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+  border: 2px solid var(--retro-green);
+  color: var(--retro-green);
+  padding: 0.75rem 1.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.retro-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 65, 0.2),
+    transparent
+  );
+  transition: left 0.5s;
+}
+
+.retro-button:hover::before {
+  left: 100%;
+}
+
+.retro-button:hover {
+  box-shadow:
+    0 0 20px var(--glow-green),
+    inset 0 0 20px rgba(0, 255, 65, 0.1);
+  transform: translateY(-2px);
+}
+
+.retro-button:active {
+  transform: translateY(0);
+  box-shadow:
+    0 0 10px var(--glow-green),
+    inset 0 0 10px rgba(0, 255, 65, 0.2);
+}
+
+/* Holographic Effect */
+.holographic {
+  background: linear-gradient(
+    45deg,
+    var(--retro-cyan),
+    var(--retro-magenta),
+    var(--retro-amber),
+    var(--retro-green)
+  );
+  background-size: 400% 400%;
+  animation: holographicShift 3s ease infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@keyframes holographicShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* System Status Indicators */
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.status-bar {
+  width: 60px;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.status-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--retro-green);
+  border-radius: 2px;
+  animation: statusProgress 2s ease-in-out infinite;
+}
+
+@keyframes statusProgress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+
+/* Vintage Monitor Bezel */
+.monitor-bezel {
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 50%, #0a0a0a 100%);
+  border: 3px solid #333;
+  border-radius: 15px;
+  padding: 20px;
+  position: relative;
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(0, 0, 0, 0.8);
+}
+
+.monitor-bezel::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--retro-red);
+  box-shadow: 0 0 8px var(--retro-red);
+  animation: powerIndicator 3s infinite;
+}
+
+@keyframes powerIndicator {
+  0%,
+  90%,
+  100% {
+    opacity: 1;
+  }
+  95% {
+    opacity: 0.3;
+  }
+}
+
+/* ASCII Art Enhancement */
+.ascii-art {
+  font-family: 'JetBrains Mono', monospace;
+  white-space: pre;
+  color: var(--retro-green);
+  text-shadow: 0 0 10px var(--glow-green);
+  animation: asciiGlow 4s ease-in-out infinite alternate;
+}
+
+@keyframes asciiGlow {
+  0% {
+    text-shadow: 0 0 5px var(--glow-green);
+    opacity: 0.8;
+  }
+  100% {
+    text-shadow: 0 0 20px var(--glow-green);
+    opacity: 1;
+  }
+}
+
+/* Retro Loading Animation */
+.retro-loader {
+  display: inline-block;
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.retro-loader::after {
+  content: '';
+  position: absolute;
+  border: 3px solid #333;
+  border-top: 3px solid var(--retro-green);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: retroSpin 1s linear infinite;
+}
+
+@keyframes retroSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Scanline Effect */
+.scanlines {
+  position: relative;
+}
+
+.scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.03) 2px,
+    rgba(0, 255, 65, 0.03) 4px
+  );
+  pointer-events: none;
+  animation: scanlineMove 8s linear infinite;
+}
+
+@keyframes scanlineMove {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(4px);
+  }
+}
+
+/* Phosphor Screen Effect */
+.phosphor-screen {
+  background: radial-gradient(ellipse at center, #001100 0%, #000000 100%);
+  color: var(--retro-green);
+  text-shadow: 0 0 2px var(--retro-green);
+}
+
+/* Terminal Window */
+.terminal-window {
+  background: #000000;
+  border: 2px solid var(--retro-green);
+  border-radius: 4px;
+  padding: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--retro-green);
+  box-shadow:
+    0 0 20px rgba(0, 255, 65, 0.3),
+    inset 0 0 20px rgba(0, 255, 65, 0.1);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--retro-green);
+}
+
+.terminal-title {
+  color: var(--retro-amber);
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+/* Retro Grid */
+.retro-grid {
+  background-image:
+    linear-gradient(rgba(0, 255, 65, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 65, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Digital Clock Display */
+.digital-clock {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--retro-green);
+  background: #000000;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--retro-green);
+  font-weight: bold;
+  text-shadow: 0 0 10px var(--retro-green);
+  letter-spacing: 0.1em;
+}
+
+/* Radar Sweep Effect */
+.radar-sweep {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    transparent 30%,
+    rgba(0, 255, 65, 0.1) 100%
+  );
+  overflow: hidden;
+}
+
+.radar-sweep::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 50%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--retro-green), transparent);
+  transform-origin: left center;
+  animation: radarSweep 3s linear infinite;
+}
+
+@keyframes radarSweep {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* VHS Static Effect */
+.vhs-static {
+  position: relative;
+  overflow: hidden;
+}
+
+.vhs-static::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.03) 2px,
+      rgba(255, 255, 255, 0.03) 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.03) 2px,
+      rgba(255, 255, 255, 0.03) 4px
+    );
+  animation: vhsStatic 0.1s infinite;
+  pointer-events: none;
+}
+
+@keyframes vhsStatic {
+  0% {
+    opacity: 0.03;
+  }
+  50% {
+    opacity: 0.05;
+  }
+  100% {
+    opacity: 0.03;
+  }
+}
+
+/* Accessibility and Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  :root {
+    --retro-green: #00ff00;
+    --retro-amber: #ffff00;
+    --retro-red: #ff0000;
+    --retro-blue: #0080ff;
+  }
+
+  .crt-effect::before {
+    display: none;
+  }
+
+  .neon-glow {
+    text-shadow: none;
+    font-weight: bold;
+  }
+
+  .scanlines::after {
+    display: none;
+  }
+}
+
+/* Dark Mode Enhancements */
+@media (prefers-color-scheme: dark) {
+  .retro-button {
+    background: linear-gradient(145deg, #1a1a1a, #0a0a0a);
+  }
+
+  .monitor-bezel {
+    background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 50%, #000000 100%);
+  }
+}
+
+/* Print Styles */
+@media print {
+  .matrix-rain,
+  .crt-effect::before,
+  .crt-effect::after,
+  .neon-glow,
+  .data-stream::before,
+  .circuit-trace::after,
+  .scanlines::after {
+    display: none !important;
+  }
+
+  .retro-button,
+  .terminal-window {
+    border: 2px solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .retro-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .terminal-window {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .digital-clock {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+/* Focus States for Accessibility */
+.retro-button:focus,
+.terminal-window:focus {
+  outline: 2px solid var(--retro-green);
+  outline-offset: 2px;
+}
