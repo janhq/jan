@@ -391,6 +391,7 @@ function ProviderDetail() {
                       <CardItem
                         key={settingIndex}
                         title={setting.title}
+                        className={cn(setting.key === 'device' && 'hidden')}
                         column={
                           setting.controller_type === 'input' &&
                           setting.controller_props.type !== 'number'
