@@ -20,6 +20,8 @@ keywords:
   ]
 ---
 
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
 
 
 # Windows Installation
@@ -30,14 +32,14 @@ keywords:
 - **Operating System**: Windows 10 or higher.
 - **CPU**
 
-<Tabs items={['Intel', 'AMD']}>
-<Tabs.Tab>
-- Intel: Haswell (Q2 2013) or newer
-- Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
-</Tabs.Tab>
-<Tabs.Tab>
-- Excavator processors (Q2 2015) and newer.
-</Tabs.Tab>
+<Tabs>
+  <TabItem label="Intel">
+    - Intel: Haswell (Q2 2013) or newer
+    - Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
+  </TabItem>
+  <TabItem label="AMD">
+    - Excavator processors (Q2 2015) and newer.
+  </TabItem>
 </Tabs>
 
 <Aside type="info">
@@ -72,31 +74,31 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 
 ### Step 1: Download Application
 
-<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
-<Tabs.Tab>
-- [Download Stable Jan](https://app.jan.ai/download/latest/win-x64)
-- Official Website: [Download Jan](https://jan.ai/download)
-</Tabs.Tab>
-<Tabs.Tab>
+<Tabs>
+  <TabItem label="Stable Release">
+    - [Download Stable Jan](https://app.jan.ai/download/latest/win-x64)
+    - Official Website: [Download Jan](https://jan.ai/download)
+  </TabItem>
+  
+  <TabItem label="Beta Release">
+    Beta: Contains newer features but may be unstable
 
-Beta: Contains newer features but may be unstable
+    [Download Beta Jan](https://app.jan.ai/download/beta/win-x64)
 
-[Download Beta Jan](https://app.jan.ai/download/beta/win-x64)
+    <Aside type="warning">
+    May be unstable
+    </Aside>
+  </TabItem>
+  
+  <TabItem label="Nightly Release">
+    Nightly: Development build with latest features
 
-<Aside type="warning">
-May be unstable
-</Aside>
-</Tabs.Tab>
-<Tabs.Tab>
+    [Download Nightly Jan](https://app.jan.ai/download/nightly/win-x64)
 
-Nightly: Development build with latest features
-
-[Download Nightly Jan](https://app.jan.ai/download/nightly/win-x64)
-
-<Aside type="warning">
-Unstable development build
-</Aside>
-</Tabs.Tab>
+    <Aside type="warning">
+    Unstable development build
+    </Aside>
+  </TabItem>
 </Tabs>
 
 ### Step 2: Install Application
@@ -121,9 +123,8 @@ See [Jan Data Folder](/docs/data-folder) for complete folder structure details.
 
 ## GPU Acceleration
 
-<Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
-
-<Tabs.Tab>
+<Tabs>
+  <TabItem label="NVIDIA GPU">
 
 <ol>
 
@@ -152,26 +153,26 @@ nvcc --version
 ```
 ### Step 2: Enable GPU Acceleration
 
-Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+Navigate to **Settings** > **Hardware** > **GPUs**
 and toggle the **ON** switch if not enabled.
 
 </ol>
 
-</Tabs.Tab>
+  </TabItem>
 
-<Tabs.Tab>
-AMD GPUs require **Vulkan** support.
+  <TabItem label="AMD GPU">
+    AMD GPUs require **Vulkan** support.
 
-Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-and toggle the **ON** switch if not enabled.
-</Tabs.Tab>
+    Navigate to **Settings** > **Hardware** > **GPUs**
+    and toggle the **ON** switch if not enabled.
+  </TabItem>
 
-<Tabs.Tab>
-Intel Arc GPUs require **Vulkan** support.
+  <TabItem label="Intel Arc GPU">
+    Intel Arc GPUs require **Vulkan** support.
 
-Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-and toggle the **ON** switch if not enabled.
-</Tabs.Tab>
+    Navigate to **Settings** > **Hardware** > **GPUs**
+    and toggle the **ON** switch if not enabled.
+  </TabItem>
 </Tabs>
 
 

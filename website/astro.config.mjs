@@ -169,7 +169,7 @@ export default defineConfig({
             },
           ],
           {
-            exclude: ['/example'],
+            exclude: ['/prods'],
             topics: {
               university: [
                 '/university/getting-started/what-is-jan',

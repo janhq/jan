@@ -1,0 +1,1872 @@
+---
+import Layout from '../layouts/Layout.astro';
+import CircuitBackground from '../components/CircuitBackground.astro';
+import StatusIndicator from '../components/StatusIndicator.astro';
+import RetroCard from '../components/RetroCard.astro';
+import FloatingNav from '../components/FloatingNav.astro';
+---
+
+<Layout title="Jan Products - AI That Runs Where You Need It">
+  <main class="products-page">
+
+    <!-- Floating Navigation -->
+    <FloatingNav
+      sections={[
+        { id: 'models', label: 'Models', icon: '🧠', status: 'active' },
+        { id: 'platforms', label: 'Platforms', icon: '💻', status: 'active' },
+        { id: 'tools', label: 'Tools', icon: '🔧', status: 'processing' }
+      ]}
+      position="right"
+      theme="matrix"
+      compact={false}
+    />
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+      <CircuitBackground variant="animated" color="multi" density="medium" animated={true} opacity={0.08} />
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-icon">⚡</span>
+          <span>Open Superintelligence</span>
+        </div>
+        <h1 class="hero-title">
+          <span class="title-main">Jan's Product Roadmap</span>
+          <span class="title-sub">Models • Platforms • Tools</span>
+        </h1>
+        <p class="hero-description">
+          Complete AI ecosystem that you control. Our models, your infrastructure, real capabilities.
+        </p>
+        <div class="hero-stats">
+          <div class="stat">
+            <span class="stat-number">3</span>
+            <span class="stat-label">AI Models</span>
+          </div>
+          <div class="stat">
+            <span class="stat-number">4</span>
+            <span class="stat-label">Platforms</span>
+          </div>
+          <div class="stat">
+            <span class="stat-number">4</span>
+            <span class="stat-label">Tools</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Roadmap Overview -->
+    <section class="roadmap-overview">
+      <div class="container">
+        <h2 class="section-title">Product Architecture</h2>
+        <div class="architecture-diagram">
+          <div class="layer-connection"></div>
+          <div class="arch-layer tools-layer">
+            <div class="layer-header">
+              <span class="layer-icon">🔧</span>
+              <span class="layer-title">Tools</span>
+              <span class="layer-count">4 capabilities</span>
+            </div>
+            <div class="layer-items">
+              <span class="item active">Search</span>
+              <span class="item active">Deep Research</span>
+              <span class="item beta">Browser Use</span>
+              <span class="item coming">AI Agents</span>
+            </div>
+          </div>
+
+          <div class="arch-layer models-layer">
+            <div class="layer-header">
+              <span class="layer-icon">🧠</span>
+              <span class="layer-title">Models</span>
+              <span class="layer-count">3 families</span>
+            </div>
+            <div class="layer-items">
+              <span class="item active">Jan V1 Series</span>
+              <span class="item beta">Jan Nano</span>
+              <span class="item coming">Lucy</span>
+            </div>
+          </div>
+
+          <div class="arch-layer platforms-layer">
+            <div class="layer-header">
+              <span class="layer-icon">💻</span>
+              <span class="layer-title">Platforms</span>
+              <span class="layer-count">4 deployment options</span>
+            </div>
+            <div class="layer-items">
+              <span class="item active">Desktop</span>
+              <span class="item beta">jan.ai</span>
+              <span class="item coming">Mobile</span>
+              <span class="item coming">Server</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Models Section -->
+    <section id="models" class="section models-section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-badge">
+            <span class="badge-icon">🧠</span>
+            <span>Neural Networks</span>
+          </div>
+          <h2 class="section-title">Our AI Models</h2>
+          <p class="section-description">
+            Purpose-built models, not API wrappers. Trained by us, optimized for privacy and performance.
+          </p>
+        </div>
+
+        <div class="models-grid">
+          <RetroCard
+            variant="circuit"
+            color="green"
+            size="large"
+            title="Jan V1 Series"
+            subtitle="Production Models"
+            status="online"
+            interactive={true}
+            glow={true}
+            scanlines={true}
+          >
+            <div class="model-header">
+              <div class="model-status">
+                <StatusIndicator status="success" label="Production Ready" size="small" />
+                <span class="model-version">v1.2.1</span>
+              </div>
+            </div>
+
+            <div class="model-specs-grid">
+              <div class="spec-group">
+                <h4>Parameters</h4>
+                <div class="spec-values">
+                  <span class="spec-item">7B <em>8GB RAM</em></span>
+                  <span class="spec-item">13B <em>16GB RAM</em></span>
+                  <span class="spec-item">70B <em>64GB RAM</em></span>
+                </div>
+              </div>
+              <div class="spec-group">
+                <h4>Context Window</h4>
+                <div class="spec-values">
+                  <span class="spec-highlight">32,768 tokens</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="model-description">
+              Complete model family designed to compete with Claude and GPT-4.
+              Optimized for reasoning, coding, and general conversation.
+            </p>
+
+            <div class="model-capabilities">
+              <span class="capability">Reasoning</span>
+              <span class="capability">Code Generation</span>
+              <span class="capability">Multilingual</span>
+              <span class="capability">Tool Use</span>
+            </div>
+          </RetroCard>
+
+          <RetroCard
+            variant="data"
+            color="blue"
+            size="large"
+            title="Jan Nano"
+            subtitle="Research Specialist"
+            status="warning"
+            interactive={true}
+            glow={true}
+            scanlines={true}
+          >
+            <div class="model-header">
+              <div class="model-status">
+                <StatusIndicator status="warning" label="Beta" size="small" />
+                <span class="model-version">v0.6.0</span>
+              </div>
+            </div>
+
+            <div class="model-specs-grid">
+              <div class="spec-group">
+                <h4>Parameters</h4>
+                <div class="spec-values">
+                  <span class="spec-highlight">4B</span> <em>6-8GB RAM</em>
+                </div>
+              </div>
+              <div class="spec-group">
+                <h4>Context Options</h4>
+                <div class="spec-values">
+                  <span class="spec-item">32k <em>Standard</em></span>
+                  <span class="spec-item">128k <em>Extended</em></span>
+                </div>
+              </div>
+            </div>
+
+            <p class="model-description">
+              Specialized for research and information retrieval. Native MCP integration
+              for web search, document analysis, and knowledge synthesis.
+            </p>
+
+            <div class="model-capabilities">
+              <span class="capability">Web Search</span>
+              <span class="capability">Document Analysis</span>
+              <span class="capability">Citation Management</span>
+              <span class="capability">MCP Tools</span>
+            </div>
+          </RetroCard>
+
+          <RetroCard
+            variant="system"
+            color="amber"
+            size="large"
+            title="Lucy"
+            subtitle="Multimodal AI"
+            status="idle"
+            interactive={true}
+            glow={false}
+            scanlines={true}
+            glitch={true}
+          >
+            <div class="model-header">
+              <div class="model-status">
+                <StatusIndicator status="idle" label="In Training" size="small" />
+                <span class="model-version">v0.1.0-alpha</span>
+              </div>
+            </div>
+
+            <div class="model-specs-grid">
+              <div class="spec-group">
+                <h4>Modalities</h4>
+                <div class="spec-values">
+                  <span class="spec-item">Vision</span>
+                  <span class="spec-item">Text</span>
+                  <span class="spec-item">Audio <em>Soon</em></span>
+                </div>
+              </div>
+              <div class="spec-group">
+                <h4>Release</h4>
+                <div class="spec-values">
+                  <span class="spec-highlight">Q2 2025</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="model-description">
+              Advanced multimodal capabilities for image understanding, document processing,
+              and visual reasoning tasks.
+            </p>
+
+            <div class="model-capabilities">
+              <span class="capability coming">Image Analysis</span>
+              <span class="capability coming">OCR</span>
+              <span class="capability coming">Visual Reasoning</span>
+              <span class="capability coming">Document Processing</span>
+            </div>
+          </RetroCard>
+        </div>
+      </div>
+    </section>
+
+    <!-- Platforms Section -->
+    <section id="platforms" class="section platforms-section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-badge">
+            <span class="badge-icon">💻</span>
+            <span>Deployment</span>
+          </div>
+          <h2 class="section-title">Platform Ecosystem</h2>
+          <p class="section-description">
+            Run AI where it makes sense for you. Local for privacy, cloud for power,
+            mobile for accessibility.
+          </p>
+        </div>
+
+        <div class="platforms-timeline">
+          <div class="timeline-line"></div>
+
+          <div class="platform-item available" data-timeline="2024">
+            <div class="platform-badge">
+              <span class="badge-status available">Available Now</span>
+            </div>
+            <div class="platform-card desktop">
+              <div class="platform-header">
+                <div class="platform-icon">💻</div>
+                <div class="platform-info">
+                  <h3>Jan Desktop</h3>
+                  <p>Your personal AI workstation</p>
+                </div>
+                <div class="platform-metrics">
+                  <span class="metric">3M+ downloads</span>
+                </div>
+              </div>
+              <div class="platform-features">
+                <span class="feature">Complete Privacy</span>
+                <span class="feature">Offline Mode</span>
+                <span class="feature">Powers Mobile</span>
+                <span class="feature">No Internet Required</span>
+              </div>
+              <div class="platform-specs">
+                <div class="spec">
+                  <span class="spec-label">Min RAM</span>
+                  <span class="spec-value">8GB</span>
+                </div>
+                <div class="spec">
+                  <span class="spec-label">Storage</span>
+                  <span class="spec-value">10GB+</span>
+                </div>
+                <div class="spec">
+                  <span class="spec-label">OS Support</span>
+                  <span class="spec-value">Win/Mac/Linux</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="platform-item beta" data-timeline="2024">
+            <div class="platform-badge">
+              <span class="badge-status beta">Beta Launch</span>
+            </div>
+            <div class="platform-card cloud">
+              <div class="platform-header">
+                <div class="platform-icon">☁️</div>
+                <div class="platform-info">
+                  <h3>jan.ai</h3>
+                  <p>Cloud AI that respects privacy</p>
+                </div>
+                <div class="platform-metrics">
+                  <span class="metric">Join waitlist</span>
+                </div>
+              </div>
+              <div class="platform-features">
+                <span class="feature">No Setup</span>
+                <span class="feature">Anonymous Usage</span>
+                <span class="feature">API Access</span>
+                <span class="feature">Fast Response</span>
+              </div>
+              <div class="platform-pricing">
+                <div class="price">
+                  <span class="price-tier">Free</span>
+                  <span class="price-value">50 queries/day</span>
+                </div>
+                <div class="price">
+                  <span class="price-tier">Pro</span>
+                  <span class="price-value">Unlimited</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="platform-item coming" data-timeline="Q4 2025">
+            <div class="platform-badge">
+              <span class="badge-status coming">Q4 2025</span>
+            </div>
+            <div class="platform-card mobile">
+              <div class="platform-header">
+                <div class="platform-icon">📱</div>
+                <div class="platform-info">
+                  <h3>Jan Mobile</h3>
+                  <p>AI assistant on the go</p>
+                </div>
+                <div class="platform-metrics">
+                  <span class="metric">iOS & Android</span>
+                </div>
+              </div>
+              <div class="platform-features">
+                <span class="feature coming">Voice First</span>
+                <span class="feature coming">Desktop Sync</span>
+                <span class="feature coming">Jan Nano Local</span>
+                <span class="feature coming">Seamless Switching</span>
+              </div>
+              <div class="platform-modes">
+                <div class="mode">
+                  <span class="mode-name">Desktop Mode</span>
+                  <span class="mode-desc">Connect to your computer</span>
+                </div>
+                <div class="mode">
+                  <span class="mode-name">Local Mode</span>
+                  <span class="mode-desc">Jan Nano on device</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="platform-item coming" data-timeline="2025">
+            <div class="platform-badge">
+              <span class="badge-status coming">Coming Soon</span>
+            </div>
+            <div class="platform-card server">
+              <div class="platform-header">
+                <div class="platform-icon">🏢</div>
+                <div class="platform-info">
+                  <h3>Jan Server</h3>
+                  <p>Private AI cloud for teams</p>
+                </div>
+                <div class="platform-metrics">
+                  <span class="metric">5-500+ users</span>
+                </div>
+              </div>
+              <div class="platform-features">
+                <span class="feature coming">Self-Hosted</span>
+                <span class="feature coming">Multi-User</span>
+                <span class="feature coming">Enterprise SSO</span>
+                <span class="feature coming">Compliance Ready</span>
+              </div>
+              <div class="platform-deployment">
+                <div class="deploy-option">
+                  <span class="deploy-name">Docker</span>
+                  <span class="deploy-desc">Single command setup</span>
+                </div>
+                <div class="deploy-option">
+                  <span class="deploy-name">Kubernetes</span>
+                  <span class="deploy-desc">Enterprise scale</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tools Section -->
+    <section id="tools" class="section tools-section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-badge">
+            <span class="badge-icon">🔧</span>
+            <span>Capabilities</span>
+          </div>
+          <h2 class="section-title">Integrated Tools</h2>
+          <p class="section-description">
+            AI capabilities that actually get things done. Not just chat, but real automation
+            and intelligence augmentation.
+          </p>
+        </div>
+
+        <div class="tools-grid">
+          <div class="tool-card active" data-tool="search">
+            <div class="tool-header">
+              <div class="tool-icon">🔍</div>
+              <div class="tool-info">
+                <h3>Search</h3>
+                <StatusIndicator status="success" label="Active" size="small" />
+              </div>
+              <div class="tool-version">v0.6.7</div>
+            </div>
+            <p class="tool-description">
+              Privacy-respecting web search with local crawling, anonymous cloud queries,
+              and intelligent routing.
+            </p>
+            <div class="tool-features">
+              <div class="feature-row">
+                <span class="feature-label">Modes</span>
+                <div class="feature-tags">
+                  <span class="tag">Local</span>
+                  <span class="tag">Cloud</span>
+                  <span class="tag">Hybrid</span>
+                </div>
+              </div>
+              <div class="feature-row">
+                <span class="feature-label">Privacy</span>
+                <div class="feature-tags">
+                  <span class="tag">Anonymous</span>
+                  <span class="tag">No Tracking</span>
+                </div>
+              </div>
+            </div>
+            <div class="tool-metrics">
+              <div class="metric">
+                <span class="metric-value">< 1s</span>
+                <span class="metric-label">Response Time</span>
+              </div>
+              <div class="metric">
+                <span class="metric-value">Real-time</span>
+                <span class="metric-label">Data Access</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tool-card active" data-tool="research">
+            <div class="tool-header">
+              <div class="tool-icon">📚</div>
+              <div class="tool-info">
+                <h3>Deep Research</h3>
+                <StatusIndicator status="success" label="Active" size="small" />
+              </div>
+              <div class="tool-version">v0.7.0</div>
+            </div>
+            <p class="tool-description">
+              Comprehensive investigation beyond simple search. Literature reviews,
+              multi-source synthesis, and academic citations.
+            </p>
+            <div class="tool-features">
+              <div class="feature-row">
+                <span class="feature-label">Depth</span>
+                <div class="feature-tags">
+                  <span class="tag">Quick</span>
+                  <span class="tag">Standard</span>
+                  <span class="tag">Comprehensive</span>
+                </div>
+              </div>
+              <div class="feature-row">
+                <span class="feature-label">Sources</span>
+                <div class="feature-tags">
+                  <span class="tag">Academic</span>
+                  <span class="tag">Patents</span>
+                  <span class="tag">News</span>
+                </div>
+              </div>
+            </div>
+            <div class="tool-metrics">
+              <div class="metric">
+                <span class="metric-value">200+</span>
+                <span class="metric-label">Max Sources</span>
+              </div>
+              <div class="metric">
+                <span class="metric-value">3 levels</span>
+                <span class="metric-label">Research Depth</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tool-card beta" data-tool="browser">
+            <div class="tool-header">
+              <div class="tool-icon">🌐</div>
+              <div class="tool-info">
+                <h3>Browser Use</h3>
+                <StatusIndicator status="warning" label="Beta" size="small" />
+              </div>
+              <div class="tool-version">v0.8.0</div>
+            </div>
+            <p class="tool-description">
+              Web automation that respects site policies. Form filling, data extraction,
+              and workflow automation with safety boundaries.
+            </p>
+            <div class="tool-features">
+              <div class="feature-row">
+                <span class="feature-label">Automation</span>
+                <div class="feature-tags">
+                  <span class="tag">Forms</span>
+                  <span class="tag">Data Extract</span>
+                  <span class="tag">Workflows</span>
+                </div>
+              </div>
+              <div class="feature-row">
+                <span class="feature-label">Safety</span>
+                <div class="feature-tags">
+                  <span class="tag">Policy Aware</span>
+                  <span class="tag">Confirmation</span>
+                </div>
+              </div>
+            </div>
+            <div class="tool-metrics">
+              <div class="metric">
+                <span class="metric-value">90%</span>
+                <span class="metric-label">Success Rate</span>
+              </div>
+              <div class="metric">
+                <span class="metric-value">Local/Cloud</span>
+                <span class="metric-label">Execution</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tool-card coming" data-tool="agents">
+            <div class="tool-header">
+              <div class="tool-icon">🤖</div>
+              <div class="tool-info">
+                <h3>AI Agents</h3>
+                <StatusIndicator status="idle" label="Q1 2026" size="small" />
+              </div>
+              <div class="tool-version">v0.9.0</div>
+            </div>
+            <p class="tool-description">
+              Autonomous task execution with tool orchestration. Multi-step workflows,
+              goal-oriented planning, and intelligent coordination.
+            </p>
+            <div class="tool-features">
+              <div class="feature-row">
+                <span class="feature-label">Capabilities</span>
+                <div class="feature-tags">
+                  <span class="tag coming">Multi-step</span>
+                  <span class="tag coming">Tool Chain</span>
+                  <span class="tag coming">Planning</span>
+                </div>
+              </div>
+              <div class="feature-row">
+                <span class="feature-label">Integration</span>
+                <div class="feature-tags">
+                  <span class="tag coming">All Tools</span>
+                  <span class="tag coming">External APIs</span>
+                </div>
+              </div>
+            </div>
+            <div class="tool-metrics">
+              <div class="metric">
+                <span class="metric-value">Coming</span>
+                <span class="metric-label">Q1 2026</span>
+              </div>
+              <div class="metric">
+                <span class="metric-value">Autonomous</span>
+                <span class="metric-label">Task Execution</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Integration Philosophy -->
+    <section class="philosophy-section">
+      <div class="container">
+        <div class="philosophy-content">
+          <div class="philosophy-text">
+            <h2>Why This Matters</h2>
+            <p class="philosophy-description">
+              Most AI is just a wrapper around someone else's models. Jan is different.
+              We build the models, control the infrastructure, and integrate the tools.
+            </p>
+            <div class="philosophy-points">
+              <div class="point">
+                <span class="point-icon">🧠</span>
+                <div class="point-content">
+                  <h4>Our Models</h4>
+                  <p>Trained by us, optimized for your use cases, not subscription revenue.</p>
+                </div>
+              </div>
+              <div class="point">
+                <span class="point-icon">🏠</span>
+                <div class="point-content">
+                  <h4>Your Infrastructure</h4>
+                  <p>Run locally for privacy, or cloud when you need power. You choose.</p>
+                </div>
+              </div>
+              <div class="point">
+                <span class="point-icon">🔧</span>
+                <div class="point-content">
+                  <h4>Real Tools</h4>
+                  <p>Not just chat, but automation that actually gets things done.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="philosophy-visual">
+            <div class="ecosystem-diagram">
+              <div class="ecosystem-center">
+                <span class="center-icon">⚡</span>
+                <span class="center-label">Jan</span>
+              </div>
+              <div class="ecosystem-orbit models-orbit">
+                <span class="orbit-label">Models</span>
+              </div>
+              <div class="ecosystem-orbit platforms-orbit">
+                <span class="orbit-label">Platforms</span>
+              </div>
+              <div class="ecosystem-orbit tools-orbit">
+                <span class="orbit-label">Tools</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Call to Action -->
+    <section class="cta-section">
+      <div class="container">
+        <div class="cta-content">
+          <h2>Start Building With Jan</h2>
+          <p>Download Jan Desktop today and experience AI that runs where you need it.</p>
+          <div class="cta-buttons">
+            <a href="/download" class="btn btn-primary">
+              <span class="btn-icon">💻</span>
+              Download Jan Desktop
+            </a>
+            <a href="/docs" class="btn btn-secondary">
+              <span class="btn-icon">📚</span>
+              Read Documentation
+            </a>
+          </div>
+          <div class="cta-stats">
+            <div class="stat">
+              <span class="stat-number">3M+</span>
+              <span class="stat-label">Downloads</span>
+            </div>
+            <div class="stat">
+              <span class="stat-number">100%</span>
+              <span class="stat-label">Open Source</span>
+            </div>
+            <div class="stat">
+              <span class="stat-number">0</span>
+              <span class="stat-label">Data Collection</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof gsap === 'undefined') return;
+
+    gsap.registerPlugin(ScrollTrigger);
+
+    // Hero animations
+    const heroTl = gsap.timeline();
+    heroTl
+      .fromTo('.hero-badge', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8 })
+      .fromTo('.hero-title', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1 }, '-=0.4')
+      .fromTo('.hero-description', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8 }, '-=0.6')
+      .fromTo('.hero-stats .stat', { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.1 }, '-=0.4');
+
+    // Architecture diagram animation
+    gsap.fromTo('.arch-layer',
+      { opacity: 0, x: -50, rotationY: 15 },
+      {
+        opacity: 1,
+        x: 0,
+        rotationY: 0,
+        duration: 0.8,
+        stagger: 0.2,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: '.architecture-diagram',
+          start: 'top 80%',
+          once: true
+        }
+      }
+    );
+
+    // Models grid animation
+    gsap.fromTo('.models-grid .retro-card',
+      { opacity: 0, y: 50, scale: 0.9 },
+      {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.8,
+        stagger: 0.2,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: '.models-section',
+          start: 'top 70%',
+          once: true
+        }
+      }
+    );
+
+    // Platform timeline animation
+    gsap.fromTo('.platform-item',
+      { opacity: 0, x: -100 },
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.8,
+        stagger: 0.3,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: '.platforms-timeline',
+          start: 'top 70%',
+          once: true
+        }
+      }
+    );
+
+    // Tools grid animation
+    gsap.fromTo('.tool-card',
+      { opacity: 0, y: 30, rotationX: 15 },
+      {
+        opacity: 1,
+        y: 0,
+        rotationX: 0,
+        duration: 0.6,
+        stagger: 0.15,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: '.tools-section',
+          start: 'top 75%',
+          once: true
+        }
+      }
+    );
+
+    // Philosophy section animation
+    gsap.fromTo('.philosophy-points .point',
+      { opacity: 0, x: -30 },
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.6,
+        stagger: 0.2,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: '.philosophy-section',
+          start: 'top 75%',
+          once: true
+        }
+      }
+    );
+
+    // Ecosystem orbit animation
+    gsap.to('.ecosystem-orbit', {
+      rotation: 360,
+      duration: 20,
+      repeat: -1,
+      ease: 'none',
+      stagger: 0.5
+    });
+  });
+</script>
+
+<style>
+  :root {
+    --retro-green: #00ff41;
+    --retro-amber: #ffb000;
+    --retro-blue: #00bfff;
+    --retro-red: #ff0040;
+    --dark-bg: #0a0a0a;
+    --darker-bg: #050505;
+    --card-bg: #111111;
+    --border-color: #333333;
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+    --text-muted: #888888;
+    --gradient-primary: linear-gradient(135deg, var(--retro-green), var(--retro-amber));
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  .products-page {
+    background: var(--dark-bg);
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+  }
+
+  /* Hero Section */
+  .hero-section {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .hero-content {
+    text-align: center;
+    z-index: 2;
+    max-width: 900px;
+    padding: 2rem;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 255, 65, 0.1);
+    border: 1px solid var(--retro-green);
+    padding: 0.5rem 1rem;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 2rem;
+    color: var(--retro-green);
+  }
+
+  .badge-icon {
+    font-size: 1.2rem;
+  }
+
+  .hero-title {
+    margin-bottom: 2rem;
+  }
+
+  .title-main {
+    display: block;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    font-weight: 700;
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+  }
+
+  .title-sub {
+    display: block;
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+    font-weight: 300;
+    margin-top: 1rem;
+  }
+
+  .hero-description {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-bottom: 3rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 4rem;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--retro-green);
+    text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Roadmap Overview */
+  .roadmap-overview {
+    padding: 6rem 0;
+    background: var(--darker-bg);
+    border-top: 1px solid var(--border-color);
+  }
+
+  .section-title {
+    font-size: 3rem;
+    color: var(--retro-green);
+    margin-bottom: 1rem;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .architecture-diagram {
+    max-width: 800px;
+    margin: 4rem auto;
+    position: relative;
+  }
+
+  .layer-connection {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--retro-green), var(--retro-amber), var(--retro-blue));
+    transform: translateX(-50%);
+    opacity: 0.3;
+  }
+
+  .arch-layer {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .arch-layer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .tools-layer::before { background: linear-gradient(90deg, var(--retro-green), var(--retro-amber)); }
+  .models-layer::before { background: linear-gradient(90deg, var(--retro-amber), var(--retro-blue)); }
+  .platforms-layer::before { background: linear-gradient(90deg, var(--retro-blue), var(--retro-green)); }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .layer-icon {
+    font-size: 2rem;
+    margin-right: 1rem;
+  }
+
+  .layer-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .layer-count {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .layer-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .item {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .item.active {
+    background: var(--retro-green);
+    color: var(--dark-bg);
+  }
+
+  .item.beta {
+    background: var(--retro-amber);
+    color: var(--dark-bg);
+  }
+
+  .item.coming {
+    background: var(--darker-bg);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+  }
+
+  /* Section Styles */
+  .section {
+    padding: 6rem 0;
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 4rem;
+  }
+
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 255, 65, 0.05);
+    border: 1px solid var(--border-color);
+    padding: 0.5rem 1rem;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+  }
+
+  .section-description {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* Models Section */
+  .models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 2rem;
+    align-items: start;
+  }
+
+  .model-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .model-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .model-version {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--darker-bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .model-specs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .spec-group h4 {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.05em;
+  }
+
+  .spec-values {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .spec-item {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+
+  .spec-item em {
+    color: var(--text-muted);
+    margin-left: 0.5rem;
+  }
+
+  .spec-highlight {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--retro-green);
+  }
+
+  .model-description {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+  }
+
+  .model-capabilities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .capability {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: var(--retro-green);
+    color: var(--dark-bg);
+  }
+
+  .capability.coming {
+    background: var(--darker-bg);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+  }
+
+  /* Platforms Section */
+  .platforms-timeline {
+    position: relative;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .timeline-line {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--retro-green), var(--retro-amber), var(--retro-blue), var(--retro-red));
+    transform: translateX(-50%);
+    opacity: 0.3;
+  }
+
+  .platform-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4rem;
+    position: relative;
+  }
+
+  .platform-item:nth-child(even) {
+    flex-direction: row-reverse;
+  }
+
+  .platform-item::before {
+    content: attr(data-timeline);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--card-bg);
+    border: 2px solid var(--retro-green);
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--retro-green);
+    z-index: 2;
+  }
+
+  .platform-badge {
+    margin: 0 2rem;
+    min-width: 120px;
+    text-align: center;
+  }
+
+  .badge-status {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge-status.available {
+    background: var(--retro-green);
+    color: var(--dark-bg);
+  }
+
+  .badge-status.beta {
+    background: var(--retro-amber);
+    color: var(--dark-bg);
+  }
+
+  .badge-status.coming {
+    background: var(--text-muted);
+    color: var(--text-primary);
+  }
+
+  .platform-card {
+    flex: 1;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 400px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .platform-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .platform-card.desktop::before { background: linear-gradient(90deg, var(--retro-green), var(--retro-blue)); }
+  .platform-card.cloud::before { background: linear-gradient(90deg, var(--retro-blue), var(--retro-amber)); }
+  .platform-card.mobile::before { background: linear-gradient(90deg, var(--retro-amber), var(--retro-red)); }
+  .platform-card.server::before { background: linear-gradient(90deg, var(--retro-red), var(--retro-green)); }
+
+  .platform-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+
+  .platform-icon {
+    font-size: 2.5rem;
+    margin-right: 1rem;
+  }
+
+  .platform-info h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .platform-info p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+
+  .platform-metrics {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .platform-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .feature {
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    background: var(--darker-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  .feature.coming {
+    border-style: dashed;
+    color: var(--text-muted);
+  }
+
+  .platform-specs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 1rem;
+  }
+
+  .spec {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .spec-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  .spec-value {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .platform-pricing, .platform-modes, .platform-deployment {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .price, .mode, .deploy-option {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: var(--darker-bg);
+    border-radius: 6px;
+  }
+
+  .price-tier, .mode-name, .deploy-name {
+    font-weight: 500;
+  }
+
+  .price-value, .mode-desc, .deploy-desc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  /* Tools Section */
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 2rem;
+  }
+
+  .tool-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .tool-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-primary);
+  }
+
+  .tool-card.coming {
+    opacity: 0.7;
+    border-style: dashed;
+  }
+
+  .tool-card:hover {
+    transform: translateX(5px);
+    border-color: var(--retro-green);
+    box-shadow: -5px 0 20px rgba(0, 255, 65, 0.2);
+  }
+
+  .tool-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .tool-icon {
+    font-size: 2rem;
+    margin-right: 1rem;
+  }
+
+  .tool-info {
+    flex: 1;
+  }
+
+  .tool-info h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .tool-version {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--darker-bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .tool-description {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+  }
+
+  .tool-features {
+    margin-bottom: 1.5rem;
+  }
+
+  .feature-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .feature-label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    min-width: 80px;
+  }
+
+  .feature-tags {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .tag {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: var(--retro-green);
+    color: var(--dark-bg);
+    font-weight: 500;
+  }
+
+  .tag.coming {
+    background: var(--darker-bg);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+  }
+
+  .tool-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .metric-value {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--retro-green);
+    margin-bottom: 0.25rem;
+  }
+
+  .metric-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  /* Philosophy Section */
+  .philosophy-section {
+    padding: 6rem 0;
+    background: var(--darker-bg);
+    border-top: 1px solid var(--border-color);
+  }
+
+  .philosophy-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+  }
+
+  .philosophy-text h2 {
+    font-size: 2.5rem;
+    color: var(--retro-green);
+    margin-bottom: 1.5rem;
+  }
+
+  .philosophy-description {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    line-height: 1.6;
+  }
+
+  .philosophy-points {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .point {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .point-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    margin-top: 0.25rem;
+  }
+
+  .point-content h4 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+
+  .point-content p {
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .philosophy-visual {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .ecosystem-diagram {
+    position: relative;
+    width: 300px;
+    height: 300px;
+  }
+
+  .ecosystem-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px;
+    height: 80px;
+    background: var(--card-bg);
+    border: 2px solid var(--retro-green);
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+
+  .center-icon {
+    font-size: 1.5rem;
+  }
+
+  .center-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--retro-green);
+  }
+
+  .ecosystem-orbit {
+    position: absolute;
+    border: 1px dashed var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .models-orbit {
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+  }
+
+  .platforms-orbit {
+    top: 40px;
+    left: 40px;
+    right: 40px;
+    bottom: 40px;
+  }
+
+  .tools-orbit {
+    top: 60px;
+    left: 60px;
+    right: 60px;
+    bottom: 60px;
+  }
+
+  .orbit-label {
+    position: absolute;
+    top: -10px;
+    background: var(--darker-bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  /* CTA Section */
+  .cta-section {
+    padding: 6rem 0;
+    text-align: center;
+  }
+
+  .cta-content h2 {
+    font-size: 2.5rem;
+    color: var(--retro-green);
+    margin-bottom: 1rem;
+  }
+
+  .cta-content p {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+  }
+
+  .cta-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 3rem;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn:hover::before {
+    left: 100%;
+  }
+
+  .btn-primary {
+    background: var(--retro-green);
+    color: var(--dark-bg);
+    border: 2px solid var(--retro-green);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 4px 20px rgba(0, 255, 65, 0.3);
+    transform: translateY(-2px);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-primary);
+    border: 2px solid var(--border-color);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--retro-green);
+    color: var(--retro-green);
+    box-shadow: 0 4px 20px rgba(0, 255, 65, 0.1);
+  }
+
+  .btn-icon {
+    font-size: 1.2rem;
+  }
+
+  .cta-stats {
+    display: flex;
+    justify-content: center;
+    gap: 4rem;
+    flex-wrap: wrap;
+  }
+
+  /* Responsive Design */
+  @media (max-width: 1024px) {
+    .philosophy-content {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+
+    .ecosystem-diagram {
+      width: 250px;
+      height: 250px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .container {
+      padding: 0 1rem;
+    }
+
+    .title-main {
+      font-size: 3rem;
+    }
+
+    .section-title {
+      font-size: 2rem;
+    }
+
+    .hero-stats {
+      gap: 2rem;
+    }
+
+    .models-grid, .tools-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .platform-item {
+      flex-direction: column !important;
+      text-align: center;
+    }
+
+    .platform-item::before {
+      position: relative;
+      left: auto;
+      top: auto;
+      transform: none;
+      margin: 1rem 0;
+    }
+
+    .platform-badge {
+      margin: 0;
+    }
+
+    .timeline-line {
+      display: none;
+    }
+
+    .model-specs-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .tool-metrics {
+      grid-template-columns: 1fr;
+    }
+
+    .cta-buttons {
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .cta-stats {
+      gap: 2rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .section {
+      padding: 4rem 0;
+    }
+
+    .hero-content {
+      padding: 1rem;
+    }
+
+    .cta-content h2 {
+      font-size: 2rem;
+    }
+
+    .philosophy-text h2 {
+      font-size: 2rem;
+    }
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--darker-bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--retro-green);
+  }
+
+  /* Selection styles */
+  ::selection {
+    background: var(--retro-green);
+    color: var(--dark-bg);
+  }
+
+  /* Focus styles for accessibility */
+  .platform-card:focus,
+  .tool-card:focus,
+  .btn:focus {
+    outline: 2px solid var(--retro-green);
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>

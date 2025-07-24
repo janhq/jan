@@ -20,6 +20,8 @@ keywords:
   ]
 ---
 
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
 
 
 
@@ -59,34 +61,33 @@ Installation steps:
 ### Step 1: Download Application
 
 Select version:
-<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
-<Tabs.Tab>
-Get Jan from here:
+<Tabs>
+  <TabItem label="Stable Release">
+    Get Jan from here:
 
-- [Download Jan's Stable Version](https://app.jan.ai/download/latest/mac-universal)
-- Official Website: https://jan.ai/download
+    - [Download Jan's Stable Version](https://app.jan.ai/download/latest/mac-universal)
+    - Official Website: https://jan.ai/download
+  </TabItem>
+  
+  <TabItem label="Beta Release">
+    Beta: New features with potential instability.
 
-</Tabs.Tab>
-<Tabs.Tab>
+    [Download Jan's Beta Version](https://app.jan.ai/download/beta/mac-universal)
 
-Beta: New features with potential instability.
+    <Aside type="warning">
+    May contain bugs.
+    </Aside>
+  </TabItem>
+  
+  <TabItem label="Nightly Release">
+    Nightly: Latest features, less stable.
 
-[Download Jan's Beta Version](https://app.jan.ai/download/beta/mac-universal)
+    [Download Jan's Nightly Version](https://app.jan.ai/download/nightly/mac-universal)
 
-<Aside type="warning">
-May contain bugs.
-</Aside>
-</Tabs.Tab>
-<Tabs.Tab>
-
-Nightly: Latest features, less stable.
-
-[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/mac-universal)
-
-<Aside type="info">
-Expect potential instability.
-</Aside>
-</Tabs.Tab>
+    <Aside type="info">
+    Expect potential instability.
+    </Aside>
+  </TabItem>
 </Tabs>
 
 

@@ -1,0 +1,601 @@
+---
+export interface Props {
+  variant?: 'terminal' | 'circuit' | 'data' | 'system';
+  color?: 'green' | 'amber' | 'blue' | 'red' | 'multi';
+  size?: 'small' | 'medium' | 'large';
+  glitch?: boolean;
+  scanlines?: boolean;
+  glow?: boolean;
+  interactive?: boolean;
+  status?: 'online' | 'offline' | 'error' | 'warning' | 'processing';
+  title?: string;
+  subtitle?: string;
+  className?: string;
+}
+
+const {
+  variant = 'terminal',
+  color = 'green',
+  size = 'medium',
+  glitch = false,
+  scanlines = true,
+  glow = true,
+  interactive = true,
+  status = 'online',
+  title,
+  subtitle,
+  className = ''
+} = Astro.props;
+
+const colorSchemes = {
+  green: {
+    primary: '#00ff41',
+    secondary: '#00cc33',
+    bg: 'rgba(0, 255, 65, 0.05)',
+    border: '#00ff41',
+    glow: 'rgba(0, 255, 65, 0.3)'
+  },
+  amber: {
+    primary: '#ffb000',
+    secondary: '#ff9500',
+    bg: 'rgba(255, 176, 0, 0.05)',
+    border: '#ffb000',
+    glow: 'rgba(255, 176, 0, 0.3)'
+  },
+  blue: {
+    primary: '#00bfff',
+    secondary: '#0099cc',
+    bg: 'rgba(0, 191, 255, 0.05)',
+    border: '#00bfff',
+    glow: 'rgba(0, 191, 255, 0.3)'
+  },
+  red: {
+    primary: '#ff0040',
+    secondary: '#cc0033',
+    bg: 'rgba(255, 0, 64, 0.05)',
+    border: '#ff0040',
+    glow: 'rgba(255, 0, 64, 0.3)'
+  },
+  multi: {
+    primary: '#00ff41',
+    secondary: '#ffb000',
+    bg: 'linear-gradient(135deg, rgba(0, 255, 65, 0.05), rgba(255, 176, 0, 0.05))',
+    border: '#00ff41',
+    glow: 'rgba(0, 255, 65, 0.3)'
+  }
+};
+
+const scheme = colorSchemes[color];
+const cardId = `retro-card-${Math.random().toString(36).substr(2, 9)}`;
+---
+
+<div
+  id={cardId}
+  class={`retro-card ${variant} ${color} ${size} ${glitch ? 'glitch' : ''} ${scanlines ? 'scanlines' : ''} ${glow ? 'glow' : ''} ${interactive ? 'interactive' : ''} ${className}`}
+  data-status={status}
+  style={`--primary: ${scheme.primary}; --secondary: ${scheme.secondary}; --bg: ${scheme.bg}; --border: ${scheme.border}; --glow: ${scheme.glow};`}
+>
+  <!-- Terminal header -->
+  <div class="retro-header">
+    <div class="terminal-controls">
+      <div class="control-dot red"></div>
+      <div class="control-dot yellow"></div>
+      <div class="control-dot green"></div>
+    </div>
+
+    {title && (
+      <div class="terminal-title">
+        <span class="title-text">{title}</span>
+        {subtitle && <span class="subtitle-text">{subtitle}</span>}
+      </div>
+    )}
+
+    <div class="status-indicator">
+      <div class={`status-dot ${status}`}></div>
+      <span class="status-text">{status.toUpperCase()}</span>
+    </div>
+  </div>
+
+  <!-- Content area -->
+  <div class="retro-content">
+    <slot />
+  </div>
+
+  <!-- Scanline overlay -->
+  {scanlines && (
+    <div class="scanline-overlay"></div>
+  )}
+
+  <!-- Border effects -->
+  <div class="border-glow"></div>
+
+  <!-- Corner brackets -->
+  <div class="corner-bracket top-left"></div>
+  <div class="corner-bracket top-right"></div>
+  <div class="corner-bracket bottom-left"></div>
+  <div class="corner-bracket bottom-right"></div>
+</div>
+
+<style>
+  .retro-card {
+    position: relative;
+    background: #111111;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Monaco', 'Menlo', monospace;
+    color: #ffffff;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Size variations */
+  .retro-card.small {
+    min-height: 200px;
+    font-size: 0.85rem;
+  }
+
+  .retro-card.medium {
+    min-height: 280px;
+    font-size: 0.9rem;
+  }
+
+  .retro-card.large {
+    min-height: 400px;
+    font-size: 1rem;
+  }
+
+  /* Interactive states */
+  .retro-card.interactive {
+    cursor: pointer;
+  }
+
+  .retro-card.interactive:hover {
+    transform: translateY(-2px) scale(1.02);
+    border-color: var(--primary);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      0 0 20px var(--glow);
+  }
+
+  .retro-card.interactive:active {
+    transform: translateY(0) scale(1.01);
+  }
+
+  /* Terminal header */
+  .retro-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid var(--border);
+    min-height: 40px;
+  }
+
+  .terminal-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .control-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    position: relative;
+  }
+
+  .control-dot.red {
+    background: #ff5f56;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .control-dot.yellow {
+    background: #ffbd2e;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .control-dot.green {
+    background: #27ca3f;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .terminal-title {
+    flex: 1;
+    text-align: center;
+    margin: 0 1rem;
+  }
+
+  .title-text {
+    color: var(--primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .subtitle-text {
+    color: #888888;
+    font-size: 0.7rem;
+    display: block;
+    margin-top: 0.25rem;
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: statusPulse 2s infinite;
+  }
+
+  .status-dot.online {
+    background: #00ff41;
+    box-shadow: 0 0 8px #00ff41;
+  }
+
+  .status-dot.offline {
+    background: #666666;
+  }
+
+  .status-dot.error {
+    background: #ff0040;
+    box-shadow: 0 0 8px #ff0040;
+  }
+
+  .status-dot.warning {
+    background: #ffb000;
+    box-shadow: 0 0 8px #ffb000;
+  }
+
+  .status-dot.processing {
+    background: #00bfff;
+    box-shadow: 0 0 8px #00bfff;
+    animation: processingPulse 1s infinite;
+  }
+
+  .status-text {
+    font-size: 0.7rem;
+    color: #888888;
+    font-weight: 500;
+  }
+
+  /* Content area */
+  .retro-content {
+    padding: 1.5rem;
+    position: relative;
+    z-index: 2;
+    min-height: 200px;
+    background: var(--bg);
+  }
+
+  /* Scanline effect */
+  .scanline-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 65, 0.03) 2px,
+      rgba(0, 255, 65, 0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .retro-card.scanlines .scanline-overlay {
+    animation: scanlineMove 8s linear infinite;
+  }
+
+  @keyframes scanlineMove {
+    0% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(4px);
+    }
+  }
+
+  /* Border glow effect */
+  .border-glow {
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    background: linear-gradient(45deg, var(--primary), transparent, var(--secondary), transparent, var(--primary));
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 0;
+  }
+
+  .retro-card.glow:hover .border-glow {
+    opacity: 0.6;
+    animation: borderPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes borderPulse {
+    0%, 100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+
+  /* Corner brackets */
+  .corner-bracket {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--primary);
+    opacity: 0.6;
+    transition: all 0.3s ease;
+  }
+
+  .corner-bracket.top-left {
+    top: 8px;
+    left: 8px;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .corner-bracket.top-right {
+    top: 8px;
+    right: 8px;
+    border-left: none;
+    border-bottom: none;
+  }
+
+  .corner-bracket.bottom-left {
+    bottom: 8px;
+    left: 8px;
+    border-right: none;
+    border-top: none;
+  }
+
+  .corner-bracket.bottom-right {
+    bottom: 8px;
+    right: 8px;
+    border-left: none;
+    border-top: none;
+  }
+
+  .retro-card:hover .corner-bracket {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  /* Variant styles */
+  .retro-card.circuit {
+    background: radial-gradient(circle at 50% 50%, rgba(0, 255, 65, 0.1), #111111);
+  }
+
+  .retro-card.circuit::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+      linear-gradient(90deg, transparent 49%, rgba(0, 255, 65, 0.1) 50%, transparent 51%),
+      linear-gradient(0deg, transparent 49%, rgba(0, 255, 65, 0.1) 50%, transparent 51%);
+    background-size: 20px 20px;
+    opacity: 0.3;
+    z-index: 1;
+  }
+
+  .retro-card.data {
+    background: linear-gradient(135deg, #111111, #1a1a1a);
+  }
+
+  .retro-card.data::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+      linear-gradient(45deg, transparent 30%, rgba(0, 255, 65, 0.05) 50%, transparent 70%);
+    animation: dataFlow 4s linear infinite;
+    z-index: 1;
+  }
+
+  @keyframes dataFlow {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .retro-card.system {
+    background:
+      radial-gradient(ellipse at top, rgba(0, 255, 65, 0.1), transparent),
+      radial-gradient(ellipse at bottom, rgba(255, 176, 0, 0.1), transparent),
+      #111111;
+  }
+
+  /* Glitch effect */
+  .retro-card.glitch {
+    animation: glitchCard 8s infinite;
+  }
+
+  .retro-card.glitch .retro-content {
+    animation: glitchContent 8s infinite;
+  }
+
+  @keyframes glitchCard {
+    0%, 90%, 100% {
+      transform: translate(0);
+    }
+    91% {
+      transform: translate(-2px, 0);
+    }
+    92% {
+      transform: translate(2px, 0);
+    }
+    93% {
+      transform: translate(-1px, 0);
+    }
+    94% {
+      transform: translate(1px, 0);
+    }
+  }
+
+  @keyframes glitchContent {
+    0%, 90%, 100% {
+      clip-path: inset(0);
+    }
+    91% {
+      clip-path: inset(10px 0 85px 0);
+    }
+    92% {
+      clip-path: inset(80px 0 10px 0);
+    }
+    93% {
+      clip-path: inset(40px 0 50px 0);
+    }
+  }
+
+  /* Animations */
+  @keyframes statusPulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes processingPulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.2);
+    }
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .retro-card,
+    .retro-card *,
+    .retro-card::before,
+    .retro-card::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* Focus states */
+  .retro-card:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  /* High contrast mode */
+  @media (prefers-contrast: high) {
+    .retro-card {
+      border-width: 2px;
+    }
+
+    .scanline-overlay {
+      display: none;
+    }
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .retro-header {
+      padding: 0.5rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .terminal-title {
+      margin: 0;
+      order: 3;
+      flex-basis: 100%;
+    }
+
+    .retro-content {
+      padding: 1rem;
+    }
+
+    .corner-bracket {
+      width: 12px;
+      height: 12px;
+    }
+  }
+</style>
+
+<script>
+  // Add interactive behaviors
+  document.addEventListener('DOMContentLoaded', () => {
+    const cards = document.querySelectorAll('.retro-card.interactive');
+
+    cards.forEach(card => {
+      // Add click ripple effect
+      card.addEventListener('click', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const ripple = document.createElement('div');
+        ripple.style.cssText = `
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(0, 255, 65, 0.3);
+          transform: scale(0);
+          animation: ripple 0.6s linear;
+          left: ${x - 10}px;
+          top: ${y - 10}px;
+          width: 20px;
+          height: 20px;
+          pointer-events: none;
+          z-index: 10;
+        `;
+
+        card.appendChild(ripple);
+
+        setTimeout(() => {
+          ripple.remove();
+        }, 600);
+      });
+
+      // Add hover sound effect placeholder
+      card.addEventListener('mouseenter', () => {
+        // Placeholder for sound effect
+        // playSound('terminal-hover');
+      });
+    });
+  });
+
+  // Add ripple animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes ripple {
+      to {
+        transform: scale(4);
+        opacity: 0;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+</script>
