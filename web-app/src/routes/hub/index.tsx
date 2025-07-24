@@ -591,9 +591,6 @@ function Hub() {
                               <div
                                 className="cursor-pointer"
                                 onClick={() => {
-                                  console.log(
-                                    filteredModels[virtualItem.index].model_name
-                                  )
                                   navigate({
                                     to: route.hub.model,
                                     params: {
