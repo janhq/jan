@@ -183,7 +183,7 @@ export const useChat = () => {
     async (modelId: string, provider: ProviderObject) => {
       const providerName = provider.provider
       const newSettings = [...provider.settings]
-      const settingKey = 'context_shift'
+      const settingKey = 'ctx_shift'
       // Handle different value types by forcing the type
       // Use type assertion to bypass type checking
       const settingIndex = provider.settings.findIndex(

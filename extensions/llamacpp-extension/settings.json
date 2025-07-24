@@ -60,7 +60,7 @@
     }
   },
   {
-    "key": "context_shift",
+    "key": "ctx_shift",
     "title": "Context Shift",
     "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
     "controllerType": "checkbox",
