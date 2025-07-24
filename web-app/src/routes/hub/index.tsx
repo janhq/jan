@@ -26,7 +26,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { CatalogModel, pullModel } from '@/services/models'
+import {
+  CatalogModel,
+  pullModel,
+  fetchHuggingFaceRepo,
+  HuggingFaceRepo,
+} from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -54,7 +59,7 @@ function Hub() {
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
   ]
-  const { sources, fetchSources, addSource, loading } = useModelSources()
+  const { sources, addSource, fetchSources, loading } = useModelSources()
   const search = useSearch({ from: route.hub.index as any })
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -63,6 +68,9 @@ function Hub() {
   )
   const [isSearching, setIsSearching] = useState(false)
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
+  const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
+    null
+  )
   const [joyrideReady, setJoyrideReady] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -73,6 +81,48 @@ function Hub() {
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
+
+  // Convert HuggingFace repository to CatalogModel format
+  const convertHfRepoToCatalogModel = useCallback(
+    (repo: HuggingFaceRepo): CatalogModel => {
+      // Extract GGUF files from the repository siblings
+      const ggufFiles =
+        repo.siblings?.filter((file) =>
+          file.rfilename.toLowerCase().endsWith('.gguf')
+        ) || []
+
+      // Convert GGUF files to quants format
+      const quants = ggufFiles.map((file) => {
+        // Format file size
+        const formatFileSize = (size?: number) => {
+          if (!size) return 'Unknown size'
+          if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
+          return `${(size / 1024 ** 3).toFixed(1)} GB`
+        }
+
+        // Generate model_id from filename (remove .gguf extension, case-insensitive)
+        const modelId = file.rfilename.replace(/\.gguf$/i, '')
+
+        return {
+          model_id: modelId,
+          path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+          file_size: formatFileSize(file.size),
+        }
+      })
+
+      return {
+        model_name: repo.modelId,
+        description: `**Metadata:** ${repo.pipeline_tag}\n\n **Tags**: ${repo.tags?.join(', ')}`,
+        developer: repo.author,
+        downloads: repo.downloads || 0,
+        num_quants: quants.length,
+        quants: quants,
+        created_at: repo.created_at,
+        readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
+      }
+    },
+    []
+  )
 
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
@@ -85,17 +135,26 @@ function Hub() {
     if (search.repo) {
       setSearchValue(search.repo || '')
       setIsSearching(true)
-      addModelSourceTimeoutRef.current = setTimeout(() => {
-        addSource(search.repo)
-          .then(() => {
-            fetchSources()
-          })
-          .finally(() => {
-            setIsSearching(false)
-          })
+
+      addModelSourceTimeoutRef.current = setTimeout(async () => {
+        try {
+          // Fetch HuggingFace repository information
+          const repoInfo = await fetchHuggingFaceRepo(search.repo)
+          if (repoInfo) {
+            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+            setHuggingFaceRepo(catalogModel)
+            addSource(catalogModel)
+          }
+
+          await fetchSources()
+        } catch (error) {
+          console.error('Error fetching repository info:', error)
+        } finally {
+          setIsSearching(false)
+        }
       }, 500)
     }
-  }, [addSource, fetchSources, search])
+  }, [convertHfRepoToCatalogModel, fetchSources, addSource, search])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
@@ -143,8 +202,19 @@ function Hub() {
       )
     }
 
+    // Add HuggingFace repo at the beginning if available
+    if (huggingFaceRepo) {
+      filtered = [huggingFaceRepo, ...filtered]
+    }
+
     return filtered
-  }, [searchValue, sortedModels, showOnlyDownloaded, llamaProvider?.models])
+  }, [
+    searchValue,
+    sortedModels,
+    showOnlyDownloaded,
+    llamaProvider?.models,
+    huggingFaceRepo,
+  ])
 
   useEffect(() => {
     fetchSources()
@@ -153,22 +223,35 @@ function Hub() {
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
+    setHuggingFaceRepo(null) // Clear previous repo info
+
     if (addModelSourceTimeoutRef.current) {
       clearTimeout(addModelSourceTimeoutRef.current)
     }
+
     if (
       e.target.value.length &&
       (e.target.value.includes('/') || e.target.value.startsWith('http'))
     ) {
       setIsSearching(true)
-      addModelSourceTimeoutRef.current = setTimeout(() => {
-        addSource(e.target.value)
-          .then(() => {
-            fetchSources()
-          })
-          .finally(() => {
-            setIsSearching(false)
-          })
+
+      addModelSourceTimeoutRef.current = setTimeout(async () => {
+        try {
+          // Fetch HuggingFace repository information
+          const repoInfo = await fetchHuggingFaceRepo(e.target.value)
+          if (repoInfo) {
+            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+            setHuggingFaceRepo(catalogModel)
+            addSource(catalogModel)
+          }
+
+          // Original addSource logic (if needed)
+          await fetchSources()
+        } catch (error) {
+          console.error('Error fetching repository info:', error)
+        } finally {
+          setIsSearching(false)
+        }
       }, 500)
     }
   }
@@ -213,6 +296,25 @@ function Hub() {
 
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
+      // Check if this is a HuggingFace repository (no quants)
+      if (model.quants.length === 0) {
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                window.open(
+                  `https://huggingface.co/${model.model_name}`,
+                  '_blank'
+                )
+              }}
+            >
+              View on HuggingFace
+            </Button>
+          </div>
+        )
+      }
+
       const quant =
         model.quants.find((e) =>
           defaultModelQuantizations.some((m) =>
