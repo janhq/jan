@@ -296,8 +296,9 @@ function Hardware() {
                           <Progress
                             value={
                               toNumber(
-                                systemUsage.used_memory /
-                                  systemUsage.total_memory
+                                (hardwareData.total_memory -
+                                  systemUsage.used_memory) /
+                                  hardwareData.total_memory
                               ) * 100
                             }
                             className="h-2 w-10"
@@ -305,8 +306,9 @@ function Hardware() {
                           <span className="text-main-view-fg/80">
                             {(
                               toNumber(
-                                systemUsage.used_memory /
-                                  systemUsage.total_memory
+                                (hardwareData.total_memory -
+                                  systemUsage.used_memory) /
+                                  hardwareData.total_memory
                               ) * 100
                             ).toFixed(2)}
                             %
