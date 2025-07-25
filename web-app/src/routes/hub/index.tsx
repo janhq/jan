@@ -145,8 +145,12 @@ function Hub() {
           const repoInfo = await fetchHuggingFaceRepo(search.repo)
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            setHuggingFaceRepo(catalogModel)
-            addSource(catalogModel)
+            if (
+              !sources.some((s) => s.model_name === catalogModel.model_name)
+            ) {
+              setHuggingFaceRepo(catalogModel)
+              addSource(catalogModel)
+            }
           }
 
           await fetchSources()
@@ -157,7 +161,7 @@ function Hub() {
         }
       }, 500)
     }
-  }, [convertHfRepoToCatalogModel, fetchSources, addSource, search])
+  }, [convertHfRepoToCatalogModel, fetchSources, addSource, search, sources])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
@@ -247,8 +251,12 @@ function Hub() {
           const repoInfo = await fetchHuggingFaceRepo(e.target.value)
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            setHuggingFaceRepo(catalogModel)
-            addSource(catalogModel)
+            if (
+              !sources.some((s) => s.model_name === catalogModel.model_name)
+            ) {
+              setHuggingFaceRepo(catalogModel)
+              addSource(catalogModel)
+            }
           }
 
           // Original addSource logic (if needed)

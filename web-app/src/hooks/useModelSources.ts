@@ -31,15 +31,9 @@ export const useModelSources = create<ModelSourcesState>()(
         set({ loading: true, error: null })
         try {
           const newSources = await fetchModelCatalog()
-          const currentSources = get().sources
 
           set({
-            sources: [
-              ...newSources,
-              ...currentSources.filter(
-                (e) => !newSources.some((s) => s.model_name === e.model_name)
-              ),
-            ],
+            sources: newSources.length ? newSources : get().sources,
             loading: false,
           })
         } catch (error) {

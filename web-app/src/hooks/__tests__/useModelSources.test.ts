@@ -33,7 +33,7 @@ describe('useModelSources', () => {
     // Get the mocked function
     const { fetchModelCatalog } = await import('@/services/models')
     mockFetchModelCatalog = fetchModelCatalog as any
-    
+
     // Reset store state to defaults
     useModelSources.setState({
       sources: [],
@@ -98,7 +98,7 @@ describe('useModelSources', () => {
       expect(result.current.sources).toEqual([])
     })
 
-    it('should merge new sources with existing ones', async () => {
+    it('should not merge new sources with existing ones', async () => {
       const existingSources: CatalogModel[] = [
         {
           model_name: 'existing-model',
@@ -132,7 +132,7 @@ describe('useModelSources', () => {
         await result.current.fetchSources()
       })
 
-      expect(result.current.sources).toEqual([...newSources, ...existingSources])
+      expect(result.current.sources).toEqual(newSources)
     })
 
     it('should not duplicate models with same model_name', async () => {
@@ -175,15 +175,7 @@ describe('useModelSources', () => {
         await result.current.fetchSources()
       })
 
-      expect(result.current.sources).toEqual([
-        ...newSources,
-        {
-          model_name: 'unique-model',
-          provider: 'provider',
-          description: 'Unique model',
-          version: '1.0.0',
-        },
-      ])
+      expect(result.current.sources).toEqual(newSources)
     })
 
     it('should handle empty sources response', async () => {
@@ -236,7 +228,7 @@ describe('useModelSources', () => {
   describe('addSource', () => {
     it('should add a new source to the store', () => {
       const { result } = renderHook(() => useModelSources())
-      
+
       const testModel: CatalogModel = {
         model_name: 'test-model',
         description: 'Test model description',
@@ -263,7 +255,7 @@ describe('useModelSources', () => {
 
     it('should replace existing source with same model_name', () => {
       const { result } = renderHook(() => useModelSources())
-      
+
       const originalModel: CatalogModel = {
         model_name: 'duplicate-model',
         description: 'Original description',
@@ -306,7 +298,7 @@ describe('useModelSources', () => {
 
     it('should handle multiple different sources', () => {
       const { result } = renderHook(() => useModelSources())
-      
+
       const model1: CatalogModel = {
         model_name: 'model-1',
         description: 'First model',
@@ -342,7 +334,7 @@ describe('useModelSources', () => {
 
     it('should handle CatalogModel with complete quants data', () => {
       const { result } = renderHook(() => useModelSources())
-      
+
       const modelWithQuants: CatalogModel = {
         model_name: 'model-with-quants',
         description: 'Model with quantizations',
@@ -475,7 +467,7 @@ describe('useModelSources', () => {
         await result.current.fetchSources()
       })
 
-      expect(result.current.sources).toEqual([...sources2, ...sources1])
+      expect(result.current.sources).toEqual(sources2)
     })
 
     it('should handle fetch after error', async () => {
