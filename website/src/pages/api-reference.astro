@@ -1,0 +1,58 @@
+---
+const title = '👋 Jan API Reference';
+const description = 'Interactive Jan API documentation powered by Scalar';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content={description} />
+  <title>{title}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #fff;
+      color: #000;
+    }
+    
+    #scalar-api {
+      width: 100%;
+      height: 100vh;
+    }
+    
+    /* Dark mode support */
+    html[data-theme="dark"] body {
+      background: #1a1a1a;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div id="scalar-api"></div>
+</body>
+</html>
+
+<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+
+<script is:inline>
+  window.addEventListener('DOMContentLoaded', function() {
+    Scalar.createApiReference('#scalar-api', {
+      url: '/openapi/openapi.json',
+      proxyUrl: 'https://proxy.scalar.com',
+      theme: 'kepler',
+      spec: {
+        info: {
+          title: '👋 Jan API'
+        }
+      }
+    });
+  });
+</script>

@@ -1,0 +1,45 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Content from '../../../content/docs/products/platforms/jan-ai.mdx';
+---
+
+<StarlightPage
+  frontmatter={{ 
+    title: 'Jan.ai',
+    description: 'Cloud-based Jan platform accessible from anywhere' 
+  }}
+  sidebar={[
+    {
+      label: 'Products',
+      items: [
+        { label: 'Overview', link: '/products/' },
+        {
+          label: 'Models',
+          items: [
+            { label: 'Jan Nano', link: '/products/models/jan-nano/' },
+            { label: 'Jan v1', link: '/products/models/jan-v1/' },
+          ]
+        },
+        {
+          label: 'Platforms', 
+          items: [
+            { label: 'Desktop', link: '/products/platforms/desktop/' },
+            { label: 'Jan.ai', link: '/products/platforms/jan-ai/' },
+            { label: 'Mobile', link: '/products/platforms/mobile/' },
+            { label: 'Server', link: '/products/platforms/server/' },
+          ]
+        },
+        {
+          label: 'Tools',
+          items: [
+            { label: 'BrowserUse', link: '/products/tools/browseruse/' },
+            { label: 'DeepResearch', link: '/products/tools/deepresearch/' },
+            { label: 'Search', link: '/products/tools/search/' },
+          ]
+        }
+      ]
+    }
+  ]}
+>
+  <Content />
+</StarlightPage>

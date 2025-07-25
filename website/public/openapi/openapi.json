@@ -1,0 +1,1459 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "👋Jan API", "version": "0.3.14" },
+  "paths": {
+    "/v1/completions": {
+      "post": {
+        "tags": ["OpenAI V1"],
+        "summary": "Completion",
+        "operationId": "create_completion_v1_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    { "$ref": "#/components/schemas/CreateCompletionResponse" },
+                    { "type": "string" },
+                    { "$ref": "#/components/schemas/CreateCompletionResponse" }
+                  ],
+                  "title": "Completion response, when stream=False"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "title": "Server Side Streaming response, when stream=True. See SSE format: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format",
+                  "example": "data: {... see CreateCompletionResponse ...} \\n\\n data: ... \\n\\n ... data: [DONE]"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "tags": ["OpenAI V1"],
+        "summary": "Embedding",
+        "operationId": "create_embedding_v1_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmbeddingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["OpenAI V1"],
+        "summary": "Chat",
+        "operationId": "create_chat_completion_v1_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatCompletionRequest"
+              },
+              "examples": {
+                "normal": {
+                  "summary": "Chat Completion",
+                  "value": {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                      {
+                        "role": "system",
+                        "content": "You are a helpful assistant."
+                      },
+                      {
+                        "role": "user",
+                        "content": "What is the capital of France?"
+                      }
+                    ]
+                  }
+                },
+                "json_mode": {
+                  "summary": "JSON Mode",
+                  "value": {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                      {
+                        "role": "system",
+                        "content": "You are a helpful assistant."
+                      },
+                      {
+                        "role": "user",
+                        "content": "Who won the world series in 2020"
+                      }
+                    ],
+                    "response_format": { "type": "json_object" }
+                  }
+                },
+                "tool_calling": {
+                  "summary": "Tool Calling",
+                  "value": {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                      {
+                        "role": "system",
+                        "content": "You are a helpful assistant."
+                      },
+                      {
+                        "role": "user",
+                        "content": "Extract Jason is 30 years old."
+                      }
+                    ],
+                    "tools": [
+                      {
+                        "type": "function",
+                        "function": {
+                          "name": "User",
+                          "description": "User record",
+                          "parameters": {
+                            "type": "object",
+                            "properties": {
+                              "name": { "type": "string" },
+                              "age": { "type": "number" }
+                            },
+                            "required": ["name", "age"]
+                          }
+                        }
+                      }
+                    ],
+                    "tool_choice": {
+                      "type": "function",
+                      "function": { "name": "User" }
+                    }
+                  }
+                },
+                "logprobs": {
+                  "summary": "Logprobs",
+                  "value": {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                      {
+                        "role": "system",
+                        "content": "You are a helpful assistant."
+                      },
+                      {
+                        "role": "user",
+                        "content": "What is the capital of France?"
+                      }
+                    ],
+                    "logprobs": true,
+                    "top_logprobs": 10
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CreateChatCompletionResponse"
+                    },
+                    { "type": "string" },
+                    {
+                      "$ref": "#/components/schemas/CreateChatCompletionResponse"
+                    }
+                  ],
+                  "title": "Completion response, when stream=False"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "title": "Server Side Streaming response, when stream=TrueSee SSE format: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format",
+                  "example": "data: {... see CreateChatCompletionResponse ...} \\n\\n data: ... \\n\\n ... data: [DONE]"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": ["OpenAI V1"],
+        "summary": "Models",
+        "operationId": "get_models_v1_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelList" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/extras/tokenize": {
+      "post": {
+        "tags": ["Extras"],
+        "summary": "Tokenize",
+        "operationId": "tokenize_extras_tokenize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TokenizeInputRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenizeInputResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/extras/tokenize/count": {
+      "post": {
+        "tags": ["Extras"],
+        "summary": "Tokenize Count",
+        "operationId": "count_query_tokens_extras_tokenize_count_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TokenizeInputRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenizeInputCountResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/extras/detokenize": {
+      "post": {
+        "tags": ["Extras"],
+        "summary": "Detokenize",
+        "operationId": "detokenize_extras_detokenize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetokenizeInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetokenizeInputResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatCompletionFunction": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "description": { "type": "string", "title": "Description" },
+          "parameters": {
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "integer" },
+                { "type": "string" },
+                { "type": "boolean" },
+                { "items": {}, "type": "array" },
+                { "additionalProperties": true, "type": "object" },
+                { "type": "null" }
+              ]
+            },
+            "type": "object",
+            "title": "Parameters"
+          }
+        },
+        "type": "object",
+        "required": ["name", "parameters"],
+        "title": "ChatCompletionFunction"
+      },
+      "ChatCompletionLogprobToken": {
+        "properties": {
+          "token": { "type": "string", "title": "Token" },
+          "logprob": { "type": "number", "title": "Logprob" },
+          "bytes": {
+            "anyOf": [
+              { "items": { "type": "integer" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Bytes"
+          },
+          "top_logprobs": {
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionTopLogprobToken"
+            },
+            "type": "array",
+            "title": "Top Logprobs"
+          }
+        },
+        "type": "object",
+        "required": ["token", "logprob", "bytes", "top_logprobs"],
+        "title": "ChatCompletionLogprobToken"
+      },
+      "ChatCompletionLogprobs": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChatCompletionLogprobToken"
+                },
+                "type": "array"
+              },
+              { "type": "null" }
+            ],
+            "title": "Content"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChatCompletionLogprobToken"
+                },
+                "type": "array"
+              },
+              { "type": "null" }
+            ],
+            "title": "Refusal"
+          }
+        },
+        "type": "object",
+        "required": ["content", "refusal"],
+        "title": "ChatCompletionLogprobs"
+      },
+      "ChatCompletionMessageToolCall": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "type": { "type": "string", "const": "function", "title": "Type" },
+          "function": {
+            "$ref": "#/components/schemas/ChatCompletionMessageToolCallFunction"
+          }
+        },
+        "type": "object",
+        "required": ["id", "type", "function"],
+        "title": "ChatCompletionMessageToolCall"
+      },
+      "ChatCompletionMessageToolCallFunction": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "arguments": { "type": "string", "title": "Arguments" }
+        },
+        "type": "object",
+        "required": ["name", "arguments"],
+        "title": "ChatCompletionMessageToolCallFunction"
+      },
+      "ChatCompletionNamedToolChoice": {
+        "properties": {
+          "type": { "type": "string", "const": "function", "title": "Type" },
+          "function": {
+            "$ref": "#/components/schemas/ChatCompletionNamedToolChoiceFunction"
+          }
+        },
+        "type": "object",
+        "required": ["type", "function"],
+        "title": "ChatCompletionNamedToolChoice"
+      },
+      "ChatCompletionNamedToolChoiceFunction": {
+        "properties": { "name": { "type": "string", "title": "Name" } },
+        "type": "object",
+        "required": ["name"],
+        "title": "ChatCompletionNamedToolChoiceFunction"
+      },
+      "ChatCompletionRequestAssistantMessage": {
+        "properties": {
+          "role": { "type": "string", "const": "assistant", "title": "Role" },
+          "content": { "type": "string", "title": "Content" },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionMessageToolCall"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "function_call": {
+            "$ref": "#/components/schemas/ChatCompletionRequestAssistantMessageFunctionCall"
+          }
+        },
+        "type": "object",
+        "required": ["role"],
+        "title": "ChatCompletionRequestAssistantMessage"
+      },
+      "ChatCompletionRequestAssistantMessageFunctionCall": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "arguments": { "type": "string", "title": "Arguments" }
+        },
+        "type": "object",
+        "required": ["name", "arguments"],
+        "title": "ChatCompletionRequestAssistantMessageFunctionCall"
+      },
+      "ChatCompletionRequestFunctionCallOption": {
+        "properties": { "name": { "type": "string", "title": "Name" } },
+        "type": "object",
+        "required": ["name"],
+        "title": "ChatCompletionRequestFunctionCallOption"
+      },
+      "ChatCompletionRequestFunctionMessage": {
+        "properties": {
+          "role": { "type": "string", "const": "function", "title": "Role" },
+          "content": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Content"
+          },
+          "name": { "type": "string", "title": "Name" }
+        },
+        "type": "object",
+        "required": ["role", "content", "name"],
+        "title": "ChatCompletionRequestFunctionMessage"
+      },
+      "ChatCompletionRequestMessageContentPartImage": {
+        "properties": {
+          "type": { "type": "string", "const": "image_url", "title": "Type" },
+          "image_url": {
+            "anyOf": [
+              { "type": "string" },
+              {
+                "$ref": "#/components/schemas/ChatCompletionRequestMessageContentPartImageImageUrl"
+              }
+            ],
+            "title": "Image Url"
+          }
+        },
+        "type": "object",
+        "required": ["type", "image_url"],
+        "title": "ChatCompletionRequestMessageContentPartImage"
+      },
+      "ChatCompletionRequestMessageContentPartImageImageUrl": {
+        "properties": {
+          "url": { "type": "string", "title": "Url" },
+          "detail": {
+            "type": "string",
+            "enum": ["auto", "low", "high"],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": ["url"],
+        "title": "ChatCompletionRequestMessageContentPartImageImageUrl"
+      },
+      "ChatCompletionRequestMessageContentPartText": {
+        "properties": {
+          "type": { "type": "string", "const": "text", "title": "Type" },
+          "text": { "type": "string", "title": "Text" }
+        },
+        "type": "object",
+        "required": ["type", "text"],
+        "title": "ChatCompletionRequestMessageContentPartText"
+      },
+      "ChatCompletionRequestResponseFormat": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "json_object"],
+            "title": "Type"
+          },
+          "schema": {
+            "anyOf": [
+              { "type": "integer" },
+              { "type": "string" },
+              { "type": "boolean" },
+              { "items": {}, "type": "array" },
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Schema"
+          }
+        },
+        "type": "object",
+        "required": ["type"],
+        "title": "ChatCompletionRequestResponseFormat"
+      },
+      "ChatCompletionRequestSystemMessage": {
+        "properties": {
+          "role": { "type": "string", "const": "system", "title": "Role" },
+          "content": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": ["role", "content"],
+        "title": "ChatCompletionRequestSystemMessage"
+      },
+      "ChatCompletionRequestToolMessage": {
+        "properties": {
+          "role": { "type": "string", "const": "tool", "title": "Role" },
+          "content": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Content"
+          },
+          "tool_call_id": { "type": "string", "title": "Tool Call Id" }
+        },
+        "type": "object",
+        "required": ["role", "content", "tool_call_id"],
+        "title": "ChatCompletionRequestToolMessage"
+      },
+      "ChatCompletionRequestUserMessage": {
+        "properties": {
+          "role": { "type": "string", "const": "user", "title": "Role" },
+          "content": {
+            "anyOf": [
+              { "type": "string" },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ChatCompletionRequestMessageContentPartText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ChatCompletionRequestMessageContentPartImage"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              { "type": "null" }
+            ],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": ["role", "content"],
+        "title": "ChatCompletionRequestUserMessage"
+      },
+      "ChatCompletionResponseChoice": {
+        "properties": {
+          "index": { "type": "integer", "title": "Index" },
+          "message": {
+            "$ref": "#/components/schemas/ChatCompletionResponseMessage"
+          },
+          "logprobs": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/ChatCompletionLogprobs" },
+              { "type": "null" }
+            ]
+          },
+          "finish_reason": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Finish Reason"
+          }
+        },
+        "type": "object",
+        "required": ["index", "message", "logprobs", "finish_reason"],
+        "title": "ChatCompletionResponseChoice"
+      },
+      "ChatCompletionResponseFunctionCall": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "arguments": { "type": "string", "title": "Arguments" }
+        },
+        "type": "object",
+        "required": ["name", "arguments"],
+        "title": "ChatCompletionResponseFunctionCall"
+      },
+      "ChatCompletionResponseMessage": {
+        "properties": {
+          "content": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Content"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionMessageToolCall"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["assistant", "function"],
+            "title": "Role"
+          },
+          "function_call": {
+            "$ref": "#/components/schemas/ChatCompletionResponseFunctionCall"
+          }
+        },
+        "type": "object",
+        "required": ["content", "role"],
+        "title": "ChatCompletionResponseMessage"
+      },
+      "ChatCompletionTool": {
+        "properties": {
+          "type": { "type": "string", "const": "function", "title": "Type" },
+          "function": {
+            "$ref": "#/components/schemas/ChatCompletionToolFunction"
+          }
+        },
+        "type": "object",
+        "required": ["type", "function"],
+        "title": "ChatCompletionTool"
+      },
+      "ChatCompletionToolFunction": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "description": { "type": "string", "title": "Description" },
+          "parameters": {
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "integer" },
+                { "type": "string" },
+                { "type": "boolean" },
+                { "items": {}, "type": "array" },
+                { "additionalProperties": true, "type": "object" },
+                { "type": "null" }
+              ]
+            },
+            "type": "object",
+            "title": "Parameters"
+          }
+        },
+        "type": "object",
+        "required": ["name", "parameters"],
+        "title": "ChatCompletionToolFunction"
+      },
+      "ChatCompletionTopLogprobToken": {
+        "properties": {
+          "token": { "type": "string", "title": "Token" },
+          "logprob": { "type": "number", "title": "Logprob" },
+          "bytes": {
+            "anyOf": [
+              { "items": { "type": "integer" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Bytes"
+          }
+        },
+        "type": "object",
+        "required": ["token", "logprob", "bytes"],
+        "title": "ChatCompletionTopLogprobToken"
+      },
+      "CompletionChoice": {
+        "properties": {
+          "text": { "type": "string", "title": "Text" },
+          "index": { "type": "integer", "title": "Index" },
+          "logprobs": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/CompletionLogprobs" },
+              { "type": "null" }
+            ]
+          },
+          "finish_reason": {
+            "anyOf": [
+              { "type": "string", "enum": ["stop", "length"] },
+              { "type": "null" }
+            ],
+            "title": "Finish Reason"
+          }
+        },
+        "type": "object",
+        "required": ["text", "index", "logprobs", "finish_reason"],
+        "title": "CompletionChoice"
+      },
+      "CompletionLogprobs": {
+        "properties": {
+          "text_offset": {
+            "items": { "type": "integer" },
+            "type": "array",
+            "title": "Text Offset"
+          },
+          "token_logprobs": {
+            "items": { "anyOf": [{ "type": "number" }, { "type": "null" }] },
+            "type": "array",
+            "title": "Token Logprobs"
+          },
+          "tokens": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Tokens"
+          },
+          "top_logprobs": {
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": { "type": "number" },
+                  "type": "object"
+                },
+                { "type": "null" }
+              ]
+            },
+            "type": "array",
+            "title": "Top Logprobs"
+          }
+        },
+        "type": "object",
+        "required": ["text_offset", "token_logprobs", "tokens", "top_logprobs"],
+        "title": "CompletionLogprobs"
+      },
+      "CompletionUsage": {
+        "properties": {
+          "prompt_tokens": { "type": "integer", "title": "Prompt Tokens" },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens"
+          },
+          "total_tokens": { "type": "integer", "title": "Total Tokens" }
+        },
+        "type": "object",
+        "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+        "title": "CompletionUsage"
+      },
+      "CreateChatCompletionRequest": {
+        "properties": {
+          "messages": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChatCompletionRequestSystemMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ChatCompletionRequestUserMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ChatCompletionRequestAssistantMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ChatCompletionRequestToolMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ChatCompletionRequestFunctionMessage"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "A list of messages to generate completions for.",
+            "default": []
+          },
+          "functions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChatCompletionFunction"
+                },
+                "type": "array"
+              },
+              { "type": "null" }
+            ],
+            "title": "Functions",
+            "description": "A list of functions to apply to the generated completions."
+          },
+          "function_call": {
+            "anyOf": [
+              { "type": "string", "enum": ["none", "auto"] },
+              {
+                "$ref": "#/components/schemas/ChatCompletionRequestFunctionCallOption"
+              },
+              { "type": "null" }
+            ],
+            "title": "Function Call",
+            "description": "A function to apply to the generated completions."
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": { "$ref": "#/components/schemas/ChatCompletionTool" },
+                "type": "array"
+              },
+              { "type": "null" }
+            ],
+            "title": "Tools",
+            "description": "A list of tools to apply to the generated completions."
+          },
+          "tool_choice": {
+            "anyOf": [
+              { "type": "string", "enum": ["none", "auto", "required"] },
+              { "$ref": "#/components/schemas/ChatCompletionNamedToolChoice" },
+              { "type": "null" }
+            ],
+            "title": "Tool Choice",
+            "description": "A tool to apply to the generated completions."
+          },
+          "max_tokens": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Max Tokens",
+            "description": "The maximum number of tokens to generate. Defaults to inf"
+          },
+          "min_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Min Tokens",
+            "description": "The minimum number of tokens to generate. It may return fewer tokens if another condition is met (e.g. max_tokens, stop).",
+            "default": 0
+          },
+          "logprobs": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Logprobs",
+            "description": "Whether to output the logprobs or not. Default is True",
+            "default": false
+          },
+          "top_logprobs": {
+            "anyOf": [
+              { "type": "integer", "minimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Top Logprobs",
+            "description": "The number of logprobs to generate. If None, no logprobs are generated. logprobs need to set to True."
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature",
+            "description": "Adjust the randomness of the generated text.\n\nTemperature is a hyperparameter that controls the randomness of the generated text. It affects the probability distribution of the model's output tokens. A higher temperature (e.g., 1.5) makes the output more random and creative, while a lower temperature (e.g., 0.5) makes the output more focused, deterministic, and conservative. The default value is 0.8, which provides a balance between randomness and determinism. At the extreme, a temperature of 0 will always pick the most likely next token, leading to identical outputs in each run.",
+            "default": 0.8
+          },
+          "top_p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Top P",
+            "description": "Limit the next token selection to a subset of tokens with a cumulative probability above a threshold P.\n\nTop-p sampling, also known as nucleus sampling, is another text generation method that selects the next token from a subset of tokens that together have a cumulative probability of at least p. This method provides a balance between diversity and quality by considering both the probabilities of tokens and the number of tokens to sample from. A higher value for top_p (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text.",
+            "default": 0.95
+          },
+          "min_p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min P",
+            "description": "Sets a minimum base probability threshold for token selection.\n\nThe Min-P sampling method was designed as an alternative to Top-P, and aims to ensure a balance of quality and variety. The parameter min_p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with min_p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out.",
+            "default": 0.05
+          },
+          "stop": {
+            "anyOf": [
+              { "type": "string" },
+              { "items": { "type": "string" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Stop",
+            "description": "A list of tokens at which to stop generation. If None, no stop tokens are used."
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "description": "Whether to stream the results as they are generated. Useful for chatbots.",
+            "default": false
+          },
+          "presence_penalty": {
+            "anyOf": [
+              { "type": "number", "maximum": 2.0, "minimum": -2.0 },
+              { "type": "null" }
+            ],
+            "title": "Presence Penalty",
+            "description": "Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.",
+            "default": 0.0
+          },
+          "frequency_penalty": {
+            "anyOf": [
+              { "type": "number", "maximum": 2.0, "minimum": -2.0 },
+              { "type": "null" }
+            ],
+            "title": "Frequency Penalty",
+            "description": "Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.",
+            "default": 0.0
+          },
+          "logit_bias": {
+            "anyOf": [
+              {
+                "additionalProperties": { "type": "number" },
+                "type": "object"
+              },
+              { "type": "null" }
+            ],
+            "title": "Logit Bias"
+          },
+          "seed": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Seed"
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatCompletionRequestResponseFormat"
+              },
+              { "type": "null" }
+            ]
+          },
+          "model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Model",
+            "description": "The model to use for generating completions."
+          },
+          "n": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "N",
+            "default": 1
+          },
+          "user": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "User"
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Top K",
+            "description": "Limit the next token selection to the K most probable tokens.\n\nTop-k sampling is a text generation method that selects the next token only from the top k most likely tokens predicted by the model. It helps reduce the risk of generating low-probability or nonsensical tokens, but it may also limit the diversity of the output. A higher value for top_k (e.g., 100) will consider more tokens and lead to more diverse text, while a lower value (e.g., 10) will focus on the most probable tokens and generate more conservative text.",
+            "default": 40
+          },
+          "repeat_penalty": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Repeat Penalty",
+            "description": "A penalty applied to each token that is already generated. This helps prevent the model from repeating itself.\n\nRepeat penalty is a hyperparameter used to penalize the repetition of token sequences during text generation. It helps prevent the model from generating repetitive or monotonous text. A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9) will be more lenient.",
+            "default": 1.1
+          },
+          "logit_bias_type": {
+            "anyOf": [
+              { "type": "string", "enum": ["input_ids", "tokens"] },
+              { "type": "null" }
+            ],
+            "title": "Logit Bias Type"
+          },
+          "mirostat_mode": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Mirostat Mode",
+            "description": "Enable Mirostat constant-perplexity algorithm of the specified version (1 or 2; 0 = disabled)",
+            "default": 0
+          },
+          "mirostat_tau": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Mirostat Tau",
+            "description": "Mirostat target entropy, i.e. the target perplexity - lower values produce focused and coherent text, larger values produce more diverse and less coherent text",
+            "default": 5.0
+          },
+          "mirostat_eta": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.001,
+            "title": "Mirostat Eta",
+            "description": "Mirostat learning rate",
+            "default": 0.1
+          },
+          "grammar": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Grammar"
+          }
+        },
+        "type": "object",
+        "title": "CreateChatCompletionRequest",
+        "examples": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "What is the capital of France?", "role": "user" }
+            ]
+          }
+        ]
+      },
+      "CreateChatCompletionResponse": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "object": {
+            "type": "string",
+            "const": "chat.completion",
+            "title": "Object"
+          },
+          "created": { "type": "integer", "title": "Created" },
+          "model": { "type": "string", "title": "Model" },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionResponseChoice"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "usage": { "$ref": "#/components/schemas/CompletionUsage" }
+        },
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices", "usage"],
+        "title": "CreateChatCompletionResponse"
+      },
+      "CreateCompletionRequest": {
+        "properties": {
+          "prompt": {
+            "anyOf": [
+              { "type": "string" },
+              { "items": { "type": "string" }, "type": "array" }
+            ],
+            "title": "Prompt",
+            "description": "The prompt to generate completions for.",
+            "default": ""
+          },
+          "suffix": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Suffix",
+            "description": "A suffix to append to the generated text. If None, no suffix is appended. Useful for chatbots."
+          },
+          "max_tokens": {
+            "anyOf": [
+              { "type": "integer", "minimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Max Tokens",
+            "description": "The maximum number of tokens to generate.",
+            "default": 16
+          },
+          "min_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Min Tokens",
+            "description": "The minimum number of tokens to generate. It may return fewer tokens if another condition is met (e.g. max_tokens, stop).",
+            "default": 0
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature",
+            "description": "Adjust the randomness of the generated text.\n\nTemperature is a hyperparameter that controls the randomness of the generated text. It affects the probability distribution of the model's output tokens. A higher temperature (e.g., 1.5) makes the output more random and creative, while a lower temperature (e.g., 0.5) makes the output more focused, deterministic, and conservative. The default value is 0.8, which provides a balance between randomness and determinism. At the extreme, a temperature of 0 will always pick the most likely next token, leading to identical outputs in each run.",
+            "default": 0.8
+          },
+          "top_p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Top P",
+            "description": "Limit the next token selection to a subset of tokens with a cumulative probability above a threshold P.\n\nTop-p sampling, also known as nucleus sampling, is another text generation method that selects the next token from a subset of tokens that together have a cumulative probability of at least p. This method provides a balance between diversity and quality by considering both the probabilities of tokens and the number of tokens to sample from. A higher value for top_p (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text.",
+            "default": 0.95
+          },
+          "min_p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min P",
+            "description": "Sets a minimum base probability threshold for token selection.\n\nThe Min-P sampling method was designed as an alternative to Top-P, and aims to ensure a balance of quality and variety. The parameter min_p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with min_p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out.",
+            "default": 0.05
+          },
+          "echo": {
+            "type": "boolean",
+            "title": "Echo",
+            "description": "Whether to echo the prompt in the generated text. Useful for chatbots.",
+            "default": false
+          },
+          "stop": {
+            "anyOf": [
+              { "type": "string" },
+              { "items": { "type": "string" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Stop",
+            "description": "A list of tokens at which to stop generation. If None, no stop tokens are used."
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "description": "Whether to stream the results as they are generated. Useful for chatbots.",
+            "default": false
+          },
+          "logprobs": {
+            "anyOf": [
+              { "type": "integer", "minimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Logprobs",
+            "description": "The number of logprobs to generate. If None, no logprobs are generated."
+          },
+          "presence_penalty": {
+            "anyOf": [
+              { "type": "number", "maximum": 2.0, "minimum": -2.0 },
+              { "type": "null" }
+            ],
+            "title": "Presence Penalty",
+            "description": "Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.",
+            "default": 0.0
+          },
+          "frequency_penalty": {
+            "anyOf": [
+              { "type": "number", "maximum": 2.0, "minimum": -2.0 },
+              { "type": "null" }
+            ],
+            "title": "Frequency Penalty",
+            "description": "Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.",
+            "default": 0.0
+          },
+          "logit_bias": {
+            "anyOf": [
+              {
+                "additionalProperties": { "type": "number" },
+                "type": "object"
+              },
+              { "type": "null" }
+            ],
+            "title": "Logit Bias"
+          },
+          "seed": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Seed"
+          },
+          "model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Model",
+            "description": "The model to use for generating completions."
+          },
+          "n": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "N",
+            "default": 1
+          },
+          "best_of": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Best Of",
+            "default": 1
+          },
+          "user": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "User"
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Top K",
+            "description": "Limit the next token selection to the K most probable tokens.\n\nTop-k sampling is a text generation method that selects the next token only from the top k most likely tokens predicted by the model. It helps reduce the risk of generating low-probability or nonsensical tokens, but it may also limit the diversity of the output. A higher value for top_k (e.g., 100) will consider more tokens and lead to more diverse text, while a lower value (e.g., 10) will focus on the most probable tokens and generate more conservative text.",
+            "default": 40
+          },
+          "repeat_penalty": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Repeat Penalty",
+            "description": "A penalty applied to each token that is already generated. This helps prevent the model from repeating itself.\n\nRepeat penalty is a hyperparameter used to penalize the repetition of token sequences during text generation. It helps prevent the model from generating repetitive or monotonous text. A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9) will be more lenient.",
+            "default": 1.1
+          },
+          "logit_bias_type": {
+            "anyOf": [
+              { "type": "string", "enum": ["input_ids", "tokens"] },
+              { "type": "null" }
+            ],
+            "title": "Logit Bias Type"
+          },
+          "mirostat_mode": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Mirostat Mode",
+            "description": "Enable Mirostat constant-perplexity algorithm of the specified version (1 or 2; 0 = disabled)",
+            "default": 0
+          },
+          "mirostat_tau": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Mirostat Tau",
+            "description": "Mirostat target entropy, i.e. the target perplexity - lower values produce focused and coherent text, larger values produce more diverse and less coherent text",
+            "default": 5.0
+          },
+          "mirostat_eta": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.001,
+            "title": "Mirostat Eta",
+            "description": "Mirostat learning rate",
+            "default": 0.1
+          },
+          "grammar": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Grammar"
+          }
+        },
+        "type": "object",
+        "title": "CreateCompletionRequest",
+        "examples": [
+          {
+            "prompt": "\n\n### Instructions:\nWhat is the capital of France?\n\n### Response:\n",
+            "stop": ["\n", "###"]
+          }
+        ]
+      },
+      "CreateCompletionResponse": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "object": {
+            "type": "string",
+            "const": "text_completion",
+            "title": "Object"
+          },
+          "created": { "type": "integer", "title": "Created" },
+          "model": { "type": "string", "title": "Model" },
+          "choices": {
+            "items": { "$ref": "#/components/schemas/CompletionChoice" },
+            "type": "array",
+            "title": "Choices"
+          },
+          "usage": { "$ref": "#/components/schemas/CompletionUsage" }
+        },
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices"],
+        "title": "CreateCompletionResponse"
+      },
+      "CreateEmbeddingRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Model",
+            "description": "The model to use for generating completions."
+          },
+          "input": {
+            "anyOf": [
+              { "type": "string" },
+              { "items": { "type": "string" }, "type": "array" }
+            ],
+            "title": "Input",
+            "description": "The input to embed."
+          },
+          "user": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "User"
+          }
+        },
+        "type": "object",
+        "required": ["input"],
+        "title": "CreateEmbeddingRequest",
+        "examples": [{ "input": "The food was delicious and the waiter..." }]
+      },
+      "DetokenizeInputRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Model",
+            "description": "The model to use for generating completions."
+          },
+          "tokens": {
+            "items": { "type": "integer" },
+            "type": "array",
+            "title": "Tokens",
+            "description": "A list of toekns to detokenize."
+          }
+        },
+        "type": "object",
+        "required": ["tokens"],
+        "title": "DetokenizeInputRequest",
+        "example": [{ "tokens": [123, 321, 222] }]
+      },
+      "DetokenizeInputResponse": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The detokenized text."
+          }
+        },
+        "type": "object",
+        "required": ["text"],
+        "title": "DetokenizeInputResponse",
+        "example": { "text": "How many tokens in this query?" }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": { "$ref": "#/components/schemas/ValidationError" },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ModelData": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "object": { "type": "string", "const": "model", "title": "Object" },
+          "owned_by": { "type": "string", "title": "Owned By" },
+          "permissions": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": ["id", "object", "owned_by", "permissions"],
+        "title": "ModelData"
+      },
+      "ModelList": {
+        "properties": {
+          "object": { "type": "string", "const": "list", "title": "Object" },
+          "data": {
+            "items": { "$ref": "#/components/schemas/ModelData" },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": ["object", "data"],
+        "title": "ModelList"
+      },
+      "TokenizeInputCountResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "The number of tokens in the input."
+          }
+        },
+        "type": "object",
+        "required": ["count"],
+        "title": "TokenizeInputCountResponse",
+        "example": { "count": 5 }
+      },
+      "TokenizeInputRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Model",
+            "description": "The model to use for generating completions."
+          },
+          "input": {
+            "type": "string",
+            "title": "Input",
+            "description": "The input to tokenize."
+          }
+        },
+        "type": "object",
+        "required": ["input"],
+        "title": "TokenizeInputRequest",
+        "examples": [{ "input": "How many tokens in this query?" }]
+      },
+      "TokenizeInputResponse": {
+        "properties": {
+          "tokens": {
+            "items": { "type": "integer" },
+            "type": "array",
+            "title": "Tokens",
+            "description": "A list of tokens."
+          }
+        },
+        "type": "object",
+        "required": ["tokens"],
+        "title": "TokenizeInputResponse",
+        "example": { "tokens": [123, 321, 222] }
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": { "type": "string", "title": "Message" },
+          "type": { "type": "string", "title": "Error Type" }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": { "HTTPBearer": { "type": "http", "scheme": "bearer" } }
+  }
+}
