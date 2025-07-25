@@ -461,6 +461,8 @@ jobs:
         with:
           name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-logs-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/jan-logs/
+        env:
+          ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: 10
 
       - name: Cleanup after tests
         if: always()
