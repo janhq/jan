@@ -19,4 +19,5 @@ export enum ModelCapabilities {
 export enum DefaultToolUseSupportedModels {
   JanNano = 'jan-nano',
   Qwen3 = 'qwen3',
+  Lucy = 'lucy',
 }

@@ -75,11 +75,11 @@ export const useModelProvider = create<ModelProviderState>()(
               ...models,
             ]
             const updatedModels = provider.models?.map((model) => {
+              const existingModel = models.find((m) => m.id === model.id)
               return {
                 ...model,
-                settings:
-                  models.find((m) => m.id === model.id)?.settings ||
-                  model.settings,
+                settings: existingModel?.settings || model.settings,
+                capabilities: existingModel?.capabilities || model.capabilities,
               }
             })
             return {
