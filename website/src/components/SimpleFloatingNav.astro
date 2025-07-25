@@ -8,10 +8,10 @@ const { currentPage = 'products' } = Astro.props;
 
 <nav class="floating-nav">
   <div class="nav-container">
-    <a href="/" class="nav-logo">Jan</a>
+    <a href="/" class="nav-logo">👋 Jan</a>
     <div class="nav-links">
       <a href="/" class={currentPage === 'home' ? 'active' : ''}>Home</a>
-      <a href="/docs" class={currentPage === 'docs' ? 'active' : ''}>Docs</a>
+      <a href="/products" class={currentPage === 'docs' ? 'active' : ''}>Docs</a>
       <a href="/prods" class={currentPage === 'products' ? 'active' : ''}>Products</a>
     </div>
     <button class="dark-mode-toggle" aria-label="Toggle dark mode">

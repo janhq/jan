@@ -17,51 +17,63 @@ import ReleaseDatabase from '../components/ReleaseDatabase.astro';
 # Products
 
 <p className="lead">
-Jan is evolving from a local AI application to a complete full-stack AI solution that you can self-host. This includes models, applications, and tools to solve real problems.
+Jan is moving from a local AI application to a complete full-stack AI solution that you can self-host. This includes models,
+applications, and tools that delights users and help them solve their problems.
 </p>
 
 ## What We're Building
 
-**Jan Agent** = Jan Models + Jan Application + Jan Tools
+**Jan Factory (or Agent)** = Jan Models + Jan Application + Jan Tools
 
 Unlike other AI assistants that do specific tasks with one model or have many models with a myriad of solutions, Jan provides:
-- Our own models optimized for local and private use
-- Applications that work across all your devices
+- Its own specialised models that are optimised at specific tasks like web-search, creative writing, and translation
+- Applications that work across all of your devices in an integrated way
 - Tools that actually get things done
 
 ## Two Modes, One Experience
 
 ### Local (Incognito) Mode
+
 Run AI models entirely on your device, giving you complete privacy with no internet required.
 
+![Jan Desktop](../assets/jan_desktop.png)
+
 ### Cloud Mode
+
 Connect to more powerful models when needed - either self-hosted or via jan.ai.
+
+![Jan Everywhere](../assets/jan_everywhere.png)
 
 Users shouldn't need to understand models, APIs, or technical details. Just choose Local for privacy or Cloud for power.
 
 ## Our Product Principles
 
-### It Just Works
+### 1) It Just Works
+
 1. Open Jan, start chatting
 2. Onboarding is fully available but optional
 3. Setting up an API key is optional
 4. Selecting a local model is optional
+5. Become a power user at your own pace, if you want to
 
 We handle the complexity.
 
-### Privacy First, Cloud When Needed
-Start with complete privacy by default. Add cloud capabilities only when you choose to.
+### 2) Cloud When Needed
 
-### Solve Problems, Not Settings
-Users want answers, not configuration options. Power users can dig deeper, but it's never required.
+Start completely locally and own your AI models. Add cloud capabilities only when you choose to.
+
+### 3) Solve Problems, Not Settings
+
+We help users get to answers quickly answers, not configuration options. Power users can dig deeper, but it's never required.
 
 ## Available on Every Device
 
 ### Jan Desktop
 
-**Status:** Available Now
+This is how Jan started and it has been available since day 1. Jan Desktop stives to be:
 
-Your personal AI workstation that powers all other devices. Run models locally with optional cloud connection.
+> Your personal AI workstation that helps with our use cases and powers other devices. Run models locally right away
+or bring an API key to connect to your favorite cloud-based models.
 
 **Key Features:**
 - Runs models locally on your hardware
@@ -79,7 +91,9 @@ Your personal AI workstation that powers all other devices. Run models locally w
 
 **Status:** Beta Launch Soon
 
-SaaS version of Jan Server with no setup required. Default cloud mode for mobile and desktop users.
+![Jan Web](../assets/jan_web.png)
+
+Web-based version of 👋 Jan with no setup required. Same default cloud mode for mobile and desktop users.
 
 **Key Features:**
 - No installation needed
@@ -87,16 +101,40 @@ SaaS version of Jan Server with no setup required. Default cloud mode for mobile
 - Automatic updates and maintenance
 - Default cloud backend for mobile apps
 - Team collaboration features
+  - Share prompts
+  - Share workflows
+  - Collaborate on threads
 
 **Pricing:**
-- Free tier: 50 queries/day
-- Pro tier: Unlimited usage
+- Free for everyone
+- Pro:
+  - Access our latest models
+  - Access other cloud providers, no need to bring their API keys
+- Enterprise:
+  - Self-host or we host it for you
+  - Active support and SLAs
+  - SSO
+  - Team featues
 
 ### Jan Mobile
 
-**Status:** Coming Q1 2025
+**Status:** Coming Q4 2025
 
-Connect to Desktop/Server, run local mode with Jan Nano, same experience everywhere. See detailed information below.
+Connect to Desktop/Server, run local mode with Jan Nano or Lucy, same experience everywhere.
+
+Jan Mobile adapts to your situation:
+
+At Home, you can connect to your Jan Desktop over WiFi
+
+![Jan Mobile Home](../assets/jan_mobile2.png)
+
+At Work, you can connect to your company Jan Server
+
+![Jan Mobile Home](../assets/jan_mobile3.png)
+
+On the Go, you can run Jan Nano on your phone or talk to your favourite cloud-based model
+
+![Jan Mobile Home](../assets/jan_mobile4.png)
 
 **Key Features:**
 - iOS and Android support
@@ -175,7 +213,7 @@ No configuration needed. It just works.
     <tr>
       <td>Models</td>
       <td>Wrapper around Claude/GPT</td>
-      <td>Our own models + others</td>
+      <td>Our own models + You can own them</td>
     </tr>
     <tr>
       <td>Dual mode</td>

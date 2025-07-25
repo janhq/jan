@@ -4,6 +4,7 @@ import starlight from '@astrojs/starlight'
 import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
 import starlightVideos from 'starlight-videos'
+// import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi'
 
 // https://astro.build/config
 export default defineConfig({
@@ -105,26 +106,6 @@ export default defineConfig({
               ],
             },
             {
-              label: 'Products',
-              link: '/products/',
-              icon: 'forward-slash',
-              items: [
-                { label: 'Overview', slug: 'products' },
-                {
-                  label: 'Models',
-                  autogenerate: { directory: 'products/models' },
-                },
-                {
-                  label: 'Platforms',
-                  autogenerate: { directory: 'products/platforms' },
-                },
-                {
-                  label: 'Tools',
-                  autogenerate: { directory: 'products/tools' },
-                },
-              ],
-            },
-            {
               label: 'Jan AI University',
               link: '/university/',
               icon: 'star',
@@ -169,7 +150,7 @@ export default defineConfig({
             },
           ],
           {
-            exclude: ['/prods'],
+            exclude: ['/prods', '/api-reference', '/products', '/products/**/*'],
             topics: {
               university: [
                 '/university/getting-started/what-is-jan',
@@ -188,6 +169,9 @@ export default defineConfig({
           href: 'https://github.com/menloresearch/jan',
         },
       ],
+      components: {
+        Header: './src/components/CustomNav.astro',
+      },
     }),
   ],
 })
