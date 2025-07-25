@@ -81,7 +81,7 @@ const DropdownAssistant = () => {
             >
               <DropdownMenuItem className="hover:bg-transparent">
                 <div
-                  className="text-main-view-fg/70 cursor-pointer flex gap-2"
+                  className="text-main-view-fg/70 cursor-pointer flex gap-2 w-full"
                   onClick={() => {
                     setCurrentAssistant(assistant)
                     updateCurrentThreadAssistant(assistant)
