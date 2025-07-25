@@ -37,6 +37,7 @@ import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
+import { events } from '@janhq/core'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -129,6 +130,19 @@ function ProviderDetail() {
       return () => clearInterval(intervalId)
     }
   }, [provider, needsBackendConfig])
+
+  // Listen for settingsChanged event and refresh backend list if version_backend changes
+  useEffect(() => {
+    const handler = (event: { key: string; value: string }) => {
+      if (event.key === 'version_backend') {
+        refreshSettings()
+      }
+    }
+    events.on('settingsChanged', handler)
+    return () => {
+      events.off('settingsChanged', handler)
+    }
+  }, [provider])
 
   // Auto-refresh models for non-predefined providers
   useEffect(() => {
