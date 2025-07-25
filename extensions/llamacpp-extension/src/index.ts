@@ -1182,7 +1182,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Add remaining options from the interface
     if (cfg.chat_template) args.push('--chat-template', cfg.chat_template)
-    args.push('-ngl', String(cfg.n_gpu_layers > 0 ? cfg.n_gpu_layers : 100))
+    args.push('-ngl', String(cfg.n_gpu_layers >= 0 ? cfg.n_gpu_layers : 100))
     if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
     if (cfg.threads_batch > 0)
       args.push('--threads-batch', String(cfg.threads_batch))
