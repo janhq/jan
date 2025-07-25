@@ -17,7 +17,7 @@
     "controllerProps": { "value": true }
   },
   {
-    "key": "auto_unload_models",
+    "key": "auto_unload",
     "title": "Auto-Unload Old Models",
     "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
     "controllerType": "checkbox",
