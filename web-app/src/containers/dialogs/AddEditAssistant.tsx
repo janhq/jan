@@ -61,6 +61,7 @@ export default function AddEditAssistant({
   const [paramsTypes, setParamsTypes] = useState<string[]>(['string'])
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const [nameError, setNameError] = useState<string | null>(null)
 
   // Handle click outside emoji picker
   useEffect(() => {
@@ -118,6 +119,7 @@ export default function AddEditAssistant({
     setParamsKeys([''])
     setParamsValues([''])
     setParamsTypes(['string'])
+    setNameError(null)
   }
 
   const handleParameterChange = (
@@ -193,6 +195,11 @@ export default function AddEditAssistant({
   }
 
   const handleSave = () => {
+    if (!name.trim()) {
+      setNameError(t('assistants:nameRequired'))
+      return
+    }
+    setNameError(null)
     // Convert parameters arrays to object
     const parameters: Record<string, unknown> = {}
     paramsKeys.forEach((key, index) => {
@@ -275,12 +282,21 @@ export default function AddEditAssistant({
               </label>
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (e.target.value.trim()) setNameError(null)
+                }}
                 placeholder={t('assistants:enterName')}
                 autoFocus
               />
             </div>
           </div>
+
+          {nameError && (
+            <div className="ml-12 text-xs text-destructive mt-1">
+              {nameError}
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-sm mb-2 inline-block">

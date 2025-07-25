@@ -10,6 +10,7 @@
   "emoji": "Emoji",
   "name": "Nama",
   "enterName": "Masukkan nama",
+  "nameRequired": "Nama wajib diisi",
   "description": "Deskripsi (opsional)",
   "enterDescription": "Masukkan deskripsi",
   "instructions": "Instruksi",

@@ -10,6 +10,7 @@
   "emoji": "Emoji",
   "name": "Name",
   "enterName": "Namen eingeben",
+  "nameRequired": "Name ist erforderlich",
   "description": "Beschreibung (optional)",
   "enterDescription": "Beschreibung eingeben",
   "instructions": "Anweisungen",
