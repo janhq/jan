@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/resizable'
 import { useCallback } from 'react'
 import GlobalError from '@/containers/GlobalError'
+import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -162,6 +163,7 @@ function RootLayout() {
       <TranslationProvider>
         <ExtensionProvider>
           <DataProvider />
+          <GlobalEventHandler />
         </ExtensionProvider>
         {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
         {/* <TanStackRouterDevtools position="bottom-right" /> */}

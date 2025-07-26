@@ -38,6 +38,9 @@ function Hardware() {
   const llamacpp = providers.find((p) => p.provider === 'llamacpp')
 
   // Llamacpp devices hook
+  const llamacppDevicesResult = useLlamacppDevices()
+
+  // Use default values on macOS since llamacpp devices are not relevant
   const {
     devices: llamacppDevices,
     loading: llamacppDevicesLoading,
@@ -45,7 +48,16 @@ function Hardware() {
     activatedDevices,
     toggleDevice,
     fetchDevices,
-  } = useLlamacppDevices()
+  } = IS_MACOS
+    ? {
+        devices: [],
+        loading: false,
+        error: null,
+        activatedDevices: new Set(),
+        toggleDevice: () => {},
+        fetchDevices: () => {},
+      }
+    : llamacppDevicesResult
 
   // Fetch llamacpp devices when component mounts
   useEffect(() => {
@@ -296,8 +308,7 @@ function Hardware() {
                           <Progress
                             value={
                               toNumber(
-                                (hardwareData.total_memory -
-                                  systemUsage.used_memory) /
+                                systemUsage.used_memory /
                                   hardwareData.total_memory
                               ) * 100
                             }
@@ -306,8 +317,7 @@ function Hardware() {
                           <span className="text-main-view-fg/80">
                             {(
                               toNumber(
-                                (hardwareData.total_memory -
-                                  systemUsage.used_memory) /
+                                systemUsage.used_memory /
                                   hardwareData.total_memory
                               ) * 100
                             ).toFixed(2)}
@@ -365,9 +375,9 @@ function Hardware() {
                             title={t('settings:hardware.vram')}
                             actions={
                               <span className="text-main-view-fg/80">
-                                {formatMegaBytes(device.mem)}{' '}
+                                {formatMegaBytes(device.free)}{' '}
                                 {t('settings:hardware.freeOf')}{' '}
-                                {formatMegaBytes(device.free)}
+                                {formatMegaBytes(device.mem)}
                               </span>
                             }
                           />

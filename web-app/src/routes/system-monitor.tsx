@@ -95,10 +95,7 @@ function SystemMonitor() {
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
-    toNumber(
-      (hardwareData.total_memory - systemUsage.used_memory) /
-        hardwareData.total_memory
-    ) * 100
+    toNumber(systemUsage.used_memory / hardwareData.total_memory) * 100
 
   return (
     <div className="flex flex-col h-full bg-main-view overflow-y-auto p-6">
@@ -197,49 +194,53 @@ function SystemMonitor() {
         </div>
 
         {/* GPU Usage Card */}
-        <div className="bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-main-view-fg mb-4">
-            {t('system-monitor:activeGpus')}
-          </h2>
-          <div className="flex flex-col gap-2">
-            {llamacppDevices.length > 0 ? (
-              llamacppDevices.map((device) => (
-                <div key={device.id} className="flex flex-col gap-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-main-view-fg/70">{device.name}</span>
-                    <span
-                      className={`text-sm px-2 py-1 rounded-md ${
-                        activatedDevices.has(device.id)
-                          ? 'bg-green-500/20 text-green-600 dark:text-green-400'
-                          : 'hidden'
-                      }`}
-                    >
-                      {activatedDevices.has(device.id)
-                        ? t('system-monitor:active')
-                        : 'Inactive'}
-                    </span>
+        {!IS_MACOS && (
+          <div className="bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-main-view-fg mb-4">
+              {t('system-monitor:activeGpus')}
+            </h2>
+            <div className="flex flex-col gap-2">
+              {llamacppDevices.length > 0 ? (
+                llamacppDevices.map((device) => (
+                  <div key={device.id} className="flex flex-col gap-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-main-view-fg/70">
+                        {device.name}
+                      </span>
+                      <span
+                        className={`text-sm px-2 py-1 rounded-md ${
+                          activatedDevices.has(device.id)
+                            ? 'bg-green-500/20 text-green-600 dark:text-green-400'
+                            : 'hidden'
+                        }`}
+                      >
+                        {activatedDevices.has(device.id)
+                          ? t('system-monitor:active')
+                          : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-main-view-fg/70">VRAM:</span>
+                      <span className="text-main-view-fg">
+                        {formatMegaBytes(device.mem)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-main-view-fg/70">Free:</span>
+                      <span className="text-main-view-fg">
+                        {formatMegaBytes(device.free)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-main-view-fg/70">VRAM:</span>
-                    <span className="text-main-view-fg">
-                      {formatMegaBytes(device.mem)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-main-view-fg/70">Free:</span>
-                    <span className="text-main-view-fg">
-                      {formatMegaBytes(device.free)}
-                    </span>
-                  </div>
+                ))
+              ) : (
+                <div className="text-main-view-fg/70 text-center py-4">
+                  {t('system-monitor:noGpus')}
                 </div>
-              ))
-            ) : (
-              <div className="text-main-view-fg/70 text-center py-4">
-                {t('system-monitor:noGpus')}
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
