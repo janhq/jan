@@ -98,23 +98,29 @@ function Hardware() {
       )?.controller_props.value as string
 
       if (currentDeviceSetting) {
-        const deviceIds = currentDeviceSetting
-          .split(',')
-          .map((device) => device.trim())
-          .filter((device) => device.length > 0)
-
-        // Find matching devices by ID
-        const matchingDeviceIds = deviceIds.filter((deviceId) =>
-          llamacppDevices.some((device) => device.id === deviceId)
-        )
-
-        if (matchingDeviceIds.length > 0) {
-          console.log(
-            `Initializing llamacpp device activations from device setting: "${currentDeviceSetting}"`
-          )
-          // Update the activatedDevices in the hook
+        // If device setting is "none", clear all activated devices
+        if (currentDeviceSetting === 'none') {
           const { setActivatedDevices } = useLlamacppDevices.getState()
-          setActivatedDevices(matchingDeviceIds)
+          setActivatedDevices([])
+        } else {
+          const deviceIds = currentDeviceSetting
+            .split(',')
+            .map((device) => device.trim())
+            .filter((device) => device.length > 0)
+
+          // Find matching devices by ID
+          const matchingDeviceIds = deviceIds.filter((deviceId) =>
+            llamacppDevices.some((device) => device.id === deviceId)
+          )
+
+          if (matchingDeviceIds.length > 0) {
+            console.log(
+              `Initializing llamacpp device activations from device setting: "${currentDeviceSetting}"`
+            )
+            // Update the activatedDevices in the hook
+            const { setActivatedDevices } = useLlamacppDevices.getState()
+            setActivatedDevices(matchingDeviceIds)
+          }
         }
       }
     }
@@ -351,15 +357,6 @@ function Hardware() {
                           title={device.name}
                           actions={
                             <div className="flex items-center gap-4">
-                              {/* <div className="flex flex-col items-end gap-1">
-                            <span className="text-main-view-fg/80 text-sm">
-                              ID: {device.id}
-                            </span>
-                            <span className="text-main-view-fg/80 text-sm">
-                              Memory: {formatMegaBytes(device.mem)} /{' '}
-                              {formatMegaBytes(device.free)} free
-                            </span>
-                          </div> */}
                               <Switch
                                 checked={activatedDevices.has(device.id)}
                                 onCheckedChange={() => {

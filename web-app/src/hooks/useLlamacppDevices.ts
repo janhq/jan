@@ -28,7 +28,33 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
 
     try {
       const devices = await getLlamacppDevices()
-      set({ devices, loading: false })
+      set((state) => {
+        const newState = { devices, loading: false }
+        
+        // Check current device setting from provider
+        const { getProviderByName } = useModelProvider.getState()
+        const llamacppProvider = getProviderByName('llamacpp')
+        const currentDeviceSetting = llamacppProvider?.settings.find(
+          (s) => s.key === 'device'
+        )?.controller_props.value as string
+
+        // If device setting is "none", clear all activated devices
+        if (currentDeviceSetting === 'none') {
+          return {
+            ...newState,
+            activatedDevices: new Set()
+          }
+        }
+        
+        // Auto-activate first device if no devices are currently activated
+        if (state.activatedDevices.size === 0 && devices.length > 0) {
+          return {
+            ...newState,
+            activatedDevices: new Set([devices[0].id]),
+          }
+        }
+        return newState
+      })
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to fetch devices'
@@ -64,7 +90,7 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
             ...setting,
             controller_props: {
               ...setting.controller_props,
-              value: deviceString,
+              value: deviceString.length > 0 ? deviceString : 'none',
             },
           }
         }
