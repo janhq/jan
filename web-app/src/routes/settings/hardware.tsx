@@ -375,9 +375,9 @@ function Hardware() {
                             title={t('settings:hardware.vram')}
                             actions={
                               <span className="text-main-view-fg/80">
-                                {formatMegaBytes(device.mem)}{' '}
+                                {formatMegaBytes(device.free)}{' '}
                                 {t('settings:hardware.freeOf')}{' '}
-                                {formatMegaBytes(device.free)}
+                                {formatMegaBytes(device.mem)}
                               </span>
                             }
                           />
