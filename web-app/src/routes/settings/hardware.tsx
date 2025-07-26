@@ -45,7 +45,6 @@ function Hardware() {
     devices: llamacppDevices,
     loading: llamacppDevicesLoading,
     error: llamacppDevicesError,
-    activatedDevices,
     toggleDevice,
     fetchDevices,
   } = IS_MACOS
@@ -53,7 +52,6 @@ function Hardware() {
         devices: [],
         loading: false,
         error: null,
-        activatedDevices: new Set(),
         toggleDevice: () => {},
         fetchDevices: () => {},
       }
@@ -87,43 +85,7 @@ function Hardware() {
     })
   }, [setHardwareData, updateSystemUsage])
 
-  const { getProviderByName } = useModelProvider()
 
-  // Initialize llamacpp device activations from provider settings
-  useEffect(() => {
-    if (llamacppDevices.length > 0 && activatedDevices.size === 0) {
-      const llamacppProvider = getProviderByName('llamacpp')
-      const currentDeviceSetting = llamacppProvider?.settings.find(
-        (s) => s.key === 'device'
-      )?.controller_props.value as string
-
-      if (currentDeviceSetting) {
-        const deviceIds = currentDeviceSetting
-          .split(',')
-          .map((device) => device.trim())
-          .filter((device) => device.length > 0)
-
-        // Find matching devices by ID
-        const matchingDeviceIds = deviceIds.filter((deviceId) =>
-          llamacppDevices.some((device) => device.id === deviceId)
-        )
-
-        if (matchingDeviceIds.length > 0) {
-          console.log(
-            `Initializing llamacpp device activations from device setting: "${currentDeviceSetting}"`
-          )
-          // Update the activatedDevices in the hook
-          const { setActivatedDevices } = useLlamacppDevices.getState()
-          setActivatedDevices(matchingDeviceIds)
-        }
-      }
-    }
-  }, [
-    llamacppDevices.length,
-    activatedDevices.size,
-    getProviderByName,
-    llamacppDevices,
-  ])
 
   useEffect(() => {
     if (pollingPaused) return
@@ -361,7 +323,7 @@ function Hardware() {
                             </span>
                           </div> */}
                               <Switch
-                                checked={activatedDevices.has(device.id)}
+                                checked={device.activated}
                                 onCheckedChange={() => {
                                   toggleDevice(device.id)
                                   stopAllModels()

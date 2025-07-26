@@ -9,7 +9,6 @@ import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSystemUsage } from '@/services/hardware'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
@@ -22,11 +21,8 @@ function SystemMonitor() {
 
   const {
     devices: llamacppDevices,
-    activatedDevices,
     fetchDevices,
-    setActivatedDevices,
   } = useLlamacppDevices()
-  const { getProviderByName } = useModelProvider()
 
   const [isInitialized, setIsInitialized] = useState(false)
 
@@ -57,41 +53,6 @@ function SystemMonitor() {
     }
   }, [hardwareData.gpus.length, isInitialized])
 
-  // Initialize llamacpp device activations from provider settings
-  useEffect(() => {
-    if (llamacppDevices.length > 0 && activatedDevices.size === 0) {
-      const llamacppProvider = getProviderByName('llamacpp')
-      const currentDeviceSetting = llamacppProvider?.settings.find(
-        (s) => s.key === 'device'
-      )?.controller_props.value as string
-
-      if (currentDeviceSetting) {
-        const deviceIds = currentDeviceSetting
-          .split(',')
-          .map((device) => device.trim())
-          .filter((device) => device.length > 0)
-
-        // Find matching devices by ID
-        const matchingDeviceIds = deviceIds.filter((deviceId) =>
-          llamacppDevices.some((device) => device.id === deviceId)
-        )
-
-        if (matchingDeviceIds.length > 0) {
-          console.log(
-            `Initializing llamacpp device activations from device setting: "${currentDeviceSetting}"`
-          )
-          // Update the activatedDevices in the hook
-          setActivatedDevices(matchingDeviceIds)
-        }
-      }
-    }
-  }, [
-    llamacppDevices.length,
-    activatedDevices.size,
-    getProviderByName,
-    llamacppDevices,
-    setActivatedDevices,
-  ])
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
@@ -209,12 +170,12 @@ function SystemMonitor() {
                       </span>
                       <span
                         className={`text-sm px-2 py-1 rounded-md ${
-                          activatedDevices.has(device.id)
+                          device.activated
                             ? 'bg-green-500/20 text-green-600 dark:text-green-400'
                             : 'hidden'
                         }`}
                       >
-                        {activatedDevices.has(device.id)
+                        {device.activated
                           ? t('system-monitor:active')
                           : 'Inactive'}
                       </span>

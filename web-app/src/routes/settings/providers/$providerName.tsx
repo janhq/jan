@@ -367,9 +367,10 @@ function ProviderDetail() {
 
                                   // Reset llamacpp device activations when backend version changes
                                   if (providerName === 'llamacpp') {
-                                    const { setActivatedDevices } =
+                                    // Refresh devices to update activation status from provider settings
+                                    const { fetchDevices } =
                                       useLlamacppDevices.getState()
-                                    setActivatedDevices([])
+                                    fetchDevices()
                                   }
                                 }
 

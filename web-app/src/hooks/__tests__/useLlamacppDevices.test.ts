@@ -31,15 +31,13 @@ describe('useLlamacppDevices', () => {
     expect(result.current.devices).toEqual([])
     expect(result.current.loading).toBe(false)
     expect(result.current.error).toBeNull()
-    expect(result.current.activatedDevices).toEqual(new Set())
     expect(typeof result.current.fetchDevices).toBe('function')
     expect(typeof result.current.clearError).toBe('function')
     expect(typeof result.current.setDevices).toBe('function')
     expect(typeof result.current.toggleDevice).toBe('function')
-    expect(typeof result.current.setActivatedDevices).toBe('function')
   })
 
-  it('should fetch devices successfully', async () => {
+  it('should fetch devices successfully with activation status', async () => {
     const mockDevices = [
       { id: 'CUDA0', name: 'NVIDIA GeForce RTX 4090', mem: 24576, free: 20480 },
       { id: 'CUDA1', name: 'NVIDIA GeForce RTX 3080', mem: 10240, free: 8192 },
@@ -53,7 +51,11 @@ describe('useLlamacppDevices', () => {
       await result.current.fetchDevices()
     })
 
-    expect(result.current.devices).toEqual(mockDevices)
+    // Should have devices with activated property (empty setting means all activated)
+    expect(result.current.devices).toEqual([
+      { ...mockDevices[0], activated: true },
+      { ...mockDevices[1], activated: true },
+    ])
     expect(result.current.loading).toBe(false)
     expect(result.current.error).toBeNull()
     expect(mockGetLlamacppDevices).toHaveBeenCalledOnce()
@@ -89,44 +91,43 @@ describe('useLlamacppDevices', () => {
     expect(result.current.devices).toEqual(mockDevices)
   })
 
-  it('should toggle device activation', () => {
+  it('should toggle device activation', async () => {
     const { result } = renderHook(() => useLlamacppDevices())
 
-    // Initially no devices are activated
-    expect(result.current.activatedDevices).toEqual(new Set())
+    // Set initial devices with activation status
+    act(() => {
+      result.current.setDevices([
+        { id: 'CUDA0', name: 'NVIDIA GeForce RTX 4090', mem: 24576, free: 20480, activated: false },
+        { id: 'CUDA1', name: 'NVIDIA GeForce RTX 3080', mem: 10240, free: 8192, activated: false },
+      ])
+    })
 
     // Toggle a device on
-    act(() => {
-      result.current.toggleDevice('CUDA0')
+    await act(async () => {
+      await result.current.toggleDevice('CUDA0')
     })
 
-    expect(result.current.activatedDevices).toEqual(new Set(['CUDA0']))
+    expect(result.current.devices[0].activated).toBe(true)
+    expect(result.current.devices[1].activated).toBe(false)
 
     // Toggle the same device off
-    act(() => {
-      result.current.toggleDevice('CUDA0')
+    await act(async () => {
+      await result.current.toggleDevice('CUDA0')
     })
 
-    expect(result.current.activatedDevices).toEqual(new Set())
+    expect(result.current.devices[0].activated).toBe(false)
+    expect(result.current.devices[1].activated).toBe(false)
 
     // Toggle multiple devices
-    act(() => {
-      result.current.toggleDevice('CUDA0')
-      result.current.toggleDevice('CUDA1')
+    await act(async () => {
+      await result.current.toggleDevice('CUDA0')
+    })
+    await act(async () => {
+      await result.current.toggleDevice('CUDA1')
     })
 
-    expect(result.current.activatedDevices).toEqual(new Set(['CUDA0', 'CUDA1']))
+    expect(result.current.devices[0].activated).toBe(true)
+    expect(result.current.devices[1].activated).toBe(true)
   })
 
-  it('should set activated devices', () => {
-    const { result } = renderHook(() => useLlamacppDevices())
-
-    const deviceIds = ['CUDA0', 'CUDA1', 'Vulkan0']
-
-    act(() => {
-      result.current.setActivatedDevices(deviceIds)
-    })
-
-    expect(result.current.activatedDevices).toEqual(new Set(deviceIds))
-  })
 }) 
