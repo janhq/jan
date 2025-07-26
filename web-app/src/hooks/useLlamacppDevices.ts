@@ -67,22 +67,25 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
   setDevices: (devices) => set({ devices }),
 
   toggleDevice: async (deviceId: string) => {
-    set((state) => {
-      const newActivatedDevices = new Set(state.activatedDevices)
-      if (newActivatedDevices.has(deviceId)) {
-        newActivatedDevices.delete(deviceId)
-      } else {
-        newActivatedDevices.add(deviceId)
-      }
-      return { activatedDevices: newActivatedDevices }
-    })
+    // Get current state and compute new activated devices
+    const currentState = get()
+    const newActivatedDevices = new Set(currentState.activatedDevices)
+    
+    if (newActivatedDevices.has(deviceId)) {
+      newActivatedDevices.delete(deviceId)
+    } else {
+      newActivatedDevices.add(deviceId)
+    }
+    
+    // Update the store
+    set({ activatedDevices: newActivatedDevices })
 
     // Update llamacpp provider settings
     const { getProviderByName, updateProvider } = useModelProvider.getState()
     const llamacppProvider = getProviderByName('llamacpp')
 
     if (llamacppProvider) {
-      const deviceString = Array.from(get().activatedDevices).join(',')
+      const deviceString = Array.from(newActivatedDevices).join(',')
 
       const updatedSettings = llamacppProvider.settings.map((setting) => {
         if (setting.key === 'device') {

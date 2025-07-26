@@ -26,6 +26,7 @@ export const Route = createFileRoute(route.settings.hardware as any)({
 function Hardware() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
+  const [isManualToggling, setIsManualToggling] = useState(false)
   const {
     hardwareData,
     systemUsage,
@@ -91,7 +92,11 @@ function Hardware() {
 
   // Initialize llamacpp device activations from provider settings
   useEffect(() => {
-    if (llamacppDevices.length > 0 && activatedDevices.size === 0) {
+    if (
+      llamacppDevices.length > 0 &&
+      activatedDevices.size === 0 &&
+      !isManualToggling
+    ) {
       const llamacppProvider = getProviderByName('llamacpp')
       const currentDeviceSetting = llamacppProvider?.settings.find(
         (s) => s.key === 'device'
@@ -126,9 +131,10 @@ function Hardware() {
     }
   }, [
     llamacppDevices.length,
-    activatedDevices.size,
     getProviderByName,
     llamacppDevices,
+    isManualToggling,
+    activatedDevices.size,
   ])
 
   useEffect(() => {
@@ -359,9 +365,15 @@ function Hardware() {
                             <div className="flex items-center gap-4">
                               <Switch
                                 checked={activatedDevices.has(device.id)}
-                                onCheckedChange={() => {
-                                  toggleDevice(device.id)
+                                onCheckedChange={async () => {
+                                  setIsManualToggling(true)
+                                  await toggleDevice(device.id)
                                   stopAllModels()
+                                  // Reset manual toggling flag after a short delay
+                                  setTimeout(
+                                    () => setIsManualToggling(false),
+                                    100
+                                  )
                                 }}
                               />
                             </div>
