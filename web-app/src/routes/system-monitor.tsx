@@ -179,9 +179,7 @@ function SystemMonitor() {
                 {t('system-monitor:usedRam')}
               </span>
               <span className="text-main-view-fg">
-                {formatMegaBytes(
-                  hardwareData.total_memory - systemUsage.used_memory
-                )}
+                {formatMegaBytes(systemUsage.used_memory)}
               </span>
             </div>
             <div className="mt-4">
