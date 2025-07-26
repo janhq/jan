@@ -95,10 +95,7 @@ function SystemMonitor() {
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
-    toNumber(
-      (hardwareData.total_memory - systemUsage.used_memory) /
-        hardwareData.total_memory
-    ) * 100
+    toNumber(systemUsage.used_memory / hardwareData.total_memory) * 100
 
   return (
     <div className="flex flex-col h-full bg-main-view overflow-y-auto p-6">
