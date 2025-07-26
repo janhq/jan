@@ -34,7 +34,18 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   setThreads: (threads) => {
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
-        acc[thread.id] = thread
+        acc[thread.id] = {
+          ...thread,
+          model: thread.model
+            ? {
+                provider: thread.model.provider.replace(
+                  'llama.cpp',
+                  'llamacpp'
+                ),
+                id: thread.model?.id.replace(/:/g, '/'),
+              }
+            : undefined,
+        }
         return acc
       },
       {} as Record<string, Thread>
