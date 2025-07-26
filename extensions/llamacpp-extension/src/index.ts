@@ -615,6 +615,17 @@ export default class llamacpp_extension extends AIEngine {
         `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
       )
 
+      // Emit for updating fe
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+        )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
+
       // Clean up old versions of the same backend type
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
