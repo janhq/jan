@@ -91,8 +91,9 @@ export const useModelProvider = create<ModelProviderState>()(
                 (legacyModels && legacyModels?.length > 0
                   ? legacyModels
                   : models
-                ).find((m) => m.id.replace(/:/g, sep()) === model.id)
-                  ?.settings || model.settings
+                ).find(
+                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {
                 ...model,
