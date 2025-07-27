@@ -1264,6 +1264,8 @@ export default class llamacpp_extension extends AIEngine {
     }
     const pid = sInfo.pid
     try {
+      this.activeSessions.delete(pid)
+
       // Pass the PID as the session_id
       const result = await invoke<UnloadResult>('unload_llama_model', {
         pid: pid,
@@ -1271,15 +1273,16 @@ export default class llamacpp_extension extends AIEngine {
 
       // If successful, remove from active sessions
       if (result.success) {
-        this.activeSessions.delete(pid)
         logger.info(`Successfully unloaded model with PID ${pid}`)
       } else {
         logger.warn(`Failed to unload model: ${result.error}`)
+        this.activeSessions.set(sInfo.pid, sInfo)
       }
 
       return result
     } catch (error) {
       logger.error('Error in unload command:', error)
+      this.activeSessions.set(sInfo.pid, sInfo)
       return {
         success: false,
         error: `Failed to unload model: ${error}`,
