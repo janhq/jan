@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { sep } from '@tauri-apps/api/path'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -50,6 +51,17 @@ export const useModelProvider = create<ModelProviderState>()(
                 ),
               }
             })
+
+          let legacyModels: Model[] | undefined = []
+          /// Cortex Migration
+          if (
+            localStorage.getItem('cortex_model_settings_migrated') !== 'true'
+          ) {
+            legacyModels = state.providers.find(
+              (e) => e.provider === 'llama.cpp'
+            )?.models
+            localStorage.setItem('cortex_model_settings_migrated', 'true')
+          }
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
             ? state.deletedModels
@@ -75,13 +87,21 @@ export const useModelProvider = create<ModelProviderState>()(
               ...models,
             ]
             const updatedModels = provider.models?.map((model) => {
+              const settings =
+                (legacyModels && legacyModels?.length > 0
+                  ? legacyModels
+                  : models
+                ).find(
+                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {
                 ...model,
-                settings: existingModel?.settings || model.settings,
+                settings: settings,
                 capabilities: existingModel?.capabilities || model.capabilities,
               }
             })
+
             return {
               ...provider,
               models: provider.persist ? updatedModels : mergedModels,

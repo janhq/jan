@@ -68,6 +68,11 @@ describe('useHardware', () => {
         extensions: ['SSE', 'AVX'],
         name: 'Intel Core i7',
         usage: 25.5,
+        instructions: [],
+      },
+      ram: {
+        available: 0,
+        total: 0,
       },
       gpus: [
         {

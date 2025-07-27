@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import { Fzf } from 'fzf'
+import { sep } from '@tauri-apps/api/path'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -34,7 +35,19 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   setThreads: (threads) => {
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
-        acc[thread.id] = thread
+        acc[thread.id] = {
+          ...thread,
+          model: thread.model
+            ? {
+                provider: thread.model.provider.replace(
+                  'llama.cpp',
+                  'llamacpp'
+                ),
+                // Cortex migration: take first two parts of the ID (the last is file name which is not needed)
+                id: thread.model?.id.split(':').slice(0, 2).join(sep()),
+              }
+            : undefined,
+        }
         return acc
       },
       {} as Record<string, Thread>
