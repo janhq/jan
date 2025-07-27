@@ -7,6 +7,7 @@ export interface DeviceList {
   name: string
   mem: number
   free: number
+  activated: boolean
 }
 
 /**
@@ -31,12 +32,14 @@ export const getSystemUsage = async () => {
  */
 export const getLlamacppDevices = async (): Promise<DeviceList[]> => {
   const extensionManager = window.core.extensionManager
-  const llamacppExtension = extensionManager.getByName('@janhq/llamacpp-extension')
-  
+  const llamacppExtension = extensionManager.getByName(
+    '@janhq/llamacpp-extension'
+  )
+
   if (!llamacppExtension) {
     throw new Error('llamacpp extension not found')
   }
-  
+
   return llamacppExtension.getDevices()
 }
 

@@ -4,31 +4,48 @@ import { updateSettings } from '@/services/providers'
 import { useModelProvider } from './useModelProvider'
 
 interface LlamacppDevicesStore {
-  devices: DeviceList[]
+  devices: (DeviceList & { activated: boolean })[]
   loading: boolean
   error: string | null
-  activatedDevices: Set<string> // Track which devices are activated
 
   // Actions
   fetchDevices: () => Promise<void>
   clearError: () => void
-  setDevices: (devices: DeviceList[]) => void
+  setDevices: (devices: (DeviceList & { activated: boolean })[]) => void
   toggleDevice: (deviceId: string) => void
-  setActivatedDevices: (deviceIds: string[]) => void
 }
 
 export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
   devices: [],
   loading: false,
   error: null,
-  activatedDevices: new Set(),
 
   fetchDevices: async () => {
     set({ loading: true, error: null })
 
     try {
       const devices = await getLlamacppDevices()
-      set({ devices, loading: false })
+      
+      // Check current device setting from provider
+      const { getProviderByName } = useModelProvider.getState()
+      const llamacppProvider = getProviderByName('llamacpp')
+      const currentDeviceSetting = llamacppProvider?.settings.find(
+        (s) => s.key === 'device'
+      )?.controller_props.value as string
+
+      // Parse device setting from extension which represents activated devices
+      const activatedDevices = currentDeviceSetting 
+        ? currentDeviceSetting.split(',').map(d => d.trim()).filter(Boolean)
+        : []
+
+      const devicesWithActivation = devices.map((device) => ({
+        ...device,
+        activated:
+          // Empty device setting means all devices are activated
+          !currentDeviceSetting || currentDeviceSetting === '' || activatedDevices.includes(device.id),
+      }))
+
+      set({ devices: devicesWithActivation, loading: false })
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to fetch devices'
@@ -41,22 +58,26 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
   setDevices: (devices) => set({ devices }),
 
   toggleDevice: async (deviceId: string) => {
-    set((state) => {
-      const newActivatedDevices = new Set(state.activatedDevices)
-      if (newActivatedDevices.has(deviceId)) {
-        newActivatedDevices.delete(deviceId)
-      } else {
-        newActivatedDevices.add(deviceId)
-      }
-      return { activatedDevices: newActivatedDevices }
-    })
+    // Toggle device activation in the local state
+    set((state) => ({
+      devices: state.devices.map((device) =>
+        device.id === deviceId
+          ? { ...device, activated: !device.activated }
+          : device
+      ),
+    }))
 
     // Update llamacpp provider settings
     const { getProviderByName, updateProvider } = useModelProvider.getState()
     const llamacppProvider = getProviderByName('llamacpp')
 
     if (llamacppProvider) {
-      const deviceString = Array.from(get().activatedDevices).join(',')
+      // Get activated devices after toggle
+      const activatedDeviceIds = get().devices
+        .filter((device) => device.activated)
+        .map((device) => device.id)
+
+      const deviceString = activatedDeviceIds.join(',')
 
       const updatedSettings = llamacppProvider.settings.map((setting) => {
         if (setting.key === 'device') {
@@ -64,7 +85,7 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
             ...setting,
             controller_props: {
               ...setting.controller_props,
-              value: deviceString,
+              value: deviceString.length > 0 ? deviceString : 'none',
             },
           }
         }
@@ -78,7 +99,4 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
     }
   },
 
-  setActivatedDevices: (deviceIds: string[]) => {
-    set({ activatedDevices: new Set(deviceIds) })
-  },
 }))
