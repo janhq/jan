@@ -886,7 +886,7 @@ export default class llamacpp_extension extends AIEngine {
 
             modelId =
               modelId !== 'imported'
-                ? modelId.replace('cortex.so/', '')
+                ? modelId.replace(/^(cortex\.so|huggingface\.co)[\/\\]/, '')
                 : (await basename(child)).replace('.yml', '')
 
             const modelName = legacyModelConfig.model ?? modelId
