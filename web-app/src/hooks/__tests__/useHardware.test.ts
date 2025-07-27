@@ -70,6 +70,10 @@ describe('useHardware', () => {
         usage: 25.5,
         instructions: [],
       },
+      ram: {
+        available: 0,
+        total: 0,
+      },
       gpus: [
         {
           name: 'NVIDIA RTX 3080',

@@ -177,6 +177,10 @@ export const useHardware = create<HardwareStore>()(
               // Cortex migration - ensure instructions data ready
               instructions: [],
             },
+            ram: {
+              available: 0,
+              total: 0,
+            },
             gpus: data.gpus.map((gpu) => ({
               ...gpu,
               activated: gpu.activated ?? false,
