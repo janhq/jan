@@ -23,7 +23,7 @@ jobs:
           ref: dev
       - uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install jq      
         uses: dcarbone/install-jq-action@v2.0.1
