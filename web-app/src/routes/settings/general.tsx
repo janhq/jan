@@ -45,6 +45,7 @@ import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
+import { useHardware } from '@/hooks/useHardware'
 import { getConnectedServers } from '@/services/mcp'
 import { invoke } from '@tauri-apps/api/core'
 import { useMCPServers } from '@/hooks/useMCPServers'
@@ -75,6 +76,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
+  const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -91,6 +93,7 @@ function General() {
   }, [])
 
   const resetApp = async () => {
+    pausePolling()
     // TODO: Loading indicator
     await factoryReset()
   }
