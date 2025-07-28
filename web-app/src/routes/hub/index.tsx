@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn, fuzzySearch } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import {
   useState,
   useMemo,
@@ -38,6 +38,7 @@ import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import Fuse from 'fuse.js'
 
 type ModelProps = {
   model: CatalogModel
@@ -62,6 +63,12 @@ function Hub() {
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
   ]
+  const searchOptions = {
+    includeScore: true,
+    // Search in `author` and in `tags` array
+    keys: ['model_name', 'quants.model_id'],
+  }
+
   const { sources, addSource, fetchSources, loading } = useModelSources()
   const search = useSearch({ from: route.hub.index as any })
   const [searchValue, setSearchValue] = useState('')
@@ -177,24 +184,22 @@ function Hub() {
     })
   }, [sortSelected, sources])
 
-  // Filtered models
+  // Filtered models (debounced search)
+  const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchValue(searchValue)
+    }, 300)
+    return () => clearTimeout(handler)
+  }, [searchValue])
+
   const filteredModels = useMemo(() => {
     let filtered = sortedModels
     // Apply search filter
-    if (searchValue.length) {
-      filtered = filtered?.filter(
-        (e) =>
-          fuzzySearch(
-            searchValue.replace(/\s+/g, '').toLowerCase(),
-            e.model_name.toLowerCase()
-          ) ||
-          e.quants.some((model) =>
-            fuzzySearch(
-              searchValue.replace(/\s+/g, '').toLowerCase(),
-              model.model_id.toLowerCase()
-            )
-          )
-      )
+    if (debouncedSearchValue.length) {
+      const fuse = new Fuse(filtered, searchOptions)
+      filtered = fuse.search(debouncedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
@@ -212,11 +217,12 @@ function Hub() {
     }
     return filtered
   }, [
-    searchValue,
     sortedModels,
+    debouncedSearchValue,
     showOnlyDownloaded,
-    llamaProvider?.models,
     huggingFaceRepo,
+    searchOptions,
+    llamaProvider?.models,
   ])
 
   // The virtualizer
