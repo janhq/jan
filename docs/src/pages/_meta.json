@@ -11,10 +11,6 @@
     "type": "page",
     "title": "Documentation"
   },
-  "products": {
-    "type": "page",
-    "title": "Products"
-  },
   "local-server": {
     "type": "page",
     "title": "Jan Local Server",
