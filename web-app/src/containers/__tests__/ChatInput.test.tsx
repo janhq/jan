@@ -123,6 +123,7 @@ describe('ChatInput', () => {
     vi.mocked(useGeneralSetting).mockReturnValue({
       spellCheckChatInput: true,
       allowSendWhenUnloaded: false,
+      experimentalFeatures: true,
     })
     
     vi.mocked(useModelProvider).mockReturnValue({
