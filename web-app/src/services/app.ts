@@ -1,4 +1,4 @@
-import { AppConfiguration, fs } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { stopAllModels } from './models'
 
