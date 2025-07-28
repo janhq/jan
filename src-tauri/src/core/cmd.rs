@@ -132,7 +132,8 @@ pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
         let _ = fs::create_dir_all(&data_folder).map_err(|e| e.to_string());
 
         // Reset the configuration
-        let default_config = AppConfiguration::default();
+        let mut default_config = AppConfiguration::default();
+        default_config.data_folder = default_data_folder_path(app_handle.clone());
         let _ = update_app_configuration(app_handle.clone(), default_config);
 
         app_handle.restart();
