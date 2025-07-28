@@ -233,7 +233,6 @@ function MCPServers() {
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
 
-  console.log(mcpServers)
 
   return (
     <div className="flex flex-col h-full">
