@@ -3,7 +3,6 @@ import {
   getProviderLogo,
   getProviderTitle,
   getReadableLanguageName,
-  fuzzySearch,
   toGigabytes,
   formatMegaBytes,
   formatDuration,
@@ -64,40 +63,6 @@ describe('getReadableLanguageName', () => {
 
   it('handles empty strings', () => {
     expect(getReadableLanguageName('')).toBe('')
-  })
-})
-
-describe('fuzzySearch', () => {
-  it('returns true for exact matches', () => {
-    expect(fuzzySearch('hello', 'hello')).toBe(true)
-    expect(fuzzySearch('test', 'test')).toBe(true)
-  })
-
-  it('returns true for subsequence matches', () => {
-    expect(fuzzySearch('hlo', 'hello')).toBe(true)
-    expect(fuzzySearch('js', 'javascript')).toBe(true)
-    expect(fuzzySearch('abc', 'aabbcc')).toBe(true)
-  })
-
-  it('returns false when needle is longer than haystack', () => {
-    expect(fuzzySearch('hello', 'hi')).toBe(false)
-    expect(fuzzySearch('test', 'te')).toBe(false)
-  })
-
-  it('returns false for non-matching patterns', () => {
-    expect(fuzzySearch('xyz', 'hello')).toBe(false)
-    expect(fuzzySearch('ba', 'abc')).toBe(false)
-  })
-
-  it('handles empty strings', () => {
-    expect(fuzzySearch('', '')).toBe(true)
-    expect(fuzzySearch('', 'hello')).toBe(true)
-    expect(fuzzySearch('h', '')).toBe(false)
-  })
-
-  it('is case sensitive', () => {
-    expect(fuzzySearch('H', 'hello')).toBe(false)
-    expect(fuzzySearch('h', 'Hello')).toBe(false)
   })
 })
 
