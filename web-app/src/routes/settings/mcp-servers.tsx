@@ -114,8 +114,15 @@ function MCPServers() {
     setDeleteDialogOpen(true)
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (serverToDelete) {
+      // Stop the server before deletion
+      try {
+        await invoke('deactivate_mcp_server', { name: serverToDelete })
+      } catch (error) {
+        console.error('Error stopping server before deletion:', error)
+      }
+
       deleteServer(serverToDelete)
       setServerToDelete(null)
       syncServersAndRestart()
@@ -225,6 +232,7 @@ function MCPServers() {
 
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
+
 
   return (
     <div className="flex flex-col h-full">
