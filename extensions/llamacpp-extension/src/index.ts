@@ -170,6 +170,8 @@ export default class llamacpp_extension extends AIEngine {
     }
     this.config = loadedConfig as LlamacppConfig
 
+    this.autoUnload = this.config.auto_unload
+
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
       await getJanDataFolderPath(),
