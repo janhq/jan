@@ -286,6 +286,12 @@ Function PageReinstallUpdateSelection
   ${EndIf}
 FunctionEnd
 Function PageLeaveReinstall
+  ; In passive mode, always uninstall when upgrading
+  ${If} $PassiveMode = 1
+  ${AndIf} $R0 = 1  ; Upgrading
+    Goto reinst_uninstall
+  ${EndIf}
+
   ${NSD_GetState} $R2 $R1
 
   ; If migrating from Wix, always uninstall
