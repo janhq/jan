@@ -15,15 +15,14 @@ keywords:
   ]
 ---
 
-
-# Google
+import { Aside } from '@astrojs/starlight/components';
 
 Jan supports [Google](https://ai.google/get-started/our-models/) API integration, allowing you to use Google models (like Gemini series) through Jan's interface.
 
 ## Integrate Google API with Jan
 
-<ol>
 ### Step 1: Get Your API Key
+
 1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey) and sign in
 2. Create & copy a new API key or copy your existing one
 
@@ -33,20 +32,19 @@ Ensure your API key has sufficient credits
 
 ### Step 2: Configure Jan
 
-1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+1. Navigate to the **Settings** page
 2. Under **Model Providers**, select **Gemini**
 3. Insert your **API Key**
 
-<br/>
 ![Google](../../../../assets/google.png)
-<br/>
+
 
 ### Step 3: Start Using Google's Models
 
 1. Got to any existing **Chat** or create a new one
 2. Select an Gemini model from **model selector**
 3. Start chatting
-</ol>
+
 
 ## Available Google Models
 

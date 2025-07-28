@@ -16,14 +16,13 @@ keywords:
   ]
 ---
 
-
-# E2B Code Sandbox MCP
+import { Aside } from '@astrojs/starlight/components';
 
 E2B MCP provides isolated Python execution environments. Your AI can run actual code instead of just describing what code might do.
 
-The real value emerges when you combine secure remote execution with Jan's flexible model selection. You can use 
-local models for conversation and reasoning while offloading actual computation to E2B's sandboxes. This means you 
-get the privacy and control of local models plus the computational power of cloud infrastructure, without the 
+The real value emerges when you combine secure remote execution with Jan's flexible model selection. You can use
+local models for conversation and reasoning while offloading actual computation to E2B's sandboxes. This means you
+get the privacy and control of local models plus the computational power of cloud infrastructure, without the
 complexity of managing Python environments or dependencies locally.
 
 ## Setup
@@ -41,7 +40,7 @@ complexity of managing Python environments or dependencies locally.
 
 ![Turn on MCP](../../../../../assets/mcp-on.png)
 
-<Aside type="info">
+<Aside type="note">
 Don't forget that MCP gets enabled once you turn on Experimental Features in Jan's General settings.
 </Aside>
 
@@ -59,7 +58,7 @@ Configure:
 - **Server Name**: `e2b-server`
 - **Command**: `npx`
 - **Arguments**: `@e2b/mcp-server`
-- **Environment Variables**: 
+- **Environment Variables**:
   - Key: `E2B_API_KEY`
   - Value: `your-api-key`
 
@@ -76,7 +75,7 @@ The sandbox includes these packages by default:
 
 **Data Analysis & Science:**
 - `pandas` (1.5.3) - Data manipulation
-- `numpy` (1.26.4) - Numerical computing  
+- `numpy` (1.26.4) - Numerical computing
 - `scipy` (1.12.0) - Scientific computing
 - `scikit-learn` (1.4.1) - Machine learning
 - `sympy` (1.12) - Symbolic mathematics
@@ -110,10 +109,10 @@ Additional packages can be installed as needed.
 ## Examples
 
 
-For the following examples, we'll use Claude 4 Sonnet but you can use any local or remote 
+For the following examples, we'll use Claude 4 Sonnet but you can use any local or remote
 model with tool calling capabilities you'd like.
 
-<Aside type="info">
+<Aside type="note">
 Make sure you activate Tools on the model you're using.
 </Aside>
 
@@ -121,13 +120,13 @@ Make sure you activate Tools on the model you're using.
 
 ### Basic Data Analysis
 
-Start small. Open a new chat, confirm that the model has tools enabled and ask it to create a small dataset of 100 students with grades and study hours. 
+Start small. Open a new chat, confirm that the model has tools enabled and ask it to create a small dataset of 100 students with grades and study hours.
 
 ![Chat and use E2B MCP ](../../../../../assets/e2b-key5.png)
 
 
 ```
-Create a small dataset of 100 students with grades and study hours. 
+Create a small dataset of 100 students with grades and study hours.
 Calculate the correlation and create a scatter plot.
 ```
 
@@ -143,7 +142,7 @@ The model will:
 ![Chat and use E2B MCP ](../../../../../assets/e2b-key7.png)
 
 
-<Aside type="warning">
+<Aside type="caution">
   As of `v0.6.5`, Jan won't be able to display visualizations in the chat but we're to get this fixed for the next release.
 </Aside>
 
@@ -165,7 +164,7 @@ For more intensive simulations, increase iterations gradually and monitor perfor
 ### Machine Learning
 
 ```
-Create a simple 2-class dataset with 200 samples. Train a logistic regression 
+Create a simple 2-class dataset with 200 samples. Train a logistic regression
 model and visualize the decision boundary.
 ```
 
@@ -178,7 +177,7 @@ The model will:
 ### Time Series Analysis
 
 ```
-Generate daily temperature data for one year. Calculate moving averages 
+Generate daily temperature data for one year. Calculate moving averages
 and identify seasonal patterns.
 ```
 
@@ -235,7 +234,7 @@ Returns structured data:
 ```json
 {
   "type": "bar",
-  "title": "Sample Bar Chart", 
+  "title": "Sample Bar Chart",
   "elements": [
     {"label": "A", "value": 10},
     {"label": "B", "value": 20},
@@ -249,7 +248,7 @@ Supported chart types: line, bar, scatter, pie, box plots.
 ## Available Tools
 
 - **run_code**: Execute Python code
-- **install_package**: Add Python packages  
+- **install_package**: Add Python packages
 - **create_file**: Save files to sandbox
 - **read_file**: Access sandbox files
 - **list_files**: Browse sandbox contents
@@ -272,7 +271,7 @@ Supported chart types: line, bar, scatter, pie, box plots.
 - System dependencies may cause failures for some packages
 - Try alternative packages if installation fails
 
-<Aside type="warning">
+<Aside type="caution">
   E2B has computational and memory limits. Break large operations into smaller chunks if needed.
 </Aside>
 
@@ -281,7 +280,7 @@ Supported chart types: line, bar, scatter, pie, box plots.
 E2B is useful for:
 
 - **Academic Research**: Statistical analysis, data visualization, hypothesis testing
-- **Data Science**: Exploratory data analysis, model prototyping, result validation  
+- **Data Science**: Exploratory data analysis, model prototyping, result validation
 - **Financial Analysis**: Portfolio optimization, risk calculations, market simulations
 - **Scientific Computing**: Numerical simulations, mathematical modeling, algorithm testing
 - **Prototyping**: Quick algorithm validation, proof-of-concept development

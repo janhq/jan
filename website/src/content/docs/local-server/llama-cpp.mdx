@@ -1,5 +1,5 @@
 ---
-title: llama.cpp Engine
+title: llama.cpp Server
 description: Configure Jan's local AI engine for optimal performance.
 keywords:
   [
@@ -15,13 +15,10 @@ keywords:
   ]
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Aside } from '@astrojs/starlight/components';
-import { Steps } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-# Local AI Engine (llama.cpp)
-
-llama.cpp is the engine that runs AI models locally on your computer. It's what makes Jan work without needing internet or cloud services.
+llama.cpp is the engine that runs AI models locally on your computer. It's what makes Jan work without
+needing internet or cloud services.
 
 ## Accessing Engine Settings
 
@@ -29,7 +26,7 @@ Find llama.cpp settings at **Settings** (⚙️) > **Local Engine** > **llama.cp
 
 ![llama.cpp](../../../assets/llama.cpp-01-updated.png)
 
-<Aside type="info">
+<Aside type="note">
 Most users don't need to change these settings. Jan picks good defaults for your hardware automatically.
 </Aside>
 
@@ -94,7 +91,7 @@ Different backends are optimized for different hardware. Pick the one that match
 ### Intel Macs
 - `llama.cpp-mac-amd64`
 
-<Aside type="info">
+<Aside type="note">
 Apple Silicon automatically uses GPU acceleration through Metal.
 </Aside>
 
@@ -162,6 +159,6 @@ Apple Silicon automatically uses GPU acceleration through Metal.
 2. Use appropriate backend for hardware
 3. Monitor memory usage
 
-<Aside type="info">
+<Aside type="note">
 The default settings work well for most hardware. Only adjust these if you're experiencing specific issues or want to optimize for your particular setup.
 </Aside>

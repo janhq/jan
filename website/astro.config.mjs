@@ -3,22 +3,27 @@ import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
-import starlightVideos from 'starlight-videos'
-// import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi'
+import mermaid from 'astro-mermaid'
 
 // https://astro.build/config
 export default defineConfig({
+  // Deploy to the new v2 subdomain
+  site: 'https://v2.jan.ai',
+  // No 'base' property is needed, as this will be deployed to the root of the subdomain.
   integrations: [
+    mermaid({
+      theme: 'default',
+      autoTheme: true,
+    }),
     starlight({
       title: '👋 Jan',
       favicon: 'jan2.png',
       plugins: [
         starlightThemeRapide(),
-        starlightVideos(),
         starlightSidebarTopics(
           [
             {
-              label: 'Jan',
+              label: 'Jan Desktop',
               link: '/',
               icon: 'rocket',
               items: [
@@ -27,7 +32,7 @@ export default defineConfig({
                   items: [
                     {
                       label: 'Install 👋 Jan',
-                      collapsed: true,
+                      collapsed: false,
                       autogenerate: { directory: 'jan/installation' },
                     },
                     { label: 'Start Chatting', slug: 'jan/threads' },
@@ -40,13 +45,18 @@ export default defineConfig({
                   ],
                 },
                 {
-                  label: 'TUTORIALS',
+                  label: 'Cloud Providers',
                   items: [
-                    { label: 'Translation', slug: 'jan/tutorials/translation' },
+                    { label: 'Anthropic', slug: 'jan/remote-models/anthropic' },
+                    { label: 'OpenAI', slug: 'jan/remote-models/openai' },
+                    { label: 'Gemini', slug: 'jan/remote-models/google' },
                     {
-                      label: 'Creative Writing',
-                      slug: 'jan/tutorials/creative-writing',
+                      label: 'OpenRouter',
+                      slug: 'jan/remote-models/openrouter',
                     },
+                    { label: 'Cohere', slug: 'jan/remote-models/cohere' },
+                    { label: 'Mistral', slug: 'jan/remote-models/mistralai' },
+                    { label: 'Groq', slug: 'jan/remote-models/groq' },
                   ],
                 },
                 {
@@ -70,7 +80,36 @@ export default defineConfig({
                     {
                       label: 'MCP Examples',
                       collapsed: true,
-                      autogenerate: { directory: 'jan/mcp-examples' },
+                      items: [
+                        {
+                          label: 'Code Sandbox (E2B)',
+                          slug: 'jan/mcp-examples/data-analysis/e2b',
+                        },
+                        {
+                          label: 'Web Search with Exa',
+                          slug: 'jan/mcp-examples/search/exa',
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  label: 'Local Server',
+                  items: [
+                    { label: 'Server Setup', slug: 'local-server/api-server' },
+                    {
+                      label: 'Jan Data Folder',
+                      slug: 'local-server/data-folder',
+                    },
+                    { label: 'Server Settings', slug: 'local-server/settings' },
+                    {
+                      label: 'Llama.cpp Server',
+                      slug: 'local-server/llama-cpp',
+                    },
+                    {
+                      label: 'Integrations',
+                      collapsed: true,
+                      autogenerate: { directory: 'local-server/integrations' },
                     },
                   ],
                 },
@@ -86,79 +125,27 @@ export default defineConfig({
               ],
             },
             {
-              label: 'Local Server',
-              link: '/local-server/',
-              icon: 'setting',
-              items: [
-                { label: 'Server Setup', slug: 'local-server/api-server' },
-                { label: 'Jan Data Folder', slug: 'local-server/data-folder' },
-                { label: 'Settings', slug: 'local-server/settings' },
-                { label: 'Llama.cpp', slug: 'local-server/llama-cpp' },
-                {
-                  label: 'Integrations',
-                  collapsed: true,
-                  autogenerate: { directory: 'local-server/integrations' },
-                },
-                {
-                  label: 'Troubleshooting',
-                  slug: 'local-server/troubleshooting',
-                },
-              ],
+              label: 'Jan Mobile',
+              link: '/mobile/',
+              badge: { text: 'Coming Soon', variant: 'caution' },
+              icon: 'phone',
+              items: [{ label: 'Overview', slug: 'mobile' }],
             },
             {
-              label: 'Jan AI University',
-              link: '/university/',
-              icon: 'star',
-              id: 'university',
-              items: [
-                { label: 'Welcome', slug: 'university' },
-                {
-                  label: 'Getting Started Path',
-                  items: [
-                    {
-                      label: 'Getting to Know Jan Series',
-                      slug: 'university/getting-started/getting-to-know-jan',
-                    },
-                    {
-                      label: 'Installation Guide',
-                      slug: 'university/getting-started/installation',
-                    },
-                    {
-                      label: 'Introduction Course',
-                      slug: 'university/getting-started/introduction',
-                    },
-                  ],
-                },
-                {
-                  label: 'Advanced Path',
-                  items: [
-                    {
-                      label: 'Using MCPs Tutorial Series',
-                      slug: 'university/advanced/using-mcps',
-                    },
-                    {
-                      label: 'API Integration',
-                      slug: 'university/advanced/api-integration',
-                    },
-                    {
-                      label: 'Performance Optimization',
-                      slug: 'university/advanced/performance-optimization',
-                    },
-                  ],
-                },
-              ],
+              label: 'Jan Server',
+              link: '/server/',
+              badge: { text: 'Coming Soon', variant: 'caution' },
+              icon: 'forward-slash',
+              items: [{ label: 'Overview', slug: 'server' }],
             },
           ],
           {
-            exclude: ['/prods', '/api-reference', '/products', '/products/**/*'],
-            topics: {
-              university: [
-                '/university/getting-started/what-is-jan',
-                '/university/getting-started/privacy-first-ai',
-                '/university/advanced/mcp-introduction',
-                '/university/advanced/search-integration-exa',
-              ],
-            },
+            exclude: [
+              '/prods',
+              '/api-reference',
+              '/products',
+              '/products/**/*',
+            ],
           }
         ),
       ],
@@ -167,6 +154,16 @@ export default defineConfig({
           icon: 'github',
           label: 'GitHub',
           href: 'https://github.com/menloresearch/jan',
+        },
+        {
+          icon: 'x.com',
+          label: 'X',
+          href: 'https://twitter.com/jandotai',
+        },
+        {
+          icon: 'discord',
+          label: 'Discord',
+          href: 'https://discord.com/invite/FTk2MvZwJH',
         },
       ],
       components: {

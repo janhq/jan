@@ -19,34 +19,26 @@ description: A step-by-step guide on integrating Jan with n8n.
 
 import { Steps } from '@astrojs/starlight/components';
 
-# n8n
-
 ## Integrate n8n with Jan
 
 [n8n](https://n8n.io/) is an open-source workflow automation tool that allows you to connect to more than 400+ integrations and services to automate repetitive tasks. With its visual interface, you can create complex workflows conveniently. To integrate n8n with Jan, follow the steps below:
 
-<ol>
+<Steps>
 1. **Run your preferred model with Jan server**
-
    1. Open Jan app.
    2. Go to the **Hub** and download your preferred model
-   3. Run the Jan server 
-
+   3. Run the Jan server
 2. **Start n8n service**
    Start n8n immediately using npx:
-
-   ```
+   ```sh
    npx n8n
    ```
 
    Or deploy with Docker:
-
-   ```
+   ```sh
    docker run -it --rm --name n8n -p 5678:5678 docker.n8n.io/n8nio/n8n
    ```
-
 3. **Integrate Jan with n8n service using HTTP Request**
-
    Integrate Jan by selecting the HTTP Request node in n8n and importing the following cURL command:
 
    ```bash
@@ -77,4 +69,4 @@ import { Steps } from '@astrojs/starlight/components';
      "top_p": 0.95
    }'
    ```
-</ol>
+</Steps>

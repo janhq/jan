@@ -42,7 +42,7 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
   </TabItem>
 </Tabs>
 
-<Aside type="info">
+<Aside type="note">
 Processor must support **AVX2 or newer**. See [full list of supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
 Performance is significantly degraded on AVX-only processors.
 </Aside>
@@ -52,7 +52,7 @@ Performance is significantly degraded on AVX-only processors.
 - 16GB → up to 7B parameter models (int4)
 - 32GB → up to 13B parameter models (int4)
 
-<Aside type="info">
+<Aside type="note">
 Newer RAM generations provide better performance.
 </Aside>
 
@@ -61,7 +61,7 @@ Newer RAM generations provide better performance.
 - 8GB → up to 7B parameter models
 - 12GB → up to 13B parameter models
 
-<Aside type="info">
+<Aside type="note">
 Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 </Aside>
 
@@ -70,8 +70,6 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 
 ## Install Jan
 
-<ol>
-
 ### Step 1: Download Application
 
 <Tabs>
@@ -79,23 +77,13 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
     - [Download Stable Jan](https://app.jan.ai/download/latest/win-x64)
     - Official Website: [Download Jan](https://jan.ai/download)
   </TabItem>
-  
-  <TabItem label="Beta Release">
-    Beta: Contains newer features but may be unstable
 
-    [Download Beta Jan](https://app.jan.ai/download/beta/win-x64)
-
-    <Aside type="warning">
-    May be unstable
-    </Aside>
-  </TabItem>
-  
   <TabItem label="Nightly Release">
     Nightly: Development build with latest features
 
     [Download Nightly Jan](https://app.jan.ai/download/nightly/win-x64)
 
-    <Aside type="warning">
+    <Aside type="caution">
     Unstable development build
     </Aside>
   </TabItem>
@@ -106,8 +94,6 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 1. Run the downloaded `.exe` file
 2. Wait for installation to complete
 3. Launch Jan
-
-</ol>
 
 ## Data Folder
 
@@ -125,8 +111,6 @@ See [Jan Data Folder](/docs/data-folder) for complete folder structure details.
 
 <Tabs>
   <TabItem label="NVIDIA GPU">
-
-<ol>
 
 ### Step 1: Verify Hardware & Install Dependencies
 **1.1. Check GPU Detection**
@@ -156,29 +140,28 @@ nvcc --version
 Navigate to **Settings** > **Hardware** > **GPUs**
 and toggle the **ON** switch if not enabled.
 
-</ol>
+</TabItem>
 
-  </TabItem>
-
-  <TabItem label="AMD GPU">
+<TabItem label="AMD GPU">
     AMD GPUs require **Vulkan** support.
 
     Navigate to **Settings** > **Hardware** > **GPUs**
     and toggle the **ON** switch if not enabled.
-  </TabItem>
+</TabItem>
 
-  <TabItem label="Intel Arc GPU">
+<TabItem label="Intel Arc GPU">
+
     Intel Arc GPUs require **Vulkan** support.
 
     Navigate to **Settings** > **Hardware** > **GPUs**
     and toggle the **ON** switch if not enabled.
-  </TabItem>
+
+</TabItem>
+
 </Tabs>
 
 
 ## Uninstall Jan
-
-<ol>
 
 ### Step 1: Remove Application through Control Panel
 
@@ -203,8 +186,7 @@ or via **Terminal**:
 cd C:\Users\%USERNAME%\AppData\Roaming
 rmdir /S Jan
 ```
-</ol>
 
-<Aside type="warning">
+<Aside type="caution">
 Deleted data folders cannot be recovered. Backup important data first.
 </Aside>

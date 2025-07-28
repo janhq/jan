@@ -18,12 +18,10 @@ keywords:
 
 import { Aside } from '@astrojs/starlight/components';
 
-# Jan-Nano-128k
-
 > Enabling deeper research through extended context understanding.
 
-Jan-Nano-128k represents a notable advancement in compact language models for different applications. Building upon the 
-success of Jan-Nano-32k, this enhanced version features a native 128k context window that enables deeper, more comprehensive 
+Jan-Nano-128k represents a notable advancement in compact language models for different applications. Building upon the
+success of Jan-Nano-32k, this enhanced version features a native 128k context window that enables deeper, more comprehensive
 research capabilities without the performance degradation typically associated with context extension methods.
 
 You can have a look at all of our models, and download them from the HuggingFace [Menlo Models page](https://huggingface.co/Menlo).
@@ -34,29 +32,29 @@ You can have a look at all of our models, and download them from the HuggingFace
 - ⚡ Native 128k Window: Built to handle long contexts efficiently, maintaining performance across the full context range
 - 📈 Enhanced Performance: Unlike traditional context extension methods, Jan-Nano-128k's performance remains consistent with longer contexts
 
-This model maintains full compatibility with Model Context Protocol (MCP) servers while dramatically expanding the scope of research 
+This model maintains full compatibility with Model Context Protocol (MCP) servers while dramatically expanding the scope of research
 tasks it can handle in a single session.
 
 
 ## Why Jan-Nano-128k?
 
-Most small models hit a wall at 8-32k tokens. Jan-Nano-128k goes beyond this limitation with a native 128k context window—that's roughly 
+Most small models hit a wall at 8-32k tokens. Jan-Nano-128k goes beyond this limitation with a native 128k context window—that's roughly
 300 pages of text or an entire novel's worth of information processed simultaneously.
 
-Unlike YaRN or PI methods that retrofit models beyond their limits and degrade performance, Jan-Nano-128k was architecturally rewired for 
-128k contexts from the ground up. The result: an inverse scaling behavior where performance actually improves with longer contexts, 
+Unlike YaRN or PI methods that retrofit models beyond their limits and degrade performance, Jan-Nano-128k was architecturally rewired for
+128k contexts from the ground up. The result: an inverse scaling behavior where performance actually improves with longer contexts,
 maintaining consistent accuracy from 1k to 128k tokens as the model leverages more information for synthesis.
 
 
-<Aside type="info">
-**Position Interpolation (PI):** A method that extends a model's context by scaling down position indices to fit within the original context 
+<Aside type="note">
+**Position Interpolation (PI):** A method that extends a model's context by scaling down position indices to fit within the original context
 window. For example, to extend a 4k model to 32k, PI compresses the 32k positions into the original 4k range by dividing each position by 8.
 
-**YaRN (Yet another RoPE extensioN method):** A more sophisticated context extension method that preserves frequently occurring tokens while 
-selectively scaling others. YaRN divides position embeddings into frequency groups and applies different scaling factors to each, resulting 
+**YaRN (Yet another RoPE extensioN method):** A more sophisticated context extension method that preserves frequently occurring tokens while
+selectively scaling others. YaRN divides position embeddings into frequency groups and applies different scaling factors to each, resulting
 in more efficient training and better performance than PI.
 
-The key difference is that PI applies uniform scaling across all dimensions, while YaRN uses targeted interpolation based on frequency analysis—preserving 
+The key difference is that PI applies uniform scaling across all dimensions, while YaRN uses targeted interpolation based on frequency analysis—preserving
 high-frequency information that's crucial for distinguishing nearby tokens while interpolating lower frequencies more aggressively.
 </Aside>
 
@@ -67,8 +65,8 @@ high-frequency information that's crucial for distinguishing nearby tokens while
 - **Business**: Distill insights from quarters of financial data
 - **Content**: Maintain narrative coherence across book-length outputs
 
-**MCP Usage:** Jan-Nano-128k doesn't memorize, it orchestrates. With MCP integration, it becomes a research conductor that fetches dozens 
-of sources, holds everything in active memory, extracts precisely what's needed, and synthesizes findings across a marathon research session. It's 
+**MCP Usage:** Jan-Nano-128k doesn't memorize, it orchestrates. With MCP integration, it becomes a research conductor that fetches dozens
+of sources, holds everything in active memory, extracts precisely what's needed, and synthesizes findings across a marathon research session. It's
 not about understanding every word; it's about finding the needle in a haystack of haystacks.
 
 ## Evaluation
@@ -87,7 +85,7 @@ Jan-Nano-128k has been rigorously evaluated on the SimpleQA benchmark using our 
 ### Demo
 
 <video width="100%" controls>
-  <source src="/assets/videos/jan-nano-demo.mp4" type="video/mp4" />
+  <source src="/videos/jan-nano-demo.mp4" type="video/mp4" />
   Your browser does not support the video tag.
 </video>
 

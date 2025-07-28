@@ -1,0 +1,335 @@
+---
+title: Jan Server
+description: Your own private AI cloud
+sidebar:
+  order: 4
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+**Status:** Coming Q2 2025
+
+Self-hosted solution for teams and enterprises. Your own private AI cloud.
+
+Jan Server is Jan Desktop with multi-user support. Deploy it on your hardware to create your own private AI cloud for your team or organization.
+
+<Aside type="note">
+Coming Q2 2025. Join the early access list at [jan.ai/server](https://jan.ai/server).
+</Aside>
+
+## What is Jan Server?
+
+```
+Jan Server = Jan Desktop + Multi-user support + Real hardware
+```
+
+It's the same engine that powers Jan Desktop, scaled up for teams. Your data stays on your servers, your models run on your GPUs, your AI remains yours.
+
+## Why Organizations Need This
+
+### The Problem
+Every API call to ChatGPT or Claude is:
+- Your intellectual property leaving your network
+- Potential training data for someone else's model
+- A compliance nightmare waiting to happen
+- A monthly bill that never ends
+
+### The Solution
+Jan Server gives you:
+- **Complete control**: Your hardware, your rules
+- **Total privacy**: Nothing leaves your network
+- **Predictable costs**: One-time hardware investment
+- **Compliance ready**: GDPR, HIPAA, SOC2 friendly
+
+## Key Features
+
+<CardGrid>
+  <Card title="Multi-User Support" icon="users">
+    Support for 5-500+ concurrent users with individual accounts and permissions.
+  </Card>
+
+  <Card title="Enterprise Authentication" icon="shield">
+    SSO, LDAP integration and enterprise-grade security controls.
+  </Card>
+
+  <Card title="Flexible Deployment" icon="setting">
+    Docker, Kubernetes, or bare metal deployment options.
+  </Card>
+
+  <Card title="Admin Dashboard" icon="laptop">
+    Centralized management for users, models, and system monitoring.
+  </Card>
+
+  <Card title="Team Knowledge Sharing" icon="group">
+    Shared conversations, templates, and collaborative workflows.
+  </Card>
+
+  <Card title="Same API" icon="code">
+    Drop-in replacement for OpenAI API - no code changes needed.
+  </Card>
+</CardGrid>
+
+## Deployment Options
+
+<CardGrid>
+  <Card title="Docker: Single Command Setup" icon="laptop">
+    Perfect for getting started quickly with containerized deployment.
+  </Card>
+
+  <Card title="Kubernetes: Enterprise Scale" icon="building">
+    Auto-scaling, high availability, and enterprise orchestration.
+  </Card>
+
+  <Card title="Bare Metal: Maximum Control" icon="setting">
+    Direct hardware access for maximum performance and customization.
+  </Card>
+</CardGrid>
+
+## Simple Deployment
+
+### Docker (Single Command Setup)
+```yaml
+version: '3'
+services:
+  jan-server:
+    image: jan.ai/server:latest
+    ports:
+      - "80:80"
+      - "1337:1337"
+    volumes:
+      - ./models:/models
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+```
+
+### Kubernetes (Enterprise Scale)
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jan-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: jan-server
+  template:
+    metadata:
+      labels:
+        app: jan-server
+    spec:
+      containers:
+      - name: jan-server
+        image: jan.ai/server:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+```
+
+### Bare Metal (Maximum Control)
+Direct installation on your hardware for maximum performance and custom configurations.
+
+## Detailed Features
+
+### Enterprise Authentication
+- **SSO Integration**: SAML, OAuth, OpenID Connect
+- **LDAP/Active Directory**: Existing user directory integration
+- **Role-Based Access**: Granular permissions and model access
+- **API Key Management**: Individual and service account keys
+
+### Multi-User Management
+- **User Accounts**: Individual profiles and preferences
+- **Usage Tracking**: Per-user analytics and quotas
+- **Team Collaboration**: Shared conversations and workflows
+- **Admin Dashboard**: Centralized user and system management
+
+### Same API as Desktop
+```python
+# Your code doesn't change
+client = OpenAI(
+    base_url="https://jan.company.internal/v1",
+    api_key="user-specific-key"
+)
+```
+
+### Team Knowledge Sharing
+- **Shared Conversations**: Collaborative chat threads
+- **Template Library**: Reusable prompts and workflows
+- **Knowledge Base**: Organizational AI knowledge
+- **Team Analytics**: Usage patterns and insights
+
+<Aside type="tip">
+Jan Server uses the same models as Desktop. No special "enterprise" versions with inflated prices.
+</Aside>
+
+## Scaling Guidelines
+
+### Small Teams (5-10 users)
+- **Hardware**: Single RTX 6000 Ada (48GB VRAM)
+- **RAM**: 128GB system memory
+- **Models**: Up to 70B parameter models
+- **Concurrent Users**: 5-10 active users
+- **Estimated Cost**: ~$15,000 one-time hardware
+
+### Department Scale (10-50 users)
+- **Hardware**: 2-4 GPU cluster nodes
+- **RAM**: 256GB per node
+- **Models**: Multiple concurrent model instances
+- **Concurrent Users**: 10-50 active users
+- **Estimated Cost**: ~$50,000-$100,000 one-time
+
+### Enterprise Scale (50+ users)
+- **Hardware**: DGX cluster or custom configuration
+- **RAM**: Scalable as needed
+- **Models**: Full model library with redundancy
+- **Concurrent Users**: 50-500+ active users
+- **Estimated Cost**: Custom enterprise quote
+
+## Real-World Use Cases
+
+| Organization Type | Deployment | Benefits Achieved |
+|------------------|------------|-------------------|
+| Law Firm | 2x RTX 6000, 200 users | Client data never leaves network, GDPR compliance |
+| Hospital System | DGX node, 500 users | HIPAA compliant AI assistant, medical data privacy |
+| Tech Startup | 4x RTX 4090, 50 users | 90% cost reduction vs. OpenAI API calls |
+| Research University | Multi-node cluster | Unrestricted research, no usage limits |
+| Financial Services | Air-gapped deployment | Complete data isolation, regulatory compliance |
+
+## Hardware Requirements
+
+### Minimum Configuration
+- **GPU**: RTX 3090 or better (24GB VRAM minimum)
+- **CPU**: 16+ cores (Xeon, EPYC, or equivalent)
+- **RAM**: 64GB system memory minimum
+- **Storage**: 1TB NVMe SSD for models and data
+- **Network**: Gigabit Ethernet minimum
+
+### Recommended Production Setup
+- **GPU**: RTX 6000 Ada (48GB) or A100 (80GB)
+- **CPU**: Dual socket Xeon/EPYC (32+ cores)
+- **RAM**: 128-256GB system memory
+- **Storage**: RAID NVMe array (2TB+ capacity)
+- **Network**: 10Gbps for multiple concurrent users
+
+### Enterprise Scaling Guidelines
+- **Users per GPU**: ~5-10 concurrent active users
+- **70B Models**: Require 40-80GB VRAM depending on quantization
+- **CPU Fallback**: Smaller models can run on CPU for cost optimization
+- **High Availability**: Multi-node deployment with load balancing
+- **Backup Strategy**: Regular model and data backups recommended
+
+## Why Self-Host?
+
+### For IT Teams
+- No data leaves your network
+- Complete audit trails
+- Integrate with existing auth (LDAP/AD)
+- Predictable resource usage
+
+### For Security Teams
+- Air-gapped deployment options
+- End-to-end encryption
+- No third-party access
+- Full compliance control
+
+### For Finance Teams
+- One-time hardware cost
+- No per-token pricing
+- Predictable TCO
+- Use existing infrastructure
+
+## Development Roadmap
+
+### Q2 2025 Launch Features
+- Multi-user authentication and management
+- Web-based admin dashboard
+- OpenAI API compatibility
+- Docker and Kubernetes deployment
+- Basic usage monitoring and analytics
+- Team collaboration features
+
+### Post-Launch Updates
+- Advanced governance and compliance tools
+- Model fine-tuning interface
+- Automated scaling and load balancing
+- Comprehensive backup and restore
+- Enhanced security and audit logging
+
+### Future Vision
+- Federated multi-site deployments
+- Cross-region synchronization
+- Advanced usage analytics and insights
+- Custom model training and optimization
+- Integration with enterprise workflow tools
+
+<Aside type="caution">
+Jan Server requires proper cooling and power for GPU hardware. Plan your infrastructure accordingly.
+</Aside>
+
+## Migration Path
+
+### From Cloud AI
+1. Deploy Jan Server
+2. Import your workflows
+3. Update API endpoints
+4. Migrate users gradually
+
+### From Jan Desktop
+1. Same models work instantly
+2. Add user management
+3. Scale as needed
+
+## The Philosophy
+
+We believe organizations should own their AI infrastructure just like they own their data. Jan Server makes this possible without compromising on capabilities.
+
+This isn't about avoiding the cloud - it's about having a choice. Run your AI where it makes sense for your organization.
+
+## Support Options
+
+### Community Edition
+- Full features
+- Community support
+- Perfect for small teams
+
+### Enterprise Edition
+- Priority support
+- Custom deployment help
+- SLA guarantees
+- Training included
+
+## Get Ready for Jan Server
+
+While Jan Server is in development (Q2 2025 launch):
+
+### Preparation Steps
+1. **Assess Hardware Needs**: Review our scaling guidelines above
+2. **Plan Network Architecture**: Consider security and access requirements  
+3. **Evaluate Authentication**: Determine SSO/LDAP integration needs
+4. **Test with Jan Desktop**: Same models and API, perfect for preparation
+5. **Join Early Access Program**: Get notified when beta testing begins
+
+### Early Access Benefits
+- Beta testing opportunities
+- Hardware optimization guidance
+- Deployment planning assistance
+- Priority technical support
+- Input on feature development
+
+### Enterprise Consultation
+For large deployments or custom requirements:
+- Architecture planning sessions
+- Hardware recommendation consultations
+- Security and compliance reviews
+- Migration planning from existing AI services
+- Custom deployment assistance
+
+---
+
+**Ready to Plan Your Deployment?**
+
+[Join Early Access](https://jan.ai/server) | [Enterprise Consultation](https://jan.ai/enterprise) | [Hardware Planning Guide](/docs/server/hardware) | [Jan Desktop Trial](/download)

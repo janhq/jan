@@ -1,5 +1,5 @@
 ---
-title: llama.cpp Engine
+title: Local AI Engine
 description: Understand and configure Jan's local AI engine for running models on your hardware.
 keywords:
   [
@@ -23,29 +23,31 @@ keywords:
   ]
 ---
 
-
-# Local AI Engine (llama.cpp)
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## What is llama.cpp?
 
-llama.cpp is the engine that runs AI models locally on your computer. Think of it as the software that takes an AI model file and makes it actually work on your hardware - whether that's your CPU, graphics card, or Apple's M-series chips.
+llama.cpp is the engine that runs AI models locally on your computer. Think of it as the software
+that takes an AI model file and makes it work on your hardware - whether that's your CPU,
+graphics card, or Apple's M-series chips.
 
-Originally created by Georgi Gerganov, llama.cpp is designed to run large language models efficiently on consumer hardware without requiring specialized AI accelerators or cloud connections.
+Originally created by Georgi Gerganov, llama.cpp is designed to run large language models
+efficiently on consumer hardware without requiring specialized AI accelerators or cloud connections.
 
 ## Why This Matters
 
-**Privacy**: Your conversations never leave your computer
-**Cost**: No monthly subscription fees or API costs
-**Speed**: No internet required once models are downloaded
-**Control**: Choose exactly which models to run and how they behave
+- **Privacy**: Your conversations never leave your computer
+- **Cost**: No monthly subscription fees or API costs
+- **Speed**: No internet required once models are downloaded
+- **Control**: Choose exactly which models to run and how they behave
 
 ## Accessing Engine Settings
 
-Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
+Find llama.cpp settings at **Settings** > **Model Providers** > **Llama.cpp**:
 
 ![llama.cpp](../../../../assets/llama.cpp-01-updated.png)
 
-<Aside type="info">
+<Aside type="note">
 These are advanced settings. You typically only need to adjust them if models aren't working properly or you want to optimize performance for your specific hardware.
 </Aside>
 
@@ -61,13 +63,13 @@ These are advanced settings. You typically only need to adjust them if models ar
 
 Jan offers different backend versions optimized for your specific hardware. Think of these as different "drivers" - each one is tuned for particular processors or graphics cards.
 
-<Aside type="warning">
+<Aside type="caution">
 Using the wrong backend can make models run slowly or fail to load. Pick the one that matches your hardware.
 </Aside>
 
-<Tabs items={['Windows', 'Linux', 'macOS']}>
+<Tabs>
 
-<Tabs.Tab>
+<TabItem label="Windows">
 
 ### NVIDIA Graphics Cards (Recommended for Speed)
 Choose based on your CUDA version (check NVIDIA Control Panel):
@@ -89,13 +91,13 @@ Choose based on your CUDA version (check NVIDIA Control Panel):
 ### Other Graphics Cards
 - `llama.cpp-vulkan` (AMD, Intel Arc, some others)
 
-<Aside type="info">
+<Aside type="note">
 **Quick Test**: Start with `avx2-cuda-12-0` if you have an NVIDIA card, or `avx2` for CPU-only. If it doesn't work, try the `avx` variant.
 </Aside>
 
-</Tabs.Tab>
+</TabItem>
 
-<Tabs.Tab>
+<TabItem label="Linux">
 
 ### NVIDIA Graphics Cards
 Same CUDA options as Windows:
@@ -110,9 +112,9 @@ Same CUDA options as Windows:
 ### Other Graphics Cards
 - `llama.cpp-vulkan` (AMD, Intel graphics)
 
-</Tabs.Tab>
+</TabItem>
 
-<Tabs.Tab>
+<TabItem label="MacOS">
 
 ### Apple Silicon (M1/M2/M3/M4)
 - `llama.cpp-mac-arm64` (recommended)
@@ -120,11 +122,11 @@ Same CUDA options as Windows:
 ### Intel Macs
 - `llama.cpp-mac-amd64`
 
-<Aside type="info">
+<Aside type="note">
 Apple Silicon Macs automatically use the GPU through Metal - no additional setup needed.
 </Aside>
 
-</Tabs.Tab>
+</TabItem>
 
 </Tabs>
 
@@ -152,7 +154,7 @@ These control how models use your computer's memory:
 
 ### KV Cache Types Explained
 - **f16**: Most stable, uses more memory
-- **q8_0**: Balanced memory usage and quality  
+- **q8_0**: Balanced memory usage and quality
 - **q4_0**: Uses least memory, slight quality loss
 
 ## Troubleshooting Common Issues
@@ -199,6 +201,7 @@ These control how models use your computer's memory:
 2. Reduce Context Size in model settings
 3. Try a smaller model
 
-<Aside type="info">
-Most users can run Jan successfully without changing any of these settings. The defaults are chosen to work well on typical hardware.
+<Aside type="note">
+Most users can run Jan successfully without changing any of these settings. The defaults are chosen
+to work well on typical hardware.
 </Aside>

@@ -1,0 +1,75 @@
+name: Deploy Astro Docs (v2)
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'website/**'
+      - '.github/workflows/jan-astro-docs.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - '.github/workflows/jan-astro-docs.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to v2.jan.ai
+    env:
+      # IMPORTANT: You will need to create a new Cloudflare Pages project
+      # and name it "jan-v2" or update this value to your new project name.
+      CLOUDFLARE_PROJECT_NAME: jan-v2
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm install
+
+      - name: Build Astro Docs
+        working-directory: website
+        # No PUBLIC_BASE_PATH is set, so it builds for the root, which is correct for a subdomain
+        run: npm run build
+
+      - name: Publish to Cloudflare Pages (PR Preview)
+        if: github.event_name == 'pull_request'
+        uses: cloudflare/pages-action@v1
+        id: deployPreview
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./website/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add PR Comment with Preview URL
+        if: github.event_name == 'pull_request'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            🚀 Astro docs preview is ready!
+            URL: ${{ steps.deployPreview.outputs.url }}
+
+      - name: Publish to Cloudflare Pages (Production)
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'workflow_dispatch')
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./website/dist
+          # This deploys to the production branch of your new Cloudflare project
+          branch: main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

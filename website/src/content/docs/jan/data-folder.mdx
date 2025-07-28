@@ -19,20 +19,18 @@ keywords:
   ]
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 
-
-# Jan Data Folder
 Jan stores your data locally in JSON format. Your data is yours alone.
 
 ## Open Jan Data Folder
 
 Via Jan:
-1. Settings (<Settings width={16} height={16} style={{display:"inline"}}/>) > Advanced Settings
-2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/>
+1. **Settings** > **General**
+2. Click on the **Change Location** button.
 
-<br/>
 ![Open Jan Data Folder](../../../assets/settings-11.png)
-<br/>
+
 
 Via Terminal:
 
@@ -50,11 +48,11 @@ cd ~/.config/Jan/data         # Default install
 
 ## Directory Structure
 
-<Aside type="info">
+<Aside type="note">
 Root directory: `~/jan`
 </Aside>
 
-```sh
+```
 /assistants/
   /jan/
     assistant.json
@@ -151,7 +149,7 @@ Debugging headquarters (`/logs/app.txt`):
 ### `models/`
 The silicon brain collection. Each model has its own `model.json`.
 
-<Aside type="info">
+<Aside type="note">
 Full parameters: [here](/docs/model-parameters)
 </Aside>
 
@@ -213,5 +211,6 @@ Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
 
 
 ## Delete Jan Data
-Uninstall guides: [Mac](/docs/desktop/mac#step-2-clean-up-data-optional),
-[Windows](/docs/desktop/windows#step-2-handle-jan-data), or [Linux](docs/desktop/linux#uninstall-jan).
+
+Uninstall guides: [Mac](./installation/mac#step-2-clean-up-data-optional),
+[Windows](./installation/windows#step-2-handle-jan-data), or [Linux](./installation/linux#uninstall-jan).

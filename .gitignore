@@ -56,3 +56,24 @@ archive/
 autoqa/trajectories
 autoqa/recordings
 autoqa/__pycache__
+
+# Astro / Starlight specific
+website/dist/
+website/.astro/
+website/src/content/config.ts.timestamp-*
+
+# Nextra specific
+docs/out/
+docs/.next/
+
+# General Node.js
+**/node_modules
+**/.env
+**/.env.*
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+
+# Combined output for local testing
+combined-output/
