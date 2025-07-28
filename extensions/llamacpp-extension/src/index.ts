@@ -149,6 +149,7 @@ export default class llamacpp_extension extends AIEngine {
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
+  private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -1132,12 +1133,54 @@ export default class llamacpp_extension extends AIEngine {
     if (sInfo) {
       throw new Error('Model already loaded!!')
     }
+
+    // If this model is already being loaded, return the existing promise
+    if (this.loadingModels.has(modelId)) {
+      return this.loadingModels.get(modelId)!
+    }
+
+    // Create the loading promise
+    const loadingPromise = this.performLoad(
+      modelId,
+      overrideSettings,
+      isEmbedding
+    )
+    this.loadingModels.set(modelId, loadingPromise)
+
+    try {
+      const result = await loadingPromise
+      return result
+    } finally {
+      this.loadingModels.delete(modelId)
+    }
+  }
+
+  private async performLoad(
+    modelId: string,
+    overrideSettings?: Partial<LlamacppConfig>,
+    isEmbedding: boolean = false
+  ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
-    if (loadedModels.length > 0 && this.autoUnload) {
-      // Unload all other models if auto-unload is enabled
-      await Promise.all(
-        loadedModels.map((loadedModel) => this.unload(loadedModel))
-      )
+
+    // Get OTHER models that are currently loading (exclude current model)
+    const otherLoadingPromises = Array.from(this.loadingModels.entries())
+      .filter(([id, _]) => id !== modelId)
+      .map(([_, promise]) => promise)
+
+    if (
+      this.autoUnload &&
+      (loadedModels.length > 0 || otherLoadingPromises.length > 0)
+    ) {
+      // Wait for OTHER loading models to finish, then unload everything
+      if (otherLoadingPromises.length > 0) {
+        await Promise.all(otherLoadingPromises)
+      }
+
+      // Now unload all loaded models
+      const allLoadedModels = await this.getLoadedModels()
+      if (allLoadedModels.length > 0) {
+        await Promise.all(allLoadedModels.map((model) => this.unload(model)))
+      }
     }
     const args: string[] = []
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
