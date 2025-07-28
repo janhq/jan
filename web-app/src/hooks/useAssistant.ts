@@ -41,9 +41,9 @@ export const defaultAssistant: Assistant = {
   parameters: {},
   avatar: '👋',
   description:
-    'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user\'s behalf.',
+    'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
   instructions:
-    'You are a helpful AI assistant. Your primary goal is to assist users with their questions and tasks to the best of your abilities.\n\nWhen responding:\n- Answer directly from your knowledge when you can\n- Be concise, clear, and helpful\n- Admit when you\'re unsure rather than making things up\n\nIf tools are available to you:\n- Only use tools when they add real value to your response\n- Use tools when the user explicitly asks (e.g., "search for...", "calculate...", "run this code")\n- Use tools for information you don\'t know or that needs verification\n- Never use tools just because they\'re available\n\nWhen using tools:\n- Use one tool at a time and wait for results\n- Use actual values as arguments, not variable names\n- Learn from each result before deciding next steps\n- Avoid repeating the same tool call with identical parameters\n\nRemember: Most questions can be answered without tools. Think first whether you need them.',
+    'You are a helpful AI assistant. Your primary goal is to assist users with their questions and tasks to the best of your abilities.\n\nWhen responding:\n- Answer directly from your knowledge when you can\n- Be concise, clear, and helpful\n- Admit when you’re unsure rather than making things up\n\nIf tools are available to you:\n- Only use tools when they add real value to your response\n- Use tools when the user explicitly asks (e.g., "search for...", "calculate...", "run this code")\n- Use tools for information you don’t know or that needs verification\n- Never use tools just because they’re available\n\nWhen using tools:\n- Use one tool at a time and wait for results\n- Use actual values as arguments, not variable names\n- Learn from each result before deciding next steps\n- Avoid repeating the same tool call with identical parameters\n\nRemember: Most questions can be answered without tools. Think first whether you need them.',
 }
 
 export const useAssistant = create<AssistantState>()((set, get) => ({
@@ -79,12 +79,12 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
     ).catch((error) => {
       console.error('Failed to delete assistant:', error)
     })
-    
+
     // Check if we're deleting the current assistant
     const wasCurrentAssistant = state.currentAssistant.id === id
-    
+
     set({ assistants: state.assistants.filter((a) => a.id !== id) })
-    
+
     // If the deleted assistant was current, fallback to default and update localStorage
     if (wasCurrentAssistant) {
       set({ currentAssistant: defaultAssistant })
@@ -109,7 +109,9 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
   initializeWithLastUsed: () => {
     const lastUsedId = getLastUsedAssistantId()
     if (lastUsedId) {
-      const lastUsedAssistant = get().assistants.find(a => a.id === lastUsedId)
+      const lastUsedAssistant = get().assistants.find(
+        (a) => a.id === lastUsedId
+      )
       if (lastUsedAssistant) {
         set({ currentAssistant: lastUsedAssistant })
       } else {
