@@ -18,4 +18,5 @@ export const localStorageKey = {
   toolAvailability: 'tool-availability',
   mcpGlobalPermissions: 'mcp-global-permissions',
   lastUsedModel: 'last-used-model',
+  lastUsedAssistant: 'last-used-assistant',
 }

@@ -1,6 +1,7 @@
 import { createAssistant, deleteAssistant } from '@/services/assistants'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
+import { localStorageKey } from '@/constants/localStorage'
 
 interface AssistantState {
   assistants: Assistant[]
@@ -8,8 +9,29 @@ interface AssistantState {
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
-  setCurrentAssistant: (assistant: Assistant) => void
+  setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
   setAssistants: (assistants: Assistant[]) => void
+  getLastUsedAssistant: () => string | null
+  setLastUsedAssistant: (assistantId: string) => void
+  initializeWithLastUsed: () => void
+}
+
+// Helper functions for localStorage
+const getLastUsedAssistantId = (): string | null => {
+  try {
+    return localStorage.getItem(localStorageKey.lastUsedAssistant)
+  } catch (error) {
+    console.debug('Failed to get last used assistant from localStorage:', error)
+    return null
+  }
+}
+
+const setLastUsedAssistantId = (assistantId: string) => {
+  try {
+    localStorage.setItem(localStorageKey.lastUsedAssistant, assistantId)
+  } catch (error) {
+    console.debug('Failed to set last used assistant in localStorage:', error)
+  }
 }
 
 export const defaultAssistant: Assistant = {
@@ -19,9 +41,9 @@ export const defaultAssistant: Assistant = {
   parameters: {},
   avatar: '👋',
   description:
-    'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
+    'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user\'s behalf.',
   instructions:
-    'You are a helpful AI assistant. Your primary goal is to assist users with their questions and tasks to the best of your abilities.\n\nWhen responding:\n- Answer directly from your knowledge when you can\n- Be concise, clear, and helpful\n- Admit when you’re unsure rather than making things up\n\nIf tools are available to you:\n- Only use tools when they add real value to your response\n- Use tools when the user explicitly asks (e.g., "search for...", "calculate...", "run this code")\n- Use tools for information you don’t know or that needs verification\n- Never use tools just because they’re available\n\nWhen using tools:\n- Use one tool at a time and wait for results\n- Use actual values as arguments, not variable names\n- Learn from each result before deciding next steps\n- Avoid repeating the same tool call with identical parameters\n\nRemember: Most questions can be answered without tools. Think first whether you need them.',
+    'You are a helpful AI assistant. Your primary goal is to assist users with their questions and tasks to the best of your abilities.\n\nWhen responding:\n- Answer directly from your knowledge when you can\n- Be concise, clear, and helpful\n- Admit when you\'re unsure rather than making things up\n\nIf tools are available to you:\n- Only use tools when they add real value to your response\n- Use tools when the user explicitly asks (e.g., "search for...", "calculate...", "run this code")\n- Use tools for information you don\'t know or that needs verification\n- Never use tools just because they\'re available\n\nWhen using tools:\n- Use one tool at a time and wait for results\n- Use actual values as arguments, not variable names\n- Learn from each result before deciding next steps\n- Avoid repeating the same tool call with identical parameters\n\nRemember: Most questions can be answered without tools. Think first whether you need them.',
 }
 
 export const useAssistant = create<AssistantState>()((set, get) => ({
@@ -51,17 +73,50 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
     })
   },
   deleteAssistant: (id) => {
+    const state = get()
     deleteAssistant(
-      get().assistants.find((e) => e.id === id) as unknown as CoreAssistant
+      state.assistants.find((e) => e.id === id) as unknown as CoreAssistant
     ).catch((error) => {
       console.error('Failed to delete assistant:', error)
     })
-    set({ assistants: get().assistants.filter((a) => a.id !== id) })
+    
+    // Check if we're deleting the current assistant
+    const wasCurrentAssistant = state.currentAssistant.id === id
+    
+    set({ assistants: state.assistants.filter((a) => a.id !== id) })
+    
+    // If the deleted assistant was current, fallback to default and update localStorage
+    if (wasCurrentAssistant) {
+      set({ currentAssistant: defaultAssistant })
+      setLastUsedAssistantId(defaultAssistant.id)
+    }
   },
-  setCurrentAssistant: (assistant) => {
+  setCurrentAssistant: (assistant, saveToStorage = true) => {
     set({ currentAssistant: assistant })
+    if (saveToStorage) {
+      setLastUsedAssistantId(assistant.id)
+    }
   },
   setAssistants: (assistants) => {
     set({ assistants })
+  },
+  getLastUsedAssistant: () => {
+    return getLastUsedAssistantId()
+  },
+  setLastUsedAssistant: (assistantId) => {
+    setLastUsedAssistantId(assistantId)
+  },
+  initializeWithLastUsed: () => {
+    const lastUsedId = getLastUsedAssistantId()
+    if (lastUsedId) {
+      const lastUsedAssistant = get().assistants.find(a => a.id === lastUsedId)
+      if (lastUsedAssistant) {
+        set({ currentAssistant: lastUsedAssistant })
+      } else {
+        // Fallback to default if last used assistant was deleted
+        set({ currentAssistant: defaultAssistant })
+        setLastUsedAssistantId(defaultAssistant.id)
+      }
+    }
   },
 }))

@@ -399,6 +399,7 @@ export const useChat = () => {
             accumulatedText,
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
+              assistant: currentAssistant,
             }
           )
 
