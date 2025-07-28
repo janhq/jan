@@ -15,14 +15,14 @@
     "type": "page",
     "title": "Products"
   },
-  "local-server": {
-    "type": "page",
-    "title": "Jan Local Server",
-    "display": "hidden"
-  },
   "cortex": {
     "type": "page",
     "title": "Cortex",
+    "display": "hidden"
+  },
+  "platforms": {
+    "type": "page",
+    "title": "Platforms",
     "display": "hidden"
   },
   "integrations": {

@@ -4,9 +4,12 @@ description: AI that runs on your computer, not someone else's. Your personal AI
 ---
 import { Callout, Tabs, Tab } from 'nextra/components'
 
-This is how Jan started and it has been available since day 1. Jan Desktop strives to be:
+This is how Jan started and it has been available since day 1.
 
-> Your personal AI workstation that helps with our use cases and powers other devices. Run models locally right away or bring an API key to connect to your favorite cloud-based models.
+Jan Desktop strives to be:
+
+> Your personal AI workstation that helps with your use cases and powers other devices. Run models
+locally right away or bring an API key to connect to your favorite cloud-based models.
 
 Jan Desktop is where it all starts. Download it, open it, and start chatting. Your AI runs on your computer with zero setup required.
 
@@ -19,7 +22,8 @@ Your conversations stay on your computer. No internet needed. Complete privacy.
 Connect to more powerful models when you need them. Your choice of provider.
 
 <Callout>
-  First time opening Jan? It just works. No API keys, no model downloads, no settings required.
+    As of today, when you first open Jan you do have to download a model or connect to a cloud provider,
+    but that is about to change soon.
 </Callout>
 
 ## What You Get
@@ -31,7 +35,7 @@ Connect to more powerful models when you need them. Your choice of provider.
   </div>
   <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
     <h4 className="font-semibold text-lg mb-2">🛡️ Your Data Stays Yours</h4>
-    <p className="text-sm text-gray-600 dark:text-gray-400">Everything stored in `~/jan`. No cloud backups unless you want them.</p>
+    <p className="text-sm text-gray-600 dark:text-gray-400">Everything stored in `~/.local/share/jan`. No cloud backups unless you want them.</p>
   </div>
   <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
     <h4 className="font-semibold text-lg mb-2">🖥️ Powers Other Devices</h4>
@@ -72,7 +76,7 @@ Connect to more powerful models when you need them. Your choice of provider.
 
 ## Local Mode Features
 
-- **Built-in Model:** Jan comes with a model that works immediately. No downloading, no waiting.
+- **Select your favorite Model:** Jan allows you to download any GGUF model from the Hugging Face Hub.
 - **Smart Defaults:** Automatically uses your GPU if available and adjusts to your system's capabilities.
 - **Complete Privacy:** No telemetry by default, no account required, and no data leaves your machine.
 
@@ -107,32 +111,11 @@ Your desktop can power AI across all your devices by automatically becoming a lo
 # Always running at localhost:1337
 curl http://localhost:1337/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "default", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "gemma3:3b", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-## Common Questions
-
-<details>
-  <summary>Do I need to download models?</summary>
-  No. Jan comes with a default model that works immediately.
-</details>
-<details>
-  <summary>Can I use it offline?</summary>
-  Yes. Local Mode works completely offline once installed.
-</details>
-<details>
-  <summary>How do I switch models?</summary>
-  Most users don't need to. Power users can explore the Model Hub.
-</details>
-<details>
-  <summary>Is it really private?</summary>
-  Yes. In Local Mode, nothing leaves your computer.
-</details>
-
-<Callout type="error">
-  Having issues? Most problems are solved by restarting the app. If that doesn't work, check our [troubleshooting guide](/docs/troubleshooting).
-</Callout>
 
 ## The Bottom Line
 
-Jan Desktop is AI that respects that your computer is YOUR computer, not a terminal to someone else's server. Just software that works for you.
+Jan Desktop is AI that respects that your computer is YOUR computer, not a terminal
+to someone else's server. Just software that works for you.
