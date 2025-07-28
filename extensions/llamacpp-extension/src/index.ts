@@ -779,6 +779,8 @@ export default class llamacpp_extension extends AIEngine {
         await this.ensureBackendReady(backend, version)
       }
       closure()
+    } else if (key === 'auto_unload') {
+        this.autoUnload = value as boolean
     }
   }
 
