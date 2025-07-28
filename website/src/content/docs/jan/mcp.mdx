@@ -18,39 +18,39 @@ keywords:
   ]
 ---
 
-# Using the Model Context Protocol (MCP) in Jan
+import { Aside } from '@astrojs/starlight/components';
 
 ```mermaid
 graph TD
     subgraph "What is MCP?"
         You[You using Jan Desktop]
         Claude[Jan AI Assistant]
-        
+
         subgraph "Your Connected Tools"
             Files[📁 Your Files<br/>Documents, folders,<br/>text files]
             Database[📊 Your Data<br/>Spreadsheets,<br/>databases]
             WebServices[🌐 Online Services<br/>GitHub, Slack,<br/>Google Drive]
             Custom[🔧 Custom Tools<br/>Special programs<br/>you've added]
         end
-        
+
         subgraph "What Jan Can Do"
             Read[Read & Understand<br/>- View your files<br/>- Check your data<br/>- See updates]
             Action[Take Actions<br/>- Search for info<br/>- Create content<br/>- Run commands]
             Templates[Use Templates<br/>- Common tasks<br/>- Saved prompts<br/>- Workflows]
         end
     end
-    
+
     You --> Claude
     Claude -->|"Can I see this file?"| Files
     Claude -->|"What's in my database?"| Database
     Claude -->|"Check my GitHub"| WebServices
     Claude -->|"Run this tool"| Custom
-    
+
     Files --> Read
     Database --> Read
     WebServices --> Action
     Custom --> Templates
-    
+
     style You fill:transparent
     style Claude fill:transparent
     style Files fill:transparent
@@ -89,14 +89,14 @@ access to search your local codebase, query a database, or interact with web API
 * **Flexibility:** Because the interface is standardized, you can swap out models or tools with minimal friction,
 making your workflows more modular and adaptable over time.
 
-<Aside type="warning">
+<Aside type="caution">
   Please note that not all models that you can download and use, whether in Jan or other tools, may be good at
   tool calling or compatible with MCP. Make sure that the model you choose is MCP-compliant before integrating
   it into your workflows. This might be available in the model card or you may need to implement it yourself to
   test the capabilities of the model.
 </Aside>
 
-<Aside type="info">
+<Aside type="note">
   To use MCP effectively, ensure your AI model supports tool calling capabilities:
   - For cloud models (like Claude or GPT-4): Verify tool calling is enabled in your API settings
   - For local models: Enable tool calling in the model parameters [click the edit button in Model Capabilities](/docs/model-parameters#model-capabilities-edit-button)

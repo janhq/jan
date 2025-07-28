@@ -18,8 +18,7 @@ keywords:
   ]
 ---
 
-
-# Model Management
+import { Aside } from '@astrojs/starlight/components';
 
 This guide shows you how to add, customize, and delete models within Jan.
 
@@ -42,13 +41,12 @@ The easiest way to get started is using Jan's built-in model hub (which is conne
 3. Choose a model that fits your needs & hardware specifications
 4. Click **Download** on your chosen model
 
-<Aside type="info">
+<Aside type="note">
 Jan will indicate if a model might be **Slow on your device** or **Not enough RAM** based on your system specifications.
 </Aside>
 
-<br/>
 ![Download Model](../../../assets/model-management-01.png)
-<br/>
+
 
 #### 2. Import from [Hugging Face](https://huggingface.co/)
 
@@ -62,14 +60,11 @@ You can download models with a direct link from Hugging Face:
 4. In Jan, paste the model ID to the **Search** bar in **Hub** page
 5. Select your preferred quantized version to download (if the option is available)
 
-<br/>
 **Copy the model ID.**
 ![Find HF Model](../../../assets/hf-unsloth.png)
 
-<br/>
 **Paste it in Jan's Hub Search Bar.**
 ![Import Model](../../../assets/model-management-02.png)
-<br/>
 
 #### 3. Import Local Files
 
@@ -81,29 +76,24 @@ If you already have one or many GGUF model files on your computer:
   - **Duplicate:** Makes a copy of model files in Jan's directory
 4. Click **Import** to complete (check the [Jan Data Folder](./data-folder) section for more info)
 
-<Aside type="warning">
+<Aside type="caution">
 You need to own your **model configurations**, use at your own risk. Misconfigurations may result in lower
 quality or unexpected outputs. Learn about [model configurations here](./model-parameters).
 </Aside>
 
-<br/>
 ![Download Model](../../../assets/model-management-04.png)
-<br/>
 
-<br/>
 ![Download Model](../../../assets/model-import-04.png)
-<br/>
 
-<br/>
 ![Download Model](../../../assets/model-import-05.png)
-<br/>
+
 
 #### 4. Manual Setup
 
 For advanced users who want to add a specific model that is not available within the Jan **Hub**:
 
-<ol>
 ##### Step 1: Create Model File
+
 1. Navigate to the [Jan Data Folder](./data-folder)
 2. Open `models` folder
 3. Create a new **Folder** for your model
@@ -154,7 +144,7 @@ For advanced users who want to add a specific model that is not available within
 Key fields to configure:
 1. The **Settings** array is where you can set the path or location of your model in your computer, the context
 length allowed, and the chat template expected by your model.
-2. The [**Parameters**](/docs/model-parameters) are the adjustable settings that affect how your model operates or
+2. The [**Parameters**](./model-parameters) are the adjustable settings that affect how your model operates or
 processes the data. The fields in the parameters array are typically general and can be used across different
 models. Here is an example of model parameters:
 
@@ -168,35 +158,30 @@ models. Here is an example of model parameters:
   "presence_penalty": 0,
 }
 ```
-</ol>
 
 ### Delete Models
 1. Go to **Settings > Model Providers > Llama.cpp**
 2. Find the model you want to remove
-3. Select the three dots <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to it and select **Delete Model**
+3. Select the three dots icon next to it and select **Delete Model**
 
-<br/>
 ![Delete Model](../../../assets/model-management-05.png)
-<br/>
-
 
 ## Cloud Models
 
-<Aside type="info">
+<Aside type="note">
 When using cloud models, be aware of any associated costs and rate limits from the providers. See detailed guide for
-each cloud model provider [here](/docs/remote-models/anthropic).
+each cloud model provider [here](./remote-models/anthropic).
 </Aside>
 
 Jan supports connecting to various AI cloud providers that are OpenAI API-compatible, including: OpenAI (GPT-4o, o3,...),
 Anthropic (Claude), Groq, Mistral, and more.
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+1. Navigate to the **Settings** page
 2. Under **Model Providers** section in the left sidebar, choose your preferred provider (OpenAI, Anthropic, etc.)
 3. Enter your API key
 4. The activated cloud models will be available in your model selector inside the **Chat** panel
 
-<br/>
 ![Download Model](../../../assets/model-management-06.png)
-<br/>
+
 As soon as you add your key for a model provider like Anthropic or OpenAI, you will be able to pick one of their models to chat with.
+
 ![Connect Remote APIs](../../../assets/quick-start-03.png)
-<br/>

@@ -1,12 +1,13 @@
 ---
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
-import Content from '../../../content/docs/products/models/jan-v1.mdx';
+import { Content } from '../../../content/products/models/jan-v1.mdx';
 ---
 
 <StarlightPage
-  frontmatter={{ 
+  frontmatter={{
     title: 'Jan v1',
-    description: 'Full-featured AI model for desktop and server deployment' 
+    description: 'Full-featured AI model for desktop and server deployment',
+    tableOfContents: false
   }}
   sidebar={[
     {
@@ -14,19 +15,19 @@ import Content from '../../../content/docs/products/models/jan-v1.mdx';
       items: [
         { label: 'Overview', link: '/products/' },
         {
-          label: 'Models',
-          items: [
-            { label: 'Jan Nano', link: '/products/models/jan-nano/' },
-            { label: 'Jan v1', link: '/products/models/jan-v1/' },
-          ]
-        },
-        {
-          label: 'Platforms', 
+          label: 'Platforms',
           items: [
             { label: 'Desktop', link: '/products/platforms/desktop/' },
             { label: 'Jan.ai', link: '/products/platforms/jan-ai/' },
             { label: 'Mobile', link: '/products/platforms/mobile/' },
             { label: 'Server', link: '/products/platforms/server/' },
+          ]
+        },
+        {
+          label: 'Models',
+          items: [
+            { label: 'Jan Nano', link: '/products/models/jan-nano/' },
+            { label: 'Jan v1', link: '/products/models/jan-v1/' },
           ]
         },
         {

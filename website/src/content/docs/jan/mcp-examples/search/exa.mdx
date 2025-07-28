@@ -15,16 +15,14 @@ keywords:
   ]
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 
-# Exa Search MCP
-
-[Exa MCP](https://docs.exa.ai/examples/exa-mcp) provides real-time web search capabilities for AI models. Instead of relying on training data, 
-models can access current web content through Exa's search API.
+[Exa MCP](https://docs.exa.ai/examples/exa-mcp) provides real-time web search capabilities for AI
+models. Instead of relying on training data, models can access current web content through Exa's search API.
 
 ## Available Tools
 
 Exa MCP includes eight search functions:
-
 - `web_search_exa`: General web search with content extraction
 - `research_paper_search`: Academic papers and research content
 - `company_research`: Company analysis and business intelligence
@@ -41,8 +39,8 @@ Exa MCP includes eight search functions:
 - Model with tool calling support
 - Node.js installed
 
-<Aside type="info">
-Tool calling support varies by model. Jan Nano 32k and 128k, Claude, Gemini, GPT-4o and above models work reliably. For both local and remote models, 
+<Aside type="note">
+Tool calling support varies by model. Jan Nano 32k and 128k, Claude, Gemini, GPT-4o and above models work reliably. For both local and remote models,
 verify tool calling is enabled in model parameters.
 </Aside>
 
@@ -68,12 +66,11 @@ verify tool calling is enabled in model parameters.
 
 Click `+` in MCP Servers section:
 
-
 **Configuration:**
 - **Server Name**: `exa`
 - **Command**: `npx`
 - **Arguments**: `-y exa-mcp-server`
-- **Environment Variables**: 
+- **Environment Variables**:
   - Key: `EXA_API_KEY`
   - Value: `your-api-key`
 
@@ -105,6 +102,7 @@ Start a new chat with a tool-enabled model. Exa tools will appear in the availab
 ### Example Queries
 
 **Current Events & Activities:**
+
 ```
 What is happening this week, mid July 2025, in Sydney, Australia?
 ```
@@ -112,56 +110,67 @@ What is happening this week, mid July 2025, in Sydney, Australia?
 ![Exa Tools Available](../../../../../assets/exa4.png)
 
 **Investment Research:**
+
 ```
 Find recent research papers about quantum computing startups that received Series A funding in 2024-2025
 ```
 
 **Tech Discovery:**
+
 ```
 Find GitHub repositories for WebAssembly runtime engines written in Rust with active development
 ```
 
 **Career Intelligence:**
+
 ```
 Search LinkedIn for AI safety researchers at major tech companies who published papers in the last 6 months
 ```
 
 **Competitive Analysis:**
+
 ```
 Research emerging competitors to OpenAI in the large language model space, focusing on companies founded after 2023
 ```
 
 **Travel & Local Research:**
+
 ```
 Find authentic local food experiences in Tokyo that aren't in typical tourist guides, mentioned in recent travel blogs
 ```
 
 **Academic Research:**
+
 ```
 Find recent papers about carbon capture technology breakthroughs published in Nature or Science during 2025
 ```
 
 **Creator Economy:**
+
 ```
 Research successful creators who transitioned from TikTok to longer-form content platforms in 2024-2025
 ```
 
 **Emerging Tech Trends:**
+
 ```
 Find startups working on brain-computer interfaces that have raised funding in the past 12 months
 ```
 
 **Health & Wellness:**
+
 ```
 Extract information about the latest longevity research findings from Peter Attia's recent podcast episodes
 ```
 
 **Regulatory Intelligence:**
+
 ```
 Find recent AI regulation developments in the EU that could impact US companies, focusing on July 2025 updates
 ```
 
 **Supply Chain Research:**
+
 ```
 Research companies developing sustainable packaging alternatives that have partnerships with major retailers
 ```
@@ -205,11 +214,11 @@ LinkedIn searches for industry connections and expertise.
 - Check rate limits on your plan
 - Regenerate API key if needed
 
-<Aside type="warning">
+<Aside type="caution">
 Exa has API rate limits. Check your plan limits to avoid interruptions.
 </Aside>
 
 ## Next Steps
 
-Exa MCP enables real-time web search within Jan's privacy-focused environment. Models can access current information while maintaining 
-local conversation processing.
+Exa MCP enables real-time web search within Jan's privacy-focused environment. Models can access current
+information while maintaining local conversation processing.

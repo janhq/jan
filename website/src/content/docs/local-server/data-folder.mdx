@@ -15,13 +15,10 @@ keywords:
   ]
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Aside } from '@astrojs/starlight/components';
-import { Steps } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-# Jan Data Folder
-
-Jan stores all your data locally on your computer. No cloud storage, no external servers - everything stays on your machine.
+Jan stores all your data locally on your computer. No cloud storage, no external servers -
+everything stays on your machine.
 
 ## Quick Access
 
@@ -45,6 +42,7 @@ Jan stores all your data locally on your computer. No cloud storage, no external
 ```
 </TabItem>
 <TabItem label="Linux">
+
 ```bash
 # Default installation
 ~/.config/Jan/data
@@ -52,7 +50,9 @@ Jan stores all your data locally on your computer. No cloud storage, no external
 # Custom installation
 $XDG_CONFIG_HOME/Jan/data
 ```
+
 </TabItem>
+
 </Tabs>
 
 ## Monitoring Server Logs
@@ -141,7 +141,7 @@ Configuration files that define how your AI assistants behave, including their i
 - Standard user-level permissions
 - No elevated access required
 
-<Aside type="info">
+<Aside type="note">
 When using cloud AI services through Jan, those conversations follow the cloud provider's data policies. Local model conversations never leave your computer.
 </Aside>
 

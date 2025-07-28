@@ -17,7 +17,7 @@ keywords:
   ]
 ---
 
-# Model Parameters
+import { Aside } from '@astrojs/starlight/components';
 
 Model parameters control how your AI thinks and responds. Think of them as the AI's personality settings and performance controls.
 
@@ -32,7 +32,7 @@ Model parameters control how your AI thinks and responds. Think of them as the A
 **For model capabilities:**
 - Click the **edit button** next to a model to enable features like vision or tools
 
-## Performance Settings (Gear Icon)
+## Performance Settings
 
 These settings control how the model thinks and performs:
 
@@ -51,7 +51,7 @@ These settings control how the model thinks and performs:
 
 ![Model Parameters](../../../../assets/model-parameters.png)
 
-## Model Capabilities (Edit Button)
+## Model Capabilities
 
 These toggle switches enable special features:
 
@@ -82,7 +82,7 @@ This is like the model's short-term memory - how much of your conversation it ca
 - **Longer context** = Remembers more of your conversation, better for long discussions
 - **Shorter context** = Uses less memory, runs faster, but might "forget" earlier parts of long conversations
 
-<Aside type="info">
+<Aside type="note">
 Jan defaults to 8192 tokens (roughly 6000 words) or your model's maximum, whichever is smaller. This handles most conversations well.
 </Aside>
 

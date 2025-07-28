@@ -1,12 +1,13 @@
 ---
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
-import Content from '../../../content/docs/products/platforms/desktop.mdx';
+import { Content } from '../../../content/products/platforms/desktop.mdx';
 ---
 
 <StarlightPage
-  frontmatter={{ 
+  frontmatter={{
     title: 'Desktop',
-    description: 'Jan Desktop application for Windows, macOS, and Linux' 
+    description: 'Jan Desktop application for Windows, macOS, and Linux',
+    tableOfContents: false
   }}
   sidebar={[
     {
@@ -14,19 +15,19 @@ import Content from '../../../content/docs/products/platforms/desktop.mdx';
       items: [
         { label: 'Overview', link: '/products/' },
         {
-          label: 'Models',
-          items: [
-            { label: 'Jan Nano', link: '/products/models/jan-nano/' },
-            { label: 'Jan v1', link: '/products/models/jan-v1/' },
-          ]
-        },
-        {
-          label: 'Platforms', 
+          label: 'Platforms',
           items: [
             { label: 'Desktop', link: '/products/platforms/desktop/' },
             { label: 'Jan.ai', link: '/products/platforms/jan-ai/' },
             { label: 'Mobile', link: '/products/platforms/mobile/' },
             { label: 'Server', link: '/products/platforms/server/' },
+          ]
+        },
+        {
+          label: 'Models',
+          items: [
+            { label: 'Jan Nano', link: '/products/models/jan-nano/' },
+            { label: 'Jan v1', link: '/products/models/jan-v1/' },
           ]
         },
         {

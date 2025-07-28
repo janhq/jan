@@ -18,7 +18,6 @@ keywords:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Steps } from '@astrojs/starlight/components';
 
 ## Integrate with Continue VS Code
 
@@ -26,29 +25,17 @@ import { Steps } from '@astrojs/starlight/components';
 
 To integrate Jan with a local AI language model, follow the steps below:
 
-<ol>
 1. **Installing Continue on Visual Studio Code**
-
-   Follow this [guide](https://continue.dev/docs/quickstart) to install the Continue extension on Visual Studio Code.
-
+  - Follow this [guide](https://continue.dev/docs/quickstart) to install the Continue extension on Visual Studio Code.
 2. **Enable the Jan API Server**
-
    To set up Continue for use with Jan's Local Server, you must activate the Jan API Server with your chosen model.
-
    1. Press the `⚙️ Settings` button.
-
    2. Locate `Local API Server`.
-
    3. Setup the server, which includes the **IP Port**, **Cross-Origin-Resource-Sharing (CORS)** and **Verbose Server Logs**.
-
    4. Include your user-defined API Key.
-
    5. Press the **Start Server** button
-
 3. **Configure Continue to Use Jan's Local Server**
-
    1. Go to the `~/.continue` directory.
-
    <Tabs>
    <TabItem label="Mac">
    ```bash
@@ -86,20 +73,16 @@ To integrate Jan with a local AI language model, follow the steps below:
      - provider: folder
      - provider: codebase
    ```
-
    2. Ensure the file has the following configurations:
      - Ensure `openai` is selected as the `provider`.
      - Match the `model` with the one enabled in the Jan API Server.
      - Set `apiBase` to `http://localhost:1337/v1`.
-
 4. **Ensure the Using Model Is Activated in Jan**
-
    1. Navigate to `Settings` > `Model Providers`.
    2. Under Llama.cpp, find the model that you would want to use.
    3. Select the **Start Model** button to activate the model.
-</ol>
 
-## How to Use Jan Integration with Continue in Visual Studio Code
+## Use Jan with Continue in Visual Studio Code
 
 ### 1. Exploring Code with Jan
 
