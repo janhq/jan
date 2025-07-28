@@ -1,4 +1,5 @@
 mod core;
+use core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
 use core::{
     cmd::get_jan_data_folder_path,
     setup::{self, setup_mcp},
@@ -8,7 +9,6 @@ use core::{
 use reqwest::Client;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager};
-use core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
 
 use tokio::sync::Mutex;
 
@@ -58,6 +58,7 @@ pub fn run() {
             core::cmd::get_server_status,
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
+            core::cmd::factory_reset,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,

@@ -45,6 +45,7 @@ import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
+import { useHardware } from '@/hooks/useHardware'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -72,6 +73,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
+  const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -88,6 +90,7 @@ function General() {
   }, [])
 
   const resetApp = async () => {
+    pausePolling()
     // TODO: Loading indicator
     await factoryReset()
   }

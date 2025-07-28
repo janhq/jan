@@ -199,7 +199,7 @@ pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle: tauri::AppHandle = app.handle().clone();
-    // Setup kill-mcp-servers event listener (similar to cortex kill-sidecar)
+    // Setup kill-mcp-servers event listener (similar to kill-sidecar)
     let app_handle_for_kill = app_handle.clone();
     app_handle.listen("kill-mcp-servers", move |_event| {
         let app_handle = app_handle_for_kill.clone();
