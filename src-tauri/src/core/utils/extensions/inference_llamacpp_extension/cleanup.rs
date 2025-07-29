@@ -1,5 +1,7 @@
 use crate::core::state::AppState;
 use tauri::State;
+use tokio::time::timeout;
+use std::time::Duration;
 
 pub async fn cleanup_processes(state: State<'_, AppState>) {
     let mut map = state.llama_server_process.lock().await;
