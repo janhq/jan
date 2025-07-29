@@ -45,7 +45,7 @@
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
-        "img-src": "'self' asset: http://asset.localhost blob: data: https://cdn.jsdelivr.net",
+        "img-src": "'self' asset: http://asset.localhost blob: data: https://cdn.jsdelivr.net https://img.shields.io https://cdn-uploads.huggingface.co",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
         "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
       },
