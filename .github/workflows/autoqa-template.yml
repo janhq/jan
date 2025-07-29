@@ -146,6 +146,7 @@ jobs:
       - name: Upload screen recordings
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
@@ -292,6 +293,7 @@ jobs:
       - name: Upload screen recordings
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
@@ -451,6 +453,7 @@ jobs:
       - name: Upload screen recordings
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ inputs.is_nightly && 'jan-nightly' || 'jan' }}-recordings-${{ github.run_number }}-${{ runner.os }}
           path: autoqa/recordings/
