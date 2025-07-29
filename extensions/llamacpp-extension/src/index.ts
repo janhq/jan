@@ -782,7 +782,7 @@ export default class llamacpp_extension extends AIEngine {
       }
       closure()
     } else if (key === 'auto_unload') {
-        this.autoUnload = value as boolean
+      this.autoUnload = value as boolean
     }
   }
 
@@ -1075,15 +1075,27 @@ export default class llamacpp_extension extends AIEngine {
    * Function to find a random port
    */
   private async getRandomPort(): Promise<number> {
-    let port: number
-    do {
-      port = Math.floor(Math.random() * 1000) + 3000
-    } while (
-      Array.from(this.activeSessions.values()).some(
+    const MAX_ATTEMPTS = 20000
+    let attempts = 0
+
+    while (attempts < MAX_ATTEMPTS) {
+      const port = Math.floor(Math.random() * 1000) + 3000
+
+      const isAlreadyUsed = Array.from(this.activeSessions.values()).some(
         (info) => info.port === port
       )
+
+      if (!isAlreadyUsed) {
+        const isAvailable = await invoke<boolean>('is_port_available', { port })
+        if (isAvailable) return port
+      }
+
+      attempts++
+    }
+
+    throw new Error(
+      'Failed to find an available port for the model to load'
     )
-    return port
   }
 
   private async sleep(ms: number): Promise<void> {
