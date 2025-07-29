@@ -502,17 +502,16 @@ fn parse_device_output(output: &str) -> ServerResult<Vec<DeviceInfo>> {
     Ok(devices)
 }
 
-
 fn parse_device_line(line: &str) -> ServerResult<Option<DeviceInfo>> {
     let line = line.trim();
-    
+
     log::info!("Parsing device line: '{}'", line);
-    
+
     // Expected formats:
     // "Vulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)"
     // "CUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)"
     // "SYCL0: Intel(R) Arc(TM) A750 Graphics (8000 MiB, 7721 MiB free)"
-    
+
     // Split by colon to get ID and rest
     let parts: Vec<&str> = line.splitn(2, ':').collect();
     if parts.len() != 2 {
@@ -528,16 +527,22 @@ fn parse_device_line(line: &str) -> ServerResult<Option<DeviceInfo>> {
     if let Some(memory_match) = find_memory_pattern(rest) {
         let (memory_start, memory_content) = memory_match;
         let name = rest[..memory_start].trim().to_string();
-        
+
         // Parse memory info: "8128 MiB, 8128 MiB free"
         let memory_parts: Vec<&str> = memory_content.split(',').collect();
         if memory_parts.len() >= 2 {
             if let (Ok(total_mem), Ok(free_mem)) = (
                 parse_memory_value(memory_parts[0].trim()),
-                parse_memory_value(memory_parts[1].trim())
+                parse_memory_value(memory_parts[1].trim()),
             ) {
-                log::info!("Parsed device - ID: '{}', Name: '{}', Mem: {}, Free: {}", id, name, total_mem, free_mem);
-                
+                log::info!(
+                    "Parsed device - ID: '{}', Name: '{}', Mem: {}, Free: {}",
+                    id,
+                    name,
+                    total_mem,
+                    free_mem
+                );
+
                 return Ok(Some(DeviceInfo {
                     id,
                     name,
@@ -556,14 +561,14 @@ fn find_memory_pattern(text: &str) -> Option<(usize, &str)> {
     // Find the last parenthesis that contains the memory pattern
     let mut last_match = None;
     let mut chars = text.char_indices().peekable();
-    
+
     while let Some((start_idx, ch)) = chars.next() {
         if ch == '(' {
             // Find the closing parenthesis
             let remaining = &text[start_idx + 1..];
             if let Some(close_pos) = remaining.find(')') {
                 let content = &remaining[..close_pos];
-                
+
                 // Check if this looks like memory info
                 if is_memory_pattern(content) {
                     last_match = Some((start_idx, content));
@@ -571,7 +576,7 @@ fn find_memory_pattern(text: &str) -> Option<(usize, &str)> {
             }
         }
     }
-    
+
     last_match
 }
 
@@ -581,18 +586,19 @@ fn is_memory_pattern(content: &str) -> bool {
     if !(content.contains("MiB") && content.contains("free") && content.contains(',')) {
         return false;
     }
-    
+
     let parts: Vec<&str> = content.split(',').collect();
     if parts.len() != 2 {
         return false;
     }
-    
+
     parts.iter().all(|part| {
         let part = part.trim();
         // Each part should start with a number and contain "MiB"
-        part.split_whitespace().next()
-            .map_or(false, |first_word| first_word.parse::<i32>().is_ok()) &&
-        part.contains("MiB")
+        part.split_whitespace()
+            .next()
+            .map_or(false, |first_word| first_word.parse::<i32>().is_ok())
+            && part.contains("MiB")
     })
 }
 
@@ -609,10 +615,7 @@ fn parse_memory_value(mem_str: &str) -> ServerResult<i32> {
     // Take the first part which should be the number
     let number_str = parts[0];
     number_str.parse::<i32>().map_err(|_| {
-        ServerError::ParseError(format!(
-            "Could not parse memory value: '{}'",
-            number_str
-        ))
+        ServerError::ParseError(format!("Could not parse memory value: '{}'", number_str))
     })
 }
 
@@ -642,4 +645,10 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
     }
 
     Ok(alive)
+}
+
+// check port availability
+#[tauri::command]
+pub fn is_port_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
