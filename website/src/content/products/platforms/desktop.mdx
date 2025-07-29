@@ -1,17 +1,18 @@
 ---
 title: Jan Desktop
-description: AI that runs on your computer, not someone else's
+description: AI that runs on your computer, not someone else's. Your personal AI workstation.
 sidebar:
   order: 2
 ---
-
 import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
-This is how Jan started and it has been available since day 1. Jan Desktop strives to be:
+This is how Jan started and it has been available since day 1.
 
-> Your personal AI workstation that helps with our use cases and powers other devices. Run models locally right away or bring an API key to connect to your favorite cloud-based models.
+Jan Desktop strives to be:
 
-Jan Desktop is where it all starts. Download it, open it, start chatting. Your AI runs on your computer with zero setup required.
+> Your personal AI workstation that helps with your use cases and powers other devices. Run models locally right away or bring an API key to connect to your favorite cloud-based models.
+
+Jan Desktop is where it all starts. Download it, open it, and start chatting. Your AI runs on your computer with zero setup required.
 
 ## Two Modes, Zero Complexity
 
@@ -22,7 +23,7 @@ Your conversations stay on your computer. No internet needed. Complete privacy.
 Connect to more powerful models when you need them. Your choice of provider.
 
 <Aside type="note">
-First time opening Jan? It just works. No API keys, no model downloads, no settings required.
+    As of today, when you first open Jan you do have to download a model or connect to a cloud provider, but that is about to change soon.
 </Aside>
 
 ## What You Get
@@ -31,23 +32,18 @@ First time opening Jan? It just works. No API keys, no model downloads, no setti
   <Card title="Works Offline" icon="wifi">
     Download once, use forever. Internet is optional.
   </Card>
-
   <Card title="Your Data Stays Yours" icon="shield">
-    Everything stored in `~/jan`. No cloud backups unless you want them.
+    Everything is stored in `~/.local/share/jan`. No cloud backups unless you want them.
   </Card>
-
   <Card title="Powers Other Devices" icon="devices">
-    Your desktop becomes an AI server for your phone and other computers via network connection.
+    Your desktop becomes an AI server for your phone and other computers.
   </Card>
-
   <Card title="Developer Friendly" icon="code">
     Local API at `localhost:1337`. Works with any OpenAI-compatible tool.
   </Card>
-
   <Card title="GPU Acceleration" icon="rocket">
     Automatically detects and uses NVIDIA GPUs for faster performance.
   </Card>
-
   <Card title="Cross-Platform" icon="laptop">
     Windows, macOS, and Linux support with native performance.
   </Card>
@@ -66,51 +62,29 @@ First time opening Jan? It just works. No API keys, no model downloads, no setti
 - **GPU:** NVIDIA GPU with 6GB+ VRAM for acceleration
 - **OS:** Latest versions for best performance
 
-### GPU Acceleration (Optional)
-- **NVIDIA Driver:** 470.63.01 or higher
-- **CUDA Toolkit:** 11.7 or higher
-- **Linux:** Additional GCC-11 packages required
-
-<Aside type="tip">
-Jan automatically detects your hardware and recommends the best model. No manual configuration needed.
-</Aside>
-
 ## Getting Started
 
-1. **Download Jan** from [jan.ai/download](https://jan.ai/download)
-2. **Open the app** - it loads with everything ready
-3. **Start chatting** - that's it
+1.  **Download Jan** from [jan.ai/download](https://jan.ai/download)
+2.  **Open the app** - it loads with everything ready
+3.  **Start chatting** - that's it
 
 ## Local Mode Features
 
-### Built-in Model
-Jan comes with a model that works immediately. No downloading, no waiting.
-
-### Smart Defaults
-- Automatically uses your GPU if available
-- Adjusts to your system's capabilities
-- Works on older hardware too
-
-### Complete Privacy
-- No telemetry by default
-- No account required
-- No data leaves your machine
-- Chat history stored locally only
-- Full control over your data
+- **Select your favorite Model:** Jan allows you to download any GGUF model from the Hugging Face Hub.
+- **Smart Defaults:** Automatically uses your GPU if available and adjusts to your system's capabilities.
+- **Complete Privacy:** No telemetry by default, no account required, and no data leaves your machine.
 
 ## Cloud Mode (Optional)
 
 Connect to external AI providers when you need more power:
 
-<Tabs syncKey="cloud-provider">
+<Tabs>
   <TabItem label="jan.ai">
     Our cloud service (coming soon). One click to enable.
   </TabItem>
-
   <TabItem label="OpenAI">
     Use your OpenAI API key for GPT-4 access.
   </TabItem>
-
   <TabItem label="Self-Hosted">
     Connect to your own Jan Server.
   </TabItem>
@@ -118,19 +92,11 @@ Connect to external AI providers when you need more power:
 
 ## Desktop as Your AI Hub
 
-Your desktop can power AI across all your devices. Jan Desktop automatically becomes a local server that other devices can connect to:
+Your desktop can power AI across all your devices by automatically becoming a local server.
 
-**Network Sharing:**
-- Mobile apps connect over WiFi
-- Other computers can access your models
-- API available at `localhost:1337`
-- No internet required for local network
-
-**Supported Connections:**
-- Jan Mobile (coming Q4 2025)
-- Other Jan Desktop instances
-- Any OpenAI-compatible application
-- Custom scripts and tools
+- **Network Sharing:** Mobile apps connect over WiFi, and other computers can access your models.
+- **API:** Available at `localhost:1337` for any OpenAI-compatible application.
+- **Offline Access:** No internet required for local network connections.
 
 ## For Developers
 
@@ -139,101 +105,9 @@ Your desktop can power AI across all your devices. Jan Desktop automatically bec
 # Always running at localhost:1337
 curl http://localhost:1337/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "default", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "gemma3:3b", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
-
-### Works With
-- Continue (AI coding assistant)
-- Cursor (AI editor)
-- Any OpenAI SDK
-- Your custom scripts
-
-## Common Questions
-
-### Do I need to download models?
-No. Jan comes with a default model that works immediately.
-
-### Can I use it offline?
-Yes. Local Mode works completely offline once installed.
-
-### How do I switch models?
-Most users don't need to. Power users can explore the Model Hub.
-
-### Is it really private?
-Yes. In Local Mode, nothing leaves your computer.
-
-## Performance Expectations
-
-| Task | Local Mode | Cloud Mode |
-|------|------------|------------|
-| Simple questions | Instant | Instant |
-| Complex analysis | 2-5 seconds | 1-2 seconds |
-| Code generation | Good | Excellent |
-| Privacy | Complete | Depends on provider |
-
-## Performance Optimization
-
-### Automatic GPU Detection
-Jan automatically detects and configures:
-- NVIDIA graphics cards
-- Available VRAM
-- Optimal GPU layers (ngl) settings
-- Fallback to CPU if needed
-
-### Memory Management
-- Smart model loading based on available RAM
-- Automatic offloading when memory is low
-- Background process cleanup
-- Efficient resource usage
-
-## Tested Configurations
-
-Jan Desktop has been verified to work on these systems:
-
-**Windows Systems:**
-- Windows 11 Pro + RTX 4070Ti + CUDA 12.2 + Driver 531.18
-- Windows 10 + GTX 1660Ti + Various driver versions
-
-**Linux Systems:**
-- Ubuntu 22.04 + RTX 4070Ti + CUDA 12.2 + Driver 545
-- Ubuntu 20.04 on Proxmox VM + GTX 1660Ti + CUDA 12.1
-
-**macOS Systems:**
-- macOS Monterey and newer
-- Both Intel and Apple Silicon (M1/M2) processors
-- Automatic Metal acceleration on Apple Silicon
-
-## Coming Soon
-
-### Enhanced User Experience
-- One-click model switching
-- Improved onboarding flow
-- Better hardware detection
-- Voice input support
-
-### Advanced Features
-- Model fine-tuning interface
-- Custom model deployment
-- Team collaboration features
-- Enhanced mobile connectivity
-
-<Aside type="caution">
-Having issues? Most problems are solved by restarting the app. If that doesn't work, check our [troubleshooting guide](/docs/troubleshooting).
-</Aside>
-
-## Why Desktop?
-
-Your computer is powerful. It has GPUs, CPUs, and memory that can run AI locally. Jan Desktop uses that power to give you:
-
-- **Privacy**: Your data never leaves your machine
-- **Control**: Update when you want, use what you want
-- **Reliability**: Works offline, no API limits
-- **Speed**: No network latency for local models
 
 ## The Bottom Line
 
-Jan Desktop is AI that respects your computer is YOUR computer. Not a terminal to someone else's server. Just software that works for you.
-
----
-
-[Download Jan Desktop](https://jan.ai/download) | [Documentation](/docs) | [Discord Community](https://discord.gg/jan)
+Jan Desktop is AI that respects that your computer is YOUR computer, not a terminal to someone else's server. Just software that works for you.

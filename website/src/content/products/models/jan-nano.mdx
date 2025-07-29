@@ -1,207 +1,33 @@
 ---
 title: Jan Nano
-description: Compact research model optimized for finding answers
+description: Compact research model optimized for finding answers through tool use.
 sidebar:
   order: 2
 ---
-
-import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 Jan Nano is a 4-billion parameter model designed for research and information retrieval. Instead of trying to know everything, it excels at finding anything through deep integration with Model Context Protocol (MCP) tools.
 
 ## Two Variants
 
 | Model | Context Window | Size | Use Case |
-|-------|----------------|------|----------|
+|:---|:---|:---|:---|
 | Jan Nano 32k | 32,768 tokens | 4-8GB | Quick research, general queries |
 | Jan Nano 128k | 131,072 tokens | 8-12GB | Deep research, document analysis |
 
 <Aside type="note">
-Jan Nano requires MCP-enabled tools (like web search) to reach its full potential. Enable MCP in Settings → Advanced Settings.
+  Jan Nano requires MCP-enabled tools (like web search) to reach its full potential. Enable MCP in **Settings → Advanced Settings**.
 </Aside>
 
 ## What Makes Nano Different
-
-### Research-First Design
-Jan Nano isn't trained to memorize facts. It's trained to:
-- Find relevant information quickly
-- Synthesize findings from multiple sources
-- Maintain context across long research sessions
-- Provide accurate citations
-
-### MCP Integration
-Works seamlessly with:
-- Web search (Serper, Exa)
-- Document analysis
-- Code repositories
-- Custom data sources
-
-### Extended Context
-The 128k variant can process:
-- 50+ research papers simultaneously
-- Entire codebases
-- Book-length documents
-- Thousand-page contracts
-
-## Performance
-
-### Hardware Requirements
-
-<CardGrid>
-  <Card title="Minimum (32k)" icon="laptop">
-    - 8GB RAM
-    - Any modern CPU
-    - Works on most devices
-  </Card>
-
-  <Card title="Recommended (128k)" icon="server">
-    - 16GB RAM
-    - GPU with 8GB+ VRAM
-    - CUDA-compatible
-  </Card>
-</CardGrid>
-
-### Speed Benchmarks
-
-| Device | Variant | Quantization | Speed |
-|--------|---------|--------------|-------|
-| M2 MacBook | 32k | Q4 | 80 tokens/s |
-| RTX 4090 | 32k | Q8 | 200+ tokens/s |
-| M2 MacBook | 128k | Q4 | 40 tokens/s |
-| RTX 4090 | 128k | Q8 | 100+ tokens/s |
-
-## Getting Started
-
-### 1. Enable MCP
-Go to **Settings** → **Model Providers** → **Llama.cpp** and enable tool use for Jan Nano.
-
-### 2. Add Search Tool
-Add a search MCP like Serper:
-- Get free API key from [serper.dev](https://serper.dev)
-- Add to **Settings** → **MCP Servers**
-
-### 3. Start Researching
-Open a chat and ask Jan Nano to search for information:
-
-```
-"What are the latest developments in quantum computing?"
-"Search for recent breakthroughs in mRNA vaccine technology"
-"Find and compare different approaches to carbon capture"
-```
-
-## Example Queries
-
-### Current Events
-- Latest renewable energy developments in Europe
-- Recent AI announcements from major tech companies
-- Current economic indicators across G7 nations
-
-### Deep Research
-- Analyze 20 papers on climate change impacts
-- Compare different programming paradigms with examples
-- Synthesize findings from multiple medical studies
-
-### Business Intelligence
-- Market analysis across competitors
-- Technology trends in specific sectors
-- Regulatory changes affecting industries
-
-<Aside type="tip">
-Jan Nano shines when you need to find and synthesize information, not when you need creative writing or complex reasoning without external data.
-</Aside>
+- **Research-First Design:** Trained to find relevant information, synthesize findings, and provide accurate citations.
+- **MCP Integration:** Works seamlessly with tools like web search, document analysis, and code repositories.
+- **Extended Context:** The 128k variant can process entire codebases, book-length documents, or 50+ research papers simultaneously.
 
 ## Technical Details
+- **Base:** 4B parameter transformer
+- **Training:** Optimized for tool use and retrieval
+- **Quantization:** Q4, Q8, FP16 variants available
 
-### Architecture
-- **Base**: 4B parameter transformer
-- **Training**: Optimized for tool use and retrieval
-- **Context**: Native support (not retrofitted)
-- **Quantization**: Q4, Q8, FP16 variants
-
-### Why Native Context Matters
-Unlike models extended with YaRN or PI methods, Jan Nano 128k:
-- Maintains consistent performance across full context
-- Actually improves with more context (inverse scaling)
-- No performance cliff at higher token counts
-
-### Deployment Options
-
-#### VLLM (Recommended for 128k)
-```bash
-vllm serve Menlo/Jan-nano-128k \
-  --host 0.0.0.0 \
-  --port 1234 \
-  --enable-auto-tool-choice \
-  --tool-call-parser hermes \
-  --rope-scaling '{"rope_type":"yarn","factor":3.2,"original_max_position_embeddings":40960}' \
-  --max-model-len 131072
-```
-
-#### llama.cpp
-```bash
-llama-server ... --rope-scaling yarn --rope-scale 3.2 --yarn-orig-ctx 40960
-```
-
-## Limitations
-
-### Not Designed For
-- Creative writing
-- Complex reasoning without data
-- Mathematical proofs
-- Code generation from scratch
-
-### Best Used For
-- Information retrieval
-- Research synthesis
-- Document analysis
-- Fact-finding missions
-
-## Choosing Between Variants
-
-### Use 32k When
-- Running on limited hardware
-- Need quick responses
-- Researching focused topics
-- Battery life matters
-
-### Use 128k When
-- Analyzing multiple documents
-- Deep research projects
-- Processing entire codebases
-- Hardware isn't a constraint
-
-## Integration Examples
-
-### With Web Search
-```python
-# Jan Nano automatically uses search when needed
-response = jan.chat(
-    model="jan-nano-32k",
-    message="Find the latest SpaceX launch details",
-    tools=["search"]
-)
-```
-
-### With Document Analysis
-```python
-# Process long documents efficiently
-response = jan.chat(
-    model="jan-nano-128k",
-    message="Summarize key findings from these papers",
-    attachments=["paper1.pdf", "paper2.pdf", "paper3.pdf"]
-)
-```
-
-## The Philosophy
-
-Most models try to be encyclopedias. Jan Nano is a research assistant. It doesn't memorize the internet - it knows how to navigate it.
-
-This focused approach means:
-- Smaller model size
-- Better accuracy with sources
-- More reliable information
-- Efficient hardware usage
-
----
-
-[Download Jan Desktop](https://jan.ai/download) | [Model Details](https://huggingface.co/Menlo/Jan-nano) | [MCP Documentation](https://jan.ai/docs/mcp)
+## Philosophy
+Most models try to be encyclopedias. Jan Nano is a research assistant. It doesn't memorize the internet—it knows how to navigate it.
