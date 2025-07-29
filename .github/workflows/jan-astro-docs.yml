@@ -1,4 +1,4 @@
-name: Deploy Astro Docs (v2)
+name: Jan Astro Docs
 
 on:
   push:
@@ -11,58 +11,81 @@ on:
     paths:
       - 'website/**'
       - '.github/workflows/jan-astro-docs.yml'
+    # Review gh actions docs if you want to further define triggers, paths, etc
+    # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to v2.jan.ai
+    name: Deploy to CloudFlare Pages
     env:
-      # IMPORTANT: You will need to create a new Cloudflare Pages project
-      # and name it "jan-v2" or update this value to your new project name.
-      CLOUDFLARE_PROJECT_NAME: jan-v2
+      CLOUDFLARE_PROJECT_NAME: astro-docs
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       deployments: write
       pull-requests: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: 20
 
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Fill env vars
+        continue-on-error: true
+        working-directory: website
+        run: |
+          env_example_file=".env.example"
+          touch .env
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" == *"="* ]]; then
+              var_name=$(echo $line | cut -d '=' -f 1)
+              echo $var_name
+              var_value="$(jq -r --arg key "$var_name" '.[$key]' <<< "$SECRETS")"
+              echo "$var_name=$var_value" >> .env
+            fi
+          done < "$env_example_file"
+        env:
+          SECRETS: '${{ toJson(secrets) }}'
+
       - name: Install dependencies
         working-directory: website
-        run: npm install
-
-      - name: Build Astro Docs
+        run: bun install
+      - name: Build website
         working-directory: website
-        # No PUBLIC_BASE_PATH is set, so it builds for the root, which is correct for a subdomain
-        run: npm run build
+        run: bun run build
 
-      - name: Publish to Cloudflare Pages (PR Preview)
+      - name: copy redirects and headers
+        continue-on-error: true
+        working-directory: website
+        run: |
+          cp _redirects dist/_redirects
+          cp _headers dist/_headers
+
+      - name: Publish to Cloudflare Pages PR Preview and Staging
         if: github.event_name == 'pull_request'
         uses: cloudflare/pages-action@v1
-        id: deployPreview
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
           directory: ./website/dist
+          # Optional: Enable this if you want to have GitHub Deployments triggered
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+        id: deployCloudflarePages
 
-      - name: Add PR Comment with Preview URL
+      - uses: mshick/add-pr-comment@v2
         if: github.event_name == 'pull_request'
-        uses: mshick/add-pr-comment@v2
         with:
           message: |
-            🚀 Astro docs preview is ready!
-            URL: ${{ steps.deployPreview.outputs.url }}
+            Preview URL Astro Docs: ${{ steps.deployCloudflarePages.outputs.url }}
 
-      - name: Publish to Cloudflare Pages (Production)
+      - name: Publish to Cloudflare Pages Production
         if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
         uses: cloudflare/pages-action@v1
         with:
@@ -70,6 +93,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
           directory: ./website/dist
-          # This deploys to the production branch of your new Cloudflare project
           branch: main
+          # Optional: Enable this if you want to have GitHub Deployments triggered
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
