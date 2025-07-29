@@ -39,7 +39,7 @@ The server is ready when the logs show `JAN API listening at http://12.0.0.1:133
 
 ```sh
 curl http://127.0.0.1:1337/v1/models/start -H "Content-Type: application/json" \
-    -H "Authorization: Bearer hey" \
+    -H "Authorization: Bearer secret-key-123" \
     -d '{"model": "gemma3:12b"}'
 ```
 

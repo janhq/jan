@@ -96,6 +96,7 @@ export default defineConfig({
                 {
                   label: 'Local Server',
                   items: [
+                    { label: 'Introduction', link: '/local-server/' },
                     { label: 'Server Setup', slug: 'local-server/api-server' },
                     {
                       label: 'Jan Data Folder',
