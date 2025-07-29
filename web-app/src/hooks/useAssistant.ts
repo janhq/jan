@@ -1,6 +1,7 @@
 import { createAssistant, deleteAssistant } from '@/services/assistants'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
+import { localStorageKey } from '@/constants/localStorage'
 
 interface AssistantState {
   assistants: Assistant[]
@@ -8,8 +9,29 @@ interface AssistantState {
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
-  setCurrentAssistant: (assistant: Assistant) => void
+  setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
   setAssistants: (assistants: Assistant[]) => void
+  getLastUsedAssistant: () => string | null
+  setLastUsedAssistant: (assistantId: string) => void
+  initializeWithLastUsed: () => void
+}
+
+// Helper functions for localStorage
+const getLastUsedAssistantId = (): string | null => {
+  try {
+    return localStorage.getItem(localStorageKey.lastUsedAssistant)
+  } catch (error) {
+    console.debug('Failed to get last used assistant from localStorage:', error)
+    return null
+  }
+}
+
+const setLastUsedAssistantId = (assistantId: string) => {
+  try {
+    localStorage.setItem(localStorageKey.lastUsedAssistant, assistantId)
+  } catch (error) {
+    console.debug('Failed to set last used assistant in localStorage:', error)
+  }
 }
 
 export const defaultAssistant: Assistant = {
@@ -51,17 +73,52 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
     })
   },
   deleteAssistant: (id) => {
+    const state = get()
     deleteAssistant(
-      get().assistants.find((e) => e.id === id) as unknown as CoreAssistant
+      state.assistants.find((e) => e.id === id) as unknown as CoreAssistant
     ).catch((error) => {
       console.error('Failed to delete assistant:', error)
     })
-    set({ assistants: get().assistants.filter((a) => a.id !== id) })
+
+    // Check if we're deleting the current assistant
+    const wasCurrentAssistant = state.currentAssistant.id === id
+
+    set({ assistants: state.assistants.filter((a) => a.id !== id) })
+
+    // If the deleted assistant was current, fallback to default and update localStorage
+    if (wasCurrentAssistant) {
+      set({ currentAssistant: defaultAssistant })
+      setLastUsedAssistantId(defaultAssistant.id)
+    }
   },
-  setCurrentAssistant: (assistant) => {
+  setCurrentAssistant: (assistant, saveToStorage = true) => {
     set({ currentAssistant: assistant })
+    if (saveToStorage) {
+      setLastUsedAssistantId(assistant.id)
+    }
   },
   setAssistants: (assistants) => {
     set({ assistants })
+  },
+  getLastUsedAssistant: () => {
+    return getLastUsedAssistantId()
+  },
+  setLastUsedAssistant: (assistantId) => {
+    setLastUsedAssistantId(assistantId)
+  },
+  initializeWithLastUsed: () => {
+    const lastUsedId = getLastUsedAssistantId()
+    if (lastUsedId) {
+      const lastUsedAssistant = get().assistants.find(
+        (a) => a.id === lastUsedId
+      )
+      if (lastUsedAssistant) {
+        set({ currentAssistant: lastUsedAssistant })
+      } else {
+        // Fallback to default if last used assistant was deleted
+        set({ currentAssistant: defaultAssistant })
+        setLastUsedAssistantId(defaultAssistant.id)
+      }
+    }
   },
 }))

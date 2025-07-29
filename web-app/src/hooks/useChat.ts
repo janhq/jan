@@ -45,7 +45,7 @@ export const useChat = () => {
     updateLoadingModel,
     setAbortController,
   } = useAppState()
-  const { currentAssistant } = useAssistant()
+  const { assistants, currentAssistant } = useAssistant()
   const { updateProvider } = useModelProvider()
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
@@ -74,6 +74,9 @@ export const useChat = () => {
     return provider?.provider || selectedProvider
   }, [provider, selectedProvider])
 
+  const selectedAssistant =
+    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+
   useEffect(() => {
     function setTools() {
       getTools().then((data: MCPTool[]) => {
@@ -92,6 +95,7 @@ export const useChat = () => {
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
+
     if (!currentThread) {
       currentThread = await createThread(
         {
@@ -99,7 +103,7 @@ export const useChat = () => {
           provider: selectedProvider,
         },
         prompt,
-        currentAssistant
+        selectedAssistant
       )
       router.navigate({
         to: route.threadsDetail,
@@ -114,7 +118,7 @@ export const useChat = () => {
     router,
     selectedModel?.id,
     selectedProvider,
-    currentAssistant,
+    selectedAssistant,
   ])
 
   const restartModel = useCallback(
@@ -402,6 +406,7 @@ export const useChat = () => {
             accumulatedText,
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
+              assistant: currentAssistant,
             }
           )
 

@@ -11,7 +11,8 @@ vi.mock('../useAssistant', () => ({
     })),
     {
       getState: vi.fn(() => ({
-        currentAssistant: { id: 'test-assistant', name: 'Test Assistant' }
+        currentAssistant: { id: 'test-assistant', name: 'Test Assistant' },
+        assistants: [{ id: 'test-assistant', name: 'Test Assistant' }]
       }))
     }
   )

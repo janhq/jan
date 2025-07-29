@@ -11,19 +11,31 @@ vi.mock('../usePrompt', () => ({
 }))
 
 vi.mock('../useAppState', () => ({
-  useAppState: vi.fn(() => ({
-    tools: [],
-    updateTokenSpeed: vi.fn(),
-    resetTokenSpeed: vi.fn(),
-    updateTools: vi.fn(),
-    updateStreamingContent: vi.fn(),
-    updateLoadingModel: vi.fn(),
-    setAbortController: vi.fn(),
-  })),
+  useAppState: Object.assign(
+    vi.fn(() => ({
+      tools: [],
+      updateTokenSpeed: vi.fn(),
+      resetTokenSpeed: vi.fn(),
+      updateTools: vi.fn(),
+      updateStreamingContent: vi.fn(),
+      updateLoadingModel: vi.fn(),
+      setAbortController: vi.fn(),
+    })),
+    {
+      getState: vi.fn(() => ({
+        tokenSpeed: { tokensPerSecond: 10 },
+      }))
+    }
+  ),
 }))
 
 vi.mock('../useAssistant', () => ({
   useAssistant: vi.fn(() => ({
+    assistants: [{
+      id: 'test-assistant',
+      instructions: 'test instructions',
+      parameters: { stream: true },
+    }],
     currentAssistant: {
       id: 'test-assistant',
       instructions: 'test instructions',
@@ -88,6 +100,12 @@ vi.mock('../useModelContextApproval', () => ({
   })),
 }))
 
+vi.mock('../useModelLoad', () => ({
+  useModelLoad: vi.fn(() => ({
+    setModelLoadError: vi.fn(),
+  })),
+}))
+
 vi.mock('@tanstack/react-router', () => ({
   useRouter: vi.fn(() => ({
     navigate: vi.fn(),
@@ -96,6 +114,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/lib/completion', () => ({
   emptyThreadContent: { thread_id: 'test-thread', content: '' },
+  extractToolCall: vi.fn(),
   newUserThreadContent: vi.fn(() => ({ thread_id: 'test-thread', content: 'user message' })),
   newAssistantThreadContent: vi.fn(() => ({ thread_id: 'test-thread', content: 'assistant message' })),
   sendCompletion: vi.fn(),
