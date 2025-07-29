@@ -158,9 +158,10 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
             )}
             <Dialog
               onOpenChange={(open) => {
-                if (!open) {
-                  setOpenDropdown(false)
+                if (open) {
                   setTitle(plainTitleForRename || t('common:newThread'))
+                } else {
+                  setOpenDropdown(false)
                 }
               }}
             >
