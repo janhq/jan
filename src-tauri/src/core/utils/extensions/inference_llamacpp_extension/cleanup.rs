@@ -1,7 +1,6 @@
 use crate::core::state::AppState;
 use tauri::State;
-use tokio::time::timeout;
-use std::time::Duration;
+use tokio::time::{timeout, Duration};
 
 pub async fn cleanup_processes(state: State<'_, AppState>) {
     let mut map = state.llama_server_process.lock().await;
@@ -13,7 +12,6 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
             {
                 use nix::sys::signal::{kill, Signal};
                 use nix::unistd::Pid;
-                use tokio::time::{timeout, Duration};
 
                 if let Some(raw_pid) = child.id() {
                     let raw_pid = raw_pid as i32;
