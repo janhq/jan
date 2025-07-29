@@ -3,7 +3,6 @@ import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 
 import LeftPanel from '@/containers/LeftPanel'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
-import { CortexFailureDialog } from '@/containers/dialogs/CortexFailureDialog' // Added import
 import { Fragment } from 'react/jsx-runtime'
 import { AppearanceProvider } from '@/providers/AppearanceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
@@ -167,7 +166,6 @@ function RootLayout() {
         </ExtensionProvider>
         {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
         {/* <TanStackRouterDevtools position="bottom-right" /> */}
-        <CortexFailureDialog />
         <ToolApproval />
         <LoadModelErrorDialog />
         <OutOfContextPromiseModal />

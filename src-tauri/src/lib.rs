@@ -6,7 +6,6 @@ use core::{
     state::{generate_app_token, AppState},
     utils::download::DownloadManagerState,
 };
-use reqwest::Client;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tokio::sync::Mutex;
@@ -143,10 +142,6 @@ pub fn run() {
                         cleanup_processes(state).await;
                     });
                 }
-
-                let client = Client::new();
-                let url = "http://127.0.0.1:39291/processManager/destroy";
-                let _ = client.delete(url).send();
             }
             _ => {}
         })

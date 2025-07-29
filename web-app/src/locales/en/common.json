@@ -258,11 +258,5 @@
       "title": "Download Cancelled",
       "description": "The download process was cancelled"
     }
-  },
-  "cortexFailureDialog": {
-    "title": "Local AI Engine Issue",
-    "description": "The local AI engine (Cortex) failed to start after multiple attempts. This might prevent some features from working correctly.",
-    "contactSupport": "Contact Support",
-    "restartJan": "Restart Jan"
   }
 }

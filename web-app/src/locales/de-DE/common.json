@@ -257,11 +257,5 @@
       "title": "Download abgebrochen",
       "description": "Der Download-Prozess wurde abgebrochen"
     }
-  },
-  "cortexFailureDialog": {
-    "title": "Problem mit der lokalen KI-Engine",
-    "description": "Die Lokale KI-Engine (Cortex) konnte nach mehreren Versuchen nicht gestartet werden. Dies verhindert möglicherweise die korrekte Ausführung diverser Funktionalitäten.",
-    "contactSupport": "Support kontaktieren",
-    "restartJan": "Jan neu starten"
   }
 }
