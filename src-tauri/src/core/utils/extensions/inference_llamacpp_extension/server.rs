@@ -330,35 +330,22 @@ pub async fn unload_llama_model(
 
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
-            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-
             if let Some(raw_pid) = child.id() {
-                log::info!("Sending Ctrl-C to PID {}", raw_pid);
-                let ok: i32 = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32) };
-                if ok == 0 {
-                    log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
-                }
+                log::info!("Terminating llama-server PID {}", raw_pid);
 
-                match timeout(Duration::from_secs(5), child.wait()).await {
-                    Ok(Ok(status)) => log::info!("Process exited after Ctrl-C: {}", status),
-                    Ok(Err(e)) => log::error!("Error waiting after Ctrl-C: {}", e),
-                    Err(_) => {
-                        log::warn!("Timed out; force-killing PID {}", raw_pid);
-                        if let Err(e) = child.kill().await {
-                            log::error!("Failed to kill process {}: {}", raw_pid, e);
-                            return Ok(UnloadResult {
-                                success: false,
-                                error: Some(format!("kill failed: {}", e)),
-                            });
-                        }
-                        if let Ok(s) = child.wait().await {
-                            log::info!("Process finally exited: {}", s);
-                        }
+                // Brief wait for natural shutdown
+                match timeout(Duration::from_secs(2), child.wait()).await {
+                    Ok(Ok(status)) => {
+                        log::info!("llama-server exited gracefully: {}", status);
+                    }
+                    _ => {
+                        log::warn!("Force-killing llama-server PID {}", raw_pid);
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
                     }
                 }
             }
         }
-
         Ok(UnloadResult {
             success: true,
             error: None,
