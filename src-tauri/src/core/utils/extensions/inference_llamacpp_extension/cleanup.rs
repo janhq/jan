@@ -1,5 +1,5 @@
-use tauri::State;
 use crate::core::state::AppState;
+use tauri::State;
 
 pub async fn cleanup_processes(state: State<'_, AppState>) {
     let mut map = state.llama_server_process.lock().await;
@@ -19,8 +19,12 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
                     let _ = kill(Pid::from_raw(raw_pid), Signal::SIGTERM);
 
                     match timeout(Duration::from_secs(2), child.wait()).await {
-                        Ok(Ok(status)) => log::info!("Process {} exited gracefully: {}", raw_pid, status),
-                        Ok(Err(e)) => log::error!("Error waiting after SIGTERM for {}: {}", raw_pid, e),
+                        Ok(Ok(status)) => {
+                            log::info!("Process {} exited gracefully: {}", raw_pid, status)
+                        }
+                        Ok(Err(e)) => {
+                            log::error!("Error waiting after SIGTERM for {}: {}", raw_pid, e)
+                        }
                         Err(_) => {
                             log::warn!("SIGTERM timed out for PID {}; sending SIGKILL", raw_pid);
                             let _ = kill(Pid::from_raw(raw_pid), Signal::SIGKILL);
@@ -29,27 +33,31 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
                     }
                 }
             }
-
             #[cfg(all(windows, target_arch = "x86_64"))]
             {
-                use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-                use tokio::time::{timeout, Duration};
-
                 if let Some(raw_pid) = child.id() {
-                    log::info!("Sending Ctrl-C to PID {} during shutdown", raw_pid);
-                    let ok: i32 = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid) };
-                    if ok == 0 {
-                        log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
-                    }
+                    log::warn!(
+                        "Gracefully terminating is unsupported on Windows, force-killing PID {}",
+                        raw_pid
+                    );
 
-                    match timeout(Duration::from_secs(2), child.wait()).await {
-                        Ok(Ok(status)) => log::info!("Process {} exited after Ctrl-C: {}", raw_pid, status),
-                        Ok(Err(e)) => log::error!("Error waiting after Ctrl-C for {}: {}", raw_pid, e),
-                        Err(_) => {
-                            log::warn!("Timed out for PID {}; force-killing", raw_pid);
-                            let _ = child.kill().await;
-                            let _ = child.wait().await;
-                        }
+                    // Since we know a graceful shutdown doesn't work and there are no child processes
+                    // to worry about, we can use `child.kill()` directly. On Windows, this is
+                    // a forceful termination via the `TerminateProcess` API.
+                    if let Err(e) = child.kill().await {
+                        log::error!("Failed to send kill signal to PID {}: {}. It may have already terminated.", raw_pid, e);
+                    }
+                    match child.wait().await {
+                        Ok(status) => log::info!(
+                            "process {} has been terminated. Final exit status: {}",
+                            raw_pid,
+                            status
+                        ),
+                        Err(e) => log::error!(
+                            "Error waiting on child process {} after kill: {}",
+                            raw_pid,
+                            e
+                        ),
                     }
                 }
             }

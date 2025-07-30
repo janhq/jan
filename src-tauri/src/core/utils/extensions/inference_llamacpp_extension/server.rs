@@ -330,35 +330,34 @@ pub async fn unload_llama_model(
 
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
-            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-
             if let Some(raw_pid) = child.id() {
-                log::info!("Sending Ctrl-C to PID {}", raw_pid);
-                let ok: i32 = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, raw_pid as u32) };
-                if ok == 0 {
-                    log::error!("Failed to send Ctrl-C to PID {}", raw_pid);
+                log::warn!("gracefully killing is unsupported on Windows, force-killing PID {}", raw_pid);
+
+                // Since we know a graceful shutdown doesn't work and there are no child processes
+                // to worry about, we can use `child.kill()` directly. On Windows, this is
+                // a forceful termination via the `TerminateProcess` API.
+                if let Err(e) = child.kill().await {
+                    log::error!(
+                        "Failed to send kill signal to PID {}: {}. It may have already terminated.",
+                        raw_pid,
+                        e
+                    );
                 }
 
-                match timeout(Duration::from_secs(5), child.wait()).await {
-                    Ok(Ok(status)) => log::info!("Process exited after Ctrl-C: {}", status),
-                    Ok(Err(e)) => log::error!("Error waiting after Ctrl-C: {}", e),
-                    Err(_) => {
-                        log::warn!("Timed out; force-killing PID {}", raw_pid);
-                        if let Err(e) = child.kill().await {
-                            log::error!("Failed to kill process {}: {}", raw_pid, e);
-                            return Ok(UnloadResult {
-                                success: false,
-                                error: Some(format!("kill failed: {}", e)),
-                            });
-                        }
-                        if let Ok(s) = child.wait().await {
-                            log::info!("Process finally exited: {}", s);
-                        }
-                    }
+                match child.wait().await {
+                    Ok(status) => log::info!(
+                        "process {} has been terminated. Final exit status: {}",
+                        raw_pid,
+                        status
+                    ),
+                    Err(e) => log::error!(
+                        "Error waiting on child process {} after kill: {}",
+                        raw_pid,
+                        e
+                    ),
                 }
             }
         }
-
         Ok(UnloadResult {
             success: true,
             error: None,
