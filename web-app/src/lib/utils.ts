@@ -16,22 +16,14 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/huggingface.svg'
     case 'mistral':
       return '/images/model-provider/mistral.svg'
-    case 'martian':
-      return '/images/model-provider/martian.svg'
     case 'openrouter':
-      return '/images/model-provider/openRouter.svg'
+      return '/images/model-provider/open-router.svg'
     case 'groq':
       return '/images/model-provider/groq.svg'
     case 'cohere':
       return '/images/model-provider/cohere.svg'
-    case 'nvidia':
-      return '/images/model-provider/nvidia.svg'
-    case 'meta':
-      return '/images/model-provider/meta.svg'
     case 'gemini':
       return '/images/model-provider/gemini.svg'
-    case 'deepseek':
-      return '/images/model-provider/deepseek.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
     default:
