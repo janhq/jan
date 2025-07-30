@@ -247,8 +247,7 @@ export const useChat = () => {
           messages,
           currentAssistant?.instructions
         )
-
-        builder.addUserMessage(message)
+        if (troubleshooting) builder.addUserMessage(message)
 
         let isCompleted = false
 
