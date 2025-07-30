@@ -71,7 +71,7 @@ We train our models in public. Check the [models page](./models/jan-v1) to see:
 - Failed runs and what went wrong
 - Models in testing before release
 
-No black box. No "trust us, it's good." Watch the entire process from dataset to deployment.
+No "trust us, it's good." Watch the entire process from dataset to deployment.
 
 ### Help Evaluate Our Models
 Every model needs real-world testing. Join our open evaluation platform where you can:
@@ -83,6 +83,25 @@ Every model needs real-world testing. Join our open evaluation platform where yo
 Think LMArena, but you can see all the data, run your own evals, and directly influence what we train next.
 
 [Test/evaluate our models here](link)
+
+### Our Models Training Right Now
+
+We don't just talk about open development. Here's what's actually happening:
+
+| Model | Progress | Status | Details |
+|:------|:---------|:-------|:--------|
+| **Jan-Search-7B** | ████████░░ 82% | Testing | [View run](/) • 2.1M steps • ETA 3 days |
+| **Jan-Write-13B** | ████░░░░░░ 41% | Training | [View run](/) • 980K steps • On track |
+| **Jan-Analyze-13B** | ████████░░ ~~67%~~ | Failed | [View logs](/) • OOM at step 1.5M • Restarting |
+
+These are our actual models training on our hardware in our Singapore office. Click any run to see:
+- Live loss curves
+- Training datasets
+- Evaluation metrics
+- Even our failures
+
+[Watch live training →](/train)
+
 
 ## Get Involved
 

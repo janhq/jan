@@ -6,12 +6,14 @@ sidebar:
 ---
 import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Jan Desktop is your local AI workstation. Download it, run your own models, or connect to cloud providers. Your computer, your choice.
+Jan Desktop is your local AI workstation. Download it, run your own models, or connect to
+cloud providers. Your computer, your choice.
 
 ## How It Works
 
 ### Default: Local Mode
-Open Jan. Start chatting with Jan Nano. No internet, no account, no API keys. Your conversations never leave your machine.
+Open Jan. Start chatting with Jan Nano. No internet, no account, no API keys. Your conversations
+never leave your machine.
 
 ### Optional: Cloud Mode
 Need more power? Connect to:
@@ -20,23 +22,28 @@ Need more power? Connect to:
 - Any OpenAI-compatible API
 
 <Aside type="caution">
-**Current limitation**: You need to download a model first (2-4GB). We're embedding Jan Nano in the app to fix this.
+**Current limitation**: You need to download a model first (2-4GB). We're embedding Jan Nano
+in the app to fix this.
 </Aside>
 
 ## Why Desktop First
 
-Your desktop has the GPU, storage, and memory to run real AI models. Not toy versions. Not demos. The same models that power ChatGPT-scale applications.
+Your desktop has the GPU, storage, and memory to run real AI models. Not toy versions. Not
+demos. The same models that power ChatGPT-scale applications.
 
-More importantly: it becomes the hub for your other devices. Your phone connects to your desktop. Your team connects to your desktop. Everything stays in your control.
+More importantly: it becomes the hub for your other devices. Your phone connects to your
+desktop. Your team connects to your desktop. Everything stays in your control.
 
 ## Specifications
 
 <CardGrid>
-  <Card title="Storage" icon="folder">
-    Everything in `~/jan`. Your data, your models, your configuration. Back it up, move it, delete it - it's just files.
+  <Card title="Storage" icon="list-format">
+    Everything in `~/.local/share/jan`. Your data, your models, your configuration. Back it up, move it, delete
+    it - it's just files.
   </Card>
-  <Card title="API Server" icon="code">
-    OpenAI-compatible API at `localhost:1337`. Any tool that works with OpenAI works with Jan. No code changes.
+  <Card title="API Server" icon="forward-slash">
+    OpenAI-compatible API at `localhost:1337`. Any tool that works with OpenAI works with Jan. No
+    code changes.
   </Card>
   <Card title="GPU Support" icon="rocket">
     NVIDIA CUDA acceleration out of the box. Automatically detects and uses available GPUs. CPU fallback always works.
