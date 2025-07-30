@@ -52,7 +52,7 @@ export default function LoadModelErrorDialog() {
             <div>
               <DialogTitle>{t('common:error')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
-                Failed to load model
+                Something went wrong
               </DialogDescription>
             </div>
           </div>
