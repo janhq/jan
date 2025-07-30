@@ -233,7 +233,6 @@ function MCPServers() {
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
 
-
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -354,7 +353,9 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleOpenJsonEditor(key)}
-                          title={t('mcp-servers:editJson')}
+                          title={t('mcp-servers:editJson.title', {
+                            serverName: key,
+                          })}
                         >
                           <IconCodeCircle
                             size={18}
@@ -374,7 +375,7 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleDeleteClick(key)}
-                          title={t('mcp-servers:deleteServer')}
+                          title={t('mcp-servers:deleteServer.title')}
                         >
                           <IconTrash
                             size={18}
