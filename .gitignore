@@ -80,6 +80,3 @@ combined-output/
 
 # vscode
 .vscode/
-
-# yarn
-.yarnrc.yml
