@@ -13,9 +13,9 @@
 import { Route as rootRoute } from './routes/__root'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as LogsImport } from './routes/logs'
-import { Route as HubImport } from './routes/hub'
 import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
+import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
@@ -27,6 +27,7 @@ import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
+import { Route as HubModelIdImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
@@ -44,12 +45,6 @@ const LogsRoute = LogsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const HubRoute = HubImport.update({
-  id: '/hub',
-  path: '/hub',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const AssistantRoute = AssistantImport.update({
   id: '/assistant',
   path: '/assistant',
@@ -59,6 +54,12 @@ const AssistantRoute = AssistantImport.update({
 const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const HubIndexRoute = HubIndexImport.update({
+  id: '/hub/',
+  path: '/hub/',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -128,6 +129,12 @@ const LocalApiServerLogsRoute = LocalApiServerLogsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const HubModelIdRoute = HubModelIdImport.update({
+  id: '/hub/$modelId',
+  path: '/hub/$modelId',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsProvidersIndexRoute = SettingsProvidersIndexImport.update({
   id: '/settings/providers/',
   path: '/settings/providers/',
@@ -159,13 +166,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AssistantImport
       parentRoute: typeof rootRoute
     }
-    '/hub': {
-      id: '/hub'
-      path: '/hub'
-      fullPath: '/hub'
-      preLoaderRoute: typeof HubImport
-      parentRoute: typeof rootRoute
-    }
     '/logs': {
       id: '/logs'
       path: '/logs'
@@ -178,6 +178,13 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorImport
+      parentRoute: typeof rootRoute
+    }
+    '/hub/$modelId': {
+      id: '/hub/$modelId'
+      path: '/hub/$modelId'
+      fullPath: '/hub/$modelId'
+      preLoaderRoute: typeof HubModelIdImport
       parentRoute: typeof rootRoute
     }
     '/local-api-server/logs': {
@@ -257,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ThreadsThreadIdImport
       parentRoute: typeof rootRoute
     }
+    '/hub/': {
+      id: '/hub/'
+      path: '/hub'
+      fullPath: '/hub'
+      preLoaderRoute: typeof HubIndexImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
@@ -279,9 +293,9 @@ declare module '@tanstack/react-router' {
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
-  '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -293,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -300,9 +315,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
-  '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -314,6 +329,7 @@ export interface FileRoutesByTo {
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -322,9 +338,9 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
-  '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -336,6 +352,7 @@ export interface FileRoutesById {
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub/': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -345,9 +362,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/assistant'
-    | '/hub'
     | '/logs'
     | '/system-monitor'
+    | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -359,15 +376,16 @@ export interface FileRouteTypes {
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/hub'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/assistant'
-    | '/hub'
     | '/logs'
     | '/system-monitor'
+    | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -379,15 +397,16 @@ export interface FileRouteTypes {
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/hub'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
     | '__root__'
     | '/'
     | '/assistant'
-    | '/hub'
     | '/logs'
     | '/system-monitor'
+    | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -399,6 +418,7 @@ export interface FileRouteTypes {
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/hub/'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -407,9 +427,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssistantRoute: typeof AssistantRoute
-  HubRoute: typeof HubRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
@@ -421,6 +441,7 @@ export interface RootRouteChildren {
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  HubIndexRoute: typeof HubIndexRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -428,9 +449,9 @@ export interface RootRouteChildren {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssistantRoute: AssistantRoute,
-  HubRoute: HubRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
@@ -442,6 +463,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  HubIndexRoute: HubIndexRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
@@ -458,9 +480,9 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/assistant",
-        "/hub",
         "/logs",
         "/system-monitor",
+        "/hub/$modelId",
         "/local-api-server/logs",
         "/settings/appearance",
         "/settings/extensions",
@@ -472,6 +494,7 @@ export const routeTree = rootRoute
         "/settings/privacy",
         "/settings/shortcuts",
         "/threads/$threadId",
+        "/hub/",
         "/settings/providers/$providerName",
         "/settings/providers/"
       ]
@@ -482,14 +505,14 @@ export const routeTree = rootRoute
     "/assistant": {
       "filePath": "assistant.tsx"
     },
-    "/hub": {
-      "filePath": "hub.tsx"
-    },
     "/logs": {
       "filePath": "logs.tsx"
     },
     "/system-monitor": {
       "filePath": "system-monitor.tsx"
+    },
+    "/hub/$modelId": {
+      "filePath": "hub/$modelId.tsx"
     },
     "/local-api-server/logs": {
       "filePath": "local-api-server/logs.tsx"
@@ -523,6 +546,9 @@ export const routeTree = rootRoute
     },
     "/threads/$threadId": {
       "filePath": "threads/$threadId.tsx"
+    },
+    "/hub/": {
+      "filePath": "hub/index.tsx"
     },
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"

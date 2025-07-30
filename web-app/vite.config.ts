@@ -14,7 +14,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
+      TanStackRouterVite({
+        target: 'react',
+        autoCodeSplitting: true,
+        routeFileIgnorePattern: '.((test).ts)|test-page',
+      }),
       react(),
       tailwindcss(),
       nodePolyfills({
@@ -49,6 +53,9 @@ export default defineConfig(({ mode }) => {
 
       POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
+      MODEL_CATALOG_URL: JSON.stringify(
+        'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
+      ),
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -70,14 +77,6 @@ export default defineConfig(({ mode }) => {
       watch: {
         // 3. tell vite to ignore watching `src-tauri`
         ignored: ['**/src-tauri/**'],
-      },
-    },
-    test: {
-      environment: 'jsdom',
-      coverage: {
-        provider: 'v8',
-        reporter: ['json', 'lcov'],
-        reportsDirectory: '../coverage/vitest',
       },
     },
   }

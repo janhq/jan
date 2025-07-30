@@ -57,7 +57,7 @@ const mainMenus = [
   {
     title: 'common:hub',
     icon: IconAppsFilled,
-    route: route.hub,
+    route: route.hub.index,
   },
   {
     title: 'common:settings',

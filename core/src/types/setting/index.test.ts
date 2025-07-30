@@ -1,5 +1,6 @@
-
+import { it, expect } from 'vitest'
+import './index'
 
 it('should not throw any errors', () => {
-  expect(() => require('./index')).not.toThrow();
-});
+  expect(true).toBe(true)
+})

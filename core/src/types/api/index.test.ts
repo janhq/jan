@@ -1,5 +1,6 @@
 
 
+import { test, expect } from 'vitest'
 import { NativeRoute } from '../index';
 
 test('testNativeRouteEnum', () => {

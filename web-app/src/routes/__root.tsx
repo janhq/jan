@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
+import LoadModelErrorDialog from '@/containers/dialogs/LoadModelErrorDialog'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import {
   ResizablePanelGroup,
@@ -27,9 +28,12 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable'
 import { useCallback } from 'react'
+import GlobalError from '@/containers/GlobalError'
+import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: ({ error }) => <GlobalError error={error} />,
 })
 
 const AppLayout = () => {
@@ -159,11 +163,13 @@ function RootLayout() {
       <TranslationProvider>
         <ExtensionProvider>
           <DataProvider />
+          <GlobalEventHandler />
         </ExtensionProvider>
         {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
         {/* <TanStackRouterDevtools position="bottom-right" /> */}
         <CortexFailureDialog />
         <ToolApproval />
+        <LoadModelErrorDialog />
         <OutOfContextPromiseModal />
       </TranslationProvider>
     </Fragment>

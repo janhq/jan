@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "target": "ES2015",
     "module": "ES2020",
     "lib": ["es2015", "es2016", "es2017", "dom"],
@@ -13,8 +13,9 @@
     "declarationDir": "dist/types",
     "outDir": "dist",
     "importHelpers": true,
-    "types": ["jest", "node"]
+    "types": ["node"],
+    "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "node_modules/@vitest/**", "node_modules/@types/chai/**"]
 }

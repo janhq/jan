@@ -35,6 +35,12 @@ export const useAppState = create<AppState>()((set) => ({
   tokenSpeed: undefined,
   currentToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
+    const assistants = useAssistant.getState().assistants
+    const currentAssistant = useAssistant.getState().currentAssistant
+
+    const selectedAssistant =
+      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+
     set(() => ({
       streamingContent: content
         ? {
@@ -42,7 +48,7 @@ export const useAppState = create<AppState>()((set) => ({
             created_at: content.created_at || Date.now(),
             metadata: {
               ...content.metadata,
-              assistant: useAssistant.getState().currentAssistant,
+              assistant: selectedAssistant,
             },
           }
         : undefined,

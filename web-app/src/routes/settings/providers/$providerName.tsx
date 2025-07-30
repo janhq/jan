@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -6,7 +7,7 @@ import { cn, getProviderTitle } from '@/lib/utils'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   getActiveModels,
-  importModel,
+  pullModel,
   startModel,
   stopAllModels,
   stopModel,
@@ -35,9 +36,10 @@ import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
-import { ActiveModel } from '@/types/models'
 import { useEffect, useState } from 'react'
-import { predefinedProviders } from '@/mock/data'
+import { predefinedProviders } from '@/consts/providers'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -52,6 +54,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const { setModelLoadError } = useModelLoad()
   const steps = [
     {
       target: '.first-step-setup-remote-provider',
@@ -73,7 +76,7 @@ function ProviderDetail() {
     },
   ]
   const { step } = useSearch({ from: Route.id })
-  const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
+  const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const { providerName } = useParams({ from: Route.id })
@@ -82,17 +85,69 @@ function ProviderDetail() {
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
 
+  // Check if llamacpp provider needs backend configuration
+  const needsBackendConfig =
+    provider?.provider === 'llamacpp' &&
+    provider.settings?.some(
+      (setting) =>
+        setting.key === 'version_backend' &&
+        (setting.controller_props.value === 'none' ||
+          setting.controller_props.value === '' ||
+          !setting.controller_props.value)
+    )
+
   useEffect(() => {
     // Initial data fetch
-    getActiveModels().then(setActiveModels)
+    getActiveModels().then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      getActiveModels().then(setActiveModels)
+      getActiveModels().then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)
   }, [setActiveModels])
+
+  // Auto-refresh provider settings to get updated backend configuration
+  const refreshSettings = async () => {
+    if (!provider) return
+
+    try {
+      // Refresh providers to get updated settings from the extension
+      const updatedProviders = await getProviders()
+      setProviders(updatedProviders)
+    } catch (error) {
+      console.error('Failed to refresh settings:', error)
+    }
+  }
+
+  // Auto-refresh settings when provider changes or when llamacpp needs backend config
+  useEffect(() => {
+    if (provider && needsBackendConfig) {
+      // Auto-refresh every 3 seconds when backend is being configured
+      const intervalId = setInterval(refreshSettings, 3000)
+      return () => clearInterval(intervalId)
+    }
+  }, [provider, needsBackendConfig])
+
+  // Note: settingsChanged event is now handled globally in GlobalEventHandler
+  // This ensures all screens receive the event intermediately
+
+  // Auto-refresh models for non-predefined providers
+  useEffect(() => {
+    if (
+      provider &&
+      provider.provider !== 'llamacpp' &&
+      !predefinedProviders.some((p) => p.provider === provider.provider) &&
+      provider.base_url
+    ) {
+      // Auto-refresh models every 10 seconds for remote providers
+      const intervalId = setInterval(() => {
+        handleRefreshModels()
+      }, 10000)
+      return () => clearInterval(intervalId)
+    }
+  }, [provider])
 
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status } = data
@@ -171,13 +226,11 @@ function ProviderDetail() {
     if (provider)
       startModel(provider, modelId)
         .then(() => {
-          setActiveModels((prevModels) => [
-            ...prevModels,
-            { id: modelId } as ActiveModel,
-          ])
+          setActiveModels((prevModels) => [...prevModels, modelId])
         })
         .catch((error) => {
           console.error('Error starting model:', error)
+          setModelLoadError(`${error.message}`)
         })
         .finally(() => {
           // Remove model from loading state
@@ -189,7 +242,7 @@ function ProviderDetail() {
     stopModel(modelId)
       .then(() => {
         setActiveModels((prevModels) =>
-          prevModels.filter((model) => model.id !== modelId)
+          prevModels.filter((model) => model !== modelId)
         )
       })
       .catch((error) => {
@@ -240,7 +293,7 @@ function ProviderDetail() {
                 className={cn(
                   'flex flex-col gap-3',
                   provider &&
-                    provider.provider === 'llama.cpp' &&
+                    provider.provider === 'llamacpp' &&
                     'flex-col-reverse'
                 )}
               >
@@ -250,55 +303,91 @@ function ProviderDetail() {
                     // Use the DynamicController component
                     const actionComponent = (
                       <div className="mt-2">
-                        <DynamicControllerSetting
-                          controllerType={setting.controller_type}
-                          controllerProps={setting.controller_props}
-                          className={cn(
-                            setting.key === 'api-key' &&
-                              'third-step-setup-remote-provider'
-                          )}
-                          onChange={(newValue) => {
-                            if (provider) {
-                              const newSettings = [...provider.settings]
-                              // Handle different value types by forcing the type
-                              // Use type assertion to bypass type checking
+                        {needsBackendConfig &&
+                        setting.key === 'version_backend' ? (
+                          <div className="flex items-center gap-1 text-sm text-main-view-fg/70">
+                            <IconLoader size={16} className="animate-spin" />
+                            <span>loading</span>
+                          </div>
+                        ) : (
+                          <DynamicControllerSetting
+                            controllerType={setting.controller_type}
+                            controllerProps={setting.controller_props}
+                            className={cn(
+                              setting.key === 'api-key' &&
+                                'third-step-setup-remote-provider',
+                              setting.key === 'device' && 'hidden'
+                            )}
+                            onChange={(newValue) => {
+                              if (provider) {
+                                const newSettings = [...provider.settings]
+                                // Handle different value types by forcing the type
+                                // Use type assertion to bypass type checking
 
-                              ;(
-                                newSettings[settingIndex].controller_props as {
-                                  value: string | boolean | number
+                                ;(
+                                  newSettings[settingIndex]
+                                    .controller_props as {
+                                    value: string | boolean | number
+                                  }
+                                ).value = newValue
+
+                                // Create update object with updated settings
+                                const updateObj: Partial<ModelProvider> = {
+                                  settings: newSettings,
                                 }
-                              ).value = newValue
+                                // Check if this is an API key or base URL setting and update the corresponding top-level field
+                                const settingKey = setting.key
+                                if (
+                                  settingKey === 'api-key' &&
+                                  typeof newValue === 'string'
+                                ) {
+                                  updateObj.api_key = newValue
+                                } else if (
+                                  settingKey === 'base-url' &&
+                                  typeof newValue === 'string'
+                                ) {
+                                  updateObj.base_url = newValue
+                                }
 
-                              // Create update object with updated settings
-                              const updateObj: Partial<ModelProvider> = {
-                                settings: newSettings,
-                              }
-                              // Check if this is an API key or base URL setting and update the corresponding top-level field
-                              const settingKey = setting.key
-                              if (
-                                settingKey === 'api-key' &&
-                                typeof newValue === 'string'
-                              ) {
-                                updateObj.api_key = newValue
-                              } else if (
-                                settingKey === 'base-url' &&
-                                typeof newValue === 'string'
-                              ) {
-                                updateObj.base_url = newValue
-                              }
-                              updateSettings(
-                                providerName,
-                                updateObj.settings ?? []
-                              )
-                              updateProvider(providerName, {
-                                ...provider,
-                                ...updateObj,
-                              })
+                                // Reset device setting to empty when backend version changes
+                                if (settingKey === 'version_backend') {
+                                  const deviceSettingIndex =
+                                    newSettings.findIndex(
+                                      (s) => s.key === 'device'
+                                    )
 
-                              stopAllModels()
-                            }
-                          }}
-                        />
+                                  if (deviceSettingIndex !== -1) {
+                                    ;(
+                                      newSettings[deviceSettingIndex]
+                                        .controller_props as {
+                                        value: string
+                                      }
+                                    ).value = ''
+                                  }
+
+                                  // Reset llamacpp device activations when backend version changes
+                                  if (providerName === 'llamacpp') {
+                                    // Refresh devices to update activation status from provider settings
+                                    const { fetchDevices } =
+                                      useLlamacppDevices.getState()
+                                    fetchDevices()
+                                  }
+                                }
+
+                                updateSettings(
+                                  providerName,
+                                  updateObj.settings ?? []
+                                )
+                                updateProvider(providerName, {
+                                  ...provider,
+                                  ...updateObj,
+                                })
+
+                                stopAllModels()
+                              }
+                            }}
+                          />
+                        )}
                       </div>
                     )
 
@@ -306,6 +395,7 @@ function ProviderDetail() {
                       <CardItem
                         key={settingIndex}
                         title={setting.title}
+                        className={cn(setting.key === 'device' && 'hidden')}
                         column={
                           setting.controller_type === 'input' &&
                           setting.controller_props.type !== 'number'
@@ -353,7 +443,7 @@ function ProviderDetail() {
                         {t('providers:models')}
                       </h1>
                       <div className="flex items-center gap-2">
-                        {provider && provider.provider !== 'llama.cpp' && (
+                        {provider && provider.provider !== 'llamacpp' && (
                           <>
                             {!predefinedProviders.some(
                               (p) => p.provider === provider.provider
@@ -388,7 +478,7 @@ function ProviderDetail() {
                             <DialogAddModel provider={provider} />
                           </>
                         )}
-                        {provider && provider.provider === 'llama.cpp' && (
+                        {provider && provider.provider === 'llamacpp' && (
                           <Button
                             variant="link"
                             size="sm"
@@ -404,10 +494,15 @@ function ProviderDetail() {
                                   },
                                 ],
                               })
+                              // If the dialog returns a file path, extract just the file name
+                              const fileName =
+                                typeof selectedFile === 'string'
+                                  ? selectedFile.split(/[\\/]/).pop()
+                                  : undefined
 
-                              if (selectedFile) {
+                              if (selectedFile && fileName) {
                                 try {
-                                  await importModel(selectedFile)
+                                  await pullModel(fileName, selectedFile)
                                 } catch (error) {
                                   console.error(
                                     t('providers:importModelError'),
@@ -475,46 +570,40 @@ function ProviderDetail() {
                                 provider={provider}
                                 modelId={model.id}
                               />
-                              {provider &&
-                                provider.provider === 'llama.cpp' && (
-                                  <div className="ml-2">
-                                    {activeModels.some(
-                                      (activeModel) =>
-                                        activeModel.id === model.id
-                                    ) ? (
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          handleStopModel(model.id)
-                                        }
-                                      >
-                                        {t('providers:stop')}
-                                      </Button>
-                                    ) : (
-                                      <Button
-                                        size="sm"
-                                        disabled={loadingModels.includes(
-                                          model.id
-                                        )}
-                                        onClick={() =>
-                                          handleStartModel(model.id)
-                                        }
-                                      >
-                                        {loadingModels.includes(model.id) ? (
-                                          <div className="flex items-center gap-2">
-                                            <IconLoader
-                                              size={16}
-                                              className="animate-spin"
-                                            />
-                                          </div>
-                                        ) : (
-                                          t('providers:start')
-                                        )}
-                                      </Button>
-                                    )}
-                                  </div>
-                                )}
+                              {provider && provider.provider === 'llamacpp' && (
+                                <div className="ml-2">
+                                  {activeModels.some(
+                                    (activeModel) => activeModel === model.id
+                                  ) ? (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleStopModel(model.id)}
+                                    >
+                                      {t('providers:stop')}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      disabled={loadingModels.includes(
+                                        model.id
+                                      )}
+                                      onClick={() => handleStartModel(model.id)}
+                                    >
+                                      {loadingModels.includes(model.id) ? (
+                                        <div className="flex items-center gap-2">
+                                          <IconLoader
+                                            size={16}
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        t('providers:start')
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           }
                         />
@@ -530,7 +619,7 @@ function ProviderDetail() {
                       <p className="text-main-view-fg/70 mt-1 text-xs leading-relaxed">
                         {t('providers:noModelFoundDesc')}
                         &nbsp;
-                        <Link to={route.hub}>{t('common:hub')}</Link>
+                        <Link to={route.hub.index}>{t('common:hub')}</Link>
                       </p>
                     </div>
                   )}

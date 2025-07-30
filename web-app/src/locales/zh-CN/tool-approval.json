@@ -7,5 +7,6 @@
   "alwaysAllow": "始终允许",
   "permissions": "权限",
   "approve": "批准",
-  "reject": "拒绝"
+  "reject": "拒绝",
+  "parameters": "工具参数"
 }

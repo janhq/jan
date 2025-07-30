@@ -1,6 +1,4 @@
-/**
- * @jest-environment jsdom
- */
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { OAIEngine } from './OAIEngine'
 import { events } from '../../events'
 import {
@@ -13,7 +11,7 @@ import {
   ContentType,
 } from '../../../types'
 
-jest.mock('../../events')
+vi.mock('../../events')
 
 class TestOAIEngine extends OAIEngine {
   inferenceUrl = 'http://test-inference-url'
@@ -29,7 +27,7 @@ describe('OAIEngine', () => {
 
   beforeEach(() => {
     engine = new TestOAIEngine('', '')
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('should subscribe to events on load', () => {

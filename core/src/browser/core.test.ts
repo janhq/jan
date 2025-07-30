@@ -1,6 +1,4 @@
-/**
- * @jest-environment jsdom
- */
+import { describe, it, expect, vi } from 'vitest'
 import { openExternalUrl } from './core'
 import { joinPath } from './core'
 import { openFileExplorer } from './core'
@@ -12,7 +10,7 @@ describe('test core apis', () => {
     const url = 'http://example.com'
     globalThis.core = {
       api: {
-        openExternalUrl: jest.fn().mockResolvedValue('opened'),
+        openExternalUrl: vi.fn().mockResolvedValue('opened'),
       },
     }
     const result = await openExternalUrl(url)
@@ -24,7 +22,7 @@ describe('test core apis', () => {
     const paths = ['/path/one', '/path/two']
     globalThis.core = {
       api: {
-        joinPath: jest.fn().mockResolvedValue('/path/one/path/two'),
+        joinPath: vi.fn().mockResolvedValue('/path/one/path/two'),
       },
     }
     const result = await joinPath(paths)
@@ -36,7 +34,7 @@ describe('test core apis', () => {
     const path = '/path/to/open'
     globalThis.core = {
       api: {
-        openFileExplorer: jest.fn().mockResolvedValue('opened'),
+        openFileExplorer: vi.fn().mockResolvedValue('opened'),
       },
     }
     const result = await openFileExplorer(path)
@@ -47,7 +45,7 @@ describe('test core apis', () => {
   it('should get jan data folder path', async () => {
     globalThis.core = {
       api: {
-        getJanDataFolderPath: jest.fn().mockResolvedValue('/path/to/jan/data'),
+        getJanDataFolderPath: vi.fn().mockResolvedValue('/path/to/jan/data'),
       },
     }
     const result = await getJanDataFolderPath()
@@ -58,7 +56,7 @@ describe('test core apis', () => {
 
 describe('dirName - just a pass thru api', () => {
   it('should retrieve the directory name from a file path', async () => {
-    const mockDirName = jest.fn()
+    const mockDirName = vi.fn()
     globalThis.core = {
       api: {
         dirName: mockDirName.mockResolvedValue('/path/to'),

@@ -6,10 +6,10 @@ import {
 } from '@janhq/core'
 
 /**
- * JSONConversationalExtension is a ConversationalExtension implementation that provides
+ * JanConversationalExtension is a ConversationalExtension implementation that provides
  * functionality for managing threads.
  */
-export default class CortexConversationalExtension extends ConversationalExtension {
+export default class JanConversationalExtension extends ConversationalExtension {
   /**
    * Called when the extension is loaded.
    */

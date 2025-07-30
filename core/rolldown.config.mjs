@@ -15,36 +15,5 @@ export default defineConfig([
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       VERSION: JSON.stringify(pkgJson.version),
     },
-  },
-  {
-    input: 'src/node/index.ts',
-    external: [
-      'fs/promises',
-      'path',
-      'pacote',
-      '@types/pacote',
-      '@npmcli/arborist',
-      'ulidx',
-      'fs',
-      'request',
-      'crypto',
-      'url',
-      'http',
-      'os',
-      'util',
-      'child_process',
-      'electron',
-      'request-progress',
-    ],
-    output: {
-      format: 'cjs',
-      file: 'dist/node/index.cjs.js',
-      sourcemap: true,
-      inlineDynamicImports: true,
-    },
-    resolve: {
-      extensions: ['.js', '.ts'],
-    },
-    platform: 'node',
-  },
+  }
 ])

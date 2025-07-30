@@ -6,5 +6,4 @@ interface Core {
 }
 interface Window {
   core?: Core | undefined
-  electronAPI?: any | undefined
 }

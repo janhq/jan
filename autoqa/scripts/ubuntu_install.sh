@@ -15,6 +15,11 @@ sudo apt-get install -f -y
 # Wait for installation to complete
 sleep 10
 
+echo "[INFO] Waiting for Jan app first initialization (120 seconds)..."
+echo "This allows Jan to complete its initial setup and configuration"
+sleep 120
+echo "[SUCCESS] Initialization wait completed"
+
 # Verify installation based on nightly flag
 if [ "$IS_NIGHTLY" = "true" ]; then
     DEFAULT_JAN_PATH="/usr/bin/Jan-nightly"

@@ -17,7 +17,10 @@ export const fetchThreads = async (): Promise<Thread[]> => {
         return threads.map((e) => {
           return {
             ...e,
-            updated: e.updated ?? 0,
+            updated:
+              typeof e.updated === 'number' && e.updated > 1e12
+                ? Math.floor(e.updated / 1000)
+                : (e.updated ?? 0),
             order: e.metadata?.order,
             isFavorite: e.metadata?.is_favorite,
             model: {
@@ -51,7 +54,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             ...(thread.assistants?.[0] ?? defaultAssistant),
             model: {
               id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llama.cpp',
+              engine: thread.model?.provider ?? 'llamacpp',
             },
           },
         ],
@@ -88,7 +91,7 @@ export const updateThread = (thread: Thread) => {
         return {
           model: {
             id: thread.model?.id ?? '*',
-            engine: thread.model?.provider ?? 'llama.cpp',
+            engine: thread.model?.provider ?? 'llamacpp',
           },
           id: e.id,
           name: e.name,
@@ -98,7 +101,7 @@ export const updateThread = (thread: Thread) => {
         {
           model: {
             id: thread.model?.id ?? '*',
-            engine: thread.model?.provider ?? 'llama.cpp',
+            engine: thread.model?.provider ?? 'llamacpp',
           },
           id: 'jan',
           name: 'Jan',

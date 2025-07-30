@@ -578,8 +578,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
         let server_info = service.peer_info();
         log::trace!("Connected to server: {server_info:#?}");
         (
-            server_info.server_info.name.clone(),
-            server_info.server_info.version.clone(),
+            server_info.unwrap().server_info.name.clone(),
+            server_info.unwrap().server_info.version.clone(),
         )
     };
 
@@ -728,27 +728,6 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
         });
     }
     
-    Ok(())
-}
-
-/// Handle app quit - stop all MCP servers cleanly (like cortex cleanup)
-pub async fn handle_app_quit(state: &AppState) -> Result<(), String> {
-    log::info!("App quitting - stopping all MCP servers cleanly");
-    
-    // Stop all running MCP servers
-    stop_mcp_servers(state.mcp_servers.clone()).await?;
-    
-    // Clear active servers and restart counts
-    {
-        let mut active_servers = state.mcp_active_servers.lock().await;
-        active_servers.clear();
-    }
-    {
-        let mut restart_counts = state.mcp_restart_counts.lock().await;
-        restart_counts.clear();
-    }
-    
-    log::info!("All MCP servers stopped cleanly");
     Ok(())
 }
 

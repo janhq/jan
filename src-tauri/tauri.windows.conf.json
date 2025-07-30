@@ -1,16 +1,8 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "resources": [
-      "resources/pre-install/**/*",
-      "resources/lib/",
-      "binaries/**/*"
-    ],
-    "externalBin": [
-      "binaries/cortex-server",
-      "resources/bin/bun",
-      "resources/bin/uv"
-    ],
+    "resources": ["resources/pre-install/**/*"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
     }

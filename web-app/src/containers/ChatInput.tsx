@@ -34,7 +34,6 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
-import { stopAllModels } from '@/services/models'
 
 type ChatInputProps = {
   className?: string
@@ -52,7 +51,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
-  const { spellCheckChatInput } = useGeneralSetting()
+  const { spellCheckChatInput, experimentalFeatures } = useGeneralSetting()
 
   const maxRows = 10
 
@@ -162,7 +161,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const stopStreaming = useCallback(
     (threadId: string) => {
       abortControllers[threadId]?.abort()
-      stopAllModels()
     },
     [abortControllers]
   )
@@ -404,7 +402,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
-                {model?.provider === 'llama.cpp' && loadingModel ? (
+                {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider
@@ -461,7 +459,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   </TooltipProvider>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') &&
+                {experimentalFeatures &&
+                  selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
                     <TooltipProvider>
                       <Tooltip

@@ -117,10 +117,8 @@ export class ExtensionManager {
   /**
    * Loads all registered extension.
    */
-  load() {
-    this.listExtensions().forEach((ext) => {
-      ext.onLoad()
-    })
+  async load() {
+    await Promise.all(this.listExtensions().map((ext) => ext.onLoad()))
   }
 
   /**
@@ -169,25 +167,27 @@ export class ExtensionManager {
   async activateExtension(extension: Extension) {
     // Import class
     const extensionUrl = extension.url
-    await import(/* @vite-ignore */convertFileSrc(extensionUrl)).then((extensionClass) => {
-      // Register class if it has a default export
-      if (
-        typeof extensionClass.default === 'function' &&
-        extensionClass.default.prototype
-      ) {
-        this.register(
-          extension.name,
-          new extensionClass.default(
-            extension.url,
+    await import(/* @vite-ignore */ convertFileSrc(extensionUrl)).then(
+      (extensionClass) => {
+        // Register class if it has a default export
+        if (
+          typeof extensionClass.default === 'function' &&
+          extensionClass.default.prototype
+        ) {
+          this.register(
             extension.name,
-            extension.productName,
-            extension.active,
-            extension.description,
-            extension.version
+            new extensionClass.default(
+              extension.url,
+              extension.name,
+              extension.productName,
+              extension.active,
+              extension.description,
+              extension.version
+            )
           )
-        )
+        }
       }
-    })
+    )
   }
 
   /**

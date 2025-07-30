@@ -279,7 +279,7 @@ def start_jan_app(jan_app_path=None):
         
         # Wait a bit more after maximizing
         time.sleep(10)
-        logger.info("Jan application should be ready")
+        logger.info("Jan application should be ready, waiting for additional setup...")
         time.sleep(10)  # Additional wait to ensure everything is ready
         
     except Exception as e:

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { ExtensionManager } from './extension'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -7,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getProviderLogo(provider: string) {
   switch (provider) {
-    case 'llama.cpp':
+    case 'llamacpp':
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
@@ -40,7 +41,7 @@ export function getProviderLogo(provider: string) {
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
-    case 'llama.cpp':
+    case 'llamacpp':
       return 'Llama.cpp'
     case 'openai':
       return 'OpenAI'
@@ -93,25 +94,9 @@ export function getReadableLanguageName(language: string): string {
   )
 }
 
-export function fuzzySearch(needle: string, haystack: string) {
-  const hlen = haystack.length
-  const nlen = needle.length
-  if (nlen > hlen) {
-    return false
-  }
-  if (nlen === hlen) {
-    return needle === haystack
-  }
-  outer: for (let i = 0, j = 0; i < nlen; i++) {
-    const nch = needle.charCodeAt(i)
-    while (j < hlen) {
-      if (haystack.charCodeAt(j++) === nch) {
-        continue outer
-      }
-    }
-    return false
-  }
-  return true
+export const isLocalProvider = (provider: string) => {
+  const extension = ExtensionManager.getInstance().getEngine(provider)
+  return extension && 'load' in extension
 }
 
 export const toGigabytes = (

@@ -22,7 +22,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useCallback, useState } from 'react'
-import { openAIProviderSettings } from '@/mock/data'
+import { openAIProviderSettings } from '@/consts/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 
@@ -38,7 +38,9 @@ function ModelProviders() {
   const [name, setName] = useState('')
 
   const createProvider = useCallback(() => {
-    if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
+    if (
+      providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
+    ) {
       toast.error(t('providerAlreadyExists', { name }))
       return
     }

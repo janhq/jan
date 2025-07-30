@@ -1,6 +1,6 @@
-
-import { expect } from '@jest/globals';
+import { it, expect } from 'vitest'
+import * as engines from './index'
 
 it('should re-export all exports from ./AIEngine', () => {
-  expect(require('./index')).toHaveProperty('AIEngine');
-});
+  expect(engines).toHaveProperty('AIEngine')
+})

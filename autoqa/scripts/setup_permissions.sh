@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Make all shell scripts executable
 chmod +x "$SCRIPT_DIR"/*.sh
 
-echo "✅ All shell scripts are now executable:"
+echo "[SUCCESS] All shell scripts are now executable:"
 ls -la "$SCRIPT_DIR"/*.sh
 
-echo "✅ Permission setup completed"
+echo "[SUCCESS] Permission setup completed"

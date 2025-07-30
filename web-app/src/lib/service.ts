@@ -1,12 +1,5 @@
-import {
-  CoreRoutes,
-  APIRoutes,
-  HardwareManagementExtension,
-  ExtensionTypeEnum,
-} from '@janhq/core'
+import { CoreRoutes, APIRoutes } from '@janhq/core'
 import { invoke, InvokeArgs } from '@tauri-apps/api/core'
-import { ExtensionManager } from './extension'
-import { useVulkan } from '@/hooks/useVulkan'
 
 export const AppRoutes = [
   'installExtensions',
@@ -43,35 +36,6 @@ export function openExternalUrl(url: string) {
   window?.open(url, '_blank')
 }
 
-export const systemInformation = async () => {
-  const hardwareExtension =
-    ExtensionManager.getInstance().get<HardwareManagementExtension>(
-      ExtensionTypeEnum.Hardware
-    )
-
-  if (!hardwareExtension) return undefined
-
-  const hardwareInfo = await hardwareExtension?.getHardware()
-
-  const gpuSettingInfo = {
-    gpus: hardwareInfo.gpus.filter((gpu) => gpu.total_vram > 0),
-    vulkan: useVulkan.getState().vulkanEnabled,
-    cpu: hardwareInfo.cpu,
-  }
-
-  const updateOsInfo = {
-    platform: PLATFORM,
-    arch: hardwareInfo.cpu.arch,
-    freeMem: hardwareInfo.ram.available,
-    totalMem: hardwareInfo.ram.total,
-  }
-
-  return {
-    gpuSetting: gpuSettingInfo,
-    osInfo: updateOsInfo,
-  }
-}
-
 export const APIs = {
   ...Object.values(Routes).reduce((acc, proxy) => {
     return {
@@ -86,5 +50,4 @@ export const APIs = {
     }
   }, {}),
   openExternalUrl,
-  systemInformation,
 }

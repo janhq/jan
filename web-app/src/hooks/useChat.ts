@@ -19,7 +19,6 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
-import { toast } from 'sonner'
 import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
@@ -31,9 +30,12 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
+import { useModelLoad } from './useModelLoad'
+import { useGeneralSetting } from './useGeneralSetting'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
+  const { experimentalFeatures } = useGeneralSetting()
   const {
     tools,
     updateTokenSpeed,
@@ -43,7 +45,7 @@ export const useChat = () => {
     updateLoadingModel,
     setAbortController,
   } = useAppState()
-  const { currentAssistant } = useAssistant()
+  const { assistants, currentAssistant } = useAssistant()
   const { updateProvider } = useModelProvider()
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
@@ -61,6 +63,7 @@ export const useChat = () => {
     updateThreadTimestamp,
   } = useThreads()
   const { getMessages, addMessage } = useMessages()
+  const { setModelLoadError } = useModelLoad()
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -70,6 +73,9 @@ export const useChat = () => {
   const currentProviderId = useMemo(() => {
     return provider?.provider || selectedProvider
   }, [provider, selectedProvider])
+
+  const selectedAssistant =
+    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
 
   useEffect(() => {
     function setTools() {
@@ -89,6 +95,7 @@ export const useChat = () => {
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
+
     if (!currentThread) {
       currentThread = await createThread(
         {
@@ -96,7 +103,7 @@ export const useChat = () => {
           provider: selectedProvider,
         },
         prompt,
-        currentAssistant
+        selectedAssistant
       )
       router.navigate({
         to: route.threadsDetail,
@@ -111,19 +118,15 @@ export const useChat = () => {
     router,
     selectedModel?.id,
     selectedProvider,
-    currentAssistant,
+    selectedAssistant,
   ])
 
   const restartModel = useCallback(
-    async (
-      provider: ProviderObject,
-      modelId: string,
-      abortController: AbortController
-    ) => {
+    async (provider: ProviderObject, modelId: string) => {
       await stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await startModel(provider, modelId, abortController).catch(console.error)
+      await startModel(provider, modelId).catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
@@ -131,11 +134,7 @@ export const useChat = () => {
   )
 
   const increaseModelContextSize = useCallback(
-    async (
-      modelId: string,
-      provider: ProviderObject,
-      controller: AbortController
-    ) => {
+    async (modelId: string, provider: ProviderObject) => {
       /**
        * Should increase the context size of the model by 2x
        * If the context size is not set or too low, it defaults to 8192.
@@ -180,22 +179,17 @@ export const useChat = () => {
         })
       }
       const updatedProvider = getProviderByName(provider.provider)
-      if (updatedProvider)
-        await restartModel(updatedProvider, model.id, controller)
+      if (updatedProvider) await restartModel(updatedProvider, model.id)
 
       return updatedProvider
     },
     [getProviderByName, restartModel, updateProvider]
   )
   const toggleOnContextShifting = useCallback(
-    async (
-      modelId: string,
-      provider: ProviderObject,
-      controller: AbortController
-    ) => {
+    async (modelId: string, provider: ProviderObject) => {
       const providerName = provider.provider
       const newSettings = [...provider.settings]
-      const settingKey = 'context_shift'
+      const settingKey = 'ctx_shift'
       // Handle different value types by forcing the type
       // Use type assertion to bypass type checking
       const settingIndex = provider.settings.findIndex(
@@ -218,8 +212,7 @@ export const useChat = () => {
         ...updateObj,
       })
       const updatedProvider = getProviderByName(providerName)
-      if (updatedProvider)
-        await restartModel(updatedProvider, modelId, controller)
+      if (updatedProvider) await restartModel(updatedProvider, modelId)
       return updatedProvider
     },
     [updateProvider, getProviderByName, restartModel]
@@ -246,11 +239,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(
-            activeProvider,
-            selectedModel.id,
-            abortController
-          ).catch(console.error)
+          await startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
 
@@ -264,12 +253,13 @@ export const useChat = () => {
         let isCompleted = false
 
         // Filter tools based on model capabilities and available tools for this thread
-        let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? tools.filter((tool) => {
-              const disabledTools = getDisabledToolsForThread(activeThread.id)
-              return !disabledTools.includes(tool.name)
-            })
-          : []
+        let availableTools =
+          experimentalFeatures && selectedModel?.capabilities?.includes('tools')
+            ? tools.filter((tool) => {
+                const disabledTools = getDisabledToolsForThread(activeThread.id)
+                return !disabledTools.includes(tool.name)
+              })
+            : []
 
         // TODO: Later replaced by Agent setup?
         const followUpWithToolUse = true
@@ -278,6 +268,25 @@ export const useChat = () => {
           !abortController.signal.aborted &&
           activeProvider
         ) {
+          const modelConfig = activeProvider.models.find(
+            (m) => m.id === selectedModel?.id
+          )
+
+          const modelSettings = modelConfig?.settings
+            ? Object.fromEntries(
+                Object.entries(modelConfig.settings)
+                  .filter(
+                    ([key, value]) =>
+                      key !== 'ctx_len' &&
+                      key !== 'ngl' &&
+                      value.controller_props?.value !== undefined &&
+                      value.controller_props?.value !== null &&
+                      value.controller_props?.value !== ''
+                  )
+                  .map(([key, value]) => [key, value.controller_props?.value])
+              )
+            : undefined
+
           const completion = await sendCompletion(
             activeThread,
             activeProvider,
@@ -285,11 +294,10 @@ export const useChat = () => {
             abortController,
             availableTools,
             currentAssistant.parameters?.stream === false ? false : true,
-            currentAssistant.parameters as unknown as Record<string, object>
-            // TODO: replace it with according provider setting later on
-            // selectedProvider === 'llama.cpp' && availableTools.length > 0
-            //   ? false
-            //   : true
+            {
+              ...modelSettings,
+              ...currentAssistant.parameters,
+            } as unknown as Record<string, object>
           )
 
           if (!completion) throw new Error('No completion received')
@@ -298,7 +306,8 @@ export const useChat = () => {
           const toolCalls: ChatCompletionMessageToolCall[] = []
           try {
             if (isCompletionResponse(completion)) {
-              accumulatedText = completion.choices[0]?.message?.content || ''
+              accumulatedText =
+                (completion.choices[0]?.message?.content as string) || ''
               if (completion.choices[0]?.message?.tool_calls) {
                 toolCalls.push(...completion.choices[0].message.tool_calls)
               }
@@ -365,16 +374,14 @@ export const useChat = () => {
                 /// Increase context size
                 activeProvider = await increaseModelContextSize(
                   selectedModel.id,
-                  activeProvider,
-                  abortController
+                  activeProvider
                 )
                 continue
               } else if (method === 'context_shift' && selectedModel?.id) {
                 /// Enable context_shift
                 activeProvider = await toggleOnContextShifting(
                   selectedModel?.id,
-                  activeProvider,
-                  abortController
+                  activeProvider
                 )
                 continue
               } else throw error
@@ -387,9 +394,9 @@ export const useChat = () => {
             accumulatedText.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
-            activeProvider.provider === 'llama.cpp'
+            provider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'cortex')
+            await stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -399,6 +406,7 @@ export const useChat = () => {
             accumulatedText,
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
+              assistant: currentAssistant,
             }
           )
 
@@ -421,13 +429,13 @@ export const useChat = () => {
           if (!followUpWithToolUse) availableTools = []
         }
       } catch (error) {
-        const errorMessage =
-          error && typeof error === 'object' && 'message' in error
-            ? error.message
-            : error
-
-        toast.error(`Error sending message: ${errorMessage}`)
-        console.error('Error sending message:', error)
+        if (!abortController.signal.aborted) {
+          const errorMessage =
+            error && typeof error === 'object' && 'message' in error
+              ? error.message
+              : error
+          setModelLoadError(`${errorMessage}`)
+        }
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
@@ -457,6 +465,7 @@ export const useChat = () => {
       showIncreaseContextSizeModal,
       increaseModelContextSize,
       toggleOnContextShifting,
+      setModelLoadError,
     ]
   )
 

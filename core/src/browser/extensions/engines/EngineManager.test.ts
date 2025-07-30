@@ -1,6 +1,4 @@
-/**
- * @jest-environment jsdom
- */
+import { describe, it, test, expect, beforeEach } from 'vitest'
 import { EngineManager } from './EngineManager'
 import { AIEngine } from './AIEngine'
 import { InferenceEngine } from '../../../types'
