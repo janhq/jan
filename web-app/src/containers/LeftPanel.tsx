@@ -197,7 +197,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-main-view z-40 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&
