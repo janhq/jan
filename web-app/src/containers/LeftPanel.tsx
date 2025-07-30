@@ -42,6 +42,7 @@ import { toast } from 'sonner'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 
 const mainMenus = [
   {
@@ -171,6 +172,8 @@ const LeftPanel = () => {
     }
   }, [isSmallScreen, open])
 
+  const { downloads, localDownloadingModels } = useDownloadStore()
+
   return (
     <>
       {/* Backdrop overlay for small screens */}
@@ -253,7 +256,14 @@ const LeftPanel = () => {
         </div>
 
         <div className="flex flex-col justify-between overflow-hidden mt-0 !h-[calc(100%-42px)]">
-          <div className="flex flex-col !h-[calc(100%-140px)]">
+          <div
+            className={cn(
+              'flex flex-col',
+              Object.keys(downloads).length > 0 || localDownloadingModels.size > 0
+                ? 'h-[calc(100%-200px)]'
+                : 'h-[calc(100%-140px)]'
+            )}
+          >
             {IS_MACOS && (
               <div
                 ref={searchContainerMacRef}
@@ -486,8 +496,8 @@ const LeftPanel = () => {
                 </Link>
               )
             })}
+            <DownloadManagement />
           </div>
-          <DownloadManagement />
         </div>
       </aside>
     </>
