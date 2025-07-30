@@ -866,65 +866,69 @@ export default class llamacpp_extension extends AIEngine {
 
       const files = await fs.readdirSync(currentDir)
       for (const child of files) {
-        const childPath = await joinPath([currentDir, child])
-        const stat = await fs.fileStat(childPath)
-        if (
-          files.some((e) => e.endsWith('model.yml')) &&
-          !child.endsWith('model.yml')
-        )
-          continue
-        if (!stat.isDirectory && child.endsWith('.yml')) {
-          // check if model.yml exists
-          const modelConfigPath = child
-          if (await fs.existsSync(modelConfigPath)) {
-            const legacyModelConfig = await invoke<{
-              files: string[]
-              model: string
-            }>('read_yaml', {
-              path: modelConfigPath,
-            })
-            const legacyModelPath = legacyModelConfig.files?.[0]
-            if (!legacyModelPath) continue
-            // +1 to remove the leading slash
-            // NOTE: this does not handle Windows path \\
-            let modelId = currentDir.slice(modelsDir.length + 1)
-
-            modelId =
-              modelId !== 'imported'
-                ? modelId.replace(/^(cortex\.so|huggingface\.co)[\/\\]/, '')
-                : (await basename(child)).replace('.yml', '')
-
-            const modelName = legacyModelConfig.model ?? modelId
-            const configPath = await joinPath([
-              await this.getProviderPath(),
-              'models',
-              modelId,
-              'model.yml',
-            ])
-            if (await fs.existsSync(configPath)) continue // Don't reimport
-
-            // this is relative to Jan's data folder
-            const modelDir = `${this.providerId}/models/${modelId}`
-
-            let size_bytes = (
-              await fs.fileStat(
-                await joinPath([janDataFolderPath, legacyModelPath])
-              )
-            ).size
-
-            const modelConfig = {
-              model_path: legacyModelPath,
-              mmproj_path: undefined, // legacy models do not have mmproj
-              name: modelName,
-              size_bytes,
-            } as ModelConfig
-            await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-            await invoke<void>('write_yaml', {
-              data: modelConfig,
-              savePath: configPath,
-            })
+        try {
+          const childPath = await joinPath([currentDir, child])
+          const stat = await fs.fileStat(childPath)
+          if (
+            files.some((e) => e.endsWith('model.yml')) &&
+            !child.endsWith('model.yml')
+          )
             continue
+          if (!stat.isDirectory && child.endsWith('.yml')) {
+            // check if model.yml exists
+            const modelConfigPath = child
+            if (await fs.existsSync(modelConfigPath)) {
+              const legacyModelConfig = await invoke<{
+                files: string[]
+                model: string
+              }>('read_yaml', {
+                path: modelConfigPath,
+              })
+              const legacyModelPath = legacyModelConfig.files?.[0]
+              if (!legacyModelPath) continue
+              // +1 to remove the leading slash
+              // NOTE: this does not handle Windows path \\
+              let modelId = currentDir.slice(modelsDir.length + 1)
+
+              modelId =
+                modelId !== 'imported'
+                  ? modelId.replace(/^(cortex\.so|huggingface\.co)[\/\\]/, '')
+                  : (await basename(child)).replace('.yml', '')
+
+              const modelName = legacyModelConfig.model ?? modelId
+              const configPath = await joinPath([
+                await this.getProviderPath(),
+                'models',
+                modelId,
+                'model.yml',
+              ])
+              if (await fs.existsSync(configPath)) continue // Don't reimport
+
+              // this is relative to Jan's data folder
+              const modelDir = `${this.providerId}/models/${modelId}`
+
+              let size_bytes = (
+                await fs.fileStat(
+                  await joinPath([janDataFolderPath, legacyModelPath])
+                )
+              ).size
+
+              const modelConfig = {
+                model_path: legacyModelPath,
+                mmproj_path: undefined, // legacy models do not have mmproj
+                name: modelName,
+                size_bytes,
+              } as ModelConfig
+              await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
+              await invoke<void>('write_yaml', {
+                data: modelConfig,
+                savePath: configPath,
+              })
+              continue
+            }
           }
+        } catch (error) {
+          console.error(`Error migrating model ${child}:`, error)
         }
       }
 
@@ -1093,9 +1097,7 @@ export default class llamacpp_extension extends AIEngine {
       attempts++
     }
 
-    throw new Error(
-      'Failed to find an available port for the model to load'
-    )
+    throw new Error('Failed to find an available port for the model to load')
   }
 
   private async sleep(ms: number): Promise<void> {
