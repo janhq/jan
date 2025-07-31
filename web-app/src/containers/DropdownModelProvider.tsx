@@ -17,6 +17,8 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
+import { predefinedProviders } from '@/consts/providers'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -69,6 +71,7 @@ const DropdownModelProvider = ({
   const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { favoriteModels } = useFavoriteModel()
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -151,8 +154,15 @@ const DropdownModelProvider = ({
 
       provider.models.forEach((modelItem) => {
         // Skip models that require API key but don't have one (except llamacpp)
-        if (provider.provider !== 'llamacpp' && !provider.api_key?.length) {
-          return
+        if (
+          provider &&
+          predefinedProviders.some((e) =>
+            e.provider.includes(provider.provider)
+          )
+        ) {
+          if (provider.provider !== 'llamacpp' && !provider.api_key?.length) {
+            return
+          }
         }
 
         const capabilities = modelItem.capabilities || []
@@ -182,6 +192,13 @@ const DropdownModelProvider = ({
     })
   }, [searchableItems])
 
+  // Get favorite models that are currently available
+  const favoriteItems = useMemo(() => {
+    return searchableItems.filter((item) =>
+      favoriteModels.some((fav) => fav.id === item.model.id)
+    )
+  }, [searchableItems, favoriteModels])
+
   // Filter models based on search value
   const filteredItems = useMemo(() => {
     if (!searchValue) return searchableItems
@@ -202,7 +219,7 @@ const DropdownModelProvider = ({
     })
   }, [searchableItems, searchValue, fzfInstance])
 
-  // Group filtered items by provider
+  // Group filtered items by provider, excluding favorites when not searching
   const groupedItems = useMemo(() => {
     const groups: Record<string, SearchableModel[]> = {}
 
@@ -221,11 +238,18 @@ const DropdownModelProvider = ({
       if (!groups[providerKey]) {
         groups[providerKey] = []
       }
+
+      // When not searching, exclude favorite models from regular provider sections
+      const isFavorite = favoriteModels.some((fav) => fav.id === item.model.id)
+      if (!searchValue && isFavorite) {
+        return // Skip adding this item to regular provider section
+      }
+
       groups[providerKey].push(item)
     })
 
     return groups
-  }, [filteredItems, providers, searchValue])
+  }, [filteredItems, providers, searchValue, favoriteModels])
 
   const handleSelect = useCallback(
     (searchableModel: SearchableModel) => {
@@ -330,6 +354,64 @@ const DropdownModelProvider = ({
               </div>
             ) : (
               <div className="py-1">
+                {/* Favorites section - only show when not searching */}
+                {!searchValue && favoriteItems.length > 0 && (
+                  <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-main-view-fg/80">
+                        {t('common:favorites')}
+                      </span>
+                    </div>
+
+                    {/* Favorite models */}
+                    {favoriteItems.map((searchableModel) => {
+                      const isSelected =
+                        selectedModel?.id === searchableModel.model.id &&
+                        selectedProvider === searchableModel.provider.provider
+                      const capabilities =
+                        searchableModel.model.capabilities || []
+
+                      return (
+                        <div
+                          key={`fav-${searchableModel.value}`}
+                          title={searchableModel.model.id}
+                          onClick={() => handleSelect(searchableModel)}
+                          className={cn(
+                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                            'hover:bg-main-view-fg/4',
+                            isSelected &&
+                              'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                          )}
+                        >
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <div className="shrink-0 -ml-1">
+                              <ProvidersAvatar
+                                provider={searchableModel.provider}
+                              />
+                            </div>
+                            <span className="truncate text-main-view-fg/80 text-sm">
+                              {searchableModel.model.id}
+                            </span>
+                            <div className="flex-1"></div>
+                            {capabilities.length > 0 && (
+                              <div className="flex-shrink-0 -mr-1.5">
+                                <Capabilities capabilities={capabilities} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Divider between favorites and regular providers */}
+                {favoriteItems.length > 0 && (
+                  <div className="border-b border-1 border-main-view-fg/8 mx-2"></div>
+                )}
+
+                {/* Regular provider sections */}
                 {Object.entries(groupedItems).map(([providerKey, models]) => {
                   const providerInfo = providers.find(
                     (p) => p.provider === providerKey
@@ -340,7 +422,7 @@ const DropdownModelProvider = ({
                   return (
                     <div
                       key={providerKey}
-                      className="bg-main-view-fg/4 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
+                      className="bg-main-view-fg/2 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
@@ -384,11 +466,13 @@ const DropdownModelProvider = ({
                           return (
                             <div
                               key={searchableModel.value}
+                              title={searchableModel.model.id}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-main-view-fg/10',
-                                isSelected && 'bg-main-view-fg/15'
+                                'hover:bg-main-view-fg/4',
+                                isSelected &&
+                                  'bg-main-view-fg/8 hover:bg-main-view-fg/8'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
