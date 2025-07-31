@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { CompletionMessagesBuilder } from '../messages'
 import { ThreadMessage } from '@janhq/core'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
@@ -32,7 +33,7 @@ describe('CompletionMessagesBuilder', () => {
     it('should initialize with empty messages array when no system instruction', () => {
       const messages: ThreadMessage[] = []
       const builder = new CompletionMessagesBuilder(messages)
-      
+
       expect(builder.getMessages()).toEqual([])
     })
 
@@ -40,7 +41,7 @@ describe('CompletionMessagesBuilder', () => {
       const messages: ThreadMessage[] = []
       const systemInstruction = 'You are a helpful assistant.'
       const builder = new CompletionMessagesBuilder(messages, systemInstruction)
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -55,10 +56,10 @@ describe('CompletionMessagesBuilder', () => {
         createMockThreadMessage('assistant', 'Hi there', true), // has error
         createMockThreadMessage('user', 'How are you?', false),
       ]
-      
+
       const builder = new CompletionMessagesBuilder(messages)
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(2)
       expect(result[0].content).toBe('Hello')
       expect(result[1].content).toBe('How are you?')
@@ -66,26 +67,34 @@ describe('CompletionMessagesBuilder', () => {
 
     it('should normalize assistant message content', () => {
       const messages: ThreadMessage[] = [
-        createMockThreadMessage('assistant', '<think>Let me think...</think>Hello there!'),
+        createMockThreadMessage(
+          'assistant',
+          '<think>Let me think...</think>Hello there!'
+        ),
       ]
-      
+
       const builder = new CompletionMessagesBuilder(messages)
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('Hello there!')
     })
 
     it('should preserve user message content without normalization', () => {
       const messages: ThreadMessage[] = [
-        createMockThreadMessage('user', '<think>This should not be normalized</think>Hello'),
+        createMockThreadMessage(
+          'user',
+          '<think>This should not be normalized</think>Hello'
+        ),
       ]
-      
+
       const builder = new CompletionMessagesBuilder(messages)
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(1)
-      expect(result[0].content).toBe('<think>This should not be normalized</think>Hello')
+      expect(result[0].content).toBe(
+        '<think>This should not be normalized</think>Hello'
+      )
     })
 
     it('should handle messages with empty content', () => {
@@ -93,10 +102,10 @@ describe('CompletionMessagesBuilder', () => {
         ...createMockThreadMessage('user', ''),
         content: [{ type: 'text' as any, text: undefined }],
       }
-      
+
       const builder = new CompletionMessagesBuilder([message])
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('.')
     })
@@ -104,12 +113,14 @@ describe('CompletionMessagesBuilder', () => {
     it('should handle messages with missing text value', () => {
       const message: ThreadMessage = {
         ...createMockThreadMessage('user', ''),
-        content: [{ type: 'text' as any, text: { value: '', annotations: [] } }],
+        content: [
+          { type: 'text' as any, text: { value: '', annotations: [] } },
+        ],
       }
-      
+
       const builder = new CompletionMessagesBuilder([message])
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('.')
     })
@@ -118,9 +129,9 @@ describe('CompletionMessagesBuilder', () => {
   describe('addUserMessage', () => {
     it('should add user message to messages array', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addUserMessage('Hello, how are you?')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -129,23 +140,22 @@ describe('CompletionMessagesBuilder', () => {
       })
     })
 
-    it('should add multiple user messages', () => {
+    it('should not add consecutive user messages', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addUserMessage('First message')
       builder.addUserMessage('Second message')
-      
+
       const result = builder.getMessages()
-      expect(result).toHaveLength(2)
-      expect(result[0].content).toBe('First message')
-      expect(result[1].content).toBe('Second message')
+      expect(result).toHaveLength(1)
+      expect(result[0].content).toBe('Second message')
     })
 
     it('should handle empty user message', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addUserMessage('')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('')
@@ -155,9 +165,9 @@ describe('CompletionMessagesBuilder', () => {
   describe('addAssistantMessage', () => {
     it('should add assistant message with normalized content', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addAssistantMessage('<think>Processing...</think>Hello!')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -170,9 +180,12 @@ describe('CompletionMessagesBuilder', () => {
 
     it('should add assistant message with refusal', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('I cannot help with that', 'Content policy violation')
-      
+
+      builder.addAssistantMessage(
+        'I cannot help with that',
+        'Content policy violation'
+      )
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -195,9 +208,13 @@ describe('CompletionMessagesBuilder', () => {
           },
         },
       ]
-      
-      builder.addAssistantMessage('Let me check the weather', undefined, toolCalls)
-      
+
+      builder.addAssistantMessage(
+        'Let me check the weather',
+        undefined,
+        toolCalls
+      )
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -220,13 +237,13 @@ describe('CompletionMessagesBuilder', () => {
           },
         },
       ]
-      
+
       builder.addAssistantMessage(
         '<think>Searching...</think>Here are the results',
         'Cannot search sensitive content',
         toolCalls
       )
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -241,9 +258,9 @@ describe('CompletionMessagesBuilder', () => {
   describe('addToolMessage', () => {
     it('should add tool message with correct format', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addToolMessage('Weather data: 72°F', 'call_123')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
@@ -255,10 +272,10 @@ describe('CompletionMessagesBuilder', () => {
 
     it('should add multiple tool messages', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addToolMessage('First tool result', 'call_1')
       builder.addToolMessage('Second tool result', 'call_2')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(2)
       expect(result[0].tool_call_id).toBe('call_1')
@@ -267,9 +284,9 @@ describe('CompletionMessagesBuilder', () => {
 
     it('should handle empty tool content', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addToolMessage('', 'call_123')
-      
+
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('')
@@ -282,30 +299,32 @@ describe('CompletionMessagesBuilder', () => {
       const threadMessages: ThreadMessage[] = [
         createMockThreadMessage('user', 'Hello'),
       ]
-      const builder = new CompletionMessagesBuilder(threadMessages, 'You are helpful')
-      
+      const builder = new CompletionMessagesBuilder(
+        threadMessages,
+        'You are helpful'
+      )
+
       builder.addUserMessage('How are you?')
       builder.addAssistantMessage('I am well, thank you!')
       builder.addToolMessage('Tool response', 'call_123')
-      
+
       const result = builder.getMessages()
-      expect(result).toHaveLength(5)
+      expect(result).toHaveLength(4)
       expect(result[0].role).toBe('system')
       expect(result[1].role).toBe('user')
-      expect(result[2].role).toBe('user')
-      expect(result[3].role).toBe('assistant')
-      expect(result[4].role).toBe('tool')
+      expect(result[2].role).toBe('assistant')
+      expect(result[3].role).toBe('tool')
     })
 
     it('should return the same array reference (not immutable)', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addUserMessage('Test message')
       const result1 = builder.getMessages()
-      
+
       builder.addAssistantMessage('Response')
       const result2 = builder.getMessages()
-      
+
       // Both should reference the same array and have 2 messages now
       expect(result1).toBe(result2) // Same reference
       expect(result1).toHaveLength(2)
@@ -316,63 +335,75 @@ describe('CompletionMessagesBuilder', () => {
   describe('content normalization', () => {
     it('should remove thinking content from the beginning', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('<think>Let me analyze this...</think>The answer is 42.')
-      
+
+      builder.addAssistantMessage(
+        '<think>Let me analyze this...</think>The answer is 42.'
+      )
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('The answer is 42.')
     })
 
     it('should handle nested thinking tags', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('<think>First thought<think>Nested</think>More thinking</think>Final answer')
-      
+
+      builder.addAssistantMessage(
+        '<think>First thought<think>Nested</think>More thinking</think>Final answer'
+      )
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('More thinking</think>Final answer')
     })
 
     it('should handle multiple thinking blocks', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('<think>First</think>Answer<think>Second</think>More content')
-      
+
+      builder.addAssistantMessage(
+        '<think>First</think>Answer<think>Second</think>More content'
+      )
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('Answer<think>Second</think>More content')
     })
 
     it('should handle content without thinking tags', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addAssistantMessage('Just a normal response')
-      
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('Just a normal response')
     })
 
     it('should handle empty content after removing thinking', () => {
       const builder = new CompletionMessagesBuilder([])
-      
+
       builder.addAssistantMessage('<think>Only thinking content</think>')
-      
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('')
     })
 
     it('should handle unclosed thinking tags', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('<think>Unclosed thinking tag... Regular content')
-      
+
+      builder.addAssistantMessage(
+        '<think>Unclosed thinking tag... Regular content'
+      )
+
       const result = builder.getMessages()
-      expect(result[0].content).toBe('<think>Unclosed thinking tag... Regular content')
+      expect(result[0].content).toBe(
+        '<think>Unclosed thinking tag... Regular content'
+      )
     })
 
     it('should handle thinking tags with whitespace', () => {
       const builder = new CompletionMessagesBuilder([])
-      
-      builder.addAssistantMessage('<think>  \n  Some thinking  \n  </think>  \n  Clean answer')
-      
+
+      builder.addAssistantMessage(
+        '<think>  \n  Some thinking  \n  </think>  \n  Clean answer'
+      )
+
       const result = builder.getMessages()
       expect(result[0].content).toBe('Clean answer')
     })
@@ -382,11 +413,17 @@ describe('CompletionMessagesBuilder', () => {
     it('should handle complex conversation flow', () => {
       const threadMessages: ThreadMessage[] = [
         createMockThreadMessage('user', 'What is the weather like?'),
-        createMockThreadMessage('assistant', '<think>I need to call weather API</think>Let me check the weather for you.'),
+        createMockThreadMessage(
+          'assistant',
+          '<think>I need to call weather API</think>Let me check the weather for you.'
+        ),
       ]
-      
-      const builder = new CompletionMessagesBuilder(threadMessages, 'You are a weather assistant')
-      
+
+      const builder = new CompletionMessagesBuilder(
+        threadMessages,
+        'You are a weather assistant'
+      )
+
       // Add tool call and response
       const toolCalls: ChatCompletionMessageToolCall[] = [
         {
@@ -398,13 +435,22 @@ describe('CompletionMessagesBuilder', () => {
           },
         },
       ]
-      
-      builder.addAssistantMessage('Calling weather service...', undefined, toolCalls)
-      builder.addToolMessage('{"temperature": 72, "condition": "sunny"}', 'call_weather')
-      builder.addAssistantMessage('<think>The weather is nice</think>The weather is 72°F and sunny!')
-      
+
+      builder.addAssistantMessage(
+        'Calling weather service...',
+        undefined,
+        toolCalls
+      )
+      builder.addToolMessage(
+        '{"temperature": 72, "condition": "sunny"}',
+        'call_weather'
+      )
+      builder.addAssistantMessage(
+        '<think>The weather is nice</think>The weather is 72°F and sunny!'
+      )
+
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(6)
       expect(result[0].role).toBe('system')
       expect(result[1].role).toBe('user')
@@ -419,9 +465,9 @@ describe('CompletionMessagesBuilder', () => {
 
     it('should handle empty thread messages with system instruction', () => {
       const builder = new CompletionMessagesBuilder([], 'System instruction')
-      
+
       const result = builder.getMessages()
-      
+
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual({
         role: 'system',
