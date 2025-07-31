@@ -44,9 +44,11 @@ export const useThreads = create<ThreadState>()((set, get) => ({
                   'llamacpp'
                 ),
                 // Cortex migration: take first two parts of the ID (the last is file name which is not needed)
-                id: !thread.model?.id.endsWith(':free')
-                  ? thread.model?.id.split(':').slice(0, 2).join(sep())
-                  : thread.model?.id,
+                id:
+                  thread.model.provider === 'llama.cpp' ||
+                  thread.model.provider === 'llamacpp'
+                    ? thread.model?.id.split(':').slice(0, 2).join(sep())
+                    : thread.model?.id,
               }
             : undefined,
         }

@@ -133,22 +133,6 @@ function ProviderDetail() {
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
 
-  // Auto-refresh models for non-predefined providers
-  useEffect(() => {
-    if (
-      provider &&
-      provider.provider !== 'llamacpp' &&
-      !predefinedProviders.some((p) => p.provider === provider.provider) &&
-      provider.base_url
-    ) {
-      // Auto-refresh models every 10 seconds for remote providers
-      const intervalId = setInterval(() => {
-        handleRefreshModels()
-      }, 10000)
-      return () => clearInterval(intervalId)
-    }
-  }, [provider])
-
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status } = data
 
