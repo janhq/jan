@@ -10,63 +10,6 @@ use reqwest::Client;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tokio::sync::Mutex;
-// Cleanup function that handles both async and sync cleanup using Tokio
-fn on_exit(app: &tauri::AppHandle, need_exiting: bool) {
-    let app_handle = app.clone();
-
-    // Use tokio::task::block_in_place to run async cleanup synchronously
-    tokio::task::block_in_place(|| {
-        tauri::async_runtime::block_on(async {
-            // Get the app state for cleanup
-            let state = app_handle.state::<AppState>();
-
-            // Hide window first
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let _ = window.hide();
-            }
-
-            // Emit event to kill MCP servers (but don't wait for response)
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let _ = window.emit("kill-mcp-servers", ());
-            }
-
-            // Add a small delay to let the frontend handle the event
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-            // Force cleanup processes directly (don't rely on frontend)
-            cleanup_processes(state).await;
-
-            // Stop the HTTP server with timeout
-            let client = Client::new();
-            let url = "http://127.0.0.1:39291/processManager/destroy";
-
-            // Use timeout to prevent hanging
-            match tokio::time::timeout(
-                tokio::time::Duration::from_secs(5),
-                client.delete(url).send(),
-            )
-            .await
-            {
-                Ok(_) => {
-                    log::info!("HTTP server stopped successfully");
-                }
-                Err(_) => {
-                    log::warn!("HTTP server stop request timed out");
-                }
-            }
-
-            // Close the window after cleanup
-            if let Some(win) = app_handle.get_webview_window("main") {
-                let _ = win.close();
-            }
-        });
-    });
-
-    // Exit the app if needed
-    if need_exiting {
-        app.exit(0);
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -193,9 +136,17 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
-                    // Run cleanup and exit
-                    on_exit(&window.app_handle(), true);
+                    window.emit("kill-mcp-servers", ()).unwrap();
+                    let state = window.app_handle().state::<AppState>();
+
+                    tauri::async_runtime::block_on(async {
+                        cleanup_processes(state).await;
+                    });
                 }
+
+                let client = Client::new();
+                let url = "http://127.0.0.1:39291/processManager/destroy";
+                let _ = client.delete(url).send();
             }
             _ => {}
         })
