@@ -2,7 +2,7 @@ prompt = """
 You are going to test the Jan application by verifying that enabling Experimental Features reveals the MCP Servers section in Settings.
 
 Step-by-step instructions:
-
+0. If a dialog appears in the bottom-right corner titled **"Help Us Improve Jan"**, click **Deny** to dismiss it before continuing. This ensures full visibility of the interface.
 1. Given the Jan application is already open.
 2. In the bottom-left menu, click **Settings**.
 3. In the left sidebar, make sure **General** is selected.

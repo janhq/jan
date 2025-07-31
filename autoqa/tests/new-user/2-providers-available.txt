@@ -2,6 +2,7 @@ prompt = """
 You are going to test the Jan application by verifying that all expected model providers are listed in the Settings panel.
 
 Step-by-step instructions:
+0. If a dialog appears in the bottom-right corner titled **"Help Us Improve Jan"**, click **Deny** to dismiss it before continuing. This ensures full visibility of the interface.
 1. Given the Jan application is already opened.
 2. In the bottom-left menu, click on **Settings**.
 3. In the left sidebar of Settings, click on **Model Providers**.
