@@ -10,7 +10,7 @@ export function FavoriteModelAction({ model }: FavoriteModelActionProps) {
   const isModelFavorite = isFavorite(model.id)
 
   return (
-    <div
+    <div aria-label="Toggle favorite"
       className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
       onClick={() => toggleFavorite(model)}
     >
