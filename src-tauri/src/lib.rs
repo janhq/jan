@@ -8,8 +8,7 @@ use core::{
 };
 use reqwest::Client;
 use std::{collections::HashMap, sync::Arc};
-use tauri::{Emitter, Manager};
-
+use tauri::{Emitter, Manager, RunEvent};
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,7 +21,8 @@ pub fn run() {
           // when defining deep link schemes at runtime, you must also check `argv` here
         }));
     }
-    builder
+
+    let app = builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
@@ -143,12 +143,46 @@ pub fn run() {
                         cleanup_processes(state).await;
                     });
                 }
+
                 let client = Client::new();
                 let url = "http://127.0.0.1:39291/processManager/destroy";
                 let _ = client.delete(url).send();
             }
             _ => {}
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Handle app lifecycle events
+    app.run(|app, event| match event {
+        RunEvent::Exit => {
+            // This is called when the app is actually exiting (e.g., macOS dock quit)
+            // We can't prevent this, so run cleanup quickly
+            let app_handle = app.clone();
+            tokio::task::block_in_place(|| {
+                tauri::async_runtime::block_on(async {
+                    let state = app_handle.state::<AppState>();
+
+                    // Hide window immediately
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.hide();
+                        let _ = window.emit("kill-mcp-servers", ());
+                    }
+
+                    // Quick cleanup with shorter timeout
+                    cleanup_processes(state).await;
+
+                    // Stop HTTP server with shorter timeout
+                    let client = Client::new();
+                    let url = "http://127.0.0.1:39291/processManager/destroy";
+                    let _ = tokio::time::timeout(
+                        tokio::time::Duration::from_secs(2),
+                        client.delete(url).send(),
+                    )
+                    .await;
+                });
+            });
+        }
+        _ => {}
+    });
 }
