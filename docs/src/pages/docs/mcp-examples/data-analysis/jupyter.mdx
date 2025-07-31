@@ -1,0 +1,347 @@
+---
+title: Jupyter MCP
+description: Real-time Jupyter notebook interaction and code execution through MCP integration.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Jupyter,
+    data analysis,
+    code execution,
+    notebooks,
+    Python,
+    visualization,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Jupyter MCP
+
+[Jupyter MCP Server](https://github.com/datalayer/jupyter-mcp-server) enables real-time interaction with Jupyter notebooks, allowing AI models to edit, execute, and document code for data analysis and visualization. Instead of just generating code suggestions, AI can actually run Python code and see the results.
+
+This integration transforms Jan from a code-suggesting assistant into a fully capable data science partner that can execute analysis, create visualizations, and iterate based on actual results.
+
+## Available Tools
+
+### Core Notebook Operations
+- `insert_execute_code_cell`: Add and run code cells with immediate execution
+- `append_markdown_cell`: Add documentation and explanations
+- `get_notebook_info`: Retrieve notebook structure and metadata
+- `read_cell`: Examine existing cell content and outputs
+- `modify_cell`: Edit existing cells and re-execute
+
+### Advanced Features
+- **Real-time synchronization**: See changes as they happen
+- **Smart execution**: Automatic retry and adjustment when cells fail
+- **Output feedback**: AI learns from execution results to improve code
+- **Multi-cell workflows**: Complex analysis across multiple cells
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Python 3.8+ with uv package manager
+- Docker installed
+- Model with tool calling support
+- Basic understanding of Jupyter notebooks
+
+<Callout type="info">
+This setup requires running JupyterLab locally. The MCP server connects to your local Jupyter instance for real-time interaction.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Install uv Package Manager
+
+If you don't have uv installed:
+
+```bash
+# macOS and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+### Create Python Environment
+
+Create an isolated environment for Jupyter:
+
+```bash
+# Create and activate environment
+uv venv jupyter-mcp
+source jupyter-mcp/bin/activate  # Linux/macOS
+# or
+jupyter-mcp\Scripts\activate     # Windows
+
+# Install required packages
+uv pip install jupyterlab==4.4.1 jupyter-collaboration==4.0.2 ipykernel
+
+# Handle dependency conflicts
+uv pip uninstall pycrdt datalayer_pycrdt
+uv pip install datalayer_pycrdt==0.12.17
+```
+
+### Start JupyterLab Server
+
+Launch JupyterLab with the required configuration:
+
+```bash
+jupyter lab --port 8888 --IdentityProvider.token MY_TOKEN --ip 0.0.0.0
+```
+
+This starts JupyterLab accessible at `http://localhost:8888` with token `MY_TOKEN`.
+
+[PLACEHOLDER: Screenshot of JupyterLab running with token authentication]
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section and choose your OS configuration:
+
+#### macOS and Windows Configuration
+
+**Configuration:**
+- **Server Name**: `jupyter`
+- **Command**: `docker`
+- **Arguments**: 
+  ```
+  run -i --rm -e ROOM_URL -e ROOM_TOKEN -e ROOM_ID -e RUNTIME_URL -e RUNTIME_TOKEN datalayer/jupyter-mcp-server:latest
+  ```
+- **Environment Variables**: 
+  - Key: `ROOM_URL`, Value: `http://host.docker.internal:8888`
+  - Key: `ROOM_TOKEN`, Value: `MY_TOKEN`
+  - Key: `ROOM_ID`, Value: `notebook.ipynb`
+  - Key: `RUNTIME_URL`, Value: `http://host.docker.internal:8888`
+  - Key: `RUNTIME_TOKEN`, Value: `MY_TOKEN`
+
+#### Linux Configuration
+
+**Configuration:**
+- **Server Name**: `jupyter`
+- **Command**: `docker`
+- **Arguments**: 
+  ```
+  run -i --rm -e ROOM_URL -e ROOM_TOKEN -e ROOM_ID -e RUNTIME_URL -e RUNTIME_TOKEN --network=host datalayer/jupyter-mcp-server:latest
+  ```
+- **Environment Variables**: 
+  - Key: `ROOM_URL`, Value: `http://localhost:8888`
+  - Key: `ROOM_TOKEN`, Value: `MY_TOKEN`
+  - Key: `ROOM_ID`, Value: `notebook.ipynb`
+  - Key: `RUNTIME_URL`, Value: `http://localhost:8888`
+  - Key: `RUNTIME_TOKEN`, Value: `MY_TOKEN`
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration with Jupyter settings]
+
+### Create Target Notebook
+
+In JupyterLab, create a new notebook named `notebook.ipynb` (matching your `ROOM_ID`).
+
+[PLACEHOLDER: Screenshot of creating new notebook in JupyterLab]
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Jupyter MCP server in Jan]
+
+### Model Configuration
+
+Use a tool-enabled model:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Jupyter tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Jupyter tools in the tools panel]
+
+### Data Analysis Workflow
+
+```
+Load the iris dataset and create a scatter plot showing the relationship between sepal length and petal length, colored by species.
+```
+
+The AI will:
+1. Insert a code cell to load the dataset
+2. Execute the code and verify it works
+3. Create visualization code
+4. Run the plotting code
+5. Display results and iterate if needed
+
+### Exploratory Data Analysis
+
+```
+I have sales data in a CSV file. Load it, show me the first few rows, then create a summary of sales by month with a trend chart.
+```
+
+This produces:
+- Data loading and validation
+- Initial data exploration
+- Monthly aggregation analysis
+- Trend visualization
+- Summary insights
+
+### Machine Learning Pipeline
+
+```
+Build a simple classification model on this dataset. Split the data, train a model, evaluate performance, and show feature importance.
+```
+
+The workflow includes:
+- Data preprocessing
+- Train/test split
+- Model training
+- Performance evaluation
+- Feature importance visualization
+- Results interpretation
+
+### Real-Time Iteration
+
+```
+The plot looks good but the colors are hard to distinguish. Make them more vibrant and add a legend.
+```
+
+The AI will:
+- Identify the relevant plotting cell
+- Modify color scheme
+- Add legend configuration
+- Re-execute the cell
+- Show updated visualization
+
+## Advanced Features
+
+### Multi-Cell Workflows
+
+The MCP server manages complex analyses across multiple cells:
+- Imports and setup in initial cells
+- Data processing in subsequent cells
+- Visualization and analysis in final cells
+- Automatic dependency tracking
+
+### Error Handling and Recovery
+
+When code execution fails:
+- AI receives error messages
+- Automatic troubleshooting and fixes
+- Re-execution with corrections
+- Learning from failure patterns
+
+### Real-Time Collaboration
+
+Changes made directly in JupyterLab are immediately visible to the AI:
+- Bidirectional synchronization
+- Conflict resolution
+- Version tracking
+- Collaborative editing
+
+## Configuration Details
+
+### Environment Variables Explained
+
+- **ROOM_URL**: JupyterLab server URL for notebook access
+- **ROOM_TOKEN**: Authentication token for JupyterLab
+- **ROOM_ID**: Path to target notebook (relative to JupyterLab root)
+- **RUNTIME_URL**: Jupyter kernel server URL for code execution
+- **RUNTIME_TOKEN**: Authentication token for kernel access
+
+### Network Configuration
+
+- **macOS/Windows**: Uses `host.docker.internal` for Docker-to-host communication
+- **Linux**: Uses `--network=host` for direct network access
+- **Port matching**: Ensure MCP configuration matches JupyterLab port
+
+## Use Cases
+
+### Data Science Research
+Interactive analysis, hypothesis testing, and visualization creation with real-time code execution and iteration.
+
+### Educational Tutorials
+Create step-by-step analysis tutorials with executed examples and explanations for learning data science concepts.
+
+### Business Analytics
+Generate reports, dashboards, and insights from business data with automated analysis and visualization.
+
+### Prototype Development
+Rapid prototyping of data processing pipelines, machine learning models, and analytical workflows.
+
+### Code Documentation
+Automatically document analysis processes with markdown cells explaining methodology and results.
+
+### Collaborative Analysis
+Work with AI to explore datasets, test hypotheses, and develop analytical solutions interactively.
+
+## Troubleshooting
+
+**JupyterLab Connection Issues:**
+- Verify JupyterLab is running on the specified port
+- Check token authentication is working
+- Confirm notebook file exists at specified path
+- Test JupyterLab access in browser
+
+**Docker Container Problems:**
+- Ensure Docker is running and accessible
+- Check network configuration for your OS
+- Verify environment variables are set correctly
+- Test Docker container can reach JupyterLab
+
+**Python Environment Issues:**
+- Activate the correct uv environment
+- Install missing packages with `uv pip install`
+- Resolve dependency conflicts
+- Check Python and package versions
+
+**Code Execution Failures:**
+- Verify kernel is running in JupyterLab
+- Check for missing Python packages
+- Examine error messages in notebook
+- Restart Jupyter kernel if needed
+
+**MCP Server Connection:**
+- Check server shows as active in Jan
+- Verify all environment variables are set
+- Restart Jan after configuration changes  
+- Test Docker container manually
+
+<Callout type="warning">
+Jupyter MCP requires both JupyterLab server and Docker to be running. Monitor system resources with active notebook sessions.
+</Callout>
+
+## Security Considerations
+
+**Code Execution:**
+- AI has full Python execution capabilities
+- Review generated code before execution
+- Use isolated Python environments
+- Monitor system resource usage
+
+**Network Access:**
+- JupyterLab server is network accessible
+- Use strong authentication tokens
+- Consider firewall restrictions
+- Monitor access logs
+
+**Data Privacy:**
+- Notebook content is processed by AI models
+- Keep sensitive data in secure environments
+- Review data handling policies
+- Use local-only configurations when needed
+
+## Next Steps
+
+Jupyter MCP transforms Jan into a fully capable data science partner that can execute real Python code, create visualizations, and iterate on analysis based on actual results. This moves beyond code suggestions to genuine collaborative data analysis.
+
+The real-time interaction enables a natural workflow where you describe what you want to analyze, and the AI builds the analysis step-by-step, adjusting based on intermediate results and your feedback.

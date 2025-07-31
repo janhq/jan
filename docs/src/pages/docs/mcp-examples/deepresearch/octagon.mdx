@@ -1,0 +1,263 @@
+---
+title: Octagon Deep Research MCP
+description: Comprehensive AI-powered research capabilities for technical teams and complex analysis.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Octagon,
+    deep research,
+    technical research,
+    debugging,
+    framework comparison,
+    API research,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Octagon Deep Research MCP
+
+[Octagon Deep Research MCP](https://docs.octagonagents.com/guide/deep-research-mcp.html) provides enterprise-grade research capabilities designed for technical teams. Instead of spending hours researching frameworks, debugging complex issues, or evaluating tools, you get comprehensive analysis that goes straight from research to working applications.
+
+Claims to be faster than ChatGPT Deep Research, more thorough than Perplexity, and without the rate limits that throttle your workflow.
+
+## Available Research Capabilities
+
+### Technical Research
+- **Complex Debugging**: Root cause analysis across distributed systems, memory leak detection
+- **Framework Comparison**: Performance benchmarking, scalability analysis, ecosystem evaluation
+- **Package Discovery**: Dependency compatibility, security assessment, bundle size impact
+- **API Research**: Documentation analysis, rate limiting comparison, integration complexity
+- **Performance Optimization**: Code profiling, database tuning, caching strategies
+
+### Business Intelligence
+- **Market Research**: Competitive analysis, industry trends, customer behavior
+- **Tool Discovery**: Development workflow optimization, CI/CD evaluation
+- **Design Analysis**: UI/UX patterns, accessibility compliance, conversion optimization
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Octagon account and API key from [octagonagents.com](https://octagonagents.com)
+- Model with tool calling support
+- Node.js installed
+
+<Callout type="info">
+Octagon offers unlimited research runs without rate limits, unlike ChatGPT Pro's 125-task monthly restriction.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Get Octagon API Key
+
+1. Sign up at [octagonagents.com](https://octagonagents.com)
+2. Navigate to **API Keys** from the left menu
+3. Generate a new API key
+4. Save the key
+
+[PLACEHOLDER: Screenshot of Octagon dashboard showing API key generation]
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section and choose your method:
+
+#### Option 1: Remote Server (Recommended)
+
+**Configuration:**
+- **Server Name**: `octagon-deep-research`
+- **URL**: `https://mcp.octagonagents.com/deep-research/mcp`
+- **Environment Variables**: Leave empty (OAuth authentication)
+
+#### Option 2: NPM Package
+
+**Configuration:**
+- **Server Name**: `octagon-deep-research`
+- **Command**: `npx`
+- **Arguments**: `-y octagon-deep-research-mcp@latest`
+- **Environment Variables**: 
+  - Key: `OCTAGON_API_KEY`, Value: `your-api-key`
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration with Octagon settings]
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Octagon MCP server in Jan]
+
+### Model Configuration
+
+Use a tool-enabled model:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Octagon research tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Octagon tools in the tools panel]
+
+### Technical Debugging
+
+```
+Research the latest techniques for spotting memory leaks in large React + Node.js projects. Then build a command-line analyzer that scans a codebase and suggests fixes.
+```
+
+The research will:
+1. Analyze current memory leak detection methods
+2. Compare available tools and libraries
+3. Identify best practices and patterns
+4. Generate working code implementation
+5. Provide optimization recommendations
+
+### Framework Evaluation
+
+```
+Compare Next.js, Remix, and Astro for high-traffic e-commerce. Benchmark build speed, runtime performance, and SEO. Build a functional storefront with the winner.
+```
+
+This produces:
+- Detailed performance comparisons
+- Real-world benchmarking data
+- SEO and accessibility analysis
+- Working storefront implementation
+- Deployment recommendations
+
+### API Analysis
+
+```
+Evaluate leading video-streaming APIs on cost, latency, uptime, and documentation quality. Create a working demo with the top choice.
+```
+
+Results include:
+- Comprehensive API comparison matrix
+- Cost-benefit analysis
+- Integration complexity assessment
+- Working implementation demo
+- Production deployment guide
+
+### Package Discovery
+
+```
+Compare Python libraries for real-time chat systems. Build a runnable chat server with the best stack, including Docker setup.
+```
+
+Delivers:
+- Library performance benchmarks
+- Feature comparison analysis
+- Security and maintenance evaluation
+- Complete working implementation
+- Production-ready configuration
+
+## Advanced Research Capabilities
+
+### Multi-Source Analysis
+
+Octagon pulls from extensive technical sources:
+- Official documentation and changelogs
+- GitHub repositories and issue trackers
+- Stack Overflow and developer forums
+- Performance benchmarking sites
+- Security vulnerability databases
+
+### Cross-Verification
+
+Research findings are cross-checked across multiple sources for accuracy and currency.
+
+### Implementation Focus
+
+Unlike generic research tools, Octagon prioritizes actionable results that lead directly to working code and implementations.
+
+## Use Cases
+
+### Development Teams
+Accelerate technical decision-making with comprehensive framework comparisons, tool evaluations, and architecture research.
+
+### DevOps Engineering
+Research deployment strategies, monitoring solutions, and infrastructure optimization techniques with working examples.
+
+### Product Development
+Analyze market opportunities, competitive landscapes, and user experience patterns to inform product strategy.
+
+### Technical Architecture
+Evaluate technology stacks, performance optimization strategies, and scalability solutions for complex systems.
+
+### Startup Research
+Rapid market analysis, competitive intelligence, and technical feasibility assessments for new ventures.
+
+### Enterprise Migration
+Research migration strategies, compatibility assessments, and risk analysis for large-scale technology transitions.
+
+## Performance Claims
+
+**Speed**: 8-10x faster than ChatGPT Deep Research
+**Depth**: 3x more source coverage than competitors
+**Limits**: No rate restrictions (vs ChatGPT Pro's 125 monthly tasks)
+**Accuracy**: Cross-verified technical details and metrics
+
+## Troubleshooting
+
+**Authentication Issues:**
+- Verify Octagon account is active
+- Check API key format and permissions
+- Re-authenticate OAuth connection
+- Confirm account has sufficient credits
+
+**Server Connection Problems:**
+- Check MCP server shows as active in Jan
+- Verify internet connectivity to Octagon services
+- Restart Jan after configuration changes
+- Test API key validity
+
+**Research Quality Issues:**
+- Be specific in research requests
+- Break complex queries into focused topics
+- Specify desired output format (code, analysis, comparison)
+- Include context about your use case
+
+**Performance Problems:**
+- Monitor Octagon account usage limits
+- Check network latency to research servers
+- Try breaking large requests into smaller chunks
+- Verify model has sufficient context window
+
+**Tool Calling Issues:**
+- Ensure model supports tool calling
+- Check that Octagon tools appear in tools panel
+- Try Claude 3.5+ Sonnet for best results
+- Verify MCP permissions are enabled
+
+<Callout type="warning">
+Octagon Deep Research requires an active internet connection and may have usage limits based on your account type.
+</Callout>
+
+## Octagon vs Competitors
+
+| Feature | Octagon | ChatGPT Deep Research | Perplexity | Grok DeepSearch |
+|---------|---------|----------------------|------------|-----------------|
+| **Speed** | 8-10x faster | Baseline | Moderate | Moderate |
+| **Rate Limits** | None | 125/month | Limited | Limited |
+| **Source Coverage** | 3x more | Standard | Standard | Standard |
+| **Technical Focus** | Specialized | General | General | General |
+| **Code Generation** | Integrated | Separate | Limited | Limited |
+| **Verification** | Cross-checked | Basic | Basic | Basic |
+
+## Next Steps
+
+Octagon Deep Research MCP transforms research from a time-consuming manual process into an automated capability that delivers actionable results. Instead of spending hours evaluating options, you get comprehensive analysis with working implementations.
+
+The unlimited research capability removes the bottleneck of monthly limits, enabling development teams to make informed decisions without workflow interruption.

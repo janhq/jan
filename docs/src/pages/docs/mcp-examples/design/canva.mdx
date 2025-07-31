@@ -1,0 +1,273 @@
+---
+title: Canva MCP
+description: Create and edit designs through natural language commands with Canva's official MCP server.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Canva,
+    design automation,
+    graphic design,
+    presentations,
+    templates,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Canva MCP
+
+[Canva MCP](https://www.canva.com/newsroom/news/deep-research-integration-mcp-server/) brings professional design capabilities directly into Jan through natural language commands. As the first design platform to offer native MCP integration, Canva lets AI models create presentations, resize graphics, and edit templates without leaving the chat.
+
+Instead of switching between apps to create designs, you describe what you need and the AI handles the design work using your Canva account and assets.
+
+## Available Tools
+
+The Canva MCP server provides comprehensive design automation:
+- **Template Generation**: Create presentations, social media posts, and documents
+- **Asset Management**: Import, export, and organize design assets  
+- **Design Editing**: Resize graphics, modify layouts, and update content
+- **Content Integration**: Use existing Canva assets and brand elements
+- **Format Conversion**: Export designs in multiple formats (PDF, PNG, etc.)
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Canva account (free or paid)
+- Model with tool calling support
+- Node.js installed
+- Internet connection for Canva API access
+
+<Callout type="info">
+Canva MCP works with both free and paid Canva accounts. Paid accounts have access to premium templates and features.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Configure Canva MCP Server
+
+Click `+` in MCP Servers section:
+
+**Configuration:**
+- **Server Name**: `Canva`
+- **Command**: `npx`
+- **Arguments**: `-y mcp-remote@latest https://mcp.canva.com/mcp`
+- **Environment Variables**: Leave empty (authentication handled via OAuth)
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration form with Canva settings]
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Canva MCP server in Jan]
+
+### Authentication
+
+The first time you use Canva tools, you'll be prompted to authenticate with your Canva account through OAuth. This grants secure access to your designs and templates.
+
+[PLACEHOLDER: Screenshot of Canva OAuth authentication flow]
+
+### Model Configuration
+
+Use a tool-enabled model:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Canva tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Canva tools in the tools panel]
+
+### Create Presentations
+
+```
+Create a 5-slide pitch deck about sustainable energy solutions. Use a professional template with blue and green colors.
+```
+
+The AI will:
+1. Access Canva's template library
+2. Select appropriate presentation template
+3. Generate content for each slide
+4. Apply consistent styling
+5. Return the completed presentation
+
+### Design Social Media Content
+
+```
+Create an Instagram post announcing our new product launch. Make it eye-catching with our brand colors.
+```
+
+This generates:
+- Platform-optimized dimensions
+- Brand-consistent styling
+- Engaging visual elements
+- Ready-to-publish format
+
+### Resize and Adapt Designs
+
+```
+Take my existing LinkedIn post design and resize it for Twitter, Facebook, and Instagram Stories.
+```
+
+Canva MCP will:
+- Access your existing design
+- Create versions for each platform
+- Maintain visual consistency
+- Optimize for platform specifications
+
+### Generate Marketing Materials
+
+```
+Create a flyer for our upcoming workshop on January 15th. Include registration details and make it professional but approachable.
+```
+
+Results in:
+- Professional layout and typography
+- Clear information hierarchy
+- Contact and registration details
+- Print-ready format
+
+## Advanced Features
+
+### Brand Integration
+
+Canva MCP automatically applies your brand guidelines:
+- Consistent color schemes
+- Brand fonts and styling
+- Logo placement
+- Template preferences
+
+### Asset Library Access
+
+Access your entire Canva library:
+- Previously created designs
+- Uploaded images and graphics
+- Brand kit elements
+- Purchased premium content
+
+### Collaborative Workflows
+
+Designs created through MCP integrate with Canva's collaboration features:
+- Share with team members
+- Collect feedback and comments
+- Track version history
+- Manage permissions
+
+### Export Options
+
+Multiple format support:
+- **PDF**: Print-ready documents
+- **PNG/JPG**: Web and social media
+- **MP4**: Video presentations
+- **GIF**: Animated graphics
+
+## Use Cases
+
+### Marketing Teams
+Create campaign materials, social media content, and promotional designs with consistent branding across all channels.
+
+### Sales Presentations
+Generate pitch decks, proposal documents, and client presentations that reflect current data and messaging.
+
+### Educational Content
+Design lesson materials, infographics, and student handouts that engage and inform effectively.
+
+### Event Planning
+Create invitations, programs, signage, and promotional materials for events and conferences.
+
+### Small Business Marketing
+Develop professional marketing materials without requiring design expertise or expensive software.
+
+### Content Creation
+Generate visual content for blogs, newsletters, and digital marketing campaigns.
+
+## Design Best Practices
+
+### Effective Prompts
+- **Be specific**: "Create a minimalist LinkedIn banner with our logo and tagline"
+- **Include dimensions**: "Design a square Instagram post"
+- **Specify style**: "Use our brand colors and modern typography"
+- **Mention purpose**: "Create a presentation slide explaining our pricing model"
+
+### Brand Consistency
+- Upload brand assets to Canva before using MCP
+- Specify brand elements in prompts
+- Use consistent messaging and visual style
+- Review designs for brand compliance
+
+### Template Selection
+- Choose templates appropriate for your audience
+- Consider platform requirements and limitations
+- Balance creativity with readability
+- Test designs across different devices
+
+## Troubleshooting
+
+**Authentication Issues:**
+- Clear browser cache and cookies
+- Re-authenticate with Canva account
+- Check Canva account permissions
+- Verify internet connection stability
+
+**Server Connection Problems:**
+- Confirm MCP server shows as active
+- Check Node.js installation and version
+- Restart Jan after configuration changes
+- Test network connectivity to Canva services
+
+**Design Creation Failures:**
+- Be more specific in design requests
+- Check Canva account limits and quotas
+- Verify template availability for your account type
+- Try simpler design requests first
+
+**Export Issues:**
+- Check available export formats for your account
+- Verify file size limitations
+- Ensure sufficient storage space
+- Try exporting individual elements separately
+
+**Tool Calling Problems:**
+- Ensure model supports tool calling
+- Check that Canva tools appear in tools panel
+- Try Claude 3.5+ Sonnet or GPT-4o
+- Verify MCP permissions are enabled
+
+<Callout type="warning">
+Canva MCP requires an active internet connection and may have usage limits based on your Canva account type.
+</Callout>
+
+## Privacy and Security
+
+**Data Handling:**
+- Designs remain in your Canva account
+- No content is shared without explicit permission
+- OAuth provides secure, revocable access
+- All API communications are encrypted
+
+**Account Security:**
+- Use strong Canva account passwords
+- Enable two-factor authentication
+- Review connected applications periodically
+- Monitor account activity for unusual access
+
+## Next Steps
+
+Canva MCP transforms design from a separate workflow step into part of your natural conversation with AI. Instead of describing what you want and then creating it separately, you can generate professional designs directly within your AI interactions.
+
+This integration positions design as a thinking tool rather than just an output format, enabling more creative and efficient workflows across marketing, sales, education, and content creation.

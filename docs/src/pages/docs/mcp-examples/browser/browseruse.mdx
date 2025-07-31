@@ -1,0 +1,269 @@
+---
+title: Browser Use MCP
+description: Control browsers with natural language through open source Browser Use automation.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Browser Use,
+    browser automation,
+    web scraping,
+    open source,
+    headless browser,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Browser Use MCP
+
+[Browser Use MCP](https://docs.browser-use.com/customize/mcp-server) exposes open source browser automation as tools for AI models. Unlike complex automation frameworks that require programming knowledge, Browser Use lets you control browsers through natural language commands.
+
+This MCP server acts as a bridge between Jan and Browser Use's automation capabilities, enabling AI models to navigate websites, interact with elements, and extract content without writing code.
+
+## Available Tools
+
+### Navigation
+- `browser_navigate`: Navigate to URLs or open new tabs
+- `browser_go_back`: Navigate back in browser history
+
+### Interaction
+- `browser_click`: Click elements by index
+- `browser_type`: Type text into input fields
+- `browser_scroll`: Scroll pages up or down
+
+### State & Content
+- `browser_get_state`: Get current page state with interactive elements
+- `browser_extract_content`: AI-powered content extraction from pages
+
+### Tab Management
+- `browser_list_tabs`: List all open browser tabs
+- `browser_switch_tab`: Switch between tabs
+- `browser_close_tab`: Close specific tabs
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Python 3.8+ installed
+- Model with tool calling support
+- Optional: OpenAI API key for content extraction
+
+<Callout type="info">
+Browser Use works with any model that supports tool calling. Claude 3.5+ Sonnet and GPT-4o provide the most reliable results.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Install Browser Use
+
+Browser Use requires Python installation. Install via pip or uv:
+
+```bash
+pip install "browser-use[cli]"
+# or
+uv pip install "browser-use[cli]"
+```
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section:
+
+**Configuration:**
+- **Server Name**: `browser-use`
+- **Command**: `uvx`
+- **Arguments**: `browser-use[cli] --mcp`
+- **Environment Variables**: 
+  - Key: `OPENAI_API_KEY`, Value: `your-openai-key` (optional, for content extraction)
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration form with Browser Use settings]
+
+### Install Browser Dependencies
+
+Browser Use needs Playwright browsers installed:
+
+```bash
+playwright install chromium
+```
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Browser Use MCP server in Jan]
+
+### Model Configuration
+
+Use a tool-enabled model:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Browser Use tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Browser Use tools in the tools panel]
+
+### Basic Navigation
+
+```
+Navigate to reddit.com and tell me what you see
+```
+
+The AI will:
+1. Launch a browser session
+2. Navigate to Reddit
+3. Capture the page state
+4. Describe the content
+
+### Element Interaction
+
+```
+Go to google.com, search for "browser automation tools", and click the first result
+```
+
+This performs:
+- Navigation to Google
+- Finding the search input
+- Typing the search query
+- Clicking the search button
+- Clicking the first result
+
+### Content Extraction
+
+```
+Visit news.ycombinator.com and extract the top 5 story titles with their URLs
+```
+
+With OpenAI API key configured, this will:
+- Navigate to Hacker News
+- Use AI to identify story elements
+- Extract structured data
+- Return organized results
+
+### Multi-Tab Workflows
+
+```
+Open YouTube and GitHub in separate tabs, then tell me what's trending on both platforms
+```
+
+Browser Use handles:
+- Opening multiple tabs
+- Switching between tabs
+- Extracting content from each
+- Comparing information
+
+## Advanced Features
+
+### State Inspection
+
+The `browser_get_state` tool provides detailed page information:
+- Current URL and title
+- All interactive elements with indices
+- Tab information
+- Optional screenshots
+
+### Smart Element Selection
+
+Browser Use uses AI-powered element detection. Instead of complex CSS selectors, elements are identified by:
+- Index numbers from page state
+- Natural language descriptions
+- Visual context understanding
+
+### Persistent Sessions
+
+Browser sessions remain active between commands, enabling:
+- Multi-step workflows
+- Authentication persistence
+- Complex navigation sequences
+
+## Use Cases
+
+### Web Research
+Automate information gathering from multiple sources, compare data across sites, and compile research reports.
+
+### E-commerce Monitoring
+Track product availability, price changes, and competitor analysis across shopping platforms.
+
+### Social Media Management
+Monitor mentions, extract engagement metrics, and analyze content performance across platforms.
+
+### Quality Assurance Testing
+Automated testing of web applications, form submissions, and user journey validation.
+
+### Content Aggregation
+Collect articles, posts, and media from various sources for analysis and curation.
+
+### Lead Generation
+Extract contact information and business intelligence from directories and professional networks.
+
+## Configuration Options
+
+### Downloads Directory
+Files download to `~/Downloads/browser-use-mcp/` by default.
+
+### Action Timing
+Default wait time between actions is 0.5 seconds, preventing rate limiting and ensuring page loads.
+
+### Session Persistence
+Browser sessions stay alive between commands, maintaining login states and navigation history.
+
+## Troubleshooting
+
+**Installation Issues:**
+- Verify Python 3.8+ is installed
+- Install Browser Use with `pip install "browser-use[cli]"`
+- Run `playwright install chromium` for browser dependencies
+
+**Server Connection Problems:**
+- Check MCP server shows as active in Jan
+- Restart Jan after configuration changes
+- Verify command path: `uvx browser-use[cli] --mcp`
+
+**Browser Launch Failures:**
+- Ensure Playwright browsers are installed
+- Check system permissions for browser launching
+- Try running `playwright install --help` for troubleshooting
+
+**Tool Calling Issues:**
+- Confirm model has tool calling enabled
+- Use Claude 3.5+ Sonnet or GPT-4o for best results
+- Check that Browser Use tools appear in the tools panel
+
+**Content Extraction Not Working:**
+- Add OpenAI API key to environment variables
+- Verify API key has sufficient credits
+- Check API key permissions for text processing
+
+<Callout type="warning">
+Browser Use launches actual browser instances. Monitor system resources with multiple concurrent sessions.
+</Callout>
+
+## Browser Use vs Browserbase
+
+| Feature | Browser Use | Browserbase |
+|---------|-------------|-------------|
+| **Infrastructure** | Local browser instances | Cloud-hosted browsers |
+| **Cost** | Free (open source) | Usage-based pricing |
+| **Setup** | Python installation required | API key only |
+| **Performance** | Local system dependent | Optimized cloud infrastructure |
+| **Privacy** | Full local control | Data processed in cloud |
+| **Scalability** | Limited by local resources | Highly scalable |
+
+## Next Steps
+
+Browser Use MCP brings powerful browser automation to Jan without requiring cloud dependencies or usage fees. The open source approach gives you complete control over the automation environment while maintaining Jan's privacy-focused philosophy.
+
+For scenarios requiring high-scale automation or specialized browser features, consider Browserbase MCP as a complementary cloud-based solution.

@@ -1,0 +1,291 @@
+---
+title: Perplexity MCP
+description: Real-time web search and research capabilities through Perplexity's official MCP server.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Perplexity,
+    web search,
+    real-time search,
+    research,
+    Sonar API,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Perplexity MCP
+
+[Perplexity MCP](https://docs.perplexity.ai/guides/mcp-server) brings real-time web search directly into Jan through Perplexity's Sonar API. This official implementation lets AI models perform live web searches and return current, relevant information without the knowledge cutoff limitations of base models.
+
+Unlike static training data, this integration provides access to current web information, making it useful for research, fact-checking, and staying current with recent developments.
+
+## Available Tools
+
+### perplexity_ask
+- **Real-time web search**: Query current web information
+- **Conversational interface**: Multi-turn research conversations
+- **Source attribution**: Results include reference links
+- **Current information**: No knowledge cutoff restrictions
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Perplexity API key from [perplexity.ai](https://perplexity.ai)
+- Model with tool calling support
+- Node.js installed (for NPX)
+
+<Callout type="info">
+This is Perplexity's official MCP implementation, providing direct access to their Sonar API infrastructure.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Get Perplexity API Key
+
+1. Visit [perplexity.ai](https://perplexity.ai)
+2. Sign up for a Sonar API account
+3. Navigate to the developer dashboard
+4. Generate your API key
+5. Save the key
+
+[PLACEHOLDER: Screenshot of Perplexity dashboard showing API key generation]
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section:
+
+**Configuration:**
+- **Server Name**: `perplexity-ask`
+- **Command**: `npx`
+- **Arguments**: `-y server-perplexity-ask`
+- **Environment Variables**: 
+  - Key: `PERPLEXITY_API_KEY`, Value: `your-api-key`
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration form with Perplexity settings]
+
+<Callout type="info">
+Using NPX means Jan handles package installation automatically. No need to clone repositories or manage dependencies manually.
+</Callout>
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Perplexity MCP server in Jan]
+
+### Model Configuration
+
+Use a tool-enabled model:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Perplexity tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Perplexity tools in the tools panel]
+
+### Basic Web Search
+
+```
+What are the latest developments in quantum computing this week?
+```
+
+The AI will:
+1. Query Perplexity's search engine
+2. Return current, relevant information
+3. Include source links and references
+4. Provide up-to-date context
+
+### Research Queries
+
+```
+Compare the current market leaders in electric vehicle charging infrastructure and their recent partnerships.
+```
+
+This produces:
+- Current market analysis
+- Recent partnership announcements
+- Competitive landscape overview
+- Source attribution for claims
+
+### Real-Time Information
+
+```
+What's happening with the latest SpaceX launch? Any delays or updates?
+```
+
+Results include:
+- Current launch status
+- Recent updates or changes
+- Official announcements
+- News coverage links
+
+### Multi-Turn Research
+
+```
+Search for information about the new EU AI Act. Then tell me how it specifically affects small startups.
+```
+
+Enables:
+- Initial broad research
+- Follow-up targeted queries
+- Contextual understanding
+- Comprehensive analysis
+
+## Advanced Features
+
+### Conversational Research
+
+The `perplexity_ask` tool accepts conversation messages, enabling:
+- Multi-turn research sessions
+- Context-aware follow-up queries
+- Refined search based on previous results
+- Deeper exploration of topics
+
+### Source Attribution
+
+All results include:
+- Reference links to original sources
+- Publication dates when available
+- Authority indicators
+- Fact-checking context
+
+### Current Information Access
+
+Unlike base model training data:
+- No knowledge cutoff limitations
+- Real-time web information
+- Recent news and developments
+- Current market data
+
+## Use Cases
+
+### Journalism and Research
+Access current news, verify facts, and gather sources for articles and reports.
+
+### Market Intelligence
+Track industry developments, competitor announcements, and market trends in real-time.
+
+### Academic Research
+Find recent publications, current statistics, and up-to-date information for studies.
+
+### Business Analysis
+Monitor competitors, industry changes, and regulatory developments affecting your business.
+
+### Technical Research
+Stay current with framework updates, security patches, and technology announcements.
+
+### Investment Research
+Access current financial news, earnings reports, and market analysis for investment decisions.
+
+## Search Optimization
+
+### Effective Queries
+- **Be specific**: "Latest Tesla earnings Q4 2024" vs "Tesla news"
+- **Include timeframes**: "AI regulation changes this month"
+- **Specify sources**: "Recent academic papers on climate change"
+- **Ask follow-ups**: Build on previous searches for deeper insights
+
+### Research Strategies
+- Start broad, then narrow focus based on initial results
+- Use follow-up questions to explore specific aspects
+- Cross-reference multiple sources for verification
+- Request specific types of sources (academic, news, official)
+
+## Troubleshooting
+
+**API Key Issues:**
+- Verify API key format and validity
+- Check Perplexity account status and credits
+- Confirm API key permissions in dashboard
+- Test API key with direct API calls
+
+**Server Connection Problems:**
+- Ensure NPX can access npm registry
+- Check Node.js installation and version
+- Verify internet connectivity
+- Restart Jan after configuration changes
+
+**Search Quality Issues:**
+- Refine query specificity and context
+- Try different search approaches
+- Check if topic has recent information available
+- Verify sources are current and authoritative
+
+**Tool Calling Problems:**
+- Confirm model supports tool calling
+- Check that Perplexity tools appear in tools panel
+- Try Claude 3.5+ Sonnet for best results
+- Verify MCP permissions are enabled
+
+**Rate Limiting:**
+- Monitor API usage in Perplexity dashboard
+- Check account limits and quotas
+- Consider upgrading account plan if needed
+- Implement delays between searches if necessary
+
+<Callout type="warning">
+Perplexity API has usage limits based on your account plan. Monitor consumption to avoid service interruptions.
+</Callout>
+
+## Advanced Configuration
+
+### Custom Search Parameters
+
+The default implementation uses standard search parameters. For custom configurations:
+- Search model selection
+- Response length preferences
+- Source filtering options
+- Citation format preferences
+
+Modifications require editing the server configuration directly.
+
+### Docker Alternative
+
+For containerized environments, Perplexity also provides Docker configuration:
+```json
+{
+  "mcpServers": {
+    "perplexity-ask": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "PERPLEXITY_API_KEY", "mcp/perplexity-ask"],
+      "env": {
+        "PERPLEXITY_API_KEY": "YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+## Perplexity vs Other Search MCPs
+
+| Feature | Perplexity | Exa | Jina (Community) |
+|---------|------------|-----|------------------|
+| **Official Support** | ✓ | ✓ | Community |
+| **Real-time Search** | ✓ | ✓ | ✓ |
+| **Source Attribution** | ✓ | ✓ | Limited |
+| **API Reliability** | High | High | Variable |
+| **Search Quality** | AI-optimized | Semantic | Standard |
+| **Rate Limits** | Plan-based | Plan-based | Varies |
+
+## Next Steps
+
+Perplexity MCP transforms Jan from a knowledge-cutoff-limited assistant into a current, web-connected research tool. The integration provides access to real-time information while maintaining Jan's privacy-focused local processing for conversation and reasoning.
+
+This combination delivers the best of both worlds: secure local AI processing with access to current web information when needed.

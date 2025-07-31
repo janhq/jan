@@ -1,0 +1,248 @@
+---
+title: Browserbase MCP
+description: Automate browsers with AI-powered natural language commands through Browserbase.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Browserbase,
+    browser automation,
+    web scraping,
+    Stagehand,
+    headless browser,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Browserbase MCP
+
+[Browserbase MCP](https://docs.browserbase.com/integrations/mcp/introduction) brings browser automation to Jan through natural language commands. Instead of writing complex selectors and automation scripts, you tell the AI what to do and it figures out how to do it.
+
+Built on Stagehand, this integration lets AI models control browsers, navigate websites, fill forms, and extract data using plain English instructions.
+
+## Available Tools
+
+### Core Browser Automation
+- `browserbase_stagehand_navigate`: Navigate to any URL
+- `browserbase_stagehand_act`: Perform actions using natural language ("click the login button")
+- `browserbase_stagehand_extract`: Extract text content from pages
+- `browserbase_stagehand_observe`: Find and identify page elements
+- `browserbase_screenshot`: Capture page screenshots
+
+### Session Management
+- `browserbase_session_create`: Create or reuse browser sessions
+- `browserbase_session_close`: Close active sessions
+- Multi-session variants for parallel automation workflows
+
+## Prerequisites
+
+- Jan with MCP enabled
+- Browserbase API key and Project ID from [dashboard.browserbase.com](https://dashboard.browserbase.com)
+- Model with tool calling support
+- Node.js installed
+
+<Callout type="info">
+Browserbase MCP works best with models that have strong tool calling capabilities. Claude 3.5+ Sonnet, GPT-4o, and similar models perform reliably.
+</Callout>
+
+## Setup
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![MCP settings page with toggle enabled](../../_assets/mcp-on.png)
+
+### Get Browserbase Credentials
+
+1. Visit [dashboard.browserbase.com](https://dashboard.browserbase.com)
+2. Create account or sign in
+3. Copy your **API Key** and **Project ID**
+
+[PLACEHOLDER: Screenshot of Browserbase dashboard showing API key and project ID locations]
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section and choose your installation method:
+
+#### Option 1: Remote URL (Recommended)
+
+For the simplest setup with hosted infrastructure:
+
+**Configuration:**
+- **Server Name**: `browserbase`
+- **URL**: Get from [smithery.ai](https://smithery.ai) with your Browserbase credentials
+
+[PLACEHOLDER: Screenshot of smithery.ai configuration page]
+
+#### Option 2: NPM Package
+
+For local installation:
+
+**Configuration:**
+- **Server Name**: `browserbase`
+- **Command**: `npx`
+- **Arguments**: `@browserbasehq/mcp-server-browserbase`
+- **Environment Variables**: 
+  - Key: `BROWSERBASE_API_KEY`, Value: `your-api-key`
+  - Key: `BROWSERBASE_PROJECT_ID`, Value: `your-project-id`
+  - Key: `GEMINI_API_KEY`, Value: `your-gemini-key` (required for Stagehand)
+
+[PLACEHOLDER: Screenshot of Jan MCP server configuration form with Browserbase settings]
+
+### Verify Setup
+
+Check server status shows as active in the MCP Servers list.
+
+[PLACEHOLDER: Screenshot showing active Browserbase MCP server in Jan]
+
+### Model Configuration
+
+Use a compatible model with tool calling enabled:
+
+- **Anthropic Claude 3.5+ Sonnet**
+- **OpenAI GPT-4o**
+- **Google Gemini Pro**
+
+[PLACEHOLDER: Screenshot showing model selection with tools enabled]
+
+## Usage
+
+Start a new chat with your tool-enabled model. Browserbase tools will appear in the available tools list.
+
+[PLACEHOLDER: Screenshot showing Browserbase tools in the tools panel]
+
+### Basic Navigation
+
+```
+Navigate to github.com and take a screenshot
+```
+
+The AI will:
+1. Create a browser session
+2. Navigate to the specified URL
+3. Capture a screenshot
+4. Return the image
+
+### Form Interaction
+
+```
+Go to example.com/contact, fill out the contact form with name "John Doe" and email "john@example.com", then submit it
+```
+
+The automation will:
+- Navigate to the contact page
+- Locate form fields using AI vision
+- Fill in the specified information
+- Submit the form
+
+### Data Extraction
+
+```
+Visit news.ycombinator.com and extract the titles of the top 10 stories
+```
+
+This will:
+- Navigate to Hacker News
+- Identify story elements
+- Extract and structure the title data
+- Return as organized text
+
+### Multi-Step Workflows
+
+```
+Go to GitHub, search for "javascript frameworks", click on the first repository, and tell me about its README content
+```
+
+Complex workflows work seamlessly:
+- Performs the search
+- Navigates to results
+- Extracts repository information
+- Summarizes findings
+
+## Advanced Features
+
+### Multi-Session Management
+
+For parallel browser automation:
+
+```
+Create two browser sessions: one for monitoring product prices on site A, another for checking inventory on site B
+```
+
+Each session maintains independent state, cookies, and context.
+
+### Custom Configuration
+
+The MCP server supports various configuration options:
+
+- **Proxies**: Enable IP rotation and geo-location testing
+- **Advanced Stealth**: Bypass detection systems (Scale Plan required)
+- **Custom Viewports**: Set specific browser dimensions
+- **Cookie Injection**: Pre-populate authentication state
+
+### AI Model Selection
+
+Browserbase MCP defaults to Gemini 2.0 Flash but supports multiple AI models:
+- **Gemini 2.0 Flash** (default, fastest)
+- **GPT-4o** (high accuracy)
+- **Claude 3.5 Sonnet** (excellent reasoning)
+
+## Use Cases
+
+### E-commerce Monitoring
+Track product prices, availability, and competitor information across multiple sites simultaneously.
+
+### Lead Generation
+Extract contact information and business data from directories, social platforms, and company websites.
+
+### Content Research
+Gather articles, posts, and media from various sources for analysis and reporting.
+
+### Quality Assurance
+Automated testing of web applications, form submissions, and user workflows.
+
+### Market Intelligence
+Monitor competitor activities, pricing changes, and product launches.
+
+### Data Migration
+Extract structured data from legacy systems or poorly documented APIs.
+
+## Troubleshooting
+
+**Connection Issues:**
+- Verify API key and Project ID accuracy
+- Check Node.js installation (if using NPM method)
+- Restart Jan application
+- Confirm Browserbase account has sufficient credits
+
+**Tool Calling Problems:**
+- Ensure model has tool calling enabled
+- Try Claude 3.5+ Sonnet or GPT-4o for best results
+- Check MCP server shows as active
+
+**Automation Failures:**
+- Use specific, descriptive instructions
+- Break complex tasks into smaller steps
+- Check browser console for JavaScript errors
+- Verify target website doesn't block automation
+
+**Performance Issues:**
+- Use appropriate viewport sizes for your use case
+- Enable proxies only when needed
+- Choose efficient AI models (Gemini Flash for speed)
+- Close unused browser sessions
+
+<Callout type="warning">
+Browserbase has usage limits based on your plan. Monitor session usage to avoid interruptions.
+</Callout>
+
+## Next Steps
+
+Browserbase MCP transforms browser automation from a programming task into a conversation. Instead of learning complex automation frameworks, you describe what you want and the AI handles the implementation details.
+
+The combination of Jan's privacy-focused local processing with Browserbase's cloud browser infrastructure provides the best of both worlds: secure local AI reasoning with scalable remote automation capabilities.
