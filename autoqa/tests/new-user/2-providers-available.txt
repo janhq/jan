@@ -1,0 +1,21 @@
+prompt = """
+You are going to test the Jan application by verifying that all expected model providers are listed in the Settings panel.
+
+Step-by-step instructions:
+1. Given the Jan application is already opened.
+2. In the bottom-left menu, click on **Settings**.
+3. In the left sidebar of Settings, click on **Model Providers**.
+4. In the main panel, verify that the following model providers are listed:
+   - Llama.cpp
+   - OpenAI
+   - Anthropic
+   - Cohere
+   - OpenRouter
+   - Mistral
+   - Groq
+   - Gemini
+   - Hugging Face
+
+If all the providers are visible, return: {"result": true}. Otherwise, return: {"result": false}.
+Use only plain ASCII characters in all responses. Do NOT use Unicode symbols.
+"""

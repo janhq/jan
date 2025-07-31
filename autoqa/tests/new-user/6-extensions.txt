@@ -1,0 +1,21 @@
+prompt = """
+You are going to test the Jan application by verifying the available extensions listed under Settings → Extensions.
+
+Step-by-step instructions:
+1. Given the Jan application is already open.
+2. In the bottom-left corner, click **Settings**.
+3. In the left sidebar of Settings, click on **Extensions**.
+4. In the main panel, confirm that the following four extensions are listed:
+   - Jan Assistant
+   - Conversational
+   - Download Manager
+   - llama.cpp Inference Engine
+
+If all four extensions are present, return:
+{"result": true}
+
+Otherwise, return:
+{"result": false}
+
+In all responses, use only plain ASCII characters. Do NOT use Unicode symbols.
+"""

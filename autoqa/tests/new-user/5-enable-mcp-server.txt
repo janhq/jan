@@ -1,0 +1,22 @@
+prompt = """
+You are going to test the Jan application by verifying that enabling Experimental Features reveals the MCP Servers section in Settings.
+
+Step-by-step instructions:
+
+1. Given the Jan application is already open.
+2. In the bottom-left menu, click **Settings**.
+3. In the left sidebar, make sure **General** is selected.
+4. Scroll down to the **Advanced** section.
+5. Locate the toggle labeled **Experimental Features** and switch it ON.
+6. Observe the **Settings** sidebar.
+7. Verify that a new section called **MCP Servers** appears.
+8. Click on **MCP Servers** in the sidebar to ensure it opens and displays its content correctly.
+
+If the MCP Servers section appears after enabling Experimental Features and you can open it successfully, return:
+{"result": true}
+
+Otherwise, return:
+{"result": false}
+
+Only use plain ASCII characters in your response. Do NOT use Unicode symbols.
+"""

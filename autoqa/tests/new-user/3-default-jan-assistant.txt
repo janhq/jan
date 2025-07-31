@@ -1,0 +1,19 @@
+prompt = """
+You are going to test the Jan application by verifying that a default assistant named **Jan** is present.
+
+Step-by-step instructions:
+
+1. Given the Jan application is already open.
+2. In the bottom-left menu, click on **Assistants**.
+3. On the Assistants screen, verify that there is a visible assistant card named **Jan**.
+4. Confirm that it has a description under the name that starts with:
+   "Jan is a helpful desktop assistant..."
+
+If the assistant named Jan is present and its description is visible, return:
+{"result": true}
+
+Otherwise, return:
+{"result": false}
+
+Only use plain ASCII characters in your response. Do NOT use Unicode symbols.
+"""

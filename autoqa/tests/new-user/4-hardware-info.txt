@@ -1,0 +1,60 @@
+prompt = """
+You are going to test the Jan application by verifying that the hardware information is displayed correctly in the Settings panel.
+
+Step-by-step instructions:
+
+1. Given the Jan application is already opened.
+2. In the bottom-left menu, click on **Settings**.
+3. In the left sidebar, click on **Hardware**.
+
+4. In the main panel, ensure the following sections are displayed clearly with appropriate system information:
+
+---
+
+**Operating System**
+- This section should display:
+  - A name such as "Windows", "Ubuntu", or "Macos"
+  - A version string like "Windows 11 Pro", "22.04.5 LTS", or "macOS 15.5 Sequoia"
+
+---
+
+**CPU**
+- This section should display:
+  - A processor model (e.g., Intel, AMD, or Apple Silicon)
+  - An architecture (e.g., x86_64, amd64, or aarch64)
+  - A number of cores
+  - Optional: An instruction set list (may appear on Linux or Windows)
+  - A usage bar indicating current CPU load
+
+---
+
+**Memory**
+- This section should display:
+  - Total RAM
+  - Available RAM
+  - A usage bar showing memory consumption
+
+---
+
+**GPUs**
+- This section is located at the bottom of the Hardware page — **scroll down if it is not immediately visible**.
+- If the system has a GPU:
+  - It should display the GPU name (e.g., NVIDIA GeForce GTX 1080)
+  - A toggle should be available to enable or disable GPU usage
+- If no GPU is detected:
+  - It should display a message like “No GPUs detected”
+
+---
+
+**Final Check**
+- Ensure that there are **no error messages** in the UI.
+- The layout should appear clean and correctly rendered with no broken visual elements.
+
+If all sections display relevant hardware information accurately and the interface is error-free, return:
+{"result": true}
+
+Otherwise, return:
+{"result": false}
+
+Use only plain ASCII characters in your response. Do NOT use Unicode symbols.
+"""
