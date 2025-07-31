@@ -88,7 +88,7 @@ describe('useThreads', () => {
     })
 
     expect(Object.keys(result.current.threads)).toHaveLength(2)
-    expect(result.current.threads['thread1'].model.id).toEqual('thread1:free')
+    expect(result.current.threads['thread1'].model.id).toEqual('thread1/free')
     expect(result.current.threads['thread1'].model.provider).toEqual('llamacpp')
     expect(result.current.threads['thread2'].model.id).toEqual('thread2/test')
     expect(result.current.threads['thread2'].model.provider).toEqual('llamacpp')
