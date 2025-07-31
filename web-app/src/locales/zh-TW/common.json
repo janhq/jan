@@ -250,11 +250,5 @@
       "title": "下載已取消",
       "description": "下載過程已取消"
     }
-  },
-  "cortexFailureDialog": {
-    "title": "Cortex 啟動失敗",
-    "description": "Cortex 啟動失敗。請檢查日誌以獲取更多詳細信息。",
-    "contactSupport": "聯繫支援",
-    "restartJan": "重啟 Jan"
   }
 }

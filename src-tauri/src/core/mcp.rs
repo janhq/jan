@@ -260,7 +260,7 @@ async fn monitor_mcp_server_handle(
     }
 }
 
-/// Starts an MCP server with restart monitoring (similar to cortex restart)
+/// Starts an MCP server with restart monitoring
 /// Returns the result of the first start attempt, then continues with restart monitoring
 async fn start_mcp_server_with_restart<R: Runtime>(
     app: AppHandle<R>,

@@ -250,11 +250,5 @@
       "title": "Đã hủy tải xuống",
       "description": "Quá trình tải xuống đã bị hủy"
     }
-  },
-  "cortexFailureDialog": {
-    "title": "Cortex không khởi động được",
-    "description": "Cortex không khởi động được. Vui lòng kiểm tra log để biết thêm chi tiết.",
-    "contactSupport": "Liên hệ Hỗ trợ",
-    "restartJan": "Khởi động lại Jan"
   }
 }

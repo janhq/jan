@@ -1,5 +1,3 @@
-declare const API_URL: string
-
 interface Core {
   api: APIFunctions
   events: EventEmitter
