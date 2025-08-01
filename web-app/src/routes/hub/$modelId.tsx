@@ -44,7 +44,7 @@ function HubModelDetail() {
   const navigate = useNavigate()
   const { sources, fetchSources } = useModelSources()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const search = useSearch({ from: route.hub.model as any })
+  const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
