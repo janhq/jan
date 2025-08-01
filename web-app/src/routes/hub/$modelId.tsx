@@ -1,5 +1,10 @@
 import HeaderPage from '@/containers/HeaderPage'
-import { createFileRoute, useParams, useNavigate } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  useParams,
+  useNavigate,
+  useSearch,
+} from '@tanstack/react-router'
 import {
   IconArrowLeft,
   IconDownload,
@@ -13,23 +18,38 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { pullModel } from '@/services/models'
+import {
+  CatalogModel,
+  convertHfRepoToCatalogModel,
+  fetchHuggingFaceRepo,
+  pullModel,
+} from '@/services/models'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+type SearchParams = {
+  repo: string
+}
+
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetail,
+  validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    repo: search.repo as SearchParams['repo'],
+  }),
 })
 
 function HubModelDetail() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { sources, fetchSources } = useModelSources()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const search = useSearch({ from: route.hub.model as any })
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
+  const [repoData, setRepoData] = useState<CatalogModel | undefined>()
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
@@ -39,10 +59,21 @@ function HubModelDetail() {
     fetchSources()
   }, [fetchSources])
 
+  const fetchRepo = useCallback(async () => {
+    const repoInfo = await fetchHuggingFaceRepo(search.repo || modelId)
+    if (repoInfo) {
+      const repoDetail = convertHfRepoToCatalogModel(repoInfo)
+      setRepoData(repoDetail)
+    }
+  }, [modelId, search])
+
+  useEffect(() => {
+    fetchRepo()
+  }, [modelId, fetchRepo])
   // Find the model data from sources
   const modelData = useMemo(() => {
-    return sources.find((model) => model.model_name === modelId)
-  }, [sources, modelId])
+    return sources.find((model) => model.model_name === modelId) ?? repoData
+  }, [sources, modelId, repoData])
 
   // Download processes
   const downloadProcesses = useMemo(
@@ -115,7 +146,6 @@ function HubModelDetail() {
       return numA - numB
     })
   }, [modelData])
-
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
