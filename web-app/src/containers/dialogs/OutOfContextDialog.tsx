@@ -60,7 +60,6 @@ export default function OutOfContextPromiseModal() {
             {t('model-errors:truncateInput')}
           </Button>
           <Button
-            asChild
             autoFocus
             onClick={() => {
               handleContextLength()
