@@ -4,6 +4,7 @@ import {
   fetchModels,
   fetchModelCatalog,
   fetchHuggingFaceRepo,
+  convertHfRepoToCatalogModel,
   updateModel,
   pullModel,
   abortDownload,
@@ -12,6 +13,8 @@ import {
   stopModel,
   stopAllModels,
   startModel,
+  HuggingFaceRepo,
+  CatalogModel,
 } from '../models'
 import { EngineManager, Model } from '@janhq/core'
 
@@ -334,7 +337,9 @@ describe('models service', () => {
       })
 
       // Test with full URL
-      await fetchHuggingFaceRepo('https://huggingface.co/microsoft/DialoGPT-medium')
+      await fetchHuggingFaceRepo(
+        'https://huggingface.co/microsoft/DialoGPT-medium'
+      )
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true'
       )
@@ -380,7 +385,7 @@ describe('models service', () => {
 
     it('should handle other HTTP errors', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      
+
       ;(fetch as any).mockResolvedValue({
         ok: false,
         status: 500,
@@ -394,13 +399,13 @@ describe('models service', () => {
         'Error fetching HuggingFace repository:',
         expect.any(Error)
       )
-      
+
       consoleSpy.mockRestore()
     })
 
     it('should handle network errors', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      
+
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
       const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
@@ -410,7 +415,7 @@ describe('models service', () => {
         'Error fetching HuggingFace repository:',
         expect.any(Error)
       )
-      
+
       consoleSpy.mockRestore()
     })
 
@@ -524,7 +529,303 @@ describe('models service', () => {
 
       expect(result).toEqual(mockRepoData)
       // Verify the GGUF file is present in siblings
-      expect(result?.siblings?.some(s => s.rfilename.endsWith('.gguf'))).toBe(true)
+      expect(result?.siblings?.some((s) => s.rfilename.endsWith('.gguf'))).toBe(
+        true
+      )
+    })
+  })
+
+  describe('convertHfRepoToCatalogModel', () => {
+    const mockHuggingFaceRepo: HuggingFaceRepo = {
+      id: 'microsoft/DialoGPT-medium',
+      modelId: 'microsoft/DialoGPT-medium',
+      sha: 'abc123',
+      downloads: 1500,
+      likes: 75,
+      tags: ['pytorch', 'transformers', 'text-generation'],
+      pipeline_tag: 'text-generation',
+      created_at: '2021-01-01T00:00:00Z',
+      last_modified: '2021-12-01T00:00:00Z',
+      private: false,
+      disabled: false,
+      gated: false,
+      author: 'microsoft',
+      siblings: [
+        {
+          rfilename: 'model-q4_0.gguf',
+          size: 2 * 1024 * 1024 * 1024, // 2GB
+          blobId: 'blob123',
+        },
+        {
+          rfilename: 'model-q8_0.GGUF', // Test case-insensitive matching
+          size: 4 * 1024 * 1024 * 1024, // 4GB
+          blobId: 'blob456',
+        },
+        {
+          rfilename: 'tokenizer.json', // Non-GGUF file (should be filtered out)
+          size: 1024 * 1024, // 1MB
+          blobId: 'blob789',
+        },
+      ],
+    }
+
+    it('should convert HuggingFace repo to catalog model format', () => {
+      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+
+      const expected: CatalogModel = {
+        model_name: 'microsoft/DialoGPT-medium',
+        description: '**Tags**: pytorch, transformers, text-generation',
+        developer: 'microsoft',
+        downloads: 1500,
+        num_quants: 2,
+        quants: [
+          {
+            model_id: 'model-q4_0',
+            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf',
+            file_size: '2.0 GB',
+          },
+          {
+            model_id: 'model-q8_0',
+            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF',
+            file_size: '4.0 GB',
+          },
+        ],
+        created_at: '2021-01-01T00:00:00Z',
+        readme:
+          'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md',
+      }
+
+      expect(result).toEqual(expected)
+    })
+
+    it('should handle repository with no GGUF files', () => {
+      const repoWithoutGGUF: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: [
+          {
+            rfilename: 'tokenizer.json',
+            size: 1024 * 1024,
+            blobId: 'blob789',
+          },
+          {
+            rfilename: 'config.json',
+            size: 2048,
+            blobId: 'blob101',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithoutGGUF)
+
+      expect(result.num_quants).toBe(0)
+      expect(result.quants).toEqual([])
+    })
+
+    it('should handle repository with no siblings', () => {
+      const repoWithoutSiblings: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: undefined,
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithoutSiblings)
+
+      expect(result.num_quants).toBe(0)
+      expect(result.quants).toEqual([])
+    })
+
+    it('should format file sizes correctly', () => {
+      const repoWithVariousFileSizes: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: [
+          {
+            rfilename: 'small-model.gguf',
+            size: 500 * 1024 * 1024, // 500MB
+            blobId: 'blob1',
+          },
+          {
+            rfilename: 'large-model.gguf',
+            size: 3.5 * 1024 * 1024 * 1024, // 3.5GB
+            blobId: 'blob2',
+          },
+          {
+            rfilename: 'unknown-size.gguf',
+            // No size property
+            blobId: 'blob3',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithVariousFileSizes)
+
+      expect(result.quants[0].file_size).toBe('500.0 MB')
+      expect(result.quants[1].file_size).toBe('3.5 GB')
+      expect(result.quants[2].file_size).toBe('Unknown size')
+    })
+
+    it('should handle empty or undefined tags', () => {
+      const repoWithEmptyTags: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        tags: [],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithEmptyTags)
+
+      expect(result.description).toBe('**Tags**: ')
+    })
+
+    it('should handle missing downloads count', () => {
+      const repoWithoutDownloads: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        downloads: undefined as any,
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithoutDownloads)
+
+      expect(result.downloads).toBe(0)
+    })
+
+    it('should correctly remove .gguf extension from model IDs', () => {
+      const repoWithVariousGGUF: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: [
+          {
+            rfilename: 'model.gguf',
+            size: 1024,
+            blobId: 'blob1',
+          },
+          {
+            rfilename: 'MODEL.GGUF',
+            size: 1024,
+            blobId: 'blob2',
+          },
+          {
+            rfilename: 'complex-model-name.gguf',
+            size: 1024,
+            blobId: 'blob3',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithVariousGGUF)
+
+      expect(result.quants[0].model_id).toBe('model')
+      expect(result.quants[1].model_id).toBe('MODEL')
+      expect(result.quants[2].model_id).toBe('complex-model-name')
+    })
+
+    it('should generate correct download paths', () => {
+      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+
+      expect(result.quants[0].path).toBe(
+        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
+      )
+      expect(result.quants[1].path).toBe(
+        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF'
+      )
+    })
+
+    it('should generate correct readme URL', () => {
+      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+
+      expect(result.readme).toBe(
+        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md'
+      )
+    })
+
+    it('should handle GGUF files with case-insensitive extension matching', () => {
+      const repoWithMixedCase: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: [
+          {
+            rfilename: 'model-1.gguf',
+            size: 1024,
+            blobId: 'blob1',
+          },
+          {
+            rfilename: 'model-2.GGUF',
+            size: 1024,
+            blobId: 'blob2',
+          },
+          {
+            rfilename: 'model-3.GgUf',
+            size: 1024,
+            blobId: 'blob3',
+          },
+          {
+            rfilename: 'not-a-model.txt',
+            size: 1024,
+            blobId: 'blob4',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithMixedCase)
+
+      expect(result.num_quants).toBe(3)
+      expect(result.quants).toHaveLength(3)
+      expect(result.quants[0].model_id).toBe('model-1')
+      expect(result.quants[1].model_id).toBe('model-2')
+      expect(result.quants[2].model_id).toBe('model-3')
+    })
+
+    it('should handle edge cases with file size formatting', () => {
+      const repoWithEdgeCases: HuggingFaceRepo = {
+        ...mockHuggingFaceRepo,
+        siblings: [
+          {
+            rfilename: 'tiny.gguf',
+            size: 512, // < 1MB
+            blobId: 'blob1',
+          },
+          {
+            rfilename: 'exactly-1gb.gguf',
+            size: 1024 * 1024 * 1024, // Exactly 1GB
+            blobId: 'blob2',
+          },
+          {
+            rfilename: 'zero-size.gguf',
+            size: 0,
+            blobId: 'blob3',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(repoWithEdgeCases)
+
+      expect(result.quants[0].file_size).toBe('0.0 MB')
+      expect(result.quants[1].file_size).toBe('1.0 GB')
+      expect(result.quants[2].file_size).toBe('Unknown size') // 0 is falsy, so it returns 'Unknown size'
+    })
+
+    it('should handle missing optional fields gracefully', () => {
+      const minimalRepo: HuggingFaceRepo = {
+        id: 'minimal/repo',
+        modelId: 'minimal/repo',
+        sha: 'abc123',
+        downloads: 0,
+        likes: 0,
+        tags: [],
+        created_at: '2021-01-01T00:00:00Z',
+        last_modified: '2021-12-01T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'minimal',
+        siblings: [
+          {
+            rfilename: 'model.gguf',
+            blobId: 'blob1',
+          },
+        ],
+      }
+
+      const result = convertHfRepoToCatalogModel(minimalRepo)
+
+      expect(result.model_name).toBe('minimal/repo')
+      expect(result.developer).toBe('minimal')
+      expect(result.downloads).toBe(0)
+      expect(result.description).toBe('**Tags**: ')
+      expect(result.quants[0].file_size).toBe('Unknown size')
     })
   })
 })
