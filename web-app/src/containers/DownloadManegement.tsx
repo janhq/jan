@@ -183,7 +183,7 @@ export function DownloadManagement() {
       toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
         description: t('common:toast.downloadComplete.description', {
-          modelId: state.modelId,
+          item: state.modelId,
         }),
       })
     },

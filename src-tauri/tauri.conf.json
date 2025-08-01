@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.5.16",
+  "version": "0.6.599",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeDevCommand": "cross-env IS_TAURI=true CLEAN=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {
@@ -45,7 +45,7 @@
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
-        "img-src": "'self' asset: http://asset.localhost blob: data: https://cdn.jsdelivr.net",
+        "img-src": "'self' asset: http://asset.localhost blob: data: https:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
         "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
       },

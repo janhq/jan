@@ -1,95 +1,136 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { ExtensionManager } from '@/lib/extension'
-import { normalizeProvider } from '@/lib/models'
-import { EngineManager, ExtensionTypeEnum, ModelExtension } from '@janhq/core'
+import {
+  AIEngine,
+  EngineManager,
+  SessionInfo,
+  SettingComponentProps,
+} from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+// Types for model catalog
+export interface ModelQuant {
+  model_id: string
+  path: string
+  file_size: string
+}
 
+export interface CatalogModel {
+  model_name: string
+  description: string
+  developer: string
+  downloads: number
+  num_quants: number
+  quants: ModelQuant[]
+  created_at?: string
+  readme?: string
+}
+
+export type ModelCatalog = CatalogModel[]
+
+// HuggingFace repository information
+export interface HuggingFaceRepo {
+  id: string
+  modelId: string
+  sha: string
+  downloads: number
+  likes: number
+  library_name?: string
+  tags: string[]
+  pipeline_tag?: string
+  created_at: string
+  last_modified: string
+  private: boolean
+  disabled: boolean
+  gated: boolean | string
+  author: string
+  cardData?: {
+    license?: string
+    language?: string[]
+    datasets?: string[]
+    metrics?: string[]
+  }
+  siblings?: Array<{
+    rfilename: string
+    size?: number
+    blobId?: string
+  }>
+  readme?: string
+}
+
+// TODO: Replace this with the actual provider later
+const defaultProvider = 'llamacpp'
+
+const getEngine = (provider: string = defaultProvider) => {
+  return EngineManager.instance().get(provider) as AIEngine | undefined
+}
 /**
  * Fetches all available models.
  * @returns A promise that resolves to the models.
  */
 export const fetchModels = async () => {
-  return ExtensionManager.getInstance()
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getModels()
+  return getEngine()?.list()
 }
 
 /**
- * Fetches the sources of the models.
- * @returns A promise that resolves to the model sources.
+ * Fetches the model catalog from the GitHub repository.
+ * @returns A promise that resolves to the model catalog.
  */
-export const fetchModelSources = async (): Promise<any[]> => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) return []
-
+export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
   try {
-    const sources = await extension.getSources()
-    const mappedSources = sources.map((m) => ({
-      ...m,
-      models: m.models.sort((a, b) => a.size - b.size),
-    }))
+    const response = await fetch(MODEL_CATALOG_URL)
 
-    // Prepend the hardcoded model to the sources
-    return [...mappedSources]
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch model catalog: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const catalog: ModelCatalog = await response.json()
+    return catalog
   } catch (error) {
-    console.error('Failed to fetch model sources:', error)
-    return []
+    console.error('Error fetching model catalog:', error)
+    throw new Error(
+      `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
   }
 }
 
 /**
- * Fetches the model hub.
- * @returns A promise that resolves to the model hub.
+ * Fetches HuggingFace repository information.
+ * @param repoId The repository ID (e.g., "microsoft/DialoGPT-medium")
+ * @returns A promise that resolves to the repository information.
  */
-export const fetchModelHub = async (): Promise<any[]> => {
-  const hubData = await ExtensionManager.getInstance()
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.fetchModelsHub()
-
-  // Prepend the hardcoded model to the hub data
-  return hubData ? [...hubData] : []
-}
-
-/**
- * Adds a new model source.
- * @param source The source to add.
- * @returns A promise that resolves when the source is added.
- */
-export const addModelSource = async (source: string) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
+export const fetchHuggingFaceRepo = async (
+  repoId: string
+): Promise<HuggingFaceRepo | null> => {
   try {
-    return await extension.addSource(source)
+    // Clean the repo ID to handle various input formats
+    const cleanRepoId = repoId
+      .replace(/^https?:\/\/huggingface\.co\//, '')
+      .replace(/^huggingface\.co\//, '')
+      .replace(/\/$/, '') // Remove trailing slash
+      .trim()
+
+    if (!cleanRepoId || !cleanRepoId.includes('/')) {
+      return null
+    }
+
+    const response = await fetch(
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`
+    )
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null // Repository not found
+      }
+      throw new Error(
+        `Failed to fetch HuggingFace repository: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const repoData: HuggingFaceRepo = await response.json()
+    return repoData
   } catch (error) {
-    console.error('Failed to add model source:', error)
-    throw error
-  }
-}
-
-/**
- * Deletes a model source.
- * @param source The source to delete.
- * @returns A promise that resolves when the source is deleted.
- */
-export const deleteModelSource = async (source: string) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.deleteSource(source)
-  } catch (error) {
-    console.error('Failed to delete model source:', error)
-    throw error
+    console.error('Error fetching HuggingFace repository:', error)
+    return null
   }
 }
 
@@ -102,38 +143,19 @@ export const updateModel = async (
   model: Partial<CoreModel>
   // provider: string,
 ) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.updateModel(model)
-  } catch (error) {
-    console.error('Failed to update model:', error)
-    throw error
-  }
+  if (model.settings)
+    getEngine()?.updateSettings(model.settings as SettingComponentProps[])
 }
 
 /**
- * Downloads a model.
- * @param model The model to download.
+ * Pull or import a model.
+ * @param model The model to pull.
  * @returns A promise that resolves when the model download task is created.
  */
-export const downloadModel = async (id: string) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.pullModel(id)
-  } catch (error) {
-    console.error('Failed to download model:', error)
-    throw error
-  }
+export const pullModel = async (id: string, modelPath: string) => {
+  return getEngine()?.import(id, {
+    modelPath,
+  })
 }
 
 /**
@@ -142,18 +164,7 @@ export const downloadModel = async (id: string) => {
  * @returns
  */
 export const abortDownload = async (id: string) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.cancelModelPull(id)
-  } catch (error) {
-    console.error('Failed to abort model download:', error)
-    throw error
-  }
+  return getEngine()?.abortImport(id)
 }
 
 /**
@@ -162,64 +173,7 @@ export const abortDownload = async (id: string) => {
  * @returns
  */
 export const deleteModel = async (id: string) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.deleteModel(id).then(() => {
-      // TODO: This should be removed when we integrate new llama.cpp extension
-      if (id.includes(':')) {
-        extension.addSource(`cortexso/${id.split(':')[0]}`)
-      }
-    })
-  } catch (error) {
-    console.error('Failed to delete model:', error)
-    throw error
-  }
-}
-
-/**
- * Imports a model from a file path.
- * @param filePath The path to the model file or an array of file paths.
- * @param modelId Optional model ID. If not provided, it will be derived from the file name.
- * @param provider The provider for the model (default: 'llama.cpp').
- * @returns A promise that resolves when the model is imported.
- */
-export const importModel = async (
-  filePath: string | string[],
-  modelId?: string,
-  provider: string = 'llama.cpp'
-) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    // If filePath is an array, use the first element
-    const path = Array.isArray(filePath) ? filePath[0] : filePath
-
-    // If no path was selected, throw an error
-    if (!path) throw new Error('No file selected')
-
-    // Extract filename from path to use as model ID if not provided
-    const defaultModelId =
-      path
-        .split(/[/\\]/)
-        .pop()
-        ?.replace(/ /g, '-')
-        .replace(/\.gguf$/i, '') || path
-    const modelIdToUse = modelId || defaultModelId
-
-    return await extension.importModel(modelIdToUse, path, provider)
-  } catch (error) {
-    console.error('Failed to import model:', error)
-    throw error
-  }
+  return getEngine()?.delete(id)
 }
 
 /**
@@ -228,20 +182,8 @@ export const importModel = async (
  * @returns
  */
 export const getActiveModels = async (provider?: string) => {
-  const providerName = provider || 'cortex' // we will go down to llama.cpp extension later on
-  const extension = EngineManager.instance().get(providerName)
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return 'activeModels' in extension &&
-      typeof extension.activeModels === 'function'
-      ? ((await extension.activeModels()) ?? [])
-      : []
-  } catch (error) {
-    console.error('Failed to get active models:', error)
-    return []
-  }
+  // getEngine(provider)
+  return getEngine(provider)?.getLoadedModels()
 }
 
 /**
@@ -251,20 +193,7 @@ export const getActiveModels = async (provider?: string) => {
  * @returns
  */
 export const stopModel = async (model: string, provider?: string) => {
-  const providerName = provider || 'cortex' // we will go down to llama.cpp extension later on
-  const extension = EngineManager.instance().get(providerName)
-
-  if (!extension) throw new Error('Model extension not found')
-
-  try {
-    return await extension.unloadModel({
-      model,
-      id: model,
-    })
-  } catch (error) {
-    console.error('Failed to stop model:', error)
-    return []
-  }
+  getEngine(provider)?.unload(model)
 }
 
 /**
@@ -273,10 +202,7 @@ export const stopModel = async (model: string, provider?: string) => {
  */
 export const stopAllModels = async () => {
   const models = await getActiveModels()
-  if (models)
-    await Promise.all(
-      models.map((model: { id: string }) => stopModel(model.id))
-    )
+  if (models) await Promise.all(models.map((model) => stopModel(model)))
 }
 
 /**
@@ -289,77 +215,39 @@ export const stopAllModels = async () => {
  */
 export const startModel = async (
   provider: ProviderObject,
-  model: string,
-  abortController?: AbortController
-): Promise<void> => {
-  const providerObj = EngineManager.instance().get(
-    normalizeProvider(provider.provider)
-  )
-  const modelObj = provider.models.find((m) => m.id === model)
+  model: string
+): Promise<SessionInfo | undefined> => {
+  const engine = getEngine(provider.provider)
+  if (!engine) return undefined
 
-  if (providerObj && modelObj) {
-    return providerObj?.loadModel(
-      {
-        id: modelObj.id,
-        settings: Object.fromEntries(
-          Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
-            key,
-            value.controller_props?.value, // assuming each setting is { value: ... }
-          ])
-        ),
-      },
-      abortController
-    )
+  if ((await engine.getLoadedModels()).includes(model)) return undefined
+
+  // Find the model configuration to get settings
+  const modelConfig = provider.models.find((m) => m.id === model)
+
+  // Key mapping function to transform setting keys
+  const mapSettingKey = (key: string): string => {
+    const keyMappings: Record<string, string> = {
+      ctx_len: 'ctx_size',
+      ngl: 'n_gpu_layers',
+    }
+    return keyMappings[key] || key
   }
-}
 
-/**
- * Configures the proxy options for model downloads.
- * @param param0
- */
-export const configurePullOptions = async ({
-  proxyEnabled,
-  proxyUrl,
-  proxyUsername,
-  proxyPassword,
-  proxyIgnoreSSL,
-  verifyProxySSL,
-  verifyProxyHostSSL,
-  verifyPeerSSL,
-  verifyHostSSL,
-  noProxy,
-}: ProxyOptions) => {
-  const extension = ExtensionManager.getInstance().get<ModelExtension>(
-    ExtensionTypeEnum.Model
-  )
+  const settings = modelConfig?.settings
+    ? Object.fromEntries(
+        Object.entries(modelConfig.settings).map(([key, value]) => [
+          mapSettingKey(key),
+          value.controller_props?.value,
+        ])
+      )
+    : undefined
 
-  if (!extension) throw new Error('Model extension not found')
-  try {
-    await extension.configurePullOptions(
-      proxyEnabled
-        ? {
-            proxy_username: proxyUsername,
-            proxy_password: proxyPassword,
-            proxy_url: proxyUrl,
-            verify_proxy_ssl: proxyIgnoreSSL ? false : verifyProxySSL,
-            verify_proxy_host_ssl: proxyIgnoreSSL ? false : verifyProxyHostSSL,
-            verify_peer_ssl: proxyIgnoreSSL ? false : verifyPeerSSL,
-            verify_host_ssl: proxyIgnoreSSL ? false : verifyHostSSL,
-            no_proxy: noProxy,
-          }
-        : {
-            proxy_username: '',
-            proxy_password: '',
-            proxy_url: '',
-            verify_proxy_ssl: false,
-            verify_proxy_host_ssl: false,
-            verify_peer_ssl: false,
-            verify_host_ssl: false,
-            no_proxy: '',
-          }
+  return engine.load(model, settings).catch((error) => {
+    console.error(
+      `Failed to start model ${model} for provider ${provider.provider}:`,
+      error
     )
-  } catch (error) {
-    console.error('Failed to configure pull options:', error)
     throw error
-  }
+  })
 }

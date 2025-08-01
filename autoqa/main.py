@@ -449,17 +449,17 @@ async def main():
                 # Update counters and log result
                 if test_passed:
                     test_results["passed"] += 1
-                    logger.info(f"✅ Test {i} PASSED: {test_data['path']}")
+                    logger.info(f"[SUCCESS] Test {i} PASSED: {test_data['path']}")
                 else:
                     test_results["failed"] += 1
-                    logger.error(f"❌ Test {i} FAILED: {test_data['path']}")
+                    logger.error(f"[FAILED] Test {i} FAILED: {test_data['path']}")
                     
                 # Debug log for troubleshooting
-                logger.info(f"🔍 Debug - Test result: type={type(test_result)}, value={test_result}, success_field={test_result.get('success', 'N/A') if isinstance(test_result, dict) else 'N/A'}, final_passed={test_passed}")
+                logger.info(f"[INFO] Debug - Test result: type={type(test_result)}, value={test_result}, success_field={test_result.get('success', 'N/A') if isinstance(test_result, dict) else 'N/A'}, final_passed={test_passed}")
                     
             except Exception as e:
                 test_results["failed"] += 1
-                logger.error(f"❌ Test {i} FAILED with exception: {test_data['path']} - {e}")
+                logger.error(f"[FAILED] Test {i} FAILED with exception: {test_data['path']} - {e}")
             
             # Add delay between tests
             if i < len(test_files):
@@ -477,10 +477,10 @@ async def main():
         logger.info("=" * 50)
         
         if test_results["failed"] > 0:
-            logger.error(f"❌ Test execution completed with {test_results['failed']} failures!")
+            logger.error(f"[FAILED] Test execution completed with {test_results['failed']} failures!")
             final_exit_code = 1
         else:
-            logger.info("✅ All tests completed successfully!")
+            logger.info("[SUCCESS] All tests completed successfully!")
             final_exit_code = 0
         
     except KeyboardInterrupt:

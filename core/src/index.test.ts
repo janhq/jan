@@ -1,4 +1,5 @@
 
+import { it, expect } from 'vitest'
 
 it('should declare global object core when importing the module and then deleting it', () => {
   import('./index');

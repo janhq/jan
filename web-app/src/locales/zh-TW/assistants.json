@@ -10,6 +10,7 @@
   "emoji": "表情符號",
   "name": "名稱",
   "enterName": "輸入名稱",
+  "nameRequired": "名稱為必填項",
   "description": "描述（可選）",
   "enterDescription": "輸入描述",
   "instructions": "指示",

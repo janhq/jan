@@ -114,8 +114,15 @@ function MCPServers() {
     setDeleteDialogOpen(true)
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (serverToDelete) {
+      // Stop the server before deletion
+      try {
+        await invoke('deactivate_mcp_server', { name: serverToDelete })
+      } catch (error) {
+        console.error('Error stopping server before deletion:', error)
+      }
+
       deleteServer(serverToDelete)
       setServerToDelete(null)
       syncServersAndRestart()
@@ -346,7 +353,9 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleOpenJsonEditor(key)}
-                          title={t('mcp-servers:editJson')}
+                          title={t('mcp-servers:editJson.title', {
+                            serverName: key,
+                          })}
                         >
                           <IconCodeCircle
                             size={18}
@@ -366,7 +375,7 @@ function MCPServers() {
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleDeleteClick(key)}
-                          title={t('mcp-servers:deleteServer')}
+                          title={t('mcp-servers:deleteServer.title')}
                         >
                           <IconTrash
                             size={18}

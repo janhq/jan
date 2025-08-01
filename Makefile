@@ -30,9 +30,8 @@ endif
 	yarn build:extensions
 
 dev: install-and-build
-	yarn install:cortex
 	yarn download:bin
-	yarn copy:lib
+	yarn download:lib
 	yarn dev
 
 # Linting
@@ -41,6 +40,8 @@ lint: install-and-build
 
 # Testing
 test: lint
+	yarn download:bin
+	yarn download:lib
 	yarn test
 
 # Builds and publishes the app
@@ -49,7 +50,7 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
-	yarn copy:lib
+	yarn download:lib
 	yarn build
 
 clean:
@@ -81,19 +82,19 @@ else ifeq ($(shell uname -s),Linux)
 	rm -rf "~/.cache/jan*"
 	rm -rf "./.cache"
 else
-	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
-	find . -name ".next" -type d -exec rm -rf '{}' +
-	find . -name "dist" -type d -exec rm -rf '{}' +
-	find . -name "build" -type d -exec rm -rf '{}' +
-	find . -name "out" -type d -exec rm -rf '{}' +
-	find . -name ".turbo" -type d -exec rm -rf '{}' +
-	find . -name ".yarn" -type d -exec rm -rf '{}' +
-	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
-	rm -rf ./pre-install/*.tgz
-	rm -rf ./extensions/*/*.tgz
-	rm -rf ./electron/pre-install/*.tgz
-	rm -rf ./src-tauri/resources
-	rm -rf ./src-tauri/target
-	rm -rf ~/jan/extensions
-	rm -rf ~/Library/Caches/jan*
+	find . -name "node_modules" -type d -prune -exec rm -rfv '{}' +
+	find . -name ".next" -type d -exec rm -rfv '{}' +
+	find . -name "dist" -type d -exec rm -rfv '{}' +
+	find . -name "build" -type d -exec rm -rfv '{}' +
+	find . -name "out" -type d -exec rm -rfv '{}' +
+	find . -name ".turbo" -type d -exec rm -rfv '{}' +
+	find . -name ".yarn" -type d -exec rm -rfv '{}' +
+	find . -name "package-lock.json" -type f -exec rm -rfv '{}' +
+	rm -rfv ./pre-install/*.tgz
+	rm -rfv ./extensions/*/*.tgz
+	rm -rfv ./electron/pre-install/*.tgz
+	rm -rfv ./src-tauri/resources
+	rm -rfv ./src-tauri/target
+	rm -rfv ~/jan/extensions
+	rm -rfv ~/Library/Caches/jan*
 endif

@@ -22,9 +22,8 @@ export const restartMCPServers = async () => {
  * @returns {Promise<object>} The MCP configuration.
  */
 export const getMCPConfig = async () => {
-  const mcpConfig = JSON.parse(
-    (await window.core?.api?.getMcpConfigs()) ?? '{}'
-  )
+  const configString = (await window.core?.api?.getMcpConfigs()) ?? '{}'
+  const mcpConfig = JSON.parse(configString || '{}')
   return mcpConfig
 }
 

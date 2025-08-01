@@ -5,6 +5,10 @@ import {
   MessageStatus,
   EngineManager,
   ModelManager,
+  chatCompletionRequestMessage,
+  chatCompletion,
+  chatCompletionChunk,
+  Tool,
 } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
@@ -24,11 +28,17 @@ type ExtendedConfigOptions = ConfigOptions & {
   fetch?: typeof fetch
 }
 import { ulid } from 'ulidx'
-import { normalizeProvider } from './models'
 import { MCPTool } from '@/types/completion'
 import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { callTool } from '@/services/mcp'
+import { ExtensionManager } from './extension'
+
+export type ChatCompletionResponse =
+  | chatCompletion
+  | AsyncIterable<chatCompletionChunk>
+  | StreamCompletionResponse
+  | CompletionResponse
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -124,7 +134,7 @@ export const sendCompletion = async (
   tools: MCPTool[] = [],
   stream: boolean = true,
   params: Record<string, object> = {}
-): Promise<StreamCompletionResponse | CompletionResponse | undefined> => {
+): Promise<ChatCompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
   let providerName = provider.provider as unknown as keyof typeof models
@@ -147,18 +157,19 @@ export const sendCompletion = async (
       },
     }),
   } as ExtendedConfigOptions)
+
   if (
     thread.model.id &&
-    !(thread.model.id in Object.values(models).flat()) &&
+    !Object.values(models[providerName]).flat().includes(thread.model.id) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    !tokenJS.extendedModelExist(providerName as any, thread.model?.id) &&
-    provider.provider !== 'llama.cpp'
+    !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
+    provider.provider !== 'llamacpp'
   ) {
     try {
       tokenJS.extendModelList(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerName as any,
-        thread.model?.id,
+        thread.model.id,
         // This is to inherit the model capabilities from another built-in model
         // Can be anything that support all model capabilities
         models.anthropic.models[0]
@@ -171,38 +182,51 @@ export const sendCompletion = async (
     }
   }
 
-  // TODO: Add message history
-  const completion = stream
-    ? await tokenJS.chat.completions.create(
+  const engine = ExtensionManager.getInstance().getEngine(provider.provider)
+
+  const completion = engine
+    ? await engine.chat(
         {
+          messages: messages as chatCompletionRequestMessage[],
+          model: thread.model?.id,
+          tools: normalizeTools(tools),
+          tool_choice: tools.length ? 'auto' : undefined,
           stream: true,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          provider: providerName as any,
+          ...params,
+        },
+        abortController
+      )
+    : stream
+      ? await tokenJS.chat.completions.create(
+          {
+            stream: true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            provider: providerName as any,
+            model: thread.model?.id,
+            messages,
+            tools: normalizeTools(tools),
+            tool_choice: tools.length ? 'auto' : undefined,
+            ...params,
+          },
+          {
+            signal: abortController.signal,
+          }
+        )
+      : await tokenJS.chat.completions.create({
+          stream: false,
+          provider: providerName,
           model: thread.model?.id,
           messages,
           tools: normalizeTools(tools),
           tool_choice: tools.length ? 'auto' : undefined,
           ...params,
-        },
-        {
-          signal: abortController.signal,
-        }
-      )
-    : await tokenJS.chat.completions.create({
-        stream: false,
-        provider: providerName,
-        model: thread.model?.id,
-        messages,
-        tools: normalizeTools(tools),
-        tool_choice: tools.length ? 'auto' : undefined,
-        ...params,
-      })
+        })
   return completion
 }
 
 export const isCompletionResponse = (
-  response: StreamCompletionResponse | CompletionResponse
-): response is CompletionResponse => {
+  response: ChatCompletionResponse
+): response is CompletionResponse | chatCompletion => {
   return 'choices' in response
 }
 
@@ -217,9 +241,9 @@ export const stopModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
-  const providerObj = EngineManager.instance().get(normalizeProvider(provider))
+  const providerObj = EngineManager.instance().get(provider)
   const modelObj = ModelManager.instance().get(model)
-  if (providerObj && modelObj) return providerObj?.unloadModel(modelObj)
+  if (providerObj && modelObj) return providerObj?.unload(model).then(() => {})
 }
 
 /**
@@ -230,7 +254,7 @@ export const stopModel = async (
  */
 export const normalizeTools = (
   tools: MCPTool[]
-): ChatCompletionTool[] | undefined => {
+): ChatCompletionTool[] | Tool[] | undefined => {
   if (tools.length === 0) return undefined
   return tools.map((tool) => ({
     type: 'function',
@@ -249,7 +273,7 @@ export const normalizeTools = (
  * @param calls
  */
 export const extractToolCall = (
-  part: CompletionResponseChunk,
+  part: chatCompletionChunk | CompletionResponseChunk,
   currentCall: ChatCompletionMessageToolCall | null,
   calls: ChatCompletionMessageToolCall[]
 ) => {
@@ -305,7 +329,11 @@ export const postMessageProcessing = async (
   message: ThreadMessage,
   abortController: AbortController,
   approvedTools: Record<string, string[]> = {},
-  showModal?: (toolName: string, threadId: string) => Promise<boolean>,
+  showModal?: (
+    toolName: string,
+    threadId: string,
+    toolParameters?: object
+  ) => Promise<boolean>,
   allowAllMCPPermissions: boolean = false
 ) => {
   // Handle completed tool calls
@@ -334,11 +362,23 @@ export const postMessageProcessing = async (
       }
 
       // Check if tool is approved or show modal for approval
+      let toolParameters = {}
+      if (toolCall.function.arguments.length) {
+        try {
+          toolParameters = JSON.parse(toolCall.function.arguments)
+        } catch (error) {
+          console.error('Failed to parse tool arguments:', error)
+        }
+      }
       const approved =
         allowAllMCPPermissions ||
         approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
         (showModal
-          ? await showModal(toolCall.function.name, message.thread_id)
+          ? await showModal(
+              toolCall.function.name,
+              message.thread_id,
+              toolParameters
+            )
           : true)
 
       let result = approved

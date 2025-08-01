@@ -44,10 +44,12 @@ export abstract class OAIEngine extends AIEngine {
    */
   override onUnload(): void {}
 
+  inference(data: MessageRequest) {}
+
   /**
    * Stops the inference.
    */
-  override stopInference() {
+  stopInference() {
     this.isCancelled = true
     this.controller?.abort()
   }

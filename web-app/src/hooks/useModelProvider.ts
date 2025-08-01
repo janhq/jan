@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { sep } from '@tauri-apps/api/path'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -24,7 +25,7 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      selectedProvider: 'llama.cpp',
+      selectedProvider: 'llamacpp',
       selectedModel: null,
       deletedModels: [],
       getModelBy: (modelId: string) => {
@@ -36,16 +37,31 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
-          const existingProviders = state.providers.map((provider) => {
-            return {
-              ...provider,
-              models: provider.models.filter(
-                (e) =>
-                  ('id' in e || 'model' in e) &&
-                  typeof (e.id ?? e.model) === 'string'
-              ),
-            }
-          })
+          const existingProviders = state.providers
+            // Filter out legacy llama.cpp provider for migration
+            // Can remove after a couple of releases
+            .filter((e) => e.provider !== 'llama.cpp')
+            .map((provider) => {
+              return {
+                ...provider,
+                models: provider.models.filter(
+                  (e) =>
+                    ('id' in e || 'model' in e) &&
+                    typeof (e.id ?? e.model) === 'string'
+                ),
+              }
+            })
+
+          let legacyModels: Model[] | undefined = []
+          /// Cortex Migration
+          if (
+            localStorage.getItem('cortex_model_settings_migrated') !== 'true'
+          ) {
+            legacyModels = state.providers.find(
+              (e) => e.provider === 'llama.cpp'
+            )?.models
+            localStorage.setItem('cortex_model_settings_migrated', 'true')
+          }
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
             ? state.deletedModels
@@ -61,7 +77,6 @@ export const useModelProvider = create<ModelProviderState>()(
                 typeof (e.id ?? e.model) === 'string'
             )
             const mergedModels = [
-              ...models,
               ...(provider?.models ?? []).filter(
                 (e) =>
                   ('id' in e || 'model' in e) &&
@@ -69,10 +84,27 @@ export const useModelProvider = create<ModelProviderState>()(
                   !models.some((m) => m.id === e.id) &&
                   !currentDeletedModels.includes(e.id)
               ),
+              ...models,
             ]
+            const updatedModels = provider.models?.map((model) => {
+              const settings =
+                (legacyModels && legacyModels?.length > 0
+                  ? legacyModels
+                  : models
+                ).find(
+                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                )?.settings || model.settings
+              const existingModel = models.find((m) => m.id === model.id)
+              return {
+                ...model,
+                settings: settings,
+                capabilities: existingModel?.capabilities || model.capabilities,
+              }
+            })
+
             return {
               ...provider,
-              models: mergedModels,
+              models: provider.persist ? updatedModels : mergedModels,
               settings: provider.settings.map((setting) => {
                 const existingSetting = provider.persist
                   ? undefined

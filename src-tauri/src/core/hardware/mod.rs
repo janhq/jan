@@ -24,7 +24,14 @@ impl CpuStaticInfo {
         let name = system
             .cpus()
             .first()
-            .map(|cpu| cpu.brand())
+            .map(|cpu| {
+                let brand = cpu.brand();
+                if brand.is_empty() {
+                    cpu.name()
+                } else {
+                    brand
+                }
+            })
             .unwrap_or("unknown")
             .to_string();
 

@@ -10,6 +10,7 @@
   "emoji": "Biểu tượng",
   "name": "Tên",
   "enterName": "Nhập tên",
+  "nameRequired": "Tên là bắt buộc",
   "description": "Mô tả (tùy chọn)",
   "enterDescription": "Nhập mô tả",
   "instructions": "Hướng dẫn",

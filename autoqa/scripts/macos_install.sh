@@ -10,7 +10,7 @@ hdiutil attach "/tmp/jan-installer.dmg" -mountpoint "/tmp/jan-mount"
 APP_FILE=$(find "/tmp/jan-mount" -name "*.app" -type d | head -1)
 
 if [ -z "$APP_FILE" ]; then
-    echo "❌ No .app file found in DMG"
+    echo "[Failed] No .app file found in DMG"
     hdiutil detach "/tmp/jan-mount" || true
     exit 1
 fi
@@ -61,7 +61,7 @@ if [ -z "$APP_PATH" ]; then
 fi
 
 if [ -z "$APP_PATH" ]; then
-    echo "❌ No executable found in MacOS folder"
+    echo "[FAILED] No executable found in MacOS folder"
     ls -la "/Applications/$APP_NAME/Contents/MacOS/"
     exit 1
 fi
@@ -76,11 +76,16 @@ echo "Process name: $PROCESS_NAME"
 echo "JAN_APP_PATH=$APP_PATH" >> $GITHUB_ENV
 echo "PROCESS_NAME=$PROCESS_NAME" >> $GITHUB_ENV
 
+echo "[INFO] Waiting for Jan app first initialization (120 seconds)..."
+echo "This allows Jan to complete its initial setup and configuration"
+sleep 120
+echo "[SUCCESS] Initialization wait completed"
+
 # Verify installation
 if [ -f "$APP_PATH" ]; then
-    echo "✅ Jan app installed successfully"
+    echo "[SUCCESS] Jan app installed successfully"
     ls -la "/Applications/$APP_NAME"
 else
-    echo "❌ Jan app installation failed - executable not found"
+    echo "[FAILED] Jan app installation failed - executable not found"
     exit 1
 fi

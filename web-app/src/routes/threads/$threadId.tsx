@@ -39,7 +39,7 @@ function ThreadDetail() {
   const lastScrollTopRef = useRef(0)
   const { currentThreadId, setCurrentThreadId } = useThreads()
   const { setCurrentAssistant, assistants } = useAssistant()
-  const { setMessages } = useMessages()
+  const { setMessages, deleteMessage } = useMessages()
   const { streamingContent } = useAppState()
   const { appMainViewBgColor, chatWidth } = useAppearance()
   const { sendMessage } = useChat()
@@ -221,8 +221,23 @@ function ThreadDetail() {
   // used when there is a sent/added user message and no assistant message (error or manual deletion)
   const generateAIResponse = () => {
     const latestUserMessage = messages[messages.length - 1]
-    if (latestUserMessage?.content?.[0]?.text?.value) {
+    if (
+      latestUserMessage?.content?.[0]?.text?.value &&
+      latestUserMessage.role === 'user'
+    ) {
       sendMessage(latestUserMessage.content[0].text.value, false)
+    } else if (latestUserMessage?.metadata?.tool_calls) {
+      // Only regenerate assistant message is allowed
+      const threadMessages = [...messages]
+      let toSendMessage = threadMessages.pop()
+      while (toSendMessage && toSendMessage?.role !== 'user') {
+        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
+        toSendMessage = threadMessages.pop()
+      }
+      if (toSendMessage) {
+        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
+      }
     }
   }
 
@@ -232,7 +247,10 @@ function ThreadDetail() {
 
   const showScrollToBottomBtn = !isAtBottom && hasScrollbar
   const showGenerateAIResponseBtn =
-    messages[messages.length - 1]?.role === 'user' && !streamingContent
+    (messages[messages.length - 1]?.role === 'user' ||
+      (messages[messages.length - 1]?.metadata &&
+        'tool_calls' in (messages[messages.length - 1].metadata ?? {}))) &&
+    !streamingContent
 
   return (
     <div className="flex flex-col h-full">
@@ -325,7 +343,7 @@ function ThreadDetail() {
                 className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
                 onClick={generateAIResponse}
               >
-                <p className="text-xs">{t('Generate AI Response')}</p>
+                <p className="text-xs">{t('common:generateAiResponse')}</p>
                 <Play size={12} />
               </div>
             )}

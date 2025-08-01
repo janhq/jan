@@ -15,6 +15,7 @@ on:
   pull_request:
     branches:
       - release/**
+      - dev
 
 jobs:
   set-public-provider:

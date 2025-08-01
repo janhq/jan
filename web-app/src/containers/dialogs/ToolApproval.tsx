@@ -19,7 +19,7 @@ export default function ToolApproval() {
     return null
   }
 
-  const { toolName, onApprove, onDeny } = modalProps
+  const { toolName, toolParameters, onApprove, onDeny } = modalProps
 
   const handleAllowOnce = () => {
     onApprove(true) // true = allow once only
@@ -58,7 +58,20 @@ export default function ToolApproval() {
           </div>
         </DialogHeader>
 
-        <div className="bg-main-view-fg/8 p-2 border border-main-view-fg/5 rounded-lg">
+        {toolParameters && Object.keys(toolParameters).length > 0 && (
+          <div className="bg-main-view-fg/4 p-2 border border-main-view-fg/5 rounded-lg overflow-x-scroll">
+            <h4 className="text-sm font-medium text-main-view-fg mb-2">
+              {t('tools:toolApproval.parameters')}
+            </h4>
+            <div className="relative bg-main-view-fg/6 rounded-md p-2 text-sm font-mono border border-main-view-fg/5 overflow-x-auto">
+              <pre className="text-main-view-fg/80 whitespace-pre-wrap">
+                {JSON.stringify(toolParameters, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-main-view-fg/1 p-2 border border-main-view-fg/5 rounded-lg">
           <p className="text-sm text-main-view-fg/70 leading-relaxed">
             {t('tools:toolApproval.securityNotice')}
           </p>
@@ -80,7 +93,7 @@ export default function ToolApproval() {
             >
               {t('tools:toolApproval.allowOnce')}
             </Button>
-            <Button variant="default" onClick={handleAllow}>
+            <Button variant="default" onClick={handleAllow} autoFocus>
               {t('tools:toolApproval.alwaysAllow')}
             </Button>
           </div>

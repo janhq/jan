@@ -37,7 +37,7 @@ function Index() {
   const hasValidProviders = providers.some(
     (provider) =>
       provider.api_key?.length ||
-      (provider.provider === 'llama.cpp' && provider.models.length)
+      (provider.provider === 'llamacpp' && provider.models.length)
   )
 
   useEffect(() => {

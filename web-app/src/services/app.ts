@@ -1,8 +1,6 @@
-import { AppConfiguration, fs } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from './models'
-import { SystemEvent } from '@/types/events'
 
 /**
  * @description This function is used to reset the app to its factory settings.
@@ -12,14 +10,8 @@ import { SystemEvent } from '@/types/events'
 export const factoryReset = async () => {
   // Kill background processes and remove data folder
   await stopAllModels()
-  emit(SystemEvent.KILL_SIDECAR)
-  setTimeout(async () => {
-    const janDataFolderPath = await getJanDataFolder()
-    if (janDataFolderPath) await fs.rm(janDataFolderPath)
-    window.localStorage.clear()
-    await window.core?.api?.installExtensions()
-    await window.core?.api?.relaunch()
-  }, 1000)
+  window.localStorage.clear()
+  await invoke('factory_reset')
 }
 
 /**

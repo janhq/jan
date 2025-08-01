@@ -40,6 +40,15 @@
   "mcp": "Model Context Protocol",
   "mcp-examples": "MCP Examples",
 
+  "localserver": {
+    "title": "LOCAL SERVER",
+    "type": "separator"
+  },
+  "api-server": "Server Setup",
+  "llama-cpp-server": "LlamaCpp Server",
+  "server-settings": "Server Settings",
+  "server-troubleshooting": "Server Troubleshooting",
+  "server-examples": "Integrations",
   "reference-separator": {
     "title": "REFERENCE",
     "type": "separator"

@@ -96,15 +96,15 @@ const DropdownModelProvider = ({
           selectModelProvider(lastUsed.provider, lastUsed.model)
         } else {
           // Fallback to default model if last used model no longer exists
-          selectModelProvider('llama.cpp', 'llama3.2:3b')
+          selectModelProvider('llamacpp', 'llama3.2:3b')
         }
       } else {
         // default model, we should add from setting
-        selectModelProvider('llama.cpp', 'llama3.2:3b')
+        selectModelProvider('llamacpp', 'llama3.2:3b')
       }
     } else {
       // default model for non-new-chat contexts
-      selectModelProvider('llama.cpp', 'llama3.2:3b')
+      selectModelProvider('llamacpp', 'llama3.2:3b')
     }
   }, [
     model,
@@ -150,8 +150,8 @@ const DropdownModelProvider = ({
       if (!provider.active) return
 
       provider.models.forEach((modelItem) => {
-        // Skip models that require API key but don't have one (except llama.cpp)
-        if (provider.provider !== 'llama.cpp' && !provider.api_key?.length) {
+        // Skip models that require API key but don't have one (except llamacpp)
+        if (provider.provider !== 'llamacpp' && !provider.api_key?.length) {
           return
         }
 

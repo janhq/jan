@@ -41,9 +41,9 @@ echo "Downloading Jan app from: $JAN_APP_URL"
 curl -L -o "/tmp/jan-installer.dmg" "$JAN_APP_URL"
 
 if [ ! -f "/tmp/jan-installer.dmg" ]; then
-    echo "❌ Failed to download Jan app"
+    echo "[FAILED] Failed to download Jan app"
     exit 1
 fi
 
-echo "✅ Successfully downloaded Jan app"
+echo "[SUCCESS] Successfully downloaded Jan app"
 ls -la "/tmp/jan-installer.dmg"

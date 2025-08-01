@@ -79,14 +79,14 @@ const DropdownAssistant = () => {
               className="relative pr-6 hover:bg-main-view-fg/4 rounded-sm"
               key={assistant.id}
             >
-              <DropdownMenuItem className="hover:bg-transparent">
-                <div
-                  className="text-main-view-fg/70 cursor-pointer flex gap-2"
-                  onClick={() => {
-                    setCurrentAssistant(assistant)
-                    updateCurrentThreadAssistant(assistant)
-                  }}
-                >
+              <DropdownMenuItem
+                className="hover:bg-transparent"
+                onClick={() => {
+                  setCurrentAssistant(assistant)
+                  updateCurrentThreadAssistant(assistant)
+                }}
+              >
+                <div className="text-main-view-fg/70 cursor-pointer flex gap-2 w-full">
                   {assistant?.avatar && (
                     <div className="shrink-0 relative w-4 h-4">
                       <AvatarEmoji

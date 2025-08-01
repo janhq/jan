@@ -7,5 +7,6 @@
   "alwaysAllow": "Always Allow",
   "permissions": "Permissions",
   "approve": "Approve",
-  "reject": "Reject"
+  "reject": "Reject",
+  "parameters": "Tool Parameters"
 }

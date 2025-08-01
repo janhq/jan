@@ -11,8 +11,7 @@ import {
 } from '@/components/ui/sheet'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { updateModel, stopModel } from '@/services/models'
-import { ModelSettingParams } from '@janhq/core'
+import { stopModel } from '@/services/models'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -71,24 +70,10 @@ export function ModelSetting({
         models: updatedModels,
       })
 
-      const params = Object.entries(updatedModel.settings).reduce(
-        (acc, [key, value]) => {
-          const rawVal = value.controller_props?.value
-          const num = parseFloat(rawVal as string)
-          acc[key] = !isNaN(num) ? num : rawVal
-          return acc
-        },
-        {} as Record<string, unknown>
-      ) as ModelSettingParams
-
-      updateModel({
-        id: model.id,
-        settings: params,
-        ...(params as unknown as object),
-      })
-
-      // Call debounced stopModel after updating the model
-      debouncedStopModel(model.id)
+      // Call debounced stopModel only when updating ctx_len or ngl
+      if (key === 'ctx_len' || key === 'ngl') {
+        debouncedStopModel(model.id)
+      }
     }
   }
 
@@ -106,7 +91,9 @@ export function ModelSetting({
       </SheetTrigger>
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{t('common:modelSettings.title', { modelId: model.id })}</SheetTitle>
+          <SheetTitle>
+            {t('common:modelSettings.title', { modelId: model.id })}
+          </SheetTitle>
           <SheetDescription>
             {t('common:modelSettings.description')}
           </SheetDescription>
