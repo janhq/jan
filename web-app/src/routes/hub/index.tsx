@@ -31,7 +31,7 @@ import {
   CatalogModel,
   pullModel,
   fetchHuggingFaceRepo,
-  HuggingFaceRepo,
+  convertHfRepoToCatalogModel,
 } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
@@ -63,14 +63,16 @@ function Hub() {
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
   ]
-  const searchOptions = {
-    includeScore: true,
-    // Search in `author` and in `tags` array
-    keys: ['model_name', 'quants.model_id'],
-  }
+  const searchOptions = useMemo(() => {
+    return {
+      includeScore: true,
+      // Search in `author` and in `tags` array
+      keys: ['model_name', 'quants.model_id'],
+    }
+  }, [])
 
   const { sources, addSource, fetchSources, loading } = useModelSources()
-  const search = useSearch({ from: route.hub.index as any })
+
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
@@ -92,83 +94,12 @@ function Hub() {
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
 
-  // Convert HuggingFace repository to CatalogModel format
-  const convertHfRepoToCatalogModel = useCallback(
-    (repo: HuggingFaceRepo): CatalogModel => {
-      // Extract GGUF files from the repository siblings
-      const ggufFiles =
-        repo.siblings?.filter((file) =>
-          file.rfilename.toLowerCase().endsWith('.gguf')
-        ) || []
-
-      // Convert GGUF files to quants format
-      const quants = ggufFiles.map((file) => {
-        // Format file size
-        const formatFileSize = (size?: number) => {
-          if (!size) return 'Unknown size'
-          if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
-          return `${(size / 1024 ** 3).toFixed(1)} GB`
-        }
-
-        // Generate model_id from filename (remove .gguf extension, case-insensitive)
-        const modelId = file.rfilename.replace(/\.gguf$/i, '')
-
-        return {
-          model_id: modelId,
-          path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-          file_size: formatFileSize(file.size),
-        }
-      })
-
-      return {
-        model_name: repo.modelId,
-        description: `**Metadata:** ${repo.pipeline_tag}\n\n **Tags**: ${repo.tags?.join(', ')}`,
-        developer: repo.author,
-        downloads: repo.downloads || 0,
-        num_quants: quants.length,
-        quants: quants,
-        created_at: repo.created_at,
-        readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
-      }
-    },
-    []
-  )
-
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
       ...prev,
       [modelId]: !prev[modelId],
     }))
   }
-
-  useEffect(() => {
-    if (search.repo) {
-      setSearchValue(search.repo || '')
-      setIsSearching(true)
-
-      addModelSourceTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(search.repo)
-          if (repoInfo) {
-            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            if (
-              !sources.some((s) => s.model_name === catalogModel.model_name)
-            ) {
-              setHuggingFaceRepo(catalogModel)
-              addSource(catalogModel)
-            }
-          }
-
-          await fetchSources()
-        } catch (error) {
-          console.error('Error fetching repository info:', error)
-        } finally {
-          setIsSearching(false)
-        }
-      }, 500)
-    }
-  }, [convertHfRepoToCatalogModel, fetchSources, addSource, search, sources])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
@@ -264,9 +195,6 @@ function Hub() {
               addSource(catalogModel)
             }
           }
-
-          // Original addSource logic (if needed)
-          await fetchSources()
         } catch (error) {
           console.error('Error fetching repository info:', error)
         } finally {
