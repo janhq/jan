@@ -185,40 +185,76 @@ pub async fn load_llama_model(
 
     // Spawn task to monitor stdout for readiness
     let _stdout_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            log::info!("[llamacpp stdout] {}", line);
+        let mut reader = BufReader::new(stdout);
+        let mut byte_buffer = Vec::new();
+
+        loop {
+            byte_buffer.clear();
+            match reader.read_until(b'\n', &mut byte_buffer).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&byte_buffer);
+                    let line = line.trim_end();
+                    if !line.is_empty() {
+                        log::info!("[llamacpp stdout] {}", line);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error reading stdout: {}", e);
+                    break;
+                }
+            }
         }
     });
 
     // Spawn task to capture stderr and monitor for errors
     let stderr_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr).lines();
+        let mut reader = BufReader::new(stderr);
+        let mut byte_buffer = Vec::new();
         let mut stderr_buffer = String::new();
-        while let Ok(Some(line)) = reader.next_line().await {
-            log::info!("[llamacpp] {}", line); // Using your log format
-            stderr_buffer.push_str(&line);
-            stderr_buffer.push('\n');
-            // Check for critical error indicators that should stop the process
-            // TODO: check for different errors
-            if line.to_lowercase().contains("error")
-                || line.to_lowercase().contains("failed")
-                || line.to_lowercase().contains("fatal")
-                || line.contains("CUDA error")
-                || line.contains("out of memory")
-                || line.contains("failed to load")
-            {
-                let _ = error_tx.send(line.clone()).await;
-            }
-            // Check for readiness indicator - llama-server outputs this when ready
-            else if line.contains("server is listening on")
-                || line.contains("starting the main loop")
-                || line.contains("server listening on")
-            {
-                log::info!("Server appears to be ready based on stdout: '{}'", line);
-                let _ = ready_tx.send(true).await;
+
+        loop {
+            byte_buffer.clear();
+            match reader.read_until(b'\n', &mut byte_buffer).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&byte_buffer);
+                    let line = line.trim_end();
+
+                    if !line.is_empty() {
+                        stderr_buffer.push_str(line);
+                        stderr_buffer.push('\n');
+                        log::info!("[llamacpp] {}", line);
+
+                        // Check for critical error indicators that should stop the process
+                        let line_lower = line.to_string().to_lowercase();
+                        if line_lower.contains("error loading model")
+                            || line_lower.contains("unknown model architecture")
+                            || line_lower.contains("fatal")
+                            || line_lower.contains("cuda error")
+                            || line_lower.contains("out of memory")
+                            || line_lower.contains("error")
+                            || line_lower.contains("failed")
+                        {
+                            let _ = error_tx.send(line.to_string()).await;
+                        }
+                        // Check for readiness indicator - llama-server outputs this when ready
+                        else if line.contains("server is listening on")
+                            || line.contains("starting the main loop")
+                            || line.contains("server listening on")
+                        {
+                            log::info!("Server appears to be ready based on stderr: '{}'", line);
+                            let _ = ready_tx.send(true).await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error reading stderr: {}", e);
+                    break;
+                }
             }
         }
+
         stderr_buffer
     });
 
@@ -226,7 +262,7 @@ pub async fn load_llama_model(
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_default();
-            log::error!("llama.cpp exited early with code {status:?}");
+            log::error!("llama.cpp exited early with code {:?}", status);
             log::error!("--- stderr ---\n{}", stderr_output);
             return Err(ServerError::LlamacppError(stderr_output.trim().to_string()));
         }
@@ -246,25 +282,43 @@ pub async fn load_llama_model(
             // Error occurred
             Some(error_msg) = error_rx.recv() => {
                 log::error!("Server encountered an error: {}", error_msg);
-                let _ = child.kill().await;
+
+                // Give process a moment to exit naturally
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                // Check if process already exited
+                if let Some(status) = child.try_wait()? {
+                    log::info!("Process exited with code {:?}", status);
+                    return Err(ServerError::LlamacppError(error_msg));
+                } else {
+                    log::info!("Process still running, killing it...");
+                    let _ = child.kill().await;
+                }
+
                 // Get full stderr output
                 let stderr_output = stderr_task.await.unwrap_or_default();
                 return Err(ServerError::LlamacppError(format!("Error: {}\n\nFull stderr:\n{}", error_msg, stderr_output)));
             }
-            // Timeout
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+            // Check for process exit more frequently
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                // Check if process exited
+                if let Some(status) = child.try_wait()? {
+                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    if !status.success() {
+                        log::error!("llama.cpp exited with error code {:?}", status);
+                        return Err(ServerError::LlamacppError(format!("Process exited with code {:?}\n\nStderr:\n{}", status, stderr_output)));
+                    } else {
+                        log::error!("llama.cpp exited successfully but without ready signal");
+                        return Err(ServerError::LlamacppError(format!("Process exited unexpectedly\n\nStderr:\n{}", stderr_output)));
+                    }
+                }
+
+                // Timeout check
                 if start_time.elapsed() > timeout_duration {
                     log::error!("Timeout waiting for server to be ready");
                     let _ = child.kill().await;
-                    return Err(ServerError::LlamacppError("Server startup timeout".to_string()));
-                }
-                // Check if process is still alive
-                if let Some(status) = child.try_wait()? {
-                    if !status.success() {
-                        let stderr_output = stderr_task.await.unwrap_or_default();
-                        log::error!("llama.cpp exited during startup with code {status:?}");
-                        return Err(ServerError::LlamacppError(format!("Process exited with code {status:?}\n\nStderr:\n{}", stderr_output)));
-                    }
+                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    return Err(ServerError::LlamacppError(format!("Server startup timeout\n\nStderr:\n{}", stderr_output)));
                 }
             }
         }
@@ -331,7 +385,10 @@ pub async fn unload_llama_model(
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
             if let Some(raw_pid) = child.id() {
-                log::warn!("gracefully killing is unsupported on Windows, force-killing PID {}", raw_pid);
+                log::warn!(
+                    "gracefully killing is unsupported on Windows, force-killing PID {}",
+                    raw_pid
+                );
 
                 // Since we know a graceful shutdown doesn't work and there are no child processes
                 // to worry about, we can use `child.kill()` directly. On Windows, this is
