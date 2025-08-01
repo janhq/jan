@@ -193,30 +193,14 @@ pub async fn load_llama_model(
 
     // Spawn task to capture stderr and monitor for errors
     let stderr_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr);
-        let mut buf = Vec::new();
+        let mut reader = BufReader::new(stderr).lines();
         let mut stderr_buffer = String::new();
-
-        loop {
-            // Read up through the next newline (or whatever bytes are available)
-            let n = reader
-                .read_until(b'\n', &mut buf)
-                .await
-                .expect("Failed to read from stderr");
-
-            // EOF
-            if n == 0 {
-                break;
-            }
-
-            // Convert the chunk (partial or full line) into a string
-            let line = String::from_utf8_lossy(&buf);
-            log::info!("[llamacpp] {}", line.trim_end());
-
-            // Accumulate for later full-stderr reporting
+        while let Ok(Some(line)) = reader.next_line().await {
+            log::info!("[llamacpp] {}", line); // Using your log format
             stderr_buffer.push_str(&line);
-
-            // Error conditions
+            stderr_buffer.push('\n');
+            // Check for critical error indicators that should stop the process
+            // TODO: check for different errors
             if line.to_lowercase().contains("error")
                 || line.to_lowercase().contains("failed")
                 || line.to_lowercase().contains("fatal")
@@ -224,23 +208,17 @@ pub async fn load_llama_model(
                 || line.contains("out of memory")
                 || line.contains("failed to load")
             {
-                let _ = error_tx.send(line.to_string()).await;
+                let _ = error_tx.send(line.clone()).await;
             }
-            // Readiness conditions
+            // Check for readiness indicator - llama-server outputs this when ready
             else if line.contains("server is listening on")
                 || line.contains("starting the main loop")
                 || line.contains("server listening on")
             {
-                log::info!(
-                    "Server appears to be ready based on stderr: '{}'",
-                    line.trim_end()
-                );
+                log::info!("Server appears to be ready based on stdout: '{}'", line);
                 let _ = ready_tx.send(true).await;
             }
-
-            buf.clear();
         }
-
         stderr_buffer
     });
 
@@ -353,10 +331,7 @@ pub async fn unload_llama_model(
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
             if let Some(raw_pid) = child.id() {
-                log::warn!(
-                    "gracefully killing is unsupported on Windows, force-killing PID {}",
-                    raw_pid
-                );
+                log::warn!("gracefully killing is unsupported on Windows, force-killing PID {}", raw_pid);
 
                 // Since we know a graceful shutdown doesn't work and there are no child processes
                 // to worry about, we can use `child.kill()` directly. On Windows, this is
