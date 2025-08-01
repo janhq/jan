@@ -84,7 +84,7 @@ function MCPServers() {
 
   const handleSaveServer = async (name: string, config: MCPServerConfig) => {
     try {
-      await toggleServer(name, false)
+      toggleServer(name, false)
     } catch (error) {
       console.error('Error deactivating server:', error)
     }
@@ -102,7 +102,7 @@ function MCPServers() {
     }
 
     syncServers()
-    await toggleServer(name, true)
+    toggleServer(name, true)
   }
 
   const handleEdit = (serverKey: string) => {
@@ -147,25 +147,30 @@ function MCPServers() {
   ) => {
     if (jsonServerName) {
       try {
-        await toggleServer(jsonServerName, false)
+        toggleServer(jsonServerName, false)
       } catch (error) {
         console.error('Error deactivating server:', error)
       }
       // Save single server
       editServer(jsonServerName, data as MCPServerConfig)
-      syncServers()
-      toggleServer(jsonServerName, true)
+      toggleServer(jsonServerName, (data as MCPServerConfig).active || false)
     } else {
       // Save all servers
       // Clear existing servers first
-      Object.keys(mcpServers).forEach((key) => {
-        deleteServer(key)
+      Object.keys(mcpServers).forEach((serverKey) => {
+        try {
+          toggleServer(serverKey, false)
+          deleteServer(serverKey)
+        } catch (error) {
+          console.error('Error deactivating server:', error)
+        }
       })
 
       // Add all servers from the JSON
       Object.entries(data as Record<string, MCPServerConfig>).forEach(
         ([key, config]) => {
           addServer(key, config)
+          toggleServer(key, config.active || false)
         }
       )
     }
