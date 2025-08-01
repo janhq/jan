@@ -202,7 +202,7 @@ pub async fn load_llama_model(
             let n = reader
                 .read_until(b'\n', &mut buf)
                 .await
-                .expect("Failed to read from stderr");
+                .map_err(ServerError::Io)?;
 
             // EOF
             if n == 0 {
