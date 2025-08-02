@@ -153,7 +153,7 @@
   {
     "key": "cont_batching",
     "title": "Continuous Batching",
-    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests (default: enabled).",
+    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
