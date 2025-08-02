@@ -210,6 +210,29 @@ export const useModelProvider = create<ModelProviderState>()(
     {
       name: localStorageKey.modelProvider,
       storage: createJSONStorage(() => localStorage),
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as ModelProviderState
+        
+        // Migration for cont_batching description update (version 0 -> 1)
+        if (version === 0 && state?.providers) {
+          state.providers = state.providers.map((provider) => {
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              provider.settings = provider.settings.map((setting) => {
+                if (setting.key === 'cont_batching') {
+                  return {
+                    ...setting,
+                    description: 'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+                  }
+                }
+                return setting
+              })
+            }
+            return provider
+          })
+        }
+        return state
+      },
+      version: 1,
     }
   )
 )
