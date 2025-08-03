@@ -33,19 +33,19 @@ export default defineConfig(({ mode }) => {
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_MACOS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
       ),
       IS_WINDOWS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? false
       ),
       IS_LINUX: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('linux') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('linux') ?? false
       ),
       IS_IOS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? false
       ),
       IS_ANDROID: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('android') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('android') ?? false
       ),
       PLATFORM: JSON.stringify(process.env.TAURI_ENV_PLATFORM),
 
@@ -55,6 +55,9 @@ export default defineConfig(({ mode }) => {
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
       MODEL_CATALOG_URL: JSON.stringify(
         'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
+      ),
+      AUTO_UPDATER_DISABLED: JSON.stringify(
+        env.AUTO_UPDATER_DISABLED === 'true'
       ),
     },
 
