@@ -62,7 +62,12 @@ export function DataProvider() {
 
   // Check for app updates
   useEffect(() => {
-    checkForUpdate()
+    // Only check for updates if the auto updater is not disabled
+    // App might be distributed via other package managers
+    // or methods that handle updates differently
+    if (!AUTO_UPDATER_DISABLED) {
+      checkForUpdate()
+    }
   }, [checkForUpdate])
 
   const handleDeepLink = (urls: string[] | null) => {
