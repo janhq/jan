@@ -266,14 +266,7 @@ describe('useSmallScreenStore', () => {
 })
 
 describe('useSmallScreen', () => {
-  beforeEach(() => {
-    // Reset the store state before each test
-    act(() => {
-      useSmallScreenStore.getState().setIsSmallScreen(false)
-    })
-  })
-
-  it('should return small screen state and update store', () => {
+  it('should return small screen state', () => {
     const mockMediaQueryList = {
       matches: true,
       addEventListener: vi.fn(),
@@ -285,7 +278,6 @@ describe('useSmallScreen', () => {
     const { result } = renderHook(() => useSmallScreen())
 
     expect(result.current).toBe(true)
-    expect(useSmallScreenStore.getState().isSmallScreen).toBe(true)
   })
 
   it('should update when media query changes', () => {
@@ -309,7 +301,6 @@ describe('useSmallScreen', () => {
     })
 
     expect(result.current).toBe(true)
-    expect(useSmallScreenStore.getState().isSmallScreen).toBe(true)
   })
 
   it('should use correct media query for small screen detection', () => {
@@ -324,21 +315,5 @@ describe('useSmallScreen', () => {
     renderHook(() => useSmallScreen())
 
     expect(mockMatchMedia).toHaveBeenCalledWith('(max-width: 768px)')
-  })
-
-  it('should persist state across multiple hook instances', () => {
-    const mockMediaQueryList = {
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }
-
-    mockMatchMedia.mockReturnValue(mockMediaQueryList)
-
-    const { result: result1 } = renderHook(() => useSmallScreen())
-    const { result: result2 } = renderHook(() => useSmallScreen())
-
-    expect(result1.current).toBe(true)
-    expect(result2.current).toBe(true)
   })
 })

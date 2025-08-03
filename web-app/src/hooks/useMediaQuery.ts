@@ -77,14 +77,7 @@ export function useMediaQuery(
   return matches || false
 }
 
-// Specific hook for small screen detection with state management
+// Specific hook for small screen detection
 export const useSmallScreen = (): boolean => {
-  const { isSmallScreen, setIsSmallScreen } = useSmallScreenStore()
-  const mediaQuery = useMediaQuery('(max-width: 768px)')
-
-  useEffect(() => {
-    setIsSmallScreen(mediaQuery)
-  }, [mediaQuery, setIsSmallScreen])
-
-  return isSmallScreen
+  return useMediaQuery('(max-width: 768px)')
 }
