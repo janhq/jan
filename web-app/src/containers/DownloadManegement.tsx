@@ -161,8 +161,14 @@ export function DownloadManagement() {
       console.debug('onFileDownloadError', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+      toast.error(t('common:toast.downloadFailed.title'), {
+        id: 'download-failed',
+        description: t('common:toast.downloadFailed.description', {
+          item: state.modelId,
+        }),
+      })
     },
-    [removeDownload, removeLocalDownloadingModel]
+    [removeDownload, removeLocalDownloadingModel, t]
   )
 
   const onFileDownloadStopped = useCallback(
