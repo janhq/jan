@@ -1,0 +1,118 @@
+---
+title: Jan Desktop
+description: The foundation of your AI ecosystem. Runs on your hardware.
+sidebar:
+  order: 2
+---
+import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Jan Desktop is your local AI workstation. Download it, run your own models, or connect to
+cloud providers. Your computer, your choice.
+
+## How It Works
+
+### Default: Local Mode
+Open Jan. Start chatting with Jan Nano. No internet, no account, no API keys. Your conversations
+never leave your machine.
+
+### Optional: Cloud Mode
+Need more power? Connect to:
+- Your own Jan Server
+- jan.ai (coming soon)
+- Any OpenAI-compatible API
+
+<Aside type="caution">
+**Current limitation**: You need to download a model first (2-4GB). We're embedding Jan Nano
+in the app to fix this.
+</Aside>
+
+## Why Desktop First
+
+Your desktop has the GPU, storage, and memory to run real AI models. Not toy versions. Not
+demos. The same models that power ChatGPT-scale applications.
+
+More importantly: it becomes the hub for your other devices. Your phone connects to your
+desktop. Your team connects to your desktop. Everything stays in your control.
+
+## Specifications
+
+<CardGrid>
+  <Card title="Storage" icon="list-format">
+    Everything in `~/.local/share/jan`. Your data, your models, your configuration. Back it up, move it, delete
+    it - it's just files.
+  </Card>
+  <Card title="API Server" icon="forward-slash">
+    OpenAI-compatible API at `localhost:1337`. Any tool that works with OpenAI works with Jan. No
+    code changes.
+  </Card>
+  <Card title="GPU Support" icon="rocket">
+    NVIDIA CUDA acceleration out of the box. Automatically detects and uses available GPUs. CPU fallback always works.
+  </Card>
+  <Card title="Model Flexibility" icon="puzzle">
+    Run any GGUF model from Hugging Face. Or our models. Or your fine-tuned models. If it's GGUF, it runs.
+  </Card>
+</CardGrid>
+
+## System Requirements
+
+**Minimum**: 8GB RAM, 10GB storage, any 64-bit OS from the last 5 years
+
+**Recommended**: 16GB RAM, NVIDIA GPU, 50GB storage for multiple models
+
+**Runs on**: Windows 10+, macOS 12+, Ubuntu 20.04+
+
+## Installation
+
+```bash
+# macOS/Linux
+curl -sSL https://jan.ai/install.sh | bash
+
+# Windows
+# Download from jan.ai/download
+```
+
+<Aside type="tip">
+First run downloads Jan Nano (4GB). After that, everything works offline.
+</Aside>
+
+## For Developers
+
+### Use Jan as an OpenAI Drop-in
+
+```javascript
+// Your existing OpenAI code
+const openai = new OpenAI({
+  apiKey: "not-needed",
+  baseURL: "http://localhost:1337/v1"
+});
+
+// Works exactly the same
+const completion = await openai.chat.completions.create({
+  model: "jan-nano",
+  messages: [{ role: "user", content: "Hello" }]
+});
+```
+
+### Available Endpoints
+- `/v1/chat/completions` - Chat with any loaded model
+- `/v1/models` - List available models
+- `/v1/embeddings` - Generate embeddings
+- `/routes` - See all available routes
+
+## The Foundation
+
+Jan Desktop isn't just an app. It's the foundation of your personal AI infrastructure:
+
+1. **Today**: Run models locally, connect to cloud APIs
+2. **Soon**: Your phone connects to your desktop
+3. **Next**: Your desktop serves your team
+4. **Future**: Your personal AI that knows you, runs everywhere
+
+No subscriptions. No lock-in. Just software that's yours.
+
+---
+
+**Next steps**:
+- [Download Jan Desktop](https://jan.ai/download)
+- [Try Jan Models →](../models/jan-v1)
+- [Explore Tools →](../tools/search)

@@ -1,0 +1,238 @@
+---
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = 'Jan', description = 'AI that runs where you need it, how you need it' } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+
+    <style>
+      /* Reset and base styles */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html {
+        font-size: 16px;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        line-height: 1.6;
+        color: #000;
+        background: #fff;
+        padding-top: 4rem; /* Space for fixed nav */
+      }
+
+      /* Typography */
+      h1, h2, h3, h4, h5, h6 {
+        font-weight: 700;
+        line-height: 1.2;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+      }
+
+      h1 { font-size: 2.5rem; }
+      h2 { font-size: 2rem; }
+      h3 { font-size: 1.5rem; }
+      h4 { font-size: 1.25rem; }
+      h5 { font-size: 1.1rem; }
+      h6 { font-size: 1rem; }
+
+      p {
+        margin-bottom: 1.5rem;
+      }
+
+      /* Links */
+      a {
+        color: #0066cc;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      /* Lists */
+      ul, ol {
+        margin-bottom: 1.5rem;
+        padding-left: 2rem;
+      }
+
+      li {
+        margin-bottom: 0.5rem;
+      }
+
+      /* Tables */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 2rem 0;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+      }
+
+      th {
+        background: #f8f8f8;
+        font-weight: 600;
+      }
+
+      /* Code */
+      code {
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-size: 0.875em;
+        padding: 0.125rem 0.25rem;
+        background: #f4f4f4;
+        border-radius: 3px;
+      }
+
+      pre {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: #f4f4f4;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+
+      pre code {
+        padding: 0;
+        background: none;
+      }
+
+      /* Blockquotes */
+      blockquote {
+        border-left: 4px solid #ddd;
+        padding-left: 1rem;
+        margin: 1.5rem 0;
+        color: #666;
+      }
+
+      /* Images */
+      img {
+        max-width: 100%;
+        height: auto;
+        margin: 2rem 0;
+        display: block;
+      }
+
+      /* HR */
+      hr {
+        border: none;
+        border-top: 1px solid #ddd;
+        margin: 3rem 0;
+      }
+
+      /* Main content area */
+      main {
+        min-height: calc(100vh - 4rem);
+      }
+
+      /* Print styles */
+      @media print {
+        body {
+          padding-top: 0;
+        }
+
+        .floating-nav,
+        .toc {
+          display: none !important;
+        }
+      }
+
+      /* Dark mode styles */
+      html[data-theme="dark"] {
+        color-scheme: dark;
+      }
+
+      html[data-theme="dark"] body {
+        background: #1a1a1a;
+        color: #fff;
+      }
+
+      html[data-theme="dark"] h1,
+      html[data-theme="dark"] h2,
+      html[data-theme="dark"] h3,
+      html[data-theme="dark"] h4,
+      html[data-theme="dark"] h5,
+      html[data-theme="dark"] h6 {
+        color: #fff;
+      }
+
+      html[data-theme="dark"] p,
+      html[data-theme="dark"] li {
+        color: #ccc;
+      }
+
+      html[data-theme="dark"] a {
+        color: #4a9eff;
+      }
+
+      html[data-theme="dark"] a:hover {
+        color: #6bb3ff;
+      }
+
+      html[data-theme="dark"] table {
+        background: #1a1a1a;
+      }
+
+      html[data-theme="dark"] th,
+      html[data-theme="dark"] td {
+        border-color: #444;
+      }
+
+      html[data-theme="dark"] th {
+        background: #2a2a2a;
+        color: #fff;
+      }
+
+      html[data-theme="dark"] td {
+        color: #ccc;
+      }
+
+      html[data-theme="dark"] code {
+        background: #2a2a2a;
+        color: #fff;
+      }
+
+      html[data-theme="dark"] pre {
+        background: #2a2a2a;
+        color: #fff;
+      }
+
+      html[data-theme="dark"] blockquote {
+        border-left-color: #444;
+        color: #999;
+      }
+
+      html[data-theme="dark"] hr {
+        border-top-color: #444;
+      }
+
+      html[data-theme="dark"] img {
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>

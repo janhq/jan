@@ -1,0 +1,1303 @@
+/* ProductsPrinciples Component Styles */
+
+.principles-section {
+  background: var(--cream-white);
+  border-top: 1px solid var(--border-color);
+}
+
+.principles-section .badge-robot-head {
+  background: var(--error-red);
+}
+
+/* Main Comparison */
+.main-comparison {
+  margin: 4rem 0;
+}
+
+.comparison-sides {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 2rem;
+  align-items: start;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.comparison-side {
+  background: white;
+  border-radius: 20px;
+  border: 3px solid var(--border-color);
+  padding: 2rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.other-ai {
+  border-color: var(--error-red);
+  border-left-width: 6px;
+}
+
+.jan-side {
+  border-color: var(--success-green);
+  border-left-width: 6px;
+}
+
+.comparison-side:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.side-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.side-robot {
+  display: inline-block;
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+/* Other AI Robot (Corporate) */
+.other-robot .robot-head {
+  width: 60px;
+  height: 60px;
+  background: var(--error-red);
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto 10px;
+  position: relative;
+}
+
+.other-robot .robot-body {
+  width: 70px;
+  height: 80px;
+  background: var(--error-red);
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.robot-eyes {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 8px;
+}
+
+.robot-eye {
+  width: 12px;
+  height: 12px;
+  background: var(--dark-text);
+  border-radius: 50%;
+  position: relative;
+}
+
+.robot-eye::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 3px;
+  height: 3px;
+  background: white;
+  border-radius: 50%;
+}
+
+.robot-eye.corporate {
+  background: var(--dark-text);
+  animation: corporateGlare 3s infinite ease-in-out;
+}
+
+.robot-corporate-hat {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 25px;
+  height: 15px;
+  background: var(--dark-text);
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hat-logo {
+  color: var(--warning-amber);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.robot-tie {
+  width: 8px;
+  height: 25px;
+  background: var(--dark-text);
+  margin-bottom: 5px;
+  position: relative;
+}
+
+.tie-pattern {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  background: var(--warning-amber);
+  border-radius: 50%;
+}
+
+.robot-briefcase {
+  width: 20px;
+  height: 12px;
+  background: var(--dark-text);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.briefcase-lock {
+  width: 6px;
+  height: 6px;
+  background: var(--warning-amber);
+  border-radius: 2px;
+}
+
+.robot-chains {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.chain-link {
+  width: 8px;
+  height: 4px;
+  border: 1px solid var(--dark-text);
+  border-radius: 2px;
+  background: var(--medium-gray);
+}
+
+/* Jan Robot (Friendly) */
+.jan-robot .robot-head {
+  width: 60px;
+  height: 60px;
+  background: var(--success-green);
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto 10px;
+  position: relative;
+}
+
+.jan-robot .robot-body {
+  width: 70px;
+  height: 80px;
+  background: var(--success-green);
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.robot-eye.friendly {
+  background: var(--dark-text);
+  animation: friendlyBlink 4s infinite ease-in-out;
+}
+
+.robot-smile {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 10px;
+  border: 3px solid var(--dark-text);
+  border-top: none;
+  border-radius: 0 0 20px 20px;
+}
+
+.robot-heart {
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.heart-beat {
+  width: 15px;
+  height: 15px;
+  background: var(--error-red);
+  border-radius: 50%;
+  position: relative;
+  animation: heartbeat 2s infinite;
+}
+
+.heart-beat::before,
+.heart-beat::after {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  background: var(--error-red);
+  border-radius: 50%;
+}
+
+.heart-beat::before {
+  top: -7px;
+  left: 0;
+}
+
+.heart-beat::after {
+  top: 0;
+  left: -7px;
+}
+
+.robot-shield {
+  width: 18px;
+  height: 20px;
+  background: var(--primary-blue);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  border: 2px solid var(--dark-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shield-lock {
+  width: 6px;
+  height: 6px;
+  background: white;
+  border-radius: 2px;
+}
+
+.robot-freedom {
+  margin-top: 8px;
+}
+
+.freedom-wings {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.wing {
+  width: 12px;
+  height: 8px;
+  background: white;
+  border: 2px solid var(--dark-text);
+  border-radius: 50%;
+  animation: wingFlap 3s infinite ease-in-out;
+}
+
+.left-wing {
+  animation-delay: 0s;
+}
+
+.right-wing {
+  animation-delay: 0.5s;
+}
+
+/* VS Divider */
+.vs-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.vs-robot {
+  position: relative;
+}
+
+.vs-robot .robot-head {
+  width: 40px;
+  height: 40px;
+  background: var(--warning-amber);
+  border-radius: 10px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto 8px;
+  position: relative;
+}
+
+.vs-robot .robot-body {
+  width: 50px;
+  height: 60px;
+  background: var(--warning-amber);
+  border-radius: 10px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.robot-eye.vs-eye {
+  animation: vsFlicker 1s infinite ease-in-out;
+}
+
+.vs-text {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--dark-text);
+}
+
+.robot-lightning {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.lightning-bolt {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 12px solid var(--warning-amber);
+  position: relative;
+}
+
+.lightning-bolt::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: -3px;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 6px solid var(--warning-amber);
+}
+
+.side-header h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 0.5rem;
+}
+
+.side-header p {
+  color: var(--medium-gray);
+  font-size: 0.9rem;
+}
+
+.side-features {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.feature-item.limitation {
+  background: var(--warm-yellow);
+  border: 2px solid var(--error-red);
+}
+
+.feature-item.advantage {
+  background: var(--soft-green);
+  border: 2px solid var(--success-green);
+}
+
+.feature-item:hover {
+  transform: translateX(4px);
+}
+
+.feature-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 2px solid var(--dark-text);
+  flex-shrink: 0;
+}
+
+.feature-icon.wrapper {
+  background: var(--error-red);
+}
+.feature-icon.cloud-only {
+  background: var(--medium-gray);
+}
+.feature-icon.subscription {
+  background: var(--warning-amber);
+}
+.feature-icon.control {
+  background: var(--error-red);
+}
+.feature-icon.own-models {
+  background: var(--success-green);
+}
+.feature-icon.privacy-first {
+  background: var(--primary-blue);
+}
+.feature-icon.free-local {
+  background: var(--success-green);
+}
+.feature-icon.your-rules {
+  background: var(--primary-blue);
+}
+
+.feature-content h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 0.25rem;
+}
+
+.feature-content p {
+  font-size: 0.9rem;
+  color: var(--medium-gray);
+  line-height: 1.4;
+}
+
+/* Detailed Comparison */
+.detailed-comparison {
+  margin: 4rem 0;
+  background: white;
+  border-radius: 20px;
+  border: 2px solid var(--border-color);
+  padding: 3rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.detailed-comparison h3 {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 2rem;
+}
+
+.comparison-table {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table-header {
+  display: contents;
+}
+
+.header-cell {
+  background: var(--primary-blue);
+  color: white;
+  padding: 1rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.table-row {
+  display: contents;
+}
+
+.table-cell {
+  background: white;
+  padding: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.feature-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-weight: 600;
+  color: var(--dark-text);
+}
+
+.feature-robot {
+  position: relative;
+}
+
+.robot-mini-head {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto 4px;
+}
+
+.robot-mini-body {
+  width: 25px;
+  height: 30px;
+  border-radius: 6px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto;
+}
+
+.models-feature .robot-mini-head {
+  background: var(--soft-pink);
+}
+.models-feature .robot-mini-body {
+  background: var(--soft-pink);
+}
+
+.privacy-feature .robot-mini-head {
+  background: var(--primary-blue);
+}
+.privacy-feature .robot-mini-body {
+  background: var(--primary-blue);
+}
+
+.deployment-feature .robot-mini-head {
+  background: var(--success-green);
+}
+.deployment-feature .robot-mini-body {
+  background: var(--success-green);
+}
+
+.cost-feature .robot-mini-head {
+  background: var(--warning-amber);
+}
+.cost-feature .robot-mini-body {
+  background: var(--warning-amber);
+}
+
+.control-feature .robot-mini-head {
+  background: var(--light-purple);
+}
+.control-feature .robot-mini-body {
+  background: var(--light-purple);
+}
+
+.limitation-indicator {
+  background: var(--warm-yellow);
+  color: var(--error-red);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  border: 2px solid var(--error-red);
+}
+
+.advantage-indicator {
+  background: var(--soft-green);
+  color: var(--success-green);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  border: 2px solid var(--success-green);
+}
+
+/* Philosophy Cards */
+.philosophy-cards {
+  margin: 4rem 0;
+}
+
+.philosophy-cards h3 {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 2rem;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.philosophy-card {
+  background: white;
+  border-radius: 16px;
+  border: 2px solid var(--border-color);
+  padding: 2rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.philosophy-card:hover {
+  border-color: var(--primary-blue);
+}
+
+.card-robot {
+  margin-bottom: 1.5rem;
+  display: inline-block;
+}
+
+.card-robot .robot-head {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto 8px;
+  position: relative;
+}
+
+.card-robot .robot-body {
+  width: 60px;
+  height: 70px;
+  border-radius: 12px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.models-card .card-robot .robot-head {
+  background: var(--soft-pink);
+}
+.models-card .card-robot .robot-body {
+  background: var(--soft-pink);
+}
+
+.infrastructure-card .card-robot .robot-head {
+  background: var(--success-green);
+}
+.infrastructure-card .card-robot .robot-body {
+  background: var(--success-green);
+}
+
+.tools-card .card-robot .robot-head {
+  background: var(--warning-amber);
+}
+.tools-card .card-robot .robot-body {
+  background: var(--warning-amber);
+}
+
+.robot-brain {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.brain-core {
+  width: 15px;
+  height: 10px;
+  background: var(--primary-blue);
+  border-radius: 8px;
+  border: 2px solid var(--dark-text);
+}
+
+.model-display {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.model-layer {
+  width: 25px;
+  height: 3px;
+  background: var(--dark-text);
+  border-radius: 2px;
+}
+
+.robot-home {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.home-roof {
+  width: 20px;
+  height: 10px;
+  background: var(--error-red);
+  border: 2px solid var(--dark-text);
+  border-radius: 2px 2px 0 0;
+}
+
+.home-door {
+  width: 8px;
+  height: 8px;
+  background: var(--dark-text);
+  border-radius: 2px;
+  margin: 0 auto;
+}
+
+.infrastructure-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.server-rack {
+  width: 20px;
+  height: 15px;
+  background: var(--dark-text);
+  border-radius: 2px;
+}
+
+.connection-lines {
+  display: flex;
+  gap: 2px;
+}
+
+.line {
+  width: 8px;
+  height: 1px;
+  background: var(--dark-text);
+}
+
+.robot-tools-display {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+}
+
+.tool-wrench {
+  width: 8px;
+  height: 8px;
+  background: var(--dark-text);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.tool-gear {
+  width: 8px;
+  height: 8px;
+  background: var(--dark-text);
+  border-radius: 50%;
+}
+
+.automation-display {
+  width: 30px;
+  height: 20px;
+}
+
+.automation-flow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flow-dot {
+  width: 4px;
+  height: 4px;
+  background: var(--dark-text);
+  border-radius: 50%;
+  animation: flowPulse 2s infinite ease-in-out;
+}
+
+.flow-dot:nth-child(2) {
+  animation-delay: 0.5s;
+}
+.flow-dot:nth-child(3) {
+  animation-delay: 1s;
+}
+
+.card-content h4 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 1rem;
+}
+
+.card-content p {
+  color: var(--medium-gray);
+  line-height: 1.6;
+}
+
+.card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto 1rem;
+}
+
+.card-icon.our-models {
+  background: var(--soft-pink);
+}
+.card-icon.your-infrastructure {
+  background: var(--success-green);
+}
+.card-icon.real-tools {
+  background: var(--warning-amber);
+}
+
+/* Principles CTA */
+.principles-cta {
+  margin: 4rem 0;
+  background: var(--light-blue);
+  border-radius: 20px;
+  border: 3px solid var(--primary-blue);
+  padding: 3rem;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+}
+
+.cta-robot {
+  flex-shrink: 0;
+  position: relative;
+}
+
+.cta-robot .robot-head {
+  width: 80px;
+  height: 80px;
+  background: var(--primary-blue);
+  border-radius: 20px;
+  border: 4px solid var(--dark-text);
+  margin: 0 auto 12px;
+  position: relative;
+}
+
+.cta-robot .robot-body {
+  width: 90px;
+  height: 100px;
+  background: var(--primary-blue);
+  border-radius: 20px;
+  border: 4px solid var(--dark-text);
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.robot-eye.confident {
+  background: var(--dark-text);
+  animation: confidentGlow 3s infinite ease-in-out;
+}
+
+.robot-confident-smile {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 15px;
+  border: 4px solid var(--dark-text);
+  border-bottom: none;
+  border-radius: 30px 30px 0 0;
+}
+
+.robot-badge {
+  background: white;
+  color: var(--primary-blue);
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 2px solid var(--dark-text);
+  text-transform: uppercase;
+}
+
+.robot-cape {
+  position: absolute;
+  top: 70px;
+  left: -10px;
+  right: -10px;
+  height: 40px;
+  background: var(--error-red);
+  border-radius: 0 0 15px 15px;
+  border: 3px solid var(--dark-text);
+  border-top: none;
+  z-index: -1;
+}
+
+.cape-flow {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 70%
+  );
+  animation: capeFlow 3s infinite ease-in-out;
+}
+
+.cta-content {
+  flex: 1;
+}
+
+.cta-content h3 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 1rem;
+}
+
+.cta-content p {
+  font-size: 1.1rem;
+  color: var(--medium-gray);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Animations */
+@keyframes corporateGlare {
+  0%,
+  100% {
+    background: var(--dark-text);
+  }
+  50% {
+    background: var(--error-red);
+  }
+}
+
+@keyframes friendlyBlink {
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+@keyframes wingFlap {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes vsFlicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes flowPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.7;
+  }
+}
+
+@keyframes confidentGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 5px var(--primary-blue);
+  }
+  50% {
+    box-shadow: 0 0 15px var(--primary-blue);
+  }
+}
+
+@keyframes capeFlow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes corporateShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(2px) rotate(1deg);
+  }
+}
+
+@keyframes friendlyBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes vsFlash {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 15px var(--warning-amber);
+  }
+}
+
+@keyframes featureBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes cardRobotFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes slideInComparison {
+  0% {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  0% {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes ctaRobotCelebrate {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-10px) rotate(-5deg);
+  }
+  75% {
+    transform: translateY(-5px) rotate(5deg);
+  }
+}
+
+@keyframes advantagePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes limitationShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes iconPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .comparison-sides {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .vs-divider {
+    order: 2;
+    transform: rotate(90deg);
+    padding: 1rem 0;
+  }
+
+  .other-ai {
+    order: 1;
+  }
+
+  .jan-side {
+    order: 3;
+  }
+
+  .principles-cta {
+    flex-direction: column;
+    text-align: center;
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .detailed-comparison {
+    padding: 2rem;
+  }
+
+  .comparison-table {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .table-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    margin-bottom: 1px;
+  }
+
+  .cards-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .philosophy-card {
+    padding: 1.5rem;
+  }
+
+  .feature-item {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+
+  .side-robot .robot-head {
+    width: 50px;
+    height: 50px;
+  }
+
+  .side-robot .robot-body {
+    width: 60px;
+    height: 70px;
+  }
+}
+
+@media (max-width: 480px) {
+  .comparison-side {
+    padding: 1.5rem;
+  }
+
+  .detailed-comparison {
+    padding: 1.5rem;
+  }
+
+  .philosophy-cards h3,
+  .detailed-comparison h3 {
+    font-size: 1.8rem;
+  }
+
+  .cta-content h3 {
+    font-size: 1.8rem;
+  }
+
+  .cta-buttons {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .table-row {
+    grid-template-columns: 1fr;
+    text-align: left;
+  }
+
+  .header-cell,
+  .table-cell {
+    padding: 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .feature-col {
+    justify-content: flex-start;
+  }
+
+  .advantage-indicator,
+  .limitation-indicator {
+    padding: 0.5rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .other-robot,
+  .jan-robot,
+  .vs-robot,
+  .feature-robot,
+  .card-robot,
+  .cta-robot,
+  .comparison-side,
+  .feature-item,
+  .philosophy-card,
+  .advantage-indicator,
+  .limitation-indicator {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .comparison-side,
+  .detailed-comparison,
+  .philosophy-card,
+  .principles-cta {
+    border-width: 3px;
+  }
+
+  .feature-item {
+    border-width: 2px;
+  }
+}

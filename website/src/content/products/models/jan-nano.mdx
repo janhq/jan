@@ -1,0 +1,33 @@
+---
+title: Jan Nano
+description: Compact research model optimized for finding answers through tool use.
+sidebar:
+  order: 2
+---
+import { Aside } from '@astrojs/starlight/components';
+
+Jan Nano is a 4-billion parameter model designed for research and information retrieval. Instead of trying to know everything, it excels at finding anything through deep integration with Model Context Protocol (MCP) tools.
+
+## Two Variants
+
+| Model | Context Window | Size | Use Case |
+|:---|:---|:---|:---|
+| Jan Nano 32k | 32,768 tokens | 4-8GB | Quick research, general queries |
+| Jan Nano 128k | 131,072 tokens | 8-12GB | Deep research, document analysis |
+
+<Aside type="note">
+  Jan Nano requires MCP-enabled tools (like web search) to reach its full potential. Enable MCP in **Settings → Advanced Settings**.
+</Aside>
+
+## What Makes Nano Different
+- **Research-First Design:** Trained to find relevant information, synthesize findings, and provide accurate citations.
+- **MCP Integration:** Works seamlessly with tools like web search, document analysis, and code repositories.
+- **Extended Context:** The 128k variant can process entire codebases, book-length documents, or 50+ research papers simultaneously.
+
+## Technical Details
+- **Base:** 4B parameter transformer
+- **Training:** Optimized for tool use and retrieval
+- **Quantization:** Q4, Q8, FP16 variants available
+
+## Philosophy
+Most models try to be encyclopedias. Jan Nano is a research assistant. It doesn't memorize the internet—it knows how to navigate it.

@@ -1,0 +1,147 @@
+---
+export interface Props {
+  status: 'active' | 'warning' | 'success' | 'error' | 'idle';
+  label: string;
+  pulse?: boolean;
+  size?: 'small' | 'medium' | 'large';
+}
+
+const { status, label, pulse = true, size = 'medium' } = Astro.props;
+
+const statusColors = {
+  active: '#00ff41',
+  warning: '#ffb000',
+  success: '#00ff41',
+  error: '#ff0040',
+  idle: '#888888'
+};
+
+const statusColor = statusColors[status];
+---
+
+<div class={`status-indicator ${size} ${pulse ? 'pulse' : ''}`}>
+  <div class="status-dot" style={`background-color: ${statusColor}`}></div>
+  <span class="status-label">{label}</span>
+</div>
+
+<style>
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .status-dot {
+    border-radius: 50%;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .status-indicator.small .status-dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .status-indicator.medium .status-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .status-indicator.large .status-dot {
+    width: 12px;
+    height: 12px;
+  }
+
+  .status-label {
+    color: #cccccc;
+    font-size: 0.9rem;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+
+  .status-indicator.small .status-label {
+    font-size: 0.8rem;
+  }
+
+  .status-indicator.large .status-label {
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  /* Pulse animation */
+  .status-indicator.pulse .status-dot {
+    animation: statusPulse 2s infinite;
+  }
+
+  .status-indicator.pulse .status-dot::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 50%;
+    background: inherit;
+    opacity: 0.3;
+    animation: statusRipple 2s infinite;
+  }
+
+  @keyframes statusPulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes statusRipple {
+    0% {
+      transform: scale(1);
+      opacity: 0.3;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  /* Hover effects */
+  .status-indicator:hover .status-dot {
+    transform: scale(1.2);
+    filter: brightness(1.2);
+  }
+
+  .status-indicator:hover .status-label {
+    color: #ffffff;
+  }
+
+  /* Terminal-style glow effect */
+  .status-dot {
+    box-shadow:
+      0 0 5px currentColor,
+      inset 0 0 5px rgba(255, 255, 255, 0.1);
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot,
+    .status-dot::before {
+      animation: none;
+    }
+  }
+
+  /* Dark mode adjustments */
+  @media (prefers-color-scheme: light) {
+    .status-label {
+      color: #333333;
+    }
+
+    .status-indicator:hover .status-label {
+      color: #000000;
+    }
+  }
+</style>
