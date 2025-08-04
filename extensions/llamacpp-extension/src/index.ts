@@ -1247,11 +1247,6 @@ export default class llamacpp_extension extends AIEngine {
       ])
       args.push('--mmproj', mmprojPath)
     }
-
-    if (cfg.ctx_size !== undefined) {
-      args.push('-c', String(cfg.ctx_size))
-    }
-
     // Add remaining options from the interface
     if (cfg.chat_template) args.push('--chat-template', cfg.chat_template)
     const gpu_layers =
@@ -1263,8 +1258,9 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
     if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
     if (cfg.device.length > 0) args.push('--device', cfg.device)
-    if (cfg.split_mode.length > 0) args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined)
+    if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
+      args.push('--split-mode', cfg.split_mode)
+    if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
@@ -1280,19 +1276,25 @@ export default class llamacpp_extension extends AIEngine {
     } else {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
-      args.push('--cache-type-k', cfg.cache_type_k)
+      if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
+        args.push('--cache-type-k', cfg.cache_type_k)
       if (
-        (cfg.flash_attn && cfg.cache_type_v != 'f16') ||
-        cfg.cache_type_v != 'f32'
+        cfg.flash_attn &&
+        (cfg.cache_type_v != 'f16' && cfg.cache_type_v != 'f32')
       ) {
         args.push('--cache-type-v', cfg.cache_type_v)
       }
-      args.push('--defrag-thold', String(cfg.defrag_thold))
+      if (cfg.defrag_thold && cfg.defrag_thold != 0.1)
+        args.push('--defrag-thold', String(cfg.defrag_thold))
 
-      args.push('--rope-scaling', cfg.rope_scaling)
-      args.push('--rope-scale', String(cfg.rope_scale))
-      args.push('--rope-freq-base', String(cfg.rope_freq_base))
-      args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
+      if (cfg.rope_scaling && cfg.rope_scaling != 'none')
+        args.push('--rope-scaling', cfg.rope_scaling)
+      if (cfg.rope_scale && cfg.rope_scale != 1)
+        args.push('--rope-scale', String(cfg.rope_scale))
+      if (cfg.rope_freq_base && cfg.rope_freq_base != 0)
+        args.push('--rope-freq-base', String(cfg.rope_freq_base))
+      if (cfg.rope_freq_scale && cfg.rope_freq_scale != 1)
+        args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
     }
 
     logger.info('Calling Tauri command llama_load with args:', args)
