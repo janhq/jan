@@ -7,5 +7,6 @@
   "alwaysAllow": "Immer erlauben",
   "permissions": "Berechtigungen",
   "approve": "Genehmigen",
-  "reject": "Ablehnen"
+  "reject": "Ablehnen",
+  "parameters": "Werkzeug-Parameter"
 }

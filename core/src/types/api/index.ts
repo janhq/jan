@@ -49,7 +49,6 @@ export enum AppRoute {
   isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
   log = 'log',
-  systemInformation = 'systemInformation',
   showToast = 'showToast',
 }
 

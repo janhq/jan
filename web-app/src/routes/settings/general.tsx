@@ -44,6 +44,11 @@ import { isDev } from '@/lib/utils'
 import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
+import { Input } from '@/components/ui/input'
+import { useHardware } from '@/hooks/useHardware'
+import { getConnectedServers } from '@/services/mcp'
+import { invoke } from '@tauri-apps/api/core'
+import { useMCPServers } from '@/hooks/useMCPServers'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -57,6 +62,8 @@ function General() {
     setSpellCheckChatInput,
     experimentalFeatures,
     setExperimentalFeatures,
+    huggingfaceToken,
+    setHuggingfaceToken,
   } = useGeneralSetting()
 
   const openFileTitle = (): string => {
@@ -69,6 +76,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
+  const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -85,6 +93,7 @@ function General() {
   }, [])
 
   const resetApp = async () => {
+    pausePolling()
     // TODO: Loading indicator
     await factoryReset()
   }
@@ -199,6 +208,38 @@ function General() {
     }
   }, [t, checkForUpdate])
 
+  const handleStopAllMCPServers = async () => {
+    try {
+      const connectedServers = await getConnectedServers()
+
+      // Stop each connected server
+      const stopPromises = connectedServers.map((serverName) =>
+        invoke('deactivate_mcp_server', { name: serverName }).catch((error) => {
+          console.error(`Error stopping MCP server ${serverName}:`, error)
+          return Promise.resolve() // Continue with other servers even if one fails
+        })
+      )
+
+      await Promise.all(stopPromises)
+
+      // Update server configs to set active: false for stopped servers
+      const { mcpServers, editServer } = useMCPServers.getState()
+      connectedServers.forEach((serverName) => {
+        const serverConfig = mcpServers[serverName]
+        if (serverConfig) {
+          editServer(serverName, { ...serverConfig, active: false })
+        }
+      })
+
+      if (connectedServers.length > 0) {
+        toast.success(`Stopped ${connectedServers.length} MCP server(s)`)
+      }
+    } catch (error) {
+      console.error('Error stopping MCP servers:', error)
+      toast.error('Failed to stop MCP servers')
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -242,20 +283,6 @@ function General() {
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
               /> */}
-            </Card>
-
-            {/* Advanced */}
-            <Card title="Advanced">
-              <CardItem
-                title="Experimental Features"
-                description="Enable experimental features. They may be unstable or change at any time."
-                actions={
-                  <Switch
-                    checked={experimentalFeatures}
-                    onCheckedChange={(e) => setExperimentalFeatures(e)}
-                  />
-                }
-              />
             </Card>
 
             {/* Data folder */}
@@ -398,20 +425,18 @@ function General() {
                 }
               />
             </Card>
-
-            {/* Other */}
-            <Card title={t('common:others')}>
+            {/* Advanced */}
+            <Card title="Advanced">
               <CardItem
-                title={t('settings:others.spellCheck', {
-                  ns: 'settings',
-                })}
-                description={t('settings:others.spellCheckDesc', {
-                  ns: 'settings',
-                })}
+                title="Experimental Features"
+                description="Enable experimental features. They may be unstable or change at any time."
                 actions={
                   <Switch
-                    checked={spellCheckChatInput}
-                    onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                    checked={experimentalFeatures}
+                    onCheckedChange={async (e) => {
+                      await handleStopAllMCPServers()
+                      setExperimentalFeatures(e)
+                    }}
                   />
                 }
               />
@@ -459,6 +484,41 @@ function General() {
                       </DialogHeader>
                     </DialogContent>
                   </Dialog>
+                }
+              />
+            </Card>
+
+            {/* Other */}
+            <Card title={t('common:others')}>
+              <CardItem
+                title={t('settings:others.spellCheck', {
+                  ns: 'settings',
+                })}
+                description={t('settings:others.spellCheckDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <Switch
+                    checked={spellCheckChatInput}
+                    onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:general.huggingfaceToken', {
+                  ns: 'settings',
+                })}
+                description={t('settings:general.huggingfaceTokenDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <Input
+                    id="hf-token"
+                    value={huggingfaceToken || ''}
+                    onChange={(e) => setHuggingfaceToken(e.target.value)}
+                    placeholder={'hf_xxx'}
+                    required
+                  />
                 }
               />
             </Card>

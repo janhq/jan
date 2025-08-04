@@ -1,6 +1,6 @@
 [package]
 name = "Jan"
-version = "0.5.16"
+version = "0.6.599"
 description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
 authors = ["Jan <service@jan.ai>"]
 license = "MIT"
@@ -34,7 +34,7 @@ tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 tokio = { version = "1", features = ["full"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "c1c4c9a0c9afbfbbf9eb42d6f8b00d8546fbdc2c", features = [
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "3196c95f1dfafbffbdcdd6d365c94969ac975e6a", features = [
     "client",
     "transport-sse-client",
     "transport-child-process",
@@ -45,6 +45,7 @@ uuid = { version = "1.7", features = ["v4"] }
 env = "1.0.1"
 futures-util = "0.3.31"
 tokio-util = "0.7.14"
+url = "2.5"
 tauri-plugin-dialog = "2.2.1"
 dirs = "6.0.0"
 sysinfo = "0.34.2"
@@ -52,9 +53,15 @@ ash = "0.38.0"
 nvml-wrapper = "0.10.0"
 tauri-plugin-deep-link = "2"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+serde_yaml = "0.9.34"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+base64 = "0.22.1"
+libloading = "0.8.7"
+thiserror = "2.0.12"
+nix = "=0.30.1"
 
 [target.'cfg(windows)'.dependencies]
-libloading = "0.8.7"
 libc = "0.2.172"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

@@ -12,13 +12,12 @@ import {
 
 import { toast } from 'sonner'
 import { CardItem } from '../Card'
-import { models } from 'token.js'
 import { EngineManager } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { normalizeProvider } from '@/lib/models'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { predefinedProviders } from '@/consts/providers'
 
 type Props = {
   provider?: ProviderObject
@@ -29,8 +28,8 @@ const DeleteProvider = ({ provider }: Props) => {
   const router = useRouter()
   if (
     !provider ||
-    Object.keys(models).includes(provider.provider) ||
-    EngineManager.instance().get(normalizeProvider(provider.provider))
+    predefinedProviders.some((e) => e.provider === provider.provider) ||
+    EngineManager.instance().get(provider.provider)
   )
     return null
 

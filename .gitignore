@@ -77,6 +77,3 @@ docs/.next/
 
 # Combined output for local testing
 combined-output/
-
-# vscode
-.vscode/

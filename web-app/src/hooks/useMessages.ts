@@ -28,19 +28,18 @@ export const useMessages = create<MessageState>()((set, get) => ({
     }))
   },
   addMessage: (message) => {
+    const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
+
+    const selectedAssistant =
+      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+
     const newMessage = {
       ...message,
       created_at: message.created_at || Date.now(),
       metadata: {
         ...message.metadata,
-        assistant: {
-          id: currentAssistant?.id || '',
-          name: currentAssistant?.name || '',
-          avatar: currentAssistant?.avatar || '',
-          instructions: currentAssistant?.instructions || '',
-          parameters: currentAssistant?.parameters || '',
-        },
+        assistant: selectedAssistant,
       },
     }
     createMessage(newMessage).then((createdMessage) => {

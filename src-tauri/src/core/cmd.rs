@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 
+use crate::core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
+
 use super::{server, setup, state::AppState};
 
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
@@ -102,6 +104,40 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 #[tauri::command]
 pub fn get_jan_extensions_path(app_handle: tauri::AppHandle) -> PathBuf {
     get_jan_data_folder_path(app_handle).join("extensions")
+}
+
+#[tauri::command]
+pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
+    // close window
+    let windows = app_handle.webview_windows();
+    for (label, window) in windows.iter() {
+        window.close().unwrap_or_else(|_| {
+            log::warn!("Failed to close window: {:?}", label);
+        });
+    }
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    log::info!("Factory reset, removing data folder: {:?}", data_folder);
+
+    tauri::async_runtime::block_on(async {
+        cleanup_processes(state).await;
+
+        if data_folder.exists() {
+            if let Err(e) = fs::remove_dir_all(&data_folder) {
+                log::error!("Failed to remove data folder: {}", e);
+                return;
+            }
+        }
+
+        // Recreate the data folder
+        let _ = fs::create_dir_all(&data_folder).map_err(|e| e.to_string());
+
+        // Reset the configuration
+        let mut default_config = AppConfiguration::default();
+        default_config.data_folder = default_data_folder_path(app_handle.clone());
+        let _ = update_app_configuration(app_handle.clone(), default_config);
+
+        app_handle.restart();
+    });
 }
 
 #[tauri::command]
@@ -284,14 +320,6 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
 }
 
 #[tauri::command]
-pub async fn reset_cortex_restart_count(state: State<'_, AppState>) -> Result<(), String> {
-    let mut count = state.cortex_restart_count.lock().await;
-    *count = 0;
-    log::info!("Cortex server restart count reset to 0.");
-    Ok(())
-}
-
-#[tauri::command]
 pub fn change_app_data_folder(
     app_handle: tauri::AppHandle,
     new_data_folder: String,
@@ -341,25 +369,24 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
 
 #[tauri::command]
 pub async fn start_server(
-    app: AppHandle,
+    state: State<'_, AppState>,
     host: String,
     port: u16,
     prefix: String,
     api_key: String,
     trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
-    let state = app.state::<AppState>();
-    let auth_token = state.app_token.clone().unwrap_or_default();
     let server_handle = state.server_handle.clone();
+    let sessions = state.llama_server_process.clone();
 
     server::start_server(
         server_handle,
+        sessions,
         host,
         port,
         prefix,
-        auth_token,
         api_key,
-        trusted_hosts,
+        vec![trusted_hosts],
     )
     .await
     .map_err(|e| e.to_string())?;

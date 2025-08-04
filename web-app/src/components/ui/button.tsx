@@ -5,13 +5,18 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[0px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive cursor-pointer focus:outline-none",
+  cn(
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none aria-invalid:ring-destructive/60 aria-invalid:border-destructive cursor-pointer",
+    'focus:border-accent focus:ring-2 focus:ring-accent/50 focus:accent-[0px]',
+    'focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:accent-[0px]'
+  ),
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-fg shadow-xs hover:bg-primary/90',
+        default:
+          'bg-primary text-primary-fg shadow-xs hover:bg-primary/90 focus-visible:ring-primary/60 focus:ring-primary/60 focus:border-primary focus-visible:border-primary',
         destructive:
-          'bg-destructive shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 text-destructive-fg',
+          'bg-destructive shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/60 text-destructive-fg focus:border-destructive focus:ring-destructive/60',
         link: 'underline-offset-4 hover:no-underline',
       },
       size: {

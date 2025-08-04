@@ -244,17 +244,11 @@
     },
     "downloadComplete": {
       "title": "Unduhan Selesai",
-      "description": "Model {{modelId}} telah diunduh"
+      "description": "{{item}} telah diunduh"
     },
     "downloadCancelled": {
       "title": "Unduhan Dibatalkan",
       "description": "Proses unduhan telah dibatalkan"
     }
-  },
-  "cortexFailureDialog": {
-    "title": "Cortex gagal dimulai",
-    "description": "Cortex gagal dimulai. Silakan periksa log untuk detail lebih lanjut.",
-    "contactSupport": "Hubungi Dukungan",
-    "restartJan": "Restart Jan"
   }
 }

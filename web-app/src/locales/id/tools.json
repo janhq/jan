@@ -5,6 +5,7 @@
     "deny": "Tolak",
     "allowOnce": "Izinkan Sekali",
     "alwaysAllow": "Selalu Izinkan",
-    "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>"
+    "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>",
+    "parameters": "Parameter Alat"
   }
 }

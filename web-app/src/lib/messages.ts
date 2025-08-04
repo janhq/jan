@@ -25,8 +25,8 @@ export class CompletionMessagesBuilder {
               role: msg.role,
               content:
                 msg.role === 'assistant'
-                  ? this.normalizeContent(msg.content[0]?.text?.value ?? '.')
-                  : (msg.content[0]?.text?.value ?? '.'),
+                  ? this.normalizeContent(msg.content[0]?.text?.value || '.')
+                  : msg.content[0]?.text?.value || '.',
             }) as ChatCompletionMessageParam
         )
     )
@@ -37,6 +37,10 @@ export class CompletionMessagesBuilder {
    * @param content - The content of the user message.
    */
   addUserMessage(content: string) {
+    // Ensure no consecutive user messages
+    if (this.messages[this.messages.length - 1]?.role === 'user') {
+      this.messages.pop()
+    }
     this.messages.push({
       role: 'user',
       content: content,

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import { Fzf } from 'fzf'
+import { sep } from '@tauri-apps/api/path'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -34,7 +35,23 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   setThreads: (threads) => {
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
-        acc[thread.id] = thread
+        acc[thread.id] = {
+          ...thread,
+          model: thread.model
+            ? {
+                provider: thread.model.provider.replace(
+                  'llama.cpp',
+                  'llamacpp'
+                ),
+                // Cortex migration: take first two parts of the ID (the last is file name which is not needed)
+                id:
+                  thread.model.provider === 'llama.cpp' ||
+                  thread.model.provider === 'llamacpp'
+                    ? thread.model?.id.split(':').slice(0, 2).join(sep())
+                    : thread.model?.id,
+              }
+            : undefined,
+        }
         return acc
       },
       {} as Record<string, Thread>
@@ -88,6 +105,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           [threadId]: {
             ...state.threads[threadId],
             isFavorite: !state.threads[threadId].isFavorite,
+            updated: Date.now() / 1000,
           },
         },
       }
@@ -109,12 +127,32 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   deleteAllThreads: () => {
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
-      allThreadIds.forEach((threadId) => {
+      const favoriteThreadIds = allThreadIds.filter(
+        (threadId) => state.threads[threadId].isFavorite
+      )
+      const nonFavoriteThreadIds = allThreadIds.filter(
+        (threadId) => !state.threads[threadId].isFavorite
+      )
+
+      // Only delete non-favorite threads
+      nonFavoriteThreadIds.forEach((threadId) => {
         deleteThread(threadId)
       })
+
+      // Keep only favorite threads
+      const remainingThreads = favoriteThreadIds.reduce(
+        (acc, threadId) => {
+          acc[threadId] = state.threads[threadId]
+          return acc
+        },
+        {} as Record<string, Thread>
+      )
+
       return {
-        threads: {},
-        searchIndex: null, // Or new Fzf([], {selector...})
+        threads: remainingThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+          selector: (item: Thread) => item.title,
+        }),
       }
     })
   },
@@ -186,6 +224,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           [state.currentThreadId as string]: {
             ...state.threads[state.currentThreadId as string],
             assistants: [assistant],
+            updated: Date.now() / 1000,
           },
         },
       }
@@ -214,6 +253,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const updatedThread = {
         ...thread,
         title: newTitle,
+        updated: Date.now() / 1000,
       }
       updateThread(updatedThread) // External call, order is fine
       const newThreads = { ...state.threads, [threadId]: updatedThread }

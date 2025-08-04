@@ -73,15 +73,15 @@ const config: DocsThemeConfig = {
         return (
           <div className="-mx-2 hidden md:block">
             {[
-              { title: 'Jan', path: '/docs', Icon: LibraryBig },
+              { title: 'Jan Desktop', path: '/docs', Icon: LibraryBig },
               {
-                title: 'Jan Local Server',
-                path: '/local-server',
+                title: 'Jan Mobile',
+                path: '/platforms',
                 Icon: BrainCircuit,
               },
               // { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
               {
-                title: 'Jan API Platform',
+                title: 'Jan Server',
                 path: '/platforms',
                 Icon: Computer,
               },

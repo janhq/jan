@@ -5,6 +5,7 @@
     "deny": "Từ chối",
     "allowOnce": "Cho phép một lần",
     "alwaysAllow": "Luôn cho phép",
-    "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>"
+    "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
+    "parameters": "Tham số công cụ"
   }
 }

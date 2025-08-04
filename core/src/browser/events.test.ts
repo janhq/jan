@@ -1,11 +1,11 @@
+import { it, expect, vi } from 'vitest'
 import { events } from './events';
-import { jest } from '@jest/globals';
 
 it('should emit an event', () => {
   const mockObject = { key: 'value' };
   globalThis.core = {
     events: {
-      emit: jest.fn()
+      emit: vi.fn()
     }
   };
   events.emit('testEvent', mockObject);
@@ -14,10 +14,10 @@ it('should emit an event', () => {
 
 
 it('should remove an observer for an event', () => {
-  const mockHandler = jest.fn();
+  const mockHandler = vi.fn();
   globalThis.core = {
     events: {
-      off: jest.fn()
+      off: vi.fn()
     }
   };
   events.off('testEvent', mockHandler);
@@ -26,10 +26,10 @@ it('should remove an observer for an event', () => {
 
 
 it('should add an observer for an event', () => {
-  const mockHandler = jest.fn();
+  const mockHandler = vi.fn();
   globalThis.core = {
     events: {
-      on: jest.fn()
+      on: vi.fn()
     }
   };
   events.on('testEvent', mockHandler);

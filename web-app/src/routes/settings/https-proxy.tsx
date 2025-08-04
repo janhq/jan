@@ -7,9 +7,8 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
-import { configurePullOptions } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
@@ -25,19 +24,11 @@ function HTTPSProxy() {
     proxyUsername,
     proxyPassword,
     proxyIgnoreSSL,
-    verifyProxySSL,
-    verifyProxyHostSSL,
-    verifyPeerSSL,
-    verifyHostSSL,
     noProxy,
     setProxyEnabled,
     setProxyUsername,
     setProxyPassword,
     setProxyIgnoreSSL,
-    setVerifyProxySSL,
-    setVerifyProxyHostSSL,
-    setVerifyPeerSSL,
-    setVerifyHostSSL,
     setNoProxy,
     setProxyUrl,
   } = useProxyConfig()
@@ -45,61 +36,9 @@ function HTTPSProxy() {
   const toggleProxy = useCallback(
     (checked: boolean) => {
       setProxyEnabled(checked)
-      configurePullOptions({
-        proxyUrl,
-        proxyEnabled: checked,
-        proxyUsername,
-        proxyPassword,
-        proxyIgnoreSSL,
-        verifyProxySSL,
-        verifyProxyHostSSL,
-        verifyPeerSSL,
-        verifyHostSSL,
-        noProxy,
-      })
     },
-    [
-      noProxy,
-      proxyIgnoreSSL,
-      proxyPassword,
-      proxyUrl,
-      proxyUsername,
-      setProxyEnabled,
-      verifyHostSSL,
-      verifyPeerSSL,
-      verifyProxyHostSSL,
-      verifyProxySSL,
-    ]
+    [setProxyEnabled]
   )
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      configurePullOptions({
-        proxyUrl,
-        proxyEnabled,
-        proxyUsername,
-        proxyPassword,
-        proxyIgnoreSSL,
-        verifyProxySSL,
-        verifyProxyHostSSL,
-        verifyPeerSSL,
-        verifyHostSSL,
-        noProxy,
-      })
-    }, 300)
-    return () => clearTimeout(handler)
-  }, [
-    noProxy,
-    proxyEnabled,
-    proxyIgnoreSSL,
-    proxyPassword,
-    proxyUrl,
-    proxyUsername,
-    verifyHostSSL,
-    verifyPeerSSL,
-    verifyProxyHostSSL,
-    verifyProxySSL,
-  ])
 
   return (
     <div className="flex flex-col h-full">
@@ -190,10 +129,6 @@ function HTTPSProxy() {
                   </div>
                 }
               />
-            </Card>
-
-            {/* SSL Verification */}
-            <Card title={t('settings:httpsProxy.sslVerification')}>
               <CardItem
                 title={t('settings:httpsProxy.ignoreSsl')}
                 description={t('settings:httpsProxy.ignoreSslDesc')}
@@ -201,48 +136,6 @@ function HTTPSProxy() {
                   <Switch
                     checked={proxyIgnoreSSL}
                     onCheckedChange={(checked) => setProxyIgnoreSSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.proxySsl')}
-                description={t('settings:httpsProxy.proxySslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyProxySSL}
-                    onCheckedChange={(checked) => setVerifyProxySSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.proxyHostSsl')}
-                description={t('settings:httpsProxy.proxyHostSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyProxyHostSSL}
-                    onCheckedChange={(checked) =>
-                      setVerifyProxyHostSSL(checked)
-                    }
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.peerSsl')}
-                description={t('settings:httpsProxy.peerSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyPeerSSL}
-                    onCheckedChange={(checked) => setVerifyPeerSSL(checked)}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.hostSsl')}
-                description={t('settings:httpsProxy.hostSslDesc')}
-                actions={
-                  <Switch
-                    checked={verifyHostSSL}
-                    onCheckedChange={(checked) => setVerifyHostSSL(checked)}
                   />
                 }
               />

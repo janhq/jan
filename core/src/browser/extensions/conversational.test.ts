@@ -1,3 +1,4 @@
+import { describe, it, test, expect, beforeEach } from 'vitest'
 import { ConversationalExtension } from './conversational'
 import { ExtensionTypeEnum } from '../extension'
 import { Thread, ThreadAssistantInfo, ThreadMessage } from '../../types'

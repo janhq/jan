@@ -10,6 +10,7 @@ type DynamicControllerProps = {
   title?: string
   className?: string
   description?: string
+  readonly?: boolean
   controllerType:
     | 'input'
     | 'checkbox'
