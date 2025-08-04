@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
     "dev:web": "yarn workspace @janhq/web-app dev",
-    "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && tauri dev",
+    "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
