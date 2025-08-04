@@ -73,7 +73,7 @@ pub async fn load_llama_model(
     state: State<'_, AppState>,
     backend_path: &str,
     library_path: Option<&str>,
-    args: Vec<String>,
+    mut args: Vec<String>,
 ) -> ServerResult<SessionInfo> {
     let mut process_map = state.llama_server_process.lock().await;
 
@@ -105,13 +105,26 @@ pub async fn load_llama_model(
             8080
         }
     };
-
-    let model_path = args
+    // FOR MODEL PATH; TODO: DO SIMILARLY FOR MMPROJ PATH
+    let model_path_index = args
         .iter()
         .position(|arg| arg == "-m")
-        .and_then(|i| args.get(i + 1))
-        .cloned()
-        .unwrap_or_default();
+        .ok_or(ServerError::LlamacppError("Missing `-m` flag".into()))?;
+
+    let model_path = args
+        .get(model_path_index + 1)
+        .ok_or(ServerError::LlamacppError("Missing path after `-m`".into()))?
+        .clone();
+
+    let model_path_pb = PathBuf::from(model_path);
+    if !model_path_pb.exists() {
+        return Err(ServerError::LlamacppError(format!(
+            "Invalid or inaccessible model path: {}",
+            model_path_pb.display().to_string(),
+        )));
+    }
+    args[model_path_index + 1] = model_path_pb.display().to_string();
+    // -----------------------------------------------------------------
 
     let api_key = args
         .iter()
@@ -332,7 +345,7 @@ pub async fn load_llama_model(
         pid: pid.clone(),
         port: port,
         model_id: model_id,
-        model_path: model_path,
+        model_path: model_path_pb.display().to_string(),
         api_key: api_key,
     };
 
