@@ -1,0 +1,142 @@
+---
+title: Start Chatting
+description: Download models and manage your conversations with AI models locally.
+keywords:
+  [
+    Jan,
+    local AI,
+    LLM,
+    chat,
+    threads,
+    models,
+    download,
+    installation,
+    conversations,
+  ]
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<ol>
+
+### Step 1: Install Jan
+
+1. [Download Jan](/download)
+2. Install the app ([Mac](/docs/desktop/mac), [Windows](/docs/desktop/windows), [Linux](/docs/desktop/linux))
+3. Launch Jan
+
+### Step 2: Download a Model
+
+Jan requires a model to chat. Download one from the Hub:
+
+1. Go to the **Hub Tab**
+2. Browse available models (must be GGUF format)
+3. Select one matching your hardware specs
+4. Click **Download**
+
+![Download a Model](../../../assets/model-management-01.png)
+
+<Aside type="caution">
+Models consume memory and processing power. Choose based on your hardware specs.
+</Aside>
+
+**HuggingFace models:** Some require an access token. Add yours in **Settings > Model Providers > Llama.cpp > Hugging Face Access Token**.
+
+![Add HF Token](../../../assets/hf_token.png)
+
+### Step 3: Enable GPU Acceleration (Optional)
+
+For Windows/Linux with compatible graphics cards:
+
+1. Go to **Settings** > **Hardware**
+2. Toggle **GPUs** to ON
+
+![Turn on GPU acceleration](../../../assets/gpu_accl.png)
+
+<Aside type="note">
+Install required drivers before enabling GPU acceleration. See setup guides for [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration).
+</Aside>
+
+### Step 4: Start Chatting
+
+1. Click the **New Chat** icon
+2. Select your model in the input field dropdown
+3. Type your message and start chatting
+
+![Create New Thread](../../../assets/threads-new-chat-updated.png)
+
+</ol>
+
+## Managing Conversations
+
+Jan organizes conversations into threads for easy tracking and revisiting.
+
+### View Chat History
+
+- **Left sidebar** shows all conversations
+- Click any chat to open the full conversation
+- **Favorites**: Pin important threads for quick access
+- **Recents**: Access recently used threads
+
+![Favorites and Recents](../../../assets/threads-favorites-and-recents-updated.png)
+
+### Edit Chat Titles
+
+1. Hover over a conversation in the sidebar
+2. Click the **three dots** icon
+3. Click **Rename**
+4. Enter new title and save
+
+![Context Menu](../../../assets/threads-context-menu-updated.png)
+
+### Delete Threads
+
+<Aside type="caution">
+Thread deletion is permanent. No undo available.
+</Aside>
+
+**Single thread:**
+1. Hover over thread in sidebar
+2. Click the **three dots** icon
+3. Click **Delete**
+
+**All threads:**
+1. Hover over `Recents` category
+2. Click the **three dots** icon
+3. Select **Delete All**
+
+## Advanced Features
+
+### Custom Assistant Instructions
+
+Customize how models respond:
+
+1. Use the assistant dropdown in the input field
+2. Or go to the **Assistant tab** to create custom instructions
+3. Instructions work across all models
+
+![Assistant Instruction](../../../assets/assistant-dropdown.png)
+
+![Add an Assistant Instruction](../../../assets/assistant-edit-dialog.png)
+
+### Model Parameters
+
+Fine-tune model behavior:
+- Click the **Gear icon** next to your model
+- Adjust parameters in **Assistant Settings**
+- Switch models via the **model selector**
+
+![Chat with a Model](../../../assets/model-parameters.png)
+
+### Connect Cloud Models (Optional)
+
+Connect to OpenAI, Anthropic, Groq, Mistral, and others:
+
+1. Open any thread
+2. Select a cloud model from the dropdown
+3. Click the **Gear icon** beside the provider
+4. Add your API key (ensure sufficient credits)
+
+![Connect Remote APIs](../../../assets/quick-start-03.png)
+
+For detailed setup, see [Remote APIs](/docs/remote-models/openai).

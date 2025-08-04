@@ -1,0 +1,534 @@
+---
+layout: ../layouts/BaseLayout.astro
+title: Product
+description: AI that runs where you need it, how you need it
+---
+
+import SimpleFloatingNav from '../components/SimpleFloatingNav.astro';
+import SimpleTOC from '../components/SimpleTOC.astro';
+import ReleaseDatabase from '../components/ReleaseDatabase.astro';
+
+<SimpleFloatingNav currentPage="products" />
+<SimpleTOC />
+
+
+<div className="content-wrapper">
+
+# Products
+
+<p className="lead">
+Jan is moving from a local AI application to a complete full-stack AI solution that you can self-host. This includes models,
+applications, and tools that delights users and help them solve their problems.
+</p>
+
+## What We're Building
+
+**Jan Factory (or Agent)** = Jan Models + Jan Application + Jan Tools
+
+Unlike other AI assistants that do specific tasks with one model or have many models with a myriad of solutions, Jan provides:
+- Its own specialised models that are optimised at specific tasks like web-search, creative writing, and translation
+- Applications that work across all of your devices in an integrated way
+- Tools that actually get things done
+
+## Two Modes, One Experience
+
+### Local (Incognito) Mode
+
+Run AI models entirely on your device, giving you complete privacy with no internet required.
+
+![Jan Desktop](../assets/jan_desktop.png)
+
+### Cloud Mode
+
+Connect to more powerful models when needed - either self-hosted or via jan.ai.
+
+![Jan Everywhere](../assets/jan_everywhere.png)
+
+Users shouldn't need to understand models, APIs, or technical details. Just choose Local for privacy or Cloud for power.
+
+## Our Product Principles
+
+### 1) It Just Works
+
+1. Open Jan, start chatting
+2. Onboarding is fully available but optional
+3. Setting up an API key is optional
+4. Selecting a local model is optional
+5. Become a power user at your own pace, if you want to
+
+We handle the complexity.
+
+### 2) Cloud When Needed
+
+Start completely locally and own your AI models. Add cloud capabilities only when you choose to.
+
+### 3) Solve Problems, Not Settings
+
+We help users get to answers quickly answers, not configuration options. Power users can dig deeper, but it's never required.
+
+## Available on Every Device
+
+### Jan Desktop
+
+This is how Jan started and it has been available since day 1. Jan Desktop stives to be:
+
+> Your personal AI workstation that helps with our use cases and powers other devices. Run models locally right away
+or bring an API key to connect to your favorite cloud-based models.
+
+**Key Features:**
+- Runs models locally on your hardware
+- GPU acceleration support
+- Powers other devices via network connection
+- Complete privacy and control
+- Windows, macOS, and Linux support
+
+**Requirements:**
+- Minimum 8GB RAM
+- 10GB+ storage space
+- Optional: NVIDIA GPU for acceleration
+
+### Jan Web
+
+**Status:** Beta Launch Soon
+
+![Jan Web](../assets/jan_web.png)
+
+Web-based version of 👋 Jan with no setup required. Same default cloud mode for mobile and desktop users.
+
+**Key Features:**
+- No installation needed
+- Instant access from any browser
+- Automatic updates and maintenance
+- Default cloud backend for mobile apps
+- Team collaboration features
+  - Share prompts
+  - Share workflows
+  - Collaborate on threads
+
+**Pricing:**
+- Free for everyone
+- Pro:
+  - Access our latest models
+  - Access other cloud providers, no need to bring their API keys
+- Enterprise:
+  - Self-host or we host it for you
+  - Active support and SLAs
+  - SSO
+  - Team featues
+
+### Jan Mobile
+
+**Status:** Coming Q4 2025
+
+Connect to Desktop/Server, run local mode with Jan Nano or Lucy, same experience everywhere.
+
+Jan Mobile adapts to your situation:
+
+At Home, you can connect to your Jan Desktop over WiFi
+
+![Jan Mobile Home](../assets/jan_mobile2.png)
+
+At Work, you can connect to your company Jan Server
+
+![Jan Mobile Home](../assets/jan_mobile3.png)
+
+On the Go, you can run Jan Nano on your phone or talk to your favourite cloud-based model
+
+![Jan Mobile Home](../assets/jan_mobile4.png)
+
+**Key Features:**
+- iOS and Android support
+- Three adaptive modes (Desktop, Server, Local)
+- Voice-first interface
+- Seamless device switching
+- Jan Nano for on-device AI
+
+### Jan Server
+
+**Status:** Coming Q2 2025
+
+Self-hosted solution for teams and enterprises. Your own private AI cloud.
+
+**Key Features:**
+- Support for 5-500+ concurrent users
+- Enterprise authentication (SSO, LDAP)
+- Docker and Kubernetes deployment
+- Admin dashboard
+- Team knowledge sharing
+
+**Deployment Options:**
+- Docker: Single command setup
+- Kubernetes: Enterprise scale
+- Bare metal: Maximum control
+
+## Jan Mobile: Three Modes, One Experience
+
+Jan Mobile brings the same AI experience to your phone. Connect to your desktop, your server, or run models locally.
+
+### How It Works
+
+Jan Mobile adapts to your situation:
+
+**At Home** - Connect to your Jan Desktop over WiFi
+Your Phone → WiFi → Your Desktop → Response
+
+**At Work** - Connect to your company Jan Server
+Your Phone → Internet → Company Server → Response
+
+**On the Go** - Run Jan Nano on your phone or talk to your favorite cloud-based model
+Your Phone → Jan Nano (6GB) → Response
+
+No configuration needed. It just works.
+
+### Key Features
+
+- **Seamless Switching**: Move from home to office to airplane. One-click and Jan adapts immediately.
+- **Voice First**: Talk to Jan naturally. Responses can be spoken too.
+- **Sync Everything**: Conversations, settings, and preferences follow you across devices.
+
+### Privacy & Security
+
+**Your Data, Your Control**
+- Local Mode: Everything stays on your phone
+- Desktop Mode: Direct encrypted connection
+- Server Mode: Your organization's policies apply
+
+**No Compromises**
+- Biometric app lock
+- Encrypted storage
+- No cloud backups without permission
+- Clear data anytime
+
+## What Makes Jan Different
+
+<table className="simple-table">
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th>Other AI Assistants</th>
+      <th>Jan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Models</td>
+      <td>Wrapper around Claude/GPT</td>
+      <td>Our own models + You can own them</td>
+    </tr>
+    <tr>
+      <td>Dual mode</td>
+      <td>Your data on their servers</td>
+      <td>Your data stays yours</td>
+    </tr>
+    <tr>
+      <td>Deployment</td>
+      <td>Cloud only</td>
+      <td>Local, self-hosted, or cloud</td>
+    </tr>
+    <tr>
+      <td>Cost</td>
+      <td>Subscription forever</td>
+      <td>Free locally, pay for cloud</td>
+    </tr>
+  </tbody>
+</table>
+
+## Development Timeline
+
+<ReleaseDatabase />
+
+</div>
+
+
+
+<style>{`
+  :root {
+    --text-primary: #000;
+    --text-secondary: #333;
+    --text-muted: #666;
+    --bg-primary: #fff;
+    --bg-secondary: #f8f8f8;
+    --border-color: #ddd;
+    --link-color: #0066cc;
+  }
+
+  html[data-theme="dark"] {
+    --text-primary: #fff;
+    --text-secondary: #ccc;
+    --text-muted: #999;
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2a2a2a;
+    --border-color: #444;
+    --link-color: #4a9eff;
+  }
+
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+  }
+
+  .content-wrapper {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+  }
+
+  h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-top: 3rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  p {
+    margin-bottom: 1.5rem;
+    color: var(--text-secondary);
+  }
+
+  .lead {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+  }
+
+  .simple-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2rem 0;
+    font-size: 0.95rem;
+  }
+
+  .simple-table th,
+  .simple-table td {
+    text-align: left;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+  }
+
+  .simple-table th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+  }
+
+  .simple-table tr:hover {
+    background: var(--bg-secondary);
+  }
+
+  html[data-theme="dark"] .simple-table {
+    border-color: var(--border-color);
+  }
+
+  html[data-theme="dark"] .simple-table th,
+  html[data-theme="dark"] .simple-table td {
+    border-color: var(--border-color);
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    margin: 2rem 0;
+  }
+
+  ul, ol {
+    margin-bottom: 1.5rem;
+    padding-left: 2rem;
+  }
+
+  li {
+    margin-bottom: 0.5rem;
+  }
+
+  blockquote {
+    border-left: 4px solid var(--border-color);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+    color: var(--text-muted);
+  }
+
+  .floating-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 1000;
+    padding: 1rem 0;
+  }
+
+  .nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .nav-links a {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .nav-links a:hover {
+    color: var(--link-color);
+  }
+
+  .nav-links a.active {
+    color: var(--link-color);
+  }
+
+  .toc {
+    position: fixed;
+    right: 2rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 250px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+
+  .toc h3 {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+  }
+
+  .toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .toc li {
+    margin-bottom: 0.5rem;
+  }
+
+  .toc a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: block;
+    padding: 0.25rem 0;
+  }
+
+  .toc a:hover {
+    color: var(--link-color);
+  }
+
+  .toc a.active {
+    color: var(--link-color);
+    font-weight: 600;
+  }
+
+  @media (max-width: 1280px) {
+    .toc {
+      display: none;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .content-wrapper {
+      padding: 3rem 1rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+    }
+  }
+
+  /* Dark mode styles */
+  html[data-theme="dark"] body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  html[data-theme="dark"] h1,
+  html[data-theme="dark"] h2,
+  html[data-theme="dark"] h3,
+  html[data-theme="dark"] h4,
+  html[data-theme="dark"] h5,
+  html[data-theme="dark"] h6 {
+    color: var(--text-primary);
+  }
+
+  html[data-theme="dark"] p,
+  html[data-theme="dark"] li {
+    color: var(--text-secondary);
+  }
+
+  html[data-theme="dark"] a {
+    color: var(--link-color);
+  }
+
+  html[data-theme="dark"] blockquote {
+    border-left-color: var(--border-color);
+    color: var(--text-muted);
+  }
+
+  html[data-theme="dark"] .lead {
+    color: var(--text-secondary);
+  }
+
+  html[data-theme="dark"] .content-wrapper {
+    background: var(--bg-primary);
+  }
+
+  /* Dark mode table styles */
+  html[data-theme="dark"] table {
+    background: var(--bg-primary);
+  }
+
+  html[data-theme="dark"] th {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  html[data-theme="dark"] td {
+    color: var(--text-secondary);
+  }
+
+  html[data-theme="dark"] th,
+  html[data-theme="dark"] td {
+    border-color: var(--border-color);
+  }
+`}</style>
