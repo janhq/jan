@@ -4,13 +4,13 @@ description: "A simple guide to running replicating Deep Research results for fr
 tags: AI, local models, Jan, GGUF, Deep Research, local AI
 categories: guides
 date: 2025-08-04
-ogImage: assets/
+ogImage: _assets/research-result-local.png
 twitter:
   card: summary_large_image
   site: "@jandotai"
   title: "Replicating Deep Research with Jan"
   description: "Learn how to replicate Deep Research results with Jan."
-  image: assets/
+  image: _assets/research-result-local.jpg
 ---
 
 import { Callout } from 'nextra/components'
@@ -18,7 +18,7 @@ import CTABlog from '@/components/Blog/CTA'
 
 # Replicating Deep Research in Jan
 
-Ever wondered how OpenAI’s Deep Research works? Since the release of Deep Research in February this year, it has been lauded as a tool that is able to “output thorough research”. 
+Ever wondered how OpenAI’s Deep Research works? Since the release of Deep Research in February 2025, it has been lauded as a tool that is able to “output thorough research”. 
 
 There are two core features of Deep Research: 
 
@@ -32,10 +32,7 @@ While the outputs of deep research might be mind blowing at first glance, it is 
 Deep Research, at a high level, is essentially a pipeline / tool chain through which a user would go through. The inner workings of this pipeline might vary from provider to provider, but we’ve done up a table for you to compare the results below. 
 
 At a high level, the pipeline would look something like this: 
-
-```
-user enters query → (optional) clarifying question through a smaller model → (optional) original query is appended to follow up response → response parsed through larger `deep-research` model → output 
-```
+![Deep Research Flow Excalidraw](./_assets/deepresearch-flow.png)
 The crux of Deep Research lies in the pipeline’s ability to output a substantiated report which has cited information from a variety of sources. 
 
 <Callout type="info">
