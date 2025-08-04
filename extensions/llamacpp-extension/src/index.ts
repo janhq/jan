@@ -1279,8 +1279,8 @@ export default class llamacpp_extension extends AIEngine {
       if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
         args.push('--cache-type-k', cfg.cache_type_k)
       if (
-        (cfg.flash_attn && cfg.cache_type_v != 'f16') ||
-        cfg.cache_type_v != 'f16'
+        cfg.flash_attn &&
+        (cfg.cache_type_v != 'f16' && cfg.cache_type_v != 'f32')
       ) {
         args.push('--cache-type-v', cfg.cache_type_v)
       }
