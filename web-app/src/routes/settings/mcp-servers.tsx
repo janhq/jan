@@ -83,11 +83,7 @@ function MCPServers() {
   }
 
   const handleSaveServer = async (name: string, config: MCPServerConfig) => {
-    try {
-      toggleServer(name, false)
-    } catch (error) {
-      console.error('Error deactivating server:', error)
-    }
+    toggleServer(name, false)
     if (editingKey) {
       // If server name changed, delete old one and add new one
       if (editingKey !== name) {
@@ -158,12 +154,8 @@ function MCPServers() {
       // Save all servers
       // Clear existing servers first
       Object.keys(mcpServers).forEach((serverKey) => {
-        try {
-          toggleServer(serverKey, false)
-          deleteServer(serverKey)
-        } catch (error) {
-          console.error('Error deactivating server:', error)
-        }
+        toggleServer(serverKey, false)
+        deleteServer(serverKey)
       })
 
       // Add all servers from the JSON
