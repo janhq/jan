@@ -67,6 +67,32 @@ pub struct DeviceInfo {
     pub free: i32,
 }
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+
+#[cfg(windows)]
+pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
+    let wide: Vec<u16> = OsStr::new(path.as_ref())
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    let mut buffer = vec![0u16; 260];
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
+
+    if len > 0 {
+        Some(String::from_utf16_lossy(&buffer[..len as usize]))
+    } else {
+        None
+    }
+}
+
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
@@ -123,7 +149,17 @@ pub async fn load_llama_model(
             model_path_pb.display().to_string(),
         )));
     }
-    args[model_path_index + 1] = model_path_pb.display().to_string();
+    #[cfg(windows)]
+    {
+        // use short path on Windows
+        if let Some(short) = get_short_path(&model_path_pb) {
+            args[model_path_index + 1] = short;
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        args[model_path_index + 1] = model_path_pb.display().to_string();
+    }
     // -----------------------------------------------------------------
 
     let api_key = args
