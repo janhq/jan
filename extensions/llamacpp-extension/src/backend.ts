@@ -27,8 +27,18 @@ export async function listSupportedBackends(): Promise<
     if (features.avx) supportedBackends.push('win-avx-x64')
     if (features.avx2) supportedBackends.push('win-avx2-x64')
     if (features.avx512) supportedBackends.push('win-avx512-x64')
-    if (features.cuda11) supportedBackends.push('win-avx2-cuda-cu11.7-x64')
-    if (features.cuda12) supportedBackends.push('win-avx2-cuda-cu12.0-x64')
+    if (features.cuda11) {
+      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu11.7-x64')
+      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu11.7-x64')
+      else if (features.avx) supportedBackends.push('win-avx-cuda-cu11.7-x64')
+      else supportedBackends.push('win-noavx-cuda-cu11.7-x64')
+    }
+    if (features.cuda12) {
+      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu12.0-x64')
+      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu12.0-x64')
+      else if (features.avx) supportedBackends.push('win-avx-cuda-cu12.0-x64')
+      else supportedBackends.push('win-noavx-cuda-cu12.0-x64')
+    }
     if (features.vulkan) supportedBackends.push('win-vulkan-x64')
   }
   // not available yet, placeholder for future
@@ -39,8 +49,18 @@ export async function listSupportedBackends(): Promise<
     if (features.avx) supportedBackends.push('linux-avx-x64')
     if (features.avx2) supportedBackends.push('linux-avx2-x64')
     if (features.avx512) supportedBackends.push('linux-avx512-x64')
-    if (features.cuda11) supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
-    if (features.cuda12) supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
+    if (features.cuda11) {
+      if (features.avx512) supportedBackends.push('linux-avx512-cuda-cu11.7-x64')
+      else if (features.avx2) supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
+      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu11.7-x64')
+      else supportedBackends.push('linux-noavx-cuda-cu11.7-x64')
+    }
+    if (features.cuda12) {
+      if (features.avx512) supportedBackends.push('linux-avx512-cuda-cu12.0-x64')
+      else if (features.avx2) supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
+      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu12.0-x64')
+      else supportedBackends.push('linux-noavx-cuda-cu12.0-x64')
+    }
     if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
   }
   // not available yet, placeholder for future
