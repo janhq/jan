@@ -1,0 +1,51 @@
+---
+title: Jan Models
+description: Specialized AI models trained in public for real tasks.
+sidebar:
+  order: 1
+banner:
+  content: 'Watch live training progress below. First models releasing Q1 2025.'
+---
+import { Aside } from '@astrojs/starlight/components';
+
+## Not Just Another Model Family
+
+Jan Models aren't general-purpose chatbots. Each model is trained for specific tasks that matter in daily work: search, analysis, creative writing, coding, research. They work together, each handling what it does best.
+
+### Current Training Status
+
+| Model | Specialization | Size | Training Progress | Status |
+|:------|:--------------|:-----|:------------------|:-------|
+| Jan-Search | Web search + synthesis | 7B | ████████░░ 82% | Testing phase |
+| Jan-Write | Creative + technical writing | 13B | ████░░░░░░ 41% | Active training |
+| Jan-Analyze | Data analysis + reasoning | 13B | ██░░░░░░░░ 23% | Dataset prep |
+| Jan-Code | Code generation + debugging | 7B | ░░░░░░░░░░ 0% | Starting Jan 2025 |
+
+<Aside type="note">
+Training runs live at [train.jan.ai](). See datasets, metrics, and even failed runs.
+</Aside>
+
+### Why Specialized Models?
+
+One model can't excel at everything. GPT-4o, o3, o4, or Claude 4 Sonnet writing poetry
+use the same weights to do math as well, which can be inefficient and expensive.
+
+Our approach:
+- **Jan-Search** knows how to query, crawl, and synthesize
+- **Jan-Write** understands tone, structure, and creativity
+- **Jan-Analyze** excels at reasoning and data interpretation
+- Models work together through the Jan orchestration layer
+
+### Built for the Ecosystem
+
+These aren't standalone models. They're designed to:
+- Run efficiently on local hardware (quantized to 4-8GB)
+- Work with Jan Tools (browser automation, file parsing, memory)
+- Scale from laptop to server without code changes
+- Share context and hand off tasks to each other
+
+### Help Us Improve
+
+Models are only as good as their real-world performance. [Test our models](link) against your actual use cases and vote on what works.
+
+We train on your feedback, not just benchmarks.

@@ -1,0 +1,667 @@
+/* Hand-Drawn UI Styles - PostHog-inspired playful design */
+
+/* ===== HAND-DRAWN BORDERS ===== */
+.hand-drawn-border {
+  position: relative;
+  border: none !important;
+}
+
+.hand-drawn-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: transparent;
+  border: 3px solid currentColor;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  pointer-events: none;
+}
+
+.hand-drawn-border.thick::before {
+  border-width: 4px;
+  inset: -3px;
+}
+
+.hand-drawn-border.animated::before {
+  animation: borderWobble 8s ease-in-out infinite;
+}
+
+@keyframes borderWobble {
+  0%, 100% {
+    border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  }
+  25% {
+    border-radius: 15px 255px 15px 225px/225px 15px 255px 15px;
+  }
+  50% {
+    border-radius: 225px 15px 255px 15px/15px 255px 15px 225px;
+  }
+  75% {
+    border-radius: 15px 225px 15px 255px/255px 15px 225px 15px;
+  }
+}
+
+/* ===== SKETCHY BUTTONS ===== */
+.btn-sketchy {
+  position: relative;
+  background: var(--robot-yellow);
+  color: var(--robot-dark);
+  padding: 1rem 2rem;
+  border: none;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  overflow: visible;
+}
+
+.btn-sketchy::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: var(--robot-yellow);
+  transform: rotate(-1deg);
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  z-index: -1;
+  transition: all 0.3s ease;
+}
+
+.btn-sketchy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--robot-dark);
+  border-radius: 225px 15px 255px 15px/15px 255px 15px 225px;
+  transform: rotate(0.5deg);
+}
+
+.btn-sketchy:hover {
+  transform: translateY(-2px) rotate(-0.5deg);
+}
+
+.btn-sketchy:hover::before {
+  transform: rotate(-2deg) scale(1.05);
+  background: var(--robot-orange);
+}
+
+.btn-sketchy:hover::after {
+  transform: rotate(1deg);
+}
+
+.btn-sketchy:active {
+  transform: translateY(0) rotate(0deg);
+}
+
+/* ===== HAND-DRAWN ARROWS ===== */
+.arrow-doodle {
+  position: relative;
+  width: 100px;
+  height: 50px;
+}
+
+.arrow-doodle svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.arrow-doodle path {
+  fill: none;
+  stroke: var(--robot-dark);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.arrow-doodle.animated path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: drawArrow 2s ease-in-out infinite;
+}
+
+@keyframes drawArrow {
+  0% { stroke-dashoffset: 100; }
+  50% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -100; }
+}
+
+/* ===== WOBBLY UNDERLINES ===== */
+.underline-wobble {
+  position: relative;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.underline-wobble::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: currentColor;
+  clip-path: polygon(
+    0% 50%,
+    2% 35%,
+    4% 65%,
+    6% 45%,
+    8% 55%,
+    10% 40%,
+    12% 60%,
+    14% 50%,
+    16% 35%,
+    18% 65%,
+    20% 45%,
+    22% 55%,
+    24% 40%,
+    26% 60%,
+    28% 50%,
+    30% 35%,
+    32% 65%,
+    34% 45%,
+    36% 55%,
+    38% 40%,
+    40% 60%,
+    42% 50%,
+    44% 35%,
+    46% 65%,
+    48% 45%,
+    50% 55%,
+    52% 40%,
+    54% 60%,
+    56% 50%,
+    58% 35%,
+    60% 65%,
+    62% 45%,
+    64% 55%,
+    66% 40%,
+    68% 60%,
+    70% 50%,
+    72% 35%,
+    74% 65%,
+    76% 45%,
+    78% 55%,
+    80% 40%,
+    82% 60%,
+    84% 50%,
+    86% 35%,
+    88% 65%,
+    90% 45%,
+    92% 55%,
+    94% 40%,
+    96% 60%,
+    98% 50%,
+    100% 50%
+  );
+}
+
+.underline-wobble:hover::after {
+  animation: wobbleUnderline 0.5s ease-in-out;
+}
+
+@keyframes wobbleUnderline {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-2px); }
+  75% { transform: translateY(2px); }
+}
+
+/* ===== SKETCH CIRCLES ===== */
+.circle-sketch {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  background: var(--robot-blue);
+}
+
+.circle-sketch::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  background: transparent;
+  border: 3px solid var(--robot-dark);
+  border-radius: 50%;
+  clip-path: polygon(
+    50% 0%,
+    52% 2%,
+    54% 1%,
+    56% 3%,
+    58% 2%,
+    60% 0%,
+    62% 1%,
+    64% 3%,
+    66% 2%,
+    68% 1%,
+    70% 0%,
+    72% 2%,
+    74% 3%,
+    76% 1%,
+    78% 2%,
+    80% 0%,
+    82% 1%,
+    84% 3%,
+    86% 2%,
+    88% 1%,
+    90% 0%,
+    92% 2%,
+    94% 1%,
+    96% 3%,
+    98% 2%,
+    100% 0%,
+    100% 50%,
+    98% 52%,
+    99% 54%,
+    97% 56%,
+    98% 58%,
+    100% 60%,
+    99% 62%,
+    97% 64%,
+    98% 66%,
+    99% 68%,
+    100% 70%,
+    98% 72%,
+    97% 74%,
+    99% 76%,
+    98% 78%,
+    100% 80%,
+    99% 82%,
+    97% 84%,
+    98% 86%,
+    99% 88%,
+    100% 90%,
+    98% 92%,
+    99% 94%,
+    97% 96%,
+    98% 98%,
+    100% 100%,
+    50% 100%,
+    48% 98%,
+    46% 99%,
+    44% 97%,
+    42% 98%,
+    40% 100%,
+    38% 99%,
+    36% 97%,
+    34% 98%,
+    32% 99%,
+    30% 100%,
+    28% 98%,
+    26% 97%,
+    24% 99%,
+    22% 98%,
+    20% 100%,
+    18% 99%,
+    16% 97%,
+    14% 98%,
+    12% 99%,
+    10% 100%,
+    8% 98%,
+    6% 99%,
+    4% 97%,
+    2% 98%,
+    0% 100%,
+    0% 50%,
+    2% 48%,
+    1% 46%,
+    3% 44%,
+    2% 42%,
+    0% 40%,
+    1% 38%,
+    3% 36%,
+    2% 34%,
+    1% 32%,
+    0% 30%,
+    2% 28%,
+    3% 26%,
+    1% 24%,
+    2% 22%,
+    0% 20%,
+    1% 18%,
+    3% 16%,
+    2% 14%,
+    1% 12%,
+    0% 10%,
+    2% 8%,
+    1% 6%,
+    3% 4%,
+    2% 2%,
+    0% 0%
+  );
+}
+
+/* ===== ROUGH PAPER TEXTURE ===== */
+.paper-texture {
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    ),
+    linear-gradient(
+      135deg,
+      #ffffff 0%,
+      #f8f8f8 100%
+    );
+}
+
+.paper-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><filter id="noise"><feTurbulence baseFrequency="0.95" numOctaves="4" /></filter><rect width="100" height="100" filter="url(%23noise)" opacity="0.02"/></svg>');
+  pointer-events: none;
+}
+
+/* ===== HANDWRITING FONTS ===== */
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Caveat:wght@400;700&display=swap');
+
+.handwriting {
+  font-family: 'Kalam', cursive;
+  letter-spacing: 0.02em;
+}
+
+.handwriting-alt {
+  font-family: 'Caveat', cursive;
+  font-size: 1.2em;
+}
+
+/* ===== DOODLE CHECKBOX ===== */
+.checkbox-doodle {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.checkbox-doodle input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.checkbox-doodle .checkbox-box {
+  position: absolute;
+  inset: 0;
+  background: white;
+  border: 3px solid var(--robot-dark);
+  border-radius: 4px;
+  transform: rotate(-2deg);
+  transition: all 0.3s ease;
+}
+
+.checkbox-doodle .checkbox-check {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0) rotate(-45deg);
+  width: 12px;
+  height: 6px;
+  border-left: 3px solid var(--robot-green);
+  border-bottom: 3px solid var(--robot-green);
+  transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.checkbox-doodle input:checked ~ .checkbox-box {
+  background: var(--robot-yellow);
+  transform: rotate(2deg);
+}
+
+.checkbox-doodle input:checked ~ .checkbox-check {
+  transform: translate(-50%, -50%) scale(1) rotate(-45deg);
+}
+
+.checkbox-doodle:hover .checkbox-box {
+  transform: rotate(-4deg) scale(1.1);
+  border-color: var(--robot-blue);
+}
+
+/* ===== TOOLTIP BUBBLE ===== */
+.tooltip-bubble {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-bubble .tooltip-content {
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  background: var(--robot-dark);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 15px 15px 15px 2px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
+  transform-origin: bottom center;
+  transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.tooltip-bubble .tooltip-content::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 10px solid var(--robot-dark);
+  margin-left: -8px;
+}
+
+.tooltip-bubble:hover .tooltip-content {
+  transform: translateX(-50%) scale(1);
+}
+
+/* ===== WIGGLE TEXT ===== */
+.text-wiggle {
+  display: inline-block;
+  animation: textWiggle 2s ease-in-out infinite;
+}
+
+.text-wiggle.subtle {
+  animation-duration: 4s;
+}
+
+@keyframes textWiggle {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+/* ===== HAND-DRAWN DIVIDER ===== */
+.divider-sketch {
+  width: 100%;
+  height: 20px;
+  margin: 2rem 0;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 20"><path d="M0,10 Q20,5 40,10 T80,10 T120,10 T160,10 T200,10" stroke="%23333" stroke-width="2" fill="none"/></svg>') center/contain no-repeat;
+}
+
+/* ===== SCRIBBLE BACKGROUND ===== */
+.scribble-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.scribble-bg::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10,50 Q30,20 50,50 T90,50" stroke="%23333" stroke-width="0.5" fill="none" opacity="0.1"/><path d="M20,30 Q40,60 60,30 T80,30" stroke="%23333" stroke-width="0.5" fill="none" opacity="0.1"/></svg>') 0 0/50px 50px;
+  transform: rotate(-5deg);
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+/* ===== STICKY NOTE ===== */
+.sticky-note {
+  position: relative;
+  background: #fff740;
+  padding: 1.5rem;
+  box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+  transform: rotate(-2deg);
+  transition: all 0.3s ease;
+}
+
+.sticky-note::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.sticky-note:hover {
+  transform: rotate(0deg) scale(1.02);
+  box-shadow: 4px 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.sticky-note.pink { background: #ff9ff3; }
+.sticky-note.blue { background: #54a0ff; }
+.sticky-note.green { background: #1dd1a1; }
+
+/* ===== MARKER HIGHLIGHT ===== */
+.highlight-marker {
+  position: relative;
+  display: inline-block;
+  color: var(--robot-dark);
+  padding: 0 0.2em;
+}
+
+.highlight-marker::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -0.1em;
+  right: -0.1em;
+  height: 0.8em;
+  background: var(--robot-yellow);
+  opacity: 0.4;
+  transform: skew(-5deg);
+  z-index: -1;
+  transition: all 0.3s ease;
+}
+
+.highlight-marker:hover::before {
+  height: 1.2em;
+  opacity: 0.6;
+}
+
+.highlight-marker.pink::before { background: var(--robot-pink); }
+.highlight-marker.blue::before { background: var(--robot-blue); }
+.highlight-marker.green::before { background: var(--robot-green); }
+
+/* ===== ROUGH SHADOW ===== */
+.shadow-rough {
+  position: relative;
+}
+
+.shadow-rough::after {
+  content: '';
+  position: absolute;
+  inset: 4px -4px -4px 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: inherit;
+  transform: rotate(-1deg);
+  z-index: -1;
+  filter: blur(2px);
+}
+
+/* ===== HAND-DRAWN PROGRESS BAR ===== */
+.progress-sketch {
+  position: relative;
+  width: 100%;
+  height: 30px;
+  background: white;
+  border: 3px solid var(--robot-dark);
+  border-radius: 15px;
+  overflow: hidden;
+  transform: rotate(-1deg);
+}
+
+.progress-sketch .progress-fill {
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--robot-green),
+    var(--robot-green) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+  border-right: 3px solid var(--robot-dark);
+  transition: width 0.5s ease;
+  animation: progressSlide 1s linear infinite;
+}
+
+@keyframes progressSlide {
+  0% { background-position: 0 0; }
+  100% { background-position: 20px 0; }
+}
+
+/* ===== UTILITY CLASSES ===== */
+.wiggle { animation: wiggle 2s ease-in-out infinite; }
+.bounce { animation: bounce 3s ease-in-out infinite; }
+.float { animation: float 4s ease-in-out infinite; }
+.shake { animation: shake 0.5s ease-in-out infinite; }
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* ===== ACCESSIBILITY ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===== RESPONSIVE ADJUSTMENTS ===== */
+@media (max-width: 768px) {
+  .btn-sketchy {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .sticky-note {
+    padding: 1rem;
+  }
+}

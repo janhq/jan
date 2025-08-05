@@ -1,0 +1,195 @@
+---
+title: Jan Local Server
+description: Run Jan as a local AI server with OpenAI-compatible API for building AI applications.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+![Jan's Cover Image](../../../assets/ls.png)
+
+Jan Local Server provides an OpenAI-compatible API that runs entirely on your computer. Build AI applications using familiar API patterns while keeping complete control over your data and models.
+
+## How It Works
+
+Jan runs a local server powered by [llama.cpp](https://github.com/ggerganov/llama.cpp) that provides an OpenAI-compatible API. By default, it runs at `https://localhost:1337` and works completely offline.
+
+**What this enables:**
+- Connect development tools like [Continue](./continue-dev) and [Cline](https://cline.bot/) to Jan
+- Build AI applications without cloud dependencies
+- Use both local and cloud models through the same API
+- Maintain full privacy for local model interactions
+
+## Key Features
+
+**Local AI Models**
+- Download popular open-source models (Llama, Gemma, Qwen) from Hugging Face
+- Import any GGUF files from your computer
+- Run models completely offline
+
+**Cloud Integration**
+- Connect to cloud services (OpenAI, Anthropic, Mistral, Groq)
+- Use your own API keys
+- Switch between local and cloud models seamlessly
+
+**Developer-Friendly**
+- OpenAI-compatible API for easy integration
+- Chat interface for testing and configuration
+- Model parameter customization
+
+**Complete Privacy**
+- All data stored locally
+- No cloud dependencies for local models
+- You control what data leaves your machine
+
+## Why Choose Jan?
+
+**Truly Open Source**
+- Apache 2.0 license - no restrictions
+- Community-driven development
+- Full transparency
+
+**Local-First Design**
+- Works 100% offline with local models
+- Data stays on your machine
+- No vendor lock-in
+
+**Flexible Model Support**
+- Your choice of AI models
+- Both local and cloud options
+- Easy model switching
+
+**No Data Collection**
+- We don't collect or sell user data
+- Local conversations stay local
+- [Read our Privacy Policy](./privacy)
+
+<Aside type="note">
+Jan follows [local-first principles](https://www.inkandswitch.com/local-first) - your data belongs to you and stays on your device.
+</Aside>
+
+## Philosophy
+
+Jan is built to be **user-owned**. This means:
+- **True open source** - Apache 2.0 license with no hidden restrictions
+- **Local data storage** - following [local-first principles](https://www.inkandswitch.com/local-first)
+- **Internet optional** - works completely offline
+- **Free choice** - use any AI models you want
+- **No surveillance** - we don't collect or sell your data
+
+Read more about our [philosophy](/about#philosophy).
+
+## Inspiration
+
+Jan draws inspiration from [Calm Computing](https://en.wikipedia.org/wiki/Calm_technology) and the Disappearing Computer - technology that works quietly in the background without demanding constant attention.
+
+## Built With
+
+Jan stands on the shoulders of excellent open-source projects:
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - Local AI model inference
+- [Scalar](https://github.com/scalar/scalar) - API documentation
+
+## Frequently Asked Questions
+
+## What is Jan?
+
+  Jan is a privacy-focused AI assistant that runs locally on your computer. It's an alternative to ChatGPT, Claude, and other cloud-based AI tools, with optional cloud AI support when you want it.
+
+
+## How do I get started?
+
+  Download Jan, add a model (either download locally or add a cloud API key), and start chatting. Check our [Quick Start guide](/docs/quickstart) for detailed setup instructions.
+
+
+## What systems does Jan support?
+
+  Jan works on all major operating systems:
+  - [macOS](/docs/desktop/mac#compatibility) - Intel and Apple Silicon
+  - [Windows](/docs/desktop/windows#compatibility) - x64 systems
+  - [Linux](/docs/desktop/linux) - Most distributions
+
+  Jan supports various hardware:
+  - NVIDIA GPUs (CUDA acceleration)
+  - AMD GPUs (Vulkan support)
+  - Intel Arc GPUs (Vulkan support)
+  - Any GPU with Vulkan support
+  - CPU-only operation
+
+
+## How does Jan protect my privacy?
+
+  Jan prioritizes privacy through:
+  - **100% offline operation** with local models
+  - **Local data storage** - everything stays on your device
+  - **Open-source transparency** - you can verify what Jan does
+  - **No data collection** - we never see your conversations
+
+  <Aside type="caution">
+    When using cloud AI services, their privacy policies apply. Jan doesn't add any tracking.
+  </Aside>
+
+  All your files and chat history are stored locally in the [Jan Data Folder](./data-folder). See our complete [Privacy Policy](./privacy).
+
+
+## What AI models can I use?
+
+  **Local models:**
+  - Download optimized models from the [Jan Hub](/docs/manage-models)
+  - Import GGUF models from Hugging Face
+  - Use any compatible local model files
+
+  **Cloud models:**
+  - OpenAI (GPT-4, ChatGPT)
+  - Anthropic (Claude)
+  - Mistral, Groq, and others
+  - Bring your own API keys
+
+
+## Is Jan really free?
+
+  Yes! Jan is completely free and open-source with no subscription fees.
+
+  **What's free:**
+  - Jan application and all features
+  - Local model usage (once downloaded)
+  - Local server and API
+
+  **What costs money:**
+  - Cloud model usage (you pay providers directly)
+  - We add no markup to cloud service costs
+
+
+## Can Jan work offline?
+
+  Absolutely! Once you download a local model, Jan works completely offline with no internet connection needed. This is one of Jan's core features.
+
+
+## How can I get help or contribute?
+
+  **Get help:**
+  - Join our [Discord community](https://discord.gg/qSwXFx6Krr)
+  - Check the [Troubleshooting guide](./troubleshooting)
+  - Ask in [#🆘|jan-help](https://discord.com/channels/1107178041848909847/1192090449725358130)
+
+  **Contribute:**
+  - Contribute on [GitHub](https://github.com/menloresearch/jan)
+  - No permission needed to submit improvements
+  - Help other users in Discord
+
+
+## Can I self-host Jan?
+
+  Yes! We fully support self-hosting. You can:
+  - Download Jan directly for personal use
+  - Fork the [GitHub repository](https://github.com/menloresearch/jan)
+  - Build from source
+  - Deploy on your own infrastructure
+
+
+## What does 'Jan' stand for?
+
+  "Just a Name" - we admit we're not great at marketing! 😄
+
+
+## Are you hiring?
+
+  Yes! We love hiring from our community. Check our open positions at [Careers](https://menlo.bamboohr.com/careers).

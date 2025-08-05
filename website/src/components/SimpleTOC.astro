@@ -1,0 +1,338 @@
+---
+export interface Props {
+  sections?: Array<{
+    id: string;
+    title: string;
+    level?: number;
+  }>;
+}
+
+const {
+  sections = [
+    { id: 'what-were-building', title: 'What We\'re Building' },
+    { id: 'two-modes-one-experience', title: 'Two Modes, One Experience' },
+    { id: 'our-product-principles', title: 'Our Product Principles' },
+    { id: 'available-on-every-device', title: 'Available on Every Device' },
+    { id: 'jan-desktop', title: 'Jan Desktop', level: 2 },
+    { id: 'jan-web', title: 'Jan Web', level: 2 },
+    { id: 'jan-mobile', title: 'Jan Mobile', level: 2 },
+    { id: 'jan-server', title: 'Jan Server', level: 2 },
+    { id: 'jan-mobile-three-modes-one-experience', title: 'Jan Mobile: Three Modes' },
+    { id: 'what-makes-jan-different', title: 'What Makes Jan Different' },
+    { id: 'development-timeline', title: 'Development Timeline' }
+  ]
+} = Astro.props;
+---
+
+<nav class="toc" aria-label="Table of Contents">
+  <div class="toc-header">
+    <h3>Contents</h3>
+  </div>
+  <ul>
+    {sections.map((section, index) => {
+      // Calculate section numbering
+      let sectionNumber = '';
+      if (!section.level) {
+        const mainSectionIndex = sections.slice(0, index + 1).filter(s => !s.level).length;
+        sectionNumber = `${mainSectionIndex}.`;
+      } else if (section.level === 2) {
+        const parentIndex = sections.slice(0, index).reverse().findIndex(s => !s.level);
+        const mainSectionIndex = sections.slice(0, index - parentIndex).filter(s => !s.level).length;
+        const subSectionIndex = sections.slice(index - parentIndex, index + 1).filter(s => s.level === 2).length;
+        sectionNumber = `${mainSectionIndex}.${subSectionIndex}`;
+      }
+
+      return (
+        <li class={section.level ? `level-${section.level}` : ''}>
+          <span class="section-number">{sectionNumber}</span>
+          <a href={`#${section.id}`} data-section={section.id}>
+            {section.title}
+          </a>
+        </li>
+      );
+    })}
+  </ul>
+</nav>
+
+<style>
+  .toc {
+    position: fixed;
+    right: 2rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 280px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: #fafafa;
+    border: 3px double #000;
+    padding: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .toc-header {
+    background: #f0f0f0;
+    border-bottom: 1px solid #000;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .toc h3 {
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0;
+    color: #000;
+    font-weight: 900;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 1rem;
+  }
+
+  .toc li {
+    margin-bottom: 0;
+    border-bottom: 1px dotted #999;
+    padding: 0.5rem 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .toc li:last-child {
+    border-bottom: none;
+  }
+
+  .toc li.level-2 {
+    padding-left: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .toc li.level-2 .section-number {
+    font-size: 0.85rem;
+  }
+
+  .toc li.level-3 {
+    padding-left: 3rem;
+  }
+
+  .section-number {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #000;
+    flex-shrink: 0;
+  }
+
+  .toc a {
+    color: #000;
+    text-decoration: none;
+    font-size: 0.95rem;
+    display: block;
+    transition: all 0.2s ease;
+    line-height: 1.3;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .toc a:hover {
+    color: #000;
+    text-decoration: underline;
+    text-decoration-style: solid;
+    text-underline-offset: 2px;
+  }
+
+  .toc a.active {
+    color: #000;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+
+  /* Scrollbar styling - classic newspaper style */
+  .toc::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .toc::-webkit-scrollbar-track {
+    background: #f0f0f0;
+    border-left: 1px solid #ccc;
+  }
+
+  .toc::-webkit-scrollbar-thumb {
+    background: #999;
+    border-left: 1px solid #666;
+  }
+
+  .toc::-webkit-scrollbar-thumb:hover {
+    background: #666;
+  }
+
+  /* Add newspaper-style ornament */
+  .toc::before {
+    content: '§';
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    font-size: 1.5rem;
+    color: #666;
+    font-weight: 700;
+  }
+
+  .toc::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 1rem;
+    right: 1rem;
+    height: 3px;
+    background: repeating-linear-gradient(
+      to right,
+      #000,
+      #000 2px,
+      transparent 2px,
+      transparent 4px
+    );
+  }
+
+  /* Dark mode styles */
+  html[data-theme="dark"] .toc {
+    background: #2a2a2a;
+    border-color: #666;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  html[data-theme="dark"] .toc-header {
+    background: #333;
+    border-bottom-color: #666;
+  }
+
+  html[data-theme="dark"] .toc h3 {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .toc li {
+    border-bottom-color: #444;
+  }
+
+  html[data-theme="dark"] .section-number {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .toc a {
+    color: #ccc;
+  }
+
+  html[data-theme="dark"] .toc a:hover {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .toc a.active {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .toc::before {
+    color: #999;
+  }
+
+  html[data-theme="dark"] .toc::after {
+    background: repeating-linear-gradient(
+      to right,
+      #666,
+      #666 2px,
+      transparent 2px,
+      transparent 4px
+    );
+  }
+
+  /* Dark mode scrollbar */
+  html[data-theme="dark"] .toc::-webkit-scrollbar-track {
+    background: #333;
+    border-left-color: #444;
+  }
+
+  html[data-theme="dark"] .toc::-webkit-scrollbar-thumb {
+    background: #666;
+    border-left-color: #888;
+  }
+
+  html[data-theme="dark"] .toc::-webkit-scrollbar-thumb:hover {
+    background: #888;
+  }
+
+  /* Hide on smaller screens */
+  @media (max-width: 1280px) {
+    .toc {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const tocLinks = document.querySelectorAll('.toc a');
+    const sections = document.querySelectorAll('h2[id], h3[id]');
+
+    // Smooth scrolling
+    tocLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = link.getAttribute('href')?.substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const offset = 80; // Account for fixed header
+          const elementPosition = targetElement.getBoundingClientRect().top + window.pageYOffset;
+          const offsetPosition = elementPosition - offset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+        }
+      });
+    });
+
+    // Update active section on scroll
+    const updateActiveSection = () => {
+      const scrollTop = window.pageYOffset + 100;
+
+      let activeSection = null;
+
+      // Find the current active section
+      sections.forEach(section => {
+        const rect = section.getBoundingClientRect();
+        const absoluteTop = rect.top + window.pageYOffset;
+
+        if (absoluteTop <= scrollTop) {
+          activeSection = section;
+        }
+      });
+
+      tocLinks.forEach(link => {
+        link.classList.remove('active');
+        if (activeSection && link.getAttribute('href') === `#${activeSection.id}`) {
+          link.classList.add('active');
+        }
+      });
+    };
+
+    // Throttled scroll handler
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          updateActiveSection();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
+    // Initial update
+    updateActiveSection();
+  });
+</script>

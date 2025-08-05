@@ -708,3 +708,195 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
 pub fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
+
+// tests
+//
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_multiple_devices() {
+        let output = r#"ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 3090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 0 | warp size: 32 | shared memory: 49152 | int dot: 0 | matrix cores: KHR_coopmat
+ggml_vulkan: 1 = AMD Radeon Graphics (RADV GFX1151) (radv) | uma: 1 | fp16: 1 | bf16: 0 | warp size: 64 | shared memory: 65536 | int dot: 0 | matrix cores: KHR_coopmat
+Available devices:
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)
+"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+
+        // Check first device
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 3090");
+        assert_eq!(devices[0].mem, 24576);
+        assert_eq!(devices[0].free, 24576);
+
+        // Check second device
+        assert_eq!(devices[1].id, "Vulkan1");
+        assert_eq!(devices[1].name, "AMD Radeon Graphics (RADV GFX1151)");
+        assert_eq!(devices[1].mem, 87722);
+        assert_eq!(devices[1].free, 87722);
+    }
+
+    #[test]
+    fn test_parse_single_device() {
+        let output = r#"Available devices:
+CUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "CUDA0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 4090");
+        assert_eq!(devices[0].mem, 24576);
+        assert_eq!(devices[0].free, 24000);
+    }
+
+    #[test]
+    fn test_parse_with_extra_whitespace_and_empty_lines() {
+        let output = r#"
+Available devices:
+
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)
+
+"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[1].id, "Vulkan1");
+    }
+
+    #[test]
+    fn test_parse_different_backends() {
+        let output = r#"Available devices:
+CUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+SYCL0: Intel(R) Arc(TM) A750 Graphics (8000 MiB, 7721 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 3);
+
+        assert_eq!(devices[0].id, "CUDA0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 4090");
+
+        assert_eq!(devices[1].id, "Vulkan0");
+        assert_eq!(devices[1].name, "NVIDIA GeForce RTX 3090");
+
+        assert_eq!(devices[2].id, "SYCL0");
+        assert_eq!(devices[2].name, "Intel(R) Arc(TM) A750 Graphics");
+        assert_eq!(devices[2].mem, 8000);
+        assert_eq!(devices[2].free, 7721);
+    }
+
+    #[test]
+    fn test_parse_complex_gpu_names() {
+        let output = r#"Available devices:
+Vulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)
+Vulkan1: AMD Radeon RX 7900 XTX (Navi 31) [RDNA 3] (24576 MiB, 24000 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[0].name, "Intel(R) Arc(tm) A750 Graphics (DG2)");
+        assert_eq!(devices[0].mem, 8128);
+        assert_eq!(devices[0].free, 8128);
+
+        assert_eq!(devices[1].id, "Vulkan1");
+        assert_eq!(devices[1].name, "AMD Radeon RX 7900 XTX (Navi 31) [RDNA 3]");
+        assert_eq!(devices[1].mem, 24576);
+        assert_eq!(devices[1].free, 24000);
+    }
+
+    #[test]
+    fn test_parse_no_devices() {
+        let output = r#"Available devices:"#;
+
+        let devices = parse_device_output(output).unwrap();
+        assert_eq!(devices.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_missing_header() {
+        let output = r#"Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)"#;
+
+        let result = parse_device_output(output);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Could not find 'Available devices:' section"));
+    }
+
+    #[test]
+    fn test_parse_malformed_device_line() {
+        let output = r#"Available devices:
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+Invalid line without colon
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        // Should skip the malformed line and parse the valid ones
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[1].id, "Vulkan1");
+    }
+
+    #[test]
+    fn test_parse_device_line_individual() {
+        // Test the individual line parser
+        let line = "Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)";
+        let device = parse_device_line(line).unwrap().unwrap();
+
+        assert_eq!(device.id, "Vulkan0");
+        assert_eq!(device.name, "NVIDIA GeForce RTX 3090");
+        assert_eq!(device.mem, 24576);
+        assert_eq!(device.free, 24576);
+    }
+
+    #[test]
+    fn test_memory_pattern_detection() {
+        assert!(is_memory_pattern("24576 MiB, 24576 MiB free"));
+        assert!(is_memory_pattern("8000 MiB, 7721 MiB free"));
+        assert!(!is_memory_pattern("just some text"));
+        assert!(!is_memory_pattern("24576 MiB"));
+        assert!(!is_memory_pattern("24576, 24576"));
+    }
+
+    #[test]
+    fn test_parse_memory_value() {
+        assert_eq!(parse_memory_value("24576 MiB").unwrap(), 24576);
+        assert_eq!(parse_memory_value("7721 MiB free").unwrap(), 7721);
+        assert_eq!(parse_memory_value("8000").unwrap(), 8000);
+
+        assert!(parse_memory_value("").is_err());
+        assert!(parse_memory_value("not_a_number MiB").is_err());
+    }
+
+    #[test]
+    fn test_find_memory_pattern() {
+        let text = "NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)";
+        let result = find_memory_pattern(text);
+        assert!(result.is_some());
+        let (_start, content) = result.unwrap();
+        assert_eq!(content, "24576 MiB, 24576 MiB free");
+
+        // Test with multiple parentheses
+        let text = "Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)";
+        let result = find_memory_pattern(text);
+        assert!(result.is_some());
+        let (_start, content) = result.unwrap();
+        assert_eq!(content, "8128 MiB, 8128 MiB free");
+    }
+}

@@ -1,0 +1,179 @@
+---
+title: Jan Data Folder
+description: Understand where Jan stores your data and how to monitor server logs.
+keywords:
+  [
+    Jan,
+    local AI,
+    data folder,
+    logs,
+    server logs,
+    troubleshooting,
+    privacy,
+    local storage,
+    file structure,
+  ]
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Jan stores all your data locally on your computer. No cloud storage, no external servers -
+everything stays on your machine.
+
+## Quick Access
+
+**Via Jan Interface:**
+1. Go to Settings (⚙️) > Advanced Settings
+2. Click the folder icon 📁
+
+![Open Jan Data Folder](../../../assets/settings-11.png)
+
+**Via File Explorer:**
+
+<Tabs>
+<TabItem label="Windows">
+```cmd
+%APPDATA%\Jan\data
+```
+</TabItem>
+<TabItem label="macOS">
+```bash
+~/Library/Application Support/Jan/data
+```
+</TabItem>
+<TabItem label="Linux">
+
+```bash
+# Default installation
+~/.config/Jan/data
+
+# Custom installation
+$XDG_CONFIG_HOME/Jan/data
+```
+
+</TabItem>
+
+</Tabs>
+
+## Monitoring Server Logs
+
+When Jan's local server is running, you can monitor real-time activity in the logs folder:
+
+![API Server Logs](../../../assets/api-server-logs.png)
+
+### Live Log Monitoring
+
+**Real-time logs show:**
+- API requests and responses
+- Model loading and inference activity
+- Error messages and warnings
+- Performance metrics
+- Connection attempts from external applications
+
+**Accessing logs:**
+- **In Jan**: System Monitor (footer) > App Log
+- **File location**: `/logs/app.log`
+
+### Log Categories
+
+| Log Type | What It Shows | When It's Useful |
+|----------|---------------|------------------|
+| **[APP]** | Core application events | Startup issues, crashes, general errors |
+| **[SERVER]** | API server activity | Connection problems, request failures |
+| **[SPECS]** | Hardware information | Performance issues, compatibility problems |
+| **[MODEL]** | Model operations | Loading failures, inference errors |
+
+## Data Structure
+
+```
+jan/
+├── assistants/          # AI personality settings
+│   └── jan/
+│       └── assistant.json
+├── engines/             # Engine configurations
+│   └── llama.cpp/
+├── extensions/          # Add-on modules
+│   └── extensions.json
+├── logs/               # Server and application logs
+│   └── app.log         # Main log file
+├── models/             # Downloaded AI models
+│   └── huggingface.co/
+└── threads/            # Chat conversations
+    └── thread_id/
+        ├── messages.jsonl
+        └── thread.json
+```
+
+## Key Folders Explained
+
+### `/logs/` - Server Activity Hub
+Contains all application and server logs. Essential for troubleshooting and monitoring API activity.
+
+**What you'll find:**
+- Real-time server requests
+- Model loading status
+- Error diagnostics
+- Performance data
+
+### `/models/` - AI Model Storage
+Where your downloaded models live. Each model includes:
+- `model.gguf` - The actual AI model file
+- `model.json` - Configuration and metadata
+
+### `/threads/` - Chat History
+Every conversation gets its own folder with:
+- `messages.jsonl` - Complete chat history
+- `thread.json` - Thread metadata and settings
+
+### `/assistants/` - AI Personalities
+Configuration files that define how your AI assistants behave, including their instructions and available tools.
+
+## Privacy & Security
+
+**Your data stays local:**
+- No cloud backups or syncing
+- Files stored in standard JSON/JSONL formats
+- Complete control over your data
+- Easy to backup or migrate
+
+**File permissions:**
+- Only you and Jan can access these files
+- Standard user-level permissions
+- No elevated access required
+
+<Aside type="note">
+When using cloud AI services through Jan, those conversations follow the cloud provider's data policies. Local model conversations never leave your computer.
+</Aside>
+
+## Common Tasks
+
+### Backup Your Data
+Copy the entire Jan data folder to backup:
+- All chat history
+- Model configurations
+- Assistant settings
+- Extension data
+
+### Clear Chat History
+Delete individual thread folders in `/threads/` or use Jan's interface to delete conversations.
+
+### Export Conversations
+Thread files are in standard JSON format - readable by any text editor or compatible with other applications.
+
+### Troubleshooting Data Issues
+1. Check `/logs/app.log` for error messages
+2. Verify folder permissions
+3. Ensure sufficient disk space
+4. Restart Jan if files appear corrupted
+
+## Uninstalling Jan
+
+If you need to completely remove Jan and all data:
+
+**Keep data (reinstall later):** Just uninstall the application
+**Remove everything:** Delete the Jan data folder after uninstalling
+
+Detailed uninstall guides:
+- [macOS](/docs/desktop/mac#step-2-clean-up-data-optional)
+- [Windows](/docs/desktop/windows#step-2-handle-jan-data)
+- [Linux](/docs/desktop/linux#uninstall-jan)
