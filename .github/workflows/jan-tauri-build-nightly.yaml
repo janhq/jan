@@ -20,6 +20,7 @@ on:
 jobs:
   set-public-provider:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     outputs:
       public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
       ref: ${{ steps.set-public-provider.outputs.ref }}
@@ -47,11 +48,13 @@ jobs:
           fi
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
     needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
@@ -64,6 +67,7 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -74,6 +78,7 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -91,6 +96,7 @@ jobs:
         build-macos,
       ]
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -236,7 +242,7 @@ jobs:
         set-public-provider,
         sync-temp-to-latest,
       ]
-    if: needs.set-public-provider.outputs.public_provider == 'aws-s3'
+    if: needs.set-public-provider.outputs.public_provider == 'aws-s3' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/autoqa-template.yml
     with:
       jan_app_windows_source: 'https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}_x64-setup.exe'
@@ -257,7 +263,7 @@ jobs:
         get-update-version,
         set-public-provider,
       ]
-    if: needs.set-public-provider.outputs.public_provider == 'none'
+    if: needs.set-public-provider.outputs.public_provider == 'none' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/autoqa-template.yml
     with:
       jan_app_windows_source: '' # Not needed for artifacts
