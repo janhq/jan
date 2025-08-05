@@ -26,18 +26,6 @@
     "controllerProps": { "value": true }
   },
   {
-    "key": "chat_template",
-    "title": "Custom Jinja Chat template",
-    "description": "Custom Jinja chat_template to be used for the model",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)",
-      "type": "text",
-      "textAlign": "right"
-    }
-  },
-  {
     "key": "threads",
     "title": "Threads",
     "description": "Number of threads to use during generation (-1 for logical cores).",

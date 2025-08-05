@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { sep } from '@tauri-apps/api/path'
+import { modelSettings } from '@/lib/predefined'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -211,8 +212,21 @@ export const useModelProvider = create<ModelProviderState>()(
       name: localStorageKey.modelProvider,
       storage: createJSONStorage(() => localStorage),
       migrate: (persistedState: unknown, version: number) => {
-        const state = persistedState as ModelProviderState
-        
+        const state = persistedState as ModelProviderState & {
+          providers: Array<
+            ModelProvider & {
+              models: Array<
+                Model & {
+                  settings?: Record<string, unknown> & {
+                    chatTemplate?: string
+                    chat_template?: string
+                  }
+                }
+              >
+            }
+          >
+        }
+
         // Migration for cont_batching description update (version 0 -> 1)
         if (version === 0 && state?.providers) {
           state.providers = state.providers.map((provider) => {
@@ -221,7 +235,8 @@ export const useModelProvider = create<ModelProviderState>()(
                 if (setting.key === 'cont_batching') {
                   return {
                     ...setting,
-                    description: 'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+                    description:
+                      'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.',
                   }
                 }
                 return setting
@@ -230,9 +245,40 @@ export const useModelProvider = create<ModelProviderState>()(
             return provider
           })
         }
+
+        // Migration for chatTemplate key to chat_template (version 1 -> 2)
+        if (version === 1 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.models) {
+              provider.models.forEach((model) => {
+                // Initialize settings if it doesn't exist
+                if (!model.settings) {
+                  model.settings = {}
+                }
+
+                // Migrate chatTemplate key to chat_template
+                if (model.settings.chatTemplate) {
+                  model.settings.chat_template = model.settings.chatTemplate
+                  delete model.settings.chatTemplate
+                }
+
+                // Add missing chat_template setting if it doesn't exist
+                if (!model.settings.chat_template) {
+                  model.settings.chat_template = {
+                    ...modelSettings.chatTemplate,
+                    controller_props: {
+                      ...modelSettings.chatTemplate.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
         return state
       },
-      version: 1,
+      version: 2,
     }
   )
 )
