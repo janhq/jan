@@ -298,7 +298,6 @@ function ProviderDetail() {
                 <Card>
                   {provider?.settings.map((setting, settingIndex) => {
                     // Use the DynamicController component
-                    // console.log(setting)
                     const actionComponent = (
                       <div className="mt-2">
                         {needsBackendConfig &&
