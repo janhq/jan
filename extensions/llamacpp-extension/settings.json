@@ -6,9 +6,11 @@
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",
-      "options": []
+      "options": [],
+      "recommended": ""
     }
   },
+
   {
     "key": "auto_update_engine",
     "title": "Auto update engine",
