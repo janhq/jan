@@ -28,6 +28,7 @@ type DynamicControllerProps = {
     min?: number
     max?: number
     step?: number
+    recommended?: string
   }
   onChange: (value: string | boolean | number) => void
 }
@@ -65,6 +66,7 @@ export function DynamicControllerSetting({
       <DropdownControl
         value={controllerProps.value as string}
         options={controllerProps.options}
+        recommended={controllerProps.recommended}
         onChange={(newValue) => onChange(newValue)}
       />
     )

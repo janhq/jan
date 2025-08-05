@@ -132,6 +132,12 @@ export abstract class BaseExtension implements ExtensionType {
             setting.controllerProps.options = setting.controllerProps.options?.length
               ? setting.controllerProps.options
               : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
+          if ('recommended' in setting.controllerProps) {
+            const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.recommended
+            if (oldRecommended !== undefined && oldRecommended !== "") {
+              setting.controllerProps.recommended = oldRecommended
+            }
+          }
         })
       }
       localStorage.setItem(this.name, JSON.stringify(settings))
