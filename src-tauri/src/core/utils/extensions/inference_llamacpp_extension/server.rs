@@ -931,7 +931,7 @@ Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
             let long_path = dir.path().join(UNCOMMON_DIR_NAME);
             std::fs::create_dir(&long_path)
                 .expect("Failed to create test directory with non-ASCII name");
-            let short_path_opt = get_short_path(&long_path);
+            let short_path = get_short_path(&long_path);
             assert!(
                 short_path.is_ascii(),
                 "The resulting short path must be composed of only ASCII characters. Got: {}",
