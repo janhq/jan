@@ -241,9 +241,7 @@ const DropdownModelProvider = ({
 
       // When not searching, exclude favorite models from regular provider sections
       const isFavorite = favoriteModels.some((fav) => fav.id === item.model.id)
-      if (!searchValue && isFavorite) {
-        return // Skip adding this item to regular provider section
-      }
+      if (!searchValue && isFavorite) return // Skip adding this item to regular provider section
 
       groups[providerKey].push(item)
     })
