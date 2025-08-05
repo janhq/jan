@@ -82,8 +82,20 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         {
+                          label: 'Browser Control (Browserbase)',
+                          slug: 'jan/mcp-examples/browser/browserbase',
+                        },
+                        {
                           label: 'Code Sandbox (E2B)',
                           slug: 'jan/mcp-examples/data-analysis/e2b',
+                        },
+                        {
+                          label: 'Design Creation (Canva)',
+                          slug: 'jan/mcp-examples/design/canva',
+                        },
+                        {
+                          label: 'Deep Research (Octagon)',
+                          slug: 'jan/mcp-examples/deepresearch/octagon',
                         },
                         {
                           label: 'Web Search with Exa',
