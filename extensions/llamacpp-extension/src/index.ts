@@ -1576,6 +1576,16 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  async getRecommendedBackend(): Promise<string> {
+    try {
+      const supportedBackends = await listSupportedBackends()
+      return this.determineBestBackend(supportedBackends)
+    } catch (error) {
+      logger.error('Failed to get recommended backend:', error)
+      return ''
+    }
+  }
+
   async embed(text: string[]): Promise<EmbeddingResponse> {
     let sInfo = this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {

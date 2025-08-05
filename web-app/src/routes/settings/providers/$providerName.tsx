@@ -40,6 +40,7 @@ import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
+import { getRecommendedBackend } from '@/services/hardware'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -79,6 +80,7 @@ function ProviderDetail() {
   const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
+  const [recommendedBackend, setRecommendedBackend] = useState<string>('')
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -129,6 +131,17 @@ function ProviderDetail() {
       return () => clearInterval(intervalId)
     }
   }, [provider, needsBackendConfig])
+
+  // Fetch recommended backend for llamacpp provider
+  useEffect(() => {
+    if (provider?.provider === 'llamacpp') {
+      getRecommendedBackend()
+        .then(setRecommendedBackend)
+        .catch((error) => {
+          console.warn('Failed to get recommended backend:', error)
+        })
+    }
+  }, [provider])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
@@ -285,6 +298,7 @@ function ProviderDetail() {
                 <Card>
                   {provider?.settings.map((setting, settingIndex) => {
                     // Use the DynamicController component
+                    // console.log(setting)
                     const actionComponent = (
                       <div className="mt-2">
                         {needsBackendConfig &&
@@ -302,6 +316,12 @@ function ProviderDetail() {
                                 'third-step-setup-remote-provider',
                               setting.key === 'device' && 'hidden'
                             )}
+                            recommendedValue={
+                              setting.key === 'version_backend' &&
+                              provider?.provider === 'llamacpp'
+                                ? recommendedBackend
+                                : undefined
+                            }
                             onChange={(newValue) => {
                               if (provider) {
                                 const newSettings = [...provider.settings]

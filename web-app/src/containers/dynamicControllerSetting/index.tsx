@@ -30,6 +30,7 @@ type DynamicControllerProps = {
     step?: number
   }
   onChange: (value: string | boolean | number) => void
+  recommendedValue?: string
 }
 
 export function DynamicControllerSetting({
@@ -37,6 +38,7 @@ export function DynamicControllerSetting({
   controllerType,
   controllerProps,
   onChange,
+  recommendedValue,
 }: DynamicControllerProps) {
   if (controllerType === 'input') {
     return (
@@ -66,6 +68,7 @@ export function DynamicControllerSetting({
         value={controllerProps.value as string}
         options={controllerProps.options}
         onChange={(newValue) => onChange(newValue)}
+        recommendedValue={recommendedValue}
       />
     )
   } else if (controllerType === 'textarea') {
