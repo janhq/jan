@@ -60,4 +60,5 @@ export type DropdownComponentProps = {
   value: string
   type?: InputType
   options?: DropdownOption[]
+  recommended?: string
 }

@@ -297,6 +297,12 @@ export default class llamacpp_extension extends AIEngine {
           return { value: key, name: key }
         })
 
+        // Set the recommended backend based on bestAvailableBackendString
+        if (bestAvailableBackendString) {
+          backendSetting.controllerProps.recommended =
+            bestAvailableBackendString
+        }
+
         const savedBackendSetting = await this.getSetting<string>(
           'version_backend',
           originalDefaultBackendValue
@@ -1298,7 +1304,8 @@ export default class llamacpp_extension extends AIEngine {
         args.push('--cache-type-k', cfg.cache_type_k)
       if (
         cfg.flash_attn &&
-        (cfg.cache_type_v != 'f16' && cfg.cache_type_v != 'f32')
+        cfg.cache_type_v != 'f16' &&
+        cfg.cache_type_v != 'f32'
       ) {
         args.push('--cache-type-v', cfg.cache_type_v)
       }
