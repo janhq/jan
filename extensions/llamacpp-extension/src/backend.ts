@@ -50,14 +50,18 @@ export async function listSupportedBackends(): Promise<
     if (features.avx2) supportedBackends.push('linux-avx2-x64')
     if (features.avx512) supportedBackends.push('linux-avx512-x64')
     if (features.cuda11) {
-      if (features.avx512) supportedBackends.push('linux-avx512-cuda-cu11.7-x64')
-      else if (features.avx2) supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
+      if (features.avx512)
+        supportedBackends.push('linux-avx512-cuda-cu11.7-x64')
+      else if (features.avx2)
+        supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
       else if (features.avx) supportedBackends.push('linux-avx-cuda-cu11.7-x64')
       else supportedBackends.push('linux-noavx-cuda-cu11.7-x64')
     }
     if (features.cuda12) {
-      if (features.avx512) supportedBackends.push('linux-avx512-cuda-cu12.0-x64')
-      else if (features.avx2) supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
+      if (features.avx512)
+        supportedBackends.push('linux-avx512-cuda-cu12.0-x64')
+      else if (features.avx2)
+        supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
       else if (features.avx) supportedBackends.push('linux-avx-cuda-cu12.0-x64')
       else supportedBackends.push('linux-noavx-cuda-cu12.0-x64')
     }
@@ -256,10 +260,16 @@ async function _getSupportedFeatures() {
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
     }
-
-    if (gpuInfo.vulkan_info?.api_version) features.vulkan = true
+    // Vulkan support check - only discrete GPUs with 6GB+ VRAM
+    if (
+      gpuInfo.vulkan_info?.api_version &&
+      gpuInfo.vulkan_info?.device_type === 'DISCRETE_GPU' &&
+      gpuInfo.total_memory >= 6 * 1024
+    ) {
+      // 6GB (total_memory is in MB)
+      features.vulkan = true
+    }
   }
-
   return features
 }
 
