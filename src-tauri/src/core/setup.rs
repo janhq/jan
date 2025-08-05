@@ -43,8 +43,8 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
 
     let mut clean_up = force;
 
-    // Check CLEAN environment variable to optionally skip extension install
-    if std::env::var("CLEAN").is_ok() {
+    // Check IS_CLEAN environment variable to optionally skip extension install
+    if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
     log::info!(

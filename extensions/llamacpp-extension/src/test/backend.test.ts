@@ -51,6 +51,164 @@ describe('Backend functions', () => {
       ])
     })
 
+    it('should return CUDA backends with proper CPU instruction detection for Windows', async () => {
+      // Mock system info with CUDA support and AVX512
+      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+        os_type: 'windows',
+        cpu: {
+          arch: 'x86_64',
+          extensions: ['avx', 'avx2', 'avx512'],
+        },
+        gpus: [
+          {
+            driver_version: '530.41',
+            nvidia_info: { compute_capability: '8.6' },
+          },
+        ],
+      })
+
+      // Mock GitHub releases with CUDA backends
+      const mockReleases = [
+        {
+          tag_name: 'v1.0.0',
+          assets: [
+            { name: 'llama-v1.0.0-bin-win-avx512-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx2-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-noavx-cuda-cu12.0-x64.tar.gz' },
+          ],
+        },
+      ]
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockReleases),
+      })
+
+      const result = await listSupportedBackends()
+
+      expect(result).toContain({ version: 'v1.0.0', backend: 'win-avx512-cuda-cu12.0-x64' })
+    })
+
+    it('should select appropriate CUDA backend based on CPU features - AVX2 only', async () => {
+      // Mock system info with CUDA support but only AVX2
+      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+        os_type: 'windows',
+        cpu: {
+          arch: 'x86_64',
+          extensions: ['avx', 'avx2'], // No AVX512
+        },
+        gpus: [
+          {
+            driver_version: '530.41',
+            nvidia_info: { compute_capability: '8.6' },
+          },
+        ],
+      })
+
+      const mockReleases = [
+        {
+          tag_name: 'v1.0.0',
+          assets: [
+            { name: 'llama-v1.0.0-bin-win-avx512-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx2-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-noavx-cuda-cu12.0-x64.tar.gz' },
+          ],
+        },
+      ]
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockReleases),
+      })
+
+      const result = await listSupportedBackends()
+
+      expect(result).toContain({ version: 'v1.0.0', backend: 'win-avx2-cuda-cu12.0-x64' })
+      expect(result).not.toContain({ version: 'v1.0.0', backend: 'win-avx512-cuda-cu12.0-x64' })
+    })
+
+    it('should select appropriate CUDA backend based on CPU features - no AVX', async () => {
+      // Mock system info with CUDA support but no AVX
+      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+        os_type: 'windows',
+        cpu: {
+          arch: 'x86_64',
+          extensions: [], // No AVX extensions
+        },
+        gpus: [
+          {
+            driver_version: '530.41',
+            nvidia_info: { compute_capability: '8.6' },
+          },
+        ],
+      })
+
+      const mockReleases = [
+        {
+          tag_name: 'v1.0.0',
+          assets: [
+            { name: 'llama-v1.0.0-bin-win-avx512-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx2-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-avx-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-win-noavx-cuda-cu12.0-x64.tar.gz' },
+          ],
+        },
+      ]
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockReleases),
+      })
+
+      const result = await listSupportedBackends()
+
+      expect(result).toContain({ version: 'v1.0.0', backend: 'win-noavx-cuda-cu12.0-x64' })
+      expect(result).not.toContain({ version: 'v1.0.0', backend: 'win-avx2-cuda-cu12.0-x64' })
+      expect(result).not.toContain({ version: 'v1.0.0', backend: 'win-avx512-cuda-cu12.0-x64' })
+    })
+
+    it('should return CUDA backends with proper CPU instruction detection for Linux', async () => {
+      // Mock system info with CUDA support and AVX support
+      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+        os_type: 'linux',
+        cpu: {
+          arch: 'x86_64',
+          extensions: ['avx'], // Only AVX, no AVX2
+        },
+        gpus: [
+          {
+            driver_version: '530.60.13',
+            nvidia_info: { compute_capability: '8.6' },
+          },
+        ],
+      })
+
+      const mockReleases = [
+        {
+          tag_name: 'v1.0.0',
+          assets: [
+            { name: 'llama-v1.0.0-bin-linux-avx512-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-linux-avx2-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-linux-avx-cuda-cu12.0-x64.tar.gz' },
+            { name: 'llama-v1.0.0-bin-linux-noavx-cuda-cu12.0-x64.tar.gz' },
+          ],
+        },
+      ]
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockReleases),
+      })
+
+      const result = await listSupportedBackends()
+
+      expect(result).toContain({ version: 'v1.0.0', backend: 'linux-avx-cuda-cu12.0-x64' })
+      expect(result).not.toContain({ version: 'v1.0.0', backend: 'linux-avx2-cuda-cu12.0-x64' })
+      expect(result).not.toContain({ version: 'v1.0.0', backend: 'linux-avx512-cuda-cu12.0-x64' })
+    })
+
     it('should return supported backends for macOS arm64', async () => {
       window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'macos',
