@@ -15,7 +15,6 @@ import {
 import {
   createFileRoute,
   Link,
-  useNavigate,
   useParams,
   useSearch,
 } from '@tanstack/react-router'
@@ -32,6 +31,7 @@ import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { updateSettings, fetchModelsFromProvider } from '@/services/providers'
+import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
@@ -83,7 +83,6 @@ function ProviderDetail() {
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
-  const navigate = useNavigate()
 
   // Check if llamacpp provider needs backend configuration
   const needsBackendConfig =
@@ -137,9 +136,7 @@ function ProviderDetail() {
     const { status } = data
 
     if (status === STATUS.FINISHED) {
-      navigate({
-        to: route.home,
-      })
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
     }
   }
 
