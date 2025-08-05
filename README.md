@@ -1,6 +1,6 @@
 # Jan - Local AI Assistant
 
-![Jan banner](./JanBanner.png)
+![Jan AI](docs/src/pages/docs/_assets/jan-app.png)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -19,11 +19,12 @@
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-Jan is an AI assistant that runs 100% offline on your device. Download and run LLMs with **full control** and **privacy**.
+Jan is an AI assistant that can run 100% offline on your device. Download and run LLMs with
+**full control** and **privacy**.
 
 ## Installation
 
-Because clicking a button is still the easiest way to get started:
+The easiest way to get started is by downloading one of the following versions for your respective operating system:
 
 <table>
   <tr>
@@ -136,13 +137,12 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 ## Troubleshooting
 
-When things go sideways (they will):
+For and if, things go sideways:
 
 1. Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
-We keep logs for 24 hours, so don't procrastinate on reporting issues.
 
 ## Contributing
 
@@ -161,15 +161,6 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel
 - **Business**: hello@jan.ai
 - **Jobs**: hr@jan.ai
 - **General Discussion**: [Discord](https://discord.gg/FTk2MvZwJH)
-
-## Trust & Safety
-
-**Friendly reminder**: We're not trying to scam you.
-
-- We won't ask for personal information
-- Jan is completely free (no premium version exists)
-- We don't have a cryptocurrency or ICO
-- We're bootstrapped and not seeking your investment (yet)
 
 ## License
 
