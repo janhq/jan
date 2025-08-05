@@ -158,12 +158,10 @@ const DropdownModelProvider = ({
           provider &&
           predefinedProviders.some((e) =>
             e.provider.includes(provider.provider)
-          )
-        ) {
-          if (provider.provider !== 'llamacpp' && !provider.api_key?.length) {
+          ) && provider.provider !== 'llamacpp' && !provider.api_key?.length
+        )
             return
-          }
-        }
+}
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
