@@ -154,6 +154,8 @@ pub async fn load_llama_model(
         // use short path on Windows
         if let Some(short) = get_short_path(&model_path_pb) {
             args[model_path_index + 1] = short;
+        } else {
+            args[model_path_index + 1] = model_path_pb.display().to_string();
         }
     }
     #[cfg(not(windows))]
