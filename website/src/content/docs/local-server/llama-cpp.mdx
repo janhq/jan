@@ -1,5 +1,5 @@
 ---
-title: llama.cpp Server
+title: llama.cpp Engine
 description: Configure Jan's local AI engine for optimal performance.
 keywords:
   [
@@ -15,14 +15,19 @@ keywords:
   ]
 ---
 
-import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components'
 
-llama.cpp is the engine that runs AI models locally on your computer. It's what makes Jan work without
-needing internet or cloud services.
+`llama.cpp` is the core **inference engine** Jan uses to run AI models locally on your computer. This section
+covers the settings for the engine itself, which control *how* a model processes information on your hardware.
+
+<Aside>
+Looking for API server settings (like port, host, CORS)? They have been moved to the dedicated
+[**Local API Server**](/docs/local-server/api-server) page.
+</Aside>
 
 ## Accessing Engine Settings
 
-Find llama.cpp settings at **Settings** (⚙️) > **Local Engine** > **llama.cpp**:
+Find llama.cpp settings at **Settings** > **Local Engine** > **llama.cpp**:
 
 ![llama.cpp](../../../assets/llama.cpp-01-updated.png)
 
@@ -49,7 +54,8 @@ You might need to modify these settings if:
 
 Different backends are optimized for different hardware. Pick the one that matches your computer:
 
-<Tabs>
+<Tabs items={['Windows', 'Linux', 'macOS']}>
+
 <TabItem label="Windows">
 
 ### NVIDIA Graphics Cards (Fastest)
@@ -69,6 +75,7 @@ Different backends are optimized for different hardware. Pick the one that match
 - `llama.cpp-vulkan` (AMD, Intel Arc)
 
 </TabItem>
+
 <TabItem label="Linux">
 
 ### NVIDIA Graphics Cards
@@ -83,6 +90,7 @@ Different backends are optimized for different hardware. Pick the one that match
 - `llama.cpp-vulkan` (AMD, Intel graphics)
 
 </TabItem>
+
 <TabItem label="macOS">
 
 ### Apple Silicon (M1/M2/M3/M4)
@@ -96,6 +104,7 @@ Apple Silicon automatically uses GPU acceleration through Metal.
 </Aside>
 
 </TabItem>
+
 </Tabs>
 
 ## Performance Settings
