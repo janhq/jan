@@ -301,7 +301,6 @@ export default class llamacpp_extension extends AIEngine {
         if (bestAvailableBackendString) {
           backendSetting.controllerProps.recommended =
             bestAvailableBackendString
-          console.log(bestAvailableBackendString, 'bestAvailableBackendString')
         }
 
         const savedBackendSetting = await this.getSetting<string>(
