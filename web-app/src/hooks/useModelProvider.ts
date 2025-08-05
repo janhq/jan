@@ -276,9 +276,34 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        // Migration for override_tensor_buffer_type key (version 2 -> 3)
+        if (version === 2 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.models) {
+              provider.models.forEach((model) => {
+                // Initialize settings if it doesn't exist
+                if (!model.settings) {
+                  model.settings = {}
+                }
+
+                // Add missing override_tensor_buffer_type setting if it doesn't exist
+                if (!model.settings.override_tensor_buffer_t) {
+                  model.settings.override_tensor_buffer_t = {
+                    ...modelSettings.override_tensor_buffer_t,
+                    controller_props: {
+                      ...modelSettings.override_tensor_buffer_t
+                        .controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
         return state
       },
-      version: 2,
+      version: 3,
     }
   )
 )

@@ -133,4 +133,15 @@ export const modelSettings = {
       textAlign: 'right',
     },
   },
+  override_tensor_buffer_t: {
+    key: 'override_tensor_buffer_t',
+    title: 'Override Tensor Buffer Type',
+    description: 'Override the tensor buffer type for the model',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: 'e.g., layers\\.\\d+\\.ffn_.*=CPU',
+      type: 'text',
+    },
+  },
 }

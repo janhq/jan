@@ -106,8 +106,10 @@ export function ModelSetting({
               <div key={key} className="space-y-2">
                 <div
                   className={cn(
-                    'flex items-start justify-between gap-8',
-                    key === 'chat_template' && 'flex-col gap-1'
+                    'flex items-start justify-between gap-8 last:mb-2',
+                    (key === 'chat_template' ||
+                      key === 'override_tensor_buffer_t') &&
+                      'flex-col gap-1 w-full'
                   )}
                 >
                   <div className="space-y-1 mb-2">

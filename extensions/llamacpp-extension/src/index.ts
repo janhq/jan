@@ -1270,7 +1270,7 @@ export default class llamacpp_extension extends AIEngine {
     // who knows what they are doing.
     // Takes a regex with matching tensor name as input
     if (cfg.override_tensor_buffer_t)
-      args.push('--override-tensors', cfg.override_tensor_buffer_t)
+      args.push('--override-tensor', cfg.override_tensor_buffer_t)
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
