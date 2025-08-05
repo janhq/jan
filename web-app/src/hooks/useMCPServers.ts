@@ -25,8 +25,8 @@ type MCPServerStoreState = {
   editServer: (key: string, config: MCPServerConfig) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
-  syncServers: () => void
-  syncServersAndRestart: () => void
+  syncServers: () => Promise<void>
+  syncServersAndRestart: () => Promise<void>
 }
 
 export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
