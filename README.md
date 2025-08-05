@@ -12,16 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/quickstart">Getting Started</a> 
-  - <a href="https://jan.ai/docs">Docs</a> 
-  - <a href="https://jan.ai/changelog">Changelog</a> 
-  - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a> 
+  <a href="https://jan.ai/docs/quickstart">Getting Started</a>
+  - <a href="https://jan.ai/docs">Docs</a>
+  - <a href="https://jan.ai/changelog">Changelog</a>
+  - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a>
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-Jan is a ChatGPT-alternative that runs 100% offline on your device. Our goal is to make it easy for a layperson to download and run LLMs and use AI with **full control** and **privacy**.
-
-**⚠️ Jan is in active development.**
+Jan is an AI assistant that runs 100% offline on your device. Download and run LLMs with **full control** and **privacy**.
 
 ## Installation
 
@@ -31,43 +29,32 @@ Because clicking a button is still the easiest way to get started:
   <tr>
     <td><b>Platform</b></td>
     <td><b>Stable</b></td>
-    <td><b>Beta</b></td>
     <td><b>Nightly</b></td>
   </tr>
   <tr>
     <td><b>Windows</b></td>
     <td><a href='https://app.jan.ai/download/latest/win-x64'>jan.exe</a></td>
-    <td><a href='https://app.jan.ai/download/beta/win-x64'>jan.exe</a></td>
     <td><a href='https://app.jan.ai/download/nightly/win-x64'>jan.exe</a></td>
   </tr>
   <tr>
     <td><b>macOS</b></td>
     <td><a href='https://app.jan.ai/download/latest/mac-universal'>jan.dmg</a></td>
-    <td><a href='https://app.jan.ai/download/beta/mac-universal'>jan.dmg</a></td>
     <td><a href='https://app.jan.ai/download/nightly/mac-universal'>jan.dmg</a></td>
   </tr>
   <tr>
     <td><b>Linux (deb)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-deb'>jan.deb</a></td>
-    <td><a href='https://app.jan.ai/download/beta/linux-amd64-deb'>jan.deb</a></td>
     <td><a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>jan.deb</a></td>
   </tr>
   <tr>
     <td><b>Linux (AppImage)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
-    <td><a href='https://app.jan.ai/download/beta/linux-amd64-appimage'>jan.AppImage</a></td>
     <td><a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>jan.AppImage</a></td>
   </tr>
 </table>
 
 Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/menloresearch/jan/releases).
 
-## Demo
-
-<video width="100%" controls>
-  <source src="./docs/public/assets/videos/enable-tool-call-for-models.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
 
 ## Features
 

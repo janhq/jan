@@ -26,5 +26,9 @@
   "openrouter": {
     "title": "OpenRouter",
     "href": "/docs/remote-models/openrouter"
+  },
+  "huggingface": {
+    "title": "Hugging Face",
+    "href": "/docs/remote-models/huggingface"
   }
 }
