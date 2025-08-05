@@ -230,7 +230,6 @@ pub async fn load_llama_model(
 
     // Create channels for communication between tasks
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
-    let (error_tx, mut error_rx) = mpsc::channel::<String>(1);
 
     // Spawn task to monitor stdout for readiness
     let _stdout_task = tokio::spawn(async move {
@@ -277,20 +276,10 @@ pub async fn load_llama_model(
 
                         // Check for critical error indicators that should stop the process
                         let line_lower = line.to_string().to_lowercase();
-                        if line_lower.contains("error loading model")
-                            || line_lower.contains("unknown model architecture")
-                            || line_lower.contains("fatal")
-                            || line_lower.contains("cuda error")
-                            || line_lower.contains("out of memory")
-                            || line_lower.contains("error")
-                            || line_lower.contains("failed")
-                        {
-                            let _ = error_tx.send(line.to_string()).await;
-                        }
                         // Check for readiness indicator - llama-server outputs this when ready
-                        else if line.contains("server is listening on")
-                            || line.contains("starting the main loop")
-                            || line.contains("server listening on")
+                        if line_lower.contains("server is listening on")
+                            || line_lower.contains("starting the main loop")
+                            || line_lower.contains("server listening on")
                         {
                             log::info!("Server appears to be ready based on stderr: '{}'", line);
                             let _ = ready_tx.send(true).await;
@@ -327,26 +316,6 @@ pub async fn load_llama_model(
             Some(true) = ready_rx.recv() => {
                 log::info!("Server is ready to accept requests!");
                 break;
-            }
-            // Error occurred
-            Some(error_msg) = error_rx.recv() => {
-                log::error!("Server encountered an error: {}", error_msg);
-
-                // Give process a moment to exit naturally
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                // Check if process already exited
-                if let Some(status) = child.try_wait()? {
-                    log::info!("Process exited with code {:?}", status);
-                    return Err(ServerError::LlamacppError(error_msg));
-                } else {
-                    log::info!("Process still running, killing it...");
-                    let _ = child.kill().await;
-                }
-
-                // Get full stderr output
-                let stderr_output = stderr_task.await.unwrap_or_default();
-                return Err(ServerError::LlamacppError(format!("Error: {}\n\nFull stderr:\n{}", error_msg, stderr_output)));
             }
             // Check for process exit more frequently
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
