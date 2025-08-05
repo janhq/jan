@@ -137,7 +137,7 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 ## Troubleshooting
 
-For and if, things go sideways:
+If things go sideways:
 
 1. Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)
 2. Copy your error logs and system specs
