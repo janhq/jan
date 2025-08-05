@@ -71,7 +71,7 @@ export function ModelSetting({
       })
 
       // Call debounced stopModel only when updating ctx_len or ngl
-      if (key === 'ctx_len' || key === 'ngl') {
+      if (key === 'ctx_len' || key === 'ngl' || key === 'chat_template') {
         debouncedStopModel(model.id)
       }
     }
@@ -101,9 +101,15 @@ export function ModelSetting({
         <div className="px-4 space-y-6">
           {Object.entries(model.settings || {}).map(([key, value]) => {
             const config = value as ProviderSetting
+
             return (
               <div key={key} className="space-y-2">
-                <div className="flex items-start justify-between gap-8">
+                <div
+                  className={cn(
+                    'flex items-start justify-between gap-8',
+                    key === 'chat_template' && 'flex-col gap-1'
+                  )}
+                >
                   <div className="space-y-1 mb-2">
                     <h3 className="font-medium">{config.title}</h3>
                     <p className="text-main-view-fg/70 text-xs">
