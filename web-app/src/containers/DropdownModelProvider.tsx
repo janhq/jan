@@ -161,7 +161,6 @@ const DropdownModelProvider = ({
           ) && provider.provider !== 'llamacpp' && !provider.api_key?.length
         )
             return
-}
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
