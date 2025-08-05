@@ -734,6 +734,9 @@ pub fn is_port_available(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    #[cfg(windows)]
+    use tempfile;
 
     #[test]
     fn test_parse_multiple_devices() {
@@ -918,5 +921,42 @@ Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
         assert!(result.is_some());
         let (_start, content) = result.unwrap();
         assert_eq!(content, "8128 MiB, 8128 MiB free");
+    }
+    #[test]
+    fn test_path_with_uncommon_dir_names() {
+        const UNCOMMON_DIR_NAME: &str = "тест-你好-éàç-🚀";
+        #[cfg(windows)]
+        {
+            let dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let long_path = dir.path().join(UNCOMMON_DIR_NAME);
+            std::fs::create_dir(&long_path)
+                .expect("Failed to create test directory with non-ASCII name");
+            let short_path_opt = get_short_path(&long_path);
+            assert!(
+                short_path.is_ascii(),
+                "The resulting short path must be composed of only ASCII characters. Got: {}",
+                short_path
+            );
+            assert!(
+                PathBuf::from(&short_path).exists(),
+                "The returned short path must exist on the filesystem"
+            );
+            assert_ne!(
+                short_path,
+                long_path.to_str().unwrap(),
+                "Short path should not be the same as the long path"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            // On Unix, paths are typically UTF-8 and there's no "short path" concept.
+            let long_path_str = format!("/tmp/{}", UNCOMMON_DIR_NAME);
+            let path_buf = PathBuf::from(&long_path_str);
+            let displayed_path = path_buf.display().to_string();
+            assert_eq!(
+                displayed_path, long_path_str,
+                "Path with non-ASCII characters should be preserved exactly on non-Windows platforms"
+            );
+        }
     }
 }
