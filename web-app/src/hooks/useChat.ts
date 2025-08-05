@@ -365,8 +365,7 @@ export const useChat = () => {
             if (
               typeof errorMessage === 'string' &&
               errorMessage.includes(OUT_OF_CONTEXT_SIZE) &&
-              selectedModel &&
-              troubleshooting
+              selectedModel
             ) {
               const method = await showIncreaseContextSizeModal()
               if (method === 'ctx_len') {
