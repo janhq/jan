@@ -357,9 +357,16 @@ export default class llamacpp_extension extends AIEngine {
 
       // Handle fresh installation case where version_backend might be 'none' or invalid
       if (
-        !effectiveBackendString ||
-        effectiveBackendString === 'none' ||
-        !effectiveBackendString.includes('/')
+        (!effectiveBackendString ||
+          effectiveBackendString === 'none' ||
+          !effectiveBackendString.includes('/') ||
+          // If the selected backend is not in the list of supported backends
+          // Need to reset too
+          !version_backends.some(
+            (e) => `${e.version}/${e.backend}` === effectiveBackendString
+          )) &&
+        // Ensure we have a valid best available backend
+        bestAvailableBackendString
       ) {
         effectiveBackendString = bestAvailableBackendString
         logger.info(
@@ -380,6 +387,17 @@ export default class llamacpp_extension extends AIEngine {
           })
         )
         logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
+
+        // Emit for updating fe
+        if (events && typeof events.emit === 'function') {
+          logger.info(
+            `Emitting settingsChanged event for version_backend with value: ${effectiveBackendString}`
+          )
+          events.emit('settingsChanged', {
+            key: 'version_backend',
+            value: effectiveBackendString,
+          })
+        }
       }
 
       // Download and install the backend if not already present
