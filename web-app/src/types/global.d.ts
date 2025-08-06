@@ -19,6 +19,7 @@ declare global {
   declare const POSTHOG_KEY: string
   declare const POSTHOG_HOST: string
   declare const MODEL_CATALOG_URL: string
+  declare const AUTO_UPDATER_DISABLED: boolean
   interface Window {
     core: AppCore | undefined
   }
