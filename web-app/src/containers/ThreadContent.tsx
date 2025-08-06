@@ -194,7 +194,7 @@ export const ThreadContent = memo(
       if (analysisMatch && analysisMatch.index !== undefined) {
         const splitIndex = analysisMatch.index + analysisMatch[0].length
         return {
-          reasoningSegment: analysisMatch[1],
+          reasoningSegment: analysisMatch[1].trim(), // Clean extracted content
           textSegment: text.slice(splitIndex),
         }
       }
@@ -328,7 +328,7 @@ export const ThreadContent = memo(
 
             {reasoningSegment && (
               <ThinkingBlock
-                id={`${item.thread_id}-${item.index ?? item.id}`}
+                id={`thinking-${item.thread_id}-${item.id}`}
                 text={reasoningSegment}
               />
             )}

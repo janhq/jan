@@ -31,9 +31,11 @@ const ThinkingBlock = ({ id, text }: Props) => {
   const { streamingContent } = useAppState()
   const { t } = useTranslation()
   const loading =
-    !text.includes('</think>') &&
-    !text.includes('<|start|>assistant<|channel|>final<|message|>') &&
-    streamingContent
+    streamingContent &&
+    ((text.includes('<think>') && !text.includes('</think>')) ||
+      (text.includes('<|channel|>analysis<|message|>') &&
+        !text.includes('<|start|>assistant<|channel|>final<|message|>') &&
+        streamingContent))
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
   const handleClick = () => {
     const newExpandedState = !isExpanded
@@ -63,20 +65,23 @@ const ThinkingBlock = ({ id, text }: Props) => {
         </div>
 
         {isExpanded && (
-            <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
+          <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
             <RenderMarkdown
               content={text
-              .replace(/<\/?think>/g, '')
-              .replace(/<\|channel\|>analysis<\|message\|>/g, '')
-              .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
-              .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
-              .replace(/^.*?<\|start\|>/s, '') // trim everything before and including <|start|>
-              .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
-              .replace(/<\|message\|>/g, '') // remove any remaining message markers  
-              .replace(/<\|start\|>/g, '') // remove any remaining start markers
-              .trim()}
+                .replace(/<\/?think>/g, '')
+                .replace(/<\|channel\|>analysis<\|message\|>/g, '')
+                .replace(
+                  /<\|start\|>assistant<\|channel\|>final<\|message\|>/g,
+                  ''
+                )
+                .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
+                .replace(/^.*?<\|start\|>/s, '') // trim everything before and including <|start|>
+                .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
+                .replace(/<\|message\|>/g, '') // remove any remaining message markers
+                .replace(/<\|start\|>/g, '') // remove any remaining start markers
+                .trim()}
             />
-            </div>
+          </div>
         )}
       </div>
     </div>
