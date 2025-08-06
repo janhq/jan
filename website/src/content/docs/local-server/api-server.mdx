@@ -17,33 +17,22 @@ keywords:
     API key
   ]
 ---
-import { Aside, Steps } from '@astrojs/starlight/components';
+import { Aside, Steps } from '@astrojs/starlight/components'
 
-Jan provides a built-in, OpenAI-compatible API server that runs entirely on your computer,
-powered by `llama.cpp`. Use it as a drop-in replacement for cloud APIs to build private,
-offline-capable AI applications.
+Jan provides a built-in, OpenAI-compatible API server that runs entirely on your computer, powered by `llama.cpp`. Use it as a drop-in replacement for cloud APIs to build private, offline-capable AI applications.
 
 ![Jan's Local API Server Settings UI](../../../assets/api-server-ui.png)
 
 ## Quick Start
 
-### 1. Start the Server
-
+### Start the Server
 1.  Navigate to **Settings** > **Local API Server**.
 2.  Enter a custom **API Key** (e.g., `secret-key-123`). This is required for all requests.
 3.  Click **Start Server**.
 
-The server is ready when the logs show `JAN API listening at http://12.0.0.1:1337`.
+The server is ready when the logs show `JAN API listening at http://127.0.0.1:1337`.
 
-### 2. Load a model with cURL
-
-```sh
-curl http://127.0.0.1:1337/v1/models/start -H "Content-Type: application/json" \
-    -H "Authorization: Bearer secret-key-123" \
-    -d '{"model": "gemma3:12b"}'
-```
-
-### 3. Test with cURL
+### Test with cURL
 Open a terminal and make a request. Replace `YOUR_MODEL_ID` with the ID of an available model in Jan.
 
 ```bash
@@ -95,7 +84,7 @@ A comma-separated list of hostnames allowed to access the server. This provides 
 
 ## Troubleshooting
 
-<Aside type="note">
+<Aside>
 Ensure **Verbose Server Logs** are enabled to get detailed error messages in the "Server Logs" view.
 </Aside>
 
