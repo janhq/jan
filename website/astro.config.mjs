@@ -120,6 +120,10 @@ export default defineConfig({
                       slug: 'local-server/llama-cpp',
                     },
                     {
+                      label: 'Server Troubleshooting',
+                      slug: 'local-server/troubleshooting',
+                    },
+                    {
                       label: 'Integrations',
                       collapsed: true,
                       autogenerate: { directory: 'local-server/integrations' },
