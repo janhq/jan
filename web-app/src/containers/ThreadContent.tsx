@@ -170,18 +170,37 @@ export const ThreadContent = memo(
     )
 
     const { reasoningSegment, textSegment } = useMemo(() => {
-      const isThinking = text.includes('<think>') && !text.includes('</think>')
+      const isThinking =
+        (text.includes('<think>') && !text.includes('</think>')) ||
+        (text.includes('<|channel|>analysis<|message|>') &&
+          !text.includes('<|start|>assistant<|channel|>final<|message|>'))
       if (isThinking) return { reasoningSegment: text, textSegment: '' }
 
-      const match = text.match(/<think>([\s\S]*?)<\/think>/)
-      if (match?.index === undefined)
-        return { reasoningSegment: undefined, textSegment: text }
-
-      const splitIndex = match.index + match[0].length
-      return {
-        reasoningSegment: text.slice(0, splitIndex),
-        textSegment: text.slice(splitIndex),
+      // Extract content between <think>...</think> or <|channel|>analysis<|message|>...</|start|>assistant<|channel|>final<|message|>
+      // Try to match <think>...</think>
+      const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
+      if (thinkMatch && thinkMatch.index !== undefined) {
+        const splitIndex = thinkMatch.index + thinkMatch[0].length
+        return {
+          reasoningSegment: thinkMatch[0],
+          textSegment: text.slice(splitIndex),
+        }
       }
+
+      // Try to match <|channel|>analysis<|message|>...</|start|>assistant<|channel|>final<|message|>
+      const analysisMatch = text.match(
+        /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
+      )
+      if (analysisMatch && analysisMatch.index !== undefined) {
+        const splitIndex = analysisMatch.index + analysisMatch[0].length
+        return {
+          reasoningSegment: analysisMatch[1],
+          textSegment: text.slice(splitIndex),
+        }
+      }
+
+      // No match, return all as textSegment
+      return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
     const { getMessages, deleteMessage } = useMessages()
@@ -309,11 +328,7 @@ export const ThreadContent = memo(
 
             {reasoningSegment && (
               <ThinkingBlock
-                id={
-                  item.isLastMessage
-                    ? `${item.thread_id}-last-${reasoningSegment.slice(0, 50).replace(/\s/g, '').slice(-10)}`
-                    : `${item.thread_id}-${item.index ?? item.id}`
-                }
+                id={`${item.thread_id}-${item.index ?? item.id}`}
                 text={reasoningSegment}
               />
             )}

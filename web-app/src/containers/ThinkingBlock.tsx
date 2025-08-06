@@ -30,14 +30,15 @@ const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, setThinkingState } = useThinkingStore()
   const { streamingContent } = useAppState()
   const { t } = useTranslation()
-  const loading = !text.includes('</think>') && streamingContent
+  const loading =
+    !text.includes('</think>') &&
+    !text.includes('<|start|>assistant<|channel|>final<|message|>') &&
+    streamingContent
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
   const handleClick = () => {
     const newExpandedState = !isExpanded
     setThinkingState(id, newExpandedState)
   }
-
-  if (!text.replace(/<\/?think>/g, '').trim()) return null
 
   return (
     <div
@@ -62,9 +63,15 @@ const ThinkingBlock = ({ id, text }: Props) => {
         </div>
 
         {isExpanded && (
-          <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
-            <RenderMarkdown content={text.replace(/<\/?think>/g, '').trim()} />
-          </div>
+            <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
+            <RenderMarkdown
+              content={text
+              .replace(/<\/?think>/g, '')
+              .replace('<|channel|>analysis<|message|>', '')
+              .replace(/^.*?<\|start\|>/s, '') // trim everything before and including <|start|>
+              .trim()}
+            />
+            </div>
         )}
       </div>
     </div>
