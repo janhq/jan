@@ -15,9 +15,7 @@ keywords:
   ]
 ---
 
-import { Aside, Steps } from '@astrojs/starlight/components'
-
-# Troubleshooting
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components'
 
 ## Getting Help: Error Logs
 
@@ -50,8 +48,8 @@ Remove any personal information before sharing logs. We only keep logs for 24 ho
 
 If Jan gets stuck after installation or won't start properly:
 
-<Tabs items={['macOS', 'Windows', 'Linux']}>
-<Tabs.Tab>
+<Tabs>
+<TabItem label="macOS">
 
 **Clean Reinstall Steps:**
 
@@ -71,8 +69,9 @@ kill -9 <PID>
 
 4. **Download fresh copy** from [jan.ai](/download)
 
-</Tabs.Tab>
-<Tabs.Tab>
+</TabItem>
+
+<TabItem label="Windows">
 
 **Clean Reinstall Steps:**
 
@@ -94,8 +93,9 @@ taskkill /F /PID <PID>
 
 4. **Download fresh copy** from [jan.ai](/download)
 
-</Tabs.Tab>
-<Tabs.Tab>
+</TabItem>
+
+<TabItem label="Linux">
 
 **Clean Reinstall Steps:**
 
@@ -124,7 +124,7 @@ kill -9 <PID>
 
 4. **Download fresh copy** from [jan.ai](/download)
 
-</Tabs.Tab>
+</TabItem>
 </Tabs>
 
 <Aside type="note">
@@ -135,7 +135,6 @@ Make sure Jan is completely removed from all user accounts before reinstalling.
 
 If Jan isn't using your NVIDIA graphics card for acceleration:
 
-<Steps>
 
 ### Step 1: Check Your Hardware Setup
 
@@ -201,8 +200,6 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 ### Step 4: Restart Jan
 
 Close and restart Jan to apply changes.
-
-</Steps>
 
 #### Tested Working Configurations
 
