@@ -22,7 +22,6 @@ export const modelSettings = {
       type: 'number',
     },
   },
-
   temperature: {
     key: 'temperature',
     title: 'Temperature',
@@ -119,6 +118,30 @@ export const modelSettings = {
       value: '',
       placeholder: '0.0',
       type: 'number',
+    },
+  },
+  chatTemplate: {
+    key: 'chat_template',
+    title: 'Custom Jinja Chat template',
+    description: 'Custom Jinja chat_template to be used for the model',
+    controller_type: 'textarea',
+    controller_props: {
+      value: '',
+      placeholder:
+        'e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)',
+      type: 'text',
+      textAlign: 'right',
+    },
+  },
+  override_tensor_buffer_t: {
+    key: 'override_tensor_buffer_t',
+    title: 'Override Tensor Buffer Type',
+    description: 'Override the tensor buffer type for the model',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: 'e.g., layers\\.\\d+\\.ffn_.*=CPU',
+      type: 'text',
     },
   },
 }

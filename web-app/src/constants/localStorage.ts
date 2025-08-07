@@ -20,4 +20,5 @@ export const localStorageKey = {
   lastUsedModel: 'last-used-model',
   lastUsedAssistant: 'last-used-assistant',
   favoriteModels: 'favorite-models',
+  setupCompleted: 'setup-completed',
 }

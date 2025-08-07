@@ -30,14 +30,31 @@ const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, setThinkingState } = useThinkingStore()
   const { streamingContent } = useAppState()
   const { t } = useTranslation()
-  const loading = !text.includes('</think>') && streamingContent
+  // Check for thinking formats
+  const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
+  const hasAnalysisChannel = text.includes('<|channel|>analysis<|message|>') && !text.includes('<|start|>assistant<|channel|>final<|message|>')
+  const loading = (hasThinkTag || hasAnalysisChannel) && streamingContent
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
   const handleClick = () => {
     const newExpandedState = !isExpanded
     setThinkingState(id, newExpandedState)
   }
 
-  if (!text.replace(/<\/?think>/g, '').trim()) return null
+  // Extract thinking content from either format
+  const extractThinkingContent = (text: string) => {
+    return text
+      .replace(/<\/?think>/g, '')
+      .replace(/<\|channel\|>analysis<\|message\|>/g, '')
+      .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
+      .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
+      .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
+      .replace(/<\|message\|>/g, '') // remove any remaining message markers  
+      .replace(/<\|start\|>/g, '') // remove any remaining start markers
+      .trim()
+  }
+
+  const thinkingContent = extractThinkingContent(text)
+  if (!thinkingContent) return null
 
   return (
     <div
@@ -63,7 +80,7 @@ const ThinkingBlock = ({ id, text }: Props) => {
 
         {isExpanded && (
           <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
-            <RenderMarkdown content={text.replace(/<\/?think>/g, '').trim()} />
+            <RenderMarkdown content={thinkingContent} />
           </div>
         )}
       </div>

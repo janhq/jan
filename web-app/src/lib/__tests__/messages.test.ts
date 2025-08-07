@@ -407,6 +407,50 @@ describe('CompletionMessagesBuilder', () => {
       const result = builder.getMessages()
       expect(result[0].content).toBe('Clean answer')
     })
+
+    it('should remove analysis channel reasoning content', () => {
+      const builder = new CompletionMessagesBuilder([])
+
+      builder.addAssistantMessage(
+        '<|channel|>analysis<|message|>Let me analyze this step by step...<|start|>assistant<|channel|>final<|message|>The final answer is 42.'
+      )
+
+      const result = builder.getMessages()
+      expect(result[0].content).toBe('The final answer is 42.')
+    })
+
+    it('should handle analysis channel without final message', () => {
+      const builder = new CompletionMessagesBuilder([])
+
+      builder.addAssistantMessage(
+        '<|channel|>analysis<|message|>Only analysis content here...'
+      )
+
+      const result = builder.getMessages()
+      expect(result[0].content).toBe('<|channel|>analysis<|message|>Only analysis content here...')
+    })
+
+    it('should handle analysis channel with multiline content', () => {
+      const builder = new CompletionMessagesBuilder([])
+
+      builder.addAssistantMessage(
+        '<|channel|>analysis<|message|>Step 1: First analysis\nStep 2: Second analysis\nStep 3: Final analysis<|start|>assistant<|channel|>final<|message|>Based on my analysis, here is the result.'
+      )
+
+      const result = builder.getMessages()
+      expect(result[0].content).toBe('Based on my analysis, here is the result.')
+    })
+
+    it('should handle both think and analysis channel tags', () => {
+      const builder = new CompletionMessagesBuilder([])
+
+      builder.addAssistantMessage(
+        '<think>Initial thought</think><|channel|>analysis<|message|>Detailed analysis<|start|>assistant<|channel|>final<|message|>Final response'
+      )
+
+      const result = builder.getMessages()
+      expect(result[0].content).toBe('Final response')
+    })
   })
 
   describe('integration tests', () => {

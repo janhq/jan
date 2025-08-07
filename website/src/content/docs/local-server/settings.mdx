@@ -14,11 +14,11 @@ keywords:
   ]
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Steps } from '@astrojs/starlight/components';
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Steps } from '@astrojs/starlight/components'
 
-Access Jan's settings by clicking the ⚙️ icon in the bottom left corner.
+# Settings
+
+Access Jan's settings by clicking the Settings icon in the bottom left corner.
 
 ## Managing AI Models
 
@@ -163,41 +163,17 @@ Jan stores everything locally on your computer in standard file formats.
 This duplicates your data to the new location - your original files stay safe.
 </Aside>
 
-## Network Settings
+## Local API Server
 
-### HTTPS Proxy Setup
+All settings for running Jan as a local, OpenAI-compatible server have been moved to their own dedicated page for clarity.
 
-If you need to connect through a corporate network or want enhanced privacy:
+This includes configuration for:
+- Server Host and Port
+- API Keys
+- CORS (Cross-Origin Resource Sharing)
+- Verbose Logging
 
-1. **Enable** the proxy toggle
-2. Enter your proxy details:
-```
-http://<username>:<password>@<server>:<port>
-```
-
-**Example:**
-```
-http://user:pass@proxy.company.com:8080
-```
-
-![HTTPS Proxy](../../../assets/settings-13.png)
-
-<Aside type="note">
-Proxy connections may slow down model downloads but don't affect local model performance.
-</Aside>
-
-### SSL Certificate Handling
-
-**Ignore SSL Certificates:** Only enable this for:
-- Corporate networks with internal certificates
-- Development/testing environments
-- Trusted network setups
-
-![Ignore SSL Certificates](../../../assets/settings-14.png)
-
-<Aside type="caution">
-Only enable if you trust your network environment completely.
-</Aside>
+[**Go to Local API Server Settings &rarr;**](/docs/local-server/api-server)
 
 ## Emergency Options
 
@@ -218,7 +194,7 @@ Only enable if you trust your network environment completely.
 
 ![Reset Confirmation](../../../assets/settings-18.png)
 
-<Aside type="caution">
+<Aside type="danger">
 **This cannot be undone.** All chat history, downloaded models, and settings will be permanently deleted.
 </Aside>
 
