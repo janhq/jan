@@ -1,7 +1,9 @@
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -724,9 +726,78 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
 }
 
 // check port availability
-#[tauri::command]
-pub fn is_port_available(port: u16) -> bool {
+fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+#[tauri::command]
+pub async fn get_random_port(state: State<'_, AppState>) -> Result<u16, String> {
+    const MAX_ATTEMPTS: u32 = 20000;
+    let mut attempts = 0;
+    let mut rng = StdRng::from_entropy();
+
+    // Get all active ports from sessions
+    let map = state.llama_server_process.lock().await;
+
+    let used_ports: HashSet<u16> = map
+        .values()
+        .filter_map(|session| {
+            // Convert valid ports to u16 (filter out placeholder ports like -1)
+            if session.info.port > 0 && session.info.port <= u16::MAX as i32 {
+                Some(session.info.port as u16)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    drop(map); // unlock early
+
+    while attempts < MAX_ATTEMPTS {
+        let port = rng.gen_range(3000..4000);
+
+        if used_ports.contains(&port) {
+            attempts += 1;
+            continue;
+        }
+
+        if is_port_available(port) {
+            return Ok(port);
+        }
+
+        attempts += 1;
+    }
+
+    Err("Failed to find an available port for the model to load".into())
+}
+
+// find session
+#[tauri::command]
+pub async fn find_session_by_model(
+    model_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<SessionInfo>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let session_info = map
+        .values()
+        .find(|backend_session| backend_session.info.model_id == model_id)
+        .map(|backend_session| backend_session.info.clone());
+
+    Ok(session_info)
+}
+
+// get running models
+#[tauri::command]
+pub async fn get_loaded_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let model_ids = map
+        .values()
+        .map(|backend_session| backend_session.info.model_id.clone())
+        .collect();
+
+    Ok(model_ids)
 }
 
 // tests
