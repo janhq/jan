@@ -1,7 +1,9 @@
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -67,13 +69,39 @@ pub struct DeviceInfo {
     pub free: i32,
 }
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+
+#[cfg(windows)]
+pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
+    let wide: Vec<u16> = OsStr::new(path.as_ref())
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    let mut buffer = vec![0u16; 260];
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
+
+    if len > 0 {
+        Some(String::from_utf16_lossy(&buffer[..len as usize]))
+    } else {
+        None
+    }
+}
+
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
     state: State<'_, AppState>,
     backend_path: &str,
     library_path: Option<&str>,
-    args: Vec<String>,
+    mut args: Vec<String>,
 ) -> ServerResult<SessionInfo> {
     let mut process_map = state.llama_server_process.lock().await;
 
@@ -105,13 +133,38 @@ pub async fn load_llama_model(
             8080
         }
     };
-
-    let model_path = args
+    // FOR MODEL PATH; TODO: DO SIMILARLY FOR MMPROJ PATH
+    let model_path_index = args
         .iter()
         .position(|arg| arg == "-m")
-        .and_then(|i| args.get(i + 1))
-        .cloned()
-        .unwrap_or_default();
+        .ok_or(ServerError::LlamacppError("Missing `-m` flag".into()))?;
+
+    let model_path = args
+        .get(model_path_index + 1)
+        .ok_or(ServerError::LlamacppError("Missing path after `-m`".into()))?
+        .clone();
+
+    let model_path_pb = PathBuf::from(model_path);
+    if !model_path_pb.exists() {
+        return Err(ServerError::LlamacppError(format!(
+            "Invalid or inaccessible model path: {}",
+            model_path_pb.display().to_string(),
+        )));
+    }
+    #[cfg(windows)]
+    {
+        // use short path on Windows
+        if let Some(short) = get_short_path(&model_path_pb) {
+            args[model_path_index + 1] = short;
+        } else {
+            args[model_path_index + 1] = model_path_pb.display().to_string();
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        args[model_path_index + 1] = model_path_pb.display().to_string();
+    }
+    // -----------------------------------------------------------------
 
     let api_key = args
         .iter()
@@ -181,7 +234,6 @@ pub async fn load_llama_model(
 
     // Create channels for communication between tasks
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
-    let (error_tx, mut error_rx) = mpsc::channel::<String>(1);
 
     // Spawn task to monitor stdout for readiness
     let _stdout_task = tokio::spawn(async move {
@@ -228,20 +280,10 @@ pub async fn load_llama_model(
 
                         // Check for critical error indicators that should stop the process
                         let line_lower = line.to_string().to_lowercase();
-                        if line_lower.contains("error loading model")
-                            || line_lower.contains("unknown model architecture")
-                            || line_lower.contains("fatal")
-                            || line_lower.contains("cuda error")
-                            || line_lower.contains("out of memory")
-                            || line_lower.contains("error")
-                            || line_lower.contains("failed")
-                        {
-                            let _ = error_tx.send(line.to_string()).await;
-                        }
                         // Check for readiness indicator - llama-server outputs this when ready
-                        else if line.contains("server is listening on")
-                            || line.contains("starting the main loop")
-                            || line.contains("server listening on")
+                        if line_lower.contains("server is listening on")
+                            || line_lower.contains("starting the main loop")
+                            || line_lower.contains("server listening on")
                         {
                             log::info!("Server appears to be ready based on stderr: '{}'", line);
                             let _ = ready_tx.send(true).await;
@@ -279,26 +321,6 @@ pub async fn load_llama_model(
                 log::info!("Server is ready to accept requests!");
                 break;
             }
-            // Error occurred
-            Some(error_msg) = error_rx.recv() => {
-                log::error!("Server encountered an error: {}", error_msg);
-
-                // Give process a moment to exit naturally
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                // Check if process already exited
-                if let Some(status) = child.try_wait()? {
-                    log::info!("Process exited with code {:?}", status);
-                    return Err(ServerError::LlamacppError(error_msg));
-                } else {
-                    log::info!("Process still running, killing it...");
-                    let _ = child.kill().await;
-                }
-
-                // Get full stderr output
-                let stderr_output = stderr_task.await.unwrap_or_default();
-                return Err(ServerError::LlamacppError(format!("Error: {}\n\nFull stderr:\n{}", error_msg, stderr_output)));
-            }
             // Check for process exit more frequently
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 // Check if process exited
@@ -332,7 +354,7 @@ pub async fn load_llama_model(
         pid: pid.clone(),
         port: port,
         model_id: model_id,
-        model_path: model_path,
+        model_path: model_path_pb.display().to_string(),
         api_key: api_key,
     };
 
@@ -704,7 +726,308 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
 }
 
 // check port availability
-#[tauri::command]
-pub fn is_port_available(port: u16) -> bool {
+fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+#[tauri::command]
+pub async fn get_random_port(state: State<'_, AppState>) -> Result<u16, String> {
+    const MAX_ATTEMPTS: u32 = 20000;
+    let mut attempts = 0;
+    let mut rng = StdRng::from_entropy();
+
+    // Get all active ports from sessions
+    let map = state.llama_server_process.lock().await;
+
+    let used_ports: HashSet<u16> = map
+        .values()
+        .filter_map(|session| {
+            // Convert valid ports to u16 (filter out placeholder ports like -1)
+            if session.info.port > 0 && session.info.port <= u16::MAX as i32 {
+                Some(session.info.port as u16)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    drop(map); // unlock early
+
+    while attempts < MAX_ATTEMPTS {
+        let port = rng.gen_range(3000..4000);
+
+        if used_ports.contains(&port) {
+            attempts += 1;
+            continue;
+        }
+
+        if is_port_available(port) {
+            return Ok(port);
+        }
+
+        attempts += 1;
+    }
+
+    Err("Failed to find an available port for the model to load".into())
+}
+
+// find session
+#[tauri::command]
+pub async fn find_session_by_model(
+    model_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<SessionInfo>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let session_info = map
+        .values()
+        .find(|backend_session| backend_session.info.model_id == model_id)
+        .map(|backend_session| backend_session.info.clone());
+
+    Ok(session_info)
+}
+
+// get running models
+#[tauri::command]
+pub async fn get_loaded_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let model_ids = map
+        .values()
+        .map(|backend_session| backend_session.info.model_id.clone())
+        .collect();
+
+    Ok(model_ids)
+}
+
+// tests
+//
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    #[cfg(windows)]
+    use tempfile;
+
+    #[test]
+    fn test_parse_multiple_devices() {
+        let output = r#"ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 3090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 0 | warp size: 32 | shared memory: 49152 | int dot: 0 | matrix cores: KHR_coopmat
+ggml_vulkan: 1 = AMD Radeon Graphics (RADV GFX1151) (radv) | uma: 1 | fp16: 1 | bf16: 0 | warp size: 64 | shared memory: 65536 | int dot: 0 | matrix cores: KHR_coopmat
+Available devices:
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)
+"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+
+        // Check first device
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 3090");
+        assert_eq!(devices[0].mem, 24576);
+        assert_eq!(devices[0].free, 24576);
+
+        // Check second device
+        assert_eq!(devices[1].id, "Vulkan1");
+        assert_eq!(devices[1].name, "AMD Radeon Graphics (RADV GFX1151)");
+        assert_eq!(devices[1].mem, 87722);
+        assert_eq!(devices[1].free, 87722);
+    }
+
+    #[test]
+    fn test_parse_single_device() {
+        let output = r#"Available devices:
+CUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "CUDA0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 4090");
+        assert_eq!(devices[0].mem, 24576);
+        assert_eq!(devices[0].free, 24000);
+    }
+
+    #[test]
+    fn test_parse_with_extra_whitespace_and_empty_lines() {
+        let output = r#"
+Available devices:
+
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)
+
+"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[1].id, "Vulkan1");
+    }
+
+    #[test]
+    fn test_parse_different_backends() {
+        let output = r#"Available devices:
+CUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+SYCL0: Intel(R) Arc(TM) A750 Graphics (8000 MiB, 7721 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 3);
+
+        assert_eq!(devices[0].id, "CUDA0");
+        assert_eq!(devices[0].name, "NVIDIA GeForce RTX 4090");
+
+        assert_eq!(devices[1].id, "Vulkan0");
+        assert_eq!(devices[1].name, "NVIDIA GeForce RTX 3090");
+
+        assert_eq!(devices[2].id, "SYCL0");
+        assert_eq!(devices[2].name, "Intel(R) Arc(TM) A750 Graphics");
+        assert_eq!(devices[2].mem, 8000);
+        assert_eq!(devices[2].free, 7721);
+    }
+
+    #[test]
+    fn test_parse_complex_gpu_names() {
+        let output = r#"Available devices:
+Vulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)
+Vulkan1: AMD Radeon RX 7900 XTX (Navi 31) [RDNA 3] (24576 MiB, 24000 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        assert_eq!(devices.len(), 2);
+
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[0].name, "Intel(R) Arc(tm) A750 Graphics (DG2)");
+        assert_eq!(devices[0].mem, 8128);
+        assert_eq!(devices[0].free, 8128);
+
+        assert_eq!(devices[1].id, "Vulkan1");
+        assert_eq!(devices[1].name, "AMD Radeon RX 7900 XTX (Navi 31) [RDNA 3]");
+        assert_eq!(devices[1].mem, 24576);
+        assert_eq!(devices[1].free, 24000);
+    }
+
+    #[test]
+    fn test_parse_no_devices() {
+        let output = r#"Available devices:"#;
+
+        let devices = parse_device_output(output).unwrap();
+        assert_eq!(devices.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_missing_header() {
+        let output = r#"Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)"#;
+
+        let result = parse_device_output(output);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Could not find 'Available devices:' section"));
+    }
+
+    #[test]
+    fn test_parse_malformed_device_line() {
+        let output = r#"Available devices:
+Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)
+Invalid line without colon
+Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
+
+        let devices = parse_device_output(output).unwrap();
+
+        // Should skip the malformed line and parse the valid ones
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[1].id, "Vulkan1");
+    }
+
+    #[test]
+    fn test_parse_device_line_individual() {
+        // Test the individual line parser
+        let line = "Vulkan0: NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)";
+        let device = parse_device_line(line).unwrap().unwrap();
+
+        assert_eq!(device.id, "Vulkan0");
+        assert_eq!(device.name, "NVIDIA GeForce RTX 3090");
+        assert_eq!(device.mem, 24576);
+        assert_eq!(device.free, 24576);
+    }
+
+    #[test]
+    fn test_memory_pattern_detection() {
+        assert!(is_memory_pattern("24576 MiB, 24576 MiB free"));
+        assert!(is_memory_pattern("8000 MiB, 7721 MiB free"));
+        assert!(!is_memory_pattern("just some text"));
+        assert!(!is_memory_pattern("24576 MiB"));
+        assert!(!is_memory_pattern("24576, 24576"));
+    }
+
+    #[test]
+    fn test_parse_memory_value() {
+        assert_eq!(parse_memory_value("24576 MiB").unwrap(), 24576);
+        assert_eq!(parse_memory_value("7721 MiB free").unwrap(), 7721);
+        assert_eq!(parse_memory_value("8000").unwrap(), 8000);
+
+        assert!(parse_memory_value("").is_err());
+        assert!(parse_memory_value("not_a_number MiB").is_err());
+    }
+
+    #[test]
+    fn test_find_memory_pattern() {
+        let text = "NVIDIA GeForce RTX 3090 (24576 MiB, 24576 MiB free)";
+        let result = find_memory_pattern(text);
+        assert!(result.is_some());
+        let (_start, content) = result.unwrap();
+        assert_eq!(content, "24576 MiB, 24576 MiB free");
+
+        // Test with multiple parentheses
+        let text = "Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)";
+        let result = find_memory_pattern(text);
+        assert!(result.is_some());
+        let (_start, content) = result.unwrap();
+        assert_eq!(content, "8128 MiB, 8128 MiB free");
+    }
+    #[test]
+    fn test_path_with_uncommon_dir_names() {
+        const UNCOMMON_DIR_NAME: &str = "тест-你好-éàç-🚀";
+        #[cfg(windows)]
+        {
+            let dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let long_path = dir.path().join(UNCOMMON_DIR_NAME);
+            std::fs::create_dir(&long_path)
+                .expect("Failed to create test directory with non-ASCII name");
+            let short_path = get_short_path(&long_path);
+            assert!(
+                short_path.is_ascii(),
+                "The resulting short path must be composed of only ASCII characters. Got: {}",
+                short_path
+            );
+            assert!(
+                PathBuf::from(&short_path).exists(),
+                "The returned short path must exist on the filesystem"
+            );
+            assert_ne!(
+                short_path,
+                long_path.to_str().unwrap(),
+                "Short path should not be the same as the long path"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            // On Unix, paths are typically UTF-8 and there's no "short path" concept.
+            let long_path_str = format!("/tmp/{}", UNCOMMON_DIR_NAME);
+            let path_buf = PathBuf::from(&long_path_str);
+            let displayed_path = path_buf.display().to_string();
+            assert_eq!(
+                displayed_path, long_path_str,
+                "Path with non-ASCII characters should be preserved exactly on non-Windows platforms"
+            );
+        }
+    }
 }

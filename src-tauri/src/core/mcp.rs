@@ -10,7 +10,11 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use super::{cmd::get_jan_data_folder_path, state::AppState};
+use super::{
+    cmd::get_jan_data_folder_path, 
+    state::AppState,
+    utils::can_override_npx,
+};
 
 const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {
@@ -512,8 +516,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
     let mut cmd = Command::new(command.clone());
-    
-    if command == "npx" {
+
+    if command == "npx" && can_override_npx() {
         let mut cache_dir = app_path.clone();
         cache_dir.push(".npx");
         let bun_x_path = format!("{}/bun", bin_path.display());

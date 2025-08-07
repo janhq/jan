@@ -36,7 +36,10 @@ export default function OutOfContextPromiseModal() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleDialogOpen}>
-      <DialogContent>
+      <DialogContent
+        showCloseButton={false}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{t('model-errors:title')}</DialogTitle>
         </DialogHeader>
@@ -57,7 +60,7 @@ export default function OutOfContextPromiseModal() {
             {t('model-errors:truncateInput')}
           </Button>
           <Button
-            asChild
+            autoFocus
             onClick={() => {
               handleContextLength()
             }}

@@ -6,9 +6,11 @@
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",
-      "options": []
+      "options": [],
+      "recommended": ""
     }
   },
+
   {
     "key": "auto_update_engine",
     "title": "Auto update engine",
@@ -22,18 +24,6 @@
     "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
     "controllerType": "checkbox",
     "controllerProps": { "value": true }
-  },
-  {
-    "key": "chat_template",
-    "title": "Custom Jinja Chat template",
-    "description": "Custom Jinja chat_template to be used for the model",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)",
-      "type": "text",
-      "textAlign": "right"
-    }
   },
   {
     "key": "threads",

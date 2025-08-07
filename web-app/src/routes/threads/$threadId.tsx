@@ -4,8 +4,7 @@ import { UIEventHandler } from 'react'
 import debounce from 'lodash.debounce'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
-import { ArrowDown } from 'lucide-react'
-import { Play } from 'lucide-react'
+import { ArrowDown, Play } from 'lucide-react'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -328,7 +327,7 @@ function ThreadDetail() {
           >
             {showScrollToBottomBtn && (
               <div
-                className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
+                className="bg-main-view-fg/10 px-2 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
                 onClick={() => {
                   scrollToBottom(true)
                   setIsUserScrolling(false)
@@ -340,7 +339,7 @@ function ThreadDetail() {
             )}
             {showGenerateAIResponseBtn && (
               <div
-                className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
+                className="mx-2 bg-main-view-fg/10 px-2 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
                 onClick={generateAIResponse}
               >
                 <p className="text-xs">{t('common:generateAiResponse')}</p>

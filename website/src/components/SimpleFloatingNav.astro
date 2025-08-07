@@ -1,0 +1,200 @@
+---
+export interface Props {
+  currentPage?: string;
+}
+
+const { currentPage = 'products' } = Astro.props;
+---
+
+<nav class="floating-nav">
+  <div class="nav-container">
+    <a href="/" class="nav-logo">👋 Jan</a>
+    <div class="nav-links">
+      <a href="/" class={currentPage === 'home' ? 'active' : ''}>Home</a>
+      <a href="/products" class={currentPage === 'docs' ? 'active' : ''}>Docs</a>
+      <a href="/prods" class={currentPage === 'products' ? 'active' : ''}>Products</a>
+    </div>
+    <button class="dark-mode-toggle" aria-label="Toggle dark mode">
+      <span class="toggle-icon sun">☀</span>
+      <span class="toggle-icon moon">☾</span>
+    </button>
+  </div>
+</nav>
+
+<style>
+  .floating-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    z-index: 1000;
+    padding: 1rem 0;
+  }
+
+  .nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .nav-logo {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #000;
+    text-decoration: none;
+  }
+
+  .nav-logo:hover {
+    color: #333;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .nav-links a {
+    color: #000;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .nav-links a:hover {
+    color: #0066cc;
+  }
+
+  .nav-links a.active {
+    color: #0066cc;
+    border-bottom: 2px solid #0066cc;
+    padding-bottom: 2px;
+  }
+
+  @media (max-width: 768px) {
+    .nav-container {
+      padding: 0 1rem;
+    }
+
+    .nav-links {
+      gap: 1rem;
+    }
+
+    .nav-links a {
+      font-size: 0.9rem;
+    }
+  }
+
+  /* Dark mode toggle button */
+  .dark-mode-toggle {
+    background: none;
+    border: 1px solid #000;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+  }
+
+  .dark-mode-toggle:hover {
+    background: #f0f0f0;
+  }
+
+  .toggle-icon {
+    position: absolute;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .toggle-icon.sun {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+
+  .toggle-icon.moon {
+    opacity: 0;
+    transform: rotate(-180deg);
+  }
+
+  /* Dark mode active state */
+  html[data-theme="dark"] .toggle-icon.sun {
+    opacity: 0;
+    transform: rotate(180deg);
+  }
+
+  html[data-theme="dark"] .toggle-icon.moon {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+
+  html[data-theme="dark"] .dark-mode-toggle {
+    border-color: #fff;
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .dark-mode-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Dark mode nav styles */
+  html[data-theme="dark"] .floating-nav {
+    background: #1a1a1a;
+    border-bottom-color: #333;
+  }
+
+  html[data-theme="dark"] .nav-logo {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .nav-logo:hover {
+    color: #ccc;
+  }
+
+  html[data-theme="dark"] .nav-links a {
+    color: #fff;
+  }
+
+  html[data-theme="dark"] .nav-links a:hover {
+    color: #4a9eff;
+  }
+
+  html[data-theme="dark"] .nav-links a.active {
+    color: #4a9eff;
+    border-bottom-color: #4a9eff;
+  }
+
+  @media (max-width: 768px) {
+    .dark-mode-toggle {
+      width: 36px;
+      height: 36px;
+      font-size: 1rem;
+    }
+  }
+</style>
+
+<script>
+  // Dark mode toggle functionality
+  const toggleButton = document.querySelector('.dark-mode-toggle');
+  const html = document.documentElement;
+
+  // Check for saved theme preference or default to light
+  const currentTheme = localStorage.getItem('theme') || 'light';
+  html.setAttribute('data-theme', currentTheme);
+
+  toggleButton?.addEventListener('click', () => {
+    const currentTheme = html.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    html.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+  });
+</script>

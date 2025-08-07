@@ -257,6 +257,10 @@
     "downloadCancelled": {
       "title": "Download Cancelled",
       "description": "The download process was cancelled"
+    },
+    "downloadFailed": {
+      "title": "Download Failed",
+      "description": "{{item}} download failed"
     }
   }
 }

@@ -38,5 +38,6 @@ export default defineConfig({
     VERSION: JSON.stringify('test'),
     POSTHOG_KEY: JSON.stringify(''),
     POSTHOG_HOST: JSON.stringify(''),
+    AUTO_UPDATER_DISABLED: JSON.stringify('false'),
   },
 })

@@ -1,0 +1,577 @@
+/* ProductsArchitecture Component Styles */
+
+.architecture-section {
+  background: var(--light-gray);
+  border-top: 1px solid var(--border-color);
+}
+
+.architecture-section .badge-robot-head {
+  background: var(--pastel-blue);
+}
+
+/* Architecture Stack */
+.architecture-stack {
+  margin: 4rem 0;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  position: relative;
+}
+
+.stack-layer {
+  background: white;
+  border-radius: 20px;
+  border: 3px solid var(--border-color);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.stack-layer:hover {
+  transform: translateX(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.tools-layer {
+  border-color: var(--gentle-orange);
+  border-left-width: 8px;
+}
+
+.models-layer {
+  border-color: var(--soft-green);
+  border-left-width: 8px;
+}
+
+.platforms-layer {
+  border-color: var(--primary-blue);
+  border-left-width: 8px;
+  margin-bottom: 0;
+}
+
+.layer-number {
+  position: absolute;
+  top: -15px;
+  left: 2rem;
+  width: 30px;
+  height: 30px;
+  background: var(--primary-blue);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  border: 3px solid white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.layer-robot {
+  flex-shrink: 0;
+}
+
+/* Robot Designs */
+.tools-robot,
+.models-robot,
+.platforms-robot {
+  position: relative;
+}
+
+.tools-robot .robot-head,
+.models-robot .robot-head,
+.platforms-robot .robot-head {
+  width: 60px;
+  height: 60px;
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto 10px;
+  position: relative;
+}
+
+.tools-robot .robot-body,
+.models-robot .robot-body,
+.platforms-robot .robot-body {
+  width: 70px;
+  height: 80px;
+  border-radius: 15px;
+  border: 3px solid var(--dark-text);
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tools-robot .robot-head,
+.tools-robot .robot-body {
+  background: var(--gentle-orange);
+}
+
+.models-robot .robot-head,
+.models-robot .robot-body {
+  background: var(--soft-green);
+}
+
+.platforms-robot .robot-head,
+.platforms-robot .robot-body {
+  background: var(--pastel-blue);
+}
+
+.robot-eyes {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 8px;
+}
+
+.robot-eye {
+  width: 12px;
+  height: 12px;
+  background: var(--dark-text);
+  border-radius: 50%;
+  position: relative;
+}
+
+.robot-eye::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 3px;
+  height: 3px;
+  background: white;
+  border-radius: 50%;
+}
+
+.robot-eye.thinking {
+  animation: thinking 3s infinite ease-in-out;
+}
+
+.robot-smile {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 15px;
+  height: 8px;
+  border: 3px solid var(--dark-text);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+}
+
+.robot-smile {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 15px;
+  height: 8px;
+  border: 3px solid var(--dark-text);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+}
+
+/* Robot-specific details */
+.robot-base {
+  margin-top: 5px;
+}
+
+.base-foundation {
+  width: 50px;
+  height: 8px;
+  background: var(--medium-gray);
+  border-radius: 4px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto;
+}
+
+.layer-content {
+  flex: 1;
+}
+
+.layer-content h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 0.75rem;
+}
+
+.layer-content p {
+  color: var(--medium-gray);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.layer-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.feature-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--dark-text);
+}
+
+.feature-item.active .feature-status {
+  background: var(--success-green);
+  animation: pulse 2s infinite;
+}
+
+.feature-item.beta .feature-status {
+  background: var(--warning-amber);
+  animation: pulse 2s infinite;
+}
+
+.feature-item.coming .feature-status {
+  background: var(--medium-gray);
+}
+
+/* Connection Lines */
+.layer-connection {
+  position: absolute;
+  bottom: -2rem;
+  left: 50%;
+  width: 4px;
+  height: 2rem;
+  background-color: var(--border-color);
+  z-index: -1;
+}
+
+.platforms-layer .layer-connection {
+  display: none;
+}
+
+.data-flow {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  right: -4px;
+  height: 100%;
+}
+
+.flow-packet {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--primary-blue);
+  border-radius: 50%;
+  animation: flowData 3s infinite linear;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.flow-packet:nth-child(2) {
+  animation-delay: 1s;
+}
+.flow-packet:nth-child(3) {
+  animation-delay: 2s;
+}
+
+/* Architecture Benefits */
+.architecture-benefits {
+  margin: 4rem 0;
+}
+
+.architecture-benefits h3 {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 2rem;
+}
+
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.benefit-card {
+  background: white;
+  border-radius: 16px;
+  border: 2px solid var(--border-color);
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.benefit-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  border-color: var(--primary-blue);
+}
+
+.benefit-robot {
+  margin-bottom: 1rem;
+}
+
+.benefit-robot .robot-head {
+  width: 40px;
+  height: 40px;
+  background: var(--warm-yellow);
+  border-radius: 10px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto 6px;
+  position: relative;
+}
+
+.benefit-robot .robot-body {
+  width: 50px;
+  height: 60px;
+  background: var(--gentle-orange);
+  border-radius: 10px;
+  border: 2px solid var(--dark-text);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.benefit-card h4 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 1rem;
+}
+
+.benefit-card p {
+  color: var(--medium-gray);
+  line-height: 1.6;
+}
+
+/* Interactive Demo */
+.architecture-demo {
+  margin: 4rem 0;
+  background: white;
+  border-radius: 20px;
+  border: 2px solid var(--border-color);
+  padding: 3rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.architecture-demo h3 {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dark-text);
+  margin-bottom: 2rem;
+}
+
+.demo-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.scenario-title {
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--primary-blue);
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: var(--light-blue);
+  border-radius: 10px;
+  border: 2px solid var(--primary-blue);
+}
+
+.demo-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.flow-step {
+  background: var(--cream-white);
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  padding: 1.5rem;
+  text-align: center;
+  max-width: 200px;
+  transition: all 0.3s ease;
+}
+
+.flow-step:hover {
+  border-color: var(--primary-blue);
+  transform: scale(1.05);
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  background: var(--primary-blue);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  margin: 0 auto 1rem;
+}
+
+.step-content {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.step-content strong {
+  color: var(--primary-blue);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.flow-arrow {
+  width: 30px;
+  height: 2px;
+  background: var(--primary-blue);
+  position: relative;
+}
+
+.flow-arrow::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 8px solid var(--primary-blue);
+}
+
+/* Animations */
+@keyframes thinking {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.8);
+  }
+}
+
+@keyframes flowData {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .stack-layer {
+    flex-direction: column;
+    text-align: center;
+    gap: 1.5rem;
+  }
+
+  .layer-connection {
+    display: none;
+  }
+
+  .benefits-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .architecture-stack {
+    margin: 3rem 0;
+  }
+
+  .stack-layer {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .layer-content h3 {
+    font-size: 1.3rem;
+  }
+
+  .demo-flow {
+    flex-direction: column;
+  }
+
+  .flow-arrow {
+    transform: rotate(90deg);
+  }
+
+  .architecture-demo {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stack-layer {
+    padding: 1.25rem;
+  }
+
+  .benefits-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .benefit-card {
+    padding: 1.5rem;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .robot-eye,
+  .flow-packet,
+  .feature-status,
+  .stack-layer,
+  .benefit-card,
+  .flow-step {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .stack-layer,
+  .benefit-card,
+  .architecture-demo {
+    border-width: 3px;
+  }
+}
