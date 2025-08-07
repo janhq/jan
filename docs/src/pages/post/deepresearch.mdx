@@ -18,105 +18,88 @@ import CTABlog from '@/components/Blog/CTA'
 
 # Replicating Deep Research in Jan
 
-Ever wondered how OpenAI’s Deep Research works? Since the release of Deep Research in February 2025, it has been lauded as a tool that is able to “output thorough research”. 
+What exactly is deep research and how does it work? OpenAI's Deep Research, released in February 2025, generates comprehensive research reports by combining systematic searching with automated synthesis. The process breaks down into two core components:
 
 There are two core features of Deep Research: 
 
-- Exhaustive searching: all major model providers that offer deep research as a service (proceed to list) would search from a variety of sources. This can be broken down (largely) into two forms of search: **breadth-first search** and **depth-first search**. There will be more of this later!
-- Report generation: most major model providers will provide an exhaustive, lengthy report at the end of completing the deep research task. For instance, OpenAI gives users the ability to export this to a PDF, while Kimi would also provide an interactive HTML webpage in their UI for easier visualization.
+- **Exhaustive search**: All major model providers that offer deep research as a service search from a variety of sources. This can be broken down (largely) into two forms of search: **breadth-first search** and **depth-first search**. There will be more of this later.
+- **Report generation**: Most major model providers generate comprehensive reports at the end of the research process. For instance, OpenAI gives users the ability to export its research output as a PDF, while Kimi provides an interactive HTML webpage in their UI for easier visualization.
 
 ## Unpacking Deep Research
-While the outputs of deep research might be mind blowing at first glance, it is possible to reverse engineer the process through which such a comprehensive output is generated! OpenAI’s [Deep Research API cookbook](https://cookbook.openai.com/examples/deep_research_api/introduction_to_deep_research_api) gives us some insight into the flow that they adopt:
+While the outputs of deep research might be mind-blowing at first glance, the underlying process is surprisingly systematic. The crux of Deep Research lies in the **base model** and **its capabilities to use tools that are provided to it**. 
+ OpenAI’s [Deep Research API cookbook](https://cookbook.openai.com/examples/deep_research_api/introduction_to_deep_research_api) reveals the step-by-step flow they use:
 ![OpenAI's Deep Research UX Flow](./_assets/openai-deep-research-flow.png)
 
-Deep Research, at a high level, is essentially a pipeline / tool chain through which a user would go through. The inner workings of this pipeline might vary from provider to provider, but we’ve done up a table for you to compare the results below. 
-
-At a high level, the pipeline would look something like this: 
+Deep Research operates as a structured pipeline with distinct phases: planning, searching, analysis, and synthesis. While the specific implementation varies between providers, the core workflow remains consistent. For example, a straightforward pipeline might look like this: 
 ![Deep Research Flow Excalidraw](./_assets/deepresearch-flow.png)
-The crux of Deep Research lies in the pipeline’s ability to output a substantiated report which has cited information from a variety of sources. 
 
 <Callout type="info">
 **Different Flows for Different Providers**
 
-Note that not all Deep Research flows are the same as what's shown in the above diagram, only OpenAI and Kimi does this currently! Most providers would adopt a simpler approach, as shown below in the comparison table.
+Note that not all Deep Research flows are the same as what's shown in the above diagram, only OpenAI and Kimi do this currently. Most providers would adopt a simpler approach, as shown below in the comparison table.
 </Callout>
+| Platform | Key Feature | Sources Used | Duration (mins) | Export Options | Deep Research Usage |
+| --- | --- | --- | --- | --- | --- |
+| OpenAI | Clarification questions | 10–30 | 10–15 | PDF, Docx | Paid |
+| Grok's DeeperSearch | Survey notes | 70–100 | 5–10 | Ability to specify format (PDF / Markdown) | Free |
+| Claude | Breadth + depth search | 100+ | 5–10 | PDF, Markdown, Artifact | Paid |
+| Gemini | Editable planning | 50+ | 10–20 | Google Docs export | Free |
+| Perplexity | Speed options | 50–100 | 3–5 | PDF, Markdown, Docx, Perplexity Page | Paid |
+| Kimi | Interactive synthesis | 50–100 | 30–60+ | PDF, Interactive website | Free |
 
-| Platform | Pipeline Flow | Planning Approach | Sources Used | Duration (mins)  | Export Options | Unique Features | Deep Research Usage |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| OpenAI | Original prompt → clarification (smaller model) → user answers → rewriter bundles prompts → specific model → output | Chain of thought (COT), no explicit planning | 10–30 | 10–15 | PDF, Markdown with inline references | Clarification questions, lightweight rewriter model | Paid |
-| Grok’s DeeperSearch  | Planning → research execution → output with survey notes | Planning phase before research | 70–100 | 5–10  | Not specified | Heavy Twitter/X source integration, "Survey Note" reasoning | Free |
-| Claude | Research plan → breadth-first search → depth-first search | Research plan generated, multiple subagents for complex queries | 100+ | 5–10  | Artifact format | Breadth-first then depth-first approach, metadata extraction | Paid |
-| Gemini | Original prompt → editable research plan → execution | Editable research plan (user can modify) | 50+ | 10–20  | Google Docs export | Editable planning phase, newer pipeline | Free |
-| Perplexity | Research plan → execution with speed options | Research plan crafted and followed | 50–100 | 3–5  | Not specified | "Answer now" option for quick results | Paid |
-| Kimi | Query → clarifying questions → planning → research → synthesis | Explicit planning with clear phase transitions | 50–100 | 30–60+ (slower inference)  | PDF, Interactive website | Distinction between "search" vs "browser use", interactive output | Free |
+The following prompt was passed to the above Deep Research providers:
+
+`Generate a comprehensive report about the state of AI in the past week. Include all new model releases and notable architectural improvements from a variety of sources.`
+
+Google's generated report was the most verbose, with a whopping 23 pages that reads like a professional intelligence briefing. It opens with an executive summary, systematically categorizes developments, and provides forward-looking strategic insights—connecting OpenAI's open-weight release to broader democratization trends and linking infrastructure investments to competitive positioning.
+
+OpenAI produced the most citation-heavy output with 134 references throughout 10 pages (albeit most of them being from the same source).
+
+Perplexity delivered the most actionable 6-page report that maximizes information density while maintaining scannability. Despite being the shortest, it captures all major developments with sufficient context for decision-making.
+
+Claude produced a comprehensive analysis that interestingly ignored the time constraint, covering an 8-month period from January-August 2025 instead of the requested week (Jul 31-Aug 7th 2025). Rather than cataloging recent events, Claude traced the evolution of trends over months.
+
+Grok produced a well-structured but relatively shallow 5-page academic-style report that read more like an event catalog than strategic analysis.
+
+Interestingly, OpenAI and Kimi—both of which require answers to their clarification questions —demonstrate the process paradox. Despite requiring user interactions before generating reports, the additional friction might not necessarily translate to quantitatively superior outputs.
+
+-----------
 
 ### Understanding Search Strategies
 
-In general, when looking at the number of sources that are used, we can classify whether a search is *breadth first* or *depth first*. 
-
-*Breadth first* searches would result in a greater number of sources that are used, which might be better for a brief survey over a landscape for instance. 
-
-*Depth first* searches would entail diving deeper into a few particular sources (or have multiple search variations between a particular context), which might be better for extracting nuanced insight. 
-
-<Callout>
-In Claude’s Deep Research, a *classifier* is used to determine whether a user query is *breadth first* or *depth first*. This results in a customization of the pipeline that is used for conducting research. For instance, a complex *breadth first* query might result in *sub-agents* being spun up to research various parts of the research query in parallel. 
-</Callout>
+In [Claude’s Deep Research](https://www.anthropic.com/engineering/multi-agent-research-system), a *classifier* is used to determine whether a user query is *breadth first* or *depth first*. This results in a customization of the pipeline that is used for conducting research. For instance, a complex *breadth first* query might result in *sub-agents* being spun up to research various parts of the research query in parallel. 
+Here's a screenshot of this in action (in Claude Desktop):
+![Claude Agent Desktop](./_assets/claude-agent.png)
+![Claude Report Visualizer](./_assets/claude-report-visualizer.png)
 
 ## Replicating Deep Research Results with Jan
-Given this overview, how would we replicate this in Jan? 
-
-We’ll make use of features that are available to us in order to customize the model output such that it gets as close to a Deep Research output without having to spend a cent, and having full control over your data!
+Given this overview, how could we replicate this in Jan? We'll use Jan's features to build a free alternative while keeping your data local.
 
 <Callout>
-This is using the latest version of Jan (v0.6.6!) The features in this guide require at least 0.6.3 but for the best experience please use 0.6.6!
+This is using the latest version of Jan v0.6.6. The features in this guide require at least 0.6.3 but for the best experience please use 0.6.6.
 </Callout>
 
-### Setting up a Purpose Built Model for Deep Research with Jan
-1. Under `Hub`, go to `Jan-Nano-128k-Gguf` and enable `Show variants`. Download the largest model that your computer can run! Jan-nano is a 4B model, so even with the largest quantization it should be able to run on your hardware comfortably. 
-![Navigate to Jan-Nano-128k](./_assets/jan-nano-hub.png)
+**The Key: Assistants + Tools**
 
-### Enabling Search through MCP
-2. Once the model has been downloaded, it should appear under the `llama.cpp` provider.
-3. Go to `Settings` > `General` and click on the toggle button next to `Experimental Features`. `MCP Servers` should then appear on the side bar. 
-![Enable MCP in Jan](./_assets/experimental-settings-jan.png)
-4. Upon clicking on `MCP Servers`, click on the toggle beside `Allow All Tool Permissions` as well as the toggle beside `Serper`. Feel free to look through [this guide in our documentation](https://jan.ai/docs/mcp-examples/search/exa) if you would like to play around with different providers.
-5. Click on the pencil (edit) button on `Serper` and navigate to [Serper login](https://serper.dev/login) to retrieve your Serper API key. Ensure that that is loaded under `Environment Variables` as shown below. 
-![Edit MCP Settings in Jan](./_assets/edit-mcp-settings.gif)
-6. Upon inputting that, the following should appear on the top right hand of the screen. 
-![Successful Serper Init](./_assets/successful-serper.png)
-7. Ensure that the downloaded model has access to tools by navigating to the following: `Settings` > `Model Providers` > Clicking on the `Pencil` icon and toggling `Tools` on!
-![Enable Tools gif](./_assets/enable-tools-local.gif)
+Jan's functionality comes from combining [custom assistants](https://jan.ai/docs/assistants) with [MCP search tools](https://jan.ai/docs/mcp-examples/search/exa). This pairing allows any model—local or cloud—to follow systematic research workflows, creating our own version of deep research functionality.
 
-### Customizing Assistants
-8. Great! Now that you have search set up, let’s [configure assistants](https://jan.ai/docs/assistants) to ensure that you make the most out of the model. Here’s the prompt that we used for our assistant “Report Writer”:
-```
-Report Writing Instructions
-You are a research analyst. Follow this exact process:
-MANDATORY RESEARCH PHASE (Do this first)
+**What We Tested**
 
-Conduct 5-10 searches maximum - then STOP searching and write the report
-Each search query must be unique - no repeating previous searches
-Search different angles: statistics, expert opinions, case studies, recent news, industry reports
-Use web_fetch to read full articles from search results
+We created a research workflow using both [Jan-Nano (4B local model)](https://jan.ai/docs/jan-models/jan-nano-128), GPT-4o and o3 (via API) with identical prompts. The goal: see how close we could get to commercial Deep Research quality.
 
-WRITING PHASE (Do this after research is complete)
-Write a comprehensive report with:
+**Performance Findings**
 
-Executive summary with key findings
-Evidence-based analysis with citations for every claim
-Actionable recommendations with rationale
+| Model | Processing Time | Sources Found | Output Quality vs Commercial Deep Research |
+|-------|----------------|---------------|-------------------------------------------|
+| Jan-Nano (Local) | 3 minutes | Moderate | Good approximation, noticeably less depth |
+| GPT-4o | 1 minute | Fewest | Fast but limited source coverage |
+| o3 | 3 minutes | Most | Best of the three, but still below commercial quality |
 
-CRITICAL: After 10 searches, immediately stop searching and write the report. Do not continue searching beyond 10 calls.
-```
+**The Reality**:
+- **Speed vs Sources**: GPT-4o prioritized speed over thoroughness, while o3 took time to gather more comprehensive sources
+- **Local vs Cloud**: Jan-Nano matched o3's processing time but with the advantage of complete data privacy
+- **Quality Gap**: All three models produced decent research reports, but none matched the depth and comprehensiveness of dedicated Deep Research tools like OpenAI's or Claude's offerings
+- **Good Enough Factor**: While not matching commercial quality, the outputs were solid approximations suitable for many research needs
 
-## Piecing it All Together
-The final result should look something like this! And voilà, you would have replicated the Deep Research flow on Jan!
-![Research Result Local](./_assets/research-result-local.png)
-
-## Need help?
-
-<Callout type="info">
-[Join our Discord community](https://discord.gg/Exe46xPMbK) for support and tips on using Jan as your offline ChatGPT alternative.
-</Callout>
 
 <CTABlog />
