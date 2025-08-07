@@ -41,6 +41,7 @@ lint: install-and-build
 test: lint
 	yarn download:bin
 	yarn test
+	cargo test
 
 # Builds and publishes the app
 build-and-publish: install-and-build

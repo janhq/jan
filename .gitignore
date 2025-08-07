@@ -1,46 +1,22 @@
-.idea
 .env
-.idea
-
-# Jan inference
 error.log
 node_modules
 *.tgz
-!charts/server/charts/*.tgz
 dist
 build
 .DS_Store
-electron/renderer
-electron/models
-electron/docs
-electron/engines
-electron/themes
-electron/playwright-report
-server/pre-install
 package-lock.json
 coverage
 *.log
 core/lib/**
-
-# Turborepo
-.turbo
-electron/test-data
-electron/test-results
-core/test_results.html
-coverage
 .yarn
 .yarnrc
-test_results.html
 *.tsbuildinfo
-electron/shared/**
+test_results.html
 
 # docs
 docs/yarn.lock
-electron/.version.bak
-src-tauri/binaries/engines/cortex.llamacpp
-src-tauri/resources/themes
 src-tauri/resources/lib
-src-tauri/Cargo.lock
 src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/gen/apple
@@ -77,3 +53,4 @@ docs/.next/
 
 # Combined output for local testing
 combined-output/
+target
