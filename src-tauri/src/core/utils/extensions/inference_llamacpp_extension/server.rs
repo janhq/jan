@@ -413,7 +413,7 @@ pub async fn load_llama_model(
     }
 
     // Wait for server to be ready or timeout
-    let timeout_duration = Duration::from_secs(180); // 5 minutes timeout
+    let timeout_duration = Duration::from_secs(180); // 3 minutes timeout
     let start_time = Instant::now();
     log::info!("Waiting for model session to be ready...");
     loop {
