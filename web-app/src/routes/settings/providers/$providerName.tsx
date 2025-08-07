@@ -211,7 +211,11 @@ function ProviderDetail() {
         })
         .catch((error) => {
           console.error('Error starting model:', error)
-          setModelLoadError(`${error.message}`)
+          if (error && typeof error === 'object' && 'message' in error) {
+            setModelLoadError(error)
+          } else {
+            setModelLoadError(`${error}`)
+          }
         })
         .finally(() => {
           // Remove model from loading state

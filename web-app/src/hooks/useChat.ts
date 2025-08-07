@@ -428,11 +428,11 @@ export const useChat = () => {
         }
       } catch (error) {
         if (!abortController.signal.aborted) {
-          const errorMessage =
-            error && typeof error === 'object' && 'message' in error
-              ? error.message
-              : error
-          setModelLoadError(`${errorMessage}`)
+          if (error && typeof error === 'object' && 'message' in error) {
+            setModelLoadError(error as ErrorObject)
+          } else {
+            setModelLoadError(`${error}`)
+          }
         }
       } finally {
         updateLoadingModel(false)
@@ -453,6 +453,7 @@ export const useChat = () => {
       setPrompt,
       selectedModel,
       currentAssistant,
+      experimentalFeatures,
       tools,
       updateLoadingModel,
       getDisabledToolsForThread,
