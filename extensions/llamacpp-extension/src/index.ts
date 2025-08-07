@@ -39,6 +39,7 @@ type LlamacppConfig = {
   auto_unload: boolean
   chat_template: string
   n_gpu_layers: number
+  override_tensor_buffer_t: string
   ctx_size: number
   threads: number
   threads_batch: number
@@ -1262,6 +1263,14 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--jinja')
     args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
+    // For overriding tensor buffer type, useful where
+    // massive MOE models can be made faster by keeping attention on the GPU
+    // and offloading the expert FFNs to the CPU.
+    // This is an expert level settings and should only be used by people
+    // who knows what they are doing.
+    // Takes a regex with matching tensor name as input
+    if (cfg.override_tensor_buffer_t)
+      args.push('--override-tensor', cfg.override_tensor_buffer_t)
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
@@ -1340,8 +1349,8 @@ export default class llamacpp_extension extends AIEngine {
 
       return sInfo
     } catch (error) {
-      logger.error('Error loading llama-server:\n', error)
-      throw new Error(`Failed to load llama-server: ${error}`)
+      logger.error('Error in load command:\n', error)
+      throw new Error(`Failed to load model:\n${error}`)
     }
   }
 
