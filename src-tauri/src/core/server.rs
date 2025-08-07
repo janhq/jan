@@ -348,7 +348,7 @@ async fn proxy_request(
                         let sessions_guard = sessions.lock().await;
 
                         if sessions_guard.is_empty() {
-                            log::warn!("Request for model '{}' but no backend servers are running.", model_id);
+                            log::warn!("Request for model '{}' but no models are running.", model_id);
                             let mut error_response = Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
                              error_response = add_cors_headers_with_host_and_origin(
                                 error_response,
@@ -356,7 +356,7 @@ async fn proxy_request(
                                 &origin_header,
                                 &config.trusted_hosts,
                             );
-                            return Ok(error_response.body(Body::from("No backend model servers are available")).unwrap());
+                            return Ok(error_response.body(Body::from("No models are available")).unwrap());
                         }
 
                         if let Some(session) = sessions_guard
@@ -366,9 +366,8 @@ async fn proxy_request(
                             target_port = Some(session.info.port);
                             session_api_key = Some(session.info.api_key.clone());
                             log::debug!(
-                                "Found session for model_id {} on port {}",
+                                "Found session for model_id {}",
                                 model_id,
-                                session.info.port
                             );
                         } else {
                             log::warn!("No running session found for model_id: {}", model_id);
@@ -382,7 +381,7 @@ async fn proxy_request(
                             );
                             return Ok(error_response
                                 .body(Body::from(format!(
-                                    "No running server found for model '{}'",
+                                    "No running session found for model '{}'",
                                     model_id
                                 )))
                                 .unwrap());
@@ -457,7 +456,7 @@ async fn proxy_request(
                 &origin_header,
                 &config.trusted_hosts,
             );
-            
+
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
         }
         _ => {
@@ -494,7 +493,7 @@ async fn proxy_request(
     let port = match target_port {
         Some(p) => p,
         None => {
-            log::error!("Internal routing error: target_port is None after successful lookup");
+            log::error!("Internal API server routing error: target is None after successful lookup");
             let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -509,7 +508,6 @@ async fn proxy_request(
     };
 
     let upstream_url = format!("http://127.0.0.1:{}{}", port, destination_path);
-    log::debug!("Proxying request to: {}", upstream_url);
 
     let mut outbound_req = client.request(method.clone(), &upstream_url);
 
@@ -587,7 +585,7 @@ async fn proxy_request(
             Ok(builder.body(body).unwrap())
         }
         Err(e) => {
-            let error_msg = format!("Proxy request to {} failed: {}", upstream_url, e);
+            let error_msg = format!("Proxy request to model failed: {}", e);
             log::error!("{}", error_msg);
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
             error_response = add_cors_headers_with_host_and_origin(
@@ -726,7 +724,7 @@ pub async fn start_server(
     });
 
     let server = Server::bind(&addr).serve(make_svc);
-    log::info!("Proxy server started on http://{}", addr);
+    log::info!("Jan API server started on http://{}", addr);
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
@@ -748,9 +746,9 @@ pub async fn stop_server(
     if let Some(handle) = handle_guard.take() {
         handle.abort();
         *handle_guard = None;
-        log::info!("Proxy server stopped");
+        log::info!("Jan API server stopped");
     } else {
-        log::debug!("No server was running");
+        log::debug!("Server was not running");
     }
 
     Ok(())
