@@ -1435,7 +1435,7 @@ export default class llamacpp_extension extends AIEngine {
           return sInfo
       } catch (e) {
           logger.error(e)
-          throw new Error(e)
+          throw new Error(String(e))
       }
   }
 
