@@ -493,7 +493,7 @@ async fn proxy_request(
     let port = match target_port {
         Some(p) => p,
         None => {
-            log::error!("Internal api server routing error: target is None after successful lookup");
+            log::error!("Internal API server routing error: target is None after successful lookup");
             let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
