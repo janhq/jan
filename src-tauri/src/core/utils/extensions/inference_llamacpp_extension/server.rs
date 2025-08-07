@@ -998,7 +998,7 @@ Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
         const UNCOMMON_DIR_NAME: &str = "тест-你好-éàç-🚀";
         #[cfg(windows)]
         {
-            let dir = tempdir().expect("Failed to create temp dir");
+            let dir = tempfile::tempdir().expect("Failed to create temp dir");
             let long_path = dir.path().join(UNCOMMON_DIR_NAME);
 
             std::fs::create_dir(&long_path)
