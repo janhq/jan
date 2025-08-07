@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -18,11 +18,47 @@ export default function LoadModelErrorDialog() {
   const { t } = useTranslation()
   const { modelLoadError, setModelLoadError } = useModelLoad()
   const [isCopying, setIsCopying] = useState(false)
+  const [isDetailExpanded, setIsDetailExpanded] = useState(true)
+
+  const getErrorDetail = (error: string | object | undefined) => {
+    if (!error || typeof error !== 'object') return null
+    if ('details' in error) {
+      return (error as { details?: string }).details
+    }
+    return null
+  }
+
+  const hasErrorDetail = (error: string | object | undefined) => {
+    return Boolean(getErrorDetail(error))
+  }
+
+  const formatErrorForCopy = (error: string | object | undefined) => {
+    if (!error) return ''
+
+    if (typeof error === 'string') return error
+
+    if (typeof error === 'object' && 'code' in error && 'message' in error) {
+      const errorObj = error as {
+        code?: string
+        message: string
+        details?: string
+      }
+      let copyText = errorObj.code
+        ? `${errorObj.code}: ${errorObj.message}`
+        : errorObj.message
+      if (errorObj.details) {
+        copyText += `\n\nDetails:\n${errorObj.details}`
+      }
+      return copyText
+    }
+
+    return JSON.stringify(error)
+  }
 
   const handleCopy = async () => {
     setIsCopying(true)
     try {
-      await navigator.clipboard.writeText(modelLoadError ?? '')
+      await navigator.clipboard.writeText(formatErrorForCopy(modelLoadError))
       toast.success('Copy successful', {
         id: 'copy-model',
         description: 'Model load error information copied to clipboard',
@@ -58,17 +94,59 @@ export default function LoadModelErrorDialog() {
           </div>
         </DialogHeader>
 
-        <div className="bg-main-view-fg/8 p-2 border border-main-view-fg/5 rounded-lg">
-          <p
-            className="text-sm text-main-view-fg/70 leading-relaxed max-h-[200px] overflow-y-auto break-all"
-            ref={(el) => {
-              if (el) {
-                el.scrollTop = el.scrollHeight
-              }
-            }}
-          >
-            {modelLoadError}
-          </p>
+        <div className="bg-main-view-fg/2 p-2 border border-main-view-fg/5 rounded-lg space-y-2">
+          {typeof modelLoadError === 'object' &&
+          modelLoadError &&
+          'code' in modelLoadError &&
+          'message' in modelLoadError ? (
+            <div>
+              {(modelLoadError as { code?: string }).code && (
+                <div>
+                  <p className="text-sm text-main-view-fg/80 leading-relaxed break-all">
+                    {(modelLoadError as { code: string }).code}
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="text-sm text-main-view-fg/60 leading-relaxed break-all">
+                  {(modelLoadError as { message: string }).message}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-main-view-fg/70 leading-relaxed break-all">
+              {String(modelLoadError)}
+            </p>
+          )}
+
+          {hasErrorDetail(modelLoadError) && (
+            <div>
+              <button
+                onClick={() => setIsDetailExpanded(!isDetailExpanded)}
+                className="flex items-center gap-1 text-sm text-main-view-fg/60 hover:text-main-view-fg/80 transition-colors cursor-pointer"
+              >
+                {isDetailExpanded ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                Details
+              </button>
+
+              {isDetailExpanded && (
+                <div
+                  className="mt-2 text-sm text-main-view-fg/70 leading-relaxed max-h-[150px] overflow-y-auto break-all bg-main-view-fg/10 p-2 rounded border border-main-view-fg/5"
+                  ref={(el) => {
+                    if (el) {
+                      el.scrollTop = el.scrollHeight
+                    }
+                  }}
+                >
+                  {getErrorDetail(modelLoadError)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-right">
