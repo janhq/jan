@@ -1,7 +1,8 @@
 // @ts-check
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import starlightThemeRapide from 'starlight-theme-rapide'
+import starlightThemeNext from 'starlight-theme-next'
+// import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
 import mermaid from 'astro-mermaid'
 
@@ -19,7 +20,8 @@ export default defineConfig({
       title: '👋 Jan',
       favicon: 'jan2.png',
       plugins: [
-        starlightThemeRapide(),
+        // starlightThemeRapide(),
+        starlightThemeNext(),
         starlightSidebarTopics(
           [
             {
@@ -144,14 +146,14 @@ export default defineConfig({
             {
               label: 'Jan Mobile',
               link: '/mobile/',
-              badge: { text: 'Coming Soon', variant: 'caution' },
+              badge: { text: 'Soon', variant: 'caution' },
               icon: 'phone',
               items: [{ label: 'Overview', slug: 'mobile' }],
             },
             {
               label: 'Jan Server',
               link: '/server/',
-              badge: { text: 'Coming Soon', variant: 'caution' },
+              badge: { text: 'Soon', variant: 'caution' },
               icon: 'forward-slash',
               items: [{ label: 'Overview', slug: 'server' }],
             },

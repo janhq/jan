@@ -27,11 +27,71 @@ const { title } = Astro.props;
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollToPlugin.min.js"></script>
+
+    <!-- Starlight theme system -->
+    <script is:inline>
+      // Theme initialization - same as Starlight
+      (() => {
+        const storedTheme = typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+        const theme = storedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+        // Apply the correct theme immediately
+        if (theme === 'auto') {
+          const actualTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', actualTheme);
+        } else {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+
+        // Store non-auto preference
+        if (storedTheme && storedTheme !== 'auto') {
+          document.documentElement.setAttribute('data-theme', storedTheme);
+        }
+      })();
+    </script>
   </head>
   <body>
     <slot />
 
     <style is:global>
+      /* Starlight CSS Variables for theme consistency */
+      :root {
+        --sl-color-white: #ffffff;
+        --sl-color-black: #000000;
+        --sl-color-gray-1: #eee;
+        --sl-color-gray-2: #c2c2c2;
+        --sl-color-gray-3: #8b8b8b;
+        --sl-color-gray-4: #585858;
+        --sl-color-gray-5: #383838;
+        --sl-color-gray-6: #272727;
+        --sl-color-accent: #4f46e5;
+        --sl-nav-height: 3.5rem;
+      }
+
+      /* Dark theme variables */
+      html[data-theme="dark"] {
+        --sl-color-text: #ffffff;
+        --sl-color-text-accent: #ffffff;
+        --sl-color-bg: #0a0a0a;
+        --sl-color-bg-nav: #1a1a1a;
+        --sl-color-bg-sidebar: #111111;
+        --sl-color-bg-accent: #4f46e5;
+        --sl-color-hairline-shade: #333333;
+        --sl-color-text-muted: #888888;
+      }
+
+      /* Light theme variables */
+      html[data-theme="light"] {
+        --sl-color-text: #000000;
+        --sl-color-text-accent: #000000;
+        --sl-color-bg: #ffffff;
+        --sl-color-bg-nav: #ffffff;
+        --sl-color-bg-sidebar: #f8f9fa;
+        --sl-color-bg-accent: #e5e7eb;
+        --sl-color-hairline-shade: #e5e7eb;
+        --sl-color-text-muted: #6b7280;
+      }
+
       html {
         font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
         scroll-behavior: smooth;
@@ -40,9 +100,10 @@ const { title } = Astro.props;
       body {
         margin: 0;
         padding: 0;
-        background: #0a0a0a;
-        color: #ffffff;
+        background: var(--sl-color-bg);
+        color: var(--sl-color-text);
         overflow-x: hidden;
+        transition: background-color 0.2s ease, color 0.2s ease;
       }
 
       * {
@@ -60,5 +121,61 @@ const { title } = Astro.props;
         transition: all 0.3s ease;
       }
     </style>
+
+    <!-- Theme switching functionality for custom layouts -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Handle Starlight theme selector changes
+        const handleThemeChange = (newTheme) => {
+          let actualTheme = newTheme;
+
+          if (newTheme === 'auto') {
+            actualTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+
+          document.documentElement.setAttribute('data-theme', actualTheme);
+          localStorage.setItem('starlight-theme', newTheme);
+        };
+
+        // Find all theme selectors and add functionality
+        document.querySelectorAll('starlight-theme-select select').forEach(select => {
+          select.addEventListener('change', function(e) {
+            handleThemeChange(e.target.value);
+          });
+        });
+
+        // Listen for system theme changes when auto is selected
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function(e) {
+          const currentPref = localStorage.getItem('starlight-theme');
+          if (currentPref === 'auto' || !currentPref) {
+            const actualTheme = e.matches ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', actualTheme);
+          }
+        });
+
+        // Observe theme changes on the HTML element
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+              // Theme has been changed, ensure all selectors are in sync
+              const currentTheme = document.documentElement.getAttribute('data-theme');
+              const storedPref = localStorage.getItem('starlight-theme');
+
+              // Update all theme selectors to match
+              document.querySelectorAll('starlight-theme-select select').forEach(select => {
+                if (select.value !== storedPref) {
+                  select.value = storedPref || 'auto';
+                }
+              });
+            }
+          });
+        });
+
+        observer.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['data-theme']
+        });
+      });
+    </script>
   </body>
 </html>
