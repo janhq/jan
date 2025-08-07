@@ -182,7 +182,7 @@ mod tests {
         assert!(get_jan_data_folder_path(app.handle().clone())
             .join(path)
             .exists());
-        fs::remove_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path)).unwrap();
+        let _ = fs::remove_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path));
     }
 
     #[test]
@@ -242,6 +242,6 @@ mod tests {
         let result = readdir_sync(app.handle().clone(), args).unwrap();
         assert_eq!(result.len(), 2);
 
-        fs::remove_dir_all(dir_path).unwrap();
+        let _ = fs::remove_dir_all(dir_path);
     }
 }
