@@ -683,7 +683,7 @@ fn parse_device_output(output: &str) -> ServerResult<Vec<DeviceInfo>> {
     } else if !found_devices_section {
         return Err(LlamacppError::new(
             ErrorCode::DeviceListParseFailed,
-            "Could not find 'Available devices:' header in the backend output.".into(),
+            "Could not find 'Available devices:' section in the backend output.".into(),
             Some(output.to_string()),
         )
         .into());
