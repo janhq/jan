@@ -31,7 +31,6 @@ endif
 
 dev: install-and-build
 	yarn download:bin
-	yarn download:lib
 	yarn dev
 
 # Linting
@@ -41,7 +40,6 @@ lint: install-and-build
 # Testing
 test: lint
 	yarn download:bin
-	yarn download:lib
 	yarn test
 
 # Builds and publishes the app
@@ -50,7 +48,6 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
-	yarn download:lib
 	yarn build
 
 clean:

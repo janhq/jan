@@ -10,8 +10,7 @@
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun",
-          "usr/lib/Jan/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"
+          "usr/bin/bun": "resources/bin/bun"
         }
       }
     }
