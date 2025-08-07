@@ -5,12 +5,17 @@ import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
 import { isProd } from '@/lib/version'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { localStorageKey } from '@/constants/localStorage'
 
 function SetupScreen() {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
   const firstItemRemoteProvider =
     providers.length > 0 ? providers[1].provider : 'openai'
+
+  // Check if setup tour has been completed
+  const isSetupCompleted =
+    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
 
   return (
     <div className="flex h-full flex-col flex-justify-center">
@@ -50,7 +55,9 @@ function SetupScreen() {
                     providerName: firstItemRemoteProvider,
                   }}
                   search={{
-                    step: 'setup_remote_provider',
+                    ...(!isSetupCompleted
+                      ? { step: 'setup_remote_provider' }
+                      : {}),
                   }}
                 >
                   <h1 className="text-main-view-fg font-medium text-base">
