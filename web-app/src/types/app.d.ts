@@ -9,5 +9,5 @@ interface LogEntry {
 type ErrorObject = {
   code?: string
   message: string
-  detail?: string
+  details?: string
 }
