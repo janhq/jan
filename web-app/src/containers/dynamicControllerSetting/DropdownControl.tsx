@@ -5,12 +5,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip'
-import { IconStarFilled } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 
 // Dropdown component
@@ -24,7 +18,6 @@ type DropdownControlProps = {
 export function DropdownControl({
   value,
   options = [],
-  recommended,
   onChange,
 }: DropdownControlProps) {
   const isSelected =
@@ -48,18 +41,6 @@ export function DropdownControl({
             )}
           >
             <span>{option.name}</span>
-            {recommended === option.value && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="cursor-pointer">
-                    <IconStarFilled className="text-accent" />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={8} className="z-50">
-                  Recommended
-                </TooltipContent>
-              </Tooltip>
-            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
