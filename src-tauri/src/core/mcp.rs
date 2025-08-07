@@ -1003,9 +1003,18 @@ mod tests {
     #[tokio::test]
     async fn test_run_mcp_commands() {
         let app = mock_app();
-        // Create a mock mcp_config.json file
-        let config_path = "mcp_config.json";
-        let mut file: File = File::create(config_path).expect("Failed to create config file");
+        
+        // Get the app path where the config should be created
+        let app_path = get_jan_data_folder_path(app.handle().clone());
+        let config_path = app_path.join("mcp_config.json");
+        
+        // Ensure the directory exists
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create parent directory");
+        }
+        
+        // Create a mock mcp_config.json file at the correct location
+        let mut file: File = File::create(&config_path).expect("Failed to create config file");
         file.write_all(b"{\"mcpServers\":{}}")
             .expect("Failed to write to config file");
 
@@ -1018,6 +1027,6 @@ mod tests {
         assert!(result.is_ok());
 
         // Clean up the mock config file
-        std::fs::remove_file(config_path).expect("Failed to remove config file");
+        std::fs::remove_file(&config_path).expect("Failed to remove config file");
     }
 }

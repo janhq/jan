@@ -41,6 +41,7 @@ lint: install-and-build
 test: lint
 	yarn download:bin
 	yarn test
+	yarn copy:assets:tauri
 	cargo test
 
 # Builds and publishes the app
