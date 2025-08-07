@@ -42,6 +42,7 @@ test: lint
 	yarn download:bin
 	yarn test
 	yarn copy:assets:tauri
+	yarn build:icon
 	cargo test
 
 # Builds and publishes the app
