@@ -806,6 +806,7 @@ pub async fn get_loaded_models(state: State<'_, AppState>) -> Result<Vec<String>
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    #[cfg(windows)]
     use tempfile;
 
     #[test]
