@@ -1280,7 +1280,7 @@ export default class llamacpp_extension extends AIEngine {
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
-      throw new Error(`Failed to load model:\n${error}`)
+      throw error
     }
   }
 
@@ -1291,7 +1291,6 @@ export default class llamacpp_extension extends AIEngine {
     }
     const pid = sInfo.pid
     try {
-
       // Pass the PID as the session_id
       const result = await invoke<UnloadResult>('unload_llama_model', {
         pid: pid,
@@ -1430,13 +1429,15 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
-      try {
-          let sInfo = await invoke<SessionInfo>('find_session_by_model', {modelId})
-          return sInfo
-      } catch (e) {
-          logger.error(e)
-          throw new Error(String(e))
-      }
+    try {
+      let sInfo = await invoke<SessionInfo>('find_session_by_model', {
+        modelId,
+      })
+      return sInfo
+    } catch (e) {
+      logger.error(e)
+      throw new Error(String(e))
+    }
   }
 
   override async chat(
@@ -1507,13 +1508,13 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-      try {
-          let models: string[] = await invoke<string[]>('get_loaded_models')
-          return models
-      } catch (e) {
-          logger.error(e)
-          throw new Error(e)
-      }
+    try {
+      let models: string[] = await invoke<string[]>('get_loaded_models')
+      return models
+    } catch (e) {
+      logger.error(e)
+      throw new Error(e)
+    }
   }
 
   async getDevices(): Promise<DeviceList[]> {

@@ -5,3 +5,9 @@ interface LogEntry {
   target: string
   message: string
 }
+
+type ErrorObject = {
+  code?: string
+  message: string
+  details?: string
+}

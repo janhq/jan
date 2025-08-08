@@ -211,7 +211,11 @@ function ProviderDetail() {
         })
         .catch((error) => {
           console.error('Error starting model:', error)
-          setModelLoadError(`${error.message}`)
+          if (error && typeof error === 'object' && 'message' in error) {
+            setModelLoadError(error)
+          } else {
+            setModelLoadError(`${error}`)
+          }
         })
         .finally(() => {
           // Remove model from loading state
@@ -384,29 +388,43 @@ function ProviderDetail() {
                             : false
                         }
                         description={
-                          <RenderMarkdown
-                            className="![>p]:text-main-view-fg/70 select-none"
-                            content={setting.description}
-                            components={{
-                              // Make links open in a new tab
-                              a: ({ ...props }) => {
-                                return (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={cn(
-                                      setting.key === 'api-key' &&
-                                        'second-step-setup-remote-provider'
-                                    )}
-                                  />
-                                )
-                              },
-                              p: ({ ...props }) => (
-                                <p {...props} className="!mb-0" />
-                              ),
-                            }}
-                          />
+                          <>
+                            <RenderMarkdown
+                              className="![>p]:text-main-view-fg/70 select-none"
+                              content={setting.description}
+                              components={{
+                                // Make links open in a new tab
+                                a: ({ ...props }) => {
+                                  return (
+                                    <a
+                                      {...props}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={cn(
+                                        setting.key === 'api-key' &&
+                                          'second-step-setup-remote-provider'
+                                      )}
+                                    />
+                                  )
+                                },
+                                p: ({ ...props }) => (
+                                  <p {...props} className="!mb-0" />
+                                ),
+                              }}
+                            />
+                            {setting.key === 'version_backend' &&
+                              setting.controller_props?.recommended && (
+                                <div className="mt-1 text-sm text-main-view-fg/60">
+                                  <span className="font-medium">
+                                    {setting.controller_props.recommended
+                                      ?.split('/')
+                                      .pop() ||
+                                      setting.controller_props.recommended}
+                                  </span>
+                                  <span> is the recommended backend.</span>
+                                </div>
+                              )}
+                          </>
                         }
                         actions={actionComponent}
                       />
