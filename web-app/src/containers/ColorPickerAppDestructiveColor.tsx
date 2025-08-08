@@ -7,17 +7,21 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppDestructiveColor() {
   const { appDestructiveBgColor, setAppDestructiveBgColor } = useAppearance()
+  const { isDark } = useTheme()
 
   const predefineAppDestructiveBgColor: RgbaColor[] = [
-    {
-      r: 220,
-      g: 45,
-      b: 45,
-      a: 1,
-    },
+    isDark
+      ? { r: 144, g: 60, b: 60, a: 1 }
+      : {
+          r: 217,
+          g: 95,
+          b: 95,
+          a: 1,
+        },
     {
       r: 220,
       g: 100,
