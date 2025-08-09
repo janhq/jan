@@ -371,7 +371,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 setRows(Math.min(newRows, maxRows))
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
+                // e.keyCode 229 is for IME input with Safari
+                const isComposing = e.nativeEvent.isComposing || e.keyCode === 229;
+                if (e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isComposing) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
                   handleSendMesage(prompt)
