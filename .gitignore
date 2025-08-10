@@ -51,6 +51,8 @@ docs/.next/
 **/yarn-error.log*
 **/pnpm-debug.log*
 
-# Combined output for local testing
-combined-output/
+## cargo
 target
+
+## test
+test-data

@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(
             result,
             get_jan_data_folder_path(app.handle().clone())
-                .join("test_dir/test_file")
+                .join(&format!("test_dir{}test_file", std::path::MAIN_SEPARATOR))
                 .to_string_lossy()
                 .to_string()
         );
@@ -232,8 +232,7 @@ mod tests {
     #[test]
     fn test_readdir_sync() {
         let app = mock_app();
-        let path = "file://test_readdir_sync_dir";
-        let dir_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        let dir_path = get_jan_data_folder_path(app.handle().clone()).join("test_readdir_sync_dir");
         fs::create_dir_all(&dir_path).unwrap();
         File::create(dir_path.join("file1.txt")).unwrap();
         File::create(dir_path.join("file2.txt")).unwrap();
