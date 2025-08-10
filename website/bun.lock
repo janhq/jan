@@ -17,6 +17,7 @@
         "starlight-theme-next": "^0.3.2",
         "starlight-theme-rapide": "^0.5.1",
         "starlight-videos": "^0.3.0",
+        "unist-util-visit": "^5.0.0",
       },
     },
   },

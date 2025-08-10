@@ -5,7 +5,7 @@ import CustomNav from '../components/CustomNav.astro';
 
 // Get all changelog entries and sort by date (newest first)
 const changelogEntries = await getCollection('changelog');
-const sortedEntries = changelogEntries.sort((a, b) => 
+const sortedEntries = changelogEntries.sort((a, b) =>
   new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
 );
 
@@ -21,7 +21,7 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       <header class="changelog-header">
         <h1>Changelog</h1>
         <p>Latest release updates from the Jan team. Check out our <a href="/products" class="roadmap-link">Roadmap</a> to see what's next.</p>
-        
+
         <!-- Email signup -->
         <div class="email-signup">
           <input type="email" placeholder="Enter your email to receive our updates" class="email-input" />
@@ -33,12 +33,12 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       <div class="changelog-timeline">
         {sortedEntries.map((entry, index) => {
           const date = new Date(entry.data.date);
-          const formattedDate = date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
           });
-          
+
           return (
             <article class="changelog-entry">
               <!-- Timeline dot and date -->
@@ -46,26 +46,26 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
                 <div class="timeline-dot"></div>
                 <time class="timeline-date">{formattedDate}</time>
               </div>
-              
+
               <!-- Content card -->
               <div class="content-card">
                 {entry.data.image && (
                   <div class="media-container">
-                    <img 
-                      src={entry.data.image} 
+                    <img
+                      src={entry.data.image}
                       alt={entry.data.title}
                       class="changelog-media"
                     />
                   </div>
                 )}
-                
+
                 <div class="card-content">
                   <h2 class="entry-title">
                     <a href={`/changelog/${entry.slug}`}>{entry.data.title}</a>
                   </h2>
-                  
+
                   <p class="entry-description">{entry.data.description}</p>
-                  
+
                   {entry.data.version && (
                     <span class="version-badge">New release Jan App v{entry.data.version}</span>
                   )}
@@ -298,17 +298,17 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
   }
 
   /* === PROGRESSIVE RESPONSIVE DESIGN === */
-  
+
   /* Tablet and down (768px) */
   @media (max-width: 768px) {
     .changelog-header h1 {
       font-size: 2.5rem;
     }
-    
+
     .changelog-entry {
       flex-direction: column;
     }
-    
+
     .timeline-marker {
       width: 100%;
       flex-direction: row;
@@ -316,56 +316,56 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       align-items: center;
       margin-bottom: 1rem;
     }
-    
+
     .timeline-date {
       margin-top: 0;
       margin-left: 1rem;
     }
-    
+
     .timeline-dot::before {
       display: none;
     }
-    
+
     .content-card {
       margin-left: 0;
     }
   }
-  
+
   /* Mobile landscape (640px and below) */
   @media (max-width: 640px) {
     .changelog-header h1 {
       font-size: 2rem;
     }
-    
+
     .changelog-header p {
       font-size: 1rem;
     }
-    
+
     /* Email signup remains horizontal on mobile landscape */
     .email-signup {
       max-width: 350px;
     }
-    
+
     .email-input {
       font-size: 0.9rem;
     }
-    
+
     .signup-button {
       font-size: 1rem;
       padding: 10px 14px;
     }
   }
-  
+
   /* Mobile (640px and below) - Much smaller email signup */
   @media (max-width: 640px) {
     .changelog-container {
       padding: 1.5rem 1rem;
     }
-    
+
     .changelog-header h1 {
       font-size: 2rem;
     }
-    
+
     /* Make email signup much more compact */
     .email-signup {
       flex-direction: column;
@@ -373,13 +373,13 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       padding: 4px;
       gap: 4px;
     }
-    
+
     .email-input {
       padding: 8px 12px;
       border-radius: 6px;
       font-size: 0.85rem;
     }
-    
+
     .signup-button {
       padding: 8px 12px;
       border-radius: 6px;
@@ -387,57 +387,57 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       min-height: auto;
     }
   }
-  
+
   /* Very small mobile (480px and below) */
   @media (max-width: 480px) {
     .changelog-container {
       padding: 1rem 0.75rem;
     }
-    
+
     .changelog-header h1 {
       font-size: 1.75rem;
     }
-    
+
     .changelog-header {
       margin-bottom: 2.5rem;
     }
-    
+
     /* Even more compact email signup */
     .email-signup {
       max-width: 240px;
       padding: 3px;
     }
-    
+
     .email-input {
       padding: 6px 10px;
       font-size: 0.8rem;
     }
-    
+
     .signup-button {
       padding: 6px 10px;
       font-size: 0.8rem;
     }
   }
-  
+
   /* Tiny screens (360px and below) */
   @media (max-width: 360px) {
     .changelog-container {
       padding: 1rem 0.5rem;
     }
-    
+
     .changelog-header h1 {
       font-size: 1.5rem;
     }
-    
+
     .email-signup {
       max-width: 200px;
     }
-    
+
     .email-input {
       font-size: 0.75rem;
       padding: 5px 8px;
     }
-    
+
     .signup-button {
       font-size: 0.75rem;
       padding: 5px 8px;
@@ -449,7 +449,7 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
   // Add email signup functionality
   const signupButton = document.querySelector('.signup-button');
   const emailInput = document.querySelector('.email-input');
-  
+
   signupButton?.addEventListener('click', (e) => {
     e.preventDefault();
     const email = (emailInput as HTMLInputElement)?.value;
@@ -459,7 +459,7 @@ const description = 'Latest release updates from the Jan team. Check out our Roa
       alert('Thanks for subscribing! We\'ll keep you updated.');
     }
   });
-  
+
   emailInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       signupButton?.click();

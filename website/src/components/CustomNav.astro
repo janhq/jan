@@ -22,7 +22,7 @@ const isDocsPage = currentPath.startsWith('/jan/') ||
     <!-- Left side with title and links -->
     <div class="sl-nav__left">
       <!-- Site title/logo -->
-      <a href="/" class="sl-nav__title">
+      <a href="https://jan.ai" class="sl-nav__title">
         👋 Jan
       </a>
 
@@ -31,11 +31,14 @@ const isDocsPage = currentPath.startsWith('/jan/') ||
         <a href="/products" class="sl-nav__link" data-nav-item="products">
           Products
         </a>
+        <a href="/jan" class="sl-nav__link" data-nav-item="docs">
+          Docs
+        </a>
+        <a href="/handbook" class="sl-nav__link" data-nav-item="handbook">
+          Handbook
+        </a>
         <a href="/blog" class="sl-nav__link" data-nav-item="blog">
           Blog
-        </a>
-        <a href="/changelog" class="sl-nav__link" data-nav-item="changelog">
-          Changelog
         </a>
       </div>
     </div>
@@ -49,7 +52,10 @@ const isDocsPage = currentPath.startsWith('/jan/') ||
 
     <!-- Right side items -->
     <div class="sl-nav__end">
-      <!-- API Reference link -->
+      <!-- Changelog and API Reference links -->
+      <a href="/changelog" class={`sl-nav__link sl-nav__api-link ${isDocsPage ? 'docs-page' : 'custom-page'}`} data-nav-item="changelog">
+        Changelog
+      </a>
       <a href="/api-reference" class={`sl-nav__link sl-nav__api-link ${isDocsPage ? 'docs-page' : 'custom-page'}`} data-nav-item="api">
         API Reference
       </a>
@@ -80,6 +86,8 @@ const isDocsPage = currentPath.startsWith('/jan/') ||
           </button>
           <div id="hamburger-menu" class="hamburger-menu">
             <a href="/products" class="hamburger-link">Products</a>
+            <a href="/jan" class="hamburger-link">Docs</a>
+            <a href="/handbook" class="hamburger-link">Handbook</a>
             <a href="/blog" class="hamburger-link">Blog</a>
             <a href="/changelog" class="hamburger-link">Changelog</a>
             <a href="/api-reference" class="hamburger-link">API Reference</a>

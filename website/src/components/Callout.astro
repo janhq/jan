@@ -1,0 +1,85 @@
+---
+export interface Props {
+  type?: 'info' | 'warning' | 'error' | 'success' | 'note';
+  emoji?: string;
+  children?: any;
+}
+
+const { type = 'note', emoji } = Astro.props;
+
+const typeConfig = {
+  info: {
+    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+    borderColor: 'border-blue-200 dark:border-blue-800',
+    textColor: 'text-blue-900 dark:text-blue-200',
+    defaultEmoji: 'ℹ️'
+  },
+  warning: {
+    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+    borderColor: 'border-yellow-200 dark:border-yellow-800',
+    textColor: 'text-yellow-900 dark:text-yellow-200',
+    defaultEmoji: '⚠️'
+  },
+  error: {
+    bgColor: 'bg-red-50 dark:bg-red-900/20',
+    borderColor: 'border-red-200 dark:border-red-800',
+    textColor: 'text-red-900 dark:text-red-200',
+    defaultEmoji: '🚨'
+  },
+  success: {
+    bgColor: 'bg-green-50 dark:bg-green-900/20',
+    borderColor: 'border-green-200 dark:border-green-800',
+    textColor: 'text-green-900 dark:text-green-200',
+    defaultEmoji: '✅'
+  },
+  note: {
+    bgColor: 'bg-gray-50 dark:bg-gray-900/20',
+    borderColor: 'border-gray-200 dark:border-gray-800',
+    textColor: 'text-gray-900 dark:text-gray-200',
+    defaultEmoji: '📝'
+  }
+};
+
+const config = typeConfig[type] || typeConfig.note;
+const displayEmoji = emoji || config.defaultEmoji;
+---
+
+<div class={`callout ${config.bgColor} ${config.borderColor} ${config.textColor} border rounded-lg p-4 my-4`}>
+  <div class="flex items-start gap-3">
+    <span class="text-xl flex-shrink-0" aria-hidden="true">{displayEmoji}</span>
+    <div class="callout-content flex-1">
+      <slot />
+    </div>
+  </div>
+</div>
+
+<style>
+  .callout {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  .callout-content :global(p) {
+    margin: 0;
+  }
+
+  .callout-content :global(p:not(:last-child)) {
+    margin-bottom: 0.5rem;
+  }
+
+  .callout-content :global(a) {
+    text-decoration: underline;
+    font-weight: 500;
+  }
+
+  .callout-content :global(code) {
+    font-size: 0.875em;
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  :global(.dark) .callout-content :global(code) {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+</style>

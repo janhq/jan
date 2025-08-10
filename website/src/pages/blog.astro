@@ -5,12 +5,12 @@ import CustomNav from '../components/CustomNav.astro';
 
 // Get all blog entries and sort by date (newest first)
 const blogEntries = await getCollection('blog');
-const sortedEntries = blogEntries.sort((a, b) => 
+const sortedEntries = blogEntries.sort((a, b) =>
   new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
 );
 
 // Extract unique categories
-const allCategories = [...new Set(sortedEntries.flatMap(entry => 
+const allCategories = [...new Set(sortedEntries.flatMap(entry =>
   entry.data.categories ? entry.data.categories.split(',').map(cat => cat.trim()) : []
 ))];
 
@@ -20,7 +20,7 @@ const description = 'The latest updates from Jan. See Changelog for more product
 // Define gradient colors for cards
 const gradients = [
   'from-purple-500 to-pink-500',
-  'from-blue-500 to-cyan-400', 
+  'from-blue-500 to-cyan-400',
   'from-purple-600 to-blue-500',
   'from-cyan-400 to-blue-500',
   'from-pink-500 to-purple-600',
@@ -50,14 +50,14 @@ const gradients = [
       <div class="blog-grid">
         {sortedEntries.map((entry, index) => {
           const date = new Date(entry.data.date);
-          const formattedDate = date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
           });
           const gradientClass = gradients[index % gradients.length];
           const category = entry.data.categories || 'guides';
-          
+
           return (
             <article class={`blog-card ${gradientClass}`} data-category={category.toLowerCase()}>
               <div class="card-header">
@@ -66,14 +66,14 @@ const gradients = [
                   <div class="card-date">{formattedDate}</div>
                 </div>
               </div>
-              
+
               <div class="card-content">
                 <h2 class="card-title">
                   <a href={`/blog/${entry.slug}`}>{entry.data.title}</a>
                 </h2>
-                
+
                 <p class="card-description">{entry.data.description}</p>
-                
+
                 <a href={`/blog/${entry.slug}`} class="read-more">
                   Read more...
                 </a>
@@ -87,17 +87,21 @@ const gradients = [
 </Layout>
 
 <style>
+  /* Blog Page Styles */
   .blog-page {
     min-height: 100vh;
     background: var(--sl-color-bg);
     color: var(--sl-color-text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
   }
 
   .blog-container {
-    max-width: 1200px;
+    max-width: 1440px;
     margin: 0 auto;
     padding: 2rem 1rem;
+    overflow-x: hidden;
   }
 
   .blog-header {
@@ -247,10 +251,14 @@ const gradients = [
   }
 
   .card-title {
-    font-size: 1.3rem;
+    font-size: 1.25rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
+    color: var(--sl-color-text);
     line-height: 1.3;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
   }
 
   .card-title a {
@@ -290,17 +298,17 @@ const gradients = [
     .blog-header h1 {
       font-size: 2.5rem;
     }
-    
+
     .blog-grid {
       grid-template-columns: 1fr;
       gap: 1.5rem;
     }
-    
+
     .category-filter {
       gap: 0.5rem;
       margin-bottom: 2rem;
     }
-    
+
     .category-btn {
       padding: 0.5rem 1rem;
       font-size: 0.85rem;
@@ -311,15 +319,15 @@ const gradients = [
     .blog-container {
       padding: 1.5rem 0.75rem;
     }
-    
+
     .blog-header h1 {
       font-size: 2rem;
     }
-    
+
     .card-gradient {
       height: 100px;
     }
-    
+
     .card-content {
       padding: 1rem;
     }
@@ -330,17 +338,17 @@ const gradients = [
   // Category filtering functionality
   const categoryButtons = document.querySelectorAll('.category-btn');
   const blogCards = document.querySelectorAll('.blog-card');
-  
+
   categoryButtons.forEach(button => {
     button.addEventListener('click', () => {
       // Remove active class from all buttons
       categoryButtons.forEach(btn => btn.classList.remove('active'));
-      
+
       // Add active class to clicked button
       button.classList.add('active');
-      
+
       const selectedCategory = button.dataset.category;
-      
+
       // Show/hide cards based on category
       blogCards.forEach(card => {
         if (selectedCategory === 'all' || card.dataset.category === selectedCategory) {

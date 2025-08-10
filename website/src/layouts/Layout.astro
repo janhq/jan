@@ -18,15 +18,7 @@ const { title } = Astro.props;
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet">
-
-    <!-- Custom Retro Effects CSS -->
-    <link rel="stylesheet" href="/src/styles/retro-effects.css">
-
-    <!-- GSAP -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollToPlugin.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
 
     <!-- Starlight theme system -->
     <script is:inline>
@@ -93,7 +85,7 @@ const { title } = Astro.props;
       }
 
       html {
-        font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         scroll-behavior: smooth;
       }
 
@@ -116,10 +108,7 @@ const { title } = Astro.props;
         padding: 0;
       }
 
-      /* Smooth transitions for all interactive elements */
-      a, button, .toc-item, .retro-card, .platform-card, .tool-card {
-        transition: all 0.3s ease;
-      }
+
     </style>
 
     <!-- Theme switching functionality for custom layouts -->

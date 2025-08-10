@@ -7,9 +7,10 @@
       "layout": "raw"
     }
   },
-  "docs": {
+  "docs-v2": {
     "type": "page",
-    "title": "Documentation"
+    "title": "Documentation",
+    "href": "https://v2.jan.ai"
   },
   "cortex": {
     "type": "page",
@@ -32,10 +33,6 @@
     "theme": {
       "layout": "raw"
     }
-  },
-  "about": {
-    "type": "page",
-    "title": "About"
   },
   "blog": {
     "type": "page",

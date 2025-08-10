@@ -1,0 +1,36 @@
+---
+export interface Props {
+  title: string;
+  date: string;
+  ogImage?: string;
+}
+
+const { title, date, ogImage } = Astro.props;
+
+// Format the date nicely
+const formattedDate = new Date(date).toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+---
+
+<header class="changelog-header mb-8">
+  {ogImage && (
+    <div class="mt-6">
+      <img
+        src={ogImage}
+        alt={title}
+        class="w-full rounded-lg shadow-lg"
+        loading="lazy"
+      />
+    </div>
+  )}
+</header>
+
+<style>
+  .changelog-header {
+    border-bottom: 1px solid var(--sl-color-gray-5);
+    padding-bottom: 2rem;
+  }
+</style>
