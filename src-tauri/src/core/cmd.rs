@@ -94,7 +94,9 @@ pub fn update_app_configuration(
 #[tauri::command]
 pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     if cfg!(test) {
-        let path = PathBuf::from("test-data");
+        let path = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("test-data");
         if !path.exists() {
             let _ = fs::create_dir_all(&path);
         }

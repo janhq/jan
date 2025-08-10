@@ -30,7 +30,6 @@ test-tauri = [
     "tauri/test",
 ]
 
-
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
 
