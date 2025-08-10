@@ -696,8 +696,6 @@ Section Install
   ; Copy resources
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
-    SetOutPath $INSTDIR
-    File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\resources\lib\vulkan-1.dll"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
     SetOutPath $INSTDIR

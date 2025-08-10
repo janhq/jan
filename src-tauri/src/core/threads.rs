@@ -218,7 +218,7 @@ pub async fn delete_thread<R: Runtime>(
 ) -> Result<(), String> {
     let thread_dir = get_thread_dir(app_handle.clone(), &thread_id);
     if thread_dir.exists() {
-        fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
+        let _ = fs::remove_dir_all(thread_dir);
     }
     Ok(())
 }
@@ -518,7 +518,7 @@ mod tests {
         assert!(threads.len() > 0);
 
         // Clean up
-        fs::remove_dir_all(data_dir).unwrap();
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[tokio::test]
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(messages[0]["role"], "user");
 
         // Clean up
-        fs::remove_dir_all(data_dir).unwrap();
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[tokio::test]
@@ -608,6 +608,6 @@ mod tests {
         assert_eq!(got["assistant_name"], "Test Assistant");
 
         // Clean up
-        fs::remove_dir_all(data_dir).unwrap();
+        let _ = fs::remove_dir_all(data_dir);
     }
 }

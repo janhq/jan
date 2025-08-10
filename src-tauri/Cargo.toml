@@ -7,10 +7,28 @@ license = "MIT"
 repository = "https://github.com/menloresearch/jan"
 edition = "2021"
 rust-version = "1.77.2"
+resolver = "2"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = [
+    "tauri/wry",
+    "tauri/common-controls-v6",
+    "tauri/x11",
+    "tauri/protocol-asset",
+    "tauri/macos-private-api",
+    "tauri/test",
+]
+test-tauri = [
+    "tauri/wry",
+    "tauri/x11",
+    "tauri/protocol-asset",
+    "tauri/macos-private-api",
+    "tauri/test",
+]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -19,9 +37,6 @@ tauri-build = { version = "2.0.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.5.0", features = [ "protocol-asset", "macos-private-api",
-    "test"
-] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"
 tauri-plugin-os = "2.2.1"
@@ -59,6 +74,20 @@ sha2 = "0.10.9"
 base64 = "0.22.1"
 libloading = "0.8.7"
 thiserror = "2.0.12"
+
+[dependencies.tauri]
+version = "2.5.0"
+default-features = false
+features = [
+    "protocol-asset",
+    "macos-private-api",
+    "test",
+]
+
+[target.'cfg(windows)'.dev-dependencies]
+tempfile = "3.20.0"
+
+[target.'cfg(unix)'.dependencies]
 nix = "=0.30.1"
 
 [target.'cfg(windows)'.dependencies]
@@ -69,6 +98,3 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2.0.0", features = ["deep-link"] }
-
-[target.'cfg(windows)'.dev-dependencies]
-tempfile = "3.20.0"

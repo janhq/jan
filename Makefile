@@ -31,7 +31,6 @@ endif
 
 dev: install-and-build
 	yarn download:bin
-	yarn download:lib
 	yarn dev
 
 # Linting
@@ -41,8 +40,10 @@ lint: install-and-build
 # Testing
 test: lint
 	yarn download:bin
-	yarn download:lib
 	yarn test
+	yarn copy:assets:tauri
+	yarn build:icon
+	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 
 # Builds and publishes the app
 build-and-publish: install-and-build
@@ -50,7 +51,6 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
-	yarn download:lib
 	yarn build
 
 clean:
