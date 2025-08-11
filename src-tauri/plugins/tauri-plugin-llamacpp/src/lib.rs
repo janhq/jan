@@ -4,8 +4,12 @@ use tauri::{
 };
 
 pub mod cleanup;
-mod server;
+mod commands;
+mod device;
+mod error;
+mod process;
 pub mod state;
+mod utils;
 pub use cleanup::cleanup_llama_processes;
 pub use state::LLamaBackendSession;
 
@@ -16,16 +20,16 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // Cleanup command
             cleanup::cleanup_llama_processes,
             // LlamaCpp server commands
-            server::load_llama_model,
-            server::unload_llama_model,
-            server::get_devices,
-            server::generate_api_key,
-            server::is_process_running,
-            server::get_random_port,
-            server::find_session_by_model,
-            server::get_loaded_models,
-            server::get_all_sessions,
-            server::get_session_by_model,
+            commands::load_llama_model,
+            commands::unload_llama_model,
+            commands::get_devices,
+            commands::generate_api_key,
+            commands::is_process_running,
+            commands::get_random_port,
+            commands::find_session_by_model,
+            commands::get_loaded_models,
+            commands::get_all_sessions,
+            commands::get_session_by_model,
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state
