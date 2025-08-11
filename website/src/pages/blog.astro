@@ -10,9 +10,9 @@ const sortedEntries = blogEntries.sort((a, b) =>
 );
 
 // Extract unique categories
-const allCategories = [...new Set(sortedEntries.flatMap(entry =>
-  entry.data.categories ? entry.data.categories.split(',').map(cat => cat.trim()) : []
-))];
+// const allCategories = [...new Set(sortedEntries.flatMap(entry =>
+//   entry.data.categories ? entry.data.categories.split(',').map(cat => cat.trim()) : []
+// ))];
 
 const title = 'Blog';
 const description = 'The latest updates from Jan. See Changelog for more product updates.';
