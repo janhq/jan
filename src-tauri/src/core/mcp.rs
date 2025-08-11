@@ -751,6 +751,26 @@ pub async fn reset_mcp_restart_count(state: State<'_, AppState>, server_name: St
     Ok(())
 }
 
+pub async fn clean_up_mcp_servers(
+    state: State<'_, AppState>,
+) {
+    log::info!("Cleaning up MCP servers");
+    
+    // Stop all running MCP servers
+    let _ = stop_mcp_servers(state.mcp_servers.clone()).await;
+    
+    // Clear active servers and restart counts
+    {
+        let mut active_servers = state.mcp_active_servers.lock().await;
+        active_servers.clear();
+    }
+    {
+        let mut restart_counts = state.mcp_restart_counts.lock().await;
+        restart_counts.clear();
+    }
+    log::info!("MCP servers cleaned up successfully");
+}
+
 pub async fn stop_mcp_servers(
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 ) -> Result<(), String> {
