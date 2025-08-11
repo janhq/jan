@@ -46,14 +46,32 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, abortControllers, loadingModel, tools } =
-    useAppState()
+  const {
+    streamingContent,
+    abortControllers,
+    loadingModel,
+    tools,
+    queuedMessage,
+    setQueuedMessage,
+  } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
   const { spellCheckChatInput, experimentalFeatures } = useGeneralSetting()
 
   const maxRows = 10
+
+  // Clear queued message when thread changes
+  useEffect(() => {
+    setQueuedMessage(null)
+  }, [currentThreadId, setQueuedMessage])
+
+  // Clear queued message when component unmounts
+  useEffect(() => {
+    return () => {
+      setQueuedMessage(null)
+    }
+  }, [setQueuedMessage])
 
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
@@ -358,11 +376,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             )}
             <TextareaAutosize
               ref={textareaRef}
-              disabled={Boolean(streamingContent)}
+              disabled={Boolean(queuedMessage)}
               minRows={2}
               rows={1}
               maxRows={10}
-              value={prompt}
+              value={queuedMessage || prompt}
               data-test-id={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
@@ -372,12 +390,23 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               }}
               onKeyDown={(e) => {
                 // e.keyCode 229 is for IME input with Safari
-                const isComposing = e.nativeEvent.isComposing || e.keyCode === 229;
-                if (e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isComposing) {
-                  e.preventDefault()
-                  // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
-                  // When Shift+Enter is pressed, a new line is added (default behavior)
+                const isComposing =
+                  e.nativeEvent.isComposing || e.keyCode === 229
+                if (e.key === 'Enter' && !isComposing) {
+                  if (!e.shiftKey && prompt.trim()) {
+                    // Enter or Ctrl+Enter: Queue if streaming, send if not
+                    e.preventDefault()
+                    if (streamingContent && !queuedMessage) {
+                      // Queue the message if AI is responding and no message already queued
+                      setQueuedMessage(prompt.trim())
+                      setPrompt('')
+                    } else if (!streamingContent) {
+                      // If not streaming, send immediately
+                      handleSendMesage(prompt)
+                    }
+                    // If streaming AND message already queued, do nothing
+                  }
+                  // Shift+Enter: Allow default behavior (new line)
                 }
               }}
               placeholder={t('common:placeholder.chatInput')}
@@ -553,6 +582,15 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
               </div>
             </div>
+
+            {/* Queue indicator */}
+            {queuedMessage && (
+              <div className="flex items-center gap-2">
+                <div className="bg-accent text-accent-fg text-xs px-2 py-1 rounded-full font-medium">
+                  Message queued
+                </div>
+              </div>
+            )}
 
             {streamingContent ? (
               <Button
