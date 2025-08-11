@@ -55,6 +55,7 @@
         }
       ]
     },
-    "store:default"
+    "store:default",
+    "llamacpp:default"
   ]
 }

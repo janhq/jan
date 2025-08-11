@@ -1,17 +1,17 @@
 use futures_util::StreamExt;
+use hyper::body::Bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
-use hyper::body::Bytes;
 use reqwest::Client;
+use serde_json;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
-use serde_json;
 
-
-use crate::core::state::{LLamaBackendSession, ServerHandle};
+use crate::core::state::ServerHandle;
 
 /// Configuration for the proxy server
 #[derive(Clone)]
@@ -212,13 +212,15 @@ async fn proxy_request(
 
     let (parts, body) = req.into_parts();
 
-    let origin_header = parts.headers
+    let origin_header = parts
+        .headers
         .get(hyper::header::ORIGIN)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
 
-    let host_header = parts.headers
+    let host_header = parts
+        .headers
         .get(hyper::header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
@@ -348,15 +350,21 @@ async fn proxy_request(
                         let sessions_guard = sessions.lock().await;
 
                         if sessions_guard.is_empty() {
-                            log::warn!("Request for model '{}' but no models are running.", model_id);
-                            let mut error_response = Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
-                             error_response = add_cors_headers_with_host_and_origin(
+                            log::warn!(
+                                "Request for model '{}' but no models are running.",
+                                model_id
+                            );
+                            let mut error_response =
+                                Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
+                            error_response = add_cors_headers_with_host_and_origin(
                                 error_response,
                                 &host_header,
                                 &origin_header,
                                 &config.trusted_hosts,
                             );
-                            return Ok(error_response.body(Body::from("No models are available")).unwrap());
+                            return Ok(error_response
+                                .body(Body::from("No models are available"))
+                                .unwrap());
                         }
 
                         if let Some(session) = sessions_guard
@@ -365,10 +373,7 @@ async fn proxy_request(
                         {
                             target_port = Some(session.info.port);
                             session_api_key = Some(session.info.api_key.clone());
-                            log::debug!(
-                                "Found session for model_id {}",
-                                model_id,
-                            );
+                            log::debug!("Found session for model_id {}", model_id,);
                         } else {
                             log::warn!("No running session found for model_id: {}", model_id);
                             let mut error_response =
@@ -433,7 +438,7 @@ async fn proxy_request(
                     serde_json::json!({
                         "id": session.info.model_id,
                         "object": "model",
-                        "created": 1, 
+                        "created": 1,
                         "owned_by": "user"
                     })
                 })
@@ -444,7 +449,8 @@ async fn proxy_request(
                 "data": models_data
             });
 
-            let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+            let body_str =
+                serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
 
             let mut response_builder = Response::builder()
                 .status(StatusCode::OK)
@@ -493,7 +499,9 @@ async fn proxy_request(
     let port = match target_port {
         Some(p) => p,
         None => {
-            log::error!("Internal API server routing error: target is None after successful lookup");
+            log::error!(
+                "Internal API server routing error: target is None after successful lookup"
+            );
             let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,

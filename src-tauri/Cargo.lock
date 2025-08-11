@@ -35,6 +35,7 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
  "tauri-plugin-http",
+ "tauri-plugin-llamacpp",
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-os",
@@ -5139,6 +5140,25 @@ dependencies = [
  "tokio",
  "url",
  "urlpattern",
+]
+
+[[package]]
+name = "tauri-plugin-llamacpp"
+version = "0.6.599"
+dependencies = [
+ "base64 0.22.1",
+ "hmac",
+ "log",
+ "nix",
+ "rand 0.8.5",
+ "serde",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.12",
+ "tokio",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

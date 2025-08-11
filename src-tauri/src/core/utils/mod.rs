@@ -1,5 +1,4 @@
 pub mod download;
-pub mod extensions;
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -110,7 +109,9 @@ pub fn can_override_npx() -> bool {
     #[cfg(all(target_os = "macos", any(target_arch = "x86", target_arch = "x86_64")))]
     {
         if !is_x86_feature_detected!("avx2") {
-            log::warn!("Your CPU doesn't support AVX2 instruction, default npx binary will be used");
+            log::warn!(
+                "Your CPU doesn't support AVX2 instruction, default npx binary will be used"
+            );
             return false; // we cannot override npx with bun binary
         }
     }
@@ -210,4 +211,3 @@ pub fn is_library_available(library: &str) -> bool {
         }
     }
 }
-

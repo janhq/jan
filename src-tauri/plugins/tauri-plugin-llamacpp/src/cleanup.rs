@@ -1,8 +1,15 @@
-use crate::core::state::AppState;
-use tauri::State;
+use tauri::{Manager, Runtime};
 
-pub async fn cleanup_processes(state: State<'_, AppState>) {
-    let mut map = state.llama_server_process.lock().await;
+pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
+    // Access the global AppState from the main app
+    let app_state = match app_handle.try_state::<crate::state::LlamacppState>() {
+        Some(state) => state,
+        None => {
+            log::warn!("LlamacppState not found in app_handle");
+            return;
+        }
+    };
+    let mut map = app_state.llama_server_process.lock().await;
     let pids: Vec<i32> = map.keys().cloned().collect();
     for pid in pids {
         if let Some(session) = map.remove(&pid) {
@@ -63,4 +70,12 @@ pub async fn cleanup_processes(state: State<'_, AppState>) {
             }
         }
     }
+}
+
+#[tauri::command]
+pub async fn cleanup_llama_processes<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<(), String> {
+    cleanup_processes(&app_handle).await;
+    Ok(())
 }

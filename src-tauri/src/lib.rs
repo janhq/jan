@@ -1,5 +1,4 @@
 mod core;
-use core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
 use core::{
     cmd::get_jan_data_folder_path,
     setup::{self, setup_mcp},
@@ -8,6 +7,7 @@ use core::{
 };
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,6 +30,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_llamacpp::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
             core::fs::join_path,
@@ -91,15 +92,6 @@ pub fn run() {
             // hardware
             core::hardware::get_system_info,
             core::hardware::get_system_usage,
-            // llama-cpp extension
-            core::utils::extensions::inference_llamacpp_extension::server::load_llama_model,
-            core::utils::extensions::inference_llamacpp_extension::server::unload_llama_model,
-            core::utils::extensions::inference_llamacpp_extension::server::get_devices,
-            core::utils::extensions::inference_llamacpp_extension::server::get_random_port,
-            core::utils::extensions::inference_llamacpp_extension::server::find_session_by_model,
-            core::utils::extensions::inference_llamacpp_extension::server::get_loaded_models,
-            core::utils::extensions::inference_llamacpp_extension::server::generate_api_key,
-            core::utils::extensions::inference_llamacpp_extension::server::is_process_running,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -144,10 +136,8 @@ pub fn run() {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
                     window.emit("kill-mcp-servers", ()).unwrap();
-                    let state = window.app_handle().state::<AppState>();
-
                     tauri::async_runtime::block_on(async {
-                        cleanup_processes(state).await;
+                        let _ = cleanup_llama_processes(window.app_handle().clone()).await;
                     });
                 }
             }
@@ -164,8 +154,6 @@ pub fn run() {
             let app_handle = app.clone();
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    let state = app_handle.state::<AppState>();
-
                     // Hide window immediately
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.hide();
@@ -173,7 +161,7 @@ pub fn run() {
                     }
 
                     // Quick cleanup with shorter timeout
-                    cleanup_processes(state).await;
+                    let _ = cleanup_llama_processes(app.clone()).await;
                 });
             });
         }

@@ -7,13 +7,8 @@ use tokio::task::JoinHandle;
 
 /// Server handle type for managing the proxy server lifecycle
 pub type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
-use tokio::{process::Child, sync::Mutex};
-use crate::core::utils::extensions::inference_llamacpp_extension::server::SessionInfo;
-
-pub struct LLamaBackendSession {
-    pub child: Child,
-    pub info: SessionInfo,
-}
+use tauri_plugin_llamacpp::LLamaBackendSession;
+use tokio::sync::Mutex;
 
 #[derive(Default)]
 pub struct AppState {

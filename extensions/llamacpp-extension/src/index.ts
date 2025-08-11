@@ -801,7 +801,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
-    const hash = await invoke<string>('generate_api_key', {
+    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
       modelId: modelId + port,
       apiSecret: this.apiSecret,
     })
@@ -1094,7 +1094,7 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async getRandomPort(): Promise<number> {
     try {
-      const port = await invoke<number>('get_random_port')
+      const port = await invoke<number>('plugin:llamacpp|get_random_port')
       return port
     } catch {
       logger.error('Unable to find a suitable port')
@@ -1272,7 +1272,7 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>('load_llama_model', {
+      const sInfo = await invoke<SessionInfo>('plugin:llamacpp|load_llama_model', {
         backendPath,
         libraryPath,
         args,
@@ -1292,7 +1292,7 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await invoke<UnloadResult>('unload_llama_model', {
+      const result = await invoke<UnloadResult>('plugin:llamacpp|unload_llama_model', {
         pid: pid,
       })
 
@@ -1430,7 +1430,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
-      let sInfo = await invoke<SessionInfo>('find_session_by_model', {
+      let sInfo = await invoke<SessionInfo>('plugin:llamacpp|find_session_by_model', {
         modelId,
       })
       return sInfo
@@ -1449,7 +1449,7 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
     // check if the process is alive
-    const result = await invoke<boolean>('is_process_running', {
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
     if (result) {
@@ -1509,7 +1509,7 @@ export default class llamacpp_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
-      let models: string[] = await invoke<string[]>('get_loaded_models')
+      let models: string[] = await invoke<string[]>('plugin:llamacpp|get_loaded_models')
       return models
     } catch (e) {
       logger.error(e)
@@ -1532,7 +1532,7 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
     const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
     try {
-      const dList = await invoke<DeviceList[]>('get_devices', {
+      const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
         backendPath,
         libraryPath,
       })

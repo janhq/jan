@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
+use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use super::{server, setup, state::AppState};
 
@@ -113,7 +113,7 @@ pub fn get_jan_extensions_path(app_handle: tauri::AppHandle) -> PathBuf {
 }
 
 #[tauri::command]
-pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
+pub fn factory_reset(app_handle: tauri::AppHandle) {
     // close window
     let windows = app_handle.webview_windows();
     for (label, window) in windows.iter() {
@@ -125,7 +125,7 @@ pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
     log::info!("Factory reset, removing data folder: {:?}", data_folder);
 
     tauri::async_runtime::block_on(async {
-        cleanup_processes(state).await;
+        let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {
             if let Err(e) = fs::remove_dir_all(&data_folder) {
@@ -304,7 +304,11 @@ pub fn get_user_home_path(app: AppHandle) -> String {
 }
 
 /// Recursively copy a directory from src to dst, excluding specified directories
-fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf, exclude_dirs: &[&str]) -> Result<(), io::Error> {
+fn copy_dir_recursive(
+    src: &PathBuf,
+    dst: &PathBuf,
+    exclude_dirs: &[&str],
+) -> Result<(), io::Error> {
     if !dst.exists() {
         fs::create_dir_all(dst)?;
     }
@@ -360,8 +364,12 @@ pub fn change_app_data_folder(
                 "New data folder cannot be a subdirectory of the current data folder".to_string(),
             );
         }
-        copy_dir_recursive(&current_data_folder, &new_data_folder_path, &[".uvx", ".npx"])
-            .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
+        copy_dir_recursive(
+            &current_data_folder,
+            &new_data_folder_path,
+            &[".uvx", ".npx"],
+        )
+        .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
     } else {
         log::info!("Current data folder does not exist, nothing to copy");
     }
