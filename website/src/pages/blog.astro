@@ -61,7 +61,7 @@ const gradients = [
           return (
             <article class={`blog-card ${gradientClass}`} data-category={category.toLowerCase()}>
               <div class="card-header">
-                <div class="card-gradient bg-gradient-to-br {gradientClass}">
+                <div class={`card-gradient bg-gradient-to-br ${gradientClass}`}>
                   <div class="category-badge">{category}</div>
                   <div class="card-date">{formattedDate}</div>
                 </div>
