@@ -1,6 +1,10 @@
+pub mod amd;
+pub mod nvidia;
+pub mod vulkan;
+
 use std::sync::OnceLock;
 use sysinfo::System;
-use tauri;
+use tauri::{path::BaseDirectory, Manager};
 
 static SYSTEM_INFO: OnceLock<SystemInfo> = OnceLock::new();
 
@@ -139,11 +143,89 @@ impl CpuStaticInfo {
     }
 }
 
+// https://devicehunt.com/all-pci-vendors
+pub const VENDOR_ID_AMD: u32 = 0x1002;
+pub const VENDOR_ID_NVIDIA: u32 = 0x10DE;
+pub const VENDOR_ID_INTEL: u32 = 0x8086;
+
+#[derive(Debug, Clone)]
+pub enum Vendor {
+    AMD,
+    NVIDIA,
+    Intel,
+    Unknown(u32),
+}
+
+impl serde::Serialize for Vendor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Vendor::AMD => "AMD".serialize(serializer),
+            Vendor::NVIDIA => "NVIDIA".serialize(serializer),
+            Vendor::Intel => "Intel".serialize(serializer),
+            Vendor::Unknown(vendor_id) => {
+                let formatted = format!("Unknown (vendor_id: {})", vendor_id);
+                serializer.serialize_str(&formatted)
+            }
+        }
+    }
+}
+
+impl Vendor {
+    pub fn from_vendor_id(vendor_id: u32) -> Self {
+        match vendor_id {
+            VENDOR_ID_AMD => Vendor::AMD,
+            VENDOR_ID_NVIDIA => Vendor::NVIDIA,
+            VENDOR_ID_INTEL => Vendor::Intel,
+            _ => Vendor::Unknown(vendor_id),
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct GpuInfo {
+    pub name: String,
+    pub total_memory: u64,
+    pub vendor: Vendor,
+    pub uuid: String,
+    pub driver_version: String,
+    pub nvidia_info: Option<nvidia::NvidiaInfo>,
+    pub vulkan_info: Option<vulkan::VulkanInfo>,
+}
+
+impl GpuInfo {
+    pub fn get_usage(&self) -> GpuUsage {
+        match self.vendor {
+            Vendor::NVIDIA => self.get_usage_nvidia(),
+            Vendor::AMD => self.get_usage_amd(),
+            _ => self.get_usage_unsupported(),
+        }
+    }
+
+    pub fn get_usage_unsupported(&self) -> GpuUsage {
+        GpuUsage {
+            uuid: self.uuid.clone(),
+            used_memory: 0,
+            total_memory: 0,
+        }
+    }
+}
+
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct SystemInfo {
     cpu: CpuStaticInfo,
     os_type: String,
     os_name: String,
+    total_memory: u64,
+    gpus: Vec<GpuInfo>,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct GpuUsage {
+    uuid: String,
+    used_memory: u64,
     total_memory: u64,
 }
 
@@ -152,14 +234,61 @@ pub struct SystemUsage {
     cpu: f32,
     used_memory: u64,
     total_memory: u64,
+    gpus: Vec<GpuUsage>,
+}
+
+fn get_jan_libvulkan_path<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> String {
+    let lib_name = if cfg!(target_os = "windows") {
+        "vulkan-1.dll"
+    } else if cfg!(target_os = "linux") {
+        "libvulkan.so"
+    } else {
+        return "".to_string();
+    };
+
+    // NOTE: this does not work in test mode (mock app)
+    match app.path().resolve(
+        format!("resources/lib/{}", lib_name),
+        BaseDirectory::Resource,
+    ) {
+        Ok(lib_path) => lib_path.to_string_lossy().to_string(),
+        Err(_) => "".to_string(),
+    }
 }
 
 #[tauri::command]
-pub fn get_system_info() -> SystemInfo {
+pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInfo {
     SYSTEM_INFO
         .get_or_init(|| {
             let mut system = System::new();
             system.refresh_memory();
+
+            let mut gpu_map = std::collections::HashMap::new();
+            for gpu in nvidia::get_nvidia_gpus() {
+                gpu_map.insert(gpu.uuid.clone(), gpu);
+            }
+
+            // try system vulkan first
+            let paths = vec!["".to_string(), get_jan_libvulkan_path(app.clone())];
+            let mut vulkan_gpus = vec![];
+            for path in paths {
+                vulkan_gpus = vulkan::get_vulkan_gpus(&path);
+                if !vulkan_gpus.is_empty() {
+                    break;
+                }
+            }
+
+            for gpu in vulkan_gpus {
+                match gpu_map.get_mut(&gpu.uuid) {
+                    // for existing NVIDIA GPUs, add Vulkan info
+                    Some(nvidia_gpu) => {
+                        nvidia_gpu.vulkan_info = gpu.vulkan_info;
+                    }
+                    None => {
+                        gpu_map.insert(gpu.uuid.clone(), gpu);
+                    }
+                }
+            }
 
             let os_type = if cfg!(target_os = "windows") {
                 "windows"
@@ -177,13 +306,14 @@ pub fn get_system_info() -> SystemInfo {
                 os_type: os_type.to_string(),
                 os_name,
                 total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
+                gpus: gpu_map.into_values().collect(),
             }
         })
         .clone()
 }
 
 #[tauri::command]
-pub fn get_system_usage() -> SystemUsage {
+pub fn get_system_usage<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemUsage {
     let mut system = System::new();
     system.refresh_memory();
 
@@ -200,22 +330,30 @@ pub fn get_system_usage() -> SystemUsage {
         cpu: cpu_usage,
         used_memory: system.used_memory() / 1024 / 1024, // bytes to MiB,
         total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB,
+        gpus: get_system_info(app.clone())
+            .gpus
+            .iter()
+            .map(|gpu| gpu.get_usage())
+            .collect(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::mock_app;
 
     #[test]
     fn test_system_info() {
-        let info = get_system_info();
+        let app = mock_app();
+        let info = get_system_info(app.handle().clone());
         println!("System Static Info: {:?}", info);
     }
 
     #[test]
     fn test_system_usage() {
-        let usage = get_system_usage();
+        let app = mock_app();
+        let usage = get_system_usage(app.handle().clone());
         println!("System Usage Info: {:?}", usage);
     }
 }
