@@ -108,7 +108,10 @@ export const useChat = () => {
       await serviceHub.models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await serviceHub.models().startModel(provider, modelId).catch(console.error)
+      await serviceHub
+        .models()
+        .startModel(provider, modelId)
+        .catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
@@ -188,7 +191,9 @@ export const useChat = () => {
         settings: newSettings,
       }
 
-      await serviceHub.providers().updateSettings(providerName, updateObj.settings ?? [])
+      await serviceHub
+        .providers()
+        .updateSettings(providerName, updateObj.settings ?? [])
       updateProvider(providerName, {
         ...provider,
         ...updateObj,
@@ -476,7 +481,9 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await serviceHub.models().stopModel(activeThread.model.id, 'llamacpp')
+            await serviceHub
+              .models()
+              .stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -523,6 +530,8 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
+
+        // Process queued message if available
       }
     },
     [
