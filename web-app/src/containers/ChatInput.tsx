@@ -70,6 +70,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }>
   >([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -281,6 +282,54 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
   }
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set dragOver to false if we're leaving the drop zone entirely
+    // In Tauri, relatedTarget can be null, so we need to handle that case
+    const relatedTarget = e.relatedTarget as Node | null
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setIsDragOver(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Ensure drag state is maintained during drag over
+    setIsDragOver(true)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    // Check if dataTransfer exists (it might not in some Tauri scenarios)
+    if (!e.dataTransfer) {
+      console.warn('No dataTransfer available in drop event')
+      return
+    }
+
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      // Create a synthetic event to reuse existing file handling logic
+      const syntheticEvent = {
+        target: {
+          files: files,
+        },
+      } as React.ChangeEvent<HTMLInputElement>
+
+      handleFileChange(syntheticEvent)
+    }
+  }
+
   return (
     <div className="relative">
       <div className="relative">
@@ -305,8 +354,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           <div
             className={cn(
               'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
-              isFocused && 'ring-1 ring-main-view-fg/10'
+              isFocused && 'ring-1 ring-main-view-fg/10',
+              isDragOver && 'ring-2 ring-accent border-accent'
             )}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
             {uploadedFiles.length > 0 && (
               <div className="flex gap-3 items-center p-2 pb-0">
@@ -372,8 +426,14 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               }}
               onKeyDown={(e) => {
                 // e.keyCode 229 is for IME input with Safari
-                const isComposing = e.nativeEvent.isComposing || e.keyCode === 229;
-                if (e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isComposing) {
+                const isComposing =
+                  e.nativeEvent.isComposing || e.keyCode === 229
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  prompt.trim() &&
+                  !isComposing
+                ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
                   handleSendMesage(prompt)
@@ -414,7 +474,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
                 {/* File attachment - always available */}
                 <div
-                  className="h-6 hidden p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                  className="h-6 p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                   onClick={handleAttachmentClick}
                 >
                   <IconPaperclip size={18} className="text-main-view-fg/50" />
@@ -422,6 +482,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     type="file"
                     ref={fileInputRef}
                     className="hidden"
+                    multiple
                     onChange={handleFileChange}
                   />
                 </div>
