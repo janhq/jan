@@ -173,6 +173,7 @@ function General() {
             setSelectedNewPath(null)
             setIsDialogOpen(false)
           } catch (error) {
+            console.error(error)
             toast.error(
               error instanceof Error
                 ? error.message

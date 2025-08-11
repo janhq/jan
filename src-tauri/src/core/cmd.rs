@@ -303,8 +303,8 @@ pub fn get_user_home_path(app: AppHandle) -> String {
     return get_app_configurations(app.clone()).data_folder;
 }
 
-/// Recursively copy a directory from src to dst
-fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+/// Recursively copy a directory from src to dst, excluding specified directories
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf, exclude_dirs: &[&str]) -> Result<(), io::Error> {
     if !dst.exists() {
         fs::create_dir_all(dst)?;
     }
@@ -316,7 +316,13 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
         let dst_path = dst.join(entry.file_name());
 
         if file_type.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
+            // Skip excluded directories
+            if let Some(dir_name) = entry.file_name().to_str() {
+                if exclude_dirs.contains(&dir_name) {
+                    continue;
+                }
+            }
+            copy_dir_recursive(&src_path, &dst_path, exclude_dirs)?;
         } else {
             fs::copy(&src_path, &dst_path)?;
         }
@@ -354,7 +360,7 @@ pub fn change_app_data_folder(
                 "New data folder cannot be a subdirectory of the current data folder".to_string(),
             );
         }
-        copy_dir_recursive(&current_data_folder, &new_data_folder_path)
+        copy_dir_recursive(&current_data_folder, &new_data_folder_path, &[".uvx", ".npx"])
             .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
     } else {
         log::info!("Current data folder does not exist, nothing to copy");
