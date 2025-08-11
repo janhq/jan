@@ -105,7 +105,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         try {
           // Only check mmproj for llamacpp provider
           if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await serviceHub.models().checkMmprojExists(selectedModel.id)
+            const hasLocalMmproj = await serviceHub
+              .models()
+              .checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
           }
           // For non-llamacpp providers, only check vision capability
@@ -543,12 +545,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             )}
             <TextareaAutosize
               ref={textareaRef}
-              disabled={Boolean(streamingContent)}
+              disabled={Boolean(queuedMessage)}
               minRows={2}
               rows={1}
               maxRows={10}
               value={prompt}
-              data-testid={'chat-input'}
+              data-test-id={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows
@@ -747,6 +749,15 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
               </div>
             </div>
+
+            {/* Queue indicator */}
+            {queuedMessage && (
+              <div className="flex items-center gap-2">
+                <div className="bg-accent text-accent-fg text-xs px-2 py-1 rounded-full font-medium">
+                  Message queued
+                </div>
+              </div>
+            )}
 
             {streamingContent ? (
               <Button
