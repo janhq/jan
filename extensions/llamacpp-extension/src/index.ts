@@ -1599,14 +1599,12 @@ export default class llamacpp_extension extends AIEngine {
     throw new Error('method not implemented yet')
   }
 
-  private async loadMetadata(path: string) {
+  private async loadMetadata(path: string): Promise<GgufMetadata> {
     try {
       const data = await invoke<GgufMetadata>('read_gguf_metadata', {
         path: path,
       })
-      console.log('Version:', data.version)
-      console.log('Tensor count:', data.tensor_count)
-      console.log('Metadata map:', data.metadata)
+      return data
     } catch (err) {
       console.error('Failed to read GGUF metadata:', err)
     }
