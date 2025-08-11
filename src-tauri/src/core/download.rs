@@ -1,6 +1,6 @@
 use crate::core::cmd::get_jan_data_folder_path;
 use crate::core::state::AppState;
-use crate::core::utils::normalize_path;
+use jan_utils::normalize_path;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;

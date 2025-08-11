@@ -1,9 +1,9 @@
 mod core;
 use core::{
     cmd::get_jan_data_folder_path,
+    download::DownloadManagerState,
     setup::{self, setup_mcp},
     state::AppState,
-    utils::download::DownloadManagerState,
 };
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
@@ -83,14 +83,14 @@ pub fn run() {
             core::threads::get_thread_assistant,
             core::threads::create_thread_assistant,
             core::threads::modify_thread_assistant,
-            // generic utils
-            core::utils::write_yaml,
-            core::utils::read_yaml,
-            core::utils::decompress,
-            core::utils::is_library_available,
+            // threads utils
+            core::threads_utils::write_yaml,
+            core::threads_utils::read_yaml,
+            core::threads_utils::decompress,
+            core::threads_utils::is_library_available,
             // Download
-            core::utils::download::download_files,
-            core::utils::download::cancel_download_task,
+            core::download::download_files,
+            core::download::cancel_download_task,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),

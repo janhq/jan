@@ -1,8 +1,9 @@
 pub mod cmd;
+pub mod download;
 pub mod fs;
 pub mod mcp;
 pub mod server;
 pub mod setup;
 pub mod state;
 pub mod threads;
-pub mod utils;
+pub mod threads_utils;

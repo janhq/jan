@@ -27,7 +27,7 @@ use tokio::sync::Mutex;
 static MESSAGE_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-use super::utils::{
+use super::threads_utils::{
     ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
     get_thread_metadata_path, THREADS_FILE,
 };

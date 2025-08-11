@@ -1,5 +1,3 @@
-pub mod download;
-
 use std::fs;
 use std::path::PathBuf;
 use tauri::Runtime;
