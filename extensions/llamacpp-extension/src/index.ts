@@ -39,6 +39,7 @@ type LlamacppConfig = {
   auto_unload: boolean
   chat_template: string
   n_gpu_layers: number
+  override_tensor_buffer_t: string
   ctx_size: number
   threads: number
   threads_batch: number
@@ -144,7 +145,6 @@ export default class llamacpp_extension extends AIEngine {
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
-  private activeSessions: Map<number, SessionInfo> = new Map()
   private providerPath!: string
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
@@ -770,16 +770,6 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onUnload(): Promise<void> {
     // Terminate all active sessions
-    for (const [_, sInfo] of this.activeSessions) {
-      try {
-        await this.unload(sInfo.model_id)
-      } catch (error) {
-        logger.error(`Failed to unload model ${sInfo.model_id}:`, error)
-      }
-    }
-
-    // Clear the sessions map
-    this.activeSessions.clear()
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -1103,67 +1093,13 @@ export default class llamacpp_extension extends AIEngine {
    * Function to find a random port
    */
   private async getRandomPort(): Promise<number> {
-    const MAX_ATTEMPTS = 20000
-    let attempts = 0
-
-    while (attempts < MAX_ATTEMPTS) {
-      const port = Math.floor(Math.random() * 1000) + 3000
-
-      const isAlreadyUsed = Array.from(this.activeSessions.values()).some(
-        (info) => info.port === port
-      )
-
-      if (!isAlreadyUsed) {
-        const isAvailable = await invoke<boolean>('is_port_available', { port })
-        if (isAvailable) return port
-      }
-
-      attempts++
+    try {
+      const port = await invoke<number>('get_random_port')
+      return port
+    } catch {
+      logger.error('Unable to find a suitable port')
+      throw new Error('Unable to find a suitable port for model')
     }
-
-    throw new Error('Failed to find an available port for the model to load')
-  }
-
-  private async sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
-
-  private async waitForModelLoad(
-    sInfo: SessionInfo,
-    timeoutMs = 240_000
-  ): Promise<void> {
-    await this.sleep(500) // Wait before first check
-    const start = Date.now()
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const res = await fetch(`http://localhost:${sInfo.port}/health`)
-
-        if (res.status === 503) {
-          const body = await res.json()
-          const msg = body?.error?.message ?? 'Model loading'
-          logger.info(`waiting for model load... (${msg})`)
-        } else if (res.ok) {
-          const body = await res.json()
-          if (body.status === 'ok') {
-            return
-          } else {
-            logger.warn('Unexpected OK response from /health:', body)
-          }
-        } else {
-          logger.warn(`Unexpected status ${res.status} from /health`)
-        }
-      } catch (e) {
-        await this.unload(sInfo.model_id)
-        throw new Error(`Model appears to have crashed: ${e}`)
-      }
-
-      await this.sleep(800) // Retry interval
-    }
-
-    await this.unload(sInfo.model_id)
-    throw new Error(
-      `Timed out loading model after ${timeoutMs}... killing llamacpp`
-    )
   }
 
   override async load(
@@ -1171,7 +1107,7 @@ export default class llamacpp_extension extends AIEngine {
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
-    const sInfo = this.findSessionByModel(modelId)
+    const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
       throw new Error('Model already loaded!!')
     }
@@ -1262,6 +1198,14 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--jinja')
     args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
+    // For overriding tensor buffer type, useful where
+    // massive MOE models can be made faster by keeping attention on the GPU
+    // and offloading the expert FFNs to the CPU.
+    // This is an expert level settings and should only be used by people
+    // who knows what they are doing.
+    // Takes a regex with matching tensor name as input
+    if (cfg.override_tensor_buffer_t)
+      args.push('--override-tensor', cfg.override_tensor_buffer_t)
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
@@ -1333,27 +1277,20 @@ export default class llamacpp_extension extends AIEngine {
         libraryPath,
         args,
       })
-
-      // Store the session info for later use
-      this.activeSessions.set(sInfo.pid, sInfo)
-      await this.waitForModelLoad(sInfo)
-
       return sInfo
     } catch (error) {
-      logger.error('Error loading llama-server:\n', error)
-      throw new Error(`Failed to load llama-server: ${error}`)
+      logger.error('Error in load command:\n', error)
+      throw error
     }
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo = this.findSessionByModel(modelId)
+    const sInfo: SessionInfo = await this.findSessionByModel(modelId)
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
     const pid = sInfo.pid
     try {
-      this.activeSessions.delete(pid)
-
       // Pass the PID as the session_id
       const result = await invoke<UnloadResult>('unload_llama_model', {
         pid: pid,
@@ -1364,13 +1301,11 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(`Successfully unloaded model with PID ${pid}`)
       } else {
         logger.warn(`Failed to unload model: ${result.error}`)
-        this.activeSessions.set(sInfo.pid, sInfo)
       }
 
       return result
     } catch (error) {
       logger.error('Error in unload command:', error)
-      this.activeSessions.set(sInfo.pid, sInfo)
       return {
         success: false,
         error: `Failed to unload model: ${error}`,
@@ -1493,17 +1428,23 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private findSessionByModel(modelId: string): SessionInfo | undefined {
-    return Array.from(this.activeSessions.values()).find(
-      (session) => session.model_id === modelId
-    )
+  private async findSessionByModel(modelId: string): Promise<SessionInfo> {
+    try {
+      let sInfo = await invoke<SessionInfo>('find_session_by_model', {
+        modelId,
+      })
+      return sInfo
+    } catch (e) {
+      logger.error(e)
+      throw new Error(String(e))
+    }
   }
 
   override async chat(
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = this.findSessionByModel(opts.model)
+    const sessionInfo = await this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
@@ -1519,7 +1460,6 @@ export default class llamacpp_extension extends AIEngine {
         throw new Error('Model appears to have crashed! Please reload!')
       }
     } else {
-      this.activeSessions.delete(sessionInfo.pid)
       throw new Error('Model have crashed! Please reload!')
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
@@ -1568,11 +1508,13 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-    let lmodels: string[] = []
-    for (const [_, sInfo] of this.activeSessions) {
-      lmodels.push(sInfo.model_id)
+    try {
+      let models: string[] = await invoke<string[]>('get_loaded_models')
+      return models
+    } catch (e) {
+      logger.error(e)
+      throw new Error(e)
     }
-    return lmodels
   }
 
   async getDevices(): Promise<DeviceList[]> {
@@ -1602,7 +1544,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    let sInfo = this.findSessionByModel('sentence-transformer-mini')
+    let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
       const downloadedModelList = await this.list()
       if (

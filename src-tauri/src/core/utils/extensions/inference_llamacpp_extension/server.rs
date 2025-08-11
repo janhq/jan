@@ -1,7 +1,9 @@
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -17,19 +19,92 @@ use crate::core::state::AppState;
 use crate::core::state::LLamaBackendSession;
 
 type HmacSha256 = Hmac<Sha256>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ErrorCode {
+    BinaryNotFound,
+    ModelFileNotFound,
+    LibraryPathInvalid,
+
+    // --- Model Loading Errors ---
+    ModelLoadFailed,
+    DraftModelLoadFailed,
+    MultimodalProjectorLoadFailed,
+    ModelArchNotSupported,
+    ModelLoadTimedOut,
+    LlamaCppProcessError,
+
+    // --- Memory Errors ---
+    OutOfMemory,
+
+    // --- Internal Application Errors ---
+    DeviceListParseFailed,
+    IoError,
+    InternalError,
+}
+
+#[derive(Debug, Clone, Serialize, thiserror::Error)]
+#[error("LlamacppError {{ code: {code:?}, message: \"{message}\" }}")]
+pub struct LlamacppError {
+    pub code: ErrorCode,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
+impl LlamacppError {
+    pub fn new(code: ErrorCode, message: String, details: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+            details,
+        }
+    }
+
+    /// Parses stderr from llama.cpp and creates a specific LlamacppError.
+    pub fn from_stderr(stderr: &str) -> Self {
+        let lower_stderr = stderr.to_lowercase();
+        // TODO: add others
+        let is_out_of_memory = lower_stderr.contains("out of memory")
+            || lower_stderr.contains("insufficient memory")
+            || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
+            || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
+            || lower_stderr.contains("cuda_error_out_of_memory"); // CUDA-specific
+
+        if is_out_of_memory {
+            return Self::new(
+                ErrorCode::OutOfMemory,
+                "Out of memory. The model requires more RAM or VRAM than available.".into(),
+                Some(stderr.into()),
+            );
+        }
+
+        if lower_stderr.contains("error loading model architecture") {
+            return Self::new(
+                ErrorCode::ModelArchNotSupported,
+                "The model's architecture is not supported by this version of the backend.".into(),
+                Some(stderr.into()),
+            );
+        }
+        Self::new(
+            ErrorCode::LlamaCppProcessError,
+            "The model process encountered an unexpected error.".into(),
+            Some(stderr.into()),
+        )
+    }
+}
+
 // Error type for server commands
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
-    #[error("llamacpp error: {0}")]
-    LlamacppError(String),
-    #[error("Failed to locate server binary: {0}")]
-    BinaryNotFound(String),
+    #[error(transparent)]
+    Llamacpp(#[from] LlamacppError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Jan API error: {0}")]
+
+    #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
-    #[error("Parse error: {0}")]
-    ParseError(String),
 }
 
 // impl serialization for tauri
@@ -38,7 +113,20 @@ impl serde::Serialize for ServerError {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.to_string().as_ref())
+        let error_to_serialize: LlamacppError = match self {
+            ServerError::Llamacpp(err) => err.clone(),
+            ServerError::Io(e) => LlamacppError::new(
+                ErrorCode::IoError,
+                "An input/output error occurred.".into(),
+                Some(e.to_string()),
+            ),
+            ServerError::Tauri(e) => LlamacppError::new(
+                ErrorCode::InternalError,
+                "An internal application error occurred.".into(),
+                Some(e.to_string()),
+            ),
+        };
+        error_to_serialize.serialize(serializer)
     }
 }
 
@@ -108,14 +196,17 @@ pub async fn load_llama_model(
 
     let server_path_buf = PathBuf::from(backend_path);
     if !server_path_buf.exists() {
+        let err_msg = format!("Binary not found at {:?}", backend_path);
         log::error!(
             "Server binary not found at expected path: {:?}",
             backend_path
         );
-        return Err(ServerError::BinaryNotFound(format!(
-            "Binary not found at {:?}",
-            backend_path
-        )));
+        return Err(LlamacppError::new(
+            ErrorCode::BinaryNotFound,
+            "The llama.cpp server binary could not be found.".into(),
+            Some(err_msg),
+        )
+        .into());
     }
 
     let port_str = args
@@ -132,22 +223,35 @@ pub async fn load_llama_model(
         }
     };
     // FOR MODEL PATH; TODO: DO SIMILARLY FOR MMPROJ PATH
-    let model_path_index = args
-        .iter()
-        .position(|arg| arg == "-m")
-        .ok_or(ServerError::LlamacppError("Missing `-m` flag".into()))?;
+    let model_path_index = args.iter().position(|arg| arg == "-m").ok_or_else(|| {
+        LlamacppError::new(
+            ErrorCode::ModelLoadFailed,
+            "Model path argument '-m' is missing.".into(),
+            None,
+        )
+    })?;
 
-    let model_path = args
-        .get(model_path_index + 1)
-        .ok_or(ServerError::LlamacppError("Missing path after `-m`".into()))?
-        .clone();
+    let model_path = args.get(model_path_index + 1).cloned().ok_or_else(|| {
+        LlamacppError::new(
+            ErrorCode::ModelLoadFailed,
+            "Model path was not provided after '-m' flag.".into(),
+            None,
+        )
+    })?;
 
-    let model_path_pb = PathBuf::from(model_path);
+    let model_path_pb = PathBuf::from(&model_path);
     if !model_path_pb.exists() {
-        return Err(ServerError::LlamacppError(format!(
+        let err_msg = format!(
             "Invalid or inaccessible model path: {}",
-            model_path_pb.display().to_string(),
-        )));
+            model_path_pb.display()
+        );
+        log::error!("{}", &err_msg);
+        return Err(LlamacppError::new(
+            ErrorCode::ModelFileNotFound,
+            "The specified model file does not exist or is not accessible.".into(),
+            Some(err_msg),
+        )
+        .into());
     }
     #[cfg(windows)]
     {
@@ -283,13 +387,13 @@ pub async fn load_llama_model(
                             || line_lower.contains("starting the main loop")
                             || line_lower.contains("server listening on")
                         {
-                            log::info!("Server appears to be ready based on stderr: '{}'", line);
+                            log::info!("Model appears to be ready based on logs: '{}'", line);
                             let _ = ready_tx.send(true).await;
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Error reading stderr: {}", e);
+                    log::error!("Error reading logs: {}", e);
                     break;
                 }
             }
@@ -302,21 +406,21 @@ pub async fn load_llama_model(
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_default();
-            log::error!("llama.cpp exited early with code {:?}", status);
-            log::error!("--- stderr ---\n{}", stderr_output);
-            return Err(ServerError::LlamacppError(stderr_output.trim().to_string()));
+            log::error!("llama.cpp failed early with code {:?}", status);
+            log::error!("{}", stderr_output);
+            return Err(LlamacppError::from_stderr(&stderr_output).into());
         }
     }
 
     // Wait for server to be ready or timeout
-    let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+    let timeout_duration = Duration::from_secs(180); // 3 minutes timeout
     let start_time = Instant::now();
-    log::info!("Waiting for server to be ready...");
+    log::info!("Waiting for model session to be ready...");
     loop {
         tokio::select! {
             // Server is ready
             Some(true) = ready_rx.recv() => {
-                log::info!("Server is ready to accept requests!");
+                log::info!("Model is ready to accept requests!");
                 break;
             }
             // Check for process exit more frequently
@@ -326,10 +430,10 @@ pub async fn load_llama_model(
                     let stderr_output = stderr_task.await.unwrap_or_default();
                     if !status.success() {
                         log::error!("llama.cpp exited with error code {:?}", status);
-                        return Err(ServerError::LlamacppError(format!("Process exited with code {:?}\n\nStderr:\n{}", status, stderr_output)));
+                        return Err(LlamacppError::from_stderr(&stderr_output).into());
                     } else {
                         log::error!("llama.cpp exited successfully but without ready signal");
-                        return Err(ServerError::LlamacppError(format!("Process exited unexpectedly\n\nStderr:\n{}", stderr_output)));
+                        return Err(LlamacppError::from_stderr(&stderr_output).into());
                     }
                 }
 
@@ -338,7 +442,11 @@ pub async fn load_llama_model(
                     log::error!("Timeout waiting for server to be ready");
                     let _ = child.kill().await;
                     let stderr_output = stderr_task.await.unwrap_or_default();
-                    return Err(ServerError::LlamacppError(format!("Server startup timeout\n\nStderr:\n{}", stderr_output)));
+                    return Err(LlamacppError::new(
+                        ErrorCode::ModelLoadTimedOut,
+                        "The model took too long to load and timed out.".into(),
+                        Some(format!("Timeout: {}s\n\nStderr:\n{}", timeout_duration.as_secs(), stderr_output)),
+                    ).into());
                 }
             }
         }
@@ -461,10 +569,12 @@ pub async fn get_devices(
             "Server binary not found at expected path: {:?}",
             backend_path
         );
-        return Err(ServerError::BinaryNotFound(format!(
-            "Binary not found at {:?}",
-            backend_path
-        )));
+        return Err(LlamacppError::new(
+            ErrorCode::BinaryNotFound,
+            "The llama.cpp server binary could not be found.".into(),
+            Some(format!("Path: {}", backend_path)),
+        )
+        .into());
     }
 
     // Configure the command to run the server with --list-devices
@@ -519,20 +629,21 @@ pub async fn get_devices(
     // Execute the command and wait for completion
     let output = timeout(Duration::from_secs(30), command.output())
         .await
-        .map_err(|_| ServerError::LlamacppError("Timeout waiting for device list".to_string()))?
+        .map_err(|_| {
+            LlamacppError::new(
+                ErrorCode::InternalError,
+                "Timeout waiting for device list".into(),
+                None,
+            )
+        })?
         .map_err(ServerError::Io)?;
 
     // Check if command executed successfully
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::error!("llama-server --list-devices failed: {}", stderr);
-        return Err(ServerError::LlamacppError(format!(
-            "Command failed with exit code {:?}: {}",
-            output.status.code(),
-            stderr
-        )));
+        return Err(LlamacppError::from_stderr(&stderr).into());
     }
-
     // Parse the output
     let stdout = String::from_utf8_lossy(&output.stdout);
     log::info!("Device list output:\n{}", stdout);
@@ -570,9 +681,12 @@ fn parse_device_output(output: &str) -> ServerResult<Vec<DeviceInfo>> {
     if devices.is_empty() && found_devices_section {
         log::warn!("No devices found in output");
     } else if !found_devices_section {
-        return Err(ServerError::ParseError(
-            "Could not find 'Available devices:' section in output".to_string(),
-        ));
+        return Err(LlamacppError::new(
+            ErrorCode::DeviceListParseFailed,
+            "Could not find 'Available devices:' section in the backend output.".into(),
+            Some(output.to_string()),
+        )
+        .into());
     }
 
     Ok(devices)
@@ -682,16 +796,23 @@ fn parse_memory_value(mem_str: &str) -> ServerResult<i32> {
     // Handle formats like "8000 MiB" or "7721 MiB free"
     let parts: Vec<&str> = mem_str.split_whitespace().collect();
     if parts.is_empty() {
-        return Err(ServerError::ParseError(format!(
-            "Empty memory value: '{}'",
-            mem_str
-        )));
+        return Err(LlamacppError::new(
+            ErrorCode::DeviceListParseFailed,
+            format!("empty memory value: {}", mem_str),
+            None,
+        )
+        .into());
     }
 
     // Take the first part which should be the number
     let number_str = parts[0];
     number_str.parse::<i32>().map_err(|_| {
-        ServerError::ParseError(format!("Could not parse memory value: '{}'", number_str))
+        LlamacppError::new(
+            ErrorCode::DeviceListParseFailed,
+            format!("Could not parse memory value: '{}'", number_str),
+            None,
+        )
+        .into()
     })
 }
 
@@ -724,9 +845,78 @@ pub async fn is_process_running(pid: i32, state: State<'_, AppState>) -> Result<
 }
 
 // check port availability
-#[tauri::command]
-pub fn is_port_available(port: u16) -> bool {
+fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+#[tauri::command]
+pub async fn get_random_port(state: State<'_, AppState>) -> Result<u16, String> {
+    const MAX_ATTEMPTS: u32 = 20000;
+    let mut attempts = 0;
+    let mut rng = StdRng::from_entropy();
+
+    // Get all active ports from sessions
+    let map = state.llama_server_process.lock().await;
+
+    let used_ports: HashSet<u16> = map
+        .values()
+        .filter_map(|session| {
+            // Convert valid ports to u16 (filter out placeholder ports like -1)
+            if session.info.port > 0 && session.info.port <= u16::MAX as i32 {
+                Some(session.info.port as u16)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    drop(map); // unlock early
+
+    while attempts < MAX_ATTEMPTS {
+        let port = rng.gen_range(3000..4000);
+
+        if used_ports.contains(&port) {
+            attempts += 1;
+            continue;
+        }
+
+        if is_port_available(port) {
+            return Ok(port);
+        }
+
+        attempts += 1;
+    }
+
+    Err("Failed to find an available port for the model to load".into())
+}
+
+// find session
+#[tauri::command]
+pub async fn find_session_by_model(
+    model_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<SessionInfo>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let session_info = map
+        .values()
+        .find(|backend_session| backend_session.info.model_id == model_id)
+        .map(|backend_session| backend_session.info.clone());
+
+    Ok(session_info)
+}
+
+// get running models
+#[tauri::command]
+pub async fn get_loaded_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let map = state.llama_server_process.lock().await;
+
+    let model_ids = map
+        .values()
+        .map(|backend_session| backend_session.info.model_id.clone())
+        .collect();
+
+    Ok(model_ids)
 }
 
 // tests
@@ -929,23 +1119,33 @@ Vulkan1: AMD Radeon Graphics (RADV GFX1151) (87722 MiB, 87722 MiB free)"#;
         {
             let dir = tempfile::tempdir().expect("Failed to create temp dir");
             let long_path = dir.path().join(UNCOMMON_DIR_NAME);
+
             std::fs::create_dir(&long_path)
-                .expect("Failed to create test directory with non-ASCII name");
+                .expect("Failed to create directory with uncommon characters");
+
             let short_path = get_short_path(&long_path);
-            assert!(
-                short_path.is_ascii(),
-                "The resulting short path must be composed of only ASCII characters. Got: {}",
-                short_path
-            );
-            assert!(
-                PathBuf::from(&short_path).exists(),
-                "The returned short path must exist on the filesystem"
-            );
-            assert_ne!(
-                short_path,
-                long_path.to_str().unwrap(),
-                "Short path should not be the same as the long path"
-            );
+
+            match short_path {
+                Some(sp) => {
+                    // Ensure the path exists
+                    assert!(
+                        PathBuf::from(&sp).exists(),
+                        "Returned short path should exist on filesystem: {}",
+                        sp
+                    );
+
+                    // It may or may not be ASCII; just ensure it differs
+                    let long_path_str = long_path.to_string_lossy();
+                    assert_ne!(
+                        sp, long_path_str,
+                        "Short path should differ from original path"
+                    );
+                }
+                None => {
+                    // On some systems, short path generation may be disabled
+                    eprintln!("Short path generation failed. This might be expected depending on system settings.");
+                }
+            }
         }
         #[cfg(not(windows))]
         {

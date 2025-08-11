@@ -7,6 +7,7 @@ type ControllerProps = {
   type?: string
   options?: Array<{ value: number | string; name: string }>
   input_actions?: string[]
+  recommended?: string
 }
 
 /**
