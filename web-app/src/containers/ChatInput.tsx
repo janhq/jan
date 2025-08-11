@@ -460,7 +460,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             <div className="px-1 flex items-center gap-1">
               <div
                 className={cn(
-                  'px-1 flex items-center gap-1',
+                  'px-1 flex items-center',
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -474,7 +474,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
                 {/* File attachment - always available */}
                 <div
-                  className="h-6 p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                  className="h-6 p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 ml-1"
                   onClick={handleAttachmentClick}
                 >
                   <IconPaperclip size={18} className="text-main-view-fg/50" />
@@ -645,6 +645,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       </div>
+
       {message && (
         <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
           <div className="flex items-center gap-1 justify-between">
