@@ -7,10 +7,9 @@
       "layout": "raw"
     }
   },
-  "docs-v2": {
+  "docs": {
     "type": "page",
-    "title": "Documentation",
-    "href": "https://v2.jan.ai"
+    "title": "Documentation"
   },
   "cortex": {
     "type": "page",
