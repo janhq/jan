@@ -1,0 +1,363 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../layouts/Layout.astro';
+import CustomNav from '../components/CustomNav.astro';
+
+// Get all blog entries and sort by date (newest first)
+const blogEntries = await getCollection('blog');
+const sortedEntries = blogEntries.sort((a, b) =>
+  new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+);
+
+// Extract unique categories
+// const allCategories = [...new Set(sortedEntries.flatMap(entry =>
+//   entry.data.categories ? entry.data.categories.split(',').map(cat => cat.trim()) : []
+// ))];
+
+const title = 'Blog';
+const description = 'The latest updates from Jan. See Changelog for more product updates.';
+
+// Define gradient colors for cards
+const gradients = [
+  'from-purple-500 to-pink-500',
+  'from-blue-500 to-cyan-400',
+  'from-purple-600 to-blue-500',
+  'from-cyan-400 to-blue-500',
+  'from-pink-500 to-purple-600',
+  'from-blue-600 to-purple-600'
+];
+---
+
+<Layout title={title} description={description}>
+  <CustomNav />
+  <main class="blog-page">
+    <div class="blog-container">
+      <!-- Header -->
+      <header class="blog-header">
+        <h1>Blog</h1>
+        <p>The latest updates from Jan. See <a href="/changelog" class="changelog-link">Changelog</a> for more product updates.</p>
+      </header>
+
+      <!-- Category Filter -->
+      <div class="category-filter">
+        <button class="category-btn active" data-category="all">All Categories</button>
+        <button class="category-btn" data-category="guides">Guides</button>
+        <button class="category-btn" data-category="research">Research</button>
+        <button class="category-btn" data-category="building jan">Building Jan</button>
+      </div>
+
+      <!-- Blog Grid -->
+      <div class="blog-grid">
+        {sortedEntries.map((entry, index) => {
+          const date = new Date(entry.data.date);
+          const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          const gradientClass = gradients[index % gradients.length];
+          const category = entry.data.categories || 'guides';
+
+          return (
+            <article class={`blog-card ${gradientClass}`} data-category={category.toLowerCase()}>
+              <div class="card-header">
+                <div class={`card-gradient bg-gradient-to-br ${gradientClass}`}>
+                  <div class="category-badge">{category}</div>
+                  <div class="card-date">{formattedDate}</div>
+                </div>
+              </div>
+
+              <div class="card-content">
+                <h2 class="card-title">
+                  <a href={`/blog/${entry.slug}`}>{entry.data.title}</a>
+                </h2>
+
+                <p class="card-description">{entry.data.description}</p>
+
+                <a href={`/blog/${entry.slug}`} class="read-more">
+                  Read more...
+                </a>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  /* Blog Page Styles */
+  .blog-page {
+    min-height: 100vh;
+    background: var(--sl-color-bg);
+    color: var(--sl-color-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  .blog-container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    overflow-x: hidden;
+  }
+
+  .blog-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .blog-header h1 {
+    font-size: 4rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #888888 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .blog-header p {
+    font-size: 1.1rem;
+    color: var(--sl-color-text-muted);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .changelog-link {
+    color: var(--sl-color-accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .changelog-link:hover {
+    text-decoration: underline;
+  }
+
+  .category-filter {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 3rem;
+    flex-wrap: wrap;
+  }
+
+  .category-btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 2rem;
+    background: var(--sl-color-bg-sidebar);
+    color: var(--sl-color-text);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid var(--sl-color-gray-5);
+  }
+
+  .category-btn:hover {
+    background: var(--sl-color-bg-accent);
+    border-color: var(--sl-color-accent);
+    transform: translateY(-1px);
+  }
+
+  .category-btn.active {
+    background: var(--sl-color-accent);
+    color: white;
+    border-color: var(--sl-color-accent);
+  }
+
+  .blog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 2rem;
+  }
+
+  .blog-card {
+    background: var(--sl-color-bg-sidebar);
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--sl-color-gray-5);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: fit-content;
+  }
+
+  .blog-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .card-header {
+    position: relative;
+  }
+
+  .card-gradient {
+    height: 120px;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 1rem;
+  }
+
+  /* Individual gradient backgrounds */
+  .blog-card.from-purple-500.to-pink-500 .card-gradient {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  }
+
+  .blog-card.from-blue-500.to-cyan-400 .card-gradient {
+    background: linear-gradient(135deg, #3b82f6 0%, #22d3ee 100%);
+  }
+
+  .blog-card.from-purple-600.to-blue-500 .card-gradient {
+    background: linear-gradient(135deg, #9333ea 0%, #3b82f6 100%);
+  }
+
+  .blog-card.from-cyan-400.to-blue-500 .card-gradient {
+    background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 100%);
+  }
+
+  .blog-card.from-pink-500.to-purple-600 .card-gradient {
+    background: linear-gradient(135deg, #ec4899 0%, #9333ea 100%);
+  }
+
+  .blog-card.from-blue-600.to-purple-600 .card-gradient {
+    background: linear-gradient(135deg, #2563eb 0%, #9333ea 100%);
+  }
+
+  .category-badge {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    backdrop-filter: blur(10px);
+  }
+
+  .card-date {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-align: right;
+  }
+
+  .card-content {
+    padding: 1.5rem;
+  }
+
+  .card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--sl-color-text);
+    line-height: 1.3;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+
+  .card-title a {
+    color: var(--sl-color-text);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .card-title a:hover {
+    color: var(--sl-color-accent);
+  }
+
+  .card-description {
+    color: var(--sl-color-text-muted);
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .read-more {
+    color: var(--sl-color-accent);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+  }
+
+  .read-more:hover {
+    color: var(--sl-color-text);
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+    .blog-header h1 {
+      font-size: 2.5rem;
+    }
+
+    .blog-grid {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    .category-filter {
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .category-btn {
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .blog-container {
+      padding: 1.5rem 0.75rem;
+    }
+
+    .blog-header h1 {
+      font-size: 2rem;
+    }
+
+    .card-gradient {
+      height: 100px;
+    }
+
+    .card-content {
+      padding: 1rem;
+    }
+  }
+</style>
+
+<script>
+  // Category filtering functionality
+  const categoryButtons = document.querySelectorAll('.category-btn');
+  const blogCards = document.querySelectorAll('.blog-card');
+
+  categoryButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      // Remove active class from all buttons
+      categoryButtons.forEach(btn => btn.classList.remove('active'));
+
+      // Add active class to clicked button
+      button.classList.add('active');
+
+      const selectedCategory = button.dataset.category;
+
+      // Show/hide cards based on category
+      blogCards.forEach(card => {
+        if (selectedCategory === 'all' || card.dataset.category === selectedCategory) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+  });
+</script>
+</Layout>

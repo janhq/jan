@@ -33,10 +33,6 @@
       "layout": "raw"
     }
   },
-  "about": {
-    "type": "page",
-    "title": "About"
-  },
   "blog": {
     "type": "page",
     "title": "Blog",

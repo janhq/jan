@@ -1,0 +1,656 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import CustomNav from '../../components/CustomNav.astro';
+import '../../styles/blog.css';
+
+export async function getStaticPaths() {
+  const blogEntries = await getCollection('blog');
+  return blogEntries.map(entry => ({
+    params: { slug: entry.slug },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await entry.render();
+
+const formattedDate = new Date(entry.data.date).toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+
+const tags = entry.data.tags ? entry.data.tags.split(',').map(tag => tag.trim()) : [];
+---
+
+<Layout title={entry.data.title} description={entry.data.description}>
+  <CustomNav />
+  <main class="blog-post">
+    <article class="blog-article">
+      <!-- Back to Blog -->
+      <div class="back-link">
+        <a href="/blog">← Back to Blog</a>
+      </div>
+
+      <!-- Article Header -->
+      <header class="article-header">
+        <div class="article-meta">
+          <time class="article-date">{formattedDate}</time>
+          {entry.data.categories && (
+            <span class="article-category">{entry.data.categories}</span>
+          )}
+        </div>
+
+        <h1 class="article-title">{entry.data.title}</h1>
+
+        <p class="article-description">{entry.data.description}</p>
+
+        {tags.length > 0 && (
+          <div class="article-tags">
+            {tags.map(tag => (
+              <span class="tag">{tag}</span>
+            ))}
+          </div>
+        )}
+      </header>
+
+      <!-- Article Content -->
+      <div class="article-content">
+        <Content />
+      </div>
+
+      <!-- Article Footer -->
+      <footer class="article-footer">
+        <div class="footer-cta">
+          <h3>Ready to try Jan?</h3>
+          <p>Experience the power of local AI with complete privacy and control.</p>
+          <a href="https://jan.ai/" class="cta-button" target="_blank" rel="noopener">
+            Download Jan →
+          </a>
+        </div>
+
+        <div class="back-to-blog">
+          <a href="/blog" class="back-button">← Back to Blog</a>
+        </div>
+      </footer>
+    </article>
+  </main>
+</Layout>
+
+<style>
+  .blog-post {
+    min-height: 100vh;
+    background: var(--sl-color-bg);
+    color: var(--sl-color-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  .blog-article {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .back-link {
+    margin-bottom: 2rem;
+  }
+
+  .back-link a {
+    color: var(--sl-color-text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+  }
+
+  .back-link a:hover {
+    color: var(--sl-color-accent);
+  }
+
+  .article-header {
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+
+  .article-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: var(--sl-color-text-muted);
+  }
+
+  .article-date {
+    display: flex;
+    align-items: center;
+  }
+
+  .article-category {
+    background: var(--sl-color-accent);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+
+  .article-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 1rem;
+    color: var(--sl-color-text);
+  }
+
+  .article-description {
+    font-size: 1.2rem;
+    color: var(--sl-color-text-muted);
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+  }
+
+  .article-tags {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .tag {
+    background: var(--sl-color-bg-sidebar);
+    color: var(--sl-color-text);
+    padding: 0.375rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--sl-color-gray-5);
+  }
+
+  .article-content {
+    line-height: 1.7;
+    font-size: 1.1rem;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+
+  /* Image styling */
+  .article-content :global(img) {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 2rem auto;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--sl-color-gray-5);
+  }
+
+  /* For inline images or icons */
+  .article-content :global(p img) {
+    display: inline-block;
+    margin: 0 0.25rem;
+    vertical-align: middle;
+    max-height: 1.5em;
+    width: auto;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  /* For figure elements if used */
+  .article-content :global(figure) {
+    margin: 2rem 0;
+    text-align: center;
+  }
+
+  .article-content :global(figure img) {
+    margin-bottom: 0.5rem;
+  }
+
+  .article-content :global(figcaption) {
+    font-size: 0.9rem;
+    color: var(--sl-color-text-muted);
+    font-style: italic;
+    margin-top: 0.5rem;
+  }
+
+  /* Content styling */
+  .article-content :global(h1),
+  .article-content :global(h2),
+  .article-content :global(h3),
+  .article-content :global(h4) {
+    color: var(--sl-color-text);
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    line-height: 1.3;
+  }
+
+  .article-content :global(h1) {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
+  .article-content :global(h2) {
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+
+  .article-content :global(h3) {
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+
+  .article-content :global(p) {
+    margin-bottom: 1.5rem;
+    color: var(--sl-color-text);
+  }
+
+  .article-content :global(a) {
+    color: var(--sl-color-accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .article-content :global(a:hover) {
+    text-decoration: underline;
+  }
+
+  .article-content :global(ul),
+  .article-content :global(ol) {
+    margin-bottom: 1.5rem;
+    padding-left: 2rem;
+  }
+
+  .article-content :global(li) {
+    margin-bottom: 0.5rem;
+  }
+
+  .article-content :global(blockquote) {
+    border-left: 4px solid var(--sl-color-accent);
+    background: var(--sl-color-bg-sidebar);
+    padding: 1rem 1.5rem;
+    margin: 2rem 0;
+    border-radius: 0.5rem;
+    font-style: italic;
+  }
+
+  .article-content :global(code) {
+    background: var(--sl-color-bg-inline-code, var(--sl-color-gray-6));
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-family: 'Fira Code', 'SF Mono', Monaco, 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.875em;
+    color: var(--sl-color-text-code);
+  }
+
+  .article-content :global(pre) {
+    background: var(--sl-color-bg-sidebar);
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border: 1px solid var(--sl-color-gray-5);
+    max-width: 100%;
+    text-align: left;
+    font-family: 'Fira Code', 'SF Mono', Monaco, 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .article-content :global(pre code) {
+    background: transparent;
+    padding: 0;
+    font-size: 0.875rem;
+  }
+
+  .article-content :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2rem 0;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+
+  .article-content :global(th),
+  .article-content :global(td) {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+  }
+
+  .article-content :global(th) {
+    background: var(--sl-color-bg-sidebar);
+    font-weight: 600;
+  }
+
+  .article-content :global(tbody tr:last-child td) {
+    border-bottom: none;
+  }
+
+  /* Horizontal scrolling for wide content */
+  .article-content :global(.table-wrapper),
+  .article-content :global(.overflow-x-auto) {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+
+  /* Fix for MDX components */
+  .article-content :global(.callout),
+  .article-content :global(.note),
+  .article-content :global(.warning),
+  .article-content :global(.tip) {
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0.5rem;
+    border-left: 4px solid var(--sl-color-accent);
+    background: var(--sl-color-bg-sidebar);
+  }
+
+  /* Lists inside article content */
+  .article-content :global(ul ul),
+  .article-content :global(ol ol),
+  .article-content :global(ul ol),
+  .article-content :global(ol ul) {
+    margin-bottom: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Strong and emphasis */
+  .article-content :global(strong) {
+    font-weight: 600;
+    color: var(--sl-color-text);
+  }
+
+  .article-content :global(em) {
+    font-style: italic;
+  }
+
+  /* Horizontal rule */
+  .article-content :global(hr) {
+    border: none;
+    border-top: 1px solid var(--sl-color-gray-5);
+    margin: 2rem 0;
+  }
+
+  /* Video embeds */
+  .article-content :global(video) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.75rem;
+    margin: 2rem 0;
+  }
+
+  /* Iframe embeds */
+  .article-content :global(iframe) {
+    max-width: 100%;
+    border-radius: 0.75rem;
+    margin: 2rem 0;
+  }
+
+  /* Custom MDX component containers */
+  .article-content :global(.mdx-component) {
+    margin: 2rem 0;
+  }
+
+  .article-footer {
+    margin-top: 4rem;
+    padding-top: 3rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+
+  .footer-cta {
+    background: linear-gradient(135deg, var(--sl-color-accent) 0%, #6366f1 100%);
+    padding: 2rem;
+    border-radius: 1rem;
+    text-align: center;
+    margin-bottom: 2rem;
+    color: white;
+  }
+
+  .footer-cta h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .footer-cta p {
+    margin-bottom: 1.5rem;
+    opacity: 0.9;
+  }
+
+  .cta-button {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.2);
+    color: white !important;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    text-decoration: none !important;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+  }
+
+  .cta-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+  }
+
+  .back-to-blog {
+    text-align: center;
+  }
+
+  .back-button {
+    color: var(--sl-color-text-muted);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .back-button:hover {
+    color: var(--sl-color-accent);
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+    .blog-article {
+      padding: 1.5rem 1rem;
+    }
+
+    .article-title {
+      font-size: 2rem;
+    }
+
+    .article-description {
+      font-size: 1.1rem;
+    }
+
+    .article-content {
+      font-size: 1rem;
+    }
+
+    .article-meta {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .footer-cta {
+      padding: 1.5rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .blog-article {
+      padding: 1rem 0.75rem;
+    }
+
+    .article-title {
+      font-size: 1.75rem;
+    }
+
+    .article-content :global(pre) {
+      padding: 1rem;
+      font-size: 0.8rem;
+    }
+
+    .article-content :global(img) {
+      border-radius: 0.5rem;
+    }
+
+    .article-content :global(table) {
+      font-size: 0.9rem;
+    }
+  }
+</style>
+
+<script>
+  // Handle image loading errors in blog posts
+  document.addEventListener('DOMContentLoaded', () => {
+    const blogImages = document.querySelectorAll('.article-content img, .blog-article img');
+
+    blogImages.forEach(img => {
+      // Add loading state
+      img.classList.add('loading');
+
+      // Handle successful load
+      img.addEventListener('load', function() {
+        this.classList.remove('loading');
+        this.classList.add('loaded');
+      });
+
+      // Handle loading errors
+      img.addEventListener('error', function() {
+        this.classList.remove('loading');
+        this.classList.add('error');
+
+        // Create error placeholder
+        const errorContainer = document.createElement('div');
+        errorContainer.className = 'image-error-placeholder';
+        errorContainer.innerHTML = `
+          <div class="error-icon">🖼️</div>
+          <div class="error-text">Image could not be loaded</div>
+          <div class="error-path">${this.alt || this.src.split('/').pop()}</div>
+        `;
+
+        // Replace broken image with error placeholder
+        if (this.parentNode) {
+          this.parentNode.replaceChild(errorContainer, this);
+        }
+      });
+    });
+
+    // Fix any broken relative paths by trying alternative paths
+    blogImages.forEach(img => {
+      const originalSrc = img.src;
+
+      // If image fails and it looks like a relative path issue
+      if (originalSrc.includes('_assets') && !originalSrc.includes('/src/content/blog/')) {
+        img.addEventListener('error', function handleError() {
+          // Try different path combinations
+          const fileName = originalSrc.split('/').pop();
+          const alternativePaths = [
+            `/src/content/blog/_assets/${fileName}`,
+            `/_assets/${fileName}`,
+            `/blog/_assets/${fileName}`
+          ];
+
+          // Remove this error handler to prevent infinite loop
+          this.removeEventListener('error', handleError);
+
+          // Try alternative paths
+          let pathIndex = 0;
+          const tryNextPath = () => {
+            if (pathIndex < alternativePaths.length) {
+              this.src = alternativePaths[pathIndex++];
+            }
+          };
+
+          this.addEventListener('error', tryNextPath);
+          tryNextPath();
+        });
+      }
+    });
+  });
+</script>
+
+<style>
+  /* Image error placeholder styles */
+  .image-error-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    background: var(--sl-color-gray-6);
+    border: 2px dashed var(--sl-color-gray-5);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    margin: 2rem auto;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  .image-error-placeholder .error-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  .image-error-placeholder .error-text {
+    color: var(--sl-color-text-muted);
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .image-error-placeholder .error-path {
+    color: var(--sl-color-text-muted);
+    font-size: 0.75rem;
+    font-family: monospace;
+    opacity: 0.7;
+    word-break: break-all;
+    max-width: 300px;
+  }
+
+  /* Image loading states */
+  .article-content img.loading,
+  .blog-article img.loading {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .article-content img.loaded,
+  .blog-article img.loaded {
+    opacity: 1;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* Dark mode adjustments */
+  :global(.dark) .image-error-placeholder {
+    background: var(--sl-color-gray-7);
+    border-color: var(--sl-color-gray-6);
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 768px) {
+    .image-error-placeholder {
+      min-height: 150px;
+      padding: 1.5rem;
+      margin: 1.5rem auto;
+    }
+
+    .image-error-placeholder .error-icon {
+      font-size: 2rem;
+    }
+
+    .image-error-placeholder .error-text {
+      font-size: 0.9rem;
+    }
+  }
+</style>
+</Layout>

@@ -1,0 +1,101 @@
+---
+title: "Jan v0.6.4: Performance Powerhouse"
+version: 0.6.4
+description: "Massive speed improvements, GPU optimization, and streamlined model management"
+date: 2025-05-20
+image: "/assets/images/changelog/performance-boost.png"
+featured: false
+---
+
+## Speed Like Never Before ⚡
+
+Jan v0.6.4 delivers our biggest performance update yet. Models load faster, inference is smoother, and memory usage is dramatically reduced. This is the Jan you've been waiting for.
+
+### 🚀 Inference Speed Improvements
+
+Dramatic performance gains across the board:
+- **3x Faster Model Loading**: Optimized model initialization reduces wait times
+- **50% Faster Inference**: Improved CUDA kernels and memory management
+- **Instant Model Switching**: Switch between models with near-zero delay
+- **Background Preloading**: Frequently used models stay ready in memory
+- **Smart Caching**: Intelligent context caching reduces repeated work
+
+### 🎯 GPU Optimization Revolution
+
+Completely rewritten GPU acceleration:
+- **Auto-GPU Detection**: Automatically finds and uses your best GPU
+- **Multi-GPU Support**: Distribute model layers across multiple GPUs
+- **Memory Optimization**: 40% reduction in VRAM usage
+- **Dynamic Offloading**: Automatically balance between GPU and CPU
+- **CUDA 12 Support**: Latest NVIDIA drivers and optimizations
+
+### 🧠 Smarter Memory Management
+
+Revolutionary memory handling:
+- **Adaptive Memory**: Automatically adjusts to available system memory
+- **Memory Pressure Detection**: Gracefully handles low-memory situations
+- **Efficient Model Unloading**: Frees memory when models aren't needed
+- **Context Length Optimization**: Handle longer conversations without slowdown
+- **Memory Usage Dashboard**: Real-time visibility into memory consumption
+
+### 📱 Startup Speed Breakthrough
+
+Jan now starts in seconds, not minutes:
+- **Cold Start Optimization**: 5x faster first launch
+- **Background Services**: Core services start in parallel
+- **Lazy Loading**: Only load components when needed
+- **Configuration Caching**: Settings load instantly
+- **Progressive Initialization**: UI appears immediately, features load progressively
+
+### 🔧 Model Management Overhaul
+
+Streamlined model experience:
+- **One-Click Downloads**: Simplified model acquisition
+- **Download Resume**: Interrupted downloads continue automatically
+- **Parallel Downloads**: Download multiple models simultaneously
+- **Storage Optimization**: Automatic cleanup of unused model files
+- **Model Recommendations**: AI suggests optimal models for your hardware
+
+### 💾 Storage Efficiency
+
+Dramatic reduction in disk usage:
+- **Model Compression**: 30% smaller model files without quality loss
+- **Duplicate Detection**: Automatically removes duplicate models
+- **Incremental Updates**: Only download model changes, not entire files
+- **Smart Cleanup**: Removes temporary files and caches automatically
+- **Storage Analytics**: See exactly what's using your disk space
+
+### 🌐 Network Optimizations
+
+Faster downloads and better connectivity:
+- **CDN Integration**: Download models from the closest server
+- **Connection Pooling**: Efficient network resource usage
+- **Retry Logic**: Automatic recovery from network interruptions
+- **Bandwidth Adaptation**: Adjusts download speed to network conditions
+- **Offline Mode**: Better handling when internet is unavailable
+
+### 🔍 Performance Monitoring
+
+New tools to understand performance:
+- **Real-time Metrics**: See inference speed, memory usage, GPU utilization
+- **Performance History**: Track performance over time
+- **Bottleneck Detection**: Identify what's slowing down your system
+- **Benchmark Tools**: Compare performance across different configurations
+- **Performance Profiles**: Save optimal settings for different use cases
+
+### 🐛 Critical Fixes
+
+Major stability improvements:
+- Fixed memory leaks during long conversations
+- Resolved GPU driver compatibility issues
+- Eliminated random crashes during model switching
+- Fixed model corruption during interrupted downloads
+- Resolved race conditions in multi-threaded operations
+
+## Technical Details
+
+This release includes fundamental changes to our inference engine, memory management, and GPU acceleration systems. While backwards compatible, you may notice different memory usage patterns and significantly improved performance.
+
+Experience the fastest Jan ever. Download v0.6.4 and feel the difference.
+
+[Download Jan v0.6.4](https://jan.ai/) • [Performance Guide](/docs/performance) • [Release Notes](https://github.com/menloresearch/jan/releases/tag/v0.6.4)

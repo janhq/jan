@@ -1,0 +1,172 @@
+---
+title: Jan
+description: Build, run, and own your AI. From laptop to superintelligence.
+keywords:
+  [
+    Jan,
+    self-hosted AI,
+    local AI,
+    open superintelligence,
+    AI ecosystem,
+    llama.cpp,
+    GGUF models,
+    MCP tools
+  ]
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+![Jan Desktop](../../../assets/jan-app-new.png)
+
+## Jan's Goal
+
+> Jan's goal is to build superintelligence that you can self-host and use locally.
+
+## What is Jan?
+
+Jan is an open-source AI ecosystem that runs on your hardware.
+
+- **Available Today**: Jan Desktop - run AI models on your computer with zero setup
+- **Coming Soon**: Complete ecosystem with specialized models, tools, and cross-device sync
+
+### The Stack
+
+**Models**: Specialized AI models trained for real tasks (search, analysis, writing)
+**Tools**: Browser automation, web search, memory systems via MCP
+**Applications**: Desktop (now), Web/Mobile/Server (coming 2025)
+
+Everything works together. Everything runs where you want it.
+
+<Aside type="tip">
+No API keys required. No account needed. Just download and use.
+</Aside>
+
+## Core Features
+
+### Run Models Locally
+- Download any GGUF model from Hugging Face
+- Use our Jan models optimized for specific tasks
+- Automatic GPU acceleration (NVIDIA/AMD/Intel)
+- OpenAI-compatible API at `localhost:1337`
+
+### Connect to Cloud (Optional)
+- Your API keys for OpenAI, Anthropic, etc.
+- Jan.ai cloud models (coming soon)
+- Self-hosted Jan Server
+
+### Extend with Tools
+- Web search via MCP
+- Browser automation
+- File parsing and analysis
+- Custom tool development
+
+## Architecture
+
+Jan is built on:
+- [Llama.cpp](https://github.com/ggerganov/llama.cpp) for inference
+- [Model Context Protocol](https://modelcontextprotocol.io) for tools
+- Local-first data storage in `~/jan`
+
+## Why Jan?
+
+| Feature | Other AI Platforms | Jan |
+|:--------|:-------------------|:----|
+| **Deployment** | Their servers only | Your device, your servers, or our cloud |
+| **Models** | One-size-fits-all | Specialized models for specific tasks |
+| **Data** | Stored on their servers | Stays on your hardware |
+| **Cost** | Monthly subscription | Free locally, pay for cloud |
+| **Extensibility** | Limited APIs | Full ecosystem with MCP tools |
+
+## Development Philosophy
+
+1. **Local First**: Everything works offline. Cloud is optional.
+2. **User Owned**: Your data, your models, your compute.
+3. **Built in Public**: Watch our models train. See our code. Track our progress.
+
+<Aside>
+We're building AI that respects your choices. Not another wrapper around someone else's API.
+</Aside>
+
+## System Requirements
+
+**Minimum**: 8GB RAM, 10GB storage
+**Recommended**: 16GB RAM, NVIDIA GPU, 50GB storage
+**Supported**: Windows 10+, macOS 12+, Linux (Ubuntu 20.04+)
+
+## What's Next?
+
+<details>
+<summary><strong>When will mobile/web versions launch?</strong></summary>
+
+- **Jan Web**: Beta Q1 2025
+- **Jan Mobile**: Q4 2025
+- **Jan Server**: Q3 2025
+
+All versions will sync seamlessly with your desktop.
+</details>
+
+<details>
+<summary><strong>What models are available?</strong></summary>
+
+**Now**:
+- Any GGUF model from Hugging Face
+- Cloud models via API keys (OpenAI, Anthropic, etc.)
+
+**Coming Q1 2025**:
+- Jan-Search: Optimized for web search and synthesis
+- Jan-Write: Creative and technical writing
+- Jan-Analyze: Data analysis and reasoning
+
+[Watch live training progress →](https://train.jan.ai)
+</details>
+
+<details>
+<summary><strong>How does Jan make money?</strong></summary>
+
+- **Local use**: Always free
+- **Cloud features**: Optional paid services (coming 2025)
+- **Enterprise**: Self-hosted deployment and support
+
+We don't sell your data. We sell software and services.
+</details>
+
+<details>
+<summary><strong>Can I contribute?</strong></summary>
+
+Yes. Everything is open:
+- [GitHub](https://github.com/janhq/jan) - Code contributions
+- [Model Training](https://jan.ai/docs/models) - See how we train
+- [Discord](https://discord.gg/FTk2MvZwJH) - Join discussions
+- [Model Testing](https://eval.jan.ai) - Help evaluate models
+</details>
+
+<details>
+<summary><strong>Is this just another ChatGPT wrapper?</strong></summary>
+
+No. We're building:
+- Our own models trained for specific tasks
+- Complete local AI infrastructure
+- Tools that extend model capabilities
+- An ecosystem that works offline
+
+ChatGPT is one model behind an API. Jan is a complete AI platform you own.
+</details>
+
+<details>
+<summary><strong>What about privacy?</strong></summary>
+
+**Local mode**: Your data never leaves your device. Period.
+**Cloud mode**: You choose when to use cloud features. Clear separation.
+
+See our [Privacy Policy](./privacy).
+</details>
+
+## Get Started
+
+1. [Install Jan Desktop](./jan/installation) - Your AI workstation
+2. [Explore Models](./jan/models) - Download and configure
+3. [Learn the API](./api-reference) - Build with Jan
+
+---
+
+**Questions?** Join our [Discord](https://discord.gg/FTk2MvZwJH) or check [GitHub roadmap](https://github.com/janhq/jan/).

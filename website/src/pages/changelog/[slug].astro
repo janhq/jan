@@ -1,0 +1,306 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import CustomNav from '../../components/CustomNav.astro';
+
+export async function getStaticPaths() {
+  const changelogEntries = await getCollection('changelog');
+  return changelogEntries.map((entry) => ({
+    params: { slug: entry.slug },
+    props: { entry },
+  }));
+}
+
+interface Props {
+  entry: CollectionEntry<'changelog'>;
+}
+
+const { entry } = Astro.props;
+const { Content } = await entry.render();
+
+const date = new Date(entry.data.date);
+const formattedDate = date.toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+});
+---
+
+<Layout title={entry.data.title} description={entry.data.description}>
+  <CustomNav />
+  <main class="changelog-entry-page">
+    <div class="container">
+      <!-- Back link -->
+      <nav class="back-nav">
+        <a href="/changelog" class="back-link">← Back to Changelog</a>
+      </nav>
+
+      <!-- Entry header -->
+      <header class="entry-header">
+        <time class="entry-date">{formattedDate}</time>
+        <h1 class="entry-title">{entry.data.title}</h1>
+        
+        {entry.data.version && (
+          <div class="version-info">
+            <span class="version-badge">v{entry.data.version}</span>
+          </div>
+        )}
+
+        {entry.data.image && (
+          <div class="hero-media">
+            <img 
+              src={entry.data.image} 
+              alt={entry.data.title}
+              class="hero-image"
+            />
+          </div>
+        )}
+      </header>
+
+      <!-- Entry content -->
+      <article class="entry-content">
+        <Content />
+      </article>
+
+      <!-- Footer navigation -->
+      <footer class="entry-footer">
+        <a href="/changelog" class="back-to-changelog">← Back to Changelog</a>
+        <div class="share-links">
+          <span>Share:</span>
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(entry.data.title)}&url=${encodeURIComponent(Astro.url.href)}`} target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </footer>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .changelog-entry-page {
+    min-height: 100vh;
+    background: #0a0a0a;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .back-nav {
+    margin-bottom: 2rem;
+  }
+
+  .back-link {
+    color: #888;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s;
+  }
+
+  .back-link:hover {
+    color: #4A9EFF;
+  }
+
+  .entry-header {
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+
+  .entry-date {
+    color: #888;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .entry-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 1rem 0;
+    line-height: 1.2;
+    background: linear-gradient(135deg, #ffffff 0%, #888888 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .version-info {
+    margin-bottom: 2rem;
+  }
+
+  .version-badge {
+    display: inline-block;
+    background: #1a4a2e;
+    color: #4ade80;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid #2d5f3f;
+  }
+
+  .hero-media {
+    margin: 2rem 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #111;
+  }
+
+  .hero-image {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .entry-content {
+    line-height: 1.7;
+    font-size: 1.05rem;
+  }
+
+  /* Content styling */
+  .entry-content :global(h2) {
+    color: #ffffff;
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 2.5rem 0 1rem 0;
+    border-bottom: 2px solid #222;
+    padding-bottom: 0.5rem;
+  }
+
+  .entry-content :global(h3) {
+    color: #ffffff;
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin: 2rem 0 0.75rem 0;
+  }
+
+  .entry-content :global(h4) {
+    color: #cccccc;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.5rem 0;
+  }
+
+  .entry-content :global(p) {
+    color: #cccccc;
+    margin-bottom: 1.25rem;
+  }
+
+  .entry-content :global(ul),
+  .entry-content :global(ol) {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+  }
+
+  .entry-content :global(li) {
+    color: #cccccc;
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+  }
+
+  .entry-content :global(strong) {
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .entry-content :global(code) {
+    background: #1a1a1a;
+    color: #4A9EFF;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.9em;
+    border: 1px solid #333;
+  }
+
+  .entry-content :global(pre) {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+
+  .entry-content :global(pre code) {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .entry-content :global(a) {
+    color: #4A9EFF;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .entry-content :global(a:hover) {
+    color: #3A8EEF;
+    text-decoration: underline;
+  }
+
+  .entry-content :global(blockquote) {
+    border-left: 4px solid #4A9EFF;
+    margin: 1.5rem 0;
+    padding: 1rem 1.5rem;
+    background: #111;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .entry-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid #222;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .back-to-changelog {
+    color: #888;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+
+  .back-to-changelog:hover {
+    color: #4A9EFF;
+  }
+
+  .share-links {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .share-links span {
+    color: #888;
+  }
+
+  .share-links a {
+    color: #4A9EFF;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .share-links a:hover {
+    color: #3A8EEF;
+  }
+
+  @media (max-width: 768px) {
+    .entry-title {
+      font-size: 1.75rem;
+    }
+
+    .entry-footer {
+      flex-direction: column;
+      gap: 1rem;
+      text-align: center;
+    }
+
+    .container {
+      padding: 1rem;
+    }
+  }
+</style>

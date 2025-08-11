@@ -1,0 +1,372 @@
+/* Blog Post Content Styles */
+
+/* Image Handling in MDX */
+.blog-article img,
+.article-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 2rem auto;
+  border-radius: 0.75rem;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--sl-color-gray-5);
+  object-fit: contain;
+}
+
+/* Prevent images from overflowing */
+.blog-article,
+.article-content {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Inline images and icons */
+.blog-article p img,
+.article-content p img {
+  display: inline-block;
+  margin: 0 0.25rem;
+  vertical-align: middle;
+  max-height: 1.5em;
+  width: auto;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* Figure elements */
+.blog-article figure,
+.article-content figure {
+  margin: 2rem 0;
+  text-align: center;
+  max-width: 100%;
+}
+
+.blog-article figure img,
+.article-content figure img {
+  margin-bottom: 0.5rem;
+  max-width: 100%;
+}
+
+.blog-article figcaption,
+.article-content figcaption {
+  font-size: 0.9rem;
+  color: var(--sl-color-text-muted);
+  font-style: italic;
+  margin-top: 0.5rem;
+  padding: 0 1rem;
+}
+
+/* Code blocks - prevent horizontal overflow */
+.blog-article pre,
+.article-content pre {
+  overflow-x: auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Tables - make responsive */
+.blog-article .table-wrapper,
+.article-content .table-wrapper,
+.blog-article .overflow-x-auto,
+.article-content .overflow-x-auto {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 1.5rem 0;
+}
+
+.blog-article table,
+.article-content table {
+  min-width: 100%;
+  width: max-content;
+}
+
+/* MDX Components */
+.blog-article .callout,
+.article-content .callout {
+  margin: 1.5rem 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Video embeds */
+.blog-article video,
+.article-content video,
+.blog-article iframe,
+.article-content iframe {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 2rem auto;
+  display: block;
+}
+
+/* YouTube/Video embeds responsive wrapper */
+.blog-article .video-wrapper,
+.article-content .video-wrapper,
+.blog-article .embed-wrapper,
+.article-content .embed-wrapper {
+  position: relative;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  height: 0;
+  overflow: hidden;
+  max-width: 100%;
+  margin: 2rem 0;
+  border-radius: 0.75rem;
+}
+
+.blog-article .video-wrapper iframe,
+.article-content .video-wrapper iframe,
+.blog-article .embed-wrapper iframe,
+.article-content .embed-wrapper iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  margin: 0;
+}
+
+/* Fix emoji and icon display */
+.blog-article .emoji,
+.article-content .emoji,
+.blog-article span[role='img'],
+.article-content span[role='img'] {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+/* Lists with icons */
+.blog-article ul li::before,
+.article-content ul li::before {
+  content: none; /* Remove default bullets if using custom icons */
+}
+
+.blog-article ul.icon-list li,
+.article-content ul.icon-list li {
+  list-style: none;
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.blog-article ul.icon-list li::before,
+.article-content ul.icon-list li::before {
+  position: absolute;
+  left: 0;
+  top: 0.25em;
+}
+
+/* Dark mode adjustments */
+:global(.dark) .blog-article img,
+:global(.dark) .article-content img {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  border-color: var(--sl-color-gray-6);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .blog-article img,
+  .article-content img {
+    border-radius: 0.5rem;
+    margin: 1.5rem auto;
+  }
+
+  .blog-article figure,
+  .article-content figure {
+    margin: 1.5rem 0;
+  }
+
+  .blog-article figcaption,
+  .article-content figcaption {
+    font-size: 0.85rem;
+    padding: 0 0.5rem;
+  }
+
+  /* Ensure content doesn't overflow on mobile */
+  .blog-article,
+  .article-content {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .blog-article pre,
+  .article-content pre {
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .blog-article img,
+  .article-content img {
+    border-radius: 0.375rem;
+    margin: 1rem auto;
+  }
+
+  .blog-article figure,
+  .article-content figure {
+    margin: 1rem 0;
+  }
+}
+
+/* Image loading states */
+.blog-article img[loading='lazy'],
+.article-content img[loading='lazy'] {
+  background: linear-gradient(
+    90deg,
+    var(--sl-color-gray-5) 0%,
+    var(--sl-color-gray-4) 50%,
+    var(--sl-color-gray-5) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Gallery styles for multiple images */
+.blog-article .image-gallery,
+.article-content .image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.blog-article .image-gallery img,
+.article-content .image-gallery img {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Side-by-side images */
+.blog-article .image-row,
+.article-content .image-row {
+  display: flex;
+  gap: 1rem;
+  margin: 2rem 0;
+  flex-wrap: wrap;
+}
+
+.blog-article .image-row img,
+.article-content .image-row img {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Full-width images */
+.blog-article .full-width-image,
+.article-content .full-width-image {
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+  max-width: 100vw;
+  width: 100vw;
+}
+
+.blog-article .full-width-image img,
+.article-content .full-width-image img {
+  width: 100%;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 0;
+}
+
+/* Screenshot specific styles */
+.blog-article .screenshot,
+.article-content .screenshot {
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sl-color-gray-4);
+}
+
+/* Terminal/code screenshots */
+.blog-article .terminal-screenshot,
+.article-content .terminal-screenshot {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Comparison images */
+.blog-article .image-comparison,
+.article-content .image-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.blog-article .image-comparison img,
+.article-content .image-comparison img {
+  margin: 0;
+}
+
+.blog-article .image-comparison figcaption,
+.article-content .image-comparison figcaption {
+  grid-column: 1 / -1;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+  .blog-article .image-comparison,
+  .article-content .image-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .blog-article .image-row,
+  .article-content .image-row {
+    flex-direction: column;
+  }
+}
+
+/* Broken image fallback */
+.blog-article img.error,
+.article-content img.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: var(--sl-color-gray-5);
+  position: relative;
+}
+
+.blog-article img.error::after,
+.article-content img.error::after {
+  content: '🖼️ Image not found';
+  position: absolute;
+  color: var(--sl-color-text-muted);
+  font-size: 0.875rem;
+}
+
+/* Print styles */
+@media print {
+  .blog-article img,
+  .article-content img {
+    max-width: 100%;
+    page-break-inside: avoid;
+    border: 1px solid #ddd;
+    box-shadow: none;
+  }
+}

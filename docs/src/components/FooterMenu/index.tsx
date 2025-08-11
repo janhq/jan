@@ -35,28 +35,28 @@ const socials = [
 ]
 
 const menus = [
-  {
-    name: 'Product',
-    child: [
-      {
-        menu: 'Download',
-        path: '/download',
-      },
-      {
-        menu: 'Changelog',
-        path: '/changelog',
-      },
-    ],
-  },
-  {
-    name: 'For Developers',
-    child: [
-      {
-        menu: 'Documentation',
-        path: '/docs',
-      },
-    ],
-  },
+  // {
+  //   name: 'Product',
+  //   child: [
+  //     {
+  //       menu: 'Download',
+  //       path: '/download',
+  //     },
+  //     {
+  //       menu: 'Changelog',
+  //       path: '/changelog',
+  //     },
+  //   ],
+  // },
+  // {
+  //   name: 'For Developers',
+  //   child: [
+  //     {
+  //       menu: 'Documentation',
+  //       path: '/docs',
+  //     },
+  //   ],
+  // },
   {
     name: 'Community',
     child: [
@@ -71,7 +71,7 @@ const menus = [
         external: true,
       },
       {
-        menu: 'Twitter',
+        menu: 'X/Twitter',
         path: 'https://twitter.com/jandotai',
         external: true,
       },
@@ -86,8 +86,8 @@ const menus = [
     name: 'Company',
     child: [
       {
-        menu: 'About',
-        path: '/about',
+        menu: 'Menlo',
+        path: 'https://menlo.ai',
       },
       {
         menu: 'Blog',
@@ -158,8 +158,8 @@ export default function Footer() {
 
   return (
     <div className="flex-shrink-0 relative overflow-hidden w-full">
-      <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
-        <div className="col-span-2">
+      <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-12">
+        <div className="col-span-2 lg:col-span-3">
           <div className="flex items-center space-x-2 mb-3">
             <LogoMark />
             <h2 className="text-lg font-semibold dark:text-white text-black">
@@ -209,9 +209,10 @@ export default function Footer() {
             </div>
           </div>
         </div>
+        <div className="hidden lg:block lg:col-span-3"></div>
         {menus.map((menu, i) => {
           return (
-            <div key={i} className="lg:text-right">
+            <div key={i} className="lg:text-right lg:col-span-3">
               <h2 className="mb-2 font-bold dark:text-gray-300 text-black">
                 {menu.name}
               </h2>

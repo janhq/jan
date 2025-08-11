@@ -1,0 +1,60 @@
+---
+export interface Props {
+  id: string;
+  title?: string;
+  class?: string;
+}
+
+const { id, title = 'YouTube video player', class: className } = Astro.props;
+
+// Extract video ID and handle both formats:
+// - Simple ID: "4mvHgLy_YV8"
+// - ID with params: "4mvHgLy_YV8?si=74cmdMmcH3gmpv0R"
+const videoId = id.split('?')[0];
+const params = id.includes('?') ? '?' + id.split('?')[1] : '';
+---
+
+<div class={`youtube-container ${className || ''}`}>
+  <iframe
+    src={`https://www.youtube.com/embed/${videoId}${params}`}
+    title={title}
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    loading="lazy"
+  ></iframe>
+</div>
+
+<style>
+  .youtube-container {
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    height: 0;
+    overflow: hidden;
+    margin: 1.5rem 0;
+    border-radius: 0.5rem;
+    background-color: var(--sl-color-gray-6);
+  }
+
+  .youtube-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0.5rem;
+  }
+
+  /* Light mode adjustments */
+  :global([data-theme="light"]) .youtube-container {
+    background-color: var(--sl-color-gray-7);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Ensure proper spacing in content */
+  :global(.sl-markdown-content) .youtube-container {
+    margin: 2rem 0;
+  }
+</style>
