@@ -74,6 +74,7 @@ sha2 = "0.10.9"
 base64 = "0.22.1"
 libloading = "0.8.7"
 thiserror = "2.0.12"
+byteorder = "1.5.0"
 
 [dependencies.tauri]
 version = "2.5.0"

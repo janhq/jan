@@ -102,6 +102,7 @@ pub fn run() {
             core::utils::extensions::inference_llamacpp_extension::server::get_loaded_models,
             core::utils::extensions::inference_llamacpp_extension::server::generate_api_key,
             core::utils::extensions::inference_llamacpp_extension::server::is_process_running,
+            core::utils::extensions::inference_llamacpp_extension::gguf::read_gguf_metadata,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
