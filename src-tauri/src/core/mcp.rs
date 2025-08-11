@@ -10,7 +10,8 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use super::{cmd::get_jan_data_folder_path, state::AppState, utils::can_override_npx};
+use super::{cmd::get_jan_data_folder_path, state::AppState};
+use jan_utils::can_override_npx;
 
 const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {

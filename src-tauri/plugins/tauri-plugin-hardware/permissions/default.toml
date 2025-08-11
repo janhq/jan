@@ -1,0 +1,12 @@
+# Default permission for the tauri-plugin-hardware plugin
+# This permission allows access to all hardware plugin commands
+
+"$schema" = "./schemas/schema.json"
+
+[[permission]]
+identifier = "default"
+description = "enables the default permissions for the hardware plugin"
+permissions = [
+  "allow-get-system-info",
+  "allow-get-system-usage"
+]

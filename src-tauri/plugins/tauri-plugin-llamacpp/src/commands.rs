@@ -11,11 +11,8 @@ use tokio::time::Instant;
 
 use crate::error::{ServerResult, ServerError, LlamacppError, ErrorCode};
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
-use crate::utils::{
-    args::{extract_arg_value, parse_port_from_args},
-    path::{validate_binary_path, validate_model_path},
-    setup::{setup_library_path, setup_windows_process_flags},
-};
+use crate::path::{validate_binary_path, validate_model_path};
+use jan_utils::{extract_arg_value, parse_port_from_args, setup_library_path, setup_windows_process_flags};
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::process::{
     is_process_running_by_pid, get_random_available_port,

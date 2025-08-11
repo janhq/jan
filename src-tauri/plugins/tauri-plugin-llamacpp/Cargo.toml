@@ -13,6 +13,7 @@ links = "tauri-plugin-llamacpp"
 [dependencies]
 base64 = "0.22.1"
 hmac = "0.12.1"
+jan-utils = { path = "../../utils" }
 log = "0.4"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }

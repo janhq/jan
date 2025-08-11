@@ -1,6 +1,7 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
 use crate::core::cmd::get_jan_data_folder_path;
+use jan_utils::normalize_file_path;
 use std::fs;
 use std::path::PathBuf;
 use tauri::Runtime;
@@ -129,9 +130,6 @@ pub fn readdir_sync<R: Runtime>(
     Ok(paths)
 }
 
-fn normalize_file_path(path: &str) -> String {
-    path.replace("file:/", "").replace("file:\\", "")
-}
 
 fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> PathBuf {
     let path = if path.starts_with("file:/") || path.starts_with("file:\\") {

@@ -2,6 +2,7 @@ use futures_util::StreamExt;
 use hyper::body::Bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
+use jan_utils::{remove_prefix, is_cors_header, is_valid_host};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -21,23 +22,6 @@ struct ProxyConfig {
     trusted_hosts: Vec<Vec<String>>,
 }
 
-/// Removes a prefix from a path, ensuring proper formatting
-fn remove_prefix(path: &str, prefix: &str) -> String {
-    log::debug!("Processing path: {}, removing prefix: {}", path, prefix);
-
-    if !prefix.is_empty() && path.starts_with(prefix) {
-        let result = path[prefix.len()..].to_string();
-        if result.is_empty() {
-            "/".to_string()
-        } else if result.starts_with('/') {
-            result
-        } else {
-            format!("/{}", result)
-        }
-    } else {
-        path.to_string()
-    }
-}
 
 /// Determines the final destination path based on the original request path
 fn get_destination_path(original_path: &str, prefix: &str) -> String {
@@ -607,10 +591,6 @@ async fn proxy_request(
     }
 }
 
-fn is_cors_header(header_name: &str) -> bool {
-    let header_lower = header_name.to_lowercase();
-    header_lower.starts_with("access-control-")
-}
 
 fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
@@ -640,49 +620,6 @@ fn add_cors_headers_with_host_and_origin(
     builder
 }
 
-fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
-    if host.is_empty() {
-        return false;
-    }
-
-    let host_without_port = if host.starts_with('[') {
-        host.split(']')
-            .next()
-            .unwrap_or(host)
-            .trim_start_matches('[')
-    } else {
-        host.split(':').next().unwrap_or(host)
-    };
-    let default_valid_hosts = ["localhost", "127.0.0.1", "0.0.0.0"];
-
-    if default_valid_hosts
-        .iter()
-        .any(|&valid| host_without_port.to_lowercase() == valid.to_lowercase())
-    {
-        return true;
-    }
-
-    trusted_hosts.iter().flatten().any(|valid| {
-        let host_lower = host.to_lowercase();
-        let valid_lower = valid.to_lowercase();
-
-        if host_lower == valid_lower {
-            return true;
-        }
-
-        let valid_without_port = if valid.starts_with('[') {
-            valid
-                .split(']')
-                .next()
-                .unwrap_or(valid)
-                .trim_start_matches('[')
-        } else {
-            valid.split(':').next().unwrap_or(valid)
-        };
-
-        host_without_port.to_lowercase() == valid_without_port.to_lowercase()
-    })
-}
 
 pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
     let handle_guard = server_handle.lock().await;

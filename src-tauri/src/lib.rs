@@ -2,9 +2,10 @@ mod core;
 use core::{
     cmd::get_jan_data_folder_path,
     setup::{self, setup_mcp},
-    state::{generate_app_token, AppState},
+    state::AppState,
     utils::download::DownloadManagerState,
 };
+use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::core::utils::download::DownloadManagerState;
-use rand::{distributions::Alphanumeric, Rng};
 use rmcp::{service::RunningService, RoleClient};
 use tokio::task::JoinHandle;
 
@@ -20,11 +19,4 @@ pub struct AppState {
     pub mcp_successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub llama_server_process: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
-}
-pub fn generate_app_token() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect()
 }

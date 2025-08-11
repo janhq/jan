@@ -56,6 +56,7 @@
       ]
     },
     "store:default",
-    "llamacpp:default"
+    "llamacpp:default",
+    "hardware:default"
   ]
 }

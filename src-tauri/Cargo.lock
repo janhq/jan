@@ -15,6 +15,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "hyper 0.14.32",
+ "jan-utils",
  "libc",
  "libloading 0.8.8",
  "log",
@@ -2317,6 +2318,21 @@ name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
+name = "jan-utils"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hmac",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "javascriptcore-rs"
@@ -5165,6 +5181,7 @@ version = "0.6.599"
 dependencies = [
  "base64 0.22.1",
  "hmac",
+ "jan-utils",
  "log",
  "nix",
  "rand 0.8.5",

@@ -7,9 +7,9 @@ pub mod cleanup;
 mod commands;
 mod device;
 mod error;
+mod path;
 mod process;
 pub mod state;
-mod utils;
 pub use cleanup::cleanup_llama_processes;
 pub use state::LLamaBackendSession;
 

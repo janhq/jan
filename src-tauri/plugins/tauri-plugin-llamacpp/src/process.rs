@@ -5,7 +5,7 @@ use tauri::{Manager, Runtime, State};
 use tokio::time::timeout;
 
 use crate::state::{LlamacppState, SessionInfo};
-use crate::utils::network::generate_random_port;
+use jan_utils::generate_random_port;
 
 /// Check if a process is running by PID
 pub async fn is_process_running_by_pid<R: Runtime>(

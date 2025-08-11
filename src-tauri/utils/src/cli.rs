@@ -1,4 +1,4 @@
-/// Extract the value of a command line argument flag from args vector
+/// Extracts the value of a command line argument flag from args vector
 pub fn extract_arg_value(args: &[String], flag: &str) -> String {
     args.iter()
         .position(|arg| arg == flag)
@@ -7,7 +7,7 @@ pub fn extract_arg_value(args: &[String], flag: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Parse port from command line arguments with fallback to default
+/// Parses port from command line arguments with fallback to default (8080)
 pub fn parse_port_from_args(args: &[String]) -> i32 {
     let port_str = extract_arg_value(args, "--port");
     match port_str.parse() {

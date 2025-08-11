@@ -5,10 +5,8 @@ use tokio::time::timeout;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ServerResult, ServerError, LlamacppError, ErrorCode};
-use crate::utils::{
-    path::validate_binary_path,
-    setup::{setup_library_path, setup_windows_process_flags},
-};
+use crate::path::validate_binary_path;
+use jan_utils::{setup_library_path, setup_windows_process_flags};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {

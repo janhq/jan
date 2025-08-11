@@ -1,5 +1,5 @@
-use tauri_plugin::Builder;
+const COMMANDS: &[&str] = &["get_system_info", "get_system_usage"];
 
 fn main() {
-    Builder::new(&["get_system_info", "get_system_usage"]).build();
+    tauri_plugin::Builder::new(COMMANDS).build();
 }

@@ -1,12 +1,11 @@
 pub mod download;
 
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use tauri::Runtime;
+use jan_utils::normalize_path;
 
 use super::cmd::get_jan_data_folder_path;
-#[cfg(windows)]
-use std::path::Prefix;
 
 pub const THREADS_DIR: &str = "threads";
 pub const THREADS_FILE: &str = "thread.json";
@@ -51,73 +50,7 @@ pub fn ensure_thread_dir_exists<R: Runtime>(
     Ok(())
 }
 
-// https://github.com/rust-lang/cargo/blob/rust-1.67.0/crates/cargo-util/src/paths.rs#L82-L107
-pub fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = path.components().peekable();
-    let mut ret = if let Some(c @ Component::Prefix(_prefix_component)) = components.peek().cloned()
-    {
-        #[cfg(windows)]
-        // Remove only the Verbatim prefix, but keep the drive letter (e.g., C:\)
-        match _prefix_component.kind() {
-            Prefix::VerbatimDisk(disk) => {
-                components.next(); // skip this prefix
-                                   // Re-add the disk prefix (e.g., C:)
-                let mut pb = PathBuf::new();
-                pb.push(format!("{}:", disk as char));
-                pb
-            }
-            Prefix::Verbatim(_) | Prefix::VerbatimUNC(_, _) => {
-                components.next(); // skip this prefix
-                PathBuf::new()
-            }
-            _ => {
-                components.next();
-                PathBuf::from(c.as_os_str())
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            components.next(); // skip this prefix
-            PathBuf::from(c.as_os_str())
-        }
-    } else {
-        PathBuf::new()
-    };
 
-    for component in components {
-        match component {
-            Component::Prefix(..) => unreachable!(),
-            Component::RootDir => {
-                ret.push(component.as_os_str());
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                ret.pop();
-            }
-            Component::Normal(c) => {
-                ret.push(c);
-            }
-        }
-    }
-    ret
-}
-
-pub fn can_override_npx() -> bool {
-    // we need to check the CPU for the AVX2 instruction support if we are running under the MacOS
-    // with Intel CPU. We can override `npx` command with `bun` only if CPU is
-    // supporting AVX2, otherwise we need to use default `npx` binary
-    #[cfg(all(target_os = "macos", any(target_arch = "x86", target_arch = "x86_64")))]
-    {
-        if !is_x86_feature_detected!("avx2") {
-            log::warn!(
-                "Your CPU doesn't support AVX2 instruction, default npx binary will be used"
-            );
-            return false; // we cannot override npx with bun binary
-        }
-    }
-
-    true // by default, we can override npx with bun binary
-}
 
 #[tauri::command]
 pub fn write_yaml(
