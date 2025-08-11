@@ -1,4 +1,4 @@
-use super::{GpuInfo, GpuUsage};
+use crate::{GpuInfo, GpuUsage};
 
 impl GpuInfo {
     #[cfg(not(target_os = "linux"))]

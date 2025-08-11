@@ -1,4 +1,4 @@
-use super::{GpuInfo, Vendor};
+use crate::{GpuInfo, Vendor};
 use ash::{vk, Entry};
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -31,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
+        .plugin(tauri_plugin_hardware::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
             core::fs::join_path,
@@ -89,9 +90,6 @@ pub fn run() {
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,
-            // hardware
-            core::hardware::get_system_info,
-            core::hardware::get_system_usage,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),

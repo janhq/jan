@@ -52,7 +52,7 @@ describe('hardware service', () => {
 
       const result = await getHardwareInfo()
 
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('get_system_info')
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
       expect(result).toEqual(mockHardwareData)
     })
 
@@ -61,7 +61,7 @@ describe('hardware service', () => {
       vi.mocked(invoke).mockRejectedValue(mockError)
 
       await expect(getHardwareInfo()).rejects.toThrow('Failed to get hardware info')
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('get_system_info')
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
     })
 
     it('should return correct type from invoke', async () => {
@@ -112,7 +112,7 @@ describe('hardware service', () => {
 
       const result = await getSystemUsage()
 
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('get_system_usage')
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
       expect(result).toEqual(mockSystemUsage)
     })
 
@@ -121,7 +121,7 @@ describe('hardware service', () => {
       vi.mocked(invoke).mockRejectedValue(mockError)
 
       await expect(getSystemUsage()).rejects.toThrow('Failed to get system usage')
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('get_system_usage')
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
     })
 
     it('should return correct type from invoke', async () => {
@@ -255,8 +255,8 @@ describe('hardware service', () => {
       expect(hardwareResult).toEqual(mockHardwareData)
       expect(usageResult).toEqual(mockSystemUsage)
       expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
-      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'get_system_info')
-      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'get_system_usage')
+      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'plugin:hardware|get_system_info')
+      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'plugin:hardware|get_system_usage')
     })
   })
 })

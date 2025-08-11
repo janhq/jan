@@ -1,4 +1,4 @@
-use super::{GpuInfo, GpuUsage, Vendor};
+use crate::{GpuInfo, GpuUsage, Vendor};
 use nvml_wrapper::{error::NvmlError, Nvml};
 use std::sync::OnceLock;
 
