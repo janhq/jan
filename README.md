@@ -19,6 +19,22 @@
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
+<p align="center">
+  <!-- Keep these links. Translations will automatically update with the README. -->
+  <a href="https://readme-i18n.com/de/menloresearch/jan">Deutsch</a> | 
+  <a href="https://readme-i18n.com/es/menloresearch/jan">Español</a> | 
+  <a href="https://readme-i18n.com/fr/menloresearch/jan">français</a> | 
+  <a href="https://readme-i18n.com/ja/menloresearch/jan">日本語</a> | 
+  <a href="https://readme-i18n.com/ko/menloresearch/jan">한국어</a> | 
+  <a href="https://readme-i18n.com/pt/menloresearch/jan">Português</a> | 
+  <a href="https://readme-i18n.com/ru/menloresearch/jan">Русский</a> | 
+  <a href="https://readme-i18n.com/zh/menloresearch/jan">中文</a>
+</p>
+
+<p align="center">
+  <a href="https://jan-zh.readme-i18n.com/docs">中文文档</a>
+</p>
+
 Jan is an AI assistant that can run 100% offline on your device. Download and run LLMs with
 **full control** and **privacy**.
 
