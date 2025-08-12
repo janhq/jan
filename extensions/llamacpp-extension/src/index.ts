@@ -1165,7 +1165,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        "Intial setup for the backend failed due to a network issue. Please restart the app!"
+        "Initial setup for the backend failed due to a network issue. Please restart the app!"
       )
     }
 
