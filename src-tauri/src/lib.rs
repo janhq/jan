@@ -10,6 +10,8 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tokio::sync::Mutex;
 
+use crate::core::mcp::clean_up_mcp_servers;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -143,10 +145,10 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
-                    window.emit("kill-mcp-servers", ()).unwrap();
                     let state = window.app_handle().state::<AppState>();
 
                     tauri::async_runtime::block_on(async {
+                        clean_up_mcp_servers(state.clone()).await;
                         cleanup_processes(state).await;
                     });
                 }
@@ -173,6 +175,7 @@ pub fn run() {
                     }
 
                     // Quick cleanup with shorter timeout
+                    clean_up_mcp_servers(state.clone()).await;
                     cleanup_processes(state).await;
                 });
             });
