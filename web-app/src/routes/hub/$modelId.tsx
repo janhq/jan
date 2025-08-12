@@ -156,13 +156,20 @@ function HubModelDetail() {
   useEffect(() => {
     if (modelData?.readme) {
       setIsLoadingReadme(true)
-      fetch(modelData.readme, {
-        headers: huggingfaceToken
-          ? {
-              Authorization: `Bearer ${huggingfaceToken}`,
-            }
-          : {},
-      })
+      // Try fetching without headers first
+      // There is a weird issue where this HF link will return error when access public repo with auth header
+      fetch(modelData.readme)
+        .then((response) => {
+          if (!response.ok && huggingfaceToken && modelData?.readme) {
+            // Retry with Authorization header if first fetch failed
+            return fetch(modelData.readme, {
+              headers: {
+                Authorization: `Bearer ${huggingfaceToken}`,
+              },
+            })
+          }
+          return response
+        })
         .then((response) => response.text())
         .then((content) => {
           setReadmeContent(content)
