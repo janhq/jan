@@ -129,11 +129,17 @@ function Hub() {
 
   const filteredModels = useMemo(() => {
     let filtered = sortedModels
-    // Apply search filter
+    
+    // Apply search filter while preserving sort order
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
-      filtered = fuse.search(debouncedSearchValue).map((result) => result.item)
+      const searchResults = fuse.search(debouncedSearchValue)
+      const searchResultIds = new Set(searchResults.map((result) => result.item.model_name))
+      
+      // Filter sortedModels to only include search matches, maintaining sort order
+      filtered = filtered.filter((model) => searchResultIds.has(model.model_name))
     }
+    
     // Apply downloaded filter
     if (showOnlyDownloaded) {
       filtered = filtered?.filter((model) =>
