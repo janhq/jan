@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
+use crate::core::{mcp::clean_up_mcp_servers, utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes};
 
 use super::{server, setup, state::AppState};
 
@@ -125,6 +125,7 @@ pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
     log::info!("Factory reset, removing data folder: {:?}", data_folder);
 
     tauri::async_runtime::block_on(async {
+        clean_up_mcp_servers(state.clone()).await;
         cleanup_processes(state).await;
 
         if data_folder.exists() {
@@ -138,7 +139,7 @@ pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
         let _ = fs::create_dir_all(&data_folder).map_err(|e| e.to_string());
 
         // Reset the configuration
-        let mut default_config = AppConfiguration::default();
+        let mut default_config: AppConfiguration = AppConfiguration::default();
         default_config.data_folder = default_data_folder_path(app_handle.clone());
         let _ = update_app_configuration(app_handle.clone(), default_config);
 

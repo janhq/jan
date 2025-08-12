@@ -16,6 +16,23 @@ on:
     branches:
       - release/**
       - dev
+    paths:
+      - '.github/workflows/jan-tauri-build-nightly.yaml'
+      - '.github/workflows/template-get-update-version.yml'
+      - '.github/workflows/template-tauri-build-macos.yml'
+      - '.github/workflows/template-tauri-build-windows-x64.yml'
+      - '.github/workflows/template-tauri-build-linux-x64.yml'
+      - '.github/workflows/template-noti-discord-and-update-url-readme.yml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'mise.toml'
+
 
 jobs:
   set-public-provider:

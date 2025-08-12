@@ -39,6 +39,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type ModelProps = {
   model: CatalogModel
@@ -57,6 +58,7 @@ export const Route = createFileRoute(route.hub.index as any)({
 
 function Hub() {
   const parentRef = useRef(null)
+  const { huggingfaceToken } = useGeneralSetting()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -71,7 +73,7 @@ function Hub() {
     }
   }, [])
 
-  const { sources, addSource, fetchSources, loading } = useModelSources()
+  const { sources, fetchSources, loading } = useModelSources()
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -185,14 +187,16 @@ function Hub() {
       addModelSourceTimeoutRef.current = setTimeout(async () => {
         try {
           // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(e.target.value)
+          const repoInfo = await fetchHuggingFaceRepo(
+            e.target.value,
+            huggingfaceToken
+          )
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
             if (
               !sources.some((s) => s.model_name === catalogModel.model_name)
             ) {
               setHuggingFaceRepo(catalogModel)
-              addSource(catalogModel)
             }
           }
         } catch (error) {

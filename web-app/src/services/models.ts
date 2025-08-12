@@ -99,7 +99,8 @@ export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
  * @returns A promise that resolves to the repository information.
  */
 export const fetchHuggingFaceRepo = async (
-  repoId: string
+  repoId: string,
+  hfToken?: string
 ): Promise<HuggingFaceRepo | null> => {
   try {
     // Clean the repo ID to handle various input formats
@@ -114,7 +115,14 @@ export const fetchHuggingFaceRepo = async (
     }
 
     const response = await fetch(
-      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`,
+      {
+        headers: hfToken
+          ? {
+              Authorization: `Bearer ${hfToken}`,
+            }
+          : {},
+      }
     )
 
     if (!response.ok) {
