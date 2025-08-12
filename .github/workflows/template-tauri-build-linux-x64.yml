@@ -28,6 +28,11 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      disable_updater:
+        required: false
+        type: boolean
+        default: false
+        description: 'If true, builds both .deb and .appimage but disables auto-updater'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -156,7 +161,7 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
+          AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
       # Publish app
 
       ## Artifacts, for dev and test
