@@ -94,15 +94,6 @@ modules:
         dest-filename: cuda_toolkit.run
         md5: c71027cf1a4ce84f80b9cbf81116e767
 
-  - name: python3-uv
-    buildsystem: simple
-    build-commands:
-      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} "uv" --no-build-isolation
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/e1/a1/4dea87c10875b441d906f82df42d725a4a04c2e8ae720d9fa01e1f75e3dc/uv-0.8.9.tar.gz
-        sha256: 54d76faf5338d1e5643a32b048c600de0cdaa7084e5909106103df04f3306615
-
   - name: binary
     buildsystem: simple
     sources:
@@ -117,7 +108,7 @@ modules:
       - tar -xf data.tar.gz
       - 'install -Dm755 usr/bin/Jan /app/bin/Jan'
       - 'install -Dm755 usr/bin/bun /app/bin/bun'
-      - 'install -Dm755 usr/bin/bun /app/bin/uv'
+      - 'install -Dm755 usr/bin/uv /app/bin/uv'
       - cp -rv usr/lib/* /app/lib/.
       - install -Dm644 usr/share/applications/Jan.desktop /app/share/applications/ai.jan.Jan.desktop
       - sed -e 's/Icon=Jan/Icon=ai.jan.Jan/g' -e 's#Exec=Jan#Exec=/app/bin/Jan#g' -i /app/share/applications/ai.jan.Jan.desktop
