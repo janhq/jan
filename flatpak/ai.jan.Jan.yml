@@ -97,7 +97,11 @@ modules:
   - name: python3-uv
     buildsystem: simple
     build-commands:
-      - pip3 install --prefix=${FLATPAK_DEST} uv
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} "uv" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/e1/a1/4dea87c10875b441d906f82df42d725a4a04c2e8ae720d9fa01e1f75e3dc/uv-0.8.9.tar.gz
+        sha256: 54d76faf5338d1e5643a32b048c600de0cdaa7084e5909106103df04f3306615
 
   - name: binary
     buildsystem: simple
