@@ -73,7 +73,7 @@ function Hub() {
     }
   }, [])
 
-  const { sources, addSource, fetchSources, loading } = useModelSources()
+  const { sources, fetchSources, loading } = useModelSources()
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -187,14 +187,16 @@ function Hub() {
       addModelSourceTimeoutRef.current = setTimeout(async () => {
         try {
           // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(e.target.value, huggingfaceToken)
+          const repoInfo = await fetchHuggingFaceRepo(
+            e.target.value,
+            huggingfaceToken
+          )
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
             if (
               !sources.some((s) => s.model_name === catalogModel.model_name)
             ) {
               setHuggingFaceRepo(catalogModel)
-              addSource(catalogModel)
             }
           }
         } catch (error) {
