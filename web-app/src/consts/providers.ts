@@ -62,6 +62,40 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    explore_models_url: 'https://www.alibabacloud.com/help/en/model-studio/models',
+    provider: 'qwen',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Qwen API uses API keys for authentication. Visit your [Alibaba Cloud Model Studio](https://www.alibabacloud.com/help/en/model-studio/get-api-key) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Qwen API documentation](https://www.alibabacloud.com/help/en/model-studio/use-qwen-by-calling-api) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+          value: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.anthropic.com',
     provider: 'anthropic',
     explore_models_url:

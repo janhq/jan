@@ -116,7 +116,7 @@ describe('providers service', () => {
     it('should return builtin and runtime providers', async () => {
       const providers = await getProviders()
 
-      expect(providers).toHaveLength(9) // 8 runtime + 1 builtin
+      expect(providers).toHaveLength(10) // 9 builtin + 1 runtime
       expect(providers.some((p) => p.provider === 'llamacpp')).toBe(true)
       expect(providers.some((p) => p.provider === 'openai')).toBe(true)
     })
