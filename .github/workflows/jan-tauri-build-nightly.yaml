@@ -12,6 +12,10 @@ on:
           - none
           - aws-s3
         default: none
+      disable_updater:
+        type: boolean
+        description: 'If true, builds both .deb and .appimage but disables auto-updater'
+        default: false
   pull_request:
     branches:
       - release/**
