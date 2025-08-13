@@ -106,7 +106,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: '39261'
-      disable_updater: ${{ github.event.inputs.disable_updater }}
+      disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
 
   sync-temp-to-latest:
     needs:
