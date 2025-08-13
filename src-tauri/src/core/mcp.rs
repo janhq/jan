@@ -4,10 +4,11 @@ use rmcp::model::{
     CallToolRequestParam, CallToolResult, ClientCapabilities, ClientInfo, Implementation, Tool,
 };
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+use rmcp::transport::SseClientTransport;
 use rmcp::ServiceError;
 use rmcp::{transport::StreamableHttpClientTransport, transport::TokioChildProcess, ServiceExt};
-use serde_json::{Map, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::fs;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -565,12 +566,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
         .expect("Executable must have a parent directory");
     let bin_path = exe_parent_path.to_path_buf();
 
-    let (command, args, envs) = extract_command_args(&config)
+    let (transport_type, url, command, args, envs) = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    let cmd = Command::new(command.clone());
-
-    if command.starts_with("http://") || command.starts_with("https://") {
+    if transport_type == Some("http") && url.is_some() {
         let transport = StreamableHttpClientTransport::with_client(
             reqwest::Client::builder()
                 .default_headers({
@@ -596,7 +595,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .build()
                 .unwrap(),
             StreamableHttpClientTransportConfig {
-                uri: command.into(),
+                uri: url.unwrap().into(),
                 ..Default::default()
             },
         );
@@ -611,6 +610,76 @@ async fn schedule_mcp_start_task<R: Runtime>(
         };
         let client = client_info.serve(transport).await.inspect_err(|e| {
             log::error!("client error: {:?}", e);
+        });
+
+        match client {
+            Ok(client) => {
+                log::info!("Connected to server: {:?}", client.peer_info());
+                servers
+                    .lock()
+                    .await
+                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
+
+                // Mark server as successfully connected (for restart policy)
+                {
+                    let app_state = app.state::<AppState>();
+                    let mut connected = app_state.mcp_successfully_connected.lock().await;
+                    connected.insert(name.clone(), true);
+                    log::info!("Marked MCP server {} as successfully connected", name);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to connect to server: {}", e);
+                return Err(format!("Failed to connect to server: {}", e));
+            }
+        }
+    } else if transport_type == Some("sse") && url.is_some() {
+        let transport = SseClientTransport::start_with_client(
+            reqwest::Client::builder()
+                .default_headers({
+                    // Map envs to request headers
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    for (key, value) in envs.iter() {
+                        if let Some(v_str) = value.as_str() {
+                            // Try to map env keys to HTTP header names (case-insensitive)
+                            // Most HTTP headers are Title-Case, so we try to convert
+                            let header_name =
+                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
+                            if let Ok(header_name) = header_name {
+                                if let Ok(header_value) =
+                                    reqwest::header::HeaderValue::from_str(v_str)
+                                {
+                                    headers.insert(header_name, header_value);
+                                }
+                            }
+                        }
+                    }
+                    headers
+                })
+                .build()
+                .unwrap(),
+            rmcp::transport::sse_client::SseClientConfig {
+                sse_endpoint: url.unwrap().into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| {
+            log::error!("transport error: {:?}", e);
+            format!("Failed to start SSE transport: {}", e)
+        })?;
+
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "Jan SSE Client".to_string(),
+                version: "0.0.1".to_string(),
+            },
+        };
+        let client = client_info.serve(transport).await.map_err(|e| {
+            log::error!("client error: {:?}", e);
+            e.to_string()
         });
 
         match client {
@@ -787,16 +856,24 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
 
 fn extract_command_args(
     config: &Value,
-) -> Option<(String, Vec<Value>, serde_json::Map<String, Value>)> {
+) -> Option<(
+    Option<&str>,
+    Option<&str>,
+    String,
+    Vec<Value>,
+    serde_json::Map<String, Value>,
+)> {
     let obj = config.as_object()?;
     let command = obj.get("command")?.as_str()?.to_string();
+    let url = obj.get("url")?.as_str();
+    let transport_type = obj.get("type")?.as_str();
     let args = obj.get("args")?.as_array()?.clone();
     let envs = obj
         .get("env")
         .unwrap_or(&Value::Object(serde_json::Map::new()))
         .as_object()?
         .clone();
-    Some((command, args, envs))
+    Some((transport_type, url, command, args, envs))
 }
 
 fn extract_active_status(config: &Value) -> Option<bool> {
@@ -1145,16 +1222,16 @@ mod tests {
     #[tokio::test]
     async fn test_run_mcp_commands() {
         let app = mock_app();
-        
+
         // Get the app path where the config should be created
         let app_path = get_jan_data_folder_path(app.handle().clone());
         let config_path = app_path.join("mcp_config.json");
-        
+
         // Ensure the directory exists
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent).expect("Failed to create parent directory");
         }
-        
+
         // Create a mock mcp_config.json file at the correct location
         let mut file: File = File::create(&config_path).expect("Failed to create config file");
         file.write_all(b"{\"mcpServers\":{}}")
