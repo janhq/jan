@@ -100,6 +100,13 @@ interface DeviceList {
   mem: number
   free: number
 }
+
+interface GgufMetadata {
+  version: number
+  tensor_count: number
+  metadata: Record<string, string>
+}
+
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -1590,5 +1597,16 @@ export default class llamacpp_extension extends AIEngine {
   // Optional method for direct client access
   override getChatClient(sessionId: string): any {
     throw new Error('method not implemented yet')
+  }
+
+  private async loadMetadata(path: string): Promise<GgufMetadata> {
+    try {
+      const data = await invoke<GgufMetadata>('read_gguf_metadata', {
+        path: path,
+      })
+      return data
+    } catch (err) {
+      throw err
+    }
   }
 }

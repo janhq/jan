@@ -8,6 +8,7 @@ version = "0.6.599"
 dependencies = [
  "ash",
  "base64 0.22.1",
+ "byteorder",
  "dirs",
  "env",
  "fix-path-env",
@@ -84,21 +85,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "alloc-no-stdlib"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
-
-[[package]]
-name = "alloc-stdlib"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
-dependencies = [
- "alloc-no-stdlib",
 ]
 
 [[package]]
@@ -465,27 +451,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
-]
-
-[[package]]
-name = "brotli"
-version = "8.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9991eea70ea4f293524138648e41ee89b0b2b12ddef3b255effa43c8056e0e0d"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
- "brotli-decompressor",
-]
-
-[[package]]
-name = "brotli-decompressor"
-version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "874bb8112abecc98cbd6d81ea4fa7e94fb9449648c93cc89aa40c81c24d7de03"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
 ]
 
 [[package]]
@@ -5006,7 +4971,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b54a99a6cd8e01abcfa61508177e6096a4fe2681efecee9214e962f2f073ae4a"
 dependencies = [
  "base64 0.22.1",
- "brotli",
  "ico",
  "json-patch",
  "plist",
@@ -5344,7 +5308,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330c15cabfe1d9f213478c9e8ec2b0c76dab26bb6f314b8ad1c8a568c1d186e"
 dependencies = [
  "anyhow",
- "brotli",
  "cargo_metadata",
  "ctor",
  "dunce",
