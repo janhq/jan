@@ -288,7 +288,8 @@ function Hub() {
       const handleDownload = () => {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
-        pullModel(modelId, modelUrl)
+        const mmprojPath = model.mmproj_models?.[0]?.path
+        pullModel(modelId, modelUrl, mmprojPath)
       }
 
       return (
@@ -749,7 +750,10 @@ function Hub() {
                                                   )
                                                   pullModel(
                                                     variant.model_id,
-                                                    variant.path
+                                                    variant.path,
+                                                    filteredModels[
+                                                      virtualItem.index
+                                                    ].mmproj_models?.[0]?.path
                                                   )
                                                 }}
                                               >
