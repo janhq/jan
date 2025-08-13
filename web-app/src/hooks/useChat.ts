@@ -44,7 +44,6 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
-    queuedMessage,
     setQueuedMessage,
   } = useAppState()
   const { assistants, currentAssistant } = useAssistant()
