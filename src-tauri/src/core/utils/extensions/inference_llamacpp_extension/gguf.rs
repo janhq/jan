@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     convert::TryFrom,
     fs::File,
-    io::{self, Read, Seek},
+    io::{self, Read, Seek, BufReader},
     path::Path,
 };
 
@@ -59,7 +59,7 @@ pub struct GgufMetadata {
 }
 
 fn read_gguf_metadata_internal<P: AsRef<Path>>(path: P) -> io::Result<GgufMetadata> {
-    let mut file = File::open(path)?;
+    let mut file = BufReader::new(File::open(path)?);
 
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
