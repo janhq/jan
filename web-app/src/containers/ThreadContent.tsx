@@ -268,6 +268,13 @@ export const ThreadContent = memo(
                 </div>
               </div>
             </div>
+            {item?.created_at && item?.created_at !== 0 && (
+              <div className="flex flex-col">
+                <span className="text-xs mt-0.5 text-right text-main-view-fg/60">
+                  {formatDate(item?.created_at)}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditDialog
                 message={item.content?.[0]?.text.value}
