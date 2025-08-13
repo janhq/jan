@@ -15,7 +15,7 @@ There are many ways to contribute to Jan, from writing code and documentation to
 
 ### Suggesting Enhancements
 
--   If you have an idea for a new feature or an improvement to an existing one, please [open an issue](httpss://github.com/menloresearch/jan/issues/new) to discuss it. This allows us to coordinate our efforts and avoid duplicated work.
+-   If you have an idea for a new feature or an improvement to an existing one, please [open an issue](https://github.com/menloresearch/jan/issues/new) to discuss it. This allows us to coordinate our efforts and avoid duplicated work.
 
 ### Code Contributions
 
