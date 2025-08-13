@@ -1606,7 +1606,7 @@ export default class llamacpp_extension extends AIEngine {
       })
       return data
     } catch (err) {
-      console.error('Failed to read GGUF metadata:', err)
+      throw err
     }
   }
 }
