@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::core::download::DownloadManagerState;
+use crate::core::downloads::models::DownloadManagerState;
 use rmcp::{service::RunningService, RoleClient};
 use tokio::task::JoinHandle;
 

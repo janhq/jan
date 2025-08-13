@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use hyper::body::Bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
-use jan_utils::{remove_prefix, is_cors_header, is_valid_host};
+use jan_utils::{is_cors_header, is_valid_host, remove_prefix};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -21,7 +21,6 @@ struct ProxyConfig {
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
 }
-
 
 /// Determines the final destination path based on the original request path
 fn get_destination_path(original_path: &str, prefix: &str) -> String {
@@ -591,7 +590,6 @@ async fn proxy_request(
     }
 }
 
-
 fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     host: &str,
@@ -619,7 +617,6 @@ fn add_cors_headers_with_host_and_origin(
 
     builder
 }
-
 
 pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
     let handle_guard = server_handle.lock().await;

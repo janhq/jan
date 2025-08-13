@@ -1,60 +1,15 @@
-use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
-use serde_json::{Map, Value};
-use std::fs;
+use serde_json::Value;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::{
     process::Command,
     sync::Mutex,
     time::{sleep, timeout},
 };
 
-use super::{cmd::get_jan_data_folder_path, state::AppState};
+use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
 use jan_utils::can_override_npx;
-
-const DEFAULT_MCP_CONFIG: &str = r#"{
-  "mcpServers": {
-    "browsermcp": {
-      "command": "npx",
-      "args": ["@browsermcp/mcp"],
-      "env": {},
-      "active": false
-    },
-    "fetch": {
-      "command": "uvx",
-      "args": ["mcp-server-fetch"],
-      "env": {},
-      "active": false
-    },
-    "serper": {
-      "command": "npx",
-      "args": ["-y", "serper-search-scrape-mcp-server"],
-      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
-      "active": false
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/other/allowed/dir"
-      ],
-      "env": {},
-      "active": false
-    },
-    "sequential-thinking": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "env": {},
-      "active": false
-    }
-  }
-}
-"#;
-
-// Timeout for MCP tool calls (30 seconds)
-const MCP_TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 // MCP server restart configuration with exponential backoff
 const MCP_BASE_RESTART_DELAY_MS: u64 = 1000; // Start with 1 second
@@ -68,7 +23,7 @@ const MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each time
 ///
 /// # Returns
 /// * `u64` - Delay in milliseconds, capped at MCP_MAX_RESTART_DELAY_MS
-fn calculate_exponential_backoff_delay(attempt: u32) -> u64 {
+pub fn calculate_exponential_backoff_delay(attempt: u32) -> u64 {
     use std::cmp;
 
     // Calculate base exponential delay: base_delay * multiplier^(attempt-1)
@@ -214,7 +169,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 }
 
 /// Monitor MCP server health without removing it from the HashMap
-async fn monitor_mcp_server_handle(
+pub async fn monitor_mcp_server_handle(
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
 ) -> Option<rmcp::service::QuitReason> {
@@ -269,7 +224,7 @@ async fn monitor_mcp_server_handle(
 
 /// Starts an MCP server with restart monitoring
 /// Returns the result of the first start attempt, then continues with restart monitoring
-async fn start_mcp_server_with_restart<R: Runtime>(
+pub async fn start_mcp_server_with_restart<R: Runtime>(
     app: AppHandle<R>,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
@@ -342,7 +297,7 @@ async fn start_mcp_server_with_restart<R: Runtime>(
 }
 
 /// Helper function to handle the restart loop logic
-async fn start_restart_loop<R: Runtime>(
+pub async fn start_restart_loop<R: Runtime>(
     app: AppHandle<R>,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
@@ -497,21 +452,7 @@ async fn start_restart_loop<R: Runtime>(
     }
 }
 
-#[tauri::command]
-pub async fn activate_mcp_server<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    state: State<'_, AppState>,
-    name: String,
-    config: Value,
-) -> Result<(), String> {
-    let servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
-        state.mcp_servers.clone();
-
-    // Use the modified start_mcp_server_with_restart that returns first attempt result
-    start_mcp_server_with_restart(app, servers, name, config, Some(3)).await
-}
-
-async fn schedule_mcp_start_task<R: Runtime>(
+pub async fn schedule_mcp_start_task<R: Runtime>(
     app: tauri::AppHandle<R>,
     servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
@@ -642,49 +583,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    log::info!("Deactivating MCP server: {}", name);
-
-    // First, mark server as manually deactivated to prevent restart
-    // Remove from active servers list to prevent restart
-    {
-        let mut active_servers = state.mcp_active_servers.lock().await;
-        active_servers.remove(&name);
-        log::info!("Removed MCP server {} from active servers list", name);
-    }
-
-    // Mark as not successfully connected to prevent restart logic
-    {
-        let mut connected = state.mcp_successfully_connected.lock().await;
-        connected.insert(name.clone(), false);
-        log::info!("Marked MCP server {} as not successfully connected", name);
-    }
-
-    // Reset restart count
-    {
-        let mut counts = state.mcp_restart_counts.lock().await;
-        counts.remove(&name);
-        log::info!("Reset restart count for MCP server {}", name);
-    }
-
-    // Now remove and stop the server
-    let servers = state.mcp_servers.clone();
-    let mut servers_map = servers.lock().await;
-
-    let service = servers_map
-        .remove(&name)
-        .ok_or_else(|| format!("Server {} not found", name))?;
-
-    // Release the lock before calling cancel
-    drop(servers_map);
-
-    service.cancel().await.map_err(|e| e.to_string())?;
-    log::info!("Server {name} stopped successfully and marked as deactivated.");
-    Ok(())
-}
-
-fn extract_command_args(
+pub fn extract_command_args(
     config: &Value,
 ) -> Option<(String, Vec<Value>, serde_json::Map<String, Value>)> {
     let obj = config.as_object()?;
@@ -698,25 +597,10 @@ fn extract_command_args(
     Some((command, args, envs))
 }
 
-fn extract_active_status(config: &Value) -> Option<bool> {
+pub fn extract_active_status(config: &Value) -> Option<bool> {
     let obj = config.as_object()?;
     let active = obj.get("active")?.as_bool()?;
     Some(active)
-}
-
-#[tauri::command]
-pub async fn restart_mcp_servers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let servers = state.mcp_servers.clone();
-    // Stop the servers
-    stop_mcp_servers(state.mcp_servers.clone()).await?;
-
-    // Restart only previously active servers (like cortex)
-    restart_active_mcp_servers(&app, servers).await?;
-
-    app.emit("mcp-update", "MCP servers updated")
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
-
-    Ok(())
 }
 
 /// Restart only servers that were previously active (like cortex restart behavior)
@@ -756,29 +640,6 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
     Ok(())
 }
 
-/// Reset MCP restart count for a specific server (like cortex reset)
-#[tauri::command]
-pub async fn reset_mcp_restart_count(
-    state: State<'_, AppState>,
-    server_name: String,
-) -> Result<(), String> {
-    let mut counts = state.mcp_restart_counts.lock().await;
-
-    let count = match counts.get_mut(&server_name) {
-        Some(count) => count,
-        None => return Ok(()), // Server not found, nothing to reset
-    };
-
-    let old_count = *count;
-    *count = 0;
-    log::info!(
-        "MCP server {} restart count reset from {} to 0.",
-        server_name,
-        old_count
-    );
-    Ok(())
-}
-
 pub async fn stop_mcp_servers(
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 ) -> Result<(), String> {
@@ -793,139 +654,8 @@ pub async fn stop_mcp_servers(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn get_connected_servers(
-    _app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Vec<String>, String> {
-    let servers = state.mcp_servers.clone();
-    let servers_map = servers.lock().await;
-    Ok(servers_map.keys().cloned().collect())
-}
-
-/// Retrieves all available tools from all MCP servers
-///
-/// # Arguments
-/// * `state` - Application state containing MCP server connections
-///
-/// # Returns
-/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
-///
-/// This function:
-/// 1. Locks the MCP servers mutex to access server connections
-/// 2. Iterates through all connected servers
-/// 3. Gets the list of tools from each server
-/// 4. Combines all tools into a single vector
-/// 5. Returns the combined list of all available tools
-#[tauri::command]
-pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
-    let servers = state.mcp_servers.lock().await;
-    let mut all_tools: Vec<Tool> = Vec::new();
-
-    for (_, service) in servers.iter() {
-        // List tools with timeout
-        let tools_future = service.list_all_tools();
-        let tools = match timeout(MCP_TOOL_CALL_TIMEOUT, tools_future).await {
-            Ok(result) => result.map_err(|e| e.to_string())?,
-            Err(_) => {
-                log::warn!(
-                    "Listing tools timed out after {} seconds",
-                    MCP_TOOL_CALL_TIMEOUT.as_secs()
-                );
-                continue; // Skip this server and continue with others
-            }
-        };
-
-        for tool in tools {
-            all_tools.push(tool);
-        }
-    }
-
-    Ok(all_tools)
-}
-
-/// Calls a tool on an MCP server by name with optional arguments
-///
-/// # Arguments
-/// * `state` - Application state containing MCP server connections
-/// * `tool_name` - Name of the tool to call
-/// * `arguments` - Optional map of argument names to values
-///
-/// # Returns
-/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
-///
-/// This function:
-/// 1. Locks the MCP servers mutex to access server connections
-/// 2. Searches through all servers for one containing the named tool
-/// 3. When found, calls the tool on that server with the provided arguments
-/// 4. Returns error if no server has the requested tool
-#[tauri::command]
-pub async fn call_tool(
-    state: State<'_, AppState>,
-    tool_name: String,
-    arguments: Option<Map<String, Value>>,
-) -> Result<CallToolResult, String> {
-    let servers = state.mcp_servers.lock().await;
-
-    // Iterate through servers and find the first one that contains the tool
-    for (_, service) in servers.iter() {
-        let tools = match service.list_all_tools().await {
-            Ok(tools) => tools,
-            Err(_) => continue, // Skip this server if we can't list tools
-        };
-
-        if !tools.iter().any(|t| t.name == tool_name) {
-            continue; // Tool not found in this server, try next
-        }
-
-        println!("Found tool {} in server", tool_name);
-
-        // Call the tool with timeout
-        let tool_call = service.call_tool(CallToolRequestParam {
-            name: tool_name.clone().into(),
-            arguments,
-        });
-
-        return match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
-            Ok(result) => result.map_err(|e| e.to_string()),
-            Err(_) => Err(format!(
-                "Tool call '{}' timed out after {} seconds",
-                tool_name,
-                MCP_TOOL_CALL_TIMEOUT.as_secs()
-            )),
-        };
-    }
-
-    Err(format!("Tool {} not found", tool_name))
-}
-
-#[tauri::command]
-pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
-    let mut path = get_jan_data_folder_path(app);
-    path.push("mcp_config.json");
-    log::info!("read mcp configs, path: {:?}", path);
-
-    // Create default empty config if file doesn't exist
-    if !path.exists() {
-        log::info!("mcp_config.json not found, creating default empty config");
-        fs::write(&path, DEFAULT_MCP_CONFIG)
-            .map_err(|e| format!("Failed to create default MCP config: {}", e))?;
-    }
-
-    fs::read_to_string(path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn save_mcp_configs(app: AppHandle, configs: String) -> Result<(), String> {
-    let mut path = get_jan_data_folder_path(app);
-    path.push("mcp_config.json");
-    log::info!("save mcp configs, path: {:?}", path);
-
-    fs::write(path, configs).map_err(|e| e.to_string())
-}
-
 /// Store active server configuration for restart purposes
-async fn store_active_server_config(
+pub async fn store_active_server_config(
     active_servers_state: &Arc<Mutex<HashMap<String, Value>>>,
     name: &str,
     config: &Value,
@@ -935,13 +665,13 @@ async fn store_active_server_config(
 }
 
 /// Reset restart count for a server
-async fn reset_restart_count(restart_counts: &Arc<Mutex<HashMap<String, u32>>>, name: &str) {
+pub async fn reset_restart_count(restart_counts: &Arc<Mutex<HashMap<String, u32>>>, name: &str) {
     let mut counts = restart_counts.lock().await;
     counts.insert(name.to_string(), 0);
 }
 
 /// Spawn the server monitoring task for handling restarts
-async fn spawn_server_monitoring_task<R: Runtime>(
+pub async fn spawn_server_monitoring_task<R: Runtime>(
     app: AppHandle<R>,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     name: String,
@@ -984,7 +714,7 @@ async fn spawn_server_monitoring_task<R: Runtime>(
 }
 
 /// Determine if a server should be restarted based on its connection status and quit reason
-async fn should_restart_server(
+pub async fn should_restart_server(
     successfully_connected: &Arc<Mutex<HashMap<String, bool>>>,
     name: &str,
     quit_reason: &Option<rmcp::service::QuitReason>,
@@ -1014,46 +744,5 @@ async fn should_restart_server(
             log::info!("MCP server {} was manually stopped - not restarting", name);
             false
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use std::fs::File;
-    use std::io::Write;
-    use std::sync::Arc;
-    use tauri::test::mock_app;
-    use tokio::sync::Mutex;
-
-    #[tokio::test]
-    async fn test_run_mcp_commands() {
-        let app = mock_app();
-
-        // Get the app path where the config should be created
-        let app_path = get_jan_data_folder_path(app.handle().clone());
-        let config_path = app_path.join("mcp_config.json");
-
-        // Ensure the directory exists
-        if let Some(parent) = config_path.parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create parent directory");
-        }
-
-        // Create a mock mcp_config.json file at the correct location
-        let mut file: File = File::create(&config_path).expect("Failed to create config file");
-        file.write_all(b"{\"mcpServers\":{}}")
-            .expect("Failed to write to config file");
-
-        // Call the run_mcp_commands function
-        let servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let result = run_mcp_commands(app.handle(), servers_state).await;
-
-        // Assert that the function returns Ok(())
-        assert!(result.is_ok());
-
-        // Clean up the mock config file
-        std::fs::remove_file(&config_path).expect("Failed to remove config file");
     }
 }
