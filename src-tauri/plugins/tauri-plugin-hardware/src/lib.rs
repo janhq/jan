@@ -1,5 +1,5 @@
-pub mod vendor;
 mod commands;
+pub mod vendor;
 
 use std::sync::OnceLock;
 use sysinfo::System;
@@ -255,11 +255,13 @@ fn get_jan_libvulkan_path<R: Runtime>(app: tauri::AppHandle<R>) -> String {
     }
 }
 
-
 /// Initialize the hardware plugin
 pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("hardware")
-        .invoke_handler(tauri::generate_handler![commands::get_system_info, commands::get_system_usage])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_system_info,
+            commands::get_system_usage
+        ])
         .build()
 }
 

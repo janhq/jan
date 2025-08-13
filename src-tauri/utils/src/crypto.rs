@@ -1,7 +1,7 @@
-use rand::{distributions::Alphanumeric, Rng};
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use base64::{engine::general_purpose, Engine as _};
+use hmac::{Hmac, Mac};
+use rand::{distributions::Alphanumeric, Rng};
+use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 

@@ -14,7 +14,11 @@ pub fn parse_uuid(bytes: &[u8; 16]) -> String {
 
 /// Safely converts C string buffer to Rust String
 pub fn parse_c_string(buf: &[i8]) -> String {
-    let bytes: Vec<u8> = buf.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+    let bytes: Vec<u8> = buf
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 

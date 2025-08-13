@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use std::collections::{HashMap, HashSet};
 use url::Url;
 
 #[derive(serde::Deserialize, Clone, Debug)]

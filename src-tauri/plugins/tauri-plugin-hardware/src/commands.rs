@@ -1,4 +1,7 @@
-use super::{get_jan_libvulkan_path, vendor::nvidia, vendor::vulkan, CpuStaticInfo, SystemInfo, SystemUsage, SYSTEM_INFO};
+use super::{
+    get_jan_libvulkan_path, vendor::nvidia, vendor::vulkan, CpuStaticInfo, SystemInfo, SystemUsage,
+    SYSTEM_INFO,
+};
 use sysinfo::System;
 use tauri::Runtime;
 

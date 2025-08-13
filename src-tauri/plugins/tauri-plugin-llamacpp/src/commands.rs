@@ -9,14 +9,16 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
-use crate::error::{ServerResult, ServerError, LlamacppError, ErrorCode};
-use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
-use crate::path::{validate_binary_path, validate_model_path};
-use jan_utils::{extract_arg_value, parse_port_from_args, setup_library_path, setup_windows_process_flags};
 use crate::device::{get_devices_from_backend, DeviceInfo};
+use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
+use crate::path::{validate_binary_path, validate_model_path};
 use crate::process::{
-    is_process_running_by_pid, get_random_available_port,
-    find_session_by_model_id, get_all_loaded_model_ids, get_all_active_sessions,
+    find_session_by_model_id, get_all_active_sessions, get_all_loaded_model_ids,
+    get_random_available_port, is_process_running_by_pid,
+};
+use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
+use jan_utils::{
+    extract_arg_value, parse_port_from_args, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -219,10 +221,10 @@ pub async fn unload_llama_model<R: Runtime>(
 ) -> ServerResult<UnloadResult> {
     let state: State<LlamacppState> = app_handle.state();
     let mut map = state.llama_server_process.lock().await;
-    
+
     if let Some(session) = map.remove(&pid) {
         let mut child = session.child;
-        
+
         #[cfg(unix)]
         {
             graceful_terminate_process(&mut child).await;
@@ -232,7 +234,7 @@ pub async fn unload_llama_model<R: Runtime>(
         {
             force_terminate_process(&mut child).await;
         }
-        
+
         Ok(UnloadResult {
             success: true,
             error: None,

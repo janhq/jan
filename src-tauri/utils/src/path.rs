@@ -1,6 +1,6 @@
-use std::path::{Component, Path, PathBuf};
 #[cfg(windows)]
 use std::path::Prefix;
+use std::path::{Component, Path, PathBuf};
 
 /// Normalizes file paths by handling path components, prefixes, and resolving relative paths
 /// Based on: https://github.com/rust-lang/cargo/blob/rust-1.67.0/crates/cargo-util/src/paths.rs#L82-L107

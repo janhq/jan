@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::error::{ServerResult, LlamacppError, ErrorCode};
+use crate::error::{ErrorCode, LlamacppError, ServerResult};
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
