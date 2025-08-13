@@ -51,8 +51,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     abortControllers,
     loadingModel,
     tools,
-    queuedMessage,
-    setQueuedMessage,
+    addToThreadQueue,
+    getThreadQueueLength,
   } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
@@ -61,17 +61,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
   const maxRows = 10
 
-  // Clear queued message when thread changes
-  useEffect(() => {
-    setQueuedMessage(null)
-  }, [currentThreadId, setQueuedMessage])
-
-  // Clear queued message when component unmounts
-  useEffect(() => {
-    return () => {
-      setQueuedMessage(null)
-    }
-  }, [setQueuedMessage])
+  // Get current thread's queue information
+  const currentThreadQueueLength = currentThreadId ? getThreadQueueLength(currentThreadId) : 0
 
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
@@ -376,11 +367,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             )}
             <TextareaAutosize
               ref={textareaRef}
-              disabled={Boolean(queuedMessage)}
               minRows={2}
               rows={1}
               maxRows={10}
-              value={queuedMessage || prompt}
+              value={prompt}
               data-test-id={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
@@ -394,17 +384,18 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   e.nativeEvent.isComposing || e.keyCode === 229
                 if (e.key === 'Enter' && !isComposing) {
                   if (!e.shiftKey && prompt.trim()) {
-                    // Enter or Ctrl+Enter: Queue if streaming, send if not
+                    // Enter: Queue if streaming, send if not
                     e.preventDefault()
-                    if (streamingContent && !queuedMessage) {
-                      // Queue the message if AI is responding and no message already queued
-                      setQueuedMessage(prompt.trim())
-                      setPrompt('')
-                    } else if (!streamingContent) {
+                    if (streamingContent) {
+                      // Always queue when AI is responding (no limitations)
+                      if (currentThreadId) {
+                        addToThreadQueue(currentThreadId, prompt.trim())
+                        setPrompt('')
+                      }
+                    } else {
                       // If not streaming, send immediately
                       handleSendMesage(prompt)
                     }
-                    // If streaming AND message already queued, do nothing
                   }
                   // Shift+Enter: Allow default behavior (new line)
                 }
@@ -583,11 +574,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               </div>
             </div>
 
-            {/* Queue indicator */}
-            {queuedMessage && (
+            {/* Enhanced Queue Indicator */}
+            {currentThreadQueueLength > 0 && (
               <div className="flex items-center gap-2">
                 <div className="bg-accent text-accent-fg text-xs px-2 py-1 rounded-full font-medium">
-                  Message queued
+                  {currentThreadQueueLength} message{currentThreadQueueLength === 1 ? '' : 's'} queued
                 </div>
               </div>
             )}
