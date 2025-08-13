@@ -41,6 +41,7 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
+    removeFromThreadQueue,
   } = useAppState()
   const { assistants, currentAssistant } = useAssistant()
   const { updateProvider } = useModelProvider()
@@ -531,7 +532,14 @@ export const useChat = () => {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
 
-        // Process queued message if available
+        // Process next queued message if available
+        const nextMessage = removeFromThreadQueue(activeThread.id)
+        if (nextMessage) {
+          // Small delay to ensure UI has updated, then send next queued message
+          setTimeout(() => {
+            sendMessage(nextMessage, true)
+          }, 100)
+        }
       }
     },
     [
@@ -560,6 +568,7 @@ export const useChat = () => {
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
+      removeFromThreadQueue,
     ]
   )
 
