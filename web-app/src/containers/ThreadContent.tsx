@@ -277,6 +277,7 @@ export const ThreadContent = memo(
                   }
                 }}
               />
+              <CopyButton text={item.content?.[0]?.text.value || ''} />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
