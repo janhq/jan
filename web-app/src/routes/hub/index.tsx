@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
 import {
   useState,
   useMemo,
@@ -287,8 +287,8 @@ function Hub() {
 
       const handleDownload = () => {
         // Immediately set local downloading state
-        addLocalDownloadingModel(modelId.replace(/[^a-zA-Z0-9/_\-.]/g, ''))
-        pullModel(modelId.replace(/[^a-zA-Z0-9/_\-.]/g, ''), modelUrl)
+        addLocalDownloadingModel(sanitizeModelId(modelId))
+        pullModel(sanitizeModelId(modelId), modelUrl)
       }
 
       return (
@@ -745,16 +745,10 @@ function Hub() {
                                                 title={t('hub:downloadModel')}
                                                 onClick={() => {
                                                   addLocalDownloadingModel(
-                                                    variant.model_id.replace(
-                                                      /[^a-zA-Z0-9/_\-.]/g,
-                                                      ''
-                                                    )
+                                                    sanitizeModelId(variant.model_id)
                                                   )
                                                   pullModel(
-                                                    variant.model_id.replace(
-                                                      /[^a-zA-Z0-9/_\-.]/g,
-                                                      ''
-                                                    ),
+                                                    sanitizeModelId(variant.model_id),
                                                     variant.path
                                                   )
                                                 }}

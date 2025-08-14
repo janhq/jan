@@ -5,6 +5,7 @@ import {
   SettingComponentProps,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import { sanitizeModelId } from '@/lib/utils'
 // Types for model catalog
 export interface ModelQuant {
   model_id: string
@@ -162,9 +163,7 @@ export const convertHfRepoToCatalogModel = (
     }
 
     // Generate model_id from filename (remove .gguf extension, case-insensitive)
-    const modelId = file.rfilename
-      .replace(/\.gguf$/i, '')
-      .replace(/[^a-zA-Z0-9/_\-.]/g, '')
+    const modelId = sanitizeModelId(file.rfilename.replace(/\.gguf$/i, ''))
 
     return {
       model_id: modelId,
