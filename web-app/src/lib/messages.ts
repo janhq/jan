@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ThreadMessage } from '@janhq/core'
@@ -19,32 +20,120 @@ export class CompletionMessagesBuilder {
     this.messages.push(
       ...messages
         .filter((e) => !e.metadata?.error)
-        .map<ChatCompletionMessageParam>(
-          (msg) =>
-            ({
+        .map<ChatCompletionMessageParam>((msg) => {
+          if (msg.role === 'assistant') {
+            return {
               role: msg.role,
-              content:
-                msg.role === 'assistant'
-                  ? this.normalizeContent(msg.content[0]?.text?.value || '.')
-                  : msg.content[0]?.text?.value || '.',
-            }) as ChatCompletionMessageParam
-        )
+              content: this.normalizeContent(
+                msg.content[0]?.text?.value || '.'
+              ),
+            } as ChatCompletionMessageParam
+          } else {
+            // For user messages, handle multimodal content
+            if (msg.content.length > 1) {
+              // Multiple content parts (text + images + files)
+              const content = msg.content.map((contentPart) => {
+                if (contentPart.type === 'text') {
+                  return {
+                    type: 'text',
+                    text: contentPart.text?.value || '',
+                  }
+                } else if (contentPart.type === 'image_url') {
+                  return {
+                    type: 'image_url',
+                    image_url: {
+                      url: contentPart.image_url?.url || '',
+                      detail: contentPart.image_url?.detail || 'auto',
+                    },
+                  }
+                } else if ((contentPart as any).type === 'file') {
+                  return {
+                    type: 'file',
+                    file: {
+                      filename: (contentPart as any).file?.filename || 'document.pdf',
+                      file_data: (contentPart as any).file?.file_data || (contentPart as any).file?.data ? `data:application/pdf;base64,${(contentPart as any).file.data}` : '',
+                    },
+                  }
+                }
+                return contentPart
+              })
+              return {
+                role: msg.role,
+                content,
+              } as ChatCompletionMessageParam
+            } else {
+              // Single text content
+              return {
+                role: msg.role,
+                content: msg.content[0]?.text?.value || '.',
+              } as ChatCompletionMessageParam
+            }
+          }
+        })
     )
   }
 
   /**
    * Add a user message to the messages array.
    * @param content - The content of the user message.
+   * @param attachments - Optional attachments for the message.
    */
-  addUserMessage(content: string) {
+  addUserMessage(
+    content: string,
+    attachments?: Array<{
+      name: string
+      type: string
+      size: number
+      base64: string
+      dataUrl: string
+    }>
+  ) {
     // Ensure no consecutive user messages
     if (this.messages[this.messages.length - 1]?.role === 'user') {
       this.messages.pop()
     }
-    this.messages.push({
-      role: 'user',
-      content: content,
-    })
+
+    // Handle multimodal content with attachments
+    if (attachments && attachments.length > 0) {
+      const messageContent: any[] = [
+        {
+          type: 'text',
+          text: content,
+        },
+      ]
+
+      // Add attachments (images and PDFs)
+      attachments.forEach((attachment) => {
+        if (attachment.type.startsWith('image/')) {
+          messageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${attachment.type};base64,${attachment.base64}`,
+              detail: 'auto',
+            },
+          })
+        } else if (attachment.type === 'application/pdf') {
+          messageContent.push({
+            type: 'file',
+            file: {
+              filename: attachment.name,
+              file_data: `data:${attachment.type};base64,${attachment.base64}`,
+            },
+          })
+        }
+      })
+
+      this.messages.push({
+        role: 'user',
+        content: messageContent,
+      } as any)
+    } else {
+      // Text-only message
+      this.messages.push({
+        role: 'user',
+        content: content,
+      })
+    }
   }
 
   /**

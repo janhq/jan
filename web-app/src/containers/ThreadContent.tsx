@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
@@ -144,7 +145,7 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
       updateMessage?: (item: ThreadMessage, message: string) => void
@@ -172,9 +173,12 @@ export const ThreadContent = memo(
     const { reasoningSegment, textSegment } = useMemo(() => {
       // Check for thinking formats
       const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
-      const hasAnalysisChannel = text.includes('<|channel|>analysis<|message|>') && !text.includes('<|start|>assistant<|channel|>final<|message|>')
-      
-      if (hasThinkTag || hasAnalysisChannel) return { reasoningSegment: text, textSegment: '' }
+      const hasAnalysisChannel =
+        text.includes('<|channel|>analysis<|message|>') &&
+        !text.includes('<|start|>assistant<|channel|>final<|message|>')
+
+      if (hasThinkTag || hasAnalysisChannel)
+        return { reasoningSegment: text, textSegment: '' }
 
       // Check for completed think tag format
       const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
@@ -187,7 +191,9 @@ export const ThreadContent = memo(
       }
 
       // Check for completed analysis channel format
-      const analysisMatch = text.match(/<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/)
+      const analysisMatch = text.match(
+        /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
+      )
       if (analysisMatch?.index !== undefined) {
         const splitIndex = analysisMatch.index + analysisMatch[0].length
         return {
@@ -213,7 +219,49 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
+        // Extract text content and any attachments
+        const textContent =
+          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
+          ''
+        const attachments = toSendMessage.content
+          ?.filter(
+            (c) =>
+              (c.type === 'image_url' && c.image_url?.url) ||
+              ((c as any).type === 'file' && (c as any).file?.data)
+          )
+          .map((c) => {
+            if (c.type === 'image_url' && c.image_url?.url) {
+              const url = c.image_url.url
+              const [mimeType, base64] = url
+                .replace('data:', '')
+                .split(';base64,')
+              return {
+                name: 'image', // We don't have the original filename
+                type: mimeType,
+                size: 0, // We don't have the original size
+                base64: base64,
+                dataUrl: url,
+              }
+            } else if ((c as any).type === 'file' && (c as any).file?.data) {
+              const fileContent = (c as any).file
+              return {
+                name: fileContent.filename || 'file',
+                type: fileContent.media_type,
+                size: 0, // We don't have the original size
+                base64: fileContent.data,
+                dataUrl: `data:${fileContent.media_type};base64,${fileContent.data}`,
+              }
+            }
+            return null
+          })
+          .filter(Boolean) as Array<{
+          name: string
+          type: string
+          size: number
+          base64: string
+          dataUrl: string
+        }>
+        sendMessage(textContent, true, attachments)
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
@@ -255,22 +303,92 @@ export const ThreadContent = memo(
 
     return (
       <Fragment>
-        {item.content?.[0]?.text && item.role === 'user' && (
+        {item.role === 'user' && (
           <div className="w-full">
-            <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
-              <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
-                <div className="select-text">
-                  <RenderMarkdown
-                    content={item.content?.[0].text.value}
-                    components={linkComponents}
-                    isUser
-                  />
+            {/* Render attachments above the message bubble */}
+            {item.content?.some(
+              (c) =>
+                (c.type === 'image_url' && c.image_url?.url) ||
+                ((c as any).type === 'file' && (c as any).file?.data)
+            ) && (
+              <div className="flex justify-end w-full mb-2">
+                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
+                  {item.content
+                    ?.filter(
+                      (c) =>
+                        (c.type === 'image_url' && c.image_url?.url) ||
+                        ((c as any).type === 'file' && (c as any).file?.data)
+                    )
+                    .map((contentPart, index) => {
+                      // Handle images
+                      if (
+                        contentPart.type === 'image_url' &&
+                        contentPart.image_url?.url
+                      ) {
+                        return (
+                          <div key={index} className="relative">
+                            <img
+                              src={contentPart.image_url.url}
+                              alt="Uploaded attachment"
+                              className="size-40 rounded-md object-cover border border-main-view-fg/10"
+                            />
+                          </div>
+                        )
+                      }
+                      // Handle PDF files
+                      else if (
+                        (contentPart as any).type === 'file' &&
+                        (contentPart as any).file?.media_type ===
+                          'application/pdf'
+                      ) {
+                        const fileContent = (contentPart as any).file
+                        return (
+                          <div key={index} className="relative">
+                            <div className="w-40 h-40 bg-main-view-fg/5 border border-main-view-fg/10 rounded-md flex flex-col items-center justify-center p-4">
+                              <div className="text-2xl mb-2">📄</div>
+                              <div className="text-xs text-center text-main-view-fg/70 truncate w-full">
+                                {fileContent.filename || 'PDF Document'}
+                              </div>
+                              <div className="text-xs text-main-view-fg/50 mt-1">
+                                PDF
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Render text content in the message bubble */}
+            {item.content?.some((c) => c.type === 'text' && c.text?.value) && (
+              <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
+                <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
+                  <div className="select-text">
+                    {item.content
+                      ?.filter((c) => c.type === 'text' && c.text?.value)
+                      .map((contentPart, index) => (
+                        <div key={index}>
+                          <RenderMarkdown
+                            content={contentPart.text!.value}
+                            components={linkComponents}
+                            isUser
+                          />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditDialog
-                message={item.content?.[0]?.text.value}
+                message={
+                  item.content?.find((c) => c.type === 'text')?.text?.value ||
+                  ''
+                }
                 setMessage={(message) => {
                   if (item.updateMessage) {
                     item.updateMessage(item, message)

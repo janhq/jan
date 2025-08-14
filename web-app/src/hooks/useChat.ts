@@ -203,7 +203,17 @@ export const useChat = () => {
   )
 
   const sendMessage = useCallback(
-    async (message: string, troubleshooting = true) => {
+    async (
+      message: string,
+      troubleshooting = true,
+      attachments?: Array<{
+        name: string
+        type: string
+        size: number
+        base64: string
+        dataUrl: string
+      }>
+    ) => {
       const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
@@ -217,7 +227,7 @@ export const useChat = () => {
       updateStreamingContent(emptyThreadContent)
       // Do not add new message on retry
       if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message))
+        addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
       setPrompt('')
       try {
@@ -231,7 +241,7 @@ export const useChat = () => {
           messages,
           currentAssistant?.instructions
         )
-        if (troubleshooting) builder.addUserMessage(message)
+        if (troubleshooting) builder.addUserMessage(message, attachments)
 
         let isCompleted = false
 
