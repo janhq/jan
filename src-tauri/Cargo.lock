@@ -5173,6 +5173,7 @@ name = "tauri-plugin-llamacpp"
 version = "0.6.599"
 dependencies = [
  "base64 0.22.1",
+ "byteorder",
  "hmac",
  "jan-utils",
  "log",

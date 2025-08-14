@@ -1,77 +1,28 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use serde::Serialize;
-use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    fs::File,
-    io::{self, Read, Seek, BufReader},
-    path::Path,
-};
+use std::convert::TryFrom;
+use std::fs::File;
+use std::io::{self, BufReader, Read, Seek};
+use std::path::Path;
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u32)]
-enum GgufValueType {
-    Uint8 = 0,
-    Int8 = 1,
-    Uint16 = 2,
-    Int16 = 3,
-    Uint32 = 4,
-    Int32 = 5,
-    Float32 = 6,
-    Bool = 7,
-    String = 8,
-    Array = 9,
-    Uint64 = 10,
-    Int64 = 11,
-    Float64 = 12,
-}
+use super::types::{GgufMetadata, GgufValueType};
 
-impl TryFrom<u32> for GgufValueType {
-    type Error = io::Error;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Uint8),
-            1 => Ok(Self::Int8),
-            2 => Ok(Self::Uint16),
-            3 => Ok(Self::Int16),
-            4 => Ok(Self::Uint32),
-            5 => Ok(Self::Int32),
-            6 => Ok(Self::Float32),
-            7 => Ok(Self::Bool),
-            8 => Ok(Self::String),
-            9 => Ok(Self::Array),
-            10 => Ok(Self::Uint64),
-            11 => Ok(Self::Int64),
-            12 => Ok(Self::Float64),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unknown GGUF value type: {}", value),
-            )),
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct GgufMetadata {
-    version: u32,
-    tensor_count: u64,
-    metadata: HashMap<String, String>,
-}
-
-fn read_gguf_metadata_internal<P: AsRef<Path>>(path: P) -> io::Result<GgufMetadata> {
+pub fn read_gguf_metadata<P: AsRef<Path>>(path: P) -> io::Result<GgufMetadata> {
     let mut file = BufReader::new(File::open(path)?);
 
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
     if &magic != b"GGUF" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Not a GGUF file"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Not a GGUF file",
+        ));
     }
 
     let version = file.read_u32::<LittleEndian>()?;
     let tensor_count = file.read_u64::<LittleEndian>()?;
     let metadata_count = file.read_u64::<LittleEndian>()?;
 
-    let mut metadata_map = HashMap::new();
+    let mut metadata_map = std::collections::HashMap::new();
     for i in 0..metadata_count {
         match read_metadata_entry(&mut file, i) {
             Ok((key, value)) => {
@@ -93,7 +44,10 @@ fn read_gguf_metadata_internal<P: AsRef<Path>>(path: P) -> io::Result<GgufMetada
     })
 }
 
-fn read_metadata_entry<R: Read + Seek>(reader: &mut R, index: u64) -> io::Result<(String, String)> {
+fn read_metadata_entry<R: Read + Seek>(reader: &mut R, index: u64) -> io::Result<(String, String)>
+where
+    R: ReadBytesExt,
+{
     let key = read_gguf_string(reader).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -108,7 +62,10 @@ fn read_metadata_entry<R: Read + Seek>(reader: &mut R, index: u64) -> io::Result
     Ok((key, value))
 }
 
-fn read_gguf_string<R: Read>(reader: &mut R) -> io::Result<String> {
+fn read_gguf_string<R: Read>(reader: &mut R) -> io::Result<String>
+where
+    R: ReadBytesExt,
+{
     let len = reader.read_u64::<LittleEndian>()?;
     if len > (1024 * 1024) {
         return Err(io::Error::new(
@@ -121,10 +78,10 @@ fn read_gguf_string<R: Read>(reader: &mut R) -> io::Result<String> {
     Ok(String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?)
 }
 
-fn read_gguf_value<R: Read + Seek>(
-    reader: &mut R,
-    value_type: GgufValueType,
-) -> io::Result<String> {
+fn read_gguf_value<R: Read + Seek>(reader: &mut R, value_type: GgufValueType) -> io::Result<String>
+where
+    R: ReadBytesExt,
+{
     match value_type {
         GgufValueType::Uint8 => Ok(reader.read_u8()?.to_string()),
         GgufValueType::Int8 => Ok(reader.read_i8()?.to_string()),
@@ -171,7 +128,10 @@ fn skip_array_data<R: Read + Seek>(
     reader: &mut R,
     elem_type: GgufValueType,
     len: u64,
-) -> io::Result<()> {
+) -> io::Result<()>
+where
+    R: ReadBytesExt,
+{
     match elem_type {
         GgufValueType::Uint8 | GgufValueType::Int8 | GgufValueType::Bool => {
             reader.seek(io::SeekFrom::Current(len as i64))?;
@@ -199,15 +159,3 @@ fn skip_array_data<R: Read + Seek>(
     }
     Ok(())
 }
-
-#[tauri::command]
-pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {
-    // run the blocking code in a separate thread pool
-    tauri::async_runtime::spawn_blocking(move || {
-        read_gguf_metadata_internal(path)
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap()
-}
-

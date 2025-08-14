@@ -7,6 +7,7 @@ pub mod cleanup;
 mod commands;
 mod device;
 mod error;
+mod gguf;
 mod path;
 mod process;
 pub mod state;
@@ -30,6 +31,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_loaded_models,
             commands::get_all_sessions,
             commands::get_session_by_model,
+            // GGUF commands
+            gguf::commands::read_gguf_metadata,
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state

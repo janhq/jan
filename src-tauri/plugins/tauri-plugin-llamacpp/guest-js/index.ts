@@ -15,6 +15,12 @@ export interface DeviceInfo {
   memory: number;
 }
 
+export interface GgufMetadata {
+  version: number;
+  tensor_count: number;
+  metadata: Record<string, string>;
+}
+
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
   return await invoke('plugin:llamacpp|cleanup_llama_processes');
@@ -79,4 +85,9 @@ export async function getAllSessions(): Promise<SessionInfo[]> {
 
 export async function getSessionByModel(modelId: string): Promise<SessionInfo | null> {
   return await invoke('plugin:llamacpp|get_session_by_model', { modelId });
+}
+
+// GGUF commands
+export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
+  return await invoke('plugin:llamacpp|read_gguf_metadata', { path });
 }

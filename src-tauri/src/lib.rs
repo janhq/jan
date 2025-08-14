@@ -2,6 +2,7 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
+    mcp::helpers::clean_up_mcp_servers,
     setup::{self, setup_mcp},
     state::AppState,
 };
@@ -10,8 +11,6 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
-
-use crate::core::mcp::clean_up_mcp_servers;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -97,7 +96,6 @@ pub fn run() {
             // Download
             core::downloads::commands::download_files,
             core::downloads::commands::cancel_download_task,
-            core::utils::extensions::inference_llamacpp_extension::gguf::read_gguf_metadata,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -156,8 +154,9 @@ pub fn run() {
                     }
 
                     // Quick cleanup with shorter timeout
+                    let state = app_handle.state::<AppState>();
+                    let _ = clean_up_mcp_servers(state).await;
                     let _ = cleanup_llama_processes(app.clone()).await;
-                    // clean_up_mcp_servers(app_handle).await;
                 });
             });
         }

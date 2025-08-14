@@ -1,7 +1,7 @@
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::Value;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio::{
     process::Command,
     sync::Mutex,

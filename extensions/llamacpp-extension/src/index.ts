@@ -1601,7 +1601,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private async loadMetadata(path: string): Promise<GgufMetadata> {
     try {
-      const data = await invoke<GgufMetadata>('read_gguf_metadata', {
+      const data = await invoke<GgufMetadata>('plugin:llamacpp|read_gguf_metadata', {
         path: path,
       })
       return data

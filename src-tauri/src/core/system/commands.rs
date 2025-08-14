@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
 };
 use crate::core::app::models::AppConfiguration;
+use crate::core::mcp::helpers::clean_up_mcp_servers;
+use crate::core::state::AppState;
 
 #[tauri::command]
 pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
