@@ -1,0 +1,20 @@
+name: Tauri Builder Flatpak
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build. For example: 0.6.8'
+        required: false
+
+jobs:
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64-flatpak.yml
+    secrets: inherit
+    with:
+      ref: ${{ github.ref }}
+      public_provider: none
+      channel: stable
+      new_version: ${{ inputs.version }}
+      disable_updater: true

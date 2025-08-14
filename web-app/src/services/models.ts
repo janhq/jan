@@ -1,3 +1,4 @@
+import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
@@ -172,7 +173,7 @@ export const convertHfRepoToCatalogModel = (
     const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
     return {
-      model_id: modelId,
+      model_id: sanitizeModelId(modelId),
       path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
       file_size: formatFileSize(file.size),
     }

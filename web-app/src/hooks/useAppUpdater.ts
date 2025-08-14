@@ -53,6 +53,11 @@ export const useAppUpdater = () => {
 
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
+      if (AUTO_UPDATER_DISABLED) {
+        console.log('Auto updater is disabled')
+        return
+      }
+
       try {
         // Reset remindMeLater if requested (e.g., when called from settings)
         if (resetRemindMeLater) {
@@ -148,6 +153,11 @@ export const useAppUpdater = () => {
   )
 
   const downloadAndInstallUpdate = useCallback(async () => {
+    if (AUTO_UPDATER_DISABLED) {
+      console.log('Auto updater is disabled')
+      return
+    }
+
     if (!updateState.updateInfo) return
 
     try {

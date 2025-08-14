@@ -52,6 +52,16 @@ export default function LoadModelErrorDialog() {
       return copyText
     }
 
+    if (typeof error === 'object') {
+      const errorObj = error as {
+        code?: string
+        message: string
+        details?: string
+      }
+
+      return errorObj.message
+    }
+
     return JSON.stringify(error)
   }
 
