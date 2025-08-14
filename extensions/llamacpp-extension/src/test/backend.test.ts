@@ -18,7 +18,7 @@ describe('Backend functions', () => {
   describe('listSupportedBackends', () => {
     it('should return supported backends for Windows x64', async () => {
       // Mock system info
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'windows',
         cpu: {
           arch: 'x86_64',
@@ -53,7 +53,7 @@ describe('Backend functions', () => {
 
     it('should return CUDA backends with proper CPU instruction detection for Windows', async () => {
       // Mock system info with CUDA support and AVX512
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'windows',
         cpu: {
           arch: 'x86_64',
@@ -92,7 +92,7 @@ describe('Backend functions', () => {
 
     it('should select appropriate CUDA backend based on CPU features - AVX2 only', async () => {
       // Mock system info with CUDA support but only AVX2
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'windows',
         cpu: {
           arch: 'x86_64',
@@ -131,7 +131,7 @@ describe('Backend functions', () => {
 
     it('should select appropriate CUDA backend based on CPU features - no AVX', async () => {
       // Mock system info with CUDA support but no AVX
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'windows',
         cpu: {
           arch: 'x86_64',
@@ -171,7 +171,7 @@ describe('Backend functions', () => {
 
     it('should return CUDA backends with proper CPU instruction detection for Linux', async () => {
       // Mock system info with CUDA support and AVX support
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'linux',
         cpu: {
           arch: 'x86_64',
@@ -210,7 +210,7 @@ describe('Backend functions', () => {
     })
 
     it('should return supported backends for macOS arm64', async () => {
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'macos',
         cpu: {
           arch: 'aarch64',
@@ -261,7 +261,7 @@ describe('Backend functions', () => {
 
   describe('getBackendExePath', () => {
     it('should return correct exe path for Windows', async () => {
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'windows',
       })
 
@@ -289,7 +289,7 @@ describe('Backend functions', () => {
     })
 
     it('should return correct exe path for Linux/macOS', async () => {
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'linux',
       })
 

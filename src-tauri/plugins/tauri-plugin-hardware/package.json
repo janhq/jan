@@ -1,7 +1,7 @@
 {
-  "name": "tauri-plugin-hardware-api",
-  "version": "0.1.0",
-  "author": "Menlo",
+  "name": "@janhq/tauri-plugin-hardware-api",
+  "version": "0.6.6",
+  "private": true,
   "description": "Hardware monitoring plugin API for Tauri",
   "type": "module",
   "types": "./dist-js/index.d.ts",

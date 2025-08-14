@@ -1,7 +1,7 @@
 {
-  "name": "tauri-plugin-llamacpp-api",
-  "version": "0.1.0",
-  "author": "Menlo",
+  "name": "@janhq/tauri-plugin-llamacpp-api",
+  "version": "0.6.6",
+  "private": true,
   "description": "",
   "type": "module",
   "types": "./dist-js/index.d.ts",

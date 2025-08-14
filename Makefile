@@ -26,6 +26,7 @@ else ifeq ($(shell uname -s),Linux)
 	chmod +x src-tauri/build-utils/*
 endif
 	yarn install
+	yarn build:tauri:plugin:api
 	yarn build:core
 	yarn build:extensions
 

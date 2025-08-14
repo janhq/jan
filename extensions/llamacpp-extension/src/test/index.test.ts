@@ -175,7 +175,7 @@ describe('llamacpp_extension', () => {
       const { invoke } = await import('@tauri-apps/api/core')
       
       // Mock system info for getBackendExePath
-      window.core.api.getSystemInfo = vi.fn().mockResolvedValue({
+      const getSystemInfo = vi.fn().mockResolvedValue({
         os_type: 'linux'
       })
       

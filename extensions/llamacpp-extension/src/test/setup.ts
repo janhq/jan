@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'window', {
     localStorage: localStorageMock,
     core: {
       api: {
-        getSystemInfo: vi.fn(),
+        // getSystemInfo: vi.fn(),
       },
       extensionManager: {
         getByName: vi.fn().mockReturnValue({
