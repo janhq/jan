@@ -162,7 +162,9 @@ export const convertHfRepoToCatalogModel = (
     }
 
     // Generate model_id from filename (remove .gguf extension, case-insensitive)
-    const modelId = file.rfilename.replace(/\.gguf$/i, '')
+    const modelId = file.rfilename
+      .replace(/\.gguf$/i, '')
+      .replace(/[^a-zA-Z0-9/_\-.]/g, '')
 
     return {
       model_id: modelId,

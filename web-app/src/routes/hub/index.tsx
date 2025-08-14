@@ -287,8 +287,8 @@ function Hub() {
 
       const handleDownload = () => {
         // Immediately set local downloading state
-        addLocalDownloadingModel(modelId)
-        pullModel(modelId, modelUrl)
+        addLocalDownloadingModel(modelId.replace(/[^a-zA-Z0-9/_\-.]/g, ''))
+        pullModel(modelId.replace(/[^a-zA-Z0-9/_\-.]/g, ''), modelUrl)
       }
 
       return (
