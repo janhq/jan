@@ -48,6 +48,12 @@ Object.defineProperty(window, 'core', {
   writable: true,
 })
 
+// Mock global AUTO_UPDATER_DISABLED
+Object.defineProperty(global, 'AUTO_UPDATER_DISABLED', {
+  value: false,
+  writable: true,
+})
+
 import { isDev } from '@/lib/utils'
 import { check } from '@tauri-apps/plugin-updater'
 import { events } from '@janhq/core'
@@ -251,11 +257,14 @@ describe('useAppUpdater', () => {
         downloadAndInstall: mockDownloadAndInstall,
       }
 
+      // Mock check to return the update
+      mockCheck.mockResolvedValue(mockUpdate)
+
       const { result } = renderHook(() => useAppUpdater())
 
-      // Set update info first
-      act(() => {
-        result.current.updateState.updateInfo = mockUpdate
+      // Set update info first by calling checkForUpdate
+      await act(async () => {
+        await result.current.checkForUpdate()
       })
 
       // Mock the download and install process
@@ -296,11 +305,14 @@ describe('useAppUpdater', () => {
         downloadAndInstall: mockDownloadAndInstall,
       }
 
+      // Mock check to return the update
+      mockCheck.mockResolvedValue(mockUpdate)
+
       const { result } = renderHook(() => useAppUpdater())
 
-      // Set update info first
-      act(() => {
-        result.current.updateState.updateInfo = mockUpdate
+      // Set update info first by calling checkForUpdate
+      await act(async () => {
+        await result.current.checkForUpdate()
       })
 
       mockDownloadAndInstall.mockRejectedValue(new Error('Download failed'))
@@ -338,11 +350,14 @@ describe('useAppUpdater', () => {
         downloadAndInstall: mockDownloadAndInstall,
       }
 
+      // Mock check to return the update
+      mockCheck.mockResolvedValue(mockUpdate)
+
       const { result } = renderHook(() => useAppUpdater())
 
-      // Set update info first
-      act(() => {
-        result.current.updateState.updateInfo = mockUpdate
+      // Set update info first by calling checkForUpdate
+      await act(async () => {
+        await result.current.checkForUpdate()
       })
 
       mockDownloadAndInstall.mockImplementation(async (progressCallback) => {
