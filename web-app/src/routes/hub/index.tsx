@@ -139,7 +139,7 @@ function Hub() {
       filtered = filtered?.filter((model) =>
         model.quants.some((variant) =>
           llamaProvider?.models.some(
-            (m: { id: string }) => m.id === sanitizeModelId(variant.model_id)
+            (m: { id: string }) => m.id === variant.model_id
           )
         )
       )
@@ -677,8 +677,8 @@ function Hub() {
                                 {filteredModels[virtualItem.index].quants.map(
                                   (variant) => (
                                     <CardItem
-                                      key={sanitizeModelId(variant.model_id)}
-                                      title={sanitizeModelId(variant.model_id)}
+                                      key={variant.model_id}
+                                      title={variant.model_id}
                                       actions={
                                         <div className="flex items-center gap-2">
                                           <p className="text-main-view-fg/70 font-medium text-xs">
@@ -687,32 +687,19 @@ function Hub() {
                                           {(() => {
                                             const isDownloading =
                                               localDownloadingModels.has(
-                                                sanitizeModelId(
-                                                  variant.model_id
-                                                )
+                                                variant.model_id
                                               ) ||
                                               downloadProcesses.some(
-                                                (e) =>
-                                                  e.id ===
-                                                  sanitizeModelId(
-                                                    variant.model_id
-                                                  )
+                                                (e) => e.id === variant.model_id
                                               )
                                             const downloadProgress =
                                               downloadProcesses.find(
-                                                (e) =>
-                                                  e.id ===
-                                                  sanitizeModelId(
-                                                    variant.model_id
-                                                  )
+                                                (e) => e.id === variant.model_id
                                               )?.progress || 0
                                             const isDownloaded =
                                               llamaProvider?.models.some(
                                                 (m: { id: string }) =>
-                                                  m.id ===
-                                                  sanitizeModelId(
-                                                    variant.model_id
-                                                  )
+                                                  m.id === variant.model_id
                                               )
 
                                             if (isDownloading) {
@@ -746,9 +733,7 @@ function Hub() {
                                                     size="sm"
                                                     onClick={() =>
                                                       handleUseModel(
-                                                        sanitizeModelId(
-                                                          variant.model_id
-                                                        )
+                                                        variant.model_id
                                                       )
                                                     }
                                                   >
