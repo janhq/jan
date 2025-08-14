@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { Route as GeneralRoute } from '../general'
 
 // Mock all the dependencies
@@ -68,9 +68,12 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   }),
 }))
 
+// Create a controllable mock
+const mockCheckForUpdate = vi.fn()
+
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
-    checkForUpdate: vi.fn(),
+    checkForUpdate: mockCheckForUpdate,
   }),
 }))
 
@@ -184,12 +187,17 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/webviewWindow', () => ({
-  WebviewWindow: vi.fn().mockImplementation((label: string, options: any) => ({
+vi.mock('@tauri-apps/api/webviewWindow', () => {
+  const MockWebviewWindow = vi.fn().mockImplementation((label: string, options: any) => ({
     once: vi.fn(),
     setFocus: vi.fn(),
-  })),
-}))
+  }))
+  MockWebviewWindow.getByLabel = vi.fn().mockReturnValue(null)
+  
+  return {
+    WebviewWindow: MockWebviewWindow,
+  }
+})
 
 vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn(),
@@ -244,6 +252,7 @@ global.window = {
   core: {
     api: {
       relaunch: vi.fn(),
+      getConnectedServers: vi.fn().mockResolvedValue([]),
     },
   },
 }
@@ -258,20 +267,26 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Reset the mock to return a promise that resolves immediately by default
+    mockCheckForUpdate.mockResolvedValue(null)
   })
 
-  it('should render the general settings page', () => {
+  it('should render the general settings page', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('should render app version', () => {
+  it('should render app version', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     expect(screen.getByText('v1.0.0')).toBeInTheDocument()
   })
@@ -284,64 +299,82 @@ describe('General Settings Route', () => {
   //   expect(screen.getByTestId('language-switcher')).toBeInTheDocument()
   // })
 
-  it('should render switches for experimental features and spell check', () => {
+  it('should render switches for experimental features and spell check', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const switches = screen.getAllByTestId('switch')
     expect(switches.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('should render huggingface token input', () => {
+  it('should render huggingface token input', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const input = screen.getByTestId('input')
     expect(input).toBeInTheDocument()
     expect(input).toHaveValue('test-token')
   })
 
-  it('should handle spell check toggle', () => {
+  it('should handle spell check toggle', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const switches = screen.getAllByTestId('switch')
     expect(switches.length).toBeGreaterThan(0)
 
     // Test that switches are interactive
-    fireEvent.click(switches[0])
+    await act(async () => {
+      fireEvent.click(switches[0])
+    })
     expect(switches[0]).toBeInTheDocument()
   })
 
-  it('should handle experimental features toggle', () => {
+  it('should handle experimental features toggle', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const switches = screen.getAllByTestId('switch')
     expect(switches.length).toBeGreaterThan(0)
 
     // Test that switches are interactive
     if (switches.length > 1) {
-      fireEvent.click(switches[1])
+      await act(async () => {
+        fireEvent.click(switches[1])
+      })
       expect(switches[1]).toBeInTheDocument()
     }
   })
 
-  it('should handle huggingface token change', () => {
+  it('should handle huggingface token change', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const input = screen.getByTestId('input')
     expect(input).toBeInTheDocument()
 
     // Test that input is interactive
-    fireEvent.change(input, { target: { value: 'new-token' } })
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'new-token' } })
+    })
     expect(input).toBeInTheDocument()
   })
 
   it('should handle check for updates', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const buttons = screen.getAllByTestId('button')
     const checkUpdateButton = buttons.find((button) =>
@@ -350,7 +383,9 @@ describe('General Settings Route', () => {
 
     if (checkUpdateButton) {
       expect(checkUpdateButton).toBeInTheDocument()
-      fireEvent.click(checkUpdateButton)
+      await act(async () => {
+        fireEvent.click(checkUpdateButton)
+      })
       // Test that button is interactive
       expect(checkUpdateButton).toBeInTheDocument()
     }
@@ -358,7 +393,9 @@ describe('General Settings Route', () => {
 
   it('should handle data folder display', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
@@ -367,25 +404,31 @@ describe('General Settings Route', () => {
 
   it('should handle copy to clipboard', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
 
-  it('should handle factory reset dialog', () => {
+  it('should handle factory reset dialog', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     expect(screen.getByTestId('dialog')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-trigger')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
   })
 
-  it('should render external links', () => {
+  it('should render external links', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     // Check for external links
     const links = screen.getAllByRole('link')
@@ -394,7 +437,9 @@ describe('General Settings Route', () => {
 
   it('should handle logs window opening', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const buttons = screen.getAllByTestId('button')
     const openLogsButton = buttons.find((button) =>
@@ -404,14 +449,18 @@ describe('General Settings Route', () => {
     if (openLogsButton) {
       expect(openLogsButton).toBeInTheDocument()
       // Test that button is interactive
-      fireEvent.click(openLogsButton)
+      await act(async () => {
+        fireEvent.click(openLogsButton)
+      })
       expect(openLogsButton).toBeInTheDocument()
     }
   })
 
   it('should handle reveal logs folder', async () => {
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const buttons = screen.getAllByTestId('button')
     const revealLogsButton = buttons.find((button) =>
@@ -421,26 +470,39 @@ describe('General Settings Route', () => {
     if (revealLogsButton) {
       expect(revealLogsButton).toBeInTheDocument()
       // Test that button is interactive
-      fireEvent.click(revealLogsButton)
+      await act(async () => {
+        fireEvent.click(revealLogsButton)
+      })
       expect(revealLogsButton).toBeInTheDocument()
     }
   })
 
-  it('should show correct file explorer text for Windows', () => {
+  it('should show correct file explorer text for Windows', async () => {
     global.IS_WINDOWS = true
     global.IS_MACOS = false
 
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     expect(
       screen.getByText('settings:general.showInFileExplorer')
     ).toBeInTheDocument()
   })
 
-  it('should disable check for updates button when checking', () => {
+  it('should disable check for updates button when checking', async () => {
+    // Create a promise that we can control
+    let resolveUpdate: (value: any) => void
+    const updatePromise = new Promise((resolve) => {
+      resolveUpdate = resolve
+    })
+    mockCheckForUpdate.mockReturnValue(updatePromise)
+
     const Component = GeneralRoute.component as React.ComponentType
-    render(<Component />)
+    await act(async () => {
+      render(<Component />)
+    })
 
     const buttons = screen.getAllByTestId('button')
     const checkUpdateButton = buttons.find((button) =>
@@ -448,8 +510,22 @@ describe('General Settings Route', () => {
     )
 
     if (checkUpdateButton) {
-      fireEvent.click(checkUpdateButton)
+      // Click the button but don't await it yet
+      act(() => {
+        fireEvent.click(checkUpdateButton)
+      })
+      
+      // Now the button should be disabled while checking
       expect(checkUpdateButton).toBeDisabled()
+      
+      // Resolve the promise to finish the update check
+      await act(async () => {
+        resolveUpdate!(null)
+        await updatePromise
+      })
+      
+      // Button should be enabled again
+      expect(checkUpdateButton).not.toBeDisabled()
     }
   })
 })
