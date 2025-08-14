@@ -157,5 +157,5 @@ export function formatDuration(startTime: number, endTime?: number): string {
 }
 
 export function sanitizeModelId(modelId: string): string {
-  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(".", "_")
+  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, "_")
 }
