@@ -765,16 +765,12 @@ function Hub() {
                                                 onClick={() => {
                                                   addLocalDownloadingModel(
                                                     sanitizeModelId(
-                                                      sanitizeModelId(
-                                                        variant.model_id
-                                                      )
+                                                      variant.model_id
                                                     )
                                                   )
                                                   pullModel(
                                                     sanitizeModelId(
-                                                      sanitizeModelId(
-                                                        variant.model_id
-                                                      )
+                                                      variant.model_id
                                                     ),
                                                     variant.path
                                                   )
