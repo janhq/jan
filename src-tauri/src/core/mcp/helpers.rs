@@ -640,14 +640,12 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
     Ok(())
 }
 
-pub async fn clean_up_mcp_servers(
-    state: State<'_, AppState>,
-) {
+pub async fn clean_up_mcp_servers(state: State<'_, AppState>) {
     log::info!("Cleaning up MCP servers");
-    
+
     // Stop all running MCP servers
     let _ = stop_mcp_servers(state.mcp_servers.clone()).await;
-    
+
     // Clear active servers and restart counts
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
