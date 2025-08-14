@@ -4,7 +4,14 @@ import { AIEngine } from './AIEngine'
  * Manages the registration and retrieval of inference engines.
  */
 export class EngineManager {
+  /**
+   * Map storing registered engines by their provider name.
+   */
   public engines = new Map<string, AIEngine>()
+  
+  /**
+   * Abort controller for managing cancellation of operations.
+   */
   public controller: AbortController | null = null
 
   /**
@@ -26,6 +33,7 @@ export class EngineManager {
 
   /**
    * The instance of the engine manager.
+   * @returns The singleton instance of EngineManager.
    */
   static instance(): EngineManager {
     return (window.core?.engineManager as EngineManager) ?? new EngineManager()
