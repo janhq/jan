@@ -226,17 +226,20 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const detectedType = file.type || getFileTypeFromExtension(file.name)
         const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        // Check file type
+        // Check file type - exclude PDF for local models (llamacpp)
         const allowedTypes = [
           'image/jpg',
           'image/jpeg',
           'image/png',
-          'application/pdf',
+          ...(model?.provider !== 'llamacpp' ? ['application/pdf'] : []),
         ]
 
         if (!allowedTypes.includes(actualType)) {
+          const supportedFormats = model?.provider === 'llamacpp' 
+            ? 'JPEG, JPG, and PNG'
+            : 'JPEG, JPG, PNG, and PDF'
           setMessage(
-            `File is not supported. Only JPEG, JPG, PNG, and PDF files are allowed.`
+            `File is not supported. Only ${supportedFormats} files are allowed.`
           )
           // Reset file input to allow re-uploading
           if (fileInputRef.current) {
