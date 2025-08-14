@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>ai.jan.Jan</id>
   <metadata_license>FSFAP</metadata_license>
-  <project_license>AGPL-3.0-only</project_license>
+  <project_license>Apache-2.0</project_license>
   <developer_name>Menlo Research</developer_name>
   <name>Jan</name>
   <icon type="stock">ai.jan.Jan</icon>
@@ -19,10 +19,12 @@
     </p>
     <p>Features:</p>
     <ul>
-      <li>Model Library with popular LLMs like Llama, Gemma, Mistral, or Qwen</li>
-      <li>Connect to Remote AI APIs like Groq and OpenRouter</li>
-      <li>Local API Server with OpenAI-equivalent API</li>
-      <li>Extensions for customizing Jan</li>
+      <li> Local AI Models: Download and run large language models like Llama, Gemma, and Qwen directly from Hugging Face. All models run locally on your device.</li>
+      <li>Cloud Integration: Connect to cloud providers such as OpenAI, Anthropic, Gemini, and Groq when needed. Easily switch between local and cloud models</li>
+      <li>Custom Assistants: Set up specialized AI assistants for different tasks, such as writing, summarizing, or coding. Customize their tone and behavior.</li>
+      <li> OpenAI-Compatible API: Jan includes a local API server (localhost:1337) that works with tools and plugins expecting OpenAI’s API format.</li>
+      <li>Model Context Protocol (MCP): Supports MCP to improve context handling and interactions across larger or more complex tasks.</li>
+      <li>Privacy First: Jan runs fully offline by default. Your data never leaves your device unless you enable cloud connections.</li>
     </ul>
   </description>
 <launchable type="desktop-id">ai.jan.Jan.desktop</launchable>
@@ -33,12 +35,12 @@
 </screenshots>
 
 <url type="homepage">https://jan.ai/</url>
-<url type="bugtracker">https://github.com/janhq/jan/issues</url>
+<url type="bugtracker">https://github.com/menloresearch/jan/issues</url>
 
 <content_rating type="oars-1.1" />
 
 <releases>
-  <release version="0.5.12" date="2024-01-02">
+  <release version="0.6.8" date="2025-08-14">
     <description>
       <p>Latest stable release of Jan AI</p>
     </description>
