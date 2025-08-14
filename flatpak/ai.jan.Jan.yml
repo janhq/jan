@@ -98,8 +98,8 @@ modules:
     buildsystem: simple
     sources:
       - type: file
-        url: https://github.com/menloresearch/jan/releases/download/v0.6.7/Jan_0.6.7_amd64.deb
-        sha256: c69910acdebd1642ee68039deefbbf43f58fceb722481f754e16caa608f7250b
+        url: https://catalog.jan.ai/flatpak/Jan_0.6.8_amd64.deb
+        sha256: e798c2757ee4efbdf9e4663084e28721f3aa97d11066d02d4dd3803dc62d2313
         only-arches: [x86_64]
       - type: file
         path: ai.jan.Jan.metainfo.xml
