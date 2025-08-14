@@ -4,19 +4,34 @@ import { OAIEngine } from './OAIEngine'
 
 /**
  * Base OAI Local Inference Provider
- * Added the implementation of loading and unloading model (applicable to local inference providers)
+ * 
+ * This abstract class extends OAIEngine and provides the implementation of loading 
+ * and unloading models, which is applicable to local inference providers.
  */
 export abstract class LocalOAIEngine extends OAIEngine {
-  // The inference engine
+  /**
+   * The inference engine module name
+   */
   abstract nodeModule: string
+
+  /**
+   * The name of the function used to load models
+   * @default 'loadModel'
+   */
   loadModelFunctionName: string = 'loadModel'
+
+  /**
+   * The name of the function used to unload models
+   * @default 'unloadModel'
+   */
   unloadModelFunctionName: string = 'unloadModel'
 
   /**
-   * This class represents a base for local inference providers in the OpenAI architecture.
-   * It extends the OAIEngine class and provides the implementation of loading and unloading models locally.
-   * The loadModel function subscribes to the ModelEvent.OnModelInit event, loading models when initiated.
-   * The unloadModel function subscribes to the ModelEvent.OnModelStop event, unloading models when stopped.
+   * Initializes the local OAI engine by setting up event listeners.
+   * 
+   * This method subscribes to ModelEvent.OnModelInit for loading models when initiated
+   * and ModelEvent.OnModelStop for unloading models when stopped. These events are
+   * specifically applicable to local inference providers.
    */
   override onLoad() {
     super.onLoad()
@@ -26,14 +41,20 @@ export abstract class LocalOAIEngine extends OAIEngine {
   }
 
   /**
-   * Load the model.
+   * Loads the specified model for inference.
+   * 
+   * @param model - The model to load, optionally including a file path
+   * @returns A promise that resolves when the model is loaded
    */
   async loadModel(model: Model & { file_path?: string }): Promise<void> {
     // Implementation of loading the model
   }
 
   /**
-   * Stops the model.
+   * Unloads the specified model to free up resources.
+   * 
+   * @param model - The model to unload (optional)
+   * @returns A promise that resolves when the model is unloaded
    */
   async unloadModel(model?: Model) {
     // Implementation of unloading the model
