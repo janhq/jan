@@ -1,4 +1,4 @@
-use crate::{GpuInfo, GpuUsage, Vendor};
+use crate::types::{GpuInfo, GpuUsage, Vendor};
 use nvml_wrapper::{error::NvmlError, Nvml};
 use std::sync::OnceLock;
 
@@ -100,21 +100,6 @@ pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
         Err(e) => {
             log::error!("Failed to get NVIDIA GPUs: {}", e);
             vec![]
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_nvidia_gpus() {
-        let gpus = get_nvidia_gpus();
-        for (i, gpu) in gpus.iter().enumerate() {
-            println!("GPU {}:", i);
-            println!("    {:?}", gpu);
-            println!("    {:?}", gpu.get_usage());
         }
     }
 }

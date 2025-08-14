@@ -1,56 +1,16 @@
 use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, RoleClient};
 use serde_json::{Map, Value};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::{sync::Mutex, time::timeout};
 
-use super::helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers};
+use super::{
+    constants::{DEFAULT_MCP_CONFIG, MCP_TOOL_CALL_TIMEOUT},
+    helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
+};
 use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
 use std::fs;
-
-// Timeout for MCP tool calls (30 seconds)
-const MCP_TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
-
-const DEFAULT_MCP_CONFIG: &str = r#"{
-  "mcpServers": {
-    "browsermcp": {
-      "command": "npx",
-      "args": ["@browsermcp/mcp"],
-      "env": {},
-      "active": false
-    },
-    "fetch": {
-      "command": "uvx",
-      "args": ["mcp-server-fetch"],
-      "env": {},
-      "active": false
-    },
-    "serper": {
-      "command": "npx",
-      "args": ["-y", "serper-search-scrape-mcp-server"],
-      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
-      "active": false
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/other/allowed/dir"
-      ],
-      "env": {},
-      "active": false
-    },
-    "sequential-thinking": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "env": {},
-      "active": false
-    }
-  }
-}
-"#;
 
 #[tauri::command]
 pub async fn activate_mcp_server<R: Runtime>(

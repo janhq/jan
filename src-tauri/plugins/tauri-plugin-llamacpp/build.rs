@@ -13,7 +13,7 @@ const COMMANDS: &[&str] = &[
     "get_all_sessions",
     "get_session_by_model",
     // GGUF commands
-    "read_gguf_metadata"
+    "read_gguf_metadata",
 ];
 
 fn main() {

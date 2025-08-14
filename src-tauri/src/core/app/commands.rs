@@ -1,11 +1,10 @@
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use super::helpers::copy_dir_recursive;
-use super::models::AppConfiguration;
+use super::{
+    constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive, models::AppConfiguration,
+};
 use crate::core::state::AppState;
-
-const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
 #[tauri::command]
 pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {

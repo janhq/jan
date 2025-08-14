@@ -1,10 +1,12 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_llamacpp::state::LlamacppState;
 
 use crate::core::server::proxy;
 use crate::core::state::AppState;
 
 #[tauri::command]
-pub async fn start_server(
+pub async fn start_server<R: Runtime>(
+    app_handle: AppHandle<R>,
     state: State<'_, AppState>,
     host: String,
     port: u16,
@@ -13,7 +15,8 @@ pub async fn start_server(
     trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
     let server_handle = state.server_handle.clone();
-    let sessions = state.llama_server_process.clone();
+    let plugin_state: State<LlamacppState> = app_handle.state();
+    let sessions = plugin_state.llama_server_process.clone();
 
     proxy::start_server(
         server_handle,

@@ -105,7 +105,6 @@ pub fn run() {
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
-            llama_server_process: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(

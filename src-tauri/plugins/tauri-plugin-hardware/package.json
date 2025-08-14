@@ -1,8 +1,8 @@
 {
-  "name": "tauri-plugin-llamacpp-api",
+  "name": "tauri-plugin-hardware-api",
   "version": "0.1.0",
   "author": "Menlo",
-  "description": "",
+  "description": "Hardware monitoring plugin API for Tauri",
   "type": "module",
   "types": "./dist-js/index.d.ts",
   "main": "./dist-js/index.cjs",

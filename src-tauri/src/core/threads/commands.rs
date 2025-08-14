@@ -6,9 +6,12 @@ use uuid::Uuid;
 use super::helpers::{
     get_lock_for_thread, read_messages_from_file, update_thread_metadata, write_messages_to_file,
 };
-use super::utils::{
-    ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
-    get_thread_metadata_path, THREADS_FILE,
+use super::{
+    constants::THREADS_FILE,
+    utils::{
+        ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path,
+        get_thread_dir, get_thread_metadata_path,
+    },
 };
 
 /// Lists all threads by reading their metadata from the threads directory.

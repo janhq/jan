@@ -1,5 +1,7 @@
-use super::{
-    get_jan_libvulkan_path, vendor::nvidia, vendor::vulkan, CpuStaticInfo, SystemInfo, SystemUsage,
+use crate::{
+    helpers::get_jan_libvulkan_path,
+    types::{CpuStaticInfo, SystemInfo, SystemUsage},
+    vendor::{nvidia, vulkan},
     SYSTEM_INFO,
 };
 use sysinfo::System;

@@ -319,10 +319,10 @@
           "markdownDescription": "Denies the get_system_usage command without any pre-configured scope."
         },
         {
-          "description": "enables the default permissions for the hardware plugin",
+          "description": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "enables the default permissions for the hardware plugin"
+          "markdownDescription": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`"
         }
       ]
     }

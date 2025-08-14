@@ -1,3 +1,12 @@
+## Default Permission
+
+Default permissions for the hardware plugin
+
+#### This default permission set includes the following:
+
+- `allow-get-system-info`
+- `allow-get-system-usage`
+
 ## Permission Table
 
 <table>
@@ -55,19 +64,6 @@ Enables the get_system_usage command without any pre-configured scope.
 <td>
 
 Denies the get_system_usage command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`hardware:default`
-
-</td>
-<td>
-
-enables the default permissions for the hardware plugin
 
 </td>
 </tr>

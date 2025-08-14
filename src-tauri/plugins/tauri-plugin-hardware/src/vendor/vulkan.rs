@@ -1,4 +1,4 @@
-use crate::{GpuInfo, Vendor};
+use crate::types::{GpuInfo, Vendor};
 use ash::{vk, Entry};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -127,19 +127,4 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
     }
 
     Ok(device_info_list)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_vulkan_gpus() {
-        let gpus = get_vulkan_gpus("");
-        for (i, gpu) in gpus.iter().enumerate() {
-            println!("GPU {}:", i);
-            println!("    {:?}", gpu);
-            println!("    {:?}", gpu.get_usage());
-        }
-    }
 }

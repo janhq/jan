@@ -8,13 +8,11 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+use super::constants::{
+    MCP_BACKOFF_MULTIPLIER, MCP_BASE_RESTART_DELAY_MS, MCP_MAX_RESTART_DELAY_MS,
+};
 use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
 use jan_utils::can_override_npx;
-
-// MCP server restart configuration with exponential backoff
-const MCP_BASE_RESTART_DELAY_MS: u64 = 1000; // Start with 1 second
-const MCP_MAX_RESTART_DELAY_MS: u64 = 30000; // Cap at 30 seconds
-const MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each time
 
 /// Calculate exponential backoff delay with jitter
 ///
