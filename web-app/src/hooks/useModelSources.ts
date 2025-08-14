@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { fetchModelCatalog, CatalogModel } from '@/services/models'
+import { sanitizeModelId } from '@/lib/utils'
 
 // Zustand store for model sources
 type ModelSourcesState = {
@@ -20,7 +21,15 @@ export const useModelSources = create<ModelSourcesState>()(
       fetchSources: async () => {
         set({ loading: true, error: null })
         try {
-          const newSources = await fetchModelCatalog()
+          const newSources = await fetchModelCatalog().then((catalogs) =>
+            catalogs.map((catalog) => ({
+              ...catalog,
+              quants: catalog.quants.map((quant) => ({
+                ...quant,
+                model_id: sanitizeModelId(quant.model_id),
+              })),
+            }))
+          )
 
           set({
             sources: newSources.length ? newSources : get().sources,

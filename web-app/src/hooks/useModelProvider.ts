@@ -227,34 +227,23 @@ export const useModelProvider = create<ModelProviderState>()(
           >
         }
 
-        // Migration for cont_batching description update (version 0 -> 1)
         if (version === 0 && state?.providers) {
-          state.providers = state.providers.map((provider) => {
-            if (provider.provider === 'llamacpp' && provider.settings) {
-              provider.settings = provider.settings.map((setting) => {
-                if (setting.key === 'cont_batching') {
-                  return {
-                    ...setting,
-                    description:
-                      'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.',
-                  }
-                }
-                return setting
-              })
-            }
-            return provider
-          })
-        }
-
-        // Migration for chatTemplate key to chat_template (version 1 -> 2)
-        if (version === 1 && state?.providers) {
           state.providers.forEach((provider) => {
+            // Update cont_batching description for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const contBatchingSetting = provider.settings.find(
+                (s) => s.key === 'cont_batching'
+              )
+              if (contBatchingSetting) {
+                contBatchingSetting.description =
+                  'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+              }
+            }
+
+            // Migrate model settings
             if (provider.models) {
               provider.models.forEach((model) => {
-                // Initialize settings if it doesn't exist
-                if (!model.settings) {
-                  model.settings = {}
-                }
+                if (!model.settings) model.settings = {}
 
                 // Migrate chatTemplate key to chat_template
                 if (model.settings.chatTemplate) {
@@ -262,7 +251,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   delete model.settings.chatTemplate
                 }
 
-                // Add missing chat_template setting if it doesn't exist
+                // Add missing settings with defaults
                 if (!model.settings.chat_template) {
                   model.settings.chat_template = {
                     ...modelSettings.chatTemplate,
@@ -271,22 +260,7 @@ export const useModelProvider = create<ModelProviderState>()(
                     },
                   }
                 }
-              })
-            }
-          })
-        }
 
-        // Migration for override_tensor_buffer_type key (version 2 -> 3)
-        if (version === 2 && state?.providers) {
-          state.providers.forEach((provider) => {
-            if (provider.models) {
-              provider.models.forEach((model) => {
-                // Initialize settings if it doesn't exist
-                if (!model.settings) {
-                  model.settings = {}
-                }
-
-                // Add missing override_tensor_buffer_type setting if it doesn't exist
                 if (!model.settings.override_tensor_buffer_t) {
                   model.settings.override_tensor_buffer_t = {
                     ...modelSettings.override_tensor_buffer_t,
@@ -303,7 +277,7 @@ export const useModelProvider = create<ModelProviderState>()(
 
         return state
       },
-      version: 3,
+      version: 1,
     }
   )
 )
