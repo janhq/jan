@@ -37,6 +37,16 @@ export default function LoadModelErrorDialog() {
 
     if (typeof error === 'string') return error
 
+    if (typeof error === 'object') {
+      const errorObj = error as {
+        code?: string
+        message: string
+        details?: string
+      }
+
+      return errorObj.message
+    }
+
     if (typeof error === 'object' && 'code' in error && 'message' in error) {
       const errorObj = error as {
         code?: string
