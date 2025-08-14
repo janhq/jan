@@ -15,6 +15,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-loaded-models`
 - `allow-get-all-sessions`
 - `allow-get-session-by-model`
+- `allow-read-gguf-metadata`
 
 ## Permission Table
 
@@ -281,6 +282,32 @@ Enables the load_llama_model command without any pre-configured scope.
 <td>
 
 Denies the load_llama_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-read-gguf-metadata`
+
+</td>
+<td>
+
+Enables the read_gguf_metadata command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-read-gguf-metadata`
+
+</td>
+<td>
+
+Denies the read_gguf_metadata command without any pre-configured scope.
 
 </td>
 </tr>

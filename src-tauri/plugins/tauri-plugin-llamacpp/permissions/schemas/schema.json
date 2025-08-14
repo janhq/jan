@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the load_llama_model command without any pre-configured scope."
         },
         {
+          "description": "Enables the read_gguf_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-gguf-metadata",
+          "markdownDescription": "Enables the read_gguf_metadata command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_gguf_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-gguf-metadata",
+          "markdownDescription": "Denies the read_gguf_metadata command without any pre-configured scope."
+        },
+        {
           "description": "Enables the unload_llama_model command without any pre-configured scope.",
           "type": "string",
           "const": "allow-unload-llama-model",
@@ -427,10 +439,10 @@
           "markdownDescription": "Denies the unload_llama_model command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`",
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`"
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`"
         }
       ]
     }
