@@ -260,26 +260,28 @@ function General() {
                   </span>
                 }
               />
-              <CardItem
-                title={t('settings:general.checkForUpdates')}
-                description={t('settings:general.checkForUpdatesDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                actions={
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="p-0"
-                    onClick={handleCheckForUpdate}
-                    disabled={isCheckingUpdate}
-                  >
-                    <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                      {isCheckingUpdate
-                        ? t('settings:general.checkingForUpdates')
-                        : t('settings:general.checkForUpdates')}
-                    </div>
-                  </Button>
-                }
-              />
+              {!AUTO_UPDATER_DISABLED && (
+                <CardItem
+                  title={t('settings:general.checkForUpdates')}
+                  description={t('settings:general.checkForUpdatesDesc')}
+                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                  actions={
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleCheckForUpdate}
+                      disabled={isCheckingUpdate}
+                    >
+                      <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        {isCheckingUpdate
+                          ? t('settings:general.checkingForUpdates')
+                          : t('settings:general.checkForUpdates')}
+                      </div>
+                    </Button>
+                  }
+                />
+              )}
               {/* <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
