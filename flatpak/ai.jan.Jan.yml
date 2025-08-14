@@ -99,7 +99,7 @@ modules:
     sources:
       - type: file
         url: https://catalog.jan.ai/flatpak/Jan_0.6.8_amd64.deb
-        sha256: e798c2757ee4efbdf9e4663084e28721f3aa97d11066d02d4dd3803dc62d2313
+        sha256: 15d1368c318a3853bad4fc3646f88afdbf9f52b6416a4734f7a297741d171f28
         only-arches: [x86_64]
       - type: file
         path: ai.jan.Jan.metainfo.xml
