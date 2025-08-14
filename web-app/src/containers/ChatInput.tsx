@@ -235,11 +235,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         ]
 
         if (!allowedTypes.includes(actualType)) {
-          const supportedFormats = model?.provider === 'llamacpp' 
-            ? 'JPEG, JPG, and PNG'
-            : 'JPEG, JPG, PNG, and PDF'
+          const supportedFormats =
+            model?.provider === 'llamacpp'
+              ? 'JPEG, JPG, and PNG'
+              : 'JPEG, JPG, PNG, and PDF'
           setMessage(
-            `File is not supported. Only ${supportedFormats} files are allowed.`
+            `File attachments not supported currently. Only ${supportedFormats} files are allowed.`
           )
           // Reset file input to allow re-uploading
           if (fileInputRef.current) {
