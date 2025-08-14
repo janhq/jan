@@ -74,11 +74,7 @@ uuid = { version = "1.7", features = ["v4"] }
 [dependencies.tauri]
 version = "2.5.0"
 default-features = false
-features = [
-    "protocol-asset",
-    "macos-private-api",
-    "test",
-]
+features = ["protocol-asset", "macos-private-api", "test"]
 
 [target.'cfg(windows)'.dev-dependencies]
 tempfile = "3.20.0"
