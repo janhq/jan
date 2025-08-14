@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import {
   useState,
   useMemo,
@@ -291,8 +291,8 @@ function Hub() {
 
       const handleDownload = () => {
         // Immediately set local downloading state
-        addLocalDownloadingModel(sanitizeModelId(modelId))
-        pullModel(sanitizeModelId(modelId), modelUrl)
+        addLocalDownloadingModel(modelId)
+        pullModel(modelId, modelUrl)
       }
 
       return (
@@ -764,14 +764,10 @@ function Hub() {
                                                 title={t('hub:downloadModel')}
                                                 onClick={() => {
                                                   addLocalDownloadingModel(
-                                                    sanitizeModelId(
-                                                      variant.model_id
-                                                    )
+                                                    variant.model_id
                                                   )
                                                   pullModel(
-                                                    sanitizeModelId(
-                                                      variant.model_id
-                                                    ),
+                                                    variant.model_id,
                                                     variant.path
                                                   )
                                                 }}

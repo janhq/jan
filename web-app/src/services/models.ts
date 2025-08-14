@@ -1,3 +1,4 @@
+import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
@@ -5,7 +6,6 @@ import {
   SettingComponentProps,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
-import { sanitizeModelId } from '@/lib/utils'
 // Types for model catalog
 export interface ModelQuant {
   model_id: string
@@ -163,10 +163,10 @@ export const convertHfRepoToCatalogModel = (
     }
 
     // Generate model_id from filename (remove .gguf extension, case-insensitive)
-    const modelId = sanitizeModelId(file.rfilename.replace(/\.gguf$/i, ''))
+    const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
     return {
-      model_id: modelId,
+      model_id: sanitizeModelId(modelId),
       path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
       file_size: formatFileSize(file.size),
     }
