@@ -9,7 +9,7 @@ use crate::core::app::commands::{
 use crate::core::app::models::AppConfiguration;
 
 #[tauri::command]
-pub fn factory_reset(app_handle: tauri::AppHandle) {
+pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
     // close window
     let windows = app_handle.webview_windows();
     for (label, window) in windows.iter() {
@@ -21,6 +21,7 @@ pub fn factory_reset(app_handle: tauri::AppHandle) {
     log::info!("Factory reset, removing data folder: {:?}", data_folder);
 
     tauri::async_runtime::block_on(async {
+        clean_up_mcp_servers(state.clone()).await;
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {

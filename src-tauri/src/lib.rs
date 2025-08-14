@@ -11,6 +11,8 @@ use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
+use crate::core::mcp::clean_up_mcp_servers;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -95,6 +97,7 @@ pub fn run() {
             // Download
             core::downloads::commands::download_files,
             core::downloads::commands::cancel_download_task,
+            core::utils::extensions::inference_llamacpp_extension::gguf::read_gguf_metadata,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -135,17 +138,6 @@ pub fn run() {
             setup_mcp(app);
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { .. } => {
-                if window.label() == "main" {
-                    window.emit("kill-mcp-servers", ()).unwrap();
-                    tauri::async_runtime::block_on(async {
-                        let _ = cleanup_llama_processes(window.app_handle().clone()).await;
-                    });
-                }
-            }
-            _ => {}
-        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
@@ -165,6 +157,7 @@ pub fn run() {
 
                     // Quick cleanup with shorter timeout
                     let _ = cleanup_llama_processes(app.clone()).await;
+                    // clean_up_mcp_servers(app_handle).await;
                 });
             });
         }

@@ -27,6 +27,7 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type SearchParams = {
   repo: string
@@ -42,6 +43,7 @@ export const Route = createFileRoute('/hub/$modelId')({
 function HubModelDetail() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
+  const { huggingfaceToken } = useGeneralSetting()
   const { sources, fetchSources } = useModelSources()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
@@ -60,12 +62,15 @@ function HubModelDetail() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await fetchHuggingFaceRepo(search.repo || modelId)
+    const repoInfo = await fetchHuggingFaceRepo(
+      search.repo || modelId,
+      huggingfaceToken
+    )
     if (repoInfo) {
       const repoDetail = convertHfRepoToCatalogModel(repoInfo)
       setRepoData(repoDetail)
     }
-  }, [modelId, search])
+  }, [modelId, search, huggingfaceToken])
 
   useEffect(() => {
     fetchRepo()
@@ -151,7 +156,20 @@ function HubModelDetail() {
   useEffect(() => {
     if (modelData?.readme) {
       setIsLoadingReadme(true)
+      // Try fetching without headers first
+      // There is a weird issue where this HF link will return error when access public repo with auth header
       fetch(modelData.readme)
+        .then((response) => {
+          if (!response.ok && huggingfaceToken && modelData?.readme) {
+            // Retry with Authorization header if first fetch failed
+            return fetch(modelData.readme, {
+              headers: {
+                Authorization: `Bearer ${huggingfaceToken}`,
+              },
+            })
+          }
+          return response
+        })
         .then((response) => response.text())
         .then((content) => {
           setReadmeContent(content)
@@ -162,7 +180,7 @@ function HubModelDetail() {
           setIsLoadingReadme(false)
         })
     }
-  }, [modelData?.readme])
+  }, [modelData?.readme, huggingfaceToken])
 
   if (!modelData) {
     return (

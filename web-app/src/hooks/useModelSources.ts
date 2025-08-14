@@ -8,7 +8,6 @@ type ModelSourcesState = {
   sources: CatalogModel[]
   error: Error | null
   loading: boolean
-  addSource: (source: CatalogModel) => void
   fetchSources: () => Promise<void>
 }
 
@@ -18,15 +17,6 @@ export const useModelSources = create<ModelSourcesState>()(
       sources: [],
       error: null,
       loading: false,
-
-      addSource: (source: CatalogModel) => {
-        set((state) => ({
-          sources: [
-            ...state.sources.filter((e) => e.model_name !== source.model_name),
-            source,
-          ],
-        }))
-      },
       fetchSources: async () => {
         set({ loading: true, error: null })
         try {

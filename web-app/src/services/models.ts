@@ -12,6 +12,12 @@ export interface ModelQuant {
   file_size: string
 }
 
+export interface MMProjModel {
+  model_id: string
+  path: string
+  file_size: string
+}
+
 export interface CatalogModel {
   model_name: string
   description: string
@@ -19,6 +25,7 @@ export interface CatalogModel {
   downloads: number
   num_quants: number
   quants: ModelQuant[]
+  mmproj_models?: MMProjModel[]
   created_at?: string
   readme?: string
 }
@@ -99,7 +106,8 @@ export const fetchModelCatalog = async (): Promise<ModelCatalog> => {
  * @returns A promise that resolves to the repository information.
  */
 export const fetchHuggingFaceRepo = async (
-  repoId: string
+  repoId: string,
+  hfToken?: string
 ): Promise<HuggingFaceRepo | null> => {
   try {
     // Clean the repo ID to handle various input formats
@@ -114,7 +122,14 @@ export const fetchHuggingFaceRepo = async (
     }
 
     const response = await fetch(
-      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`,
+      {
+        headers: hfToken
+          ? {
+              Authorization: `Bearer ${hfToken}`,
+            }
+          : {},
+      }
     )
 
     if (!response.ok) {
@@ -193,9 +208,14 @@ export const updateModel = async (
  * @param model The model to pull.
  * @returns A promise that resolves when the model download task is created.
  */
-export const pullModel = async (id: string, modelPath: string) => {
+export const pullModel = async (
+  id: string,
+  modelPath: string,
+  mmprojPath?: string
+) => {
   return getEngine()?.import(id, {
     modelPath,
+    mmprojPath,
   })
 }
 
