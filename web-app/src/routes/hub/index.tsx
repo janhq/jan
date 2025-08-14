@@ -194,7 +194,11 @@ function Hub() {
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
             if (
-              !sources.some((s) => s.model_name === catalogModel.model_name)
+              !sources.some(
+                (s) =>
+                  catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim()
+              )
             ) {
               setHuggingFaceRepo(catalogModel)
             }
