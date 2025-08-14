@@ -25,6 +25,11 @@ vi.mock('@/services/models', () => ({
   fetchModelCatalog: vi.fn(),
 }))
 
+// Mock the sanitizeModelId function
+vi.mock('@/lib/utils', () => ({
+  sanitizeModelId: vi.fn((id: string) => id),
+}))
+
 describe('useModelSources', () => {
   let mockFetchModelCatalog: any
 
@@ -56,15 +61,19 @@ describe('useModelSources', () => {
       const mockSources: CatalogModel[] = [
         {
           model_name: 'model-1',
-          provider: 'provider-1',
           description: 'First model',
-          version: '1.0.0',
+          developer: 'provider-1',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
         },
         {
           model_name: 'model-2',
-          provider: 'provider-2',
           description: 'Second model',
-          version: '2.0.0',
+          developer: 'provider-2',
+          downloads: 200,
+          num_quants: 1,
+          quants: [{ model_id: 'model-2-q4', path: '/path/2', file_size: '2GB' }],
         },
       ]
 
@@ -101,18 +110,22 @@ describe('useModelSources', () => {
       const existingSources: CatalogModel[] = [
         {
           model_name: 'existing-model',
-          provider: 'existing-provider',
           description: 'Existing model',
-          version: '1.0.0',
+          developer: 'existing-provider',
+          downloads: 50,
+          num_quants: 1,
+          quants: [{ model_id: 'existing-model-q4', path: '/path/existing', file_size: '1GB' }],
         },
       ]
 
       const newSources: CatalogModel[] = [
         {
           model_name: 'new-model',
-          provider: 'new-provider',
           description: 'New model',
-          version: '2.0.0',
+          developer: 'new-provider',
+          downloads: 150,
+          num_quants: 1,
+          quants: [{ model_id: 'new-model-q4', path: '/path/new', file_size: '2GB' }],
         },
       ]
 
@@ -138,24 +151,30 @@ describe('useModelSources', () => {
       const existingSources: CatalogModel[] = [
         {
           model_name: 'duplicate-model',
-          provider: 'old-provider',
           description: 'Old version',
-          version: '1.0.0',
+          developer: 'old-provider',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'duplicate-model-q4', path: '/path/old', file_size: '1GB' }],
         },
         {
           model_name: 'unique-model',
-          provider: 'provider',
           description: 'Unique model',
-          version: '1.0.0',
+          developer: 'provider',
+          downloads: 75,
+          num_quants: 1,
+          quants: [{ model_id: 'unique-model-q4', path: '/path/unique', file_size: '1GB' }],
         },
       ]
 
       const newSources: CatalogModel[] = [
         {
           model_name: 'duplicate-model',
-          provider: 'new-provider',
           description: 'New version',
-          version: '2.0.0',
+          developer: 'new-provider',
+          downloads: 200,
+          num_quants: 1,
+          quants: [{ model_id: 'duplicate-model-q4-new', path: '/path/new', file_size: '2GB' }],
         },
       ]
 
@@ -207,9 +226,11 @@ describe('useModelSources', () => {
       const mockSources: CatalogModel[] = [
         {
           model_name: 'model-1',
-          provider: 'provider-1',
           description: 'Model 1',
-          version: '1.0.0',
+          developer: 'provider-1',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
         },
       ]
 
@@ -238,9 +259,11 @@ describe('useModelSources', () => {
       const mockSources: CatalogModel[] = [
         {
           model_name: 'shared-model',
-          provider: 'shared-provider',
           description: 'Shared model',
-          version: '1.0.0',
+          developer: 'shared-provider',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'shared-model-q4', path: '/path/shared', file_size: '1GB' }],
         },
       ]
 
@@ -288,18 +311,22 @@ describe('useModelSources', () => {
       const sources1: CatalogModel[] = [
         {
           model_name: 'model-1',
-          provider: 'provider-1',
           description: 'First batch',
-          version: '1.0.0',
+          developer: 'provider-1',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
         },
       ]
 
       const sources2: CatalogModel[] = [
         {
           model_name: 'model-2',
-          provider: 'provider-2',
           description: 'Second batch',
-          version: '2.0.0',
+          developer: 'provider-2',
+          downloads: 200,
+          num_quants: 1,
+          quants: [{ model_id: 'model-2-q4', path: '/path/2', file_size: '2GB' }],
         },
       ]
 
@@ -338,9 +365,11 @@ describe('useModelSources', () => {
       const mockSources: CatalogModel[] = [
         {
           model_name: 'recovery-model',
-          provider: 'recovery-provider',
           description: 'Recovery model',
-          version: '1.0.0',
+          developer: 'recovery-provider',
+          downloads: 100,
+          num_quants: 1,
+          quants: [{ model_id: 'recovery-model-q4', path: '/path/recovery', file_size: '1GB' }],
         },
       ]
 

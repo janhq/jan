@@ -132,7 +132,9 @@ function Hub() {
     // Apply search filter
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
-      filtered = fuse.search(debouncedSearchValue).map((result) => result.item)
+      // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
+      const cleanedSearchValue = debouncedSearchValue.replace(/^https?:\/\/[^/]+\//, '')
+      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
