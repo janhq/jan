@@ -224,11 +224,7 @@ export const ThreadContent = memo(
           toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
           ''
         const attachments = toSendMessage.content
-          ?.filter(
-            (c) =>
-              (c.type === 'image_url' && c.image_url?.url) ||
-              ((c as any).type === 'file' && (c as any).file?.data)
-          )
+          ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
           .map((c) => {
             if (c.type === 'image_url' && c.image_url?.url) {
               const url = c.image_url.url
@@ -241,15 +237,6 @@ export const ThreadContent = memo(
                 size: 0, // We don't have the original size
                 base64: base64,
                 dataUrl: url,
-              }
-            } else if ((c as any).type === 'file' && (c as any).file?.data) {
-              const fileContent = (c as any).file
-              return {
-                name: fileContent.filename || 'file',
-                type: fileContent.media_type,
-                size: 0, // We don't have the original size
-                base64: fileContent.data,
-                dataUrl: `data:${fileContent.media_type};base64,${fileContent.data}`,
               }
             }
             return null
@@ -307,17 +294,14 @@ export const ThreadContent = memo(
           <div className="w-full">
             {/* Render attachments above the message bubble */}
             {item.content?.some(
-              (c) =>
-                (c.type === 'image_url' && c.image_url?.url) ||
-                ((c as any).type === 'file' && (c as any).file?.data)
+              (c) => (c.type === 'image_url' && c.image_url?.url) || false
             ) && (
               <div className="flex justify-end w-full mb-2">
                 <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
                   {item.content
                     ?.filter(
                       (c) =>
-                        (c.type === 'image_url' && c.image_url?.url) ||
-                        ((c as any).type === 'file' && (c as any).file?.data)
+                        (c.type === 'image_url' && c.image_url?.url) || false
                     )
                     .map((contentPart, index) => {
                       // Handle images
@@ -332,27 +316,6 @@ export const ThreadContent = memo(
                               alt="Uploaded attachment"
                               className="size-40 rounded-md object-cover border border-main-view-fg/10"
                             />
-                          </div>
-                        )
-                      }
-                      // Handle PDF files
-                      else if (
-                        (contentPart as any).type === 'file' &&
-                        (contentPart as any).file?.media_type ===
-                          'application/pdf'
-                      ) {
-                        const fileContent = (contentPart as any).file
-                        return (
-                          <div key={index} className="relative">
-                            <div className="w-40 h-40 bg-main-view-fg/5 border border-main-view-fg/10 rounded-md flex flex-col items-center justify-center p-4">
-                              <div className="text-2xl mb-2">📄</div>
-                              <div className="text-xs text-center text-main-view-fg/70 truncate w-full">
-                                {fileContent.filename || 'PDF Document'}
-                              </div>
-                              <div className="text-xs text-main-view-fg/50 mt-1">
-                                PDF
-                              </div>
-                            </div>
                           </div>
                         )
                       }

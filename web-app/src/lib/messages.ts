@@ -32,6 +32,7 @@ export class CompletionMessagesBuilder {
             // For user messages, handle multimodal content
             if (msg.content.length > 1) {
               // Multiple content parts (text + images + files)
+
               const content = msg.content.map((contentPart) => {
                 if (contentPart.type === 'text') {
                   return {
@@ -46,16 +47,9 @@ export class CompletionMessagesBuilder {
                       detail: contentPart.image_url?.detail || 'auto',
                     },
                   }
-                } else if ((contentPart as any).type === 'file') {
-                  return {
-                    type: 'file',
-                    file: {
-                      filename: (contentPart as any).file?.filename || 'document.pdf',
-                      file_data: (contentPart as any).file?.file_data || (contentPart as any).file?.data ? `data:application/pdf;base64,${(contentPart as any).file.data}` : '',
-                    },
-                  }
+                } else {
+                  return contentPart
                 }
-                return contentPart
               })
               return {
                 role: msg.role,
@@ -110,14 +104,6 @@ export class CompletionMessagesBuilder {
             image_url: {
               url: `data:${attachment.type};base64,${attachment.base64}`,
               detail: 'auto',
-            },
-          })
-        } else if (attachment.type === 'application/pdf') {
-          messageContent.push({
-            type: 'file',
-            file: {
-              filename: attachment.name,
-              file_data: `data:${attachment.type};base64,${attachment.base64}`,
             },
           })
         }

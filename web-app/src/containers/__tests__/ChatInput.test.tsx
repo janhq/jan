@@ -231,7 +231,7 @@ describe('ChatInput', () => {
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
     await user.click(sendButton)
     
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world')
+    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('sends message when Enter key is pressed', async () => {
@@ -248,7 +248,7 @@ describe('ChatInput', () => {
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, '{Enter}')
     
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world')
+    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('does not send message when Shift+Enter is pressed', async () => {

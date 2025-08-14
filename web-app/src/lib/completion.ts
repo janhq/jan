@@ -81,17 +81,6 @@ export const newUserThreadContent = (
             detail: 'auto',
           },
         } as any)
-      } else if (attachment.type === 'application/pdf') {
-        contentParts.push({
-          type: 'file' as any,
-          file: {
-            filename: attachment.name,
-            file_data: `data:${attachment.type};base64,${attachment.base64}`,
-            // Keep original data for local display purposes
-            data: attachment.base64,
-            media_type: attachment.type,
-          },
-        } as any)
       }
     })
   }

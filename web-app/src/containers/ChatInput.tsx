@@ -1,7 +1,7 @@
 'use client'
 
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, toGigabytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -191,8 +191,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         return 'image/jpeg'
       case 'png':
         return 'image/png'
-      case 'pdf':
-        return 'application/pdf'
       default:
         return ''
     }
@@ -226,21 +224,16 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const detectedType = file.type || getFileTypeFromExtension(file.name)
         const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        // Check file type - exclude PDF for local models (llamacpp)
+        // Check file type - images only
         const allowedTypes = [
           'image/jpg',
           'image/jpeg',
           'image/png',
-          ...(model?.provider !== 'llamacpp' ? ['application/pdf'] : []),
         ]
 
         if (!allowedTypes.includes(actualType)) {
-          const supportedFormats =
-            model?.provider === 'llamacpp'
-              ? 'JPEG, JPG, and PNG'
-              : 'JPEG, JPG, PNG, and PDF'
           setMessage(
-            `File attachments not supported currently. Only ${supportedFormats} files are allowed.`
+            `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
           )
           // Reset file input to allow re-uploading
           if (fileInputRef.current) {
@@ -388,25 +381,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                           src={file.dataUrl}
                           alt={`${file.name} - ${index}`}
                         />
-                      )}
-                      {file.type === 'application/pdf' && (
-                        <div className="bg-main-view-fg/4 h-full rounded-lg p-2 max-w-[400px] pr-4">
-                          <div className="flex gap-2 items-center justify-center h-full">
-                            <div className="size-10 rounded-md bg-main-view shrink-0 flex items-center justify-center">
-                              <span className="uppercase font-bold">
-                                {file.name.split('.').pop()}
-                              </span>
-                            </div>
-                            <div className="truncate">
-                              <h6 className="truncate mb-0.5 text-main-view-fg/80">
-                                {file.name}
-                              </h6>
-                              <p className="text-xs text-main-view-fg/70">
-                                {toGigabytes(file.size)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
                       )}
                       <div
                         className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
