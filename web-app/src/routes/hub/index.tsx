@@ -745,10 +745,16 @@ function Hub() {
                                                 title={t('hub:downloadModel')}
                                                 onClick={() => {
                                                   addLocalDownloadingModel(
-                                                    variant.model_id
+                                                    variant.model_id.replace(
+                                                      /[^a-zA-Z0-9/_\-.]/g,
+                                                      ''
+                                                    )
                                                   )
                                                   pullModel(
-                                                    variant.model_id,
+                                                    variant.model_id.replace(
+                                                      /[^a-zA-Z0-9/_\-.]/g,
+                                                      ''
+                                                    ),
                                                     variant.path
                                                   )
                                                 }}
