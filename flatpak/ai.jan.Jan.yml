@@ -92,7 +92,7 @@ modules:
           - x86_64
         url: https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run
         dest-filename: cuda_toolkit.run
-        md5: c71027cf1a4ce84f80b9cbf81116e767
+        sha256: 610867dcd6d94c4e36c4924f1d01b9db28ec08164e8af6c764f21b84200695f8
 
   - name: binary
     buildsystem: simple
