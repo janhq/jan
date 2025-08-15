@@ -311,6 +311,66 @@ export const useChat = () => {
                 toolCalls.push(...completion.choices[0].message.tool_calls)
               }
             } else {
+              // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
+              let rafScheduled = false
+              let rafHandle: number | undefined
+              let pendingDeltaCount = 0
+              const scheduleFlush = () => {
+                if (rafScheduled) return
+                rafScheduled = true
+                const doSchedule = (cb: () => void) => {
+                  if (typeof requestAnimationFrame !== 'undefined') {
+                    rafHandle = requestAnimationFrame(() => cb())
+                  } else {
+                    // Fallback for non-browser test environments
+                    const t = setTimeout(() => cb(), 0) as unknown as number
+                    rafHandle = t
+                  }
+                }
+                doSchedule(() => {
+                  const currentContent = newAssistantThreadContent(
+                    activeThread.id,
+                    accumulatedText,
+                    {
+                      tool_calls: toolCalls.map((e) => ({
+                        ...e,
+                        state: 'pending',
+                      })),
+                    }
+                  )
+                  updateStreamingContent(currentContent)
+                  if (pendingDeltaCount > 0) {
+                    updateTokenSpeed(currentContent, pendingDeltaCount)
+                  }
+                  pendingDeltaCount = 0
+                  rafScheduled = false
+                })
+              }
+              const flushIfPending = () => {
+                if (!rafScheduled) return
+                if (typeof cancelAnimationFrame !== 'undefined' && rafHandle !== undefined) {
+                  cancelAnimationFrame(rafHandle)
+                } else if (rafHandle !== undefined) {
+                  clearTimeout(rafHandle)
+                }
+                // Do an immediate flush
+                const currentContent = newAssistantThreadContent(
+                  activeThread.id,
+                  accumulatedText,
+                  {
+                    tool_calls: toolCalls.map((e) => ({
+                      ...e,
+                      state: 'pending',
+                    })),
+                  }
+                )
+                updateStreamingContent(currentContent)
+                if (pendingDeltaCount > 0) {
+                  updateTokenSpeed(currentContent, pendingDeltaCount)
+                }
+                pendingDeltaCount = 0
+                rafScheduled = false
+              }
               for await (const part of completion) {
                 // Error message
                 if (!part.choices) {
@@ -323,39 +383,19 @@ export const useChat = () => {
                 const delta = part.choices[0]?.delta?.content || ''
 
                 if (part.choices[0]?.delta?.tool_calls) {
-                  const calls = extractToolCall(part, currentCall, toolCalls)
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: calls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  await new Promise((resolve) => setTimeout(resolve, 0))
+                  extractToolCall(part, currentCall, toolCalls)
+                  // Schedule a flush to reflect tool update
+                  scheduleFlush()
                 }
                 if (delta) {
                   accumulatedText += delta
-                  // Create a new object each time to avoid reference issues
-                  // Use a timeout to prevent React from batching updates too quickly
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: toolCalls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  updateTokenSpeed(currentContent)
-                  await new Promise((resolve) => setTimeout(resolve, 0))
+                  pendingDeltaCount += 1
+                  // Batch UI update on next animation frame
+                  scheduleFlush()
                 }
               }
+              // Ensure any pending buffered content is rendered at the end
+              flushIfPending()
             }
           } catch (error) {
             const errorMessage =
