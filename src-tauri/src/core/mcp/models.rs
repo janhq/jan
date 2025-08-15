@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Configuration parameters extracted from MCP server config
@@ -8,4 +9,14 @@ pub struct McpServerConfig {
     pub command: String,
     pub args: Vec<Value>,
     pub envs: serde_json::Map<String, Value>,
+}
+
+/// Tool with server information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolWithServer {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: serde_json::Value,
+    pub server: String,
 }

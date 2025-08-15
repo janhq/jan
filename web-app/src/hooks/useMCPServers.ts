@@ -7,6 +7,10 @@ export type MCPServerConfig = {
   args: string[]
   env: Record<string, string>
   active?: boolean
+  type?: 'stdio' | 'http' | 'sse'
+  url?: string
+  headers?: Record<string, string>
+  timeout?: number
 }
 
 // Define the structure of all MCP servers

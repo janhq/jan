@@ -392,7 +392,10 @@ const DropdownModelProvider = ({
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span className="truncate text-main-view-fg/80 text-sm">
+                                <span
+                                  className="truncate text-main-view-fg/80 text-sm"
+                                  title={searchableModel.model.id}
+                                >
                                   {searchableModel.model.id}
                                 </span>
 
