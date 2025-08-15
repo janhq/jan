@@ -51,147 +51,142 @@ export default defineConfig({
       plugins: [
         // starlightThemeRapide(),
         starlightThemeNext(),
-        starlightSidebarTopics(
-          [
-            {
-              label: 'Jan Desktop',
-              link: '/',
-              icon: 'rocket',
-              items: [
-                {
-                  label: 'GETTING STARTED',
-                  items: [
-                    {
-                      label: 'Install 👋 Jan',
-                      collapsed: false,
-                      autogenerate: { directory: 'jan/installation' },
-                    },
-                    { label: 'QuickStart', slug: 'jan/quickstart' },
-                    {
-                      label: 'Models',
-                      collapsed: true,
-                      autogenerate: { directory: 'jan/jan-models' },
-                    },
-                    { label: 'Assistants', slug: 'jan/assistants' },
-                    {
-                      label: 'Cloud Providers',
-                      collapsed: true,
-                      items: [
-                        {
-                          label: 'Anthropic',
-                          slug: 'jan/remote-models/anthropic',
-                        },
-                        { label: 'OpenAI', slug: 'jan/remote-models/openai' },
-                        { label: 'Gemini', slug: 'jan/remote-models/google' },
-                        {
-                          label: 'OpenRouter',
-                          slug: 'jan/remote-models/openrouter',
-                        },
-                        { label: 'Cohere', slug: 'jan/remote-models/cohere' },
-                        {
-                          label: 'Mistral',
-                          slug: 'jan/remote-models/mistralai',
-                        },
-                        { label: 'Groq', slug: 'jan/remote-models/groq' },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  label: 'TUTORIALS',
-                  items: [
-                    {
-                      label: 'MCP Examples',
-                      collapsed: true,
-                      items: [
-                        {
-                          label: 'Browser Control (Browserbase)',
-                          slug: 'jan/mcp-examples/browser/browserbase',
-                        },
-                        {
-                          label: 'Code Sandbox (E2B)',
-                          slug: 'jan/mcp-examples/data-analysis/e2b',
-                        },
-                        {
-                          label: 'Design Creation (Canva)',
-                          slug: 'jan/mcp-examples/design/canva',
-                        },
-                        {
-                          label: 'Deep Research (Octagon)',
-                          slug: 'jan/mcp-examples/deepresearch/octagon',
-                        },
-                        {
-                          label: 'Serper Search',
-                          slug: 'jan/mcp-examples/search/serper',
-                        },
-                        {
-                          label: 'Web Search (Exa)',
-                          slug: 'jan/mcp-examples/search/exa',
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  label: 'EXPLANATION',
-                  items: [
-                    {
-                      label: 'Local AI Engine',
-                      slug: 'jan/explanation/llama-cpp',
-                    },
-                    {
-                      label: 'Model Parameters',
-                      slug: 'jan/explanation/model-parameters',
-                    },
-                  ],
-                },
-                {
-                  label: 'ADVANCED',
-                  items: [
-                    { label: 'Manage Models', slug: 'jan/manage-models' },
-                    { label: 'Model Context Protocol', slug: 'jan/mcp' },
-                  ],
-                },
-                {
-                  label: 'Local Server',
-                  items: [
-                    {
-                      label: 'All',
-                      collapsed: true,
-                      autogenerate: { directory: 'local-server' },
-                    },
-                  ],
-                },
-                {
-                  label: 'REFERENCE',
-                  items: [
-                    { label: 'Settings', slug: 'jan/settings' },
-                    { label: 'Jan Data Folder', slug: 'jan/data-folder' },
-                    { label: 'Troubleshooting', slug: 'jan/troubleshooting' },
-                    { label: 'Privacy Policy', slug: 'jan/privacy' },
-                  ],
-                },
-              ],
-            },
-            {
-              label: 'Jan Mobile',
-              link: '/mobile/',
-              badge: { text: 'Soon', variant: 'caution' },
-              icon: 'phone',
-              items: [{ label: 'Overview', slug: 'mobile' }],
-            },
-            {
-              label: 'Jan Server',
-              link: '/server/',
-              badge: { text: 'Soon', variant: 'caution' },
-              icon: 'forward-slash',
-              items: [{ label: 'Overview', slug: 'server' }],
-            },
-          ],
+        starlightSidebarTopics([
           {
-            exclude: ['/api-reference'],
-          }
-        ),
+            label: 'Jan Desktop',
+            link: '/',
+            icon: 'rocket',
+            items: [
+              {
+                label: 'GETTING STARTED',
+                items: [
+                  {
+                    label: 'Install 👋 Jan',
+                    collapsed: false,
+                    autogenerate: { directory: 'jan/installation' },
+                  },
+                  { label: 'QuickStart', slug: 'jan/quickstart' },
+                  {
+                    label: 'Models',
+                    collapsed: true,
+                    autogenerate: { directory: 'jan/jan-models' },
+                  },
+                  { label: 'Assistants', slug: 'jan/assistants' },
+                  {
+                    label: 'Cloud Providers',
+                    collapsed: true,
+                    items: [
+                      {
+                        label: 'Anthropic',
+                        slug: 'jan/remote-models/anthropic',
+                      },
+                      { label: 'OpenAI', slug: 'jan/remote-models/openai' },
+                      { label: 'Gemini', slug: 'jan/remote-models/google' },
+                      {
+                        label: 'OpenRouter',
+                        slug: 'jan/remote-models/openrouter',
+                      },
+                      { label: 'Cohere', slug: 'jan/remote-models/cohere' },
+                      {
+                        label: 'Mistral',
+                        slug: 'jan/remote-models/mistralai',
+                      },
+                      { label: 'Groq', slug: 'jan/remote-models/groq' },
+                    ],
+                  },
+                ],
+              },
+              {
+                label: 'TUTORIALS',
+                items: [
+                  {
+                    label: 'MCP Examples',
+                    collapsed: true,
+                    items: [
+                      {
+                        label: 'Browser Control (Browserbase)',
+                        slug: 'jan/mcp-examples/browser/browserbase',
+                      },
+                      {
+                        label: 'Code Sandbox (E2B)',
+                        slug: 'jan/mcp-examples/data-analysis/e2b',
+                      },
+                      {
+                        label: 'Design Creation (Canva)',
+                        slug: 'jan/mcp-examples/design/canva',
+                      },
+                      {
+                        label: 'Deep Research (Octagon)',
+                        slug: 'jan/mcp-examples/deepresearch/octagon',
+                      },
+                      {
+                        label: 'Serper Search',
+                        slug: 'jan/mcp-examples/search/serper',
+                      },
+                      {
+                        label: 'Web Search (Exa)',
+                        slug: 'jan/mcp-examples/search/exa',
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                label: 'EXPLANATION',
+                items: [
+                  {
+                    label: 'Local AI Engine',
+                    slug: 'jan/explanation/llama-cpp',
+                  },
+                  {
+                    label: 'Model Parameters',
+                    slug: 'jan/explanation/model-parameters',
+                  },
+                ],
+              },
+              {
+                label: 'ADVANCED',
+                items: [
+                  { label: 'Manage Models', slug: 'jan/manage-models' },
+                  { label: 'Model Context Protocol', slug: 'jan/mcp' },
+                ],
+              },
+              {
+                label: 'Local Server',
+                items: [
+                  {
+                    label: 'All',
+                    collapsed: true,
+                    autogenerate: { directory: 'local-server' },
+                  },
+                ],
+              },
+              {
+                label: 'REFERENCE',
+                items: [
+                  { label: 'Settings', slug: 'jan/settings' },
+                  { label: 'Jan Data Folder', slug: 'jan/data-folder' },
+                  { label: 'Troubleshooting', slug: 'jan/troubleshooting' },
+                  { label: 'Privacy Policy', slug: 'jan/privacy' },
+                ],
+              },
+            ],
+          },
+          {
+            label: 'Jan Mobile',
+            link: '/mobile/',
+            badge: { text: 'Soon', variant: 'caution' },
+            icon: 'phone',
+            items: [{ label: 'Overview', slug: 'mobile' }],
+          },
+          {
+            label: 'Jan Server',
+            link: '/server/',
+            badge: { text: 'Soon', variant: 'caution' },
+            icon: 'forward-slash',
+            items: [{ label: 'Overview', slug: 'server' }],
+          },
+        ]),
       ],
       social: [
         {
