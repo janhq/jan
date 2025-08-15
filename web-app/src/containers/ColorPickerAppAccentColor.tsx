@@ -1,4 +1,4 @@
-import { useAppearance } from '@/hooks/useAppearance'
+import { useAppearance, isDefaultColorAccent } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -37,10 +37,11 @@ export function ColorPickerAppAccentColor() {
     <div className="flex items-center gap-1.5">
       {predefineAppAccentBgColor.map((item, i) => {
         const isSelected =
-          item.r === appAccentBgColor.r &&
+          (item.r === appAccentBgColor.r &&
           item.g === appAccentBgColor.g &&
           item.b === appAccentBgColor.b &&
-          item.a === appAccentBgColor.a
+          item.a === appAccentBgColor.a) ||
+          (isDefaultColorAccent(appAccentBgColor) && isDefaultColorAccent(item))
         return (
           <div
             key={i}
