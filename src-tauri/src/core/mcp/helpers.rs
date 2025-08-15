@@ -490,7 +490,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             reqwest::Client::builder()
                 .default_headers({
                     // Map envs to request headers
-                    let mut headers = reqwest::header::HeaderMap::new();
+                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
                     for (key, value) in config_params.envs.iter() {
                         if let Some(v_str) = value.as_str() {
                             // Try to map env keys to HTTP header names (case-insensitive)
@@ -508,6 +508,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     }
                     headers
                 })
+                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
                 .build()
                 .unwrap(),
             StreamableHttpClientTransportConfig {
@@ -572,6 +573,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     }
                     headers
                 })
+                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
                 .build()
                 .unwrap(),
             rmcp::transport::sse_client::SseClientConfig {
@@ -724,12 +726,14 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let args = obj.get("args")?.as_array()?.clone();
     let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
     let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
+    let timeout = obj.get("timeout").and_then(|t| t.as_u64()).map(Duration::from_secs);
     let envs = obj
         .get("env")
         .unwrap_or(&Value::Object(serde_json::Map::new()))
         .as_object()?
         .clone();
     Some(McpServerConfig {
+        timeout,
         transport_type,
         url,
         command,

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -9,6 +11,7 @@ pub struct McpServerConfig {
     pub command: String,
     pub args: Vec<Value>,
     pub envs: serde_json::Map<String, Value>,
+    pub timeout: Option<Duration>,
 }
 
 /// Tool with server information
