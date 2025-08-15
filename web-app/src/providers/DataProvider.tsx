@@ -17,6 +17,7 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { AppEvent, events } from '@janhq/core'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -69,6 +70,13 @@ export function DataProvider() {
       checkForUpdate()
     }
   }, [checkForUpdate])
+
+  useEffect(() => {
+    events.on(AppEvent.onModelImported, () => {
+      getProviders().then(setProviders)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleDeepLink = (urls: string[] | null) => {
     if (!urls) return

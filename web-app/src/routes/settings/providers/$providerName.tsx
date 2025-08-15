@@ -22,7 +22,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
@@ -556,10 +555,6 @@ function ProviderDetail() {
                           }
                           actions={
                             <div className="flex items-center gap-0.5">
-                              <DialogEditModel
-                                provider={provider}
-                                modelId={model.id}
-                              />
                               {model.settings && (
                                 <ModelSetting
                                   provider={provider}

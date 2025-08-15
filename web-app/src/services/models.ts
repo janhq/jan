@@ -313,3 +313,16 @@ export const startModel = async (
     throw error
   })
 }
+
+/**
+ * Check if model support tool use capability
+ * Returned by backend engine
+ * @param modelId 
+ * @returns 
+ */
+export const isToolSupported = async (modelId: string): Promise<boolean> => {
+  const engine = getEngine()
+  if (!engine) return false
+
+  return engine.isToolSupported(modelId)
+}
