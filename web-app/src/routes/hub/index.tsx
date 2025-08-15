@@ -115,8 +115,8 @@ function Hub() {
         return (b.downloads || 0) - (a.downloads || 0)
       } else {
         return (
-          new Date(b.created_at || 0).getTime() -
-          new Date(a.created_at || 0).getTime()
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
         )
       }
     })

@@ -27,7 +27,8 @@ export interface CatalogModel {
   num_quants: number
   quants: ModelQuant[]
   mmproj_models?: MMProjModel[]
-  created_at?: string
+  num_mmproj: number
+  createdAt?: string
   readme?: string
   tools?: boolean
 }
@@ -44,7 +45,7 @@ export interface HuggingFaceRepo {
   library_name?: string
   tags: string[]
   pipeline_tag?: string
-  created_at: string
+  createdAt: string
   last_modified: string
   private: boolean
   disabled: boolean
@@ -155,22 +156,42 @@ export const fetchHuggingFaceRepo = async (
 export const convertHfRepoToCatalogModel = (
   repo: HuggingFaceRepo
 ): CatalogModel => {
+  // Format file size helper
+  const formatFileSize = (size?: number) => {
+    if (!size) return 'Unknown size'
+    if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
+    return `${(size / 1024 ** 3).toFixed(1)} GB`
+  }
+
   // Extract GGUF files from the repository siblings
   const ggufFiles =
     repo.siblings?.filter((file) =>
       file.rfilename.toLowerCase().endsWith('.gguf')
     ) || []
 
-  // Convert GGUF files to quants format
-  const quants = ggufFiles.map((file) => {
-    // Format file size
-    const formatFileSize = (size?: number) => {
-      if (!size) return 'Unknown size'
-      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
-      return `${(size / 1024 ** 3).toFixed(1)} GB`
-    }
+  // Separate regular GGUF files from mmproj files
+  const regularGgufFiles = ggufFiles.filter(
+    (file) => !file.rfilename.toLowerCase().includes('mmproj')
+  )
 
+  const mmprojFiles = ggufFiles.filter((file) =>
+    file.rfilename.toLowerCase().includes('mmproj')
+  )
+
+  // Convert regular GGUF files to quants format
+  const quants = regularGgufFiles.map((file) => {
     // Generate model_id from filename (remove .gguf extension, case-insensitive)
+    const modelId = file.rfilename.replace(/\.gguf$/i, '')
+
+    return {
+      model_id: sanitizeModelId(modelId),
+      path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+      file_size: formatFileSize(file.size),
+    }
+  })
+
+  // Convert mmproj files to mmproj_models format
+  const mmprojModels = mmprojFiles.map((file) => {
     const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
     return {
@@ -182,13 +203,15 @@ export const convertHfRepoToCatalogModel = (
 
   return {
     model_name: repo.modelId,
-    description: `**Tags**: ${repo.tags?.join(', ')}`,
     developer: repo.author,
     downloads: repo.downloads || 0,
+    createdAt: repo.createdAt,
     num_quants: quants.length,
     quants: quants,
-    created_at: repo.created_at,
+    num_mmproj: mmprojModels.length,
+    mmproj_models: mmprojModels,
     readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
+    description: `**Tags**: ${repo.tags?.join(', ')}`,
   }
 }
 
