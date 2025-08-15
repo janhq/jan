@@ -350,18 +350,18 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const file = item.getAsFile()
         if (file) {
           files.push(file)
-          processedCount++
+        }
+        processedCount++
+        
+        // When all items are processed, handle the valid files
+        if (processedCount === imageItems.length && files.length > 0) {
+          const syntheticEvent = {
+            target: {
+              files: files,
+            },
+          } as unknown as React.ChangeEvent<HTMLInputElement>
           
-          // When all files are collected, process them
-          if (processedCount === imageItems.length) {
-            const syntheticEvent = {
-              target: {
-                files: files,
-              },
-            } as unknown as React.ChangeEvent<HTMLInputElement>
-            
-            handleFileChange(syntheticEvent)
-          }
+          handleFileChange(syntheticEvent)
         }
       })
     }
