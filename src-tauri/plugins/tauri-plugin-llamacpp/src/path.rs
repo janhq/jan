@@ -98,3 +98,50 @@ pub fn validate_model_path(args: &mut Vec<String>) -> ServerResult<PathBuf> {
 
     Ok(model_path_pb)
 }
+
+/// Validate mmproj path exists and update args with platform-appropriate path format
+pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathBuf>> {
+   let mmproj_path_index = match args.iter().position(|arg| arg == "--mmproj") {
+       Some(index) => index,
+       None => return Ok(None), // mmproj is optional
+   };
+
+   let mmproj_path = args.get(mmproj_path_index + 1).cloned().ok_or_else(|| {
+       LlamacppError::new(
+           ErrorCode::ModelLoadFailed,
+           "Mmproj path was not provided after '--mmproj' flag.".into(),
+           None,
+       )
+   })?;
+
+   let mmproj_path_pb = PathBuf::from(&mmproj_path);
+   if !mmproj_path_pb.exists() {
+       let err_msg = format!(
+           "Invalid or inaccessible mmproj path: {}",
+           mmproj_path_pb.display()
+       );
+       log::error!("{}", &err_msg);
+       return Err(LlamacppError::new(
+           ErrorCode::ModelFileNotFound,
+           "The specified mmproj file does not exist or is not accessible.".into(),
+           Some(err_msg),
+       )
+       .into());
+   }
+
+   #[cfg(windows)]
+   {
+       // use short path on Windows
+       if let Some(short) = get_short_path(&mmproj_path_pb) {
+           args[mmproj_path_index + 1] = short;
+       } else {
+           args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
+       }
+   }
+   #[cfg(not(windows))]
+   {
+       args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
+   }
+
+   Ok(Some(mmproj_path_pb))
+}
