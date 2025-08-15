@@ -332,6 +332,41 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
   }
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const clipboardItems = e.clipboardData?.items
+    if (!clipboardItems) return
+
+    const imageItems = Array.from(clipboardItems).filter(item => 
+      item.type.startsWith('image/')
+    )
+
+    if (imageItems.length > 0) {
+      e.preventDefault()
+      
+      const files: File[] = []
+      let processedCount = 0
+      
+      imageItems.forEach((item) => {
+        const file = item.getAsFile()
+        if (file) {
+          files.push(file)
+          processedCount++
+          
+          // When all files are collected, process them
+          if (processedCount === imageItems.length) {
+            const syntheticEvent = {
+              target: {
+                files: files,
+              },
+            } as unknown as React.ChangeEvent<HTMLInputElement>
+            
+            handleFileChange(syntheticEvent)
+          }
+        }
+      })
+    }
+  }
+
   return (
     <div className="relative">
       <div className="relative">
@@ -359,6 +394,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
             )}
+            data-drop-zone="true"
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -423,6 +459,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
+              onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
