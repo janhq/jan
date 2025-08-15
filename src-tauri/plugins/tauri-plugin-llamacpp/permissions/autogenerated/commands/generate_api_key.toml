@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-generate-api-key"
+description = "Enables the generate_api_key command without any pre-configured scope."
+commands.allow = ["generate_api_key"]
+
+[[permission]]
+identifier = "deny-generate-api-key"
+description = "Denies the generate_api_key command without any pre-configured scope."
+commands.deny = ["generate_api_key"]

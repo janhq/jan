@@ -6,36 +6,31 @@ version = 3
 name = "Jan"
 version = "0.6.599"
 dependencies = [
- "ash",
- "base64 0.22.1",
- "byteorder",
  "dirs",
  "env",
  "fix-path-env",
  "flate2",
  "futures-util",
- "hmac",
  "hyper 0.14.32",
+ "jan-utils",
  "libc",
  "libloading 0.8.8",
  "log",
  "nix",
- "nvml-wrapper",
  "once_cell",
- "rand 0.8.5",
  "reqwest 0.11.27",
  "rmcp",
  "serde",
  "serde_json",
  "serde_yaml",
- "sha2",
- "sysinfo",
  "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
+ "tauri-plugin-hardware",
  "tauri-plugin-http",
+ "tauri-plugin-llamacpp",
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-os",
@@ -2280,6 +2275,21 @@ name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
+name = "jan-utils"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hmac",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "javascriptcore-rs"
@@ -5082,6 +5092,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-hardware"
+version = "0.6.599"
+dependencies = [
+ "ash",
+ "libc",
+ "libloading 0.8.8",
+ "log",
+ "nvml-wrapper",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+]
+
+[[package]]
 name = "tauri-plugin-http"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5103,6 +5129,27 @@ dependencies = [
  "tokio",
  "url",
  "urlpattern",
+]
+
+[[package]]
+name = "tauri-plugin-llamacpp"
+version = "0.6.599"
+dependencies = [
+ "base64 0.22.1",
+ "byteorder",
+ "hmac",
+ "jan-utils",
+ "log",
+ "nix",
+ "rand 0.8.5",
+ "serde",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.12",
+ "tokio",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

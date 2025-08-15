@@ -1,16 +1,16 @@
 mod core;
-use core::utils::extensions::inference_llamacpp_extension::cleanup::cleanup_processes;
 use core::{
-    cmd::get_jan_data_folder_path,
+    app::commands::get_jan_data_folder_path,
+    downloads::models::DownloadManagerState,
+    mcp::helpers::clean_up_mcp_servers,
     setup::{self, setup_mcp},
-    state::{generate_app_token, AppState},
-    utils::download::DownloadManagerState,
+    state::AppState,
 };
+use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
-
-use crate::core::mcp::clean_up_mcp_servers;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,77 +32,70 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_llamacpp::init())
+        .plugin(tauri_plugin_hardware::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
-            core::fs::join_path,
-            core::fs::mkdir,
-            core::fs::exists_sync,
-            core::fs::readdir_sync,
-            core::fs::read_file_sync,
-            core::fs::rm,
-            core::fs::file_stat,
-            core::fs::write_file_sync,
-            // App commands
-            core::cmd::get_app_configurations,
-            core::cmd::get_active_extensions,
-            core::cmd::get_user_home_path,
-            core::cmd::update_app_configuration,
-            core::cmd::get_jan_data_folder_path,
-            core::cmd::get_jan_extensions_path,
-            core::cmd::relaunch,
-            core::cmd::open_app_directory,
-            core::cmd::open_file_explorer,
-            core::cmd::install_extensions,
-            core::cmd::app_token,
-            core::cmd::start_server,
-            core::cmd::stop_server,
-            core::cmd::get_server_status,
-            core::cmd::read_logs,
-            core::cmd::change_app_data_folder,
-            core::cmd::factory_reset,
+            core::filesystem::commands::join_path,
+            core::filesystem::commands::mkdir,
+            core::filesystem::commands::exists_sync,
+            core::filesystem::commands::readdir_sync,
+            core::filesystem::commands::read_file_sync,
+            core::filesystem::commands::rm,
+            core::filesystem::commands::file_stat,
+            core::filesystem::commands::write_file_sync,
+            core::filesystem::commands::write_yaml,
+            core::filesystem::commands::read_yaml,
+            core::filesystem::commands::decompress,
+            // App configuration commands
+            core::app::commands::get_app_configurations,
+            core::app::commands::get_user_home_path,
+            core::app::commands::update_app_configuration,
+            core::app::commands::get_jan_data_folder_path,
+            core::app::commands::get_configuration_file_path,
+            core::app::commands::default_data_folder_path,
+            core::app::commands::change_app_data_folder,
+            core::app::commands::app_token,
+            // Extension commands
+            core::extensions::commands::get_jan_extensions_path,
+            core::extensions::commands::install_extensions,
+            core::extensions::commands::get_active_extensions,
+            // System commands
+            core::system::commands::relaunch,
+            core::system::commands::open_app_directory,
+            core::system::commands::open_file_explorer,
+            core::system::commands::factory_reset,
+            core::system::commands::read_logs,
+            core::system::commands::is_library_available,
+            // Server commands
+            core::server::commands::start_server,
+            core::server::commands::stop_server,
+            core::server::commands::get_server_status,
             // MCP commands
-            core::mcp::get_tools,
-            core::mcp::call_tool,
-            core::mcp::restart_mcp_servers,
-            core::mcp::get_connected_servers,
-            core::mcp::save_mcp_configs,
-            core::mcp::get_mcp_configs,
-            core::mcp::activate_mcp_server,
-            core::mcp::deactivate_mcp_server,
-            core::mcp::reset_mcp_restart_count,
+            core::mcp::commands::get_tools,
+            core::mcp::commands::call_tool,
+            core::mcp::commands::restart_mcp_servers,
+            core::mcp::commands::get_connected_servers,
+            core::mcp::commands::save_mcp_configs,
+            core::mcp::commands::get_mcp_configs,
+            core::mcp::commands::activate_mcp_server,
+            core::mcp::commands::deactivate_mcp_server,
+            core::mcp::commands::reset_mcp_restart_count,
             // Threads
-            core::threads::list_threads,
-            core::threads::create_thread,
-            core::threads::modify_thread,
-            core::threads::delete_thread,
-            core::threads::list_messages,
-            core::threads::create_message,
-            core::threads::modify_message,
-            core::threads::delete_message,
-            core::threads::get_thread_assistant,
-            core::threads::create_thread_assistant,
-            core::threads::modify_thread_assistant,
-            // generic utils
-            core::utils::write_yaml,
-            core::utils::read_yaml,
-            core::utils::decompress,
-            core::utils::is_library_available,
+            core::threads::commands::list_threads,
+            core::threads::commands::create_thread,
+            core::threads::commands::modify_thread,
+            core::threads::commands::delete_thread,
+            core::threads::commands::list_messages,
+            core::threads::commands::create_message,
+            core::threads::commands::modify_message,
+            core::threads::commands::delete_message,
+            core::threads::commands::get_thread_assistant,
+            core::threads::commands::create_thread_assistant,
+            core::threads::commands::modify_thread_assistant,
             // Download
-            core::utils::download::download_files,
-            core::utils::download::cancel_download_task,
-            // hardware
-            core::hardware::get_system_info,
-            core::hardware::get_system_usage,
-            // llama-cpp extension
-            core::utils::extensions::inference_llamacpp_extension::server::load_llama_model,
-            core::utils::extensions::inference_llamacpp_extension::server::unload_llama_model,
-            core::utils::extensions::inference_llamacpp_extension::server::get_devices,
-            core::utils::extensions::inference_llamacpp_extension::server::get_random_port,
-            core::utils::extensions::inference_llamacpp_extension::server::find_session_by_model,
-            core::utils::extensions::inference_llamacpp_extension::server::get_loaded_models,
-            core::utils::extensions::inference_llamacpp_extension::server::generate_api_key,
-            core::utils::extensions::inference_llamacpp_extension::server::is_process_running,
-            core::utils::extensions::inference_llamacpp_extension::gguf::read_gguf_metadata,
+            core::downloads::commands::download_files,
+            core::downloads::commands::cancel_download_task,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -112,7 +105,6 @@ pub fn run() {
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
-            llama_server_process: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -143,19 +135,6 @@ pub fn run() {
             setup_mcp(app);
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { .. } => {
-                if window.label() == "main" {
-                    let state = window.app_handle().state::<AppState>();
-
-                    tauri::async_runtime::block_on(async {
-                        clean_up_mcp_servers(state.clone()).await;
-                        cleanup_processes(state).await;
-                    });
-                }
-            }
-            _ => {}
-        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
@@ -167,8 +146,6 @@ pub fn run() {
             let app_handle = app.clone();
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    let state = app_handle.state::<AppState>();
-
                     // Hide window immediately
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.hide();
@@ -176,8 +153,9 @@ pub fn run() {
                     }
 
                     // Quick cleanup with shorter timeout
-                    clean_up_mcp_servers(state.clone()).await;
-                    cleanup_processes(state).await;
+                    let state = app_handle.state::<AppState>();
+                    let _ = clean_up_mcp_servers(state).await;
+                    let _ = cleanup_llama_processes(app.clone()).await;
                 });
             });
         }

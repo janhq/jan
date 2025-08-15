@@ -34,21 +34,16 @@ test-tauri = [
 tauri-build = { version = "2.0.2", features = [] }
 
 [dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
-tauri-plugin-log = "2.0.0-rc"
-tauri-plugin-shell = "2.2.0"
-tauri-plugin-os = "2.2.1"
-tauri-plugin-opener = "2.2.7"
+dirs = "6.0.0"
+env = "1.0.1"
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 flate2 = "1.0"
-tar = "0.4"
-rand = "0.8"
-tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
-tauri-plugin-store = "2"
+futures-util = "0.3.31"
 hyper = { version = "0.14", features = ["server"] }
+jan-utils = { path = "./utils" }
+libloading = "0.8.7"
+log = "0.4"
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
-tokio = { version = "1", features = ["full"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "3196c95f1dfafbffbdcdd6d365c94969ac975e6a", features = [
     "client",
     "transport-sse-client",
@@ -56,34 +51,30 @@ rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "3196c9
     "tower",
     "reqwest",
 ] }
-uuid = { version = "1.7", features = ["v4"] }
-env = "1.0.1"
-futures-util = "0.3.31"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9.34"
+tar = "0.4"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2.2.1"
+tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware" }
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
+tauri-plugin-log = "2.0.0-rc"
+tauri-plugin-opener = "2.2.7"
+tauri-plugin-os = "2.2.1"
+tauri-plugin-shell = "2.2.0"
+tauri-plugin-store = "2"
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"
 url = "2.5"
-tauri-plugin-dialog = "2.2.1"
-dirs = "6.0.0"
-sysinfo = "0.34.2"
-ash = "0.38.0"
-nvml-wrapper = "0.10.0"
-tauri-plugin-deep-link = "2"
-fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
-serde_yaml = "0.9.34"
-hmac = "0.12.1"
-sha2 = "0.10.9"
-base64 = "0.22.1"
-libloading = "0.8.7"
-thiserror = "2.0.12"
-byteorder = "1.5.0"
+uuid = { version = "1.7", features = ["v4"] }
 
 [dependencies.tauri]
 version = "2.5.0"
 default-features = false
-features = [
-    "protocol-asset",
-    "macos-private-api",
-    "test",
-]
+features = ["protocol-asset", "macos-private-api", "test"]
 
 [target.'cfg(windows)'.dev-dependencies]
 tempfile = "3.20.0"
