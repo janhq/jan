@@ -15,30 +15,6 @@ const __dirname = dirname(__filename)
 export default defineConfig({
   // Deploy to the new v2 subdomain
   site: 'https://v2.jan.ai',
-  vite: {
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-        '@/components': path.resolve(__dirname, './src/components'),
-        '@/layouts': path.resolve(__dirname, './src/layouts'),
-        '@/assets': path.resolve(__dirname, './src/assets'),
-        '@/content': path.resolve(__dirname, './src/content'),
-        '@/styles': path.resolve(__dirname, './src/styles'),
-        '@/utils': path.resolve(__dirname, './src/utils'),
-      },
-    },
-    assetsInclude: [
-      '**/*.jpg',
-      '**/*.jpeg',
-      '**/*.png',
-      '**/*.gif',
-      '**/*.svg',
-      '**/*.webp',
-    ],
-    optimizeDeps: {
-      exclude: ['@astrojs/starlight'],
-    },
-  },
   integrations: [
     mermaid({
       theme: 'default',
