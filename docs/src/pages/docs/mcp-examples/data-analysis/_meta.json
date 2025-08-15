@@ -1,0 +1,10 @@
+{
+  "e2b": {
+    "title": "E2B Code Sandbox",
+    "href": "/docs/mcp-examples/data-analysis/e2b"
+  },
+  "jupyter": {
+    "title": "Jupyter Notebooks",
+    "href": "/docs/mcp-examples/data-analysis/jupyter"
+  }
+}

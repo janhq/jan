@@ -55,59 +55,51 @@ export default defineConfig({
           [
             {
               label: 'Jan Desktop',
-              link: '/jan/',
+              link: '/',
               icon: 'rocket',
               items: [
                 {
-                  label: 'HOW TO',
+                  label: 'GETTING STARTED',
                   items: [
                     {
                       label: 'Install 👋 Jan',
                       collapsed: false,
                       autogenerate: { directory: 'jan/installation' },
                     },
-                    { label: 'Start Chatting', slug: 'jan/threads' },
+                    { label: 'QuickStart', slug: 'jan/quickstart' },
                     {
-                      label: 'Use Jan Models',
+                      label: 'Models',
                       collapsed: true,
                       autogenerate: { directory: 'jan/jan-models' },
                     },
                     { label: 'Assistants', slug: 'jan/assistants' },
-                  ],
-                },
-                {
-                  label: 'Cloud Providers',
-                  items: [
-                    { label: 'Anthropic', slug: 'jan/remote-models/anthropic' },
-                    { label: 'OpenAI', slug: 'jan/remote-models/openai' },
-                    { label: 'Gemini', slug: 'jan/remote-models/google' },
                     {
-                      label: 'OpenRouter',
-                      slug: 'jan/remote-models/openrouter',
-                    },
-                    { label: 'Cohere', slug: 'jan/remote-models/cohere' },
-                    { label: 'Mistral', slug: 'jan/remote-models/mistralai' },
-                    { label: 'Groq', slug: 'jan/remote-models/groq' },
-                  ],
-                },
-                {
-                  label: 'EXPLANATION',
-                  items: [
-                    {
-                      label: 'Local AI Engine',
-                      slug: 'jan/explanation/llama-cpp',
-                    },
-                    {
-                      label: 'Model Parameters',
-                      slug: 'jan/explanation/model-parameters',
+                      label: 'Cloud Providers',
+                      collapsed: true,
+                      items: [
+                        {
+                          label: 'Anthropic',
+                          slug: 'jan/remote-models/anthropic',
+                        },
+                        { label: 'OpenAI', slug: 'jan/remote-models/openai' },
+                        { label: 'Gemini', slug: 'jan/remote-models/google' },
+                        {
+                          label: 'OpenRouter',
+                          slug: 'jan/remote-models/openrouter',
+                        },
+                        { label: 'Cohere', slug: 'jan/remote-models/cohere' },
+                        {
+                          label: 'Mistral',
+                          slug: 'jan/remote-models/mistralai',
+                        },
+                        { label: 'Groq', slug: 'jan/remote-models/groq' },
+                      ],
                     },
                   ],
                 },
                 {
-                  label: 'ADVANCED',
+                  label: 'TUTORIALS',
                   items: [
-                    { label: 'Manage Models', slug: 'jan/manage-models' },
-                    { label: 'Model Context Protocol', slug: 'jan/mcp' },
                     {
                       label: 'MCP Examples',
                       collapsed: true,
@@ -129,11 +121,35 @@ export default defineConfig({
                           slug: 'jan/mcp-examples/deepresearch/octagon',
                         },
                         {
-                          label: 'Web Search with Exa',
+                          label: 'Serper Search',
+                          slug: 'jan/mcp-examples/search/serper',
+                        },
+                        {
+                          label: 'Web Search (Exa)',
                           slug: 'jan/mcp-examples/search/exa',
                         },
                       ],
                     },
+                  ],
+                },
+                {
+                  label: 'EXPLANATION',
+                  items: [
+                    {
+                      label: 'Local AI Engine',
+                      slug: 'jan/explanation/llama-cpp',
+                    },
+                    {
+                      label: 'Model Parameters',
+                      slug: 'jan/explanation/model-parameters',
+                    },
+                  ],
+                },
+                {
+                  label: 'ADVANCED',
+                  items: [
+                    { label: 'Manage Models', slug: 'jan/manage-models' },
+                    { label: 'Model Context Protocol', slug: 'jan/mcp' },
                   ],
                 },
                 {
@@ -171,97 +187,9 @@ export default defineConfig({
               icon: 'forward-slash',
               items: [{ label: 'Overview', slug: 'server' }],
             },
-            {
-              label: 'Handbook',
-              link: '/handbook/',
-              icon: 'open-book',
-              items: [
-                { label: 'Welcome', slug: 'handbook' },
-                {
-                  label: 'About Jan',
-                  items: [
-                    {
-                      label: 'Why does Jan Exist?',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/why' },
-                    },
-                    {
-                      label: 'How we make Money',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/money' },
-                    },
-                    {
-                      label: 'Who We Hire',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/who' },
-                    },
-                    {
-                      label: "Jan's Philosophies",
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/philosophy' },
-                    },
-                    {
-                      label: 'Brand & Identity',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/brand' },
-                    },
-                  ],
-                },
-                {
-                  label: 'How We Work',
-                  items: [
-                    {
-                      label: 'Team Roster',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/team' },
-                    },
-                    {
-                      label: "Jan's Culture",
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/culture' },
-                    },
-                    {
-                      label: 'How We Build',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/how' },
-                    },
-                    {
-                      label: 'How We Sell',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/sell' },
-                    },
-                  ],
-                },
-                {
-                  label: 'HR',
-                  items: [
-                    {
-                      label: 'HR Lifecycle',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/lifecycle' },
-                    },
-                    {
-                      label: 'HR Policies',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/hr' },
-                    },
-                    {
-                      label: 'Compensation',
-                      collapsed: true,
-                      autogenerate: { directory: 'handbook/comp' },
-                    },
-                  ],
-                },
-              ],
-            },
           ],
           {
-            exclude: [
-              '/prods',
-              '/api-reference',
-              '/products',
-              '/products/**/*',
-            ],
+            exclude: ['/api-reference'],
           }
         ),
       ],
@@ -282,9 +210,6 @@ export default defineConfig({
           href: 'https://discord.com/invite/FTk2MvZwJH',
         },
       ],
-      components: {
-        Header: './src/components/CustomNav.astro',
-      },
     }),
   ],
 })
