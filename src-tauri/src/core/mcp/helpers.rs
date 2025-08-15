@@ -1,4 +1,4 @@
-use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
+use rmcp::{transport::TokioChildProcess, ServiceExt};
 use serde_json::Value;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -11,7 +11,10 @@ use tokio::{
 use super::constants::{
     MCP_BACKOFF_MULTIPLIER, MCP_BASE_RESTART_DELAY_MS, MCP_MAX_RESTART_DELAY_MS,
 };
-use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
+use crate::core::{
+    app::commands::get_jan_data_folder_path,
+    state::{AppState, RunningServiceEnum, SharedMcpServers},
+};
 use jan_utils::can_override_npx;
 
 /// Calculate exponential backoff delay with jitter
@@ -72,7 +75,7 @@ pub fn calculate_exponential_backoff_delay(attempt: u32) -> u64 {
 /// * `Err(String)` if there was an error reading config or starting servers
 pub async fn run_mcp_commands<R: Runtime>(
     app: &AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
     let app_path_str = app_path.to_str().unwrap().to_string();
@@ -168,7 +171,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 
 /// Monitor MCP server health without removing it from the HashMap
 pub async fn monitor_mcp_server_handle(
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
 ) -> Option<rmcp::service::QuitReason> {
     log::info!("Monitoring MCP server {} health", name);
@@ -213,7 +216,16 @@ pub async fn monitor_mcp_server_handle(
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
                 // Try to cancel the service gracefully
-                let _ = service.cancel().await;
+                match service {
+                    RunningServiceEnum::NoInit(service) => {
+                        log::info!("Stopping server {name}...");
+                        let _ = service.cancel().await;
+                    }
+                    RunningServiceEnum::WithInit(service) => {
+                        log::info!("Stopping server {name} with initialization...");
+                        let _ = service.cancel().await;
+                    }
+                }
             }
             return Some(rmcp::service::QuitReason::Closed);
         }
@@ -224,7 +236,7 @@ pub async fn monitor_mcp_server_handle(
 /// Returns the result of the first start attempt, then continues with restart monitoring
 pub async fn start_mcp_server_with_restart<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: Option<u32>,
@@ -297,7 +309,7 @@ pub async fn start_mcp_server_with_restart<R: Runtime>(
 /// Helper function to handle the restart loop logic
 pub async fn start_restart_loop<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: u32,
@@ -452,7 +464,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
 pub async fn schedule_mcp_start_task<R: Runtime>(
     app: tauri::AppHandle<R>,
-    servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers: SharedMcpServers,
     name: String,
     config: Value,
 ) -> Result<(), String> {
@@ -540,7 +552,12 @@ pub async fn schedule_mcp_start_task<R: Runtime>(
     };
 
     // Now move the service into the HashMap
-    servers.lock().await.insert(name.clone(), service);
+    // Now move the service into the HashMap
+    servers
+        .lock()
+        .await
+        .insert(name.clone(), RunningServiceEnum::NoInit(service));
+    log::info!("Server {name} started successfully.");
     log::info!("Server {name} started successfully.");
 
     // Wait a short time to verify the server is stable before marking as connected
@@ -604,7 +621,7 @@ pub fn extract_active_status(config: &Value) -> Option<bool> {
 /// Restart only servers that were previously active (like cortex restart behavior)
 pub async fn restart_active_mcp_servers<R: Runtime>(
     app: &AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
     let active_servers = app_state.mcp_active_servers.lock().await;
@@ -656,14 +673,21 @@ pub async fn clean_up_mcp_servers(state: State<'_, AppState>) {
     log::info!("MCP servers cleaned up successfully");
 }
 
-pub async fn stop_mcp_servers(
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
-) -> Result<(), String> {
+pub async fn stop_mcp_servers(servers_state: SharedMcpServers) -> Result<(), String> {
     let mut servers_map = servers_state.lock().await;
     let keys: Vec<String> = servers_map.keys().cloned().collect();
     for key in keys {
         if let Some(service) = servers_map.remove(&key) {
-            service.cancel().await.map_err(|e| e.to_string())?;
+            match service {
+                RunningServiceEnum::NoInit(service) => {
+                    log::info!("Stopping server {key}...");
+                    service.cancel().await.map_err(|e| e.to_string())?;
+                }
+                RunningServiceEnum::WithInit(service) => {
+                    log::info!("Stopping server {key} with initialization...");
+                    service.cancel().await.map_err(|e| e.to_string())?;
+                }
+            }
         }
     }
     drop(servers_map); // Release the lock after stopping
@@ -689,7 +713,7 @@ pub async fn reset_restart_count(restart_counts: &Arc<Mutex<HashMap<String, u32>
 /// Spawn the server monitoring task for handling restarts
 pub async fn spawn_server_monitoring_task<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: u32,

@@ -1,14 +1,13 @@
 use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
-use rmcp::{service::RunningService, RoleClient};
 use serde_json::{Map, Value};
-use std::{collections::HashMap, sync::Arc};
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::{sync::Mutex, time::timeout};
+use tokio::time::timeout;
 
 use super::{
     constants::{DEFAULT_MCP_CONFIG, MCP_TOOL_CALL_TIMEOUT},
     helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
 };
+use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
 use std::fs;
 
@@ -19,8 +18,7 @@ pub async fn activate_mcp_server<R: Runtime>(
     name: String,
     config: Value,
 ) -> Result<(), String> {
-    let servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
-        state.mcp_servers.clone();
+    let servers: SharedMcpServers = state.mcp_servers.clone();
 
     // Use the modified start_mcp_server_with_restart that returns first attempt result
     start_mcp_server_with_restart(app, servers, name, config, Some(3)).await
@@ -63,7 +61,16 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
     // Release the lock before calling cancel
     drop(servers_map);
 
-    service.cancel().await.map_err(|e| e.to_string())?;
+    match service {
+        RunningServiceEnum::NoInit(service) => {
+            log::info!("Stopping server {name}...");
+            service.cancel().await.map_err(|e| e.to_string())?;
+        }
+        RunningServiceEnum::WithInit(service) => {
+            log::info!("Stopping server {name} with initialization...");
+            service.cancel().await.map_err(|e| e.to_string())?;
+        }
+    }
     log::info!("Server {name} stopped successfully and marked as deactivated.");
     Ok(())
 }
