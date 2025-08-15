@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Listener, Manager};
+use tauri::{App, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 // use tokio::sync::Mutex;
 // use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
@@ -13,9 +13,8 @@ use tauri_plugin_store::StoreExt;
 
 // MCP
 use super::{
-    cmd::{get_jan_data_folder_path, get_jan_extensions_path},
-    mcp::run_mcp_commands,
-    state::AppState,
+    app::commands::get_jan_data_folder_path, extensions::commands::get_jan_extensions_path,
+    mcp::helpers::run_mcp_commands, state::AppState,
 };
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
@@ -165,7 +164,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     Ok(())
 }
 
-fn extract_extension_manifest<R: Read>(
+pub fn extract_extension_manifest<R: Read>(
     archive: &mut Archive<R>,
 ) -> Result<Option<serde_json::Value>, String> {
     let entry = archive
@@ -199,30 +198,6 @@ pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle: tauri::AppHandle = app.handle().clone();
-    // Setup kill-mcp-servers event listener (similar to kill-sidecar)
-    let app_handle_for_kill = app_handle.clone();
-    app_handle.listen("kill-mcp-servers", move |_event| {
-        let app_handle = app_handle_for_kill.clone();
-        tauri::async_runtime::spawn(async move {
-            log::info!("Received kill-mcp-servers event - cleaning up MCP servers");
-            let app_state = app_handle.state::<AppState>();
-            // Stop all running MCP servers
-            if let Err(e) = super::mcp::stop_mcp_servers(app_state.mcp_servers.clone()).await {
-                log::error!("Failed to stop MCP servers: {}", e);
-                return;
-            }
-            // Clear active servers and restart counts
-            {
-                let mut active_servers = app_state.mcp_active_servers.lock().await;
-                active_servers.clear();
-            }
-            {
-                let mut restart_counts = app_state.mcp_restart_counts.lock().await;
-                restart_counts.clear();
-            }
-            log::info!("MCP servers cleaned up successfully");
-        });
-    });
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);

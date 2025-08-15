@@ -1,0 +1,112 @@
+---
+export interface Props {
+  class?: string;
+}
+
+const { class: className } = Astro.props;
+---
+
+<div class={`steps-container ${className || ''}`}>
+  <slot />
+</div>
+
+<style>
+  .steps-container {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background-color: var(--sl-color-gray-6);
+    border-radius: 0.5rem;
+    border: 1px solid var(--sl-color-gray-5);
+  }
+
+  /* Light mode adjustments */
+  :global([data-theme="light"]) .steps-container {
+    background-color: var(--sl-color-gray-7);
+    border-color: var(--sl-color-gray-6);
+  }
+
+  /* Style the headers inside steps */
+  .steps-container :global(h2),
+  .steps-container :global(h3) {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--sl-color-text-accent);
+    font-weight: 600;
+  }
+
+  .steps-container :global(h2:first-child),
+  .steps-container :global(h3:first-child) {
+    margin-top: 0;
+  }
+
+  /* Style lists inside steps */
+  .steps-container :global(ul) {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+    list-style: none;
+  }
+
+  .steps-container :global(ul li) {
+    position: relative;
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+  }
+
+  /* Custom bullet points */
+  .steps-container :global(ul li::before) {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--sl-color-text-accent);
+    font-weight: bold;
+  }
+
+  /* Style links inside steps */
+  .steps-container :global(a) {
+    color: var(--sl-color-text);
+    text-decoration: none;
+    transition: color 0.2s ease;
+    font-weight: 500;
+  }
+
+  .steps-container :global(a:hover) {
+    color: var(--sl-color-text-accent);
+    text-decoration: underline;
+  }
+
+  /* Add spacing between step groups */
+  .steps-container :global(h2:not(:first-child)),
+  .steps-container :global(h3:not(:first-child)) {
+    padding-top: 1rem;
+    border-top: 1px solid var(--sl-color-hairline);
+  }
+
+  /* Numbered steps styling */
+  .steps-container :global(h2) {
+    counter-increment: step-counter;
+    position: relative;
+    padding-left: 2.5rem;
+  }
+
+  .steps-container {
+    counter-reset: step-counter;
+  }
+
+  .steps-container :global(h2::before) {
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2rem;
+    height: 2rem;
+    background-color: var(--sl-color-accent);
+    color: var(--sl-color-white);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: bold;
+  }
+</style>

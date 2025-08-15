@@ -120,6 +120,7 @@ mise dev        # runs the full development setup
 
 ```bash
 yarn install
+yarn build:tauri:plugin:api
 yarn build:core
 yarn build:extensions
 yarn dev

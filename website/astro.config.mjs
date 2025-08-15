@@ -1,15 +1,44 @@
 // @ts-check
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import starlightThemeRapide from 'starlight-theme-rapide'
+import starlightThemeNext from 'starlight-theme-next'
+// import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
 import mermaid from 'astro-mermaid'
+import { fileURLToPath } from 'url'
+import path, { dirname } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // https://astro.build/config
 export default defineConfig({
   // Deploy to the new v2 subdomain
   site: 'https://v2.jan.ai',
-  // No 'base' property is needed, as this will be deployed to the root of the subdomain.
+  vite: {
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+        '@/components': path.resolve(__dirname, './src/components'),
+        '@/layouts': path.resolve(__dirname, './src/layouts'),
+        '@/assets': path.resolve(__dirname, './src/assets'),
+        '@/content': path.resolve(__dirname, './src/content'),
+        '@/styles': path.resolve(__dirname, './src/styles'),
+        '@/utils': path.resolve(__dirname, './src/utils'),
+      },
+    },
+    assetsInclude: [
+      '**/*.jpg',
+      '**/*.jpeg',
+      '**/*.png',
+      '**/*.gif',
+      '**/*.svg',
+      '**/*.webp',
+    ],
+    optimizeDeps: {
+      exclude: ['@astrojs/starlight'],
+    },
+  },
   integrations: [
     mermaid({
       theme: 'default',
@@ -17,14 +46,16 @@ export default defineConfig({
     }),
     starlight({
       title: '👋 Jan',
+
       favicon: 'jan2.png',
       plugins: [
-        starlightThemeRapide(),
+        // starlightThemeRapide(),
+        starlightThemeNext(),
         starlightSidebarTopics(
           [
             {
               label: 'Jan Desktop',
-              link: '/',
+              link: '/jan/',
               icon: 'rocket',
               items: [
                 {
@@ -108,25 +139,10 @@ export default defineConfig({
                 {
                   label: 'Local Server',
                   items: [
-                    { label: 'Introduction', link: '/local-server/' },
-                    { label: 'Server Setup', slug: 'local-server/api-server' },
                     {
-                      label: 'Jan Data Folder',
-                      slug: 'local-server/data-folder',
-                    },
-                    { label: 'Server Settings', slug: 'local-server/settings' },
-                    {
-                      label: 'Llama.cpp Server',
-                      slug: 'local-server/llama-cpp',
-                    },
-                    {
-                      label: 'Server Troubleshooting',
-                      slug: 'local-server/troubleshooting',
-                    },
-                    {
-                      label: 'Integrations',
+                      label: 'All',
                       collapsed: true,
-                      autogenerate: { directory: 'local-server/integrations' },
+                      autogenerate: { directory: 'local-server' },
                     },
                   ],
                 },
@@ -144,16 +160,99 @@ export default defineConfig({
             {
               label: 'Jan Mobile',
               link: '/mobile/',
-              badge: { text: 'Coming Soon', variant: 'caution' },
+              badge: { text: 'Soon', variant: 'caution' },
               icon: 'phone',
               items: [{ label: 'Overview', slug: 'mobile' }],
             },
             {
               label: 'Jan Server',
               link: '/server/',
-              badge: { text: 'Coming Soon', variant: 'caution' },
+              badge: { text: 'Soon', variant: 'caution' },
               icon: 'forward-slash',
               items: [{ label: 'Overview', slug: 'server' }],
+            },
+            {
+              label: 'Handbook',
+              link: '/handbook/',
+              icon: 'open-book',
+              items: [
+                { label: 'Welcome', slug: 'handbook' },
+                {
+                  label: 'About Jan',
+                  items: [
+                    {
+                      label: 'Why does Jan Exist?',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/why' },
+                    },
+                    {
+                      label: 'How we make Money',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/money' },
+                    },
+                    {
+                      label: 'Who We Hire',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/who' },
+                    },
+                    {
+                      label: "Jan's Philosophies",
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/philosophy' },
+                    },
+                    {
+                      label: 'Brand & Identity',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/brand' },
+                    },
+                  ],
+                },
+                {
+                  label: 'How We Work',
+                  items: [
+                    {
+                      label: 'Team Roster',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/team' },
+                    },
+                    {
+                      label: "Jan's Culture",
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/culture' },
+                    },
+                    {
+                      label: 'How We Build',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/how' },
+                    },
+                    {
+                      label: 'How We Sell',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/sell' },
+                    },
+                  ],
+                },
+                {
+                  label: 'HR',
+                  items: [
+                    {
+                      label: 'HR Lifecycle',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/lifecycle' },
+                    },
+                    {
+                      label: 'HR Policies',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/hr' },
+                    },
+                    {
+                      label: 'Compensation',
+                      collapsed: true,
+                      autogenerate: { directory: 'handbook/comp' },
+                    },
+                  ],
+                },
+              ],
             },
           ],
           {

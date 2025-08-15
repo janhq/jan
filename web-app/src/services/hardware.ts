@@ -15,7 +15,7 @@ export interface DeviceList {
  * @returns {Promise<HardwareInfo>} A promise that resolves to the hardware information.
  */
 export const getHardwareInfo = async () => {
-  return invoke('get_system_info') as Promise<HardwareData>
+  return invoke('plugin:hardware|get_system_info') as Promise<HardwareData>
 }
 
 /**
@@ -23,7 +23,7 @@ export const getHardwareInfo = async () => {
  * @returns {Promise<HardwareInfo>} A promise that resolves to the hardware information.
  */
 export const getSystemUsage = async () => {
-  return invoke('get_system_usage') as Promise<SystemUsage>
+  return invoke('plugin:hardware|get_system_usage') as Promise<SystemUsage>
 }
 
 /**

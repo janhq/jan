@@ -1,0 +1,87 @@
+---
+export interface Props {
+  title?: string;
+  description?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  variant?: 'primary' | 'secondary' | 'gradient';
+  align?: 'left' | 'center' | 'right';
+}
+
+const {
+  title = "Ready to get started?",
+  description = "Download Jan and start running AI models locally on your device.",
+  buttonText = "Download Jan",
+  buttonLink = "https://jan.ai",
+  variant = 'primary',
+  align = 'center'
+} = Astro.props;
+
+const variantClasses = {
+  primary: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+  secondary: 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800',
+  gradient: 'bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-purple-200 dark:border-purple-800'
+};
+
+const alignClasses = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right'
+};
+
+const buttonVariantClasses = {
+  primary: 'bg-blue-600 hover:bg-blue-700 text-white',
+  secondary: 'bg-gray-800 hover:bg-gray-900 dark:bg-gray-200 dark:hover:bg-gray-300 text-white dark:text-gray-900',
+  gradient: 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white'
+};
+---
+
+<div class={`cta-blog ${variantClasses[variant]} ${alignClasses[align]} border rounded-xl p-6 lg:p-8 my-8`}>
+  <div class="max-w-2xl mx-auto">
+    {title && (
+      <h3 class="text-2xl lg:text-3xl font-bold mb-3 text-gray-900 dark:text-gray-100">
+        {title}
+      </h3>
+    )}
+
+    {description && (
+      <p class="text-gray-700 dark:text-gray-300 mb-6 text-lg">
+        {description}
+      </p>
+    )}
+
+    <a
+      href={buttonLink}
+      class={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${buttonVariantClasses[variant]} shadow-sm hover:shadow-md`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {buttonText}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+      </svg>
+    </a>
+  </div>
+</div>
+
+<style>
+  .cta-blog {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-blog::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  :global(.dark) .cta-blog::before {
+    background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+  }
+</style>

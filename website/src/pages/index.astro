@@ -1,0 +1,198 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import CustomNav from '@/components/CustomNav.astro';
+import DownloadButton from '@/components/DownloadButton.astro';
+
+// Placeholder data - to be fetched from GitHub API later
+const latestVersion = 'v0.6.7';
+const downloadCount = '3.8M+';
+---
+
+<Layout title="Jan - Run AI Locally | 100% Offline ChatGPT Alternative">
+  <CustomNav />
+  <main>
+    <section class="hero-section">
+      <div class="hero-container">
+
+        <!-- Version Banner -->
+        <div class="version-banner-wrapper">
+          <a
+            href="https://github.com/janhq/jan/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="version-banner"
+          >
+            <span class="new-badge">NEW</span>
+            <span class="version-text">✨ {latestVersion} is now live on GitHub. Check it out!</span>
+          </a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="hero-content">
+          <div class="heading-wrapper">
+            <span class="quote-mark">“</span>
+            <h1 class="main-heading">
+              Chat with AI<br />
+              without privacy concerns
+            </h1>
+          </div>
+
+          <p class="description">
+            Jan is an open source ChatGPT-alternative that runs 100% offline.
+          </p>
+
+          <div class="download-wrapper">
+            <DownloadButton showStats={true} downloadCount={downloadCount} />
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  .hero-section {
+    width: 100%;
+    min-height: calc(90vh - var(--sl-nav-height, 3.5rem));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5rem 1.5rem;
+    color: var(--sl-color-text);
+    background: var(--sl-color-bg);
+    overflow: hidden;
+  }
+
+  .hero-container {
+    width: 100%;
+    max-width: 65rem; /* 1040px */
+    margin: 0 auto;
+    text-align: center;
+    animation: fadeIn 0.8s ease-out forwards;
+  }
+
+  .version-banner-wrapper {
+    margin-bottom: 3rem;
+  }
+
+  .version-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.25rem;
+    background-color: #4f46e5; /* A nice indigo color */
+    color: white;
+    border-radius: 9999px; /* Pill shape */
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .version-banner:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(79, 70, 229, 0.4);
+  }
+
+  .new-badge {
+    background-color: white;
+    color: #4f46e5;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  .version-text {
+    padding-right: 0.75rem;
+  }
+
+  .heading-wrapper {
+    position: relative;
+    max-width: 48rem; /* 768px */
+    margin: 0 auto;
+  }
+
+  .quote-mark {
+    position: absolute;
+    top: -1.5rem;
+    left: -2rem;
+    font-family: 'DM Serif Display', serif;
+    font-size: 10rem;
+    line-height: 1;
+    color: #34d399; /* A nice green color */
+    opacity: 0.4;
+    user-select: none;
+  }
+
+  .main-heading {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: clamp(3rem, 5.5vw, 5rem);
+    line-height: 1.1;
+    color: var(--sl-color-text);
+    position: relative;
+  }
+
+  :global([data-theme="light"]) .main-heading {
+     color: #111827;
+  }
+
+  :global([data-theme="dark"]) .main-heading {
+     color: #f9fafb;
+  }
+
+  .description {
+    font-size: 1.25rem;
+    line-height: 1.7;
+    max-width: 36rem; /* 576px */
+    margin: 1.5rem auto 2.5rem;
+    color: #6b7280;
+  }
+
+  :global([data-theme="dark"]) .description {
+    color: #9ca3af;
+  }
+
+  .download-wrapper {
+    margin-top: 2rem;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .hero-section {
+      padding: 4rem 1rem;
+    }
+
+    .quote-mark {
+      font-size: 8rem;
+      top: -1rem;
+      left: -1rem;
+    }
+
+    .main-heading {
+      font-size: 2.75rem;
+    }
+
+    .description {
+      font-size: 1.125rem;
+    }
+
+    .version-banner {
+      font-size: 0.8rem;
+    }
+  }
+</style>

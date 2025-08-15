@@ -39,6 +39,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type ModelProps = {
   model: CatalogModel
@@ -57,6 +58,7 @@ export const Route = createFileRoute(route.hub.index as any)({
 
 function Hub() {
   const parentRef = useRef(null)
+  const { huggingfaceToken } = useGeneralSetting()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -71,7 +73,7 @@ function Hub() {
     }
   }, [])
 
-  const { sources, addSource, fetchSources, loading } = useModelSources()
+  const { sources, fetchSources, loading } = useModelSources()
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -130,7 +132,9 @@ function Hub() {
     // Apply search filter
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
-      filtered = fuse.search(debouncedSearchValue).map((result) => result.item)
+      // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
+      const cleanedSearchValue = debouncedSearchValue.replace(/^https?:\/\/[^/]+\//, '')
+      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
@@ -185,14 +189,20 @@ function Hub() {
       addModelSourceTimeoutRef.current = setTimeout(async () => {
         try {
           // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(e.target.value)
+          const repoInfo = await fetchHuggingFaceRepo(
+            e.target.value,
+            huggingfaceToken
+          )
           if (repoInfo) {
             const catalogModel = convertHfRepoToCatalogModel(repoInfo)
             if (
-              !sources.some((s) => s.model_name === catalogModel.model_name)
+              !sources.some(
+                (s) =>
+                  catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim()
+              )
             ) {
               setHuggingFaceRepo(catalogModel)
-              addSource(catalogModel)
             }
           }
         } catch (error) {
@@ -284,7 +294,8 @@ function Hub() {
       const handleDownload = () => {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
-        pullModel(modelId, modelUrl)
+        const mmprojPath = model.mmproj_models?.[0]?.path
+        pullModel(modelId, modelUrl, mmprojPath)
       }
 
       return (
@@ -501,7 +512,7 @@ function Hub() {
           </HeaderPage>
           <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
             <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 mx-auto">
-              {loading ? (
+              {loading && !filteredModels.length ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
                     {t('hub:loadingModels')}
@@ -745,7 +756,10 @@ function Hub() {
                                                   )
                                                   pullModel(
                                                     variant.model_id,
-                                                    variant.path
+                                                    variant.path,
+                                                    filteredModels[
+                                                      virtualItem.index
+                                                    ].mmproj_models?.[0]?.path
                                                   )
                                                 }}
                                               >

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useHardware } from '@/hooks/useHardware'
 import { Progress } from '@/components/ui/progress'
 import { route } from '@/constants/routes'
@@ -19,12 +19,7 @@ function SystemMonitor() {
   const { t } = useTranslation()
   const { hardwareData, systemUsage, updateSystemUsage } = useHardware()
 
-  const {
-    devices: llamacppDevices,
-    fetchDevices,
-  } = useLlamacppDevices()
-
-  const [isInitialized, setIsInitialized] = useState(false)
+  const { devices: llamacppDevices, fetchDevices } = useLlamacppDevices()
 
   useEffect(() => {
     // Fetch llamacpp devices
@@ -45,14 +40,6 @@ function SystemMonitor() {
 
     return () => clearInterval(intervalId)
   }, [updateSystemUsage])
-
-  // Initialize when hardware data and llamacpp devices are available
-  useEffect(() => {
-    if (hardwareData.gpus.length > 0 && !isInitialized) {
-      setIsInitialized(true)
-    }
-  }, [hardwareData.gpus.length, isInitialized])
-
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =

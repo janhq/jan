@@ -28,9 +28,19 @@ run = "yarn install"
 sources = ['package.json', 'yarn.lock']
 outputs = ['node_modules']
 
+[tasks.build-tauri-plugin-api]
+description = "Build Tauri plugin API"
+depends = ["install"]
+run = "yarn build:tauri:plugin:api"
+sources = ['src-tauri/plugins/**/*']
+outputs = [
+  'src-tauri/plugins/tauri-plugin-hardware/dist-js',
+  'src-tauri/plugins/tauri-plugin-llamacpp/dist-js',
+]
+
 [tasks.build-core]
 description = "Build core package"
-depends = ["install"]
+depends = ["build-tauri-plugin-api"]
 run = "yarn build:core"
 sources = ['core/**/*']
 outputs = ['core/dist']

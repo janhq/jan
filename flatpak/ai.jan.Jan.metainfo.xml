@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ai.jan.Jan</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <developer_name>Menlo Research</developer_name>
+  <name>Jan</name>
+  <icon type="stock">ai.jan.Jan</icon>
+  <summary>Local AI Assistant that runs 100% offline on your device</summary>
+  <categories>
+  <category>Utility</category>
+  <category>Education</category>
+  <category>Chat</category>
+  <category>Dictionary</category>
+  </categories>
+  <description>
+    <p>
+      Jan is a ChatGPT-alternative that runs 100% offline on your device. Our goal is to make it easy for anyone to download and run LLMs and use AI with full control and privacy.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li> Local AI Models: Download and run large language models like Llama, Gemma, and Qwen directly from Hugging Face. All models run locally on your device.</li>
+      <li>Cloud Integration: Connect to cloud providers such as OpenAI, Anthropic, Gemini, and Groq when needed. Easily switch between local and cloud models</li>
+      <li>Custom Assistants: Set up specialized AI assistants for different tasks, such as writing, summarizing, or coding. Customize their tone and behavior.</li>
+      <li> OpenAI-Compatible API: Jan includes a local API server (localhost:1337) that works with tools and plugins expecting OpenAI’s API format.</li>
+      <li>Model Context Protocol (MCP): Supports MCP to improve context handling and interactions across larger or more complex tasks.</li>
+      <li>Privacy First: Jan runs fully offline by default. Your data never leaves your device unless you enable cloud connections.</li>
+    </ul>
+  </description>
+<launchable type="desktop-id">ai.jan.Jan.desktop</launchable>
+<screenshots>
+  <screenshot type="default">
+    <image>https://catalog.jan.ai/flatpak/demo.gif</image>
+  </screenshot>
+</screenshots>
+
+<url type="homepage">https://jan.ai/</url>
+<url type="bugtracker">https://github.com/menloresearch/jan/issues</url>
+
+<content_rating type="oars-1.1" />
+
+<releases>
+  <release version="0.6.8" date="2025-08-14">
+    <description>
+      <p>Latest stable release of Jan AI</p>
+    </description>
+  </release>
+</releases>
+</component>

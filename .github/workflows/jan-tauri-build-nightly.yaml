@@ -12,10 +12,31 @@ on:
           - none
           - aws-s3
         default: none
+      disable_updater:
+        type: boolean
+        description: 'If true, builds both .deb and .appimage but disables auto-updater'
+        default: false
   pull_request:
     branches:
       - release/**
       - dev
+    paths:
+      - '.github/workflows/jan-tauri-build-nightly.yaml'
+      - '.github/workflows/template-get-update-version.yml'
+      - '.github/workflows/template-tauri-build-macos.yml'
+      - '.github/workflows/template-tauri-build-windows-x64.yml'
+      - '.github/workflows/template-tauri-build-linux-x64.yml'
+      - '.github/workflows/template-noti-discord-and-update-url-readme.yml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'mise.toml'
+
 
 jobs:
   set-public-provider:
@@ -85,6 +106,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: '39261'
+      disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
 
   sync-temp-to-latest:
     needs:

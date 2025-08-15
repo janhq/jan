@@ -1,0 +1,233 @@
+---
+export interface Props {
+  class?: string;
+  showStats?: boolean;
+  downloadCount?: string;
+}
+
+const { class: className, showStats = false, downloadCount = '3.8M+' } = Astro.props;
+
+// Download links for different platforms
+const downloadLinks = {
+  'mac-intel': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-mac-x64-0.5.14.dmg',
+  'mac-arm': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-mac-arm64-0.5.14.dmg',
+  'windows': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-win-x64-0.5.14.exe',
+  'linux-deb': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-linux-amd64-0.5.14.deb',
+  'linux-appimage': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-linux-x86_64-0.5.14.AppImage'
+};
+---
+
+<div class={`download-container ${className || ''}`}>
+  <div class="download-section inline-flex items-center gap-2">
+    <!-- Main Download Button -->
+    <button
+      id="main-download-btn"
+      class="download-btn inline-flex items-center gap-2 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+      data-download-url=""
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+      </svg>
+      <span id="platform-text" class="text-base">Download for your platform</span>
+      <span id="file-size" class="text-xs opacity-70"></span>
+    </button>
+
+    <!-- Dropdown Toggle -->
+    <details class="download-dropdown relative">
+      <summary class="dropdown-toggle cursor-pointer p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors h-full flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </summary>
+
+      <!-- Dropdown Menu -->
+      <div class="dropdown-menu absolute top-full mt-1 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-1 min-w-[250px] z-50">
+        <div class="font-semibold text-xs text-gray-500 dark:text-gray-400 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700">
+          All Platforms
+        </div>
+
+        <!-- macOS Options -->
+        <div class="py-1">
+          <div class="text-xs text-gray-500 dark:text-gray-400 px-3 py-0.5 uppercase tracking-wide">macOS</div>
+          <a href={downloadLinks['mac-arm']}
+             class="platform-option block px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-sm"
+             data-platform="mac-arm">
+            <span class="font-medium">Apple Silicon</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(M1/M2/M3)</span>
+          </a>
+          <a href={downloadLinks['mac-intel']}
+             class="platform-option block px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-sm"
+             data-platform="mac-intel">
+            <span class="font-medium">Intel</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(x64)</span>
+          </a>
+        </div>
+
+        <!-- Windows -->
+        <div class="py-1 border-t border-gray-200 dark:border-gray-700">
+          <div class="text-xs text-gray-500 dark:text-gray-400 px-3 py-0.5 uppercase tracking-wide">Windows</div>
+          <a href={downloadLinks['windows']}
+             class="platform-option block px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-sm"
+             data-platform="windows">
+            <span class="font-medium">Windows</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(x64)</span>
+          </a>
+        </div>
+
+        <!-- Linux Options -->
+        <div class="py-1 border-t border-gray-200 dark:border-gray-700">
+          <div class="text-xs text-gray-500 dark:text-gray-400 px-3 py-0.5 uppercase tracking-wide">Linux</div>
+          <a href={downloadLinks['linux-deb']}
+             class="platform-option block px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-sm"
+             data-platform="linux-deb">
+            <span class="font-medium">Debian/Ubuntu</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(.deb)</span>
+          </a>
+          <a href={downloadLinks['linux-appimage']}
+             class="platform-option block px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-sm"
+             data-platform="linux-appimage">
+            <span class="font-medium">AppImage</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(Universal)</span>
+          </a>
+        </div>
+
+        <!-- View All Releases -->
+        <div class="pt-1 border-t border-gray-200 dark:border-gray-700">
+          <a href="https://github.com/janhq/jan/releases"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="block px-3 py-1.5 text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-xs">
+            View all releases →
+          </a>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  {showStats && (
+    <p class="text-gray-600 dark:text-gray-400 mt-3 text-center text-sm">
+      <span class="text-yellow-600 font-semibold">{downloadCount}</span> downloads | Free & Open Source
+    </p>
+  )}
+</div>
+
+<style>
+  .download-dropdown[open] .dropdown-menu {
+    animation: slideDown 0.2s ease-out;
+  }
+
+  .download-dropdown summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .download-dropdown summary {
+    list-style: none;
+  }
+
+  .download-btn:active {
+    transform: scale(0.98);
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Close dropdown when clicking outside */
+  .download-dropdown:not([open]) .dropdown-menu {
+    display: none;
+  }
+</style>
+
+<script>
+  // Platform detection and download handling
+  document.addEventListener('DOMContentLoaded', () => {
+    const platformText = document.getElementById('platform-text');
+    const fileSize = document.getElementById('file-size');
+    const mainDownloadBtn = document.getElementById('main-download-btn');
+
+    // Platform detection
+    function detectPlatform() {
+      const platform = navigator.platform.toLowerCase();
+      const userAgent = navigator.userAgent.toLowerCase();
+
+      let detectedPlatform = 'linux-deb';
+      let platformName = 'Linux (deb)';
+      let downloadSize = '(69.7 MB)';
+
+      if (platform.includes('mac') || userAgent.includes('mac')) {
+        // Check if Apple Silicon
+        if (userAgent.includes('arm') || userAgent.includes('apple')) {
+          detectedPlatform = 'mac-arm';
+          platformName = 'macOS (Apple Silicon)';
+          downloadSize = '(73.2 MB)';
+        } else {
+          detectedPlatform = 'mac-intel';
+          platformName = 'macOS (Intel)';
+          downloadSize = '(75.8 MB)';
+        }
+      } else if (platform.includes('win') || userAgent.includes('win')) {
+        detectedPlatform = 'windows';
+        platformName = 'Windows';
+        downloadSize = '(71.4 MB)';
+      }
+
+      return { platform: detectedPlatform, name: platformName, size: downloadSize };
+    }
+
+    // Set initial platform
+    const detected = detectPlatform();
+    if (platformText) {
+      platformText.textContent = `Download for ${detected.name}`;
+    }
+    if (fileSize) {
+      fileSize.textContent = detected.size;
+    }
+
+    // Get download URL based on platform
+    const downloadUrls = {
+      'mac-intel': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-mac-x64-0.5.14.dmg',
+      'mac-arm': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-mac-arm64-0.5.14.dmg',
+      'windows': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-win-x64-0.5.14.exe',
+      'linux-deb': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-linux-amd64-0.5.14.deb',
+      'linux-appimage': 'https://github.com/janhq/jan/releases/download/v0.5.14/jan-linux-x86_64-0.5.14.AppImage'
+    };
+
+    if (mainDownloadBtn) {
+      mainDownloadBtn.setAttribute('data-download-url', downloadUrls[detected.platform]);
+
+      // Handle main button click
+      mainDownloadBtn.addEventListener('click', () => {
+        const url = mainDownloadBtn.getAttribute('data-download-url');
+        if (url) {
+          window.location.href = url;
+        }
+      });
+    }
+
+    // Handle dropdown platform clicks
+    document.querySelectorAll('.platform-option').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const url = e.currentTarget.getAttribute('href');
+        if (url) {
+          window.location.href = url;
+        }
+      });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      const dropdown = document.querySelector('.download-dropdown');
+      if (dropdown && !dropdown.contains(e.target)) {
+        dropdown.removeAttribute('open');
+      }
+    });
+  });
+</script>

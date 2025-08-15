@@ -14,8 +14,10 @@
         "sharp": "^0.34.3",
         "starlight-openapi": "^0.19.1",
         "starlight-sidebar-topics": "^0.6.0",
+        "starlight-theme-next": "^0.3.2",
         "starlight-theme-rapide": "^0.5.1",
         "starlight-videos": "^0.3.0",
+        "unist-util-visit": "^5.0.0",
       },
     },
   },
@@ -1075,6 +1077,8 @@
     "starlight-openapi": ["starlight-openapi@0.19.1", "", { "dependencies": { "@readme/openapi-parser": "^2.7.0", "github-slugger": "^2.0.0", "url-template": "^3.1.1" }, "peerDependencies": { "@astrojs/markdown-remark": ">=6.0.1", "@astrojs/starlight": ">=0.34.0", "astro": ">=5.5.0" } }, "sha512-hEwbLlxpWaEceJM6Cj66Amh/CCDH5mbZ/MO55byWSUmBGmitkmWMUMTPhbSj8Y7MD2SQ7uJ83tcnfaDpfwxk4Q=="],
 
     "starlight-sidebar-topics": ["starlight-sidebar-topics@0.6.0", "", { "dependencies": { "picomatch": "^4.0.2" }, "peerDependencies": { "@astrojs/starlight": ">=0.32.0" } }, "sha512-ysmOR7zaHYKtk18/mpW4MbEMDioR/ZBsisu9bdQrq0v9BlHWpW7gAdWlqFWO9zdv1P7l0Mo1WKd0wJ0UtqOVEQ=="],
+
+    "starlight-theme-next": ["starlight-theme-next@0.3.2", "", { "peerDependencies": { "@astrojs/starlight": ">=0.34" } }, "sha512-GQGhZ67nZ09pWVQoecl1N+H/1EUkUOvLVpjqOCHlkSotCblwrWrj4guEsdF9aKkNqiyTi6zzwZ5sxQospvdHOg=="],
 
     "starlight-theme-rapide": ["starlight-theme-rapide@0.5.1", "", { "peerDependencies": { "@astrojs/starlight": ">=0.34.0" } }, "sha512-QRF6mzcYHLEX5UpUvOPXVVwISS298siIJLcKextoMLhXcnF12nX+IYJ0LNxFk9XaPbX9uDXIieSBJf5Pztkteg=="],
 
