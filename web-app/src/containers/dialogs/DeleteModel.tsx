@@ -18,6 +18,7 @@ import { IconTrash } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type DialogDeleteModelProps = {
   provider: ModelProvider
@@ -31,8 +32,12 @@ export const DialogDeleteModel = ({
   const { t } = useTranslation()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const { setProviders, deleteModel: deleteModelCache } = useModelProvider()
+  const { removeFavorite } = useFavoriteModel()
 
   const removeModel = async () => {
+    // Remove model from favorites if it exists
+    removeFavorite(selectedModelId)
+    
     deleteModelCache(selectedModelId)
     deleteModel(selectedModelId).then(() => {
       getProviders().then((providers) => {

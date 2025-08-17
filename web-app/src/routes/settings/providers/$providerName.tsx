@@ -26,6 +26,7 @@ import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
@@ -554,7 +555,7 @@ function ProviderDetail() {
                             </div>
                           }
                           actions={
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5">
                               <DialogEditModel
                                 provider={provider}
                                 modelId={model.id}
@@ -564,6 +565,17 @@ function ProviderDetail() {
                                   provider={provider}
                                   model={model}
                                 />
+                              )}
+                              {((provider &&
+                                !predefinedProviders.some(
+                                  (p) => p.provider === provider.provider
+                                )) ||
+                                (provider &&
+                                  predefinedProviders.some(
+                                    (p) => p.provider === provider.provider
+                                  ) &&
+                                  Boolean(provider.api_key?.length))) && (
+                                <FavoriteModelAction model={model} />
                               )}
                               <DialogDeleteModel
                                 provider={provider}
