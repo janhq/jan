@@ -28,7 +28,7 @@ export interface CatalogModel {
   quants: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj: number
-  createdAt?: string
+  created_at?: string
   readme?: string
   tools?: boolean
 }
@@ -205,7 +205,7 @@ export const convertHfRepoToCatalogModel = (
     model_name: repo.modelId,
     developer: repo.author,
     downloads: repo.downloads || 0,
-    createdAt: repo.createdAt,
+    created_at: repo.createdAt,
     num_quants: quants.length,
     quants: quants,
     num_mmproj: mmprojModels.length,
