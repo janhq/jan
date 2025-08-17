@@ -8,7 +8,7 @@ import {
 // Extract reasoning from a message (for completed responses)
 export function extractReasoningFromMessage(
   message: chatCompletionRequestMessage | ChatCompletionMessage
-): string | string[] | null {
+): string | null {
   if (!message) return null
 
   const extendedMessage = message as chatCompletionRequestMessage
