@@ -32,7 +32,10 @@ import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import { useGeneralSetting } from './useGeneralSetting'
-import { ReasoningProcessor, extractReasoningFromMessage } from '@/utils/reasoning'
+import {
+  ReasoningProcessor,
+  extractReasoningFromMessage,
+} from '@/utils/reasoning'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -308,13 +311,14 @@ export const useChat = () => {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
               accumulatedText = (message?.content as string) || ''
-              
-              // Handle reasoning field if there is one 
+
+              // Handle reasoning field if there is one
               const reasoning = extractReasoningFromMessage(message)
               if (reasoning) {
-                accumulatedText = `<think>${reasoning}</think>` + accumulatedText
+                accumulatedText =
+                  `<think>${reasoning}</think>` + accumulatedText
               }
-              
+
               if (message?.tool_calls) {
                 toolCalls.push(...message.tool_calls)
               }
@@ -357,7 +361,10 @@ export const useChat = () => {
               }
               const flushIfPending = () => {
                 if (!rafScheduled) return
-                if (typeof cancelAnimationFrame !== 'undefined' && rafHandle !== undefined) {
+                if (
+                  typeof cancelAnimationFrame !== 'undefined' &&
+                  rafHandle !== undefined
+                ) {
                   cancelAnimationFrame(rafHandle)
                 } else if (rafHandle !== undefined) {
                   clearTimeout(rafHandle)
@@ -389,27 +396,25 @@ export const useChat = () => {
                       : (JSON.stringify(part) ?? '')
                   )
                 }
-                const delta_content = part.choices[0]?.delta?.content || ''
-
-                // Process reasoning and append to accumulatedText
-                const reasoningToAppend = reasoningProcessor.processReasoningChunk(part)
-                if (reasoningToAppend) {
-                  accumulatedText += reasoningToAppend
-                  pendingDeltaCount += 1
-                }
 
                 if (part.choices[0]?.delta?.tool_calls) {
                   extractToolCall(part, currentCall, toolCalls)
                   // Schedule a flush to reflect tool update
                   scheduleFlush()
                 }
-                if (delta_content) {
-                  accumulatedText += delta_content
+                const deltaReasoning =
+                  reasoningProcessor.processReasoningChunk(part)
+                if (deltaReasoning) {
+                  accumulatedText += deltaReasoning
+                  pendingDeltaCount += 1
+                  // Schedule flush for reasoning updates
+                  scheduleFlush()
+                }
+                const deltaContent = part.choices[0]?.delta?.content || ''
+                if (deltaContent) {
+                  accumulatedText += deltaContent
                   pendingDeltaCount += 1
                   // Batch UI update on next animation frame
-                  scheduleFlush()
-                } else if (reasoningToAppend) {
-                  // Schedule flush for reasoning updates
                   scheduleFlush()
                 }
               }
