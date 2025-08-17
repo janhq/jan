@@ -7,23 +7,26 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppMainView() {
   const { appMainViewBgColor, setAppMainViewBgColor } = useAppearance()
+  const { isDark } = useTheme()
 
   const predefineAppMainViewBgColor: RgbaColor[] = [
-    {
-      r: 251,
-      g: 251,
-      b: 251,
-      a: 1,
-    },
-    {
-      r: 24,
-      g: 24,
-      b: 24,
-      a: 1,
-    },
+    isDark
+      ? {
+          r: 25,
+          g: 25,
+          b: 25,
+          a: 1,
+        }
+      : {
+          r: 255,
+          g: 255,
+          b: 255,
+          a: 1,
+        },
   ]
 
   return (

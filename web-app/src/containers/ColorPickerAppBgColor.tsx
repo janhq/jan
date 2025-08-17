@@ -8,24 +8,27 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppBgColor() {
   const { appBgColor, setAppBgColor } = useAppearance()
+  const { isDark } = useTheme()
   const { t } = useTranslation()
 
   const predefineAppBgColor: RgbaColor[] = [
-    {
-      r: 20,
-      g: 20,
-      b: 20,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
-    },
-    {
-      r: 250,
-      g: 250,
-      b: 250,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
-    },
+    isDark
+      ? {
+          r: 25,
+          g: 25,
+          b: 25,
+          a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+        }
+      : {
+          r: 255,
+          g: 255,
+          b: 255,
+          a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+        },
     {
       r: 70,
       g: 79,

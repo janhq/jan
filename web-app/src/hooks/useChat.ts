@@ -306,8 +306,7 @@ export const useChat = () => {
           const toolCalls: ChatCompletionMessageToolCall[] = []
           try {
             if (isCompletionResponse(completion)) {
-              // Handle completed (non-streaming) response
-              const message = completion.choices[0]?.message;
+              const message = completion.choices[0]?.message
               accumulatedText = (message?.content as string) || ''
               
               // Handle reasoning field if there is one 
@@ -320,47 +319,24 @@ export const useChat = () => {
                 toolCalls.push(...message.tool_calls)
               }
             } else {
+              // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
+              let rafScheduled = false
+              let rafHandle: number | undefined
+              let pendingDeltaCount = 0
               const reasoningProcessor = new ReasoningProcessor()
-              for await (const part of completion) {
-                // Error message
-                if (!part.choices) {
-                  throw new Error(
-                    'message' in part
-                      ? (part.message as string)
-                      : (JSON.stringify(part) ?? '')
-                  )
+              const scheduleFlush = () => {
+                if (rafScheduled) return
+                rafScheduled = true
+                const doSchedule = (cb: () => void) => {
+                  if (typeof requestAnimationFrame !== 'undefined') {
+                    rafHandle = requestAnimationFrame(() => cb())
+                  } else {
+                    // Fallback for non-browser test environments
+                    const t = setTimeout(() => cb(), 0) as unknown as number
+                    rafHandle = t
+                  }
                 }
-                
-                // Process reasoning and append to accumulatedText
-                const reasoningToAppend = reasoningProcessor.processReasoningChunk(part)
-                accumulatedText += reasoningToAppend
-
-                // Extract content from chunk and add to accumulatedText
-                const delta_content = part.choices[0]?.delta?.content || ''
-
-                // Process tool calls if present
-                if (part.choices[0]?.delta?.tool_calls) {
-                  const calls = extractToolCall(part, currentCall, toolCalls)
-                  // Update UI immediately for tool calls
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: calls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  await new Promise((resolve) => setTimeout(resolve, 0))
-                }
-                
-                // Update UI if there's any content change (non-tool-call updates)
-                if (delta_content || reasoningToAppend) {
-                  accumulatedText += delta_content
-                  // Create a new object each time to avoid reference issues
-                  // Use a timeout to prevent React from batching updates too quickly
+                doSchedule(() => {
                   const currentContent = newAssistantThreadContent(
                     activeThread.id,
                     accumulatedText,
@@ -372,12 +348,75 @@ export const useChat = () => {
                     }
                   )
                   updateStreamingContent(currentContent)
-                  updateTokenSpeed(currentContent)
-                  await new Promise((resolve) => setTimeout(resolve, 0))
+                  if (pendingDeltaCount > 0) {
+                    updateTokenSpeed(currentContent, pendingDeltaCount)
+                  }
+                  pendingDeltaCount = 0
+                  rafScheduled = false
+                })
+              }
+              const flushIfPending = () => {
+                if (!rafScheduled) return
+                if (typeof cancelAnimationFrame !== 'undefined' && rafHandle !== undefined) {
+                  cancelAnimationFrame(rafHandle)
+                } else if (rafHandle !== undefined) {
+                  clearTimeout(rafHandle)
+                }
+                // Do an immediate flush
+                const currentContent = newAssistantThreadContent(
+                  activeThread.id,
+                  accumulatedText,
+                  {
+                    tool_calls: toolCalls.map((e) => ({
+                      ...e,
+                      state: 'pending',
+                    })),
+                  }
+                )
+                updateStreamingContent(currentContent)
+                if (pendingDeltaCount > 0) {
+                  updateTokenSpeed(currentContent, pendingDeltaCount)
+                }
+                pendingDeltaCount = 0
+                rafScheduled = false
+              }
+              for await (const part of completion) {
+                // Error message
+                if (!part.choices) {
+                  throw new Error(
+                    'message' in part
+                      ? (part.message as string)
+                      : (JSON.stringify(part) ?? '')
+                  )
+                }
+                const delta_content = part.choices[0]?.delta?.content || ''
+
+                // Process reasoning and append to accumulatedText
+                const reasoningToAppend = reasoningProcessor.processReasoningChunk(part)
+                if (reasoningToAppend) {
+                  accumulatedText += reasoningToAppend
+                  pendingDeltaCount += 1
+                }
+
+                if (part.choices[0]?.delta?.tool_calls) {
+                  extractToolCall(part, currentCall, toolCalls)
+                  // Schedule a flush to reflect tool update
+                  scheduleFlush()
+                }
+                if (delta_content) {
+                  accumulatedText += delta_content
+                  pendingDeltaCount += 1
+                  // Batch UI update on next animation frame
+                  scheduleFlush()
+                } else if (reasoningToAppend) {
+                  // Schedule flush for reasoning updates
+                  scheduleFlush()
                 }
               }
-              // Finalize reasoning (add closed </think> tag if the processor is not done)
+              // Finalize reasoning (close any open think tags)
               accumulatedText += reasoningProcessor.finalize()
+              // Ensure any pending buffered content is rendered at the end
+              flushIfPending()
             }
           } catch (error) {
             const errorMessage =

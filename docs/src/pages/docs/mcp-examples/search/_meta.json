@@ -1,0 +1,10 @@
+{
+  "exa": {
+    "title": "Exa Search",
+    "href": "/docs/mcp-examples/search/exa"
+  },
+  "serper": {
+    "title": "Serper Search",
+    "href": "/docs/mcp-examples/search/serper"
+  }
+}
