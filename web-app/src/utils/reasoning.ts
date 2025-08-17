@@ -1,13 +1,16 @@
 import { CompletionResponseChunk } from 'token.js'
 import {
   chatCompletionChunk,
+  ChatCompletionMessage,
   chatCompletionRequestMessage,
 } from '@janhq/core'
 
 // Extract reasoning from a message (for completed responses)
-export function extractReasoningFromMessage(message: any): string | string[] | null {
+export function extractReasoningFromMessage(
+  message: chatCompletionRequestMessage | ChatCompletionMessage
+): string | string[] | null {
   if (!message) return null
-  
+
   const extendedMessage = message as chatCompletionRequestMessage
   return extendedMessage.reasoning || null
 }
