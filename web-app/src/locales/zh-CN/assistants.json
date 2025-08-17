@@ -29,5 +29,6 @@
   "save": "保存",
   "createNew": "创建新助手",
   "personality": "个性",
-  "capabilities": "能力"
+  "capabilities": "能力",
+  "instructionsDateHint": "提示：使用 {{current_date}} 插入今天的日期。"
 }

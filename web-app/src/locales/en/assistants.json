@@ -29,5 +29,6 @@
   "save": "Save",
   "createNew": "Create New Assistant",
   "personality": "Personality",
-  "capabilities": "Capabilities"
+  "capabilities": "Capabilities",
+  "instructionsDateHint": "Tip: Use {{current_date}} to insert today’s date."
 }

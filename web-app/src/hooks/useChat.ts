@@ -17,6 +17,7 @@ import {
   sendCompletion,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
+import { renderInstructions } from '@/lib/instructionTemplate'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
 import { getTools } from '@/services/mcp'
@@ -245,7 +246,7 @@ export const useChat = () => {
 
         const builder = new CompletionMessagesBuilder(
           messages,
-          currentAssistant?.instructions
+          renderInstructions(currentAssistant?.instructions)
         )
         if (troubleshooting) builder.addUserMessage(message)
 
