@@ -32,6 +32,7 @@ import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import { useGeneralSetting } from './useGeneralSetting'
+import { ReasoningProcessor, extractReasoningFromMessage } from '@/utils/reasoning'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -305,12 +306,21 @@ export const useChat = () => {
           const toolCalls: ChatCompletionMessageToolCall[] = []
           try {
             if (isCompletionResponse(completion)) {
-              accumulatedText =
-                (completion.choices[0]?.message?.content as string) || ''
-              if (completion.choices[0]?.message?.tool_calls) {
-                toolCalls.push(...completion.choices[0].message.tool_calls)
+              // Handle completed (non-streaming) response
+              const message = completion.choices[0]?.message;
+              accumulatedText = (message?.content as string) || ''
+              
+              // Handle reasoning field if there is one 
+              const reasoning = extractReasoningFromMessage(message)
+              if (reasoning) {
+                accumulatedText = `<think>${reasoning}</think>` + accumulatedText
+              }
+              
+              if (message?.tool_calls) {
+                toolCalls.push(...message.tool_calls)
               }
             } else {
+              const reasoningProcessor = new ReasoningProcessor()
               for await (const part of completion) {
                 // Error message
                 if (!part.choices) {
@@ -320,10 +330,18 @@ export const useChat = () => {
                       : (JSON.stringify(part) ?? '')
                   )
                 }
-                const delta = part.choices[0]?.delta?.content || ''
+                
+                // Process reasoning and append to accumulatedText
+                const reasoningToAppend = reasoningProcessor.processReasoningChunk(part)
+                accumulatedText += reasoningToAppend
 
+                // Extract content from chunk and add to accumulatedText
+                const delta_content = part.choices[0]?.delta?.content || ''
+
+                // Process tool calls if present
                 if (part.choices[0]?.delta?.tool_calls) {
                   const calls = extractToolCall(part, currentCall, toolCalls)
+                  // Update UI immediately for tool calls
                   const currentContent = newAssistantThreadContent(
                     activeThread.id,
                     accumulatedText,
@@ -337,8 +355,10 @@ export const useChat = () => {
                   updateStreamingContent(currentContent)
                   await new Promise((resolve) => setTimeout(resolve, 0))
                 }
-                if (delta) {
-                  accumulatedText += delta
+                
+                // Update UI if there's any content change (non-tool-call updates)
+                if (delta_content || reasoningToAppend) {
+                  accumulatedText += delta_content
                   // Create a new object each time to avoid reference issues
                   // Use a timeout to prevent React from batching updates too quickly
                   const currentContent = newAssistantThreadContent(
@@ -356,6 +376,8 @@ export const useChat = () => {
                   await new Promise((resolve) => setTimeout(resolve, 0))
                 }
               }
+              // Finalize reasoning (add closed </think> tag if the processor is not done)
+              accumulatedText += reasoningProcessor.finalize()
             }
           } catch (error) {
             const errorMessage =
