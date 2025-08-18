@@ -61,14 +61,17 @@ export default function AddEditAssistant({
   const [paramsTypes, setParamsTypes] = useState<string[]>(['string'])
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const emojiPickerTriggerRef = useRef<HTMLDivElement>(null)
   const [nameError, setNameError] = useState<string | null>(null)
 
-  // Handle click outside emoji picker
+  // Handle click outside emoji picker or trigger
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         emojiPickerRef.current &&
-        !emojiPickerRef.current.contains(event.target as Node)
+        emojiPickerTriggerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        !emojiPickerTriggerRef.current.contains(event.target as Node)
       ) {
         setShowEmojiPicker(false)
       }
@@ -90,6 +93,7 @@ export default function AddEditAssistant({
       setName(initialData.name)
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
+      setShowEmojiPicker(false)
       // Convert parameters object to arrays of keys and values
       const keys = Object.keys(initialData.parameters || {})
       const values = Object.values(initialData.parameters || {})
@@ -120,6 +124,7 @@ export default function AddEditAssistant({
     setParamsValues([''])
     setParamsTypes(['string'])
     setNameError(null)
+    setShowEmojiPicker(false)
   }
 
   const handleParameterChange = (
@@ -243,6 +248,7 @@ export default function AddEditAssistant({
               <div
                 className="border rounded-sm p-1 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                ref={emojiPickerTriggerRef}
               >
                 {avatar ? (
                   <AvatarEmoji
