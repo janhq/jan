@@ -29,6 +29,10 @@ import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import { useGeneralSetting } from './useGeneralSetting'
+import {
+  ReasoningProcessor,
+  extractReasoningFromMessage,
+} from '@/utils/reasoning'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -285,16 +289,25 @@ export const useChat = () => {
           const toolCalls: ChatCompletionMessageToolCall[] = []
           try {
             if (isCompletionResponse(completion)) {
-              accumulatedText =
-                (completion.choices[0]?.message?.content as string) || ''
-              if (completion.choices[0]?.message?.tool_calls) {
-                toolCalls.push(...completion.choices[0].message.tool_calls)
+              const message = completion.choices[0]?.message
+              accumulatedText = (message?.content as string) || ''
+
+              // Handle reasoning field if there is one
+              const reasoning = extractReasoningFromMessage(message)
+              if (reasoning) {
+                accumulatedText =
+                  `<think>${reasoning}</think>` + accumulatedText
+              }
+
+              if (message?.tool_calls) {
+                toolCalls.push(...message.tool_calls)
               }
             } else {
               // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
               let rafScheduled = false
               let rafHandle: number | undefined
               let pendingDeltaCount = 0
+              const reasoningProcessor = new ReasoningProcessor()
               const scheduleFlush = () => {
                 if (rafScheduled) return
                 rafScheduled = true
@@ -328,7 +341,10 @@ export const useChat = () => {
               }
               const flushIfPending = () => {
                 if (!rafScheduled) return
-                if (typeof cancelAnimationFrame !== 'undefined' && rafHandle !== undefined) {
+                if (
+                  typeof cancelAnimationFrame !== 'undefined' &&
+                  rafHandle !== undefined
+                ) {
                   cancelAnimationFrame(rafHandle)
                 } else if (rafHandle !== undefined) {
                   clearTimeout(rafHandle)
@@ -360,20 +376,30 @@ export const useChat = () => {
                       : (JSON.stringify(part) ?? '')
                   )
                 }
-                const delta = part.choices[0]?.delta?.content || ''
 
                 if (part.choices[0]?.delta?.tool_calls) {
                   extractToolCall(part, currentCall, toolCalls)
                   // Schedule a flush to reflect tool update
                   scheduleFlush()
                 }
-                if (delta) {
-                  accumulatedText += delta
+                const deltaReasoning =
+                  reasoningProcessor.processReasoningChunk(part)
+                if (deltaReasoning) {
+                  accumulatedText += deltaReasoning
+                  pendingDeltaCount += 1
+                  // Schedule flush for reasoning updates
+                  scheduleFlush()
+                }
+                const deltaContent = part.choices[0]?.delta?.content || ''
+                if (deltaContent) {
+                  accumulatedText += deltaContent
                   pendingDeltaCount += 1
                   // Batch UI update on next animation frame
                   scheduleFlush()
                 }
               }
+              // Finalize reasoning (close any open think tags)
+              accumulatedText += reasoningProcessor.finalize()
               // Ensure any pending buffered content is rendered at the end
               flushIfPending()
             }
