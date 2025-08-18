@@ -107,9 +107,7 @@ modules:
       - 'install -Dm755 usr/bin/uv /app/bin/uv'
       - cp -rv usr/lib/* /app/lib/.
       - install -Dm644 usr/share/applications/Jan.desktop /app/share/applications/ai.jan.Jan.desktop
-      - desktop-file-edit /app/share/applications/ai.jan.Jan.desktop \
-          --set-icon=ai.jan.Jan \
-          --set-key=Exec --set-value=/app/bin/Jan
+      - desktop-file-edit --set-key=Exec --set-value=/app/bin/Jan --set-icon=ai.jan.Jan /app/share/applications/ai.jan.Jan.desktop
       - install -Dm644 usr/share/icons/hicolor/128x128/apps/Jan.png /app/share/icons/hicolor/128x128/apps/ai.jan.Jan.png
       - install -Dm644 usr/share/icons/hicolor/32x32/apps/Jan.png /app/share/icons/hicolor/32x32/apps/ai.jan.Jan.png
       - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/Jan.png /app/share/icons/hicolor/256x256@2/apps/ai.jan.Jan.png
