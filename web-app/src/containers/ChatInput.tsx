@@ -225,11 +225,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const actualType = getFileTypeFromExtension(file.name) || detectedType
 
         // Check file type - images only
-        const allowedTypes = [
-          'image/jpg',
-          'image/jpeg',
-          'image/png',
-        ]
+        const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
 
         if (!allowedTypes.includes(actualType)) {
           setMessage(
@@ -336,23 +332,23 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const clipboardItems = e.clipboardData?.items
     if (!clipboardItems) return
 
-    const imageItems = Array.from(clipboardItems).filter(item => 
+    const imageItems = Array.from(clipboardItems).filter((item) =>
       item.type.startsWith('image/')
     )
 
     if (imageItems.length > 0) {
       e.preventDefault()
-      
+
       const files: File[] = []
       let processedCount = 0
-      
+
       imageItems.forEach((item) => {
         const file = item.getAsFile()
         if (file) {
           files.push(file)
         }
         processedCount++
-        
+
         // When all items are processed, handle the valid files
         if (processedCount === imageItems.length && files.length > 0) {
           const syntheticEvent = {
@@ -360,7 +356,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               files: files,
             },
           } as unknown as React.ChangeEvent<HTMLInputElement>
-          
+
           handleFileChange(syntheticEvent)
         }
       })
@@ -494,7 +490,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
                 {/* File attachment - always available */}
                 <div
-                  className="h-6 p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 ml-1"
+                  className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                   onClick={handleAttachmentClick}
                 >
                   <IconPaperclip size={18} className="text-main-view-fg/50" />
