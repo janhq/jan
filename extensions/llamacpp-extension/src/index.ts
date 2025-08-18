@@ -1548,6 +1548,26 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Check if mmproj.gguf file exists for a given model ID
+   * @param modelId - The model ID to check for mmproj.gguf
+   * @returns Promise<boolean> - true if mmproj.gguf exists, false otherwise
+   */
+  async checkMmprojExists(modelId: string): Promise<boolean> {
+    try {
+      const mmprojPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'mmproj.gguf',
+      ])
+      return await fs.existsSync(mmprojPath)
+    } catch (e) {
+      logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
+      return false
+    }
+  }
+
   async getDevices(): Promise<DeviceList[]> {
     const cfg = this.config
     const [version, backend] = cfg.version_backend.split('/')

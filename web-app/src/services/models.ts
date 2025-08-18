@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
@@ -341,12 +342,126 @@ export const startModel = async (
 /**
  * Check if model support tool use capability
  * Returned by backend engine
- * @param modelId 
- * @returns 
+ * @param modelId
+ * @returns
  */
 export const isToolSupported = async (modelId: string): Promise<boolean> => {
   const engine = getEngine()
   if (!engine) return false
 
   return engine.isToolSupported(modelId)
+}
+
+/**
+ * Checks if mmproj.gguf file exists for a given model ID in the llamacpp provider.
+ * Also checks if the model has offload_mmproj setting.
+ * If mmproj.gguf exists, adds offload_mmproj setting with value true.
+ * @param modelId - The model ID to check for mmproj.gguf
+ * @param updateProvider - Function to update the provider state
+ * @param getProviderByName - Function to get provider by name
+ * @returns Promise<{exists: boolean, settingsUpdated: boolean}> - exists: true if mmproj.gguf exists, settingsUpdated: true if settings were modified
+ */
+export const checkMmprojExists = async (
+  modelId: string,
+  updateProvider?: (providerName: string, data: Partial<ModelProvider>) => void,
+  getProviderByName?: (providerName: string) => ModelProvider | undefined
+): Promise<{ exists: boolean; settingsUpdated: boolean }> => {
+  let settingsUpdated = false
+
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      checkMmprojExists?: (id: string) => Promise<boolean>
+    }
+    if (engine && typeof engine.checkMmprojExists === 'function') {
+      const exists = await engine.checkMmprojExists(modelId)
+
+      // If we have the store functions, use them; otherwise fall back to localStorage
+      if (updateProvider && getProviderByName) {
+        const provider = getProviderByName('llamacpp')
+        if (provider) {
+          const model = provider.models.find((m) => m.id === modelId)
+
+          if (model?.settings) {
+            const hasOffloadMmproj = 'offload_mmproj' in model.settings
+
+            // If mmproj exists, add offload_mmproj setting (only if it doesn't exist)
+            if (exists && !hasOffloadMmproj) {
+              // Create updated models array with the new setting
+              const updatedModels = provider.models.map((m) => {
+                if (m.id === modelId) {
+                  return {
+                    ...m,
+                    settings: {
+                      ...m.settings,
+                      offload_mmproj: {
+                        key: 'offload_mmproj',
+                        title: 'Offload MMProj',
+                        description:
+                          'Offload multimodal projection layers to GPU',
+                        controller_type: 'checkbox',
+                        controller_props: {
+                          value: true,
+                        },
+                      },
+                    },
+                  }
+                }
+                return m
+              })
+
+              // Update the provider with the new models array
+              updateProvider('llamacpp', { models: updatedModels })
+              settingsUpdated = true
+            }
+          }
+        }
+      } else {
+        // Fall back to localStorage approach for backwards compatibility
+        try {
+          const modelProviderData = JSON.parse(
+            localStorage.getItem('model-provider') || '{}'
+          )
+          const llamacppProvider = modelProviderData.state?.providers?.find(
+            (p: any) => p.provider === 'llamacpp'
+          )
+          const model = llamacppProvider?.models?.find(
+            (m: any) => m.id === modelId
+          )
+
+          if (model?.settings) {
+            // If mmproj exists, add offload_mmproj setting (only if it doesn't exist)
+            if (exists) {
+              if (!model.settings.offload_mmproj) {
+                model.settings.offload_mmproj = {
+                  key: 'offload_mmproj',
+                  title: 'Offload MMProj',
+                  description: 'Offload multimodal projection layers to GPU',
+                  controller_type: 'checkbox',
+                  controller_props: {
+                    value: true,
+                  },
+                }
+                // Save updated settings back to localStorage
+                localStorage.setItem(
+                  'model-provider',
+                  JSON.stringify(modelProviderData)
+                )
+                settingsUpdated = true
+              }
+            }
+          }
+        } catch (localStorageError) {
+          console.error(
+            `Error checking localStorage for model ${modelId}:`,
+            localStorageError
+          )
+        }
+      }
+
+      return { exists, settingsUpdated }
+    }
+  } catch (error) {
+    console.error(`Error checking mmproj for model ${modelId}:`, error)
+  }
+  return { exists: false, settingsUpdated }
 }
