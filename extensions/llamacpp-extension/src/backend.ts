@@ -264,7 +264,6 @@ async function _getSupportedFeatures() {
     // Vulkan support check - only discrete GPUs with 6GB+ VRAM
     if (
       gpuInfo.vulkan_info?.api_version &&
-      gpuInfo.vulkan_info?.device_type === 'DISCRETE_GPU' &&
       gpuInfo.total_memory >= 6 * 1024
     ) {
       // 6GB (total_memory is in MB)
