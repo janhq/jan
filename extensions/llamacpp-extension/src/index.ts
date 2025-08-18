@@ -1389,7 +1389,7 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      signal: abortController?.signal,
+      signal: AbortSignal.any([AbortSignal.timeout(120000), abortController?.signal]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
