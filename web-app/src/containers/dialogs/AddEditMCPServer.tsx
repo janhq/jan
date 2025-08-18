@@ -142,7 +142,7 @@ export default function AddEditMCPServer({
       setTimeout(initialData.timeout ? initialData.timeout.toString() : '')
       setArgs(initialData.args?.length > 0 ? initialData.args : [''])
       setTransportType(initialData?.type || 'stdio')
-      
+
       // Initialize JSON content for toggle mode
       try {
         const jsonData = { [editingKey]: initialData }
@@ -633,7 +633,12 @@ export default function AddEditMCPServer({
           <Button variant="link" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
-          <Button onClick={handleSave}>{t('mcp-servers:save')}</Button>
+          <Button
+            onClick={handleSave}
+            disabled={!isToggled && serverName.trim() === ''}
+          >
+            {t('mcp-servers:save')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
