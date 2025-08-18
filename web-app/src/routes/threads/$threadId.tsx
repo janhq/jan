@@ -23,6 +23,7 @@ import { ContentType, ThreadMessage } from '@janhq/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useChat } from '@/hooks/useChat'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { useTools } from '@/hooks/useTools'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -43,6 +44,7 @@ function ThreadDetail() {
   const { appMainViewBgColor, chatWidth } = useAppearance()
   const { sendMessage } = useChat()
   const isSmallScreen = useSmallScreen()
+  useTools()
 
   const { messages } = useMessages(
     useShallow((state) => ({

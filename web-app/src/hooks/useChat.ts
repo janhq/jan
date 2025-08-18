@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -19,10 +19,7 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
-import { getTools } from '@/services/mcp'
-import { MCPTool } from '@/types/completion'
-import { listen } from '@tauri-apps/api/event'
-import { SystemEvent } from '@/types/events'
+
 import { stopModel, startModel, stopAllModels } from '@/services/models'
 
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -40,7 +37,6 @@ export const useChat = () => {
     tools,
     updateTokenSpeed,
     resetTokenSpeed,
-    updateTools,
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
@@ -76,22 +72,6 @@ export const useChat = () => {
 
   const selectedAssistant =
     assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
-
-  useEffect(() => {
-    function setTools() {
-      getTools().then((data: MCPTool[]) => {
-        updateTools(data)
-      })
-    }
-    setTools()
-
-    let unsubscribe = () => {}
-    listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
-      // Unsubscribe from the event when the component unmounts
-      unsubscribe = unsub
-    })
-    return unsubscribe
-  }, [updateTools])
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()

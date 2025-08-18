@@ -1,15 +1,17 @@
-use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
-use rmcp::{service::RunningService, RoleClient};
+use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::{Map, Value};
-use std::{collections::HashMap, sync::Arc};
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::{sync::Mutex, time::timeout};
+use tokio::time::timeout;
 
 use super::{
     constants::{DEFAULT_MCP_CONFIG, MCP_TOOL_CALL_TIMEOUT},
     helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
 };
 use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
+use crate::core::{
+    mcp::models::ToolWithServer,
+    state::{RunningServiceEnum, SharedMcpServers},
+};
 use std::fs;
 
 #[tauri::command]
@@ -19,8 +21,7 @@ pub async fn activate_mcp_server<R: Runtime>(
     name: String,
     config: Value,
 ) -> Result<(), String> {
-    let servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
-        state.mcp_servers.clone();
+    let servers: SharedMcpServers = state.mcp_servers.clone();
 
     // Use the modified start_mcp_server_with_restart that returns first attempt result
     start_mcp_server_with_restart(app, servers, name, config, Some(3)).await
@@ -63,7 +64,16 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
     // Release the lock before calling cancel
     drop(servers_map);
 
-    service.cancel().await.map_err(|e| e.to_string())?;
+    match service {
+        RunningServiceEnum::NoInit(service) => {
+            log::info!("Stopping server {name}...");
+            service.cancel().await.map_err(|e| e.to_string())?;
+        }
+        RunningServiceEnum::WithInit(service) => {
+            log::info!("Stopping server {name} with initialization...");
+            service.cancel().await.map_err(|e| e.to_string())?;
+        }
+    }
     log::info!("Server {name} stopped successfully and marked as deactivated.");
     Ok(())
 }
@@ -116,7 +126,7 @@ pub async fn get_connected_servers(
     Ok(servers_map.keys().cloned().collect())
 }
 
-/// Retrieves all available tools from all MCP servers
+/// Retrieves all available tools from all MCP servers with server information
 ///
 /// # Arguments
 /// * `state` - Application state containing MCP server connections
@@ -128,14 +138,15 @@ pub async fn get_connected_servers(
 /// 1. Locks the MCP servers mutex to access server connections
 /// 2. Iterates through all connected servers
 /// 3. Gets the list of tools from each server
-/// 4. Combines all tools into a single vector
-/// 5. Returns the combined list of all available tools
+/// 4. Associates each tool with its parent server name
+/// 5. Combines all tools into a single vector
+/// 6. Returns the combined list of all available tools with server information
 #[tauri::command]
-pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
+pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>, String> {
     let servers = state.mcp_servers.lock().await;
-    let mut all_tools: Vec<Tool> = Vec::new();
+    let mut all_tools: Vec<ToolWithServer> = Vec::new();
 
-    for (_, service) in servers.iter() {
+    for (server_name, service) in servers.iter() {
         // List tools with timeout
         let tools_future = service.list_all_tools();
         let tools = match timeout(MCP_TOOL_CALL_TIMEOUT, tools_future).await {
@@ -150,7 +161,12 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> 
         };
 
         for tool in tools {
-            all_tools.push(tool);
+            all_tools.push(ToolWithServer {
+                name: tool.name.to_string(),
+                description: tool.description.as_ref().map(|d| d.to_string()),
+                input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                server: server_name.clone(),
+            });
         }
     }
 
