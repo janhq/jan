@@ -51,6 +51,7 @@ import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
+import { ModelFilters, ModelFilterOptions } from '@/components/filters/ModelFilters'
 
 type SearchParams = {
   repo: string
@@ -104,7 +105,10 @@ function HubContent() {
     {}
   )
   const [isSearching, setIsSearching] = useState(false)
-  const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
+  const [filterOptions, setFilterOptions] = useState<ModelFilterOptions>({
+    showOnlyDownloaded: false,
+    toolCallingOnly: false,
+  })
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
@@ -159,18 +163,19 @@ function HubContent() {
       filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
-    if (showOnlyDownloaded) {
-      filtered = filtered
-        ?.map((model) => ({
-          ...model,
-          quants: model.quants.filter((variant) =>
-            useModelProvider
-              .getState()
-              .getProviderByName('llamacpp')
-              ?.models.some((m: { id: string }) => m.id === variant.model_id)
-          ),
-        }))
-        .filter((model) => model.quants.length > 0)
+    if (filterOptions.showOnlyDownloaded) {
+      filtered = filtered?.filter((model) =>
+        model.quants.some((variant) =>
+          useModelProvider
+            .getState()
+            .getProviderByName('llamacpp')
+            ?.models.some((m: { id: string }) => m.id === variant.model_id)
+        )
+      )
+    }
+    // Apply tool calling filter
+    if (filterOptions.toolCallingOnly) {
+      filtered = filtered?.filter((model) => model.tools === true)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -180,7 +185,8 @@ function HubContent() {
   }, [
     sortedModels,
     debouncedSearchValue,
-    showOnlyDownloaded,
+    filterOptions.showOnlyDownloaded,
+    filterOptions.toolCallingOnly,
     huggingFaceRepo,
     searchOptions,
   ])
@@ -242,7 +248,7 @@ function HubContent() {
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
 
-    if (!showOnlyDownloaded) {
+    if (!filterOptions.showOnlyDownloaded) {
       fetchHuggingFaceModel(e.target.value)
     }
   }
@@ -324,9 +330,9 @@ function HubContent() {
 
   // Check if we're on the last step
   const renderFilter = () => {
-    return (
-      <>
-        {searchValue.length === 0 && (
+    if (searchValue.length === 0)
+      return (
+        <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger>
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
@@ -351,26 +357,20 @@ function HubContent() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={showOnlyDownloaded}
-            onCheckedChange={(checked) => {
-              setShowOnlyDownloaded(checked)
-              if (checked) {
+          <ModelFilters
+            filters={filterOptions}
+            onFiltersChange={(newFilters) => {
+              setFilterOptions(newFilters)
+              if (newFilters.showOnlyDownloaded) {
                 setHuggingFaceRepo(null)
-              } else {
+              } else if (!newFilters.showOnlyDownloaded && filterOptions.showOnlyDownloaded) {
                 // Re-trigger HuggingFace search when switching back to "All models"
                 fetchHuggingFaceModel(searchValue)
               }
             }}
           />
-          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-            {t('hub:downloaded')}
-          </span>
         </div>
-      </>
-    )
+      )
   }
 
   return (

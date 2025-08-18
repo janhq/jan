@@ -15,6 +15,10 @@
   "tools": "Werkzeuge",
   "searchPlaceholder": "Suche nach Modellen auf Hugging Face...",
   "editTheme": "Bearbeite Erscheinungsbild",
+  "filters": "Filter",
+  "filterBy": "Filtern nach",
+  "toolCalling": "Tool-Aufrufe",
+  "clearFilters": "Alle Filter löschen",
   "joyride": {
     "recommendedModelTitle": "Empfohlenes Modell",
     "recommendedModelContent": "Durchsuche und lade leistungsstarke KI-Modelle verschiedener Anbieter an einem Ort herunter. Wir empfehlen mit Jan-Nano zu beginnen, einem Modell, das für Funktionsaufrufe, Werkzeug-Integration und Forschungsfunktionen optimiert ist. Es eignet sich ideal für die Entwicklung interaktiver KI-Agenten.",

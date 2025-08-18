@@ -14,6 +14,10 @@
   "downloadModel": "Pobierz model",
   "tools": "Narzędzia",
   "searchPlaceholder": "Szukaj modeli na Hugging Face…",
+  "filters": "Filtry",
+  "filterBy": "Filtruj po:",
+  "toolCalling": "Obsługujący Narzędzia",
+  "clearFilters": "Wyczyść wszystkie filtry",
   "joyride": {
     "recommendedModelTitle": "Polecany Model",
     "recommendedModelContent": "Przeglądaj i pobieraj silne modele SI od różnych dostawców, wszystko w jednym miejscu. Warto zacząć od Jan-Nano - modelu zoptymalizowanego do wywoływania funkcji, integracji z narzędziami i możliwości badawczych. Jest on idealny do budowania interaktywnych agentów SI.",
