@@ -373,14 +373,14 @@ export default function AddEditMCPServer({
                   value={jsonContent}
                   language="json"
                   placeholder={`{
-                    "serverName": {
-                      "command": "command",
-                      "args": ["arg1", "arg2"],
-                      "env": {
-                        "KEY": "value"
-                      }
-                    }
-                  }`}
+  "serverName": {
+    "command": "command",
+    "args": ["arg1", "arg2"],
+    "env": {
+      "KEY": "value"
+    }
+  }
+}`}
                   onChange={(e) => {
                     setJsonContent(e.target.value)
                     setError(null)
@@ -633,8 +633,8 @@ export default function AddEditMCPServer({
           <Button variant="link" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
-          <Button 
-            onClick={handleSave} 
+          <Button
+            onClick={handleSave}
             disabled={!isToggled && serverName.trim() === ''}
           >
             {t('mcp-servers:save')}
