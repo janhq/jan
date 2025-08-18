@@ -12,6 +12,7 @@ pub struct McpServerConfig {
     pub args: Vec<Value>,
     pub envs: serde_json::Map<String, Value>,
     pub timeout: Option<Duration>,
+    pub headers: serde_json::Map<String, Value>,
 }
 
 /// Tool with server information

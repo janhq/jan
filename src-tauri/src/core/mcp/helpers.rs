@@ -20,7 +20,9 @@ use super::constants::{
     MCP_BACKOFF_MULTIPLIER, MCP_BASE_RESTART_DELAY_MS, MCP_MAX_RESTART_DELAY_MS,
 };
 use crate::core::{
-    app::commands::get_jan_data_folder_path, mcp::models::McpServerConfig, state::{AppState, RunningServiceEnum, SharedMcpServers}
+    app::commands::get_jan_data_folder_path,
+    mcp::models::McpServerConfig,
+    state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
 use jan_utils::can_override_npx;
 
@@ -491,7 +493,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .default_headers({
                     // Map envs to request headers
                     let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.envs.iter() {
+                    for (key, value) in config_params.headers.iter() {
                         if let Some(v_str) = value.as_str() {
                             // Try to map env keys to HTTP header names (case-insensitive)
                             // Most HTTP headers are Title-Case, so we try to convert
@@ -550,13 +552,14 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 return Err(format!("Failed to connect to server: {}", e));
             }
         }
-    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some() {
+    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
+    {
         let transport = SseClientTransport::start_with_client(
             reqwest::Client::builder()
                 .default_headers({
                     // Map envs to request headers
                     let mut headers = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.envs.iter() {
+                    for (key, value) in config_params.headers.iter() {
                         if let Some(v_str) = value.as_str() {
                             // Try to map env keys to HTTP header names (case-insensitive)
                             // Most HTTP headers are Title-Case, so we try to convert
@@ -662,9 +665,13 @@ async fn schedule_mcp_start_task<R: Runtime>(
         cmd.kill_on_drop(true);
         log::trace!("Command: {cmd:#?}");
 
-        config_params.args.iter().filter_map(Value::as_str).for_each(|arg| {
-            cmd.arg(arg);
-        });
+        config_params
+            .args
+            .iter()
+            .filter_map(Value::as_str)
+            .for_each(|arg| {
+                cmd.arg(arg);
+            });
         config_params.envs.iter().for_each(|(k, v)| {
             if let Some(v_str) = v.as_str() {
                 cmd.env(k, v_str);
@@ -726,7 +733,15 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let args = obj.get("args")?.as_array()?.clone();
     let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
     let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
-    let timeout = obj.get("timeout").and_then(|t| t.as_u64()).map(Duration::from_secs);
+    let timeout = obj
+        .get("timeout")
+        .and_then(|t| t.as_u64())
+        .map(Duration::from_secs);
+    let headers = obj
+        .get("headers")
+        .unwrap_or(&Value::Object(serde_json::Map::new()))
+        .as_object()?
+        .clone();
     let envs = obj
         .get("env")
         .unwrap_or(&Value::Object(serde_json::Map::new()))
@@ -739,6 +754,7 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
         command,
         args,
         envs,
+        headers
     })
 }
 
