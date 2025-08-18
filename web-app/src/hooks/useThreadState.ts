@@ -8,28 +8,12 @@ import { useAppState } from './useAppState'
  */
 
 /**
- * Get streaming content for a specific thread
- * @param threadId The thread ID to get streaming content for
- * @returns ThreadMessage or null if not streaming
- */
-export const useStreamingContent = (threadId: string) =>
-  useAppState((state) => state.streamingContentByThread[threadId])
-
-/**
  * Get error state for a specific thread
  * @param threadId The thread ID to get error for
  * @returns Error string/object or undefined if no error
  */
 export const useThreadError = (threadId: string) =>
   useAppState((state) => state.errorsByThread[threadId])
-
-/**
- * Get token speed for a specific thread
- * @param threadId The thread ID to get token speed for
- * @returns TokenSpeed or undefined if not available
- */
-export const useTokenSpeed = (threadId: string) =>
-  useAppState((state) => state.tokenSpeedByThread[threadId])
 
 // Stable empty array to prevent infinite loops
 const EMPTY_QUEUE: string[] = []
@@ -50,36 +34,7 @@ export const useQueuedMessages = (threadId: string) =>
 export const useThreadQueueLength = (threadId: string) =>
   useAppState((state) => state.queuedMessagesByThread[threadId]?.length || 0)
 
-/**
- * Check if a specific thread is currently active (has streaming content)
- * @param threadId The thread ID to check
- * @returns boolean indicating if thread is streaming
- */
-export const useIsThreadActive = (threadId: string) =>
-  useAppState((state) => Boolean(state.streamingContentByThread[threadId]))
 
-/**
- * Get complete thread state for a specific thread
- * @param threadId The thread ID to get state for
- * @returns Object with all thread-specific state
- */
-export const useThreadState = (threadId: string) => {
-  const streamingContent = useStreamingContent(threadId)
-  const tokenSpeed = useTokenSpeed(threadId)
-  const queuedMessages = useQueuedMessages(threadId)
-  const queueLength = useThreadQueueLength(threadId)
-  const error = useThreadError(threadId)
-  const isActive = useIsThreadActive(threadId)
-
-  return {
-    streamingContent,
-    tokenSpeed,
-    queuedMessages,
-    queueLength,
-    error,
-    isActive,
-  }
-}
 /**
  * Get list of all threads with active state
  * @returns Array of thread IDs that have active streaming, queued messages, or errors
