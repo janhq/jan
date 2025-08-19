@@ -1176,6 +1176,7 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     const args: string[] = []
+    const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
@@ -1202,7 +1203,7 @@ export default class llamacpp_extension extends AIEngine {
     // disable llama-server webui
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
-    args.push('--api-key', api_key)
+    envs["LLAMA_API_KEY"] = api_key
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1287,14 +1288,12 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>(
-        'plugin:llamacpp|load_llama_model',
-        {
-          backendPath,
-          libraryPath,
-          args,
-        }
-      )
+      const sInfo = await invoke<SessionInfo>('plugin:llamacpp|load_llama_model', {
+        backendPath,
+        libraryPath,
+        args,
+        envs,
+      })
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)

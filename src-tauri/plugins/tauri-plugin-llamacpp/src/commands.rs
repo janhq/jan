@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use std::collections::HashMap;
 use std::process::Stdio;
 use std::time::Duration;
 use tauri::{Manager, Runtime, State};
@@ -42,6 +43,7 @@ pub async fn load_llama_model<R: Runtime>(
     backend_path: &str,
     library_path: Option<&str>,
     mut args: Vec<String>,
+    envs: HashMap<String, String>,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -54,12 +56,21 @@ pub async fn load_llama_model<R: Runtime>(
     let port = parse_port_from_args(&args);
     let model_path_pb = validate_model_path(&mut args)?;
 
-    let api_key = extract_arg_value(&args, "--api-key");
+    let api_key: String;
+
+    if let Some(api_value) = envs.get("LLAMA_API_KEY") {
+        api_key = api_value.to_string();
+    } else {
+        log::warn!("API key not provided");
+        api_key = "".to_string();
+    }
+
     let model_id = extract_arg_value(&args, "-a");
 
     // Configure the command to run the server
     let mut command = Command::new(backend_path);
     command.args(args);
+    command.envs(envs);
 
     setup_library_path(library_path, &mut command);
     command.stdout(Stdio::piped());
