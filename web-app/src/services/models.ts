@@ -29,6 +29,7 @@ export interface CatalogModel {
   mmproj_models?: MMProjModel[]
   created_at?: string
   readme?: string
+  tools?: boolean
 }
 
 export type ModelCatalog = CatalogModel[]

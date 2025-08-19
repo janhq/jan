@@ -17,7 +17,12 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
-import { IconDownload, IconFileCode, IconSearch } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconFileCode,
+  IconSearch,
+  IconTool,
+} from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
@@ -133,7 +138,10 @@ function Hub() {
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
       // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(/^https?:\/\/[^/]+\//, '')
+      const cleanedSearchValue = debouncedSearchValue.replace(
+        /^https?:\/\/[^/]+\//,
+        ''
+      )
       filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
@@ -647,6 +655,15 @@ function Hub() {
                                     ?.length || 0}
                                 </span>
                               </div>
+                              {filteredModels[virtualItem.index].tools && (
+                                <div className="flex items-center gap-1">
+                                  <IconTool
+                                    size={17}
+                                    className="text-main-view-fg/50"
+                                    title={t('hub:tools')}
+                                  />
+                                </div>
+                              )}
                               {filteredModels[virtualItem.index].quants.length >
                                 1 && (
                                 <div className="flex items-center gap-2 hub-show-variants-step">
