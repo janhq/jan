@@ -309,7 +309,7 @@ export const useChat = () => {
               let pendingDeltaCount = 0
               const reasoningProcessor = new ReasoningProcessor()
               const scheduleFlush = () => {
-                if (rafScheduled) return
+                if (rafScheduled || abortController.signal.aborted) return
                 rafScheduled = true
                 const doSchedule = (cb: () => void) => {
                   if (typeof requestAnimationFrame !== 'undefined') {
@@ -321,6 +321,12 @@ export const useChat = () => {
                   }
                 }
                 doSchedule(() => {
+                  // Check abort status before executing the scheduled callback
+                  if (abortController.signal.aborted) {
+                    rafScheduled = false
+                    return
+                  }
+
                   const currentContent = newAssistantThreadContent(
                     activeThread.id,
                     accumulatedText,
@@ -367,41 +373,63 @@ export const useChat = () => {
                 pendingDeltaCount = 0
                 rafScheduled = false
               }
-              for await (const part of completion) {
-                // Error message
-                if (!part.choices) {
-                  throw new Error(
-                    'message' in part
-                      ? (part.message as string)
-                      : (JSON.stringify(part) ?? '')
-                  )
+              try {
+                for await (const part of completion) {
+                  // Check if aborted before processing each part
+                  if (abortController.signal.aborted) {
+                    break
+                  }
+
+                  // Error message
+                  if (!part.choices) {
+                    throw new Error(
+                      'message' in part
+                        ? (part.message as string)
+                        : (JSON.stringify(part) ?? '')
+                    )
+                  }
+
+                  if (part.choices[0]?.delta?.tool_calls) {
+                    extractToolCall(part, currentCall, toolCalls)
+                    // Schedule a flush to reflect tool update
+                    scheduleFlush()
+                  }
+                  const deltaReasoning =
+                    reasoningProcessor.processReasoningChunk(part)
+                  if (deltaReasoning) {
+                    accumulatedText += deltaReasoning
+                    pendingDeltaCount += 1
+                    // Schedule flush for reasoning updates
+                    scheduleFlush()
+                  }
+                  const deltaContent = part.choices[0]?.delta?.content || ''
+                  if (deltaContent) {
+                    accumulatedText += deltaContent
+                    pendingDeltaCount += 1
+                    // Batch UI update on next animation frame
+                    scheduleFlush()
+                  }
+                }
+              } finally {
+                // Always clean up scheduled RAF when stream ends (either normally or via abort)
+                if (rafHandle !== undefined) {
+                  if (typeof cancelAnimationFrame !== 'undefined') {
+                    cancelAnimationFrame(rafHandle)
+                  } else {
+                    clearTimeout(rafHandle)
+                  }
+                  rafHandle = undefined
+                  rafScheduled = false
                 }
 
-                if (part.choices[0]?.delta?.tool_calls) {
-                  extractToolCall(part, currentCall, toolCalls)
-                  // Schedule a flush to reflect tool update
-                  scheduleFlush()
-                }
-                const deltaReasoning =
-                  reasoningProcessor.processReasoningChunk(part)
-                if (deltaReasoning) {
-                  accumulatedText += deltaReasoning
-                  pendingDeltaCount += 1
-                  // Schedule flush for reasoning updates
-                  scheduleFlush()
-                }
-                const deltaContent = part.choices[0]?.delta?.content || ''
-                if (deltaContent) {
-                  accumulatedText += deltaContent
-                  pendingDeltaCount += 1
-                  // Batch UI update on next animation frame
-                  scheduleFlush()
+                // Only finalize and flush if not aborted
+                if (!abortController.signal.aborted) {
+                  // Finalize reasoning (close any open think tags)
+                  accumulatedText += reasoningProcessor.finalize()
+                  // Ensure any pending buffered content is rendered at the end
+                  flushIfPending()
                 }
               }
-              // Finalize reasoning (close any open think tags)
-              accumulatedText += reasoningProcessor.finalize()
-              // Ensure any pending buffered content is rendered at the end
-              flushIfPending()
             }
           } catch (error) {
             const errorMessage =
