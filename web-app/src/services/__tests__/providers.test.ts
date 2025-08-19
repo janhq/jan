@@ -5,7 +5,7 @@ import {
   updateSettings,
 } from '../providers'
 import { models as providerModels } from 'token.js'
-import { predefinedProviders } from '@/mock/data'
+import { predefinedProviders } from '@/consts/providers'
 import { EngineManager } from '@janhq/core'
 import { fetchModels } from '../models'
 import { ExtensionManager } from '@/lib/extension'
@@ -21,7 +21,7 @@ vi.mock('token.js', () => ({
   },
 }))
 
-vi.mock('@/mock/data', () => ({
+vi.mock('@/consts/providers', () => ({
   predefinedProviders: [
     {
       active: true,
@@ -69,6 +69,7 @@ vi.mock('../models', () => ({
       { id: 'llama-2-7b', name: 'Llama 2 7B', description: 'Llama model' },
     ])
   ),
+  isToolSupported: vi.fn(() => Promise.resolve(false)),
 }))
 
 vi.mock('@/lib/extension', () => ({
@@ -116,7 +117,7 @@ describe('providers service', () => {
     it('should return builtin and runtime providers', async () => {
       const providers = await getProviders()
 
-      expect(providers).toHaveLength(9) // 8 runtime + 1 builtin
+      expect(providers).toHaveLength(2) // 1 runtime + 1 builtin (mocked)
       expect(providers.some((p) => p.provider === 'llamacpp')).toBe(true)
       expect(providers.some((p) => p.provider === 'openai')).toBe(true)
     })
@@ -156,7 +157,7 @@ describe('providers service', () => {
         provider: 'openai',
         base_url: 'https://api.openai.com/v1',
         api_key: 'test-key',
-      } as ModelProvider
+      }
 
       const models = await fetchModelsFromProvider(provider)
 
@@ -185,7 +186,7 @@ describe('providers service', () => {
         provider: 'custom',
         base_url: 'https://api.custom.com',
         api_key: '',
-      } as ModelProvider
+      }
 
       const models = await fetchModelsFromProvider(provider)
 
@@ -204,7 +205,7 @@ describe('providers service', () => {
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
-      } as ModelProvider
+      }
 
       const models = await fetchModelsFromProvider(provider)
 
@@ -214,7 +215,7 @@ describe('providers service', () => {
     it('should throw error when provider has no base_url', async () => {
       const provider = {
         provider: 'custom',
-      } as ModelProvider
+      }
 
       await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
         'Provider must have base_url configured'
@@ -232,10 +233,10 @@ describe('providers service', () => {
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
-      } as ModelProvider
+      }
 
       await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
-        'Cannot connect to custom at https://api.custom.com'
+        'Cannot connect to custom at https://api.custom.com. Please check that the service is running and accessible.'
       )
     })
 
@@ -245,10 +246,10 @@ describe('providers service', () => {
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
-      } as ModelProvider
+      }
 
       await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
-        'Cannot connect to custom at https://api.custom.com'
+        'Cannot connect to custom at https://api.custom.com. Please check that the service is running and accessible.'
       )
     })
 
@@ -264,7 +265,7 @@ describe('providers service', () => {
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
-      } as ModelProvider
+      }
 
       const models = await fetchModelsFromProvider(provider)
 
@@ -298,7 +299,7 @@ describe('providers service', () => {
           controller_type: 'input',
           controller_props: { value: 'test-key' },
         },
-      ] as ProviderSetting[]
+      ]
 
       await updateSettings('openai', settings)
 
@@ -324,7 +325,7 @@ describe('providers service', () => {
         mockExtensionManager
       )
 
-      const settings = [] as ProviderSetting[]
+      const settings = []
 
       const result = await updateSettings('nonexistent', settings)
 
@@ -350,7 +351,7 @@ describe('providers service', () => {
           controller_type: 'input',
           controller_props: { value: undefined },
         },
-      ] as ProviderSetting[]
+      ]
 
       await updateSettings('openai', settings)
 

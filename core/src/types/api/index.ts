@@ -58,6 +58,7 @@ export enum AppEvent {
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
+  onModelImported = 'onModelImported',
 
   onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
   onSelectedText = 'onSelectedText',

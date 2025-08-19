@@ -6,10 +6,8 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { abortDownload } from '@/services/models'
-import { getProviders } from '@/services/providers'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,7 +16,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function DownloadManagement() {
   const { t } = useTranslation()
-  const { setProviders } = useModelProvider()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const {
@@ -185,7 +182,6 @@ export function DownloadManagement() {
       console.debug('onFileDownloadSuccess', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
-      getProviders().then(setProviders)
       toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
         description: t('common:toast.downloadComplete.description', {
@@ -193,7 +189,7 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, setProviders, t]
+    [removeDownload, removeLocalDownloadingModel, t]
   )
 
   useEffect(() => {
