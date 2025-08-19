@@ -79,6 +79,7 @@ function ProviderDetail() {
   const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
+  const [importingModel, setImportingModel] = useState(false)
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -482,7 +483,9 @@ function ProviderDetail() {
                             variant="link"
                             size="sm"
                             className="hover:no-underline"
+                            disabled={importingModel}
                             onClick={async () => {
+                              setImportingModel(true)
                               const selectedFile = await open({
                                 multiple: false,
                                 directory: false,
@@ -496,10 +499,26 @@ function ProviderDetail() {
                               // If the dialog returns a file path, extract just the file name
                               const fileName =
                                 typeof selectedFile === 'string'
-                                  ? selectedFile.split(/[\\/]/).pop()
+                                  ? selectedFile
+                                      .split(/[\\/]/)
+                                      .pop()
+                                      ?.replace(/\s/g, '-')
                                   : undefined
 
                               if (selectedFile && fileName) {
+                                // Check if model already exists
+                                const modelExists = provider.models.some(
+                                  (model) => model.name === fileName
+                                )
+                                
+                                if (modelExists) {
+                                  toast.error('Model already exists', {
+                                    description: `${fileName} already imported`,
+                                  })
+                                  setImportingModel(false)
+                                  return
+                                }
+
                                 try {
                                   await pullModel(fileName, selectedFile)
                                 } catch (error) {
@@ -509,25 +528,35 @@ function ProviderDetail() {
                                   )
                                 } finally {
                                   // Refresh the provider to update the models list
-                                  getProviders().then(setProviders)
+                                  await getProviders().then(setProviders)
                                   toast.success(t('providers:import'), {
                                     id: `import-model-${provider.provider}`,
                                     description: t(
                                       'providers:importModelSuccess',
-                                      { provider: provider.provider }
+                                      { provider: fileName }
                                     ),
                                   })
+                                  setImportingModel(false)
                                 }
+                              } else {
+                                setImportingModel(false)
                               }
                             }}
                           >
                             <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
-                              <IconFolderPlus
-                                size={18}
-                                className="text-main-view-fg/50"
-                              />
+                              {importingModel ? (
+                                <IconLoader
+                                  size={18}
+                                  className="text-main-view-fg/50 animate-spin"
+                                />
+                              ) : (
+                                <IconFolderPlus
+                                  size={18}
+                                  className="text-main-view-fg/50"
+                                />
+                              )}
                               <span className="text-main-view-fg/70">
-                                {t('providers:import')}
+                                {importingModel ? 'Importing...' : t('providers:import')}
                               </span>
                             </div>
                           </Button>
