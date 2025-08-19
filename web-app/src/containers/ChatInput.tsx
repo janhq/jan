@@ -472,7 +472,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               rows={1}
               maxRows={10}
               value={prompt}
-              data-test-id={'chat-input'}
+              data-testid={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows

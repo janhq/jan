@@ -75,6 +75,10 @@ vi.mock('@/services/models', () => ({
   stopAllModels: vi.fn(),
 }))
 
+vi.mock('../MovingBorder', () => ({
+  MovingBorder: ({ children }: { children: React.ReactNode }) => <div data-testid="moving-border">{children}</div>,
+}))
+
 describe('ChatInput', () => {
   const mockSendMessage = vi.fn()
   const mockSetPrompt = vi.fn()
@@ -361,7 +365,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
     
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     expect(textarea).toBeDisabled()
   })
 
