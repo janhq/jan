@@ -93,7 +93,7 @@ description = "Read system hardware information"
 
 ```bash
 # Test plugin in isolation
-cd tauri-plugin-myname
+cd tauri-plugin-my-plugin
 cargo test
 
 # Test with main app
