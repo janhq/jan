@@ -12,7 +12,7 @@ export function extractReasoningFromMessage(
   if (!message) return null
 
   const extendedMessage = message as chatCompletionRequestMessage
-  return extendedMessage.reasoning || null
+  return extendedMessage.reasoning_content || extendedMessage.reasoning || null
 }
 
 // Extract reasoning from a chunk (for streaming responses)
@@ -22,7 +22,7 @@ function extractReasoningFromChunk(
   if (!chunk.choices?.[0]?.delta) return null
 
   const delta = chunk.choices[0].delta as chatCompletionRequestMessage
-  const reasoning = delta.reasoning
+  const reasoning = delta.reasoning_content || delta.reasoning
 
   // Return null for falsy values, non-strings, or whitespace-only strings
   if (!reasoning || typeof reasoning !== 'string' || !reasoning.trim())
