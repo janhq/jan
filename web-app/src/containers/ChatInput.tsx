@@ -488,20 +488,22 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* File attachment - always available */}
-                <div
-                  className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                  onClick={handleAttachmentClick}
-                >
-                  <IconPaperclip size={18} className="text-main-view-fg/50" />
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    multiple
-                    onChange={handleFileChange}
-                  />
-                </div>
+                {/* File attachment - show only for models with mmproj */}
+                {selectedModel?.settings?.offload_mmproj && (
+                  <div
+                    className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                    onClick={handleAttachmentClick}
+                  >
+                    <IconPaperclip size={18} className="text-main-view-fg/50" />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      multiple
+                      onChange={handleFileChange}
+                    />
+                  </div>
+                )}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
