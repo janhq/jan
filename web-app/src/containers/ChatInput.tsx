@@ -34,6 +34,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
+import { checkMmprojExists } from '@/services/models'
 
 type ChatInputProps = {
   className?: string
@@ -71,6 +72,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   >([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [hasMmproj, setHasMmproj] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -91,6 +93,25 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
     return () => clearInterval(intervalId)
   }, [])
+
+  // Check for mmproj existence when model changes
+  useEffect(() => {
+    const checkMmprojSupport = async () => {
+      if (selectedModel?.id) {
+        try {
+          const exists = await checkMmprojExists(selectedModel.id)
+          setHasMmproj(exists)
+        } catch (error) {
+          console.error('Error checking mmproj:', error)
+          setHasMmproj(false)
+        }
+      } else {
+        setHasMmproj(false)
+      }
+    }
+
+    checkMmprojSupport()
+  }, [selectedModel?.id])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
@@ -283,7 +304,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragOver(true)
+    // Only allow drag if model supports mmproj
+    if (hasMmproj) {
+      setIsDragOver(true)
+    }
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
@@ -301,13 +325,20 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     e.preventDefault()
     e.stopPropagation()
     // Ensure drag state is maintained during drag over
-    setIsDragOver(true)
+    if (hasMmproj) {
+      setIsDragOver(true)
+    }
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragOver(false)
+
+    // Only allow drop if model supports mmproj
+    if (!hasMmproj) {
+      return
+    }
 
     // Check if dataTransfer exists (it might not in some Tauri scenarios)
     if (!e.dataTransfer) {
@@ -331,6 +362,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const handlePaste = (e: React.ClipboardEvent) => {
     const clipboardItems = e.clipboardData?.items
     if (!clipboardItems) return
+
+    // Only allow paste if model supports mmproj
+    if (!hasMmproj) {
+      return
+    }
 
     const imageItems = Array.from(clipboardItems).filter((item) =>
       item.type.startsWith('image/')
@@ -390,11 +426,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
             )}
-            data-drop-zone="true"
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
+            data-drop-zone={hasMmproj ? "true" : undefined}
+            onDragEnter={hasMmproj ? handleDragEnter : undefined}
+            onDragLeave={hasMmproj ? handleDragLeave : undefined}
+            onDragOver={hasMmproj ? handleDragOver : undefined}
+            onDrop={hasMmproj ? handleDrop : undefined}
           >
             {uploadedFiles.length > 0 && (
               <div className="flex gap-3 items-center p-2 pb-0">
@@ -455,7 +491,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
-              onPaste={handlePaste}
+              onPaste={hasMmproj ? handlePaste : undefined}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
@@ -489,7 +525,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   />
                 )}
                 {/* File attachment - show only for models with mmproj */}
-                {selectedModel?.settings?.offload_mmproj && (
+                {hasMmproj && (
                   <div
                     className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                     onClick={handleAttachmentClick}

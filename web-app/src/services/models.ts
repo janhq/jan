@@ -361,7 +361,7 @@ export const isToolSupported = async (modelId: string): Promise<boolean> => {
  * @param getProviderByName - Function to get provider by name
  * @returns Promise<{exists: boolean, settingsUpdated: boolean}> - exists: true if mmproj.gguf exists, settingsUpdated: true if settings were modified
  */
-export const checkMmprojExists = async (
+export const checkMmprojExistsAndUpdateOffloadMMprojSetting = async (
   modelId: string,
   updateProvider?: (providerName: string, data: Partial<ModelProvider>) => void,
   getProviderByName?: (providerName: string) => ModelProvider | undefined
@@ -464,4 +464,26 @@ export const checkMmprojExists = async (
     console.error(`Error checking mmproj for model ${modelId}:`, error)
   }
   return { exists: false, settingsUpdated }
+}
+
+/**
+ * Checks if mmproj.gguf file exists for a given model ID in the llamacpp provider.
+ * If mmproj.gguf exists, adds offload_mmproj setting with value true.
+ * @param modelId - The model ID to check for mmproj.gguf
+ * @param updateProvider - Function to update the provider state
+ * @param getProviderByName - Function to get provider by name
+ * @returns Promise<{exists: boolean, settingsUpdated: boolean}> - exists: true if mmproj.gguf exists, settingsUpdated: true if settings were modified
+ */
+export const checkMmprojExists = async (modelId: string): Promise<boolean> => {
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      checkMmprojExists?: (id: string) => Promise<boolean>
+    }
+    if (engine && typeof engine.checkMmprojExists === 'function') {
+      return await engine.checkMmprojExists(modelId)
+    }
+  } catch (error) {
+    console.error(`Error checking mmproj for model ${modelId}:`, error)
+  }
+  return false
 }

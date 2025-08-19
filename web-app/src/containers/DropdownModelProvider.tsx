@@ -19,7 +19,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/consts/providers'
-import { checkMmprojExists } from '@/services/models'
+import { checkMmprojExistsAndUpdateOffloadMMprojSetting } from '@/services/models'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -102,7 +102,7 @@ const DropdownModelProvider = ({
         }
         // Check mmproj existence for llamacpp models
         if (model?.provider === 'llamacpp') {
-          await checkMmprojExists(
+          await checkMmprojExistsAndUpdateOffloadMMprojSetting(
             model.id as string,
             updateProvider,
             getProviderByName
@@ -114,7 +114,7 @@ const DropdownModelProvider = ({
         if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
           selectModelProvider(lastUsed.provider, lastUsed.model)
           if (lastUsed.provider === 'llamacpp') {
-            await checkMmprojExists(
+            await checkMmprojExistsAndUpdateOffloadMMprojSetting(
               lastUsed.model,
               updateProvider,
               getProviderByName
@@ -282,7 +282,7 @@ const DropdownModelProvider = ({
 
       // Check mmproj existence for llamacpp models
       if (searchableModel.provider.provider === 'llamacpp') {
-        await checkMmprojExists(
+        await checkMmprojExistsAndUpdateOffloadMMprojSetting(
           searchableModel.model.id,
           updateProvider,
           getProviderByName
