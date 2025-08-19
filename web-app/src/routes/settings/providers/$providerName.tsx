@@ -151,6 +151,9 @@ function ProviderDetail() {
           t('providers:importModelError'),
           error
         )
+        toast.error(t('providers:importModelError'), {
+          description: error instanceof Error ? error.message : 'Unknown error occurred',
+        })
       } finally {
         setImportingModel(false)
       }
