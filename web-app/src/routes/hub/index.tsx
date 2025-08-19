@@ -146,13 +146,14 @@ function Hub() {
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      filtered = filtered?.filter((model) =>
-        model.quants.some((variant) =>
+      filtered = filtered?.map((model) => ({
+        ...model,
+        quants: model.quants.filter((variant) =>
           llamaProvider?.models.some(
             (m: { id: string }) => m.id === variant.model_id
           )
         )
-      )
+      })).filter((model) => model.quants.length > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
