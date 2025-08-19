@@ -78,36 +78,31 @@ const DropdownModelProvider = ({
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Helper function to check if a model exists in providers
+  const checkModelExists = useCallback((providerName: string, modelId: string) => {
+    const provider = providers.find(
+      (p) => p.provider === providerName && p.active
+    )
+    return provider?.models.find((m) => m.id === modelId)
+  }, [providers])
+
   // Initialize model provider only once
   useEffect(() => {
     // Auto select model when existing thread is passed
     if (model) {
       selectModelProvider(model?.provider as string, model?.id as string)
+      if (!checkModelExists(model.provider, model.id)) {
+        selectModelProvider('', '')
+      }
     } else if (useLastUsedModel) {
       // Try to use last used model only when explicitly requested (for new chat)
       const lastUsed = getLastUsedModel()
-      if (lastUsed) {
-        // Verify the last used model still exists
-        const provider = providers.find(
-          (p) => p.provider === lastUsed.provider && p.active
-        )
-        const modelExists = provider?.models.find(
-          (m) => m.id === lastUsed.model
-        )
-
-        if (provider && modelExists) {
-          selectModelProvider(lastUsed.provider, lastUsed.model)
-        } else {
-          // Fallback to default model if last used model no longer exists
-          selectModelProvider('llamacpp', 'llama3.2:3b')
-        }
+      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+        selectModelProvider(lastUsed.provider, lastUsed.model)
       } else {
-        // default model, we should add from setting
-        selectModelProvider('llamacpp', 'llama3.2:3b')
+        // Fallback to default model if last used model no longer exists
+        selectModelProvider('', '')
       }
-    } else {
-      // default model for non-new-chat contexts
-      selectModelProvider('llamacpp', 'llama3.2:3b')
     }
   }, [
     model,
@@ -115,6 +110,7 @@ const DropdownModelProvider = ({
     updateCurrentThreadModel,
     providers,
     useLastUsedModel,
+    checkModelExists,
   ])
 
   // Update display model when selection changes
@@ -158,9 +154,11 @@ const DropdownModelProvider = ({
           provider &&
           predefinedProviders.some((e) =>
             e.provider.includes(provider.provider)
-          ) && provider.provider !== 'llamacpp' && !provider.api_key?.length
+          ) &&
+          provider.provider !== 'llamacpp' &&
+          !provider.api_key?.length
         )
-            return
+          return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
