@@ -31,6 +31,7 @@
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
     "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-http": "^2.5.1",
     "@tauri-apps/plugin-log": "^2.6.0",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"

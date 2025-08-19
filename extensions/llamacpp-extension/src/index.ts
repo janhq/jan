@@ -23,6 +23,7 @@ import {
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
+import { fetch } from "@tauri-apps/plugin-http"
 
 import {
   listSupportedBackends,
@@ -1389,7 +1390,8 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      signal: AbortSignal.any([AbortSignal.timeout(120000), abortController?.signal]),
+      connectTimeout: 600000, // 10 minutes
+      signal: AbortSignal.any([AbortSignal.timeout(600000), abortController?.signal]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
