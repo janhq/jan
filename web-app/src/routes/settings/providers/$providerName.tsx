@@ -96,6 +96,69 @@ function ProviderDetail() {
           !setting.controller_props.value)
     )
 
+  const handleImportModel = async () => {
+    if (!provider) {
+      return
+    }
+    
+    setImportingModel(true)
+    const selectedFile = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: 'GGUF',
+          extensions: ['gguf'],
+        },
+      ],
+    })
+    // If the dialog returns a file path, extract just the file name
+    const fileName =
+      typeof selectedFile === 'string'
+        ? selectedFile
+            .split(/[\\/]/)
+            .pop()
+            ?.replace(/\s/g, '-')
+        : undefined
+
+    if (selectedFile && fileName) {
+      // Check if model already exists
+      const modelExists = provider.models.some(
+        (model) => model.name === fileName
+      )
+      
+      if (modelExists) {
+        toast.error('Model already exists', {
+          description: `${fileName} already imported`,
+        })
+        setImportingModel(false)
+        return
+      }
+
+      try {
+        await pullModel(fileName, selectedFile)
+        // Refresh the provider to update the models list
+        await getProviders().then(setProviders)
+        toast.success(t('providers:import'), {
+          id: `import-model-${provider.provider}`,
+          description: t(
+            'providers:importModelSuccess',
+            { provider: fileName }
+          ),
+        })
+      } catch (error) {
+        console.error(
+          t('providers:importModelError'),
+          error
+        )
+      } finally {
+        setImportingModel(false)
+      }
+    } else {
+      setImportingModel(false)
+    }
+  }
+
   useEffect(() => {
     // Initial data fetch
     getActiveModels().then((models) => setActiveModels(models || []))
@@ -484,64 +547,7 @@ function ProviderDetail() {
                             size="sm"
                             className="hover:no-underline"
                             disabled={importingModel}
-                            onClick={async () => {
-                              setImportingModel(true)
-                              const selectedFile = await open({
-                                multiple: false,
-                                directory: false,
-                                filters: [
-                                  {
-                                    name: 'GGUF',
-                                    extensions: ['gguf'],
-                                  },
-                                ],
-                              })
-                              // If the dialog returns a file path, extract just the file name
-                              const fileName =
-                                typeof selectedFile === 'string'
-                                  ? selectedFile
-                                      .split(/[\\/]/)
-                                      .pop()
-                                      ?.replace(/\s/g, '-')
-                                  : undefined
-
-                              if (selectedFile && fileName) {
-                                // Check if model already exists
-                                const modelExists = provider.models.some(
-                                  (model) => model.name === fileName
-                                )
-                                
-                                if (modelExists) {
-                                  toast.error('Model already exists', {
-                                    description: `${fileName} already imported`,
-                                  })
-                                  setImportingModel(false)
-                                  return
-                                }
-
-                                try {
-                                  await pullModel(fileName, selectedFile)
-                                } catch (error) {
-                                  console.error(
-                                    t('providers:importModelError'),
-                                    error
-                                  )
-                                } finally {
-                                  // Refresh the provider to update the models list
-                                  await getProviders().then(setProviders)
-                                  toast.success(t('providers:import'), {
-                                    id: `import-model-${provider.provider}`,
-                                    description: t(
-                                      'providers:importModelSuccess',
-                                      { provider: fileName }
-                                    ),
-                                  })
-                                  setImportingModel(false)
-                                }
-                              } else {
-                                setImportingModel(false)
-                              }
-                            }}
+                            onClick={handleImportModel}
                           >
                             <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
                               {importingModel ? (
