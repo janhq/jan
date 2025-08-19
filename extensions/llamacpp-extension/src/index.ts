@@ -23,7 +23,6 @@ import {
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
-import { fetch } from "@tauri-apps/plugin-http"
 
 import {
   listSupportedBackends,
