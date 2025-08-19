@@ -19,6 +19,7 @@ import {
   ImportOptions,
   chatCompletionRequest,
   events,
+  AppEvent,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -32,6 +33,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
+import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 
 type LlamacppConfig = {
   version_backend: string
@@ -1085,6 +1087,12 @@ export default class llamacpp_extension extends AIEngine {
       data: modelConfig,
       savePath: configPath,
     })
+    events.emit(AppEvent.onModelImported, {
+      modelId,
+      modelPath,
+      mmprojPath,
+      size_bytes,
+    })
   }
 
   override async abortImport(modelId: string): Promise<void> {
@@ -1168,11 +1176,12 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     const args: string[] = []
+    const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        "Initial setup for the backend failed due to a network issue. Please restart the app!"
+        'Initial setup for the backend failed due to a network issue. Please restart the app!'
       )
     }
 
@@ -1194,7 +1203,7 @@ export default class llamacpp_extension extends AIEngine {
     // disable llama-server webui
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
-    args.push('--api-key', api_key)
+    envs["LLAMA_API_KEY"] = api_key
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1283,6 +1292,7 @@ export default class llamacpp_extension extends AIEngine {
         backendPath,
         libraryPath,
         args,
+        envs,
       })
       return sInfo
     } catch (error) {
@@ -1299,9 +1309,12 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await invoke<UnloadResult>('plugin:llamacpp|unload_llama_model', {
-        pid: pid,
-      })
+      const result = await invoke<UnloadResult>(
+        'plugin:llamacpp|unload_llama_model',
+        {
+          pid: pid,
+        }
+      )
 
       // If successful, remove from active sessions
       if (result.success) {
@@ -1437,9 +1450,12 @@ export default class llamacpp_extension extends AIEngine {
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
-      let sInfo = await invoke<SessionInfo>('plugin:llamacpp|find_session_by_model', {
-        modelId,
-      })
+      let sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|find_session_by_model',
+        {
+          modelId,
+        }
+      )
       return sInfo
     } catch (e) {
       logger.error(e)
@@ -1516,7 +1532,9 @@ export default class llamacpp_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
-      let models: string[] = await invoke<string[]>('plugin:llamacpp|get_loaded_models')
+      let models: string[] = await invoke<string[]>(
+        'plugin:llamacpp|get_loaded_models'
+      )
       return models
     } catch (e) {
       logger.error(e)
@@ -1599,14 +1617,31 @@ export default class llamacpp_extension extends AIEngine {
     throw new Error('method not implemented yet')
   }
 
-  private async loadMetadata(path: string): Promise<GgufMetadata> {
-    try {
-      const data = await invoke<GgufMetadata>('plugin:llamacpp|read_gguf_metadata', {
-        path: path,
-      })
-      return data
-    } catch (err) {
-      throw err
-    }
+  /**
+   * Check if a tool is supported by the model
+   * Currently read from GGUF chat_template
+   * @param modelId
+   * @returns
+   */
+  async isToolSupported(modelId: string): Promise<boolean> {
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelConfigPath = await joinPath([
+      this.providerPath,
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: modelConfigPath,
+    })
+    // model option is required
+    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    const modelPath = await joinPath([
+      janDataFolderPath,
+      modelConfig.model_path,
+    ])
+    return (await readGgufMetadata(modelPath)).metadata?.[
+      'tokenizer.chat_template'
+    ]?.includes('tools')
   }
 }

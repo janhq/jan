@@ -19,5 +19,6 @@ export const localStorageKey = {
   mcpGlobalPermissions: 'mcp-global-permissions',
   lastUsedModel: 'last-used-model',
   lastUsedAssistant: 'last-used-assistant',
+  favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
 }

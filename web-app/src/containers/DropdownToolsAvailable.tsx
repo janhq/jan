@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
+
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  DropDrawer,
+  DropDrawerContent,
+  DropDrawerItem,
+  DropDrawerSub,
+  DropDrawerLabel,
+  DropDrawerSubContent,
+  DropDrawerSeparator,
+  DropDrawerSubTrigger,
+  DropDrawerTrigger,
+  DropDrawerGroup,
+} from '@/components/ui/dropdrawer'
+
 import { Switch } from '@/components/ui/switch'
 
 import { useThreads } from '@/hooks/useThreads'
@@ -15,6 +21,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import React from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cn } from '@/lib/utils'
 
 interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
@@ -82,6 +89,23 @@ export default function DropdownToolsAvailable({
     return false
   }
 
+  const handleDisableAllServerTools = (
+    serverName: string,
+    disable: boolean
+  ) => {
+    const allToolsByServer = getToolsByServer()
+    const serverTools = allToolsByServer[serverName] || []
+    serverTools.forEach((tool) => {
+      handleToolToggle(tool.name, !disable)
+    })
+  }
+
+  const areAllServerToolsDisabled = (serverName: string): boolean => {
+    const allToolsByServer = getToolsByServer()
+    const serverTools = allToolsByServer[serverName] || []
+    return serverTools.every((tool) => !isToolChecked(tool.name))
+  }
+
   const getEnabledToolsCount = (): number => {
     const disabledTools = initialMessage
       ? getDefaultDisabledTools()
@@ -91,69 +115,153 @@ export default function DropdownToolsAvailable({
     return tools.filter((tool) => !disabledTools.includes(tool.name)).length
   }
 
+  const getToolsByServer = () => {
+    const toolsByServer = tools.reduce(
+      (acc, tool) => {
+        if (!acc[tool.server]) {
+          acc[tool.server] = []
+        }
+        acc[tool.server].push(tool)
+        return acc
+      },
+      {} as Record<string, typeof tools>
+    )
+
+    return toolsByServer
+  }
+
   const renderTrigger = () => children(isOpen, getEnabledToolsCount())
 
   if (tools.length === 0) {
     return (
-      <DropdownMenu onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-w-64">
-          <DropdownMenuItem disabled>{t('common:noToolsAvailable')}</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DropDrawer onOpenChange={handleOpenChange}>
+        <DropDrawerTrigger asChild>{renderTrigger()}</DropDrawerTrigger>
+        <DropDrawerContent align="start" className="max-w-64">
+          <DropDrawerItem disabled>
+            {t('common:noToolsAvailable')}
+          </DropDrawerItem>
+        </DropDrawerContent>
+      </DropDrawer>
     )
   }
 
-  return (
-    <DropdownMenu onOpenChange={handleOpenChange}>
-      <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
+  const toolsByServer = getToolsByServer()
 
-      <DropdownMenuContent
+  return (
+    <DropDrawer onOpenChange={handleOpenChange}>
+      <DropDrawerTrigger asChild>{renderTrigger()}</DropDrawerTrigger>
+      <DropDrawerContent
         side="top"
         align="start"
-        className="max-w-64 backdrop-blur-xl bg-main-view"
+        className="bg-main-view !overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
-        <DropdownMenuLabel className="flex items-center gap-2 sticky -top-1 z-10 px-4 pl-2 py-2 ">
+        <DropDrawerLabel className="flex items-center gap-2 sticky -top-1 z-10 px-4 pl-2 py-1">
           Available Tools
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        </DropDrawerLabel>
+        <DropDrawerSeparator />
         <div className="max-h-64 overflow-y-auto">
-          {tools.map((tool) => {
-            const isChecked = isToolChecked(tool.name)
-            return (
-              <div
-                key={tool.name}
-                className="py-2 hover:bg-main-view-fg/5 hover:backdrop-blur-2xl rounded-sm px-2 mx-auto w-full"
+          <DropDrawerGroup>
+            {Object.entries(toolsByServer).map(([serverName, serverTools]) => (
+              <DropDrawerSub
+                id={`server-${serverName}`}
+                key={serverName}
+                title={serverName}
               >
-                <div className="flex items-start justify-center gap-3">
-                  <div className="flex items-start justify-between gap-4 w-full">
-                    <div className="overflow-hidden w-full flex flex-col ">
-                      <div className="truncate">
-                        <span className="text-sm font-medium" title={tool.name}>
-                          {tool.name}
-                        </span>
-                      </div>
-                      {tool.description && (
-                        <p className="text-xs text-main-view-fg/70 mt-1 line-clamp-2">
-                          {tool.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="shrink-0 mx-auto">
-                      <Switch
-                        checked={isChecked}
-                        onCheckedChange={(checked) =>
-                          handleToolToggle(tool.name, checked)
-                        }
-                      />
-                    </div>
+                <DropDrawerSubTrigger className="py-2 hover:bg-main-view-fg/5 hover:backdrop-blur-2xl rounded-sm px-2 mx-auto w-full">
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-sm text-main-view-fg/80">
+                      {serverName}
+                    </span>
+                    <span className="text-xs text-main-view-fg/50 inline-flex items-center mr-1 border border-main-view-fg/20 px-1 rounded-sm">
+                      {
+                        serverTools.filter((tool) => isToolChecked(tool.name))
+                          .length
+                      }
+                    </span>
                   </div>
-                </div>
-              </div>
-            )
-          })}
+                </DropDrawerSubTrigger>
+                <DropDrawerSubContent className="max-w-64 max-h-70 w-full overflow-hidden">
+                  <DropDrawerGroup>
+                    {serverTools.length > 1 && (
+                      <div className="sticky top-0 z-10 bg-main-view border-b border-main-view-fg/10 px-4 md:px-2 pr-2 py-1.5 flex items-center justify-between">
+                        <span className="text-xs font-medium text-main-view-fg/70">
+                          Disable All Tools
+                        </span>
+                        <div
+                          className={cn(
+                            'flex items-center gap-2',
+                            serverTools.length > 5
+                              ? 'mr-3 md:mr-1.5'
+                              : 'mr-2 md:mr-0'
+                          )}
+                        >
+                          <Switch
+                            checked={!areAllServerToolsDisabled(serverName)}
+                            onCheckedChange={(checked) =>
+                              handleDisableAllServerTools(serverName, !checked)
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="max-h-56 overflow-y-auto">
+                      {serverTools.map((tool) => {
+                        const isChecked = isToolChecked(tool.name)
+                        return (
+                          <DropDrawerItem
+                            onClick={(e) => {
+                              handleToolToggle(tool.name, !isChecked)
+                              e.preventDefault()
+                            }}
+                            onSelect={(e) => {
+                              handleToolToggle(tool.name, !isChecked)
+                              e.preventDefault()
+                            }}
+                            key={tool.name}
+                            className="mt-1 first:mt-0 py-1.5"
+                            icon={
+                              <Switch
+                                checked={isChecked}
+                                onCheckedChange={(checked) => {
+                                  console.log('checked', checked)
+                                  handleToolToggle(tool.name, checked)
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                }}
+                              />
+                            }
+                          >
+                            <div className="overflow-hidden flex flex-col items-start ">
+                              <div className="truncate">
+                                <span
+                                  className="text-sm font-medium text-main-view-fg"
+                                  title={tool.name}
+                                >
+                                  {tool.name}
+                                </span>
+                              </div>
+                              {tool.description && (
+                                <p
+                                  className="text-xs text-main-view-fg/70 mt-1 line-clamp-1"
+                                  title={tool.description}
+                                >
+                                  {tool.description}
+                                </p>
+                              )}
+                            </div>
+                          </DropDrawerItem>
+                        )
+                      })}
+                    </div>
+                  </DropDrawerGroup>
+                </DropDrawerSubContent>
+              </DropDrawerSub>
+            ))}
+          </DropDrawerGroup>
         </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropDrawerContent>
+    </DropDrawer>
   )
 }

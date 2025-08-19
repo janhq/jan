@@ -483,7 +483,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                               initialMessage={initialMessage}
                               onOpenChange={(isOpen) => {
                                 setDropdownToolsAvailable(isOpen)
-                                setTooltipToolsAvailable(false)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
                               }}
                             >
                               {(isOpen, toolsCount) => {

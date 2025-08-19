@@ -25,6 +25,7 @@ import { useCallback, useState } from 'react'
 import { openAIProviderSettings } from '@/consts/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
+import { stopAllModels } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -169,7 +170,10 @@ function ModelProviders() {
                       )}
                       <Switch
                         checked={provider.active}
-                        onCheckedChange={(e) => {
+                        onCheckedChange={async (e) => {
+                          if (!e && provider.provider.toLowerCase() === 'llamacpp') {
+                            await stopAllModels()
+                          }
                           updateProvider(provider.provider, {
                             ...provider,
                             active: e,

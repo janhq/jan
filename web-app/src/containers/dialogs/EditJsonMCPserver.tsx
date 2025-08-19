@@ -43,19 +43,9 @@ export default function EditJsonMCPserver({
     }
   }, [open, initialData, t])
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const pastedText = e.clipboardData.getData('text')
-    try {
-      const parsedJson = JSON.parse(pastedText)
-      const prettifiedJson = JSON.stringify(parsedJson, null, 2)
-      e.preventDefault()
-      setJsonContent(prettifiedJson)
-      setError(null)
-    } catch (error) {
-      e.preventDefault()
-      setError(t('mcp-servers:editJson.errorPaste'))
-      console.error('Paste error:', error)
-    }
+  const handlePaste = () => {
+    // Clear any existing errors when pasting
+    setError(null)
   }
 
   const handleSave = () => {
@@ -80,7 +70,18 @@ export default function EditJsonMCPserver({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
+          <div className="border border-main-view-fg/10 rounded-md !overflow-hidden">
+            <style>{`
+              .w-tc-editor textarea {
+                word-break: break-all !important;
+                overflow-wrap: anywhere !important;
+                white-space: pre-wrap !important;
+              }
+              .w-tc-editor .token.string {
+                word-break: break-all !important;
+                overflow-wrap: anywhere !important;
+              }
+            `}</style>
             <CodeEditor
               value={jsonContent}
               language="json"
@@ -90,8 +91,11 @@ export default function EditJsonMCPserver({
               style={{
                 fontFamily: 'ui-monospace',
                 backgroundColor: 'transparent',
+                wordBreak: 'break-all',
+                overflowWrap: 'anywhere',
+                whiteSpace: 'pre-wrap',
               }}
-              className="w-full !text-sm "
+              className="w-full !text-sm overflow-hidden break-all"
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}
