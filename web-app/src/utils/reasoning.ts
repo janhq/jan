@@ -7,7 +7,7 @@ import {
 
 // Helper function to get reasoning content from an object
 function getReasoning(obj: { reasoning_content?: string | null; reasoning?: string | null } | null | undefined): string | null {
-  return obj?.reasoning_content || obj?.reasoning || null
+  return obj?.reasoning_content ?? obj?.reasoning ?? null
 }
 
 // Extract reasoning from a message (for completed responses)
