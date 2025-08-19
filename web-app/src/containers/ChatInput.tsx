@@ -94,24 +94,28 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     return () => clearInterval(intervalId)
   }, [])
 
-  // Check for mmproj existence when model changes
+  // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
     const checkMmprojSupport = async () => {
       if (selectedModel?.id) {
         try {
-          const exists = await checkMmprojExists(selectedModel.id)
-          setHasMmproj(exists)
+          // Only check mmproj for llamacpp provider
+          if (model?.provider === 'llamacpp') {
+            const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
+            setHasMmproj(hasLocalMmproj)
+          } else {
+            // For non-llamacpp providers, only check vision capability
+            setHasMmproj(true)
+          }
         } catch (error) {
           console.error('Error checking mmproj:', error)
           setHasMmproj(false)
         }
-      } else {
-        setHasMmproj(false)
       }
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.id])
+  }, [selectedModel?.id, selectedModel?.capabilities, model?.provider])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
@@ -426,7 +430,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
             )}
-            data-drop-zone={hasMmproj ? "true" : undefined}
+            data-drop-zone={hasMmproj ? 'true' : undefined}
             onDragEnter={hasMmproj ? handleDragEnter : undefined}
             onDragLeave={hasMmproj ? handleDragLeave : undefined}
             onDragOver={hasMmproj ? handleDragOver : undefined}
