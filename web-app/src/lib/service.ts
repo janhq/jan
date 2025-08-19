@@ -5,6 +5,7 @@ export const AppRoutes = [
   'installExtensions',
   'getTools',
   'callTool',
+  'cancelToolCall',
   'listThreads',
   'createThread',
   'modifyThread',

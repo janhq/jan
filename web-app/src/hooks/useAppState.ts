@@ -13,6 +13,7 @@ type AppState = {
   tokenSpeed?: TokenSpeed
   currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
+  cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   updateCurrentToolCall: (
@@ -24,6 +25,7 @@ type AppState = {
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   resetTokenSpeed: () => void
   setOutOfContextDialog: (show: boolean) => void
+  setCancelToolCall: (cancel: (() => void) | undefined) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -34,6 +36,7 @@ export const useAppState = create<AppState>()((set) => ({
   abortControllers: {},
   tokenSpeed: undefined,
   currentToolCall: undefined,
+  cancelToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
@@ -110,6 +113,11 @@ export const useAppState = create<AppState>()((set) => ({
   setOutOfContextDialog: (show) => {
     set(() => ({
       showOutOfContextDialog: show,
+    }))
+  },
+  setCancelToolCall: (cancel) => {
+    set(() => ({
+      cancelToolCall: cancel,
     }))
   },
 }))
