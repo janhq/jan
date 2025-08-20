@@ -1228,7 +1228,6 @@ export default class llamacpp_extension extends AIEngine {
       modelConfig.model_path,
     ])
     args.push('--jinja')
-    args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
