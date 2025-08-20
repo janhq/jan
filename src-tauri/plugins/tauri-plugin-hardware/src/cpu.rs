@@ -24,8 +24,35 @@ impl CpuStaticInfo {
         CpuStaticInfo {
             name,
             core_count: System::physical_core_count().unwrap_or(0),
-            arch: std::env::consts::ARCH.to_string(),
+            arch: CpuStaticInfo::get_runtime_arch(),
             extensions: CpuStaticInfo::get_extensions(),
+        }
+    }
+
+    fn get_runtime_arch() -> String {
+        // Use sysinfo to get the actual CPU architecture at runtime
+        let mut system = System::new();
+        system.refresh_cpu_all();
+
+        if let Some(cpu) = system.cpus().first() {
+            let brand = cpu.brand().to_lowercase();
+
+            // Detect architecture based on CPU brand/model
+            if brand.contains("aarch64") || brand.contains("arm64") || brand.contains("apple m") {
+                "aarch64".to_string()
+            } else if brand.contains("x86")
+                || brand.contains("amd64")
+                || brand.contains("i386")
+                || brand.contains("i686")
+            {
+                "x86_64".to_string()
+            } else {
+                // Fallback to compile-time architecture if we can't detect
+                std::env::consts::ARCH.to_string()
+            }
+        } else {
+            // Fallback to compile-time architecture if no CPU info available
+            std::env::consts::ARCH.to_string()
         }
     }
 
