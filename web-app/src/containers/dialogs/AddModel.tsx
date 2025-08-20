@@ -8,8 +8,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useProviderModels } from '@/hooks/useProviderModels'
+import { ModelCombobox } from '@/containers/ModelCombobox'
 import { IconPlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { getProviderTitle } from '@/lib/utils'
@@ -25,6 +26,11 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
   const { updateProvider } = useModelProvider()
   const [modelId, setModelId] = useState<string>('')
   const [open, setOpen] = useState(false)
+
+  // Fetch models from provider API (API key is optional)
+  const { models, loading, error, refetch } = useProviderModels(
+    provider.base_url ? provider : undefined
+  )
 
   // Handle form submission
   const handleSubmit = () => {
@@ -72,7 +78,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Model ID field - required */}
+        {/* Model selection field - required */}
         <div className="space-y-2">
           <label
             htmlFor="model-id"
@@ -81,12 +87,14 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             {t('providers:addModel.modelId')}{' '}
             <span className="text-destructive">*</span>
           </label>
-          <Input
-            id="model-id"
+          <ModelCombobox
             value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
+            onChange={setModelId}
+            models={models}
+            loading={loading}
+            error={error}
+            onRefresh={refetch}
             placeholder={t('providers:addModel.enterModelId')}
-            required
           />
         </div>
 

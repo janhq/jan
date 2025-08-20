@@ -135,9 +135,24 @@ export const fetchModelsFromProvider = async (
     })
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch models: ${response.status} ${response.statusText}`
-      )
+      // Provide more specific error messages based on status code
+      if (response.status === 401) {
+        throw new Error(
+          `Authentication failed: API key is required or invalid for ${provider.provider}`
+        )
+      } else if (response.status === 403) {
+        throw new Error(
+          `Access forbidden: Check your API key permissions for ${provider.provider}`
+        )
+      } else if (response.status === 404) {
+        throw new Error(
+          `Models endpoint not found for ${provider.provider}. Check the base URL configuration.`
+        )
+      } else {
+        throw new Error(
+          `Failed to fetch models from ${provider.provider}: ${response.status} ${response.statusText}`
+        )
+      }
     }
 
     const data = await response.json()
@@ -167,14 +182,26 @@ export const fetchModelsFromProvider = async (
   } catch (error) {
     console.error('Error fetching models from provider:', error)
 
-    // Provide helpful error message
+    if (error instanceof Error && (
+      error.message.includes('Authentication failed') ||
+      error.message.includes('Access forbidden') ||
+      error.message.includes('Models endpoint not found') ||
+      error.message.includes('Failed to fetch models from')
+    )) {
+      throw error
+    }
+
+    // Provide helpful error message for network issues
     if (error instanceof Error && error.message.includes('fetch')) {
       throw new Error(
         `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
       )
     }
 
-    throw error
+    // Generic fallback
+    throw new Error(
+      `Unexpected error while fetching models from ${provider.provider}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
   }
 }
 
