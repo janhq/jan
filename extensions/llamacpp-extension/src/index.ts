@@ -36,6 +36,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
+import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
@@ -1815,7 +1816,10 @@ export default class llamacpp_extension extends AIEngine {
    *  estimate KVCache size of from a given metadata
    *
    */
-  private async estimateKVCache(meta: Record<string, string>, ctxLen: number): Promise<number> {
+  private async estimateKVCache(
+    meta: Record<string, string>,
+    ctxLen: number
+  ): Promise<number> {
     const arch = meta['general.architecture']
     if (!arch) throw new Error('Invalid metadata: architecture not found')
 
@@ -1857,7 +1861,14 @@ export default class llamacpp_extension extends AIEngine {
         `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
       )
       const devices = await this.getDevices()
-      return devices.some((d) => (d.free * 1024 * 1024) >= totalRequired)
+      if (devices.length > 0) {
+        // infer from ggml devices
+        return devices.some((d) => d.free * 1024 * 1024 >= totalRequired)
+      } else {
+        const sys = await getSystemUsage()
+        const availableRam = (sys.total_memory - sys.used_memory) * 1024 * 1024 // MB → bytes
+        return availableRam >= totalRequired
+      }
     } catch (e) {
       throw new Error(String(e))
     }
