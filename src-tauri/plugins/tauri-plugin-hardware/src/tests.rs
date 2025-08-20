@@ -38,7 +38,6 @@ mod cpu_tests {
         );
         
         // Extensions should be a valid list (can be empty on non-x86)
-        assert!(cpu_info.extensions.is_empty() || !cpu_info.extensions.is_empty());
         
         println!("CPU Info: {:?}", cpu_info);
     }
