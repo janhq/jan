@@ -1593,7 +1593,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+        'Backend setup was not successful. Please restart the app in a stable internet connection.'
       )
     }
 
@@ -1689,5 +1689,57 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
+  }
+
+  /**
+   *  estimate KVCache size of from a given metadata
+   *
+   */
+  private async estimateKVCache(meta: Record<string, string>, ctxLen: number): Promise<number> {
+    const arch = meta['general.architecture']
+    if (!arch) throw new Error('Invalid metadata: architecture not found')
+
+    const nLayer = Number(meta[`${arch}.block_count`])
+    if (!nLayer) throw new Error('Invalid metadata: block_count not found')
+    const nHead = Number(meta[`${arch}.attention.head_count`])
+    if (!nHead) throw new Error('Invalid metadata: head_count not found')
+    const keyLen = Number(meta[`${arch}.attention.key_length`])
+    if (!keyLen) throw new Error('Invalid metadata: key_length not found')
+    const valLen = Number(meta[`${arch}.attention.value_length`])
+    if (!keyLen) throw new Error('Invalid metadata: value_length not found')
+    logger.info(`ctxLen: ${ctxLen}`)
+    logger.info(`nLayer: ${nLayer}`)
+    logger.info(`nHead: ${nHead}`)
+    logger.info(`keyLen: ${keyLen}`)
+    logger.info(`valLen: ${valLen}`)
+    // Consider f16 by default
+    // can extension by checking cache-type-v and cache-type-k
+    // but we are checking overall compatibility with the default settings
+    // fp16 = 8 bits * 2 = 16
+    const bytesPerElement = 2
+
+    // K cache = nHead * keyLen
+    // V cache = nHead * valLen
+    const kvPerToken = nHead * (keyLen + valLen) * bytesPerElement
+    return ctxLen * nLayer * kvPerToken
+  }
+
+  async isModelSupported(path: string, ctx_size: number): Promise<boolean> {
+    try {
+      const modelSize = (await fs.fileStat(path)).size
+      logger.info(`modelSize: ${modelSize}`)
+      const gguf = await readGgufMetadata(path)
+      const kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
+      // total memory consumption = model weighst + kvcache + a small buffer for outputs
+      // output buffer is small so not considering here
+      const totalRequired = modelSize + kvCacheSize
+      logger.info(
+        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
+      )
+      const devices = await this.getDevices()
+      return devices.some((d) => (d.free * 1024 * 1024) >= totalRequired)
+    } catch (e) {
+      throw new Error(String(e))
+    }
   }
 }
