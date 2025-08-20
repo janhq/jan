@@ -62,6 +62,7 @@ export default function AddEditAssistant({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [toolSteps, setToolSteps] = useState(20)
 
   // Handle click outside emoji picker
   useEffect(() => {
@@ -90,6 +91,7 @@ export default function AddEditAssistant({
       setName(initialData.name)
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
+      setToolSteps(initialData.tool_steps ?? 20)
       // Convert parameters object to arrays of keys and values
       const keys = Object.keys(initialData.parameters || {})
       const values = Object.values(initialData.parameters || {})
@@ -120,6 +122,7 @@ export default function AddEditAssistant({
     setParamsValues([''])
     setParamsTypes(['string'])
     setNameError(null)
+    setToolSteps(20)
   }
 
   const handleParameterChange = (
@@ -216,6 +219,7 @@ export default function AddEditAssistant({
       description,
       instructions,
       parameters: parameters || {},
+      tool_steps: toolSteps,
     }
     onSave(assistant)
     onOpenChange(false)
@@ -321,6 +325,29 @@ export default function AddEditAssistant({
               className="resize-none"
               rows={4}
             />
+          </div>
+
+          <div className="space-y-2 my-4 mt-6">
+            <div className="flex items-center justify-between">
+              <label className="text-sm">{t('common:settings')}</label>
+            </div>
+            <div className="flex justify-between items-center gap-2">
+              <div className="w-full">
+                <p className="text-sm">{t('assistants:maxToolSteps')}</p>
+              </div>
+              <Input
+                value={toolSteps}
+                type="number"
+                min={0}
+                onChange={(e) => {
+                  const newSteps = e.target.value
+                  const stepNumber = Number(newSteps)
+                  setToolSteps(isNaN(stepNumber) ? 20 : stepNumber)
+                }}
+                placeholder="20"
+                className="w-18 text-right"
+              />
+            </div>
           </div>
 
           <div className="space-y-2 my-4">

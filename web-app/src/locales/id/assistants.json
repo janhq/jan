@@ -29,5 +29,6 @@
   "save": "Simpan",
   "createNew": "Buat Asisten Baru",
   "personality": "Kepribadian",
-  "capabilities": "Kemampuan"
+  "capabilities": "Kemampuan",
+  "maxToolSteps": "Langkah alat maksimum"
 }

@@ -29,5 +29,6 @@
   "save": "Lưu",
   "createNew": "Tạo Trợ lý Mới",
   "personality": "Tính cách",
-  "capabilities": "Khả năng"
+  "capabilities": "Khả năng",
+  "maxToolSteps": "Bước tối đa của công cụ"
 }

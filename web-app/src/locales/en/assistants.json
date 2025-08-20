@@ -29,5 +29,6 @@
   "save": "Save",
   "createNew": "Create New Assistant",
   "personality": "Personality",
-  "capabilities": "Capabilities"
+  "capabilities": "Capabilities",
+  "maxToolSteps": "Max tool steps"
 }
