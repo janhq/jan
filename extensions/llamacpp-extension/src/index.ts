@@ -1843,7 +1843,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
       )
-      headDim = (keyLen + valLen) / nHead
+      headDim = (keyLen + valLen)
     } else {
       // Fall back to embedding_length estimation
       const embeddingLen = Number(meta[`${arch}.embedding_length`])
