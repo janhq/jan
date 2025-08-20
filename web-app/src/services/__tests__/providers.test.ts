@@ -222,7 +222,7 @@ describe('providers service', () => {
       )
     })
 
-    it('should throw error when API response is not ok', async () => {
+    it('should throw error when API response is not ok (404)', async () => {
       const mockResponse = {
         ok: false,
         status: 404,
@@ -236,7 +236,43 @@ describe('providers service', () => {
       }
 
       await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
-        'Cannot connect to custom at https://api.custom.com. Please check that the service is running and accessible.'
+        'Models endpoint not found for custom. Check the base URL configuration.'
+      )
+    })
+
+    it('should throw error when API response is not ok (403)', async () => {
+      const mockResponse = {
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      }
+      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+
+      const provider = {
+        provider: 'custom',
+        base_url: 'https://api.custom.com',
+      } as ModelProvider
+
+      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+        'Access forbidden: Check your API key permissions for custom'
+      )
+    })
+
+    it('should throw error when API response is not ok (401)', async () => {
+      const mockResponse = {
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+      }
+      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+
+      const provider = {
+        provider: 'custom',
+        base_url: 'https://api.custom.com',
+      } as ModelProvider
+
+      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+        'Authentication failed: API key is required or invalid for custom'
       )
     })
 
