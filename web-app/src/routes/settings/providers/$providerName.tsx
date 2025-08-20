@@ -100,25 +100,16 @@ function ProviderDetail() {
     if (!provider) {
       return
     }
-    
+
     setImportingModel(true)
     const selectedFile = await open({
       multiple: false,
       directory: false,
-      filters: [
-        {
-          name: 'GGUF',
-          extensions: ['gguf'],
-        },
-      ],
     })
     // If the dialog returns a file path, extract just the file name
     const fileName =
       typeof selectedFile === 'string'
-        ? selectedFile
-            .split(/[\\/]/)
-            .pop()
-            ?.replace(/\s/g, '-')
+        ? selectedFile.split(/[\\/]/).pop()?.replace(/\s/g, '-')
         : undefined
 
     if (selectedFile && fileName) {
@@ -126,7 +117,7 @@ function ProviderDetail() {
       const modelExists = provider.models.some(
         (model) => model.name === fileName
       )
-      
+
       if (modelExists) {
         toast.error('Model already exists', {
           description: `${fileName} already imported`,
@@ -141,18 +132,15 @@ function ProviderDetail() {
         await getProviders().then(setProviders)
         toast.success(t('providers:import'), {
           id: `import-model-${provider.provider}`,
-          description: t(
-            'providers:importModelSuccess',
-            { provider: fileName }
-          ),
+          description: t('providers:importModelSuccess', {
+            provider: fileName,
+          }),
         })
       } catch (error) {
-        console.error(
-          t('providers:importModelError'),
-          error
-        )
+        console.error(t('providers:importModelError'), error)
         toast.error(t('providers:importModelError'), {
-          description: error instanceof Error ? error.message : 'Unknown error occurred',
+          description:
+            error instanceof Error ? error.message : 'Unknown error occurred',
         })
       } finally {
         setImportingModel(false)
@@ -565,7 +553,9 @@ function ProviderDetail() {
                                 />
                               )}
                               <span className="text-main-view-fg/70">
-                                {importingModel ? 'Importing...' : t('providers:import')}
+                                {importingModel
+                                  ? 'Importing...'
+                                  : t('providers:import')}
                               </span>
                             </div>
                           </Button>
