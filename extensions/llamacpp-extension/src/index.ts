@@ -1706,7 +1706,7 @@ export default class llamacpp_extension extends AIEngine {
     const keyLen = Number(meta[`${arch}.attention.key_length`])
     if (!keyLen) throw new Error('Invalid metadata: key_length not found')
     const valLen = Number(meta[`${arch}.attention.value_length`])
-    if (!keyLen) throw new Error('Invalid metadata: value_length not found')
+    if (!valLen) throw new Error('Invalid metadata: value_length not found')
     logger.info(`ctxLen: ${ctxLen}`)
     logger.info(`nLayer: ${nLayer}`)
     logger.info(`nHead: ${nHead}`)
