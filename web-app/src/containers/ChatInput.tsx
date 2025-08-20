@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/tooltip'
 import { ArrowRight } from 'lucide-react'
 import {
-  IconPaperclip,
+  IconPhoto,
   IconWorld,
   IconAtom,
   IconEye,
@@ -56,7 +56,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
   const maxRows = 10
 
-  const { selectedModel } = useModelProvider()
+  const { selectedModel, selectedProvider } = useModelProvider()
   const { sendMessage } = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
@@ -100,7 +100,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       if (selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
-          if (model?.provider === 'llamacpp') {
+          if (selectedProvider === 'llamacpp') {
             const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
           } else {
@@ -115,7 +115,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.id, selectedModel?.capabilities, model?.provider])
+  }, [selectedModel?.id, selectedProvider])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
@@ -534,7 +534,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                     onClick={handleAttachmentClick}
                   >
-                    <IconPaperclip size={18} className="text-main-view-fg/50" />
+                    <IconPhoto size={18} className="text-main-view-fg/50" />
                     <input
                       type="file"
                       ref={fileInputRef}
