@@ -20,10 +20,17 @@ import { extractModelName, extractDescription } from '@/lib/models'
 import {
   IconDownload,
   IconFileCode,
+  IconPhoto,
   IconSearch,
   IconTool,
 } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
@@ -661,11 +668,41 @@ function Hub() {
                               </div>
                               {filteredModels[virtualItem.index].tools && (
                                 <div className="flex items-center gap-1">
-                                  <IconTool
-                                    size={17}
-                                    className="text-main-view-fg/50"
-                                    title={t('hub:tools')}
-                                  />
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconTool
+                                            size={17}
+                                            className="text-main-view-fg/50"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('tools')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              )}
+                              {filteredModels[virtualItem.index].num_mmproj >
+                                0 && (
+                                <div className="flex items-center gap-1">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconPhoto
+                                            size={17}
+                                            className="text-main-view-fg/50"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('vision')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 </div>
                               )}
                               {filteredModels[virtualItem.index].quants.length >
