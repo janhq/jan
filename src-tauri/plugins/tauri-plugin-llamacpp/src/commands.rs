@@ -12,7 +12,7 @@ use tokio::time::Instant;
 
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use crate::path::{validate_binary_path, validate_model_path};
+use crate::path::{validate_binary_path, validate_model_path, validate_mmproj_path};
 use crate::process::{
     find_session_by_model_id, get_all_active_sessions, get_all_loaded_model_ids,
     get_random_available_port, is_process_running_by_pid,
@@ -55,6 +55,7 @@ pub async fn load_llama_model<R: Runtime>(
 
     let port = parse_port_from_args(&args);
     let model_path_pb = validate_model_path(&mut args)?;
+    let _mmproj_path_pb = validate_mmproj_path(&mut args)?;
 
     let api_key: String;
 

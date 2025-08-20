@@ -35,7 +35,8 @@
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
           "state": "active",
           "radius": 8
-        }
+        },
+        "dragDropEnabled": false
       }
     ],
     "security": {

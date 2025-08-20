@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   ContentType,
   ChatCompletionRole,
@@ -51,11 +52,16 @@ export type ChatCompletionResponse =
  */
 export const newUserThreadContent = (
   threadId: string,
-  content: string
-): ThreadMessage => ({
-  type: 'text',
-  role: ChatCompletionRole.User,
-  content: [
+  content: string,
+  attachments?: Array<{
+    name: string
+    type: string
+    size: number
+    base64: string
+    dataUrl: string
+  }>
+): ThreadMessage => {
+  const contentParts = [
     {
       type: ContentType.Text,
       text: {
@@ -63,14 +69,35 @@ export const newUserThreadContent = (
         annotations: [],
       },
     },
-  ],
-  id: ulid(),
-  object: 'thread.message',
-  thread_id: threadId,
-  status: MessageStatus.Ready,
-  created_at: 0,
-  completed_at: 0,
-})
+  ]
+
+  // Add attachments to content array
+  if (attachments) {
+    attachments.forEach((attachment) => {
+      if (attachment.type.startsWith('image/')) {
+        contentParts.push({
+          type: ContentType.Image,
+          image_url: {
+            url: `data:${attachment.type};base64,${attachment.base64}`,
+            detail: 'auto',
+          },
+        } as any)
+      }
+    })
+  }
+
+  return {
+    type: 'text',
+    role: ChatCompletionRole.User,
+    content: contentParts,
+    id: ulid(),
+    object: 'thread.message',
+    thread_id: threadId,
+    status: MessageStatus.Ready,
+    created_at: 0,
+    completed_at: 0,
+  }
+}
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
@@ -162,13 +189,11 @@ export const sendCompletion = async (
   if (
     thread.model.id &&
     !Object.values(models[providerName]).flat().includes(thread.model.id) &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
     provider.provider !== 'llamacpp'
   ) {
     try {
       tokenJS.extendModelList(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerName as any,
         thread.model.id,
         // This is to inherit the model capabilities from another built-in model
@@ -201,7 +226,7 @@ export const sendCompletion = async (
       ? await tokenJS.chat.completions.create(
           {
             stream: true,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             provider: providerName as any,
             model: thread.model?.id,
             messages,

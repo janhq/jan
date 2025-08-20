@@ -41,6 +41,7 @@ type LlamacppConfig = {
   auto_unload: boolean
   chat_template: string
   n_gpu_layers: number
+  offload_mmproj: boolean
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -1222,6 +1223,10 @@ export default class llamacpp_extension extends AIEngine {
     // Takes a regex with matching tensor name as input
     if (cfg.override_tensor_buffer_t)
       args.push('--override-tensor', cfg.override_tensor_buffer_t)
+    // offload multimodal projector model to the GPU by default. if there is not enough memory
+    // turn this setting off will keep the projector model on the CPU but the image processing can
+    // take longer
+    if (cfg.offload_mmproj === false) args.push('--no-mmproj-offload')
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
@@ -1383,7 +1388,8 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      signal: abortController?.signal,
+      connectTimeout: 600000, // 10 minutes
+      signal: AbortSignal.any([AbortSignal.timeout(600000), abortController?.signal]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
@@ -1542,6 +1548,26 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Check if mmproj.gguf file exists for a given model ID
+   * @param modelId - The model ID to check for mmproj.gguf
+   * @returns Promise<boolean> - true if mmproj.gguf exists, false otherwise
+   */
+  async checkMmprojExists(modelId: string): Promise<boolean> {
+    try {
+      const mmprojPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'mmproj.gguf',
+      ])
+      return await fs.existsSync(mmprojPath)
+    } catch (e) {
+      logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
+      return false
+    }
+  }
+
   async getDevices(): Promise<DeviceList[]> {
     const cfg = this.config
     const [version, backend] = cfg.version_backend.split('/')
@@ -1643,5 +1669,19 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
+  }
+
+  private async loadMetadata(path: string): Promise<GgufMetadata> {
+    try {
+      const data = await invoke<GgufMetadata>(
+        'plugin:llamacpp|read_gguf_metadata',
+        {
+          path: path,
+        }
+      )
+      return data
+    } catch (err) {
+      throw err
+    }
   }
 }
