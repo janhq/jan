@@ -1850,7 +1850,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(`modelSize: ${modelSize}`)
       const gguf = await readGgufMetadata(path)
       const kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
-      // total memory consumption = model weighst + kvcache + a small buffer for outputs
+      // total memory consumption = model weights + kvcache + a small buffer for outputs
       // output buffer is small so not considering here
       const totalRequired = modelSize + kvCacheSize
       logger.info(
