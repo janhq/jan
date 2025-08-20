@@ -20,7 +20,7 @@ import { extractModelName, extractDescription } from '@/lib/models'
 import {
   IconDownload,
   IconFileCode,
-  IconPhoto,
+  IconEye,
   IconSearch,
   IconTool,
 } from '@tabler/icons-react'
@@ -692,7 +692,7 @@ function Hub() {
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <div>
-                                          <IconPhoto
+                                          <IconEye
                                             size={17}
                                             className="text-main-view-fg/50"
                                           />
