@@ -104,12 +104,6 @@ interface DeviceList {
   free: number
 }
 
-interface GgufMetadata {
-  version: number
-  tensor_count: number
-  metadata: Record<string, string>
-}
-
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -1062,13 +1056,34 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    // TODO: check if files are valid GGUF files
-    // NOTE: modelPath and mmprojPath can be either relative to Jan's data folder (if they are downloaded)
-    // or absolute paths (if they are provided as local files)
+    // Validate GGUF files
     const janDataFolderPath = await getJanDataFolderPath()
-    let size_bytes = (
-      await fs.fileStat(await joinPath([janDataFolderPath, modelPath]))
-    ).size
+    const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+
+    try {
+      // Validate main model file
+      const modelMetadata = await readGgufMetadata(fullModelPath)
+      logger.info(
+        `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
+      )
+
+      // Validate mmproj file if present
+      if (mmprojPath) {
+        const fullMmprojPath = await joinPath([janDataFolderPath, mmprojPath])
+        const mmprojMetadata = await readGgufMetadata(fullMmprojPath)
+        logger.info(
+          `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
+        )
+      }
+    } catch (error) {
+      logger.error('GGUF validation failed:', error)
+      throw new Error(
+        `Invalid GGUF file(s): ${error.message || 'File format validation failed'}`
+      )
+    }
+
+    // Calculate file sizes
+    let size_bytes = (await fs.fileStat(fullModelPath)).size
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
@@ -1204,7 +1219,7 @@ export default class llamacpp_extension extends AIEngine {
     // disable llama-server webui
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
-    envs["LLAMA_API_KEY"] = api_key
+    envs['LLAMA_API_KEY'] = api_key
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1293,12 +1308,15 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>('plugin:llamacpp|load_llama_model', {
-        backendPath,
-        libraryPath,
-        args,
-        envs,
-      })
+      const sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|load_llama_model',
+        {
+          backendPath,
+          libraryPath,
+          args,
+          envs,
+        }
+      )
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1389,7 +1407,10 @@ export default class llamacpp_extension extends AIEngine {
       headers,
       body,
       connectTimeout: 600000, // 10 minutes
-      signal: AbortSignal.any([AbortSignal.timeout(600000), abortController?.signal]),
+      signal: AbortSignal.any([
+        AbortSignal.timeout(600000),
+        abortController?.signal,
+      ]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
@@ -1669,19 +1690,5 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
-  }
-
-  private async loadMetadata(path: string): Promise<GgufMetadata> {
-    try {
-      const data = await invoke<GgufMetadata>(
-        'plugin:llamacpp|read_gguf_metadata',
-        {
-          path: path,
-        }
-      )
-      return data
-    } catch (err) {
-      throw err
-    }
   }
 }
