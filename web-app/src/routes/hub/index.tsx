@@ -146,14 +146,16 @@ function Hub() {
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      filtered = filtered?.map((model) => ({
-        ...model,
-        quants: model.quants.filter((variant) =>
-          llamaProvider?.models.some(
-            (m: { id: string }) => m.id === variant.model_id
-          )
-        )
-      })).filter((model) => model.quants.length > 0)
+      filtered = filtered
+        ?.map((model) => ({
+          ...model,
+          quants: model.quants.filter((variant) =>
+            llamaProvider?.models.some(
+              (m: { id: string }) => m.id === variant.model_id
+            )
+          ),
+        }))
+        .filter((model) => model.quants.length > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -428,43 +430,44 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    return (
-      <>
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
-              {
-                sortOptions.find((option) => option.value === sortSelected)
-                  ?.name
-              }
+    if (searchValue.length === 0)
+      return (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+                {
+                  sortOptions.find((option) => option.value === sortSelected)
+                    ?.name
+                }
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              {sortOptions.map((option) => (
+                <DropdownMenuItem
+                  className={cn(
+                    'cursor-pointer my-0.5',
+                    sortSelected === option.value && 'bg-main-view-fg/5'
+                  )}
+                  key={option.value}
+                  onClick={() => setSortSelected(option.value)}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showOnlyDownloaded}
+              onCheckedChange={setShowOnlyDownloaded}
+            />
+            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+              {t('hub:downloaded')}
             </span>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end">
-            {sortOptions.map((option) => (
-              <DropdownMenuItem
-                className={cn(
-                  'cursor-pointer my-0.5',
-                  sortSelected === option.value && 'bg-main-view-fg/5'
-                )}
-                key={option.value}
-                onClick={() => setSortSelected(option.value)}
-              >
-                {option.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
-          />
-          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-            {t('hub:downloaded')}
-          </span>
-        </div>
-      </>
-    )
+          </div>
+        </>
+      )
   }
 
   return (
