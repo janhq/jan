@@ -32,6 +32,8 @@ function LocalAPIServer() {
     setCorsEnabled,
     verboseLogs,
     setVerboseLogs,
+    runOnStartup,
+    setRunOnStartup,
     serverHost,
     serverPort,
     apiPrefix,
@@ -195,6 +197,26 @@ function LocalAPIServer() {
                       <span>{t('settings:localApiServer.openLogs')}</span>
                     </div>
                   </Button>
+                }
+              />
+            </Card>
+
+            {/* Startup Configuration */}
+            <Card title={t('settings:localApiServer.startupConfiguration')}>
+              <CardItem
+                title={t('settings:localApiServer.runOnStartup')}
+                description={t('settings:localApiServer.runOnStartupDesc')}
+                actions={
+                  <Switch
+                    checked={runOnStartup}
+                    onCheckedChange={(checked) => {
+                      if (!apiKey || apiKey.toString().trim().length === 0) {
+                        setShowApiKeyError(true)
+                        return
+                      }
+                      setRunOnStartup(checked)
+                    }}
+                  />
                 }
               />
             </Card>
