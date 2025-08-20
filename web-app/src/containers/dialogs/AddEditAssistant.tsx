@@ -338,6 +338,7 @@ export default function AddEditAssistant({
                   <Input
                     value={toolSteps}
                     type="number"
+                    min={0}
                     onChange={(e) => {
                       const newSteps = e.target.value
                       const stepNumber = Number(newSteps)
