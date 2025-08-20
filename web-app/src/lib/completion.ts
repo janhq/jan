@@ -31,8 +31,9 @@ import { ulid } from 'ulidx'
 import { MCPTool } from '@/types/completion'
 import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { callTool } from '@/services/mcp'
+import { callToolWithCancellation } from '@/services/mcp'
 import { ExtensionManager } from './extension'
+import { useAppState } from '@/hooks/useAppState'
 
 export type ChatCompletionResponse =
   | chatCompletion
@@ -381,13 +382,17 @@ export const postMessageProcessing = async (
             )
           : true)
 
+      const { promise, cancel } = callToolWithCancellation({
+        toolName: toolCall.function.name,
+        arguments: toolCall.function.arguments.length
+          ? JSON.parse(toolCall.function.arguments)
+          : {},
+      })
+
+      useAppState.getState().setCancelToolCall(cancel)
+
       let result = approved
-        ? await callTool({
-            toolName: toolCall.function.name,
-            arguments: toolCall.function.arguments.length
-              ? JSON.parse(toolCall.function.arguments)
-              : {},
-          }).catch((e) => {
+        ? await promise.catch((e) => {
             console.error('Tool call failed:', e)
             return {
               content: [

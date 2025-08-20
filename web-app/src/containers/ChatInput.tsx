@@ -46,8 +46,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, abortControllers, loadingModel, tools } =
-    useAppState()
+  const {
+    streamingContent,
+    abortControllers,
+    loadingModel,
+    tools,
+    cancelToolCall,
+  } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
@@ -161,8 +166,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const stopStreaming = useCallback(
     (threadId: string) => {
       abortControllers[threadId]?.abort()
+      cancelToolCall?.()
     },
-    [abortControllers]
+    [abortControllers, cancelToolCall]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
