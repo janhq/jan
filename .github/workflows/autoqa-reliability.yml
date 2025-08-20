@@ -4,23 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       source_type:
-        description: 'App source type (url or local)'
+        description: 'App source type (url)'
         required: true
         type: choice
-        options: [url, local]
+        options: [url]
         default: url
       jan_app_windows_source:
-        description: 'Windows installer URL or local path (used when source_type=url or to select artifact)'
+        description: 'Windows installer URL path (used when source_type=url or to select artifact)'
         required: true
         type: string
         default: 'https://catalog.jan.ai/windows/Jan_0.6.8_x64-setup.exe'
       jan_app_ubuntu_source:
-        description: 'Ubuntu .deb URL or local path'
+        description: 'Ubuntu .deb URL path'
         required: true
         type: string
         default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_amd64.deb'
       jan_app_macos_source:
-        description: 'macOS .dmg URL or local path'
+        description: 'macOS .dmg URL path'
         required: true
         type: string
         default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_universal.dmg'
@@ -45,21 +45,6 @@ on:
         required: true
         type: string
         default: 'tests/base/settings/app-data.txt'
-      artifact_name_windows:
-        description: 'Windows artifact name (only for source_type=local)'
-        required: false
-        type: string
-        default: ''
-      artifact_name_ubuntu:
-        description: 'Ubuntu artifact name (only for source_type=local)'
-        required: false
-        type: string
-        default: ''
-      artifact_name_macos:
-        description: 'macOS artifact name (only for source_type=local)'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   reliability-windows:
@@ -77,13 +62,6 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Download artifact (if source_type is local)
-        if: inputs.source_type == 'local'
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.artifact_name_windows }}
-          path: ${{ runner.temp }}/windows-artifact
-
       - name: Clean existing Jan installations
         shell: powershell
         run: |
@@ -92,26 +70,13 @@ jobs:
       - name: Download/Prepare Jan app
         shell: powershell
         run: |
-          if ("${{ inputs.source_type }}" -eq "local") {
-            $exeFile = Get-ChildItem -Path "${{ runner.temp }}/windows-artifact" -Recurse -Filter "*.exe" | Select-Object -First 1
-            if ($exeFile) {
-              Write-Host "[SUCCESS] Found local installer: $($exeFile.FullName)"
-              Copy-Item -Path $exeFile.FullName -Destination "$env:TEMP\jan-installer.exe" -Force
-              Write-Host "[SUCCESS] Installer copied to: $env:TEMP\jan-installer.exe"
-              echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $env:GITHUB_ENV
-            } else {
-              Write-Error "[FAILED] No .exe file found in artifact"
-              exit 1
-            }
-          } else {
-            .\autoqa\scripts\windows_download.ps1 `
-              -WorkflowInputUrl "${{ inputs.jan_app_windows_source }}" `
-              -WorkflowInputIsNightly "${{ inputs.is_nightly }}" `
-              -RepoVariableUrl "${{ vars.JAN_APP_URL }}" `
-              -RepoVariableIsNightly "${{ vars.IS_NIGHTLY }}" `
-              -DefaultUrl "$env:DEFAULT_JAN_APP_URL" `
-              -DefaultIsNightly "$env:DEFAULT_IS_NIGHTLY"
-          }
+          .\autoqa\scripts\windows_download.ps1 `
+            -WorkflowInputUrl "${{ inputs.jan_app_windows_source }}" `
+            -WorkflowInputIsNightly "${{ inputs.is_nightly }}" `
+            -RepoVariableUrl "${{ vars.JAN_APP_URL }}" `
+            -RepoVariableIsNightly "${{ vars.IS_NIGHTLY }}" `
+            -DefaultUrl "$env:DEFAULT_JAN_APP_URL" `
+            -DefaultIsNightly "$env:DEFAULT_IS_NIGHTLY"
 
       - name: Install Jan app
         shell: powershell
