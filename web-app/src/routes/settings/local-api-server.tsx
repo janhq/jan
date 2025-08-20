@@ -13,6 +13,9 @@ import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { startModel } from '@/services/models'
+import { localStorageKey } from '@/constants/localStorage'
 import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
@@ -32,8 +35,8 @@ function LocalAPIServer() {
     setCorsEnabled,
     verboseLogs,
     setVerboseLogs,
-    runOnStartup,
-    setRunOnStartup,
+    enableOnStartup,
+    setEnableOnStartup,
     serverHost,
     serverPort,
     apiPrefix,
@@ -42,6 +45,7 @@ function LocalAPIServer() {
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
+  const { selectedModel, selectedProvider, getProviderByName } = useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
@@ -62,6 +66,54 @@ function LocalAPIServer() {
     setIsApiKeyEmpty(!isValid)
   }
 
+  const getLastUsedModel = (): { provider: string; model: string } | null => {
+    try {
+      const stored = localStorage.getItem(localStorageKey.lastUsedModel)
+      return stored ? JSON.parse(stored) : null
+    } catch (error) {
+      console.debug('Failed to get last used model from localStorage:', error)
+      return null
+    }
+  }
+
+  // Helper function to determine which model to start
+  const getModelToStart = () => {
+    // Use last used model if available
+    const lastUsedModel = getLastUsedModel()
+    if (lastUsedModel) {
+      const provider = getProviderByName(lastUsedModel.provider)
+      if (
+        provider &&
+        provider.models.some((m) => m.id === lastUsedModel.model)
+      ) {
+        return { model: lastUsedModel.model, provider }
+      }
+    }
+
+    // Use selected model if available
+    if (selectedModel && selectedProvider) {
+      const provider = getProviderByName(selectedProvider)
+      if (provider) {
+        return { model: selectedModel.id, provider }
+      }
+    }
+
+    // Use first model from llamacpp provider
+    const llamacppProvider = getProviderByName('llamacpp')
+    if (
+      llamacppProvider &&
+      llamacppProvider.models &&
+      llamacppProvider.models.length > 0
+    ) {
+      return {
+        model: llamacppProvider.models[0].id,
+        provider: llamacppProvider,
+      }
+    }
+
+    return null
+  }
+
   const toggleAPIServer = async () => {
     // Validate API key before starting server
     if (serverStatus === 'stopped') {
@@ -70,19 +122,33 @@ function LocalAPIServer() {
         return
       }
       setShowApiKeyError(false)
-    }
 
-    setServerStatus('pending')
-    if (serverStatus === 'stopped') {
-      window.core?.api
-        ?.startServer({
-          host: serverHost,
-          port: serverPort,
-          prefix: apiPrefix,
-          apiKey,
-          trustedHosts,
-          isCorsEnabled: corsEnabled,
-          isVerboseEnabled: verboseLogs,
+      const modelToStart = getModelToStart()
+      // Only start server if we have a model to load
+      if (!modelToStart) {
+        console.warn(
+          'Cannot start Local API Server: No model available to load'
+        )
+        return
+      }
+
+      setServerStatus('pending')
+
+      // Start the model first
+      startModel(modelToStart.provider, modelToStart.model)
+        .then(() => {
+          console.log(`Model ${modelToStart.model} started successfully`)
+
+          // Then start the server
+          return window.core?.api?.startServer({
+            host: serverHost,
+            port: serverPort,
+            prefix: apiPrefix,
+            apiKey,
+            trustedHosts,
+            isCorsEnabled: corsEnabled,
+            isVerboseEnabled: verboseLogs,
+          })
         })
         .then(() => {
           setServerStatus('running')
@@ -92,6 +158,7 @@ function LocalAPIServer() {
           setServerStatus('stopped')
         })
     } else {
+      setServerStatus('pending')
       window.core?.api
         ?.stopServer()
         .then(() => {
@@ -208,13 +275,13 @@ function LocalAPIServer() {
                 description={t('settings:localApiServer.runOnStartupDesc')}
                 actions={
                   <Switch
-                    checked={runOnStartup}
+                    checked={enableOnStartup}
                     onCheckedChange={(checked) => {
                       if (!apiKey || apiKey.toString().trim().length === 0) {
                         setShowApiKeyError(true)
                         return
                       }
-                      setRunOnStartup(checked)
+                      setEnableOnStartup(checked)
                     }}
                   />
                 }
