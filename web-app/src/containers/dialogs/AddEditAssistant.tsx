@@ -327,28 +327,26 @@ export default function AddEditAssistant({
             />
           </div>
 
-          <div className="space-y-2 my-4">
+          <div className="space-y-2 my-4 mt-6">
             <div className="flex items-center justify-between">
               <label className="text-sm">{t('common:settings')}</label>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center flex-col sm:flex-row w-full gap-2">
-                  <span className="text-sm">{t('assistants:maxToolSteps')}</span>
-                  <Input
-                    value={toolSteps}
-                    type="number"
-                    min={0}
-                    onChange={(e) => {
-                      const newSteps = e.target.value
-                      const stepNumber = Number(newSteps)
-                      setToolSteps(isNaN(stepNumber) ? 20 : stepNumber)
-                    }}
-                    placeholder="20"
-                    className="w-full sm:w-24"
-                  />
-                </div>
+            <div className="flex justify-between items-center gap-2">
+              <div className="w-full">
+                <p className="text-sm">{t('assistants:maxToolSteps')}</p>
               </div>
+              <Input
+                value={toolSteps}
+                type="number"
+                min={0}
+                onChange={(e) => {
+                  const newSteps = e.target.value
+                  const stepNumber = Number(newSteps)
+                  setToolSteps(isNaN(stepNumber) ? 20 : stepNumber)
+                }}
+                placeholder="20"
+                className="w-18 text-right"
+              />
             </div>
           </div>
 
