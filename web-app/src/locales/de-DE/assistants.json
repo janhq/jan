@@ -29,5 +29,6 @@
   "save": "Speichern",
   "createNew": "Neuen Assistenten anlegen",
   "personality": "Persönlichkeit",
-  "capabilities": "Fähigkeiten"
+  "capabilities": "Fähigkeiten",
+  "maxToolSteps": "Maximale Werkzeugschritte"
 }
