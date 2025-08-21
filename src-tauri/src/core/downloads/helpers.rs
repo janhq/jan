@@ -4,6 +4,7 @@ use futures_util::StreamExt;
 use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::fs::File;
@@ -13,6 +14,115 @@ use url::Url;
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {}", e)
+}
+
+/// Validates a downloaded file against expected hash and size
+async fn validate_downloaded_file(
+    item: &DownloadItem,
+    save_path: &Path,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
+    // Skip validation if no verification data is provided
+    if item.sha256.is_none() && item.size.is_none() {
+        log::debug!(
+            "No validation data provided for {}, skipping validation",
+            item.url
+        );
+        return Ok(());
+    }
+
+    // Extract model ID from save path for validation events
+    // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
+    let model_id = save_path
+        .parent() // get parent directory (modelId folder)
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+
+    // Emit validation started event
+    app.emit(
+        "onModelValidationStarted",
+        serde_json::json!({
+            "modelId": model_id,
+            "downloadType": "Model",
+        }),
+    )
+    .unwrap();
+
+    log::info!("Starting validation for model: {}", model_id);
+
+    // Validate size if provided (fast check first)
+    if let Some(expected_size) = &item.size {
+        log::info!("Starting size verification for {}", item.url);
+
+        match tokio::fs::metadata(save_path).await {
+            Ok(metadata) => {
+                let actual_size = metadata.len();
+
+                if actual_size != *expected_size {
+                    log::error!(
+                        "Size verification failed for {}. Expected: {} bytes, Actual: {} bytes",
+                        item.url,
+                        expected_size,
+                        actual_size
+                    );
+                    return Err(format!(
+                        "Size verification failed. Expected {} bytes but got {} bytes.",
+                        expected_size, actual_size
+                    ));
+                }
+
+                log::info!(
+                    "Size verification successful for {} ({} bytes)",
+                    item.url,
+                    actual_size
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to get file metadata for {}: {}",
+                    save_path.display(),
+                    e
+                );
+                return Err(format!("Failed to verify file size: {}", e));
+            }
+        }
+    }
+
+    // Validate hash if provided (expensive check second)
+    if let Some(expected_sha256) = &item.sha256 {
+        log::info!("Starting Hash verification for {}", item.url);
+
+        match jan_utils::crypto::compute_file_sha256(save_path).await {
+            Ok(computed_sha256) => {
+                if computed_sha256 != *expected_sha256 {
+                    log::error!(
+                        "Hash verification failed for {}. Expected: {}, Computed: {}",
+                        item.url,
+                        expected_sha256,
+                        computed_sha256
+                    );
+
+                    return Err(format!(
+                        "Hash verification failed. The downloaded file is corrupted or has been tampered with."
+                    ));
+                }
+
+                log::info!("Hash verification successful for {}", item.url);
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to compute SHA256 for {}: {}",
+                    save_path.display(),
+                    e
+                );
+                return Err(format!("Failed to verify file integrity: {}", e));
+            }
+        }
+    }
+
+    log::info!("All validations passed for {}", item.url);
+    Ok(())
 }
 
 pub fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
@@ -324,6 +434,10 @@ pub async fn _download_files_internal(
         tokio::fs::remove_file(&url_save_path)
             .await
             .map_err(err_to_string)?;
+
+        // Validate downloaded file if verification data is provided
+        validate_downloaded_file(&item, &save_path, &app).await?;
+
         log::info!("Finished downloading: {}", item.url);
     }
 

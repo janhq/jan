@@ -73,6 +73,9 @@ export enum DownloadEvent {
   onFileDownloadSuccess = 'onFileDownloadSuccess',
   onFileDownloadStopped = 'onFileDownloadStopped',
   onFileDownloadStarted = 'onFileDownloadStarted',
+  onModelValidationStarted = 'onModelValidationStarted',
+  onModelValidationFailed = 'onModelValidationFailed',
+  onFileDownloadAndVerificationSuccess = 'onFileDownloadAndVerificationSuccess',
 }
 export enum ExtensionRoute {
   baseExtensions = 'baseExtensions',

@@ -22,7 +22,7 @@ import {
   CatalogModel,
   convertHfRepoToCatalogModel,
   fetchHuggingFaceRepo,
-  pullModel,
+  pullModelWithMetadata,
 } from '@/services/models'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
@@ -408,9 +408,11 @@ function HubModelDetail() {
                                         addLocalDownloadingModel(
                                           variant.model_id
                                         )
-                                        pullModel(
+                                        pullModelWithMetadata(
                                           variant.model_id,
-                                          variant.path
+                                          variant.path,
+                                          modelData.mmproj_models?.[0]?.path,
+                                          huggingfaceToken
                                         )
                                       }}
                                       className={cn(isDownloading && 'hidden')}

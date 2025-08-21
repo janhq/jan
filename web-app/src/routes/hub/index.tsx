@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   CatalogModel,
-  pullModel,
+  pullModelWithMetadata,
   fetchHuggingFaceRepo,
   convertHfRepoToCatalogModel,
 } from '@/services/models'
@@ -304,7 +304,12 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModel(modelId, modelUrl, mmprojPath)
+        pullModelWithMetadata(
+          modelId, 
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken
+        )
       }
 
       return (
@@ -772,12 +777,13 @@ function Hub() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModel(
+                                                  pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[
                                                       virtualItem.index
-                                                    ].mmproj_models?.[0]?.path
+                                                    ].mmproj_models?.[0]?.path,
+                                                    huggingfaceToken
                                                   )
                                                 }}
                                               >

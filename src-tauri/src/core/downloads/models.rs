@@ -20,6 +20,8 @@ pub struct DownloadItem {
     pub url: String,
     pub save_path: String,
     pub proxy: Option<ProxyConfig>,
+    pub sha256: Option<String>,
+    pub size: Option<u64>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]

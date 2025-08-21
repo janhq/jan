@@ -193,6 +193,10 @@ export interface chatOptions {
 export interface ImportOptions {
   modelPath: string
   mmprojPath?: string
+  modelSha256?: string
+  modelSize?: number
+  mmprojSha256?: string
+  mmprojSize?: number
 }
 
 export interface importResult {
@@ -274,7 +278,7 @@ export abstract class AIEngine extends BaseExtension {
 
   /**
    * Check if a tool is supported by the model
-   * @param modelId 
+   * @param modelId
    */
   abstract isToolSupported(modelId: string): Promise<boolean>
 }
