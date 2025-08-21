@@ -325,7 +325,7 @@ describe('models service', () => {
 
       expect(result).toEqual(mockRepoData)
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
           headers: {},
         }
@@ -344,7 +344,7 @@ describe('models service', () => {
         'https://huggingface.co/microsoft/DialoGPT-medium'
       )
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
           headers: {},
         }
@@ -353,7 +353,7 @@ describe('models service', () => {
       // Test with domain prefix
       await fetchHuggingFaceRepo('huggingface.co/microsoft/DialoGPT-medium')
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
           headers: {},
         }
@@ -362,7 +362,7 @@ describe('models service', () => {
       // Test with trailing slash
       await fetchHuggingFaceRepo('microsoft/DialoGPT-medium/')
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
           headers: {},
         }
@@ -391,7 +391,7 @@ describe('models service', () => {
 
       expect(result).toBeNull()
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/nonexistent/model?blobs=true',
+        'https://huggingface.co/api/models/nonexistent/model?blobs=true&files_metadata=true',
         {
           headers: {},
         }

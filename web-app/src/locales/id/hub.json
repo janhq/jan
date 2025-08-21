@@ -12,6 +12,7 @@
   "showVariants": "Tampilkan Varian",
   "useModel": "Gunakan model ini",
   "downloadModel": "Unduh model",
+  "tools": "Alat",
   "searchPlaceholder": "Cari model di Hugging Face...",
   "joyride": {
     "recommendedModelTitle": "Model yang Direkomendasikan",

@@ -168,9 +168,46 @@ export function DownloadManagement() {
     [removeDownload, removeLocalDownloadingModel, t]
   )
 
+  const onModelValidationStarted = useCallback(
+    (event: { modelId: string; downloadType: string }) => {
+      console.debug('onModelValidationStarted', event)
+
+      // Show validation in progress toast
+      toast.info(t('common:toast.modelValidationStarted.title'), {
+        id: `model-validation-started-${event.modelId}`,
+        description: t('common:toast.modelValidationStarted.description', {
+          modelId: event.modelId,
+        }),
+        duration: 10000,
+      })
+    },
+    [t]
+  )
+
+  const onModelValidationFailed = useCallback(
+    (event: { modelId: string; error: string; reason: string }) => {
+      console.debug('onModelValidationFailed', event)
+
+      // Dismiss the validation started toast
+      toast.dismiss(`model-validation-started-${event.modelId}`)
+
+      removeDownload(event.modelId)
+      removeLocalDownloadingModel(event.modelId)
+
+      // Show specific toast for validation failure
+      toast.error(t('common:toast.modelValidationFailed.title'), {
+        description: t('common:toast.modelValidationFailed.description', {
+          modelId: event.modelId,
+        }),
+        duration: 30000, // Requires manual dismissal for security-critical message
+      })
+    },
+    [removeDownload, removeLocalDownloadingModel, t]
+  )
+
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
-      console.debug('onFileDownloadError', state)
+      console.debug('onFileDownloadStopped', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
     },
@@ -180,11 +217,34 @@ export function DownloadManagement() {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
+
+      // Dismiss any validation started toast when download completes successfully
+      toast.dismiss(`model-validation-started-${state.modelId}`)
+
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
         description: t('common:toast.downloadComplete.description', {
+          item: state.modelId,
+        }),
+      })
+    },
+    [removeDownload, removeLocalDownloadingModel, t]
+  )
+
+  const onFileDownloadAndVerificationSuccess = useCallback(
+    async (state: DownloadState) => {
+      console.debug('onFileDownloadAndVerificationSuccess', state)
+
+      // Dismiss any validation started toast when download and verification complete successfully
+      toast.dismiss(`model-validation-started-${state.modelId}`)
+
+      removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
+      toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+        id: 'download-complete',
+        description: t('common:toast.downloadAndVerificationComplete.description', {
           item: state.modelId,
         }),
       })
@@ -198,6 +258,9 @@ export function DownloadManagement() {
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
     events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
+    events.on(DownloadEvent.onModelValidationStarted, onModelValidationStarted)
+    events.on(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
+    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
 
     // Register app update event listeners
     events.on(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
@@ -210,6 +273,12 @@ export function DownloadManagement() {
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
       events.off(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
+      events.off(
+        DownloadEvent.onModelValidationStarted,
+        onModelValidationStarted
+      )
+      events.off(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
+      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
 
       // Unregister app update event listeners
       events.off(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
@@ -224,6 +293,9 @@ export function DownloadManagement() {
     onFileDownloadError,
     onFileDownloadSuccess,
     onFileDownloadStopped,
+    onModelValidationStarted,
+    onModelValidationFailed,
+    onFileDownloadAndVerificationSuccess,
     onAppUpdateDownloadUpdate,
     onAppUpdateDownloadSuccess,
     onAppUpdateDownloadError,

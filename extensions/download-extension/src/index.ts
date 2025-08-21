@@ -10,6 +10,8 @@ interface DownloadItem {
   url: string
   save_path: string
   proxy?: Record<string, string | string[] | boolean>
+  sha256?: string
+  size?: number
 }
 
 type DownloadEvent = {

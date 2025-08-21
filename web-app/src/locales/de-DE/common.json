@@ -256,6 +256,22 @@
     "downloadCancelled": {
       "title": "Download abgebrochen",
       "description": "Der Download-Prozess wurde abgebrochen"
+    },
+    "downloadFailed": {
+      "title": "Download fehlgeschlagen",
+      "description": "{{item}} Download fehlgeschlagen"
+    },
+    "modelValidationStarted": {
+      "title": "Modell wird validiert",
+      "description": "Modell \"{{modelId}}\" erfolgreich heruntergeladen. Integrität wird überprüft..."
+    },
+    "modelValidationFailed": {
+      "title": "Modellvalidierung fehlgeschlagen",
+      "description": "Das heruntergeladene Modell \"{{modelId}}\" ist bei der Integritätsprüfung fehlgeschlagen und wurde entfernt. Die Datei könnte beschädigt oder manipuliert worden sein."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download abgeschlossen",
+      "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
   }
 }

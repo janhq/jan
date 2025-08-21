@@ -194,6 +194,10 @@ export interface chatOptions {
 export interface ImportOptions {
   modelPath: string
   mmprojPath?: string
+  modelSha256?: string
+  modelSize?: number
+  mmprojSha256?: string
+  mmprojSize?: number
 }
 
 export interface importResult {

@@ -20,9 +20,11 @@ import {
   chatCompletionRequest,
   events,
   AppEvent,
+  DownloadEvent,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
+import { listen } from '@tauri-apps/api/event'
 
 import {
   listSupportedBackends,
@@ -71,6 +73,8 @@ interface DownloadItem {
   url: string
   save_path: string
   proxy?: Record<string, string | string[] | boolean>
+  sha256?: string
+  size?: number
 }
 
 interface ModelConfig {
@@ -79,6 +83,9 @@ interface ModelConfig {
   name: string // user-friendly
   // some model info that we cache upon import
   size_bytes: number
+  sha256?: string
+  mmproj_sha256?: string
+  mmproj_size_bytes?: number
 }
 
 interface EmbeddingResponse {
@@ -154,6 +161,7 @@ export default class llamacpp_extension extends AIEngine {
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  private unlistenValidationStarted?: () => void
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -181,6 +189,19 @@ export default class llamacpp_extension extends AIEngine {
       await getJanDataFolderPath(),
       this.providerId,
     ])
+
+    // Set up validation event listeners to bridge Tauri events to frontend
+    this.unlistenValidationStarted = await listen<{
+      modelId: string
+      downloadType: string
+    }>('onModelValidationStarted', (event) => {
+      console.debug(
+        'LlamaCPP: bridging onModelValidationStarted event',
+        event.payload
+      )
+      events.emit(DownloadEvent.onModelValidationStarted, event.payload)
+    })
+
     this.configureBackends()
   }
 
@@ -774,6 +795,11 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onUnload(): Promise<void> {
     // Terminate all active sessions
+
+    // Clean up validation event listeners
+    if (this.unlistenValidationStarted) {
+      this.unlistenValidationStarted()
+    }
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -1006,6 +1032,9 @@ export default class llamacpp_extension extends AIEngine {
           url: path,
           save_path: localPath,
           proxy: getProxyConfig(),
+          sha256:
+            saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
+          size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
         })
         return localPath
       }
@@ -1023,8 +1052,6 @@ export default class llamacpp_extension extends AIEngine {
       : undefined
 
     if (downloadItems.length > 0) {
-      let downloadCompleted = false
-
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
@@ -1034,7 +1061,6 @@ export default class llamacpp_extension extends AIEngine {
             size: { transferred, total },
             downloadType: 'Model',
           })
-          downloadCompleted = transferred === total
         }
         const downloadManager = window.core.extensionManager.getByName(
           '@janhq/download-extension'
@@ -1045,13 +1071,67 @@ export default class llamacpp_extension extends AIEngine {
           onProgress
         )
 
-        const eventName = downloadCompleted
-          ? 'onFileDownloadSuccess'
-          : 'onFileDownloadStopped'
-        events.emit(eventName, { modelId, downloadType: 'Model' })
+        // If we reach here, download completed successfully (including validation)
+        // The downloadFiles function only returns successfully if all files downloaded AND validated
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, { 
+          modelId, 
+          downloadType: 'Model' 
+        })
       } catch (error) {
         logger.error('Error downloading model:', modelId, opts, error)
-        events.emit('onFileDownloadError', { modelId, downloadType: 'Model' })
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+
+        // Check if this is a cancellation
+        const isCancellationError = errorMessage.includes('Download cancelled') ||
+          errorMessage.includes('Validation cancelled') ||
+          errorMessage.includes('Hash computation cancelled') ||
+          errorMessage.includes('cancelled') ||
+          errorMessage.includes('aborted')
+
+        // Check if this is a validation failure
+        const isValidationError =
+          errorMessage.includes('Hash verification failed') ||
+          errorMessage.includes('Size verification failed') ||
+          errorMessage.includes('Failed to verify file')
+
+        if (isCancellationError) {
+          logger.info('Download cancelled for model:', modelId)
+          // Emit download stopped event instead of error
+          events.emit(DownloadEvent.onFileDownloadStopped, {
+            modelId,
+            downloadType: 'Model',
+          })
+        } else if (isValidationError) {
+          logger.error(
+            'Validation failed for model:',
+            modelId,
+            'Error:',
+            errorMessage
+          )
+
+          // Cancel any other download tasks for this model
+          try {
+            this.abortImport(modelId)
+          } catch (cancelError) {
+            logger.warn('Failed to cancel download task:', cancelError)
+          }
+
+          // Emit validation failure event
+          events.emit(DownloadEvent.onModelValidationFailed, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+            reason: 'validation_failed',
+          })
+        } else {
+          // Regular download error
+          events.emit(DownloadEvent.onFileDownloadError, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+          })
+        }
         throw error
       }
     }
@@ -1078,7 +1158,9 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.error('GGUF validation failed:', error)
       throw new Error(
-        `Invalid GGUF file(s): ${error.message || 'File format validation failed'}`
+        `Invalid GGUF file(s): ${
+          error.message || 'File format validation failed'
+        }`
       )
     }
 
@@ -1097,6 +1179,10 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_path: mmprojPath,
       name: modelId,
       size_bytes,
+      model_sha256: opts.modelSha256,
+      model_size_bytes: opts.modelSize,
+      mmproj_sha256: opts.mmprojSha256,
+      mmproj_size_bytes: opts.mmprojSize,
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -1108,16 +1194,50 @@ export default class llamacpp_extension extends AIEngine {
       modelPath,
       mmprojPath,
       size_bytes,
+      model_sha256: opts.modelSha256,
+      model_size_bytes: opts.modelSize,
+      mmproj_sha256: opts.mmprojSha256,
+      mmproj_size_bytes: opts.mmprojSize,
     })
   }
 
+  /**
+   * Deletes the entire model folder for a given modelId
+   * @param modelId The model ID to delete
+   */
+  private async deleteModelFolder(modelId: string): Promise<void> {
+    try {
+      const modelDir = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+      ])
+
+      if (await fs.existsSync(modelDir)) {
+        logger.info(`Cleaning up model directory: ${modelDir}`)
+        await fs.rm(modelDir)
+      }
+    } catch (deleteError) {
+      logger.warn('Failed to delete model directory:', deleteError)
+    }
+  }
+
   override async abortImport(modelId: string): Promise<void> {
-    // prepand provider name to avoid name collision
+    // Cancel any active download task
+    // prepend provider name to avoid name collision
     const taskId = this.createDownloadTaskId(modelId)
     const downloadManager = window.core.extensionManager.getByName(
       '@janhq/download-extension'
     )
-    await downloadManager.cancelDownload(taskId)
+
+    try {
+      await downloadManager.cancelDownload(taskId)
+    } catch (cancelError) {
+      logger.warn('Failed to cancel download task:', cancelError)
+    }
+
+    // Delete the entire model folder if it exists (for validation failures)
+    await this.deleteModelFolder(modelId)
   }
 
   /**
