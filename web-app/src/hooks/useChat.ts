@@ -29,7 +29,6 @@ import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
-import { useGeneralSetting } from './useGeneralSetting'
 import {
   ReasoningProcessor,
   extractReasoningFromMessage,
@@ -37,7 +36,6 @@ import {
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
-  const { experimentalFeatures } = useGeneralSetting()
   const {
     tools,
     updateTokenSpeed,
@@ -247,13 +245,12 @@ export const useChat = () => {
         let isCompleted = false
 
         // Filter tools based on model capabilities and available tools for this thread
-        let availableTools =
-          experimentalFeatures && selectedModel?.capabilities?.includes('tools')
-            ? tools.filter((tool) => {
-                const disabledTools = getDisabledToolsForThread(activeThread.id)
-                return !disabledTools.includes(tool.name)
-              })
-            : []
+        let availableTools = selectedModel?.capabilities?.includes('tools')
+          ? tools.filter((tool) => {
+              const disabledTools = getDisabledToolsForThread(activeThread.id)
+              return !disabledTools.includes(tool.name)
+            })
+          : []
 
         let assistantLoopSteps = 0
 
@@ -543,7 +540,6 @@ export const useChat = () => {
       setPrompt,
       selectedModel,
       currentAssistant,
-      experimentalFeatures,
       tools,
       updateLoadingModel,
       getDisabledToolsForThread,
