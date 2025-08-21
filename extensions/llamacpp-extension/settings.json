@@ -17,7 +17,7 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "none",
-      "placeholder": "Eg, GGML_VK_VISIBLE_DEVICES='0,1'",
+      "placeholder": "Eg. GGML_VK_VISIBLE_DEVICES=0,1",
       "type": "text",
       "textAlign": "right"
     }
