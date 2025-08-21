@@ -1052,8 +1052,6 @@ export default class llamacpp_extension extends AIEngine {
       : undefined
 
     if (downloadItems.length > 0) {
-      let downloadCompleted = false
-
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
@@ -1063,7 +1061,6 @@ export default class llamacpp_extension extends AIEngine {
             size: { transferred, total },
             downloadType: 'Model',
           })
-          downloadCompleted = transferred === total
         }
         const downloadManager = window.core.extensionManager.getByName(
           '@janhq/download-extension'
@@ -1074,10 +1071,12 @@ export default class llamacpp_extension extends AIEngine {
           onProgress
         )
 
-        const eventName = downloadCompleted
-          ? DownloadEvent.onFileDownloadAndVerificationSuccess
-          : DownloadEvent.onFileDownloadStopped
-        events.emit(eventName, { modelId, downloadType: 'Model' })
+        // If we reach here, download completed successfully (including validation)
+        // The downloadFiles function only returns successfully if all files downloaded AND validated
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, { 
+          modelId, 
+          downloadType: 'Model' 
+        })
       } catch (error) {
         logger.error('Error downloading model:', modelId, opts, error)
         const errorMessage =

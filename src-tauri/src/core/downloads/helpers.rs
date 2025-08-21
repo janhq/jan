@@ -5,10 +5,12 @@ use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -282,6 +284,34 @@ pub async fn _get_file_size(
     }
 }
 
+// Structure to track progress for each file
+#[derive(Clone)]
+struct ProgressTracker {
+    file_progress: Arc<Mutex<HashMap<String, u64>>>,
+    total_size: u64,
+}
+
+impl ProgressTracker {
+    fn new(_items: &[DownloadItem], sizes: HashMap<String, u64>) -> Self {
+        let total_size = sizes.values().sum();
+        ProgressTracker {
+            file_progress: Arc::new(Mutex::new(HashMap::new())),
+            total_size,
+        }
+    }
+
+    async fn update_progress(&self, file_id: &str, transferred: u64) {
+        let mut progress = self.file_progress.lock().await;
+        progress.insert(file_id.to_string(), transferred);
+    }
+
+    async fn get_total_progress(&self) -> (u64, u64) {
+        let progress = self.file_progress.lock().await;
+        let total_transferred: u64 = progress.values().sum();
+        (total_transferred, self.total_size)
+    }
+}
+
 pub async fn _download_files_internal(
     app: tauri::AppHandle,
     items: &[DownloadItem],
@@ -294,28 +324,31 @@ pub async fn _download_files_internal(
 
     let header_map = _convert_headers(headers).map_err(err_to_string)?;
 
-    let total_size = {
-        let mut total_size = 0u64;
-        for item in items.iter() {
-            let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-            total_size += _get_file_size(&client, &item.url)
-                .await
-                .map_err(err_to_string)?;
-        }
-        total_size
-    };
+    // Calculate sizes for each file
+    let mut file_sizes = HashMap::new();
+    for item in items.iter() {
+        let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
+        let size = _get_file_size(&client, &item.url)
+            .await
+            .map_err(err_to_string)?;
+        file_sizes.insert(item.url.clone(), size);
+    }
+
+    let total_size: u64 = file_sizes.values().sum();
     log::info!("Total download size: {}", total_size);
 
-    let mut evt = DownloadEvent {
-        transferred: 0,
-        total: total_size,
-    };
     let evt_name = format!("download-{}", task_id);
+
+    // Create progress tracker
+    let progress_tracker = ProgressTracker::new(items, file_sizes.clone());
 
     // save file under Jan data folder
     let jan_data_folder = get_jan_data_folder_path(app.clone());
 
-    for item in items.iter() {
+    // Collect download tasks for parallel execution
+    let mut download_tasks = Vec::new();
+
+    for (index, item) in items.iter().enumerate() {
         let save_path = jan_data_folder.join(&item.save_path);
         let save_path = normalize_path(&save_path);
 
@@ -327,122 +360,246 @@ pub async fn _download_files_internal(
             ));
         }
 
-        // Create parent directories if they don't exist
-        if let Some(parent) = save_path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(err_to_string)?;
-            }
-        }
+        // Spawn download task for each file
+        let item_clone = item.clone();
+        let app_clone = app.clone();
+        let header_map_clone = header_map.clone();
+        let cancel_token_clone = cancel_token.clone();
+        let evt_name_clone = evt_name.clone();
+        let progress_tracker_clone = progress_tracker.clone();
+        let file_id = format!("{}-{}", task_id, index);
+        let file_size = file_sizes.get(&item.url).copied().unwrap_or(0);
 
-        let current_extension = save_path.extension().unwrap_or_default().to_string_lossy();
-        let append_extension = |ext: &str| {
-            if current_extension.is_empty() {
-                ext.to_string()
-            } else {
-                format!("{}.{}", current_extension, ext)
-            }
-        };
-        let tmp_save_path = save_path.with_extension(append_extension("tmp"));
-        let url_save_path = save_path.with_extension(append_extension("url"));
-
-        let mut should_resume = resume
-            && tmp_save_path.exists()
-            && tokio::fs::read_to_string(&url_save_path)
-                .await
-                .map(|url| url == item.url) // check if we resume the same URL
-                .unwrap_or(false);
-
-        tokio::fs::write(&url_save_path, item.url.clone())
+        let task = tokio::spawn(async move {
+            download_single_file(
+                app_clone,
+                &item_clone,
+                &header_map_clone,
+                &save_path,
+                resume,
+                cancel_token_clone,
+                evt_name_clone,
+                progress_tracker_clone,
+                file_id,
+                file_size,
+            )
             .await
-            .map_err(err_to_string)?;
+        });
 
-        log::info!("Started downloading: {}", item.url);
-        let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-        let mut download_delta = 0u64;
-        let resp = if should_resume {
-            let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
-            match _get_maybe_resume(&client, &item.url, downloaded_size).await {
-                Ok(resp) => {
-                    log::info!(
-                        "Resume download: {}, already downloaded {} bytes",
-                        item.url,
-                        downloaded_size
-                    );
-                    download_delta += downloaded_size;
-                    resp
-                }
-                Err(e) => {
-                    // fallback to normal download
-                    log::warn!("Failed to resume download: {}", e);
-                    should_resume = false;
-                    _get_maybe_resume(&client, &item.url, 0).await?
-                }
-            }
-        } else {
-            _get_maybe_resume(&client, &item.url, 0).await?
-        };
-        let mut stream = resp.bytes_stream();
-
-        let file = if should_resume {
-            // resume download, append to existing file
-            tokio::fs::OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(&tmp_save_path)
-                .await
-                .map_err(err_to_string)?
-        } else {
-            // start new download, create a new file
-            File::create(&tmp_save_path).await.map_err(err_to_string)?
-        };
-        let mut writer = tokio::io::BufWriter::new(file);
-
-        // write chunk to file
-        while let Some(chunk) = stream.next().await {
-            if cancel_token.is_cancelled() {
-                if !should_resume {
-                    tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                        .await
-                        .ok();
-                }
-                log::info!("Download cancelled for task: {}", task_id);
-                app.emit(&evt_name, evt.clone()).unwrap();
-                return Ok(());
-            }
-
-            let chunk = chunk.map_err(err_to_string)?;
-            writer.write_all(&chunk).await.map_err(err_to_string)?;
-            download_delta += chunk.len() as u64;
-
-            // only update every 10 MB
-            if download_delta >= 10 * 1024 * 1024 {
-                evt.transferred += download_delta;
-                app.emit(&evt_name, evt.clone()).unwrap();
-                download_delta = 0u64;
-            }
-        }
-
-        writer.flush().await.map_err(err_to_string)?;
-        evt.transferred += download_delta;
-
-        // rename tmp file to final file
-        tokio::fs::rename(&tmp_save_path, &save_path)
-            .await
-            .map_err(err_to_string)?;
-        tokio::fs::remove_file(&url_save_path)
-            .await
-            .map_err(err_to_string)?;
-
-        // Validate downloaded file if verification data is provided
-        validate_downloaded_file(&item, &save_path, &app).await?;
-
-        log::info!("Finished downloading: {}", item.url);
+        download_tasks.push(task);
     }
 
-    app.emit(&evt_name, evt.clone()).unwrap();
+    // Wait for all downloads to complete
+    let mut validation_tasks = Vec::new();
+    for (task, item) in download_tasks.into_iter().zip(items.iter()) {
+        let result = task.await.map_err(|e| format!("Task join error: {}", e))?;
+
+        match result {
+            Ok(downloaded_path) => {
+                // Spawn validation task in parallel
+                let item_clone = item.clone();
+                let app_clone = app.clone();
+                let path_clone = downloaded_path.clone();
+                let validation_task = tokio::spawn(async move {
+                    validate_downloaded_file(&item_clone, &path_clone, &app_clone).await
+                });
+                validation_tasks.push((validation_task, downloaded_path, item.clone()));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // Wait for all validations to complete
+    for (validation_task, save_path, _item) in validation_tasks {
+        let validation_result = validation_task
+            .await
+            .map_err(|e| format!("Validation task join error: {}", e))?;
+
+        if let Err(validation_error) = validation_result {
+            // Clean up the file if validation fails
+            let _ = tokio::fs::remove_file(&save_path).await;
+
+            // Try to clean up the parent directory if it's empty
+            if let Some(parent) = save_path.parent() {
+                let _ = tokio::fs::remove_dir(parent).await;
+            }
+
+            return Err(validation_error);
+        }
+    }
+
+    // Emit final progress
+    let (transferred, total) = progress_tracker.get_total_progress().await;
+    let final_evt = DownloadEvent { transferred, total };
+    app.emit(&evt_name, final_evt).unwrap();
     Ok(())
+}
+
+/// Downloads a single file without blocking other downloads
+async fn download_single_file(
+    app: tauri::AppHandle,
+    item: &DownloadItem,
+    header_map: &HeaderMap,
+    save_path: &std::path::Path,
+    resume: bool,
+    cancel_token: CancellationToken,
+    evt_name: String,
+    progress_tracker: ProgressTracker,
+    file_id: String,
+    _file_size: u64,
+) -> Result<std::path::PathBuf, String> {
+    // Create parent directories if they don't exist
+    if let Some(parent) = save_path.parent() {
+        if !parent.exists() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(err_to_string)?;
+        }
+    }
+
+    let current_extension = save_path.extension().unwrap_or_default().to_string_lossy();
+    let append_extension = |ext: &str| {
+        if current_extension.is_empty() {
+            ext.to_string()
+        } else {
+            format!("{}.{}", current_extension, ext)
+        }
+    };
+    let tmp_save_path = save_path.with_extension(append_extension("tmp"));
+    let url_save_path = save_path.with_extension(append_extension("url"));
+
+    let mut should_resume = resume
+        && tmp_save_path.exists()
+        && tokio::fs::read_to_string(&url_save_path)
+            .await
+            .map(|url| url == item.url) // check if we resume the same URL
+            .unwrap_or(false);
+
+    tokio::fs::write(&url_save_path, item.url.clone())
+        .await
+        .map_err(err_to_string)?;
+
+    log::info!("Started downloading: {}", item.url);
+    let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
+    let mut download_delta = 0u64;
+    let mut initial_progress = 0u64;
+
+    let resp = if should_resume {
+        let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
+        match _get_maybe_resume(&client, &item.url, downloaded_size).await {
+            Ok(resp) => {
+                log::info!(
+                    "Resume download: {}, already downloaded {} bytes",
+                    item.url,
+                    downloaded_size
+                );
+                initial_progress = downloaded_size;
+
+                // Initialize progress for resumed download
+                progress_tracker
+                    .update_progress(&file_id, downloaded_size)
+                    .await;
+
+                // Emit initial combined progress
+                let (combined_transferred, combined_total) =
+                    progress_tracker.get_total_progress().await;
+                let evt = DownloadEvent {
+                    transferred: combined_transferred,
+                    total: combined_total,
+                };
+                app.emit(&evt_name, evt).unwrap();
+
+                resp
+            }
+            Err(e) => {
+                // fallback to normal download
+                log::warn!("Failed to resume download: {}", e);
+                should_resume = false;
+                _get_maybe_resume(&client, &item.url, 0).await?
+            }
+        }
+    } else {
+        _get_maybe_resume(&client, &item.url, 0).await?
+    };
+    let mut stream = resp.bytes_stream();
+
+    let file = if should_resume {
+        // resume download, append to existing file
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(&tmp_save_path)
+            .await
+            .map_err(err_to_string)?
+    } else {
+        // start new download, create a new file
+        File::create(&tmp_save_path).await.map_err(err_to_string)?
+    };
+    let mut writer = tokio::io::BufWriter::new(file);
+    let mut total_transferred = initial_progress;
+
+    // write chunk to file
+    while let Some(chunk) = stream.next().await {
+        if cancel_token.is_cancelled() {
+            if !should_resume {
+                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
+                    .await
+                    .ok();
+            }
+            log::info!("Download cancelled: {}", item.url);
+            return Err("Download cancelled".to_string());
+        }
+
+        let chunk = chunk.map_err(err_to_string)?;
+        writer.write_all(&chunk).await.map_err(err_to_string)?;
+        download_delta += chunk.len() as u64;
+        total_transferred += chunk.len() as u64;
+
+        // Update progress every 10 MB
+        if download_delta >= 10 * 1024 * 1024 {
+            // Update individual file progress
+            progress_tracker
+                .update_progress(&file_id, total_transferred)
+                .await;
+
+            // Emit combined progress event
+            let (combined_transferred, combined_total) =
+                progress_tracker.get_total_progress().await;
+            let evt = DownloadEvent {
+                transferred: combined_transferred,
+                total: combined_total,
+            };
+            app.emit(&evt_name, evt).unwrap();
+
+            download_delta = 0u64;
+        }
+    }
+
+    writer.flush().await.map_err(err_to_string)?;
+
+    // Final progress update for this file
+    progress_tracker
+        .update_progress(&file_id, total_transferred)
+        .await;
+
+    // Emit final combined progress
+    let (combined_transferred, combined_total) = progress_tracker.get_total_progress().await;
+    let evt = DownloadEvent {
+        transferred: combined_transferred,
+        total: combined_total,
+    };
+    app.emit(&evt_name, evt).unwrap();
+
+    // rename tmp file to final file
+    tokio::fs::rename(&tmp_save_path, &save_path)
+        .await
+        .map_err(err_to_string)?;
+    tokio::fs::remove_file(&url_save_path)
+        .await
+        .map_err(err_to_string)?;
+
+    log::info!("Finished downloading: {}", item.url);
+    Ok(save_path.to_path_buf())
 }
 
 pub async fn _get_maybe_resume(
