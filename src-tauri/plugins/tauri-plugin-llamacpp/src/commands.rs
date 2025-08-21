@@ -265,8 +265,9 @@ pub async fn unload_llama_model<R: Runtime>(
 pub async fn get_devices(
     backend_path: &str,
     library_path: Option<&str>,
+    envs: HashMap<String, String>
 ) -> ServerResult<Vec<DeviceInfo>> {
-    get_devices_from_backend(backend_path, library_path).await
+    get_devices_from_backend(backend_path, library_path, envs).await
 }
 
 /// Generate API key using HMAC-SHA256
