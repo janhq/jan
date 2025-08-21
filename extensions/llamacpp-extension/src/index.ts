@@ -1082,13 +1082,25 @@ export default class llamacpp_extension extends AIEngine {
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
+        // Check if this is a cancellation
+        const isCancellationError = errorMessage.includes('Download cancelled') ||
+          errorMessage.includes('cancelled') ||
+          errorMessage.includes('aborted')
+
         // Check if this is a validation failure
         const isValidationError =
           errorMessage.includes('Hash verification failed') ||
           errorMessage.includes('Size verification failed') ||
           errorMessage.includes('Failed to verify file')
 
-        if (isValidationError) {
+        if (isCancellationError) {
+          logger.info('Download cancelled for model:', modelId)
+          // Emit download stopped event instead of error
+          events.emit(DownloadEvent.onFileDownloadStopped, {
+            modelId,
+            downloadType: 'Model',
+          })
+        } else if (isValidationError) {
           logger.error(
             'Validation failed for model:',
             modelId,

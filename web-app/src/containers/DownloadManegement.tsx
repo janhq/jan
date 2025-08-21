@@ -207,7 +207,7 @@ export function DownloadManagement() {
 
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
-      console.debug('onFileDownloadError', state)
+      console.debug('onFileDownloadStopped', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
     },
