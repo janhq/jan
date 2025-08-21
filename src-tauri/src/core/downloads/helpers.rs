@@ -1,22 +1,24 @@
-use super::models::{DownloadEvent, DownloadItem, ProxyConfig};
+use super::models::{DownloadEvent, DownloadItem, ProxyConfig, ProgressTracker};
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
 use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+
+// ===== UTILITY FUNCTIONS =====
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {}", e)
 }
+
+// ===== VALIDATION FUNCTIONS =====
 
 /// Validates a downloaded file against expected hash and size
 async fn validate_downloaded_file(
@@ -284,34 +286,9 @@ pub async fn _get_file_size(
     }
 }
 
-// Structure to track progress for each file
-#[derive(Clone)]
-struct ProgressTracker {
-    file_progress: Arc<Mutex<HashMap<String, u64>>>,
-    total_size: u64,
-}
+// ===== MAIN DOWNLOAD FUNCTIONS =====
 
-impl ProgressTracker {
-    fn new(_items: &[DownloadItem], sizes: HashMap<String, u64>) -> Self {
-        let total_size = sizes.values().sum();
-        ProgressTracker {
-            file_progress: Arc::new(Mutex::new(HashMap::new())),
-            total_size,
-        }
-    }
-
-    async fn update_progress(&self, file_id: &str, transferred: u64) {
-        let mut progress = self.file_progress.lock().await;
-        progress.insert(file_id.to_string(), transferred);
-    }
-
-    async fn get_total_progress(&self) -> (u64, u64) {
-        let progress = self.file_progress.lock().await;
-        let total_transferred: u64 = progress.values().sum();
-        (total_transferred, self.total_size)
-    }
-}
-
+/// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
     app: tauri::AppHandle,
     items: &[DownloadItem],
@@ -601,6 +578,8 @@ async fn download_single_file(
     log::info!("Finished downloading: {}", item.url);
     Ok(save_path.to_path_buf())
 }
+
+// ===== HTTP CLIENT HELPER FUNCTIONS =====
 
 pub async fn _get_maybe_resume(
     client: &reqwest::Client,
