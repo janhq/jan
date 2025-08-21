@@ -57,7 +57,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
-  const { spellCheckChatInput, experimentalFeatures } = useGeneralSetting()
+  const { spellCheckChatInput } = useGeneralSetting()
 
   const maxRows = 10
 
@@ -586,8 +586,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   </TooltipProvider>
                 )}
 
-                {experimentalFeatures &&
-                  selectedModel?.capabilities?.includes('tools') &&
+                {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
                     <TooltipProvider>
                       <Tooltip

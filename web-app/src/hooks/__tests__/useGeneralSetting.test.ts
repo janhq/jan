@@ -31,16 +31,15 @@ describe('useGeneralSetting', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    
+
     // Get the mocked ExtensionManager
     const { ExtensionManager } = await import('@/lib/extension')
     mockExtensionManager = ExtensionManager
-    
+
     // Reset store state to defaults
     useGeneralSetting.setState({
       currentLanguage: 'en',
       spellCheckChatInput: true,
-      experimentalFeatures: false,
       huggingfaceToken: undefined,
     })
 
@@ -49,7 +48,7 @@ describe('useGeneralSetting', () => {
       getSettings: vi.fn().mockResolvedValue(null),
       updateSettings: vi.fn(),
     })
-    
+
     mockExtensionManager.getInstance.mockReturnValue({
       getByName: mockGetByName,
     })
@@ -60,11 +59,9 @@ describe('useGeneralSetting', () => {
 
     expect(result.current.currentLanguage).toBe('en')
     expect(result.current.spellCheckChatInput).toBe(true)
-    expect(result.current.experimentalFeatures).toBe(false)
     expect(result.current.huggingfaceToken).toBeUndefined()
     expect(typeof result.current.setCurrentLanguage).toBe('function')
     expect(typeof result.current.setSpellCheckChatInput).toBe('function')
-    expect(typeof result.current.setExperimentalFeatures).toBe('function')
     expect(typeof result.current.setHuggingfaceToken).toBe('function')
   })
 
@@ -155,42 +152,6 @@ describe('useGeneralSetting', () => {
     })
   })
 
-  describe('setExperimentalFeatures', () => {
-    it('should enable experimental features', () => {
-      const { result } = renderHook(() => useGeneralSetting())
-
-      act(() => {
-        result.current.setExperimentalFeatures(true)
-      })
-
-      expect(result.current.experimentalFeatures).toBe(true)
-    })
-
-    it('should disable experimental features', () => {
-      const { result } = renderHook(() => useGeneralSetting())
-
-      act(() => {
-        result.current.setExperimentalFeatures(false)
-      })
-
-      expect(result.current.experimentalFeatures).toBe(false)
-    })
-
-    it('should toggle experimental features multiple times', () => {
-      const { result } = renderHook(() => useGeneralSetting())
-
-      act(() => {
-        result.current.setExperimentalFeatures(true)
-      })
-      expect(result.current.experimentalFeatures).toBe(true)
-
-      act(() => {
-        result.current.setExperimentalFeatures(false)
-      })
-      expect(result.current.experimentalFeatures).toBe(false)
-    })
-  })
-
   describe('setHuggingfaceToken', () => {
     it('should set huggingface token', () => {
       const { result } = renderHook(() => useGeneralSetting())
@@ -235,7 +196,7 @@ describe('useGeneralSetting', () => {
       const mockGetByName = vi.fn()
       const mockGetSettings = vi.fn().mockResolvedValue(mockSettings)
       const mockUpdateSettings = vi.fn()
-      
+
       mockExtensionManager.getInstance.mockReturnValue({
         getByName: mockGetByName,
       })
@@ -252,9 +213,9 @@ describe('useGeneralSetting', () => {
 
       expect(mockExtensionManager.getInstance).toHaveBeenCalled()
       expect(mockGetByName).toHaveBeenCalledWith('@janhq/download-extension')
-      
+
       // Wait for async operations
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(mockGetSettings).toHaveBeenCalled()
       expect(mockUpdateSettings).toHaveBeenCalledWith([
@@ -272,13 +233,11 @@ describe('useGeneralSetting', () => {
       act(() => {
         result1.current.setCurrentLanguage('id')
         result1.current.setSpellCheckChatInput(false)
-        result1.current.setExperimentalFeatures(true)
         result1.current.setHuggingfaceToken('shared-token')
       })
 
       expect(result2.current.currentLanguage).toBe('id')
       expect(result2.current.spellCheckChatInput).toBe(false)
-      expect(result2.current.experimentalFeatures).toBe(true)
       expect(result2.current.huggingfaceToken).toBe('shared-token')
     })
   })
@@ -290,13 +249,11 @@ describe('useGeneralSetting', () => {
       act(() => {
         result.current.setCurrentLanguage('vn')
         result.current.setSpellCheckChatInput(false)
-        result.current.setExperimentalFeatures(true)
         result.current.setHuggingfaceToken('complex-token-123')
       })
 
       expect(result.current.currentLanguage).toBe('vn')
       expect(result.current.spellCheckChatInput).toBe(false)
-      expect(result.current.experimentalFeatures).toBe(true)
       expect(result.current.huggingfaceToken).toBe('complex-token-123')
     })
 
@@ -314,11 +271,9 @@ describe('useGeneralSetting', () => {
 
       // Second update
       act(() => {
-        result.current.setExperimentalFeatures(true)
         result.current.setHuggingfaceToken('sequential-token')
       })
 
-      expect(result.current.experimentalFeatures).toBe(true)
       expect(result.current.huggingfaceToken).toBe('sequential-token')
 
       // Third update
