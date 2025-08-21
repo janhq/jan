@@ -33,6 +33,7 @@ mod cpu_tests {
         // Architecture should be one of the expected values
         assert!(
             cpu_info.arch == "aarch64" || 
+            cpu_info.arch == "arm64" || 
             cpu_info.arch == "x86_64" || 
             cpu_info.arch == std::env::consts::ARCH
         );
@@ -110,7 +111,7 @@ mod cpu_tests {
         assert!(!cpu_info.arch.is_empty());
         
         // Should be one of the common architectures
-        let common_archs = ["x86_64", "aarch64", "arm", "x86"];
+        let common_archs = ["x86_64", "aarch64", "arm", "arm64", "x86"];
         let is_common_arch = common_archs.iter().any(|&arch| cpu_info.arch == arch);
         let is_compile_time_arch = cpu_info.arch == std::env::consts::ARCH;
         
