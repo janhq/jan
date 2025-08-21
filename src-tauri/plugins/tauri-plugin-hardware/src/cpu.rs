@@ -24,7 +24,7 @@ impl CpuStaticInfo {
         CpuStaticInfo {
             name,
             core_count: System::physical_core_count().unwrap_or(0),
-            arch: std::env::consts::ARCH.to_string(),
+            arch: System::cpu_arch(),
             extensions: CpuStaticInfo::get_extensions(),
         }
     }
