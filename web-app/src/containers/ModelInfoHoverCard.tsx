@@ -47,40 +47,44 @@ export const ModelInfoHoverCard = ({
 
     if (status === 'LOADING') {
       return (
-        <>
-          <div className="size-2 border border-main-view-fg/50 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex items-start gap-2">
+          <div className="size-2 border border-main-view-fg/50 border-t-transparent rounded-full animate-spin mt-1"></div>
           <span className="text-main-view-fg/50">Checking...</span>
-        </>
+        </div>
       )
     } else if (status === 'GREEN') {
       return (
-        <>
-          <div className="size-2 bg-green-500 rounded-full"></div>
-          <span className="text-green-500 font-medium">Works Well</span>
-        </>
+        <div className="flex items-start gap-2">
+          <div className="size-2 bg-green-500 rounded-full mt-1"></div>
+          <span className="text-green-500 font-medium">
+            Recommended for your device
+          </span>
+        </div>
       )
     } else if (status === 'YELLOW') {
       return (
-        <>
-          <div className="size-2 bg-yellow-500 rounded-full"></div>
+        <div className="flex items-start gap-2">
+          <div className="size-2 bg-yellow-500 rounded-full mt-1"></div>
           <span className="text-yellow-500 font-medium">
-            Works with Limitation
+            May be slow on your device
           </span>
-        </>
+        </div>
       )
     } else if (status === 'RED') {
       return (
-        <>
-          <div className="size-2 bg-red-500 rounded-full"></div>
-          <span className="text-red-500 font-medium">Doesn't work</span>
-        </>
+        <div className="flex items-start gap-2">
+          <div className="size-2 bg-red-500 rounded-full mt-1"></div>
+          <span className="text-red-500 font-medium">
+            May be incompatible with your device
+          </span>
+        </div>
       )
     } else {
       return (
-        <>
-          <div className="size-2 bg-gray-400 rounded-full"></div>
+        <div className="flex items-start gap-2">
+          <div className="size-2 bg-gray-400 rounded-full mt-1"></div>
           <span className="text-gray-500">Unknown</span>
-        </>
+        </div>
       )
     }
   }
