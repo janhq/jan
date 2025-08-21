@@ -11,7 +11,7 @@ export const Route = createFileRoute(route.localApiServerlogs as any)({
   component: LogsViewer,
 })
 
-const SERVER_LOG_TARGET = 'app_lib::core::server'
+const SERVER_LOG_TARGET = 'app_lib::core::server::proxy'
 const LOG_EVENT_NAME = 'log://log'
 
 function LogsViewer() {

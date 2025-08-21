@@ -41,6 +41,7 @@ type LlamacppConfig = {
   auto_unload: boolean
   chat_template: string
   n_gpu_layers: number
+  offload_mmproj: boolean
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -101,12 +102,6 @@ interface DeviceList {
   name: string
   mem: number
   free: number
-}
-
-interface GgufMetadata {
-  version: number
-  tensor_count: number
-  metadata: Record<string, string>
 }
 
 /**
@@ -1061,13 +1056,34 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    // TODO: check if files are valid GGUF files
-    // NOTE: modelPath and mmprojPath can be either relative to Jan's data folder (if they are downloaded)
-    // or absolute paths (if they are provided as local files)
+    // Validate GGUF files
     const janDataFolderPath = await getJanDataFolderPath()
-    let size_bytes = (
-      await fs.fileStat(await joinPath([janDataFolderPath, modelPath]))
-    ).size
+    const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+
+    try {
+      // Validate main model file
+      const modelMetadata = await readGgufMetadata(fullModelPath)
+      logger.info(
+        `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
+      )
+
+      // Validate mmproj file if present
+      if (mmprojPath) {
+        const fullMmprojPath = await joinPath([janDataFolderPath, mmprojPath])
+        const mmprojMetadata = await readGgufMetadata(fullMmprojPath)
+        logger.info(
+          `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
+        )
+      }
+    } catch (error) {
+      logger.error('GGUF validation failed:', error)
+      throw new Error(
+        `Invalid GGUF file(s): ${error.message || 'File format validation failed'}`
+      )
+    }
+
+    // Calculate file sizes
+    let size_bytes = (await fs.fileStat(fullModelPath)).size
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
@@ -1203,7 +1219,7 @@ export default class llamacpp_extension extends AIEngine {
     // disable llama-server webui
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
-    envs["LLAMA_API_KEY"] = api_key
+    envs['LLAMA_API_KEY'] = api_key
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1212,7 +1228,6 @@ export default class llamacpp_extension extends AIEngine {
       modelConfig.model_path,
     ])
     args.push('--jinja')
-    args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
@@ -1222,6 +1237,10 @@ export default class llamacpp_extension extends AIEngine {
     // Takes a regex with matching tensor name as input
     if (cfg.override_tensor_buffer_t)
       args.push('--override-tensor', cfg.override_tensor_buffer_t)
+    // offload multimodal projector model to the GPU by default. if there is not enough memory
+    // turn this setting off will keep the projector model on the CPU but the image processing can
+    // take longer
+    if (cfg.offload_mmproj === false) args.push('--no-mmproj-offload')
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
@@ -1288,12 +1307,15 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>('plugin:llamacpp|load_llama_model', {
-        backendPath,
-        libraryPath,
-        args,
-        envs,
-      })
+      const sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|load_llama_model',
+        {
+          backendPath,
+          libraryPath,
+          args,
+          envs,
+        }
+      )
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1383,7 +1405,11 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      signal: abortController?.signal,
+      connectTimeout: 600000, // 10 minutes
+      signal: AbortSignal.any([
+        AbortSignal.timeout(600000),
+        abortController?.signal,
+      ]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
@@ -1539,6 +1565,26 @@ export default class llamacpp_extension extends AIEngine {
     } catch (e) {
       logger.error(e)
       throw new Error(e)
+    }
+  }
+
+  /**
+   * Check if mmproj.gguf file exists for a given model ID
+   * @param modelId - The model ID to check for mmproj.gguf
+   * @returns Promise<boolean> - true if mmproj.gguf exists, false otherwise
+   */
+  async checkMmprojExists(modelId: string): Promise<boolean> {
+    try {
+      const mmprojPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'mmproj.gguf',
+      ])
+      return await fs.existsSync(mmprojPath)
+    } catch (e) {
+      logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
+      return false
     }
   }
 

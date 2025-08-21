@@ -74,6 +74,7 @@ pub fn run() {
             // MCP commands
             core::mcp::commands::get_tools,
             core::mcp::commands::call_tool,
+            core::mcp::commands::cancel_tool_call,
             core::mcp::commands::restart_mcp_servers,
             core::mcp::commands::get_connected_servers,
             core::mcp::commands::save_mcp_configs,
@@ -105,6 +106,7 @@ pub fn run() {
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
+            tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(

@@ -30,5 +30,6 @@
   "createNew": "Neuen Assistenten anlegen",
   "personality": "Persönlichkeit",
   "capabilities": "Fähigkeiten",
-  "instructionsDateHint": "Tipp: Verwenden Sie {{current_date}}, um das heutige Datum einzufügen."
+  "instructionsDateHint": "Tipp: Verwenden Sie {{current_date}}, um das heutige Datum einzufügen.",
+  "maxToolSteps": "Maximale Werkzeugschritte"
 }

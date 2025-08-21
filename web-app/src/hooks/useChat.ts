@@ -204,7 +204,17 @@ export const useChat = () => {
   )
 
   const sendMessage = useCallback(
-    async (message: string, troubleshooting = true) => {
+    async (
+      message: string,
+      troubleshooting = true,
+      attachments?: Array<{
+        name: string
+        type: string
+        size: number
+        base64: string
+        dataUrl: string
+      }>
+    ) => {
       const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
@@ -218,7 +228,7 @@ export const useChat = () => {
       updateStreamingContent(emptyThreadContent)
       // Do not add new message on retry
       if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message))
+        addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
       setPrompt('')
       try {
@@ -232,7 +242,7 @@ export const useChat = () => {
           messages,
           renderInstructions(currentAssistant?.instructions)
         )
-        if (troubleshooting) builder.addUserMessage(message)
+        if (troubleshooting) builder.addUserMessage(message, attachments)
 
         let isCompleted = false
 
@@ -245,8 +255,8 @@ export const useChat = () => {
               })
             : []
 
-        // TODO: Later replaced by Agent setup?
-        const followUpWithToolUse = true
+        let assistantLoopSteps = 0
+
         while (
           !isCompleted &&
           !abortController.signal.aborted &&
@@ -255,6 +265,7 @@ export const useChat = () => {
           const modelConfig = activeProvider.models.find(
             (m) => m.id === selectedModel?.id
           )
+          assistantLoopSteps += 1
 
           const modelSettings = modelConfig?.settings
             ? Object.fromEntries(
@@ -499,7 +510,11 @@ export const useChat = () => {
 
           isCompleted = !toolCalls.length
           // Do not create agent loop if there is no need for it
-          if (!followUpWithToolUse) availableTools = []
+          // Check if assistant loop steps are within limits
+          if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
+            // Stop the assistant tool call if it exceeds the maximum steps
+            availableTools = []
+          }
         }
       } catch (error) {
         if (!abortController.signal.aborted) {

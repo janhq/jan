@@ -19,6 +19,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/consts/providers'
+import { checkMmprojExistsAndUpdateOffloadMMprojSetting } from '@/services/models'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -66,6 +67,7 @@ const DropdownModelProvider = ({
     getModelBy,
     selectedProvider,
     selectedModel,
+    updateProvider,
   } = useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
   const { updateCurrentThreadModel } = useThreads()
@@ -79,31 +81,52 @@ const DropdownModelProvider = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Helper function to check if a model exists in providers
-  const checkModelExists = useCallback((providerName: string, modelId: string) => {
-    const provider = providers.find(
-      (p) => p.provider === providerName && p.active
-    )
-    return provider?.models.find((m) => m.id === modelId)
-  }, [providers])
+  const checkModelExists = useCallback(
+    (providerName: string, modelId: string) => {
+      const provider = providers.find(
+        (p) => p.provider === providerName && p.active
+      )
+      return provider?.models.find((m) => m.id === modelId)
+    },
+    [providers]
+  )
 
   // Initialize model provider only once
   useEffect(() => {
-    // Auto select model when existing thread is passed
-    if (model) {
-      selectModelProvider(model?.provider as string, model?.id as string)
-      if (!checkModelExists(model.provider, model.id)) {
-        selectModelProvider('', '')
-      }
-    } else if (useLastUsedModel) {
-      // Try to use last used model only when explicitly requested (for new chat)
-      const lastUsed = getLastUsedModel()
-      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
-        selectModelProvider(lastUsed.provider, lastUsed.model)
-      } else {
-        // Fallback to default model if last used model no longer exists
-        selectModelProvider('', '')
+    const initializeModel = async () => {
+      // Auto select model when existing thread is passed
+      if (model) {
+        selectModelProvider(model?.provider as string, model?.id as string)
+        if (!checkModelExists(model.provider, model.id)) {
+          selectModelProvider('', '')
+        }
+        // Check mmproj existence for llamacpp models
+        if (model?.provider === 'llamacpp') {
+          await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            model.id as string,
+            updateProvider,
+            getProviderByName
+          )
+        }
+      } else if (useLastUsedModel) {
+        // Try to use last used model only when explicitly requested (for new chat)
+        const lastUsed = getLastUsedModel()
+        if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+          selectModelProvider(lastUsed.provider, lastUsed.model)
+          if (lastUsed.provider === 'llamacpp') {
+            await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+              lastUsed.model,
+              updateProvider,
+              getProviderByName
+            )
+          }
+        } else {
+          selectModelProvider('', '')
+        }
       }
     }
+
+    initializeModel()
   }, [
     model,
     selectModelProvider,
@@ -111,6 +134,8 @@ const DropdownModelProvider = ({
     providers,
     useLastUsedModel,
     checkModelExists,
+    updateProvider,
+    getProviderByName,
   ])
 
   // Update display model when selection changes
@@ -245,7 +270,7 @@ const DropdownModelProvider = ({
   }, [filteredItems, providers, searchValue, favoriteModels])
 
   const handleSelect = useCallback(
-    (searchableModel: SearchableModel) => {
+    async (searchableModel: SearchableModel) => {
       selectModelProvider(
         searchableModel.provider.provider,
         searchableModel.model.id
@@ -254,6 +279,16 @@ const DropdownModelProvider = ({
         id: searchableModel.model.id,
         provider: searchableModel.provider.provider,
       })
+
+      // Check mmproj existence for llamacpp models
+      if (searchableModel.provider.provider === 'llamacpp') {
+        await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+          searchableModel.model.id,
+          updateProvider,
+          getProviderByName
+        )
+      }
+
       // Store the selected model as last used
       if (useLastUsedModel) {
         setLastUsedModel(
@@ -264,7 +299,13 @@ const DropdownModelProvider = ({
       setSearchValue('')
       setOpen(false)
     },
-    [selectModelProvider, updateCurrentThreadModel, useLastUsedModel]
+    [
+      selectModelProvider,
+      updateCurrentThreadModel,
+      useLastUsedModel,
+      updateProvider,
+      getProviderByName,
+    ]
   )
 
   const currentModel = selectedModel?.id

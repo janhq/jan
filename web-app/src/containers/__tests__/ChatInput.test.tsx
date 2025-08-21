@@ -73,6 +73,11 @@ vi.mock('@/services/mcp', () => ({
 
 vi.mock('@/services/models', () => ({
   stopAllModels: vi.fn(),
+  checkMmprojExists: vi.fn(() => Promise.resolve(true)),
+}))
+
+vi.mock('../MovingBorder', () => ({
+  MovingBorder: ({ children }: { children: React.ReactNode }) => <div data-testid="moving-border">{children}</div>,
 }))
 
 describe('ChatInput', () => {
@@ -231,7 +236,7 @@ describe('ChatInput', () => {
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
     await user.click(sendButton)
     
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world')
+    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('sends message when Enter key is pressed', async () => {
@@ -248,7 +253,7 @@ describe('ChatInput', () => {
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, '{Enter}')
     
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world')
+    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('does not send message when Shift+Enter is pressed', async () => {
@@ -343,9 +348,12 @@ describe('ChatInput', () => {
     const user = userEvent.setup()
     renderWithRouter()
     
-    // File upload is rendered as hidden input element
-    const fileInput = document.querySelector('input[type="file"]')
-    expect(fileInput).toBeInTheDocument()
+    // Wait for async effects to complete (mmproj check)
+    await waitFor(() => {
+      // File upload is rendered as hidden input element
+      const fileInput = document.querySelector('input[type="file"]')
+      expect(fileInput).toBeInTheDocument()
+    })
   })
 
   it('disables input when streaming', () => {
@@ -361,7 +369,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
     
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     expect(textarea).toBeDisabled()
   })
 
@@ -377,5 +385,29 @@ describe('ChatInput', () => {
       const toolsIcon = document.querySelector('.tabler-icon-tool')
       expect(toolsIcon).toBeInTheDocument()
     })
+  })
+
+  it('uses selectedProvider for provider checks', () => {
+    // Test that the component correctly uses selectedProvider instead of selectedModel.provider
+    vi.mocked(useModelProvider).mockReturnValue({
+      selectedModel: {
+        id: 'test-model',
+        capabilities: ['vision'],
+      },
+      providers: [],
+      getModelBy: vi.fn(),
+      selectModelProvider: vi.fn(),
+      selectedProvider: 'llamacpp',
+      setProviders: vi.fn(),
+      getProviderByName: vi.fn(),
+      updateProvider: vi.fn(),
+      addProvider: vi.fn(),
+      deleteProvider: vi.fn(),
+      deleteModel: vi.fn(),
+      deletedModels: [],
+    })
+    
+    // This test ensures the component renders without errors when using selectedProvider
+    expect(() => renderWithRouter()).not.toThrow()
   })
 })
