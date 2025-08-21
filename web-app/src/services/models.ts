@@ -579,3 +579,35 @@ export const checkMmprojExists = async (modelId: string): Promise<boolean> => {
   }
   return false
 }
+
+/**
+ * Checks if a model is supported by analyzing memory requirements and system resources.
+ * @param modelPath - The path to the model file (local path or URL)
+ * @param ctxSize - The context size for the model (default: 4096)
+ * @returns Promise<'RED' | 'YELLOW' | 'GREEN'> - Support status:
+ *   - 'RED': Model weights don't fit in available memory
+ *   - 'YELLOW': Model weights fit, but KV cache doesn't
+ *   - 'GREEN': Both model weights and KV cache fit in available memory
+ */
+export const isModelSupported = async (
+  modelPath: string,
+  ctxSize?: number
+): Promise<'RED' | 'YELLOW' | 'GREEN'> => {
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      isModelSupported?: (
+        path: string,
+        ctx_size?: number
+      ) => Promise<'RED' | 'YELLOW' | 'GREEN'>
+    }
+    if (engine && typeof engine.isModelSupported === 'function') {
+      return await engine.isModelSupported(modelPath, ctxSize)
+    }
+    // Fallback if method is not available
+    console.warn('isModelSupported method not available in llamacpp engine')
+    return 'YELLOW' // Conservative fallback
+  } catch (error) {
+    console.error(`Error checking model support for ${modelPath}:`, error)
+    return 'RED' // Error state, assume not supported
+  }
+}

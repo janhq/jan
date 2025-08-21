@@ -14,12 +14,13 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { ModelSupportStatus } from '@/components/ModelSupportStatus'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/consts/providers'
-import { checkMmprojExistsAndUpdateOffloadMMprojSetting } from '@/services/models'
+import { checkMmprojExistsAndUpdateOffloadMMprojSetting, checkMmprojExists } from '@/services/models'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -80,6 +81,7 @@ const DropdownModelProvider = ({
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+
   // Helper function to check if a model exists in providers
   const checkModelExists = useCallback(
     (providerName: string, modelId: string) => {
@@ -90,6 +92,45 @@ const DropdownModelProvider = ({
     },
     [providers]
   )
+
+  // Helper function to get context size from model settings
+  const getContextSize = useCallback((): number => {
+    if (!selectedModel?.settings?.ctx_len?.controller_props?.value) {
+      return 8192 // Default context size
+    }
+    return selectedModel.settings.ctx_len.controller_props.value as number
+  }, [selectedModel?.settings?.ctx_len?.controller_props?.value])
+
+  // Function to check if a llamacpp model has vision capabilities and update model capabilities
+  const checkAndUpdateModelVisionCapability = useCallback(async (modelId: string) => {
+    try {
+      const hasVision = await checkMmprojExists(modelId)
+      if (hasVision) {
+        // Update the model capabilities to include 'vision'
+        const provider = getProviderByName('llamacpp')
+        if (provider) {
+          const modelIndex = provider.models.findIndex(m => m.id === modelId)
+          if (modelIndex !== -1) {
+            const model = provider.models[modelIndex]
+            const capabilities = model.capabilities || []
+            
+            // Add 'vision' capability if not already present
+            if (!capabilities.includes('vision')) {
+              const updatedModels = [...provider.models]
+              updatedModels[modelIndex] = {
+                ...model,
+                capabilities: [...capabilities, 'vision']
+              }
+              
+              updateProvider('llamacpp', { models: updatedModels })
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.debug('Error checking mmproj for model:', modelId, error)
+    }
+  }, [getProviderByName, updateProvider])
 
   // Initialize model provider only once
   useEffect(() => {
@@ -107,6 +148,8 @@ const DropdownModelProvider = ({
             updateProvider,
             getProviderByName
           )
+          // Also check vision capability
+          await checkAndUpdateModelVisionCapability(model.id as string)
         }
       } else if (useLastUsedModel) {
         // Try to use last used model only when explicitly requested (for new chat)
@@ -119,6 +162,8 @@ const DropdownModelProvider = ({
               updateProvider,
               getProviderByName
             )
+            // Also check vision capability
+            await checkAndUpdateModelVisionCapability(lastUsed.model)
           }
         } else {
           selectModelProvider('', '')
@@ -136,6 +181,7 @@ const DropdownModelProvider = ({
     checkModelExists,
     updateProvider,
     getProviderByName,
+    checkAndUpdateModelVisionCapability,
   ])
 
   // Update display model when selection changes
@@ -146,6 +192,23 @@ const DropdownModelProvider = ({
       setDisplayModel(t('common:selectAModel'))
     }
   }, [selectedProvider, selectedModel, t])
+
+  // Check vision capabilities for all llamacpp models
+  useEffect(() => {
+    const checkAllLlamacppModelsForVision = async () => {
+      const llamacppProvider = providers.find(p => p.provider === 'llamacpp' && p.active)
+      if (llamacppProvider) {
+        const checkPromises = llamacppProvider.models.map(model => 
+          checkAndUpdateModelVisionCapability(model.id)
+        )
+        await Promise.allSettled(checkPromises)
+      }
+    }
+
+    if (open) {
+      checkAllLlamacppModelsForVision()
+    }
+  }, [open, providers, checkAndUpdateModelVisionCapability])
 
   // Reset search value when dropdown closes
   const onOpenChange = useCallback((open: boolean) => {
@@ -287,6 +350,8 @@ const DropdownModelProvider = ({
           updateProvider,
           getProviderByName
         )
+        // Also check vision capability
+        await checkAndUpdateModelVisionCapability(searchableModel.model.id)
       }
 
       // Store the selected model as last used
@@ -305,6 +370,7 @@ const DropdownModelProvider = ({
       useLastUsedModel,
       updateProvider,
       getProviderByName,
+      checkAndUpdateModelVisionCapability,
     ]
   )
 
@@ -318,7 +384,7 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px] ">
+      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px] mr-0.5">
         <PopoverTrigger asChild>
           <button
             title={displayModel}
@@ -346,6 +412,12 @@ const DropdownModelProvider = ({
             smallIcon
           />
         )}
+        <ModelSupportStatus
+          modelId={selectedModel?.id}
+          provider={selectedProvider}
+          contextSize={getContextSize()}
+          className="ml-0.5 flex-shrink-0"
+        />
       </div>
 
       <PopoverContent
