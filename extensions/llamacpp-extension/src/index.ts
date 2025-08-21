@@ -1701,7 +1701,7 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async estimateKVCache(
     meta: Record<string, string>,
-    ctxLen: number
+    ctx_size?: number
   ): Promise<number> {
     const arch = meta['general.architecture']
     if (!arch) throw new Error('Invalid metadata: architecture not found')
@@ -1736,6 +1736,12 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
       )
+    }
+    let ctxLen: number
+    if (!ctx_size) {
+      ctxLen = Number(meta[`${arch}.context_length`])
+    } else {
+      ctxLen = ctx_size
     }
 
     logger.info(`ctxLen: ${ctxLen}`)
@@ -1775,14 +1781,19 @@ export default class llamacpp_extension extends AIEngine {
    */
   async isModelSupported(
     path: string,
-    ctx_size: number
+    ctx_size?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
       const modelSize = await this.getModelSize(path)
       logger.info(`modelSize: ${modelSize}`)
       let gguf: GgufMetadata
       gguf = await readGgufMetadata(path)
-      const kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
+      let kvCacheSize: number
+      if (ctx_size) {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
+      } else {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata)
+      }
       // total memory consumption = model weights + kvcache + a small buffer for outputs
       // output buffer is small so not considering here
       const totalRequired = modelSize + kvCacheSize
@@ -1792,10 +1803,10 @@ export default class llamacpp_extension extends AIEngine {
       let availableMemBytes: number
       const devices = await this.getDevices()
       if (devices.length > 0) {
-        // Pick the largest free GPU memory
-        availableMemBytes = Math.max(
-          ...devices.map((d) => d.free * 1024 * 1024)
-        )
+        // Sum free memory across all GPUs
+        availableMemBytes = devices
+          .map((d) => d.free * 1024 * 1024)
+          .reduce((a, b) => a + b, 0)
       } else {
         // CPU fallback
         const sys = await getSystemUsage()
