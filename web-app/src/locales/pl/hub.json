@@ -12,6 +12,7 @@
   "showVariants": "Pokaż warianty",
   "useModel": "Użyj tego modelu",
   "downloadModel": "Pobierz model",
+  "tools": "Narzędzia",
   "searchPlaceholder": "Szukaj modeli na Hugging Face…",
   "joyride": {
     "recommendedModelTitle": "Polecany Model",

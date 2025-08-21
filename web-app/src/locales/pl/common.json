@@ -261,6 +261,18 @@
     "downloadFailed": {
       "title": "Błąd Pobierania",
       "description": "Błąd pobierania {{item}}"
+    },
+    "modelValidationStarted": {
+      "title": "Weryfikacja Modelu",
+      "description": "Pomyślnie pobrano model \"{{modelId}}\". Weryfikowanie integralności..."
+    },
+    "modelValidationFailed": {
+      "title": "Błąd Weryfikacji Modelu",
+      "description": "Pobrany model \"{{modelId}}\" nie przeszedł weryfikacji integralności i został usunięty. Plik może być uszkodzony lub zmodyfikowany."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Pobieranie Ukończone",
+      "description": "Model \"{{item}}\" został pobrany i pomyślnie zweryfikowany"
     }
   }
 }
