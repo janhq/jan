@@ -77,13 +77,13 @@ export const ModelSupportStatus = ({
   const getStatusTooltip = (): string => {
     switch (modelSupportStatus) {
       case 'GREEN':
-        return `Works Well (ctx: ${contextSize})`
+        return `Works Well on your device (ctx: ${contextSize})`
       case 'YELLOW':
-        return `Works with Limitation (ctx: ${contextSize})`
+        return `Might work on your device (ctx: ${contextSize})`
       case 'RED':
-        return `Doesn't work (ctx: ${contextSize})`
+        return `Doesn't work on your device  (ctx: ${contextSize})`
       case 'LOADING':
-        return 'Checking compatibility...'
+        return 'Checking device compatibility...'
       default:
         return 'Unknown'
     }
