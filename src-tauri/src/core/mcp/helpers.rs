@@ -7,10 +7,11 @@ use rmcp::{
     ServiceExt,
 };
 use serde_json::Value;
-use std::{collections::HashMap, env, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_http::reqwest;
 use tokio::{
+    io::AsyncReadExt,
     process::Command,
     sync::Mutex,
     time::{sleep, timeout},
@@ -647,23 +648,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
         {
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
         }
-        let app_path_str = app_path.to_str().unwrap().to_string();
-        let log_file_path = format!("{}/logs/app.log", app_path_str);
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_file_path)
-        {
-            Ok(file) => {
-                cmd.stderr(std::process::Stdio::from(file));
-            }
-            Err(err) => {
-                log::error!("Failed to open log file: {}", err);
-            }
-        };
 
         cmd.kill_on_drop(true);
-        log::trace!("Command: {cmd:#?}");
 
         config_params
             .args
@@ -678,26 +664,42 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         });
 
-        let process = TokioChildProcess::new(cmd).map_err(|e| {
-            log::error!("Failed to run command {name}: {e}");
-            format!("Failed to run command {name}: {e}")
-        })?;
+        let (process, stderr) = TokioChildProcess::builder(cmd)
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                log::error!("Failed to run command {name}: {e}");
+                format!("Failed to run command {name}: {e}")
+            })?;
 
         let service = ()
             .serve(process)
             .await
-            .map_err(|e| format!("Failed to start MCP server {name}: {e}"))?;
+            .map_err(|e| format!("Failed to start MCP server {name}: {e}"));
 
-        // Get peer info and clone the needed values before moving the service
-        let server_info = service.peer_info();
-        log::trace!("Connected to server: {server_info:#?}");
-
-        // Now move the service into the HashMap
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), RunningServiceEnum::NoInit(service));
-        log::info!("Server {name} started successfully.");
+        match service {
+            Ok(server) => {
+                log::trace!("Connected to server: {:#?}", server.peer_info());
+                servers
+                    .lock()
+                    .await
+                    .insert(name.clone(), RunningServiceEnum::NoInit(server));
+                log::info!("Server {name} started successfully.");
+            }
+            Err(_) => {
+                let mut buffer = String::new();
+                let error = match stderr
+                    .expect("stderr must be piped")
+                    .read_to_string(&mut buffer)
+                    .await
+                {
+                    Ok(_) => format!("Failed to start MCP server {name}: {buffer}"),
+                    Err(_) => format!("Failed to read MCP server {name} stderr"),
+                };
+                log::error!("{error}");
+                return Err(error);
+            }
+        }
 
         // Wait a short time to verify the server is stable before marking as connected
         // This prevents race conditions where the server quits immediately
@@ -754,7 +756,7 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
         command,
         args,
         envs,
-        headers
+        headers,
     })
 }
 
