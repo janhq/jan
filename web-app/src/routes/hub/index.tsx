@@ -17,8 +17,20 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
-import { IconDownload, IconFileCode, IconSearch } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconFileCode,
+  IconEye,
+  IconSearch,
+  IconTool,
+} from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
@@ -133,18 +145,24 @@ function Hub() {
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
       // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(/^https?:\/\/[^/]+\//, '')
+      const cleanedSearchValue = debouncedSearchValue.replace(
+        /^https?:\/\/[^/]+\//,
+        ''
+      )
       filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      filtered = filtered?.filter((model) =>
-        model.quants.some((variant) =>
-          llamaProvider?.models.some(
-            (m: { id: string }) => m.id === variant.model_id
-          )
-        )
-      )
+      filtered = filtered
+        ?.map((model) => ({
+          ...model,
+          quants: model.quants.filter((variant) =>
+            llamaProvider?.models.some(
+              (m: { id: string }) => m.id === variant.model_id
+            )
+          ),
+        }))
+        .filter((model) => model.quants.length > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -419,43 +437,44 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    return (
-      <>
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
-              {
-                sortOptions.find((option) => option.value === sortSelected)
-                  ?.name
-              }
+    if (searchValue.length === 0)
+      return (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+                {
+                  sortOptions.find((option) => option.value === sortSelected)
+                    ?.name
+                }
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              {sortOptions.map((option) => (
+                <DropdownMenuItem
+                  className={cn(
+                    'cursor-pointer my-0.5',
+                    sortSelected === option.value && 'bg-main-view-fg/5'
+                  )}
+                  key={option.value}
+                  onClick={() => setSortSelected(option.value)}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showOnlyDownloaded}
+              onCheckedChange={setShowOnlyDownloaded}
+            />
+            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+              {t('hub:downloaded')}
             </span>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end">
-            {sortOptions.map((option) => (
-              <DropdownMenuItem
-                className={cn(
-                  'cursor-pointer my-0.5',
-                  sortSelected === option.value && 'bg-main-view-fg/5'
-                )}
-                key={option.value}
-                onClick={() => setSortSelected(option.value)}
-              >
-                {option.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
-          />
-          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-            {t('hub:downloaded')}
-          </span>
-        </div>
-      </>
-    )
+          </div>
+        </>
+      )
   }
 
   return (
@@ -647,6 +666,45 @@ function Hub() {
                                     ?.length || 0}
                                 </span>
                               </div>
+                              {filteredModels[virtualItem.index].tools && (
+                                <div className="flex items-center gap-1">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconTool
+                                            size={17}
+                                            className="text-main-view-fg/50"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('tools')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              )}
+                              {filteredModels[virtualItem.index].num_mmproj >
+                                0 && (
+                                <div className="flex items-center gap-1">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconEye
+                                            size={17}
+                                            className="text-main-view-fg/50"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('vision')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              )}
                               {filteredModels[virtualItem.index].quants.length >
                                 1 && (
                                 <div className="flex items-center gap-2 hub-show-variants-step">

@@ -70,8 +70,8 @@ export function ModelSetting({
         models: updatedModels,
       })
 
-      // Call debounced stopModel only when updating ctx_len or ngl
-      if (key === 'ctx_len' || key === 'ngl' || key === 'chat_template') {
+      // Call debounced stopModel only when updating ctx_len, ngl, chat_template, or offload_mmproj
+      if (key === 'ctx_len' || key === 'ngl' || key === 'chat_template' || key === 'offload_mmproj') {
         debouncedStopModel(model.id)
       }
     }

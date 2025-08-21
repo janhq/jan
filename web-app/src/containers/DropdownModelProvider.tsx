@@ -17,6 +17,9 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
+import { predefinedProviders } from '@/consts/providers'
+import { checkMmprojExistsAndUpdateOffloadMMprojSetting } from '@/services/models'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -64,54 +67,75 @@ const DropdownModelProvider = ({
     getModelBy,
     selectedProvider,
     selectedModel,
+    updateProvider,
   } = useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
   const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { favoriteModels } = useFavoriteModel()
 
   // Search state
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Helper function to check if a model exists in providers
+  const checkModelExists = useCallback(
+    (providerName: string, modelId: string) => {
+      const provider = providers.find(
+        (p) => p.provider === providerName && p.active
+      )
+      return provider?.models.find((m) => m.id === modelId)
+    },
+    [providers]
+  )
+
   // Initialize model provider only once
   useEffect(() => {
-    // Auto select model when existing thread is passed
-    if (model) {
-      selectModelProvider(model?.provider as string, model?.id as string)
-    } else if (useLastUsedModel) {
-      // Try to use last used model only when explicitly requested (for new chat)
-      const lastUsed = getLastUsedModel()
-      if (lastUsed) {
-        // Verify the last used model still exists
-        const provider = providers.find(
-          (p) => p.provider === lastUsed.provider && p.active
-        )
-        const modelExists = provider?.models.find(
-          (m) => m.id === lastUsed.model
-        )
-
-        if (provider && modelExists) {
-          selectModelProvider(lastUsed.provider, lastUsed.model)
-        } else {
-          // Fallback to default model if last used model no longer exists
-          selectModelProvider('llamacpp', 'llama3.2:3b')
+    const initializeModel = async () => {
+      // Auto select model when existing thread is passed
+      if (model) {
+        selectModelProvider(model?.provider as string, model?.id as string)
+        if (!checkModelExists(model.provider, model.id)) {
+          selectModelProvider('', '')
         }
-      } else {
-        // default model, we should add from setting
-        selectModelProvider('llamacpp', 'llama3.2:3b')
+        // Check mmproj existence for llamacpp models
+        if (model?.provider === 'llamacpp') {
+          await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            model.id as string,
+            updateProvider,
+            getProviderByName
+          )
+        }
+      } else if (useLastUsedModel) {
+        // Try to use last used model only when explicitly requested (for new chat)
+        const lastUsed = getLastUsedModel()
+        if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+          selectModelProvider(lastUsed.provider, lastUsed.model)
+          if (lastUsed.provider === 'llamacpp') {
+            await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+              lastUsed.model,
+              updateProvider,
+              getProviderByName
+            )
+          }
+        } else {
+          selectModelProvider('', '')
+        }
       }
-    } else {
-      // default model for non-new-chat contexts
-      selectModelProvider('llamacpp', 'llama3.2:3b')
     }
+
+    initializeModel()
   }, [
     model,
     selectModelProvider,
     updateCurrentThreadModel,
     providers,
     useLastUsedModel,
+    checkModelExists,
+    updateProvider,
+    getProviderByName,
   ])
 
   // Update display model when selection changes
@@ -151,9 +175,15 @@ const DropdownModelProvider = ({
 
       provider.models.forEach((modelItem) => {
         // Skip models that require API key but don't have one (except llamacpp)
-        if (provider.provider !== 'llamacpp' && !provider.api_key?.length) {
+        if (
+          provider &&
+          predefinedProviders.some((e) =>
+            e.provider.includes(provider.provider)
+          ) &&
+          provider.provider !== 'llamacpp' &&
+          !provider.api_key?.length
+        )
           return
-        }
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
@@ -182,6 +212,13 @@ const DropdownModelProvider = ({
     })
   }, [searchableItems])
 
+  // Get favorite models that are currently available
+  const favoriteItems = useMemo(() => {
+    return searchableItems.filter((item) =>
+      favoriteModels.some((fav) => fav.id === item.model.id)
+    )
+  }, [searchableItems, favoriteModels])
+
   // Filter models based on search value
   const filteredItems = useMemo(() => {
     if (!searchValue) return searchableItems
@@ -202,7 +239,7 @@ const DropdownModelProvider = ({
     })
   }, [searchableItems, searchValue, fzfInstance])
 
-  // Group filtered items by provider
+  // Group filtered items by provider, excluding favorites when not searching
   const groupedItems = useMemo(() => {
     const groups: Record<string, SearchableModel[]> = {}
 
@@ -221,14 +258,19 @@ const DropdownModelProvider = ({
       if (!groups[providerKey]) {
         groups[providerKey] = []
       }
+
+      // When not searching, exclude favorite models from regular provider sections
+      const isFavorite = favoriteModels.some((fav) => fav.id === item.model.id)
+      if (!searchValue && isFavorite) return // Skip adding this item to regular provider section
+
       groups[providerKey].push(item)
     })
 
     return groups
-  }, [filteredItems, providers, searchValue])
+  }, [filteredItems, providers, searchValue, favoriteModels])
 
   const handleSelect = useCallback(
-    (searchableModel: SearchableModel) => {
+    async (searchableModel: SearchableModel) => {
       selectModelProvider(
         searchableModel.provider.provider,
         searchableModel.model.id
@@ -237,6 +279,16 @@ const DropdownModelProvider = ({
         id: searchableModel.model.id,
         provider: searchableModel.provider.provider,
       })
+
+      // Check mmproj existence for llamacpp models
+      if (searchableModel.provider.provider === 'llamacpp') {
+        await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+          searchableModel.model.id,
+          updateProvider,
+          getProviderByName
+        )
+      }
+
       // Store the selected model as last used
       if (useLastUsedModel) {
         setLastUsedModel(
@@ -247,7 +299,13 @@ const DropdownModelProvider = ({
       setSearchValue('')
       setOpen(false)
     },
-    [selectModelProvider, updateCurrentThreadModel, useLastUsedModel]
+    [
+      selectModelProvider,
+      updateCurrentThreadModel,
+      useLastUsedModel,
+      updateProvider,
+      getProviderByName,
+    ]
   )
 
   const currentModel = selectedModel?.id
@@ -330,6 +388,64 @@ const DropdownModelProvider = ({
               </div>
             ) : (
               <div className="py-1">
+                {/* Favorites section - only show when not searching */}
+                {!searchValue && favoriteItems.length > 0 && (
+                  <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-main-view-fg/80">
+                        {t('common:favorites')}
+                      </span>
+                    </div>
+
+                    {/* Favorite models */}
+                    {favoriteItems.map((searchableModel) => {
+                      const isSelected =
+                        selectedModel?.id === searchableModel.model.id &&
+                        selectedProvider === searchableModel.provider.provider
+                      const capabilities =
+                        searchableModel.model.capabilities || []
+
+                      return (
+                        <div
+                          key={`fav-${searchableModel.value}`}
+                          title={searchableModel.model.id}
+                          onClick={() => handleSelect(searchableModel)}
+                          className={cn(
+                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                            'hover:bg-main-view-fg/4',
+                            isSelected &&
+                              'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                          )}
+                        >
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <div className="shrink-0 -ml-1">
+                              <ProvidersAvatar
+                                provider={searchableModel.provider}
+                              />
+                            </div>
+                            <span className="truncate text-main-view-fg/80 text-sm">
+                              {searchableModel.model.id}
+                            </span>
+                            <div className="flex-1"></div>
+                            {capabilities.length > 0 && (
+                              <div className="flex-shrink-0 -mr-1.5">
+                                <Capabilities capabilities={capabilities} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Divider between favorites and regular providers */}
+                {favoriteItems.length > 0 && (
+                  <div className="border-b border-1 border-main-view-fg/8 mx-2"></div>
+                )}
+
+                {/* Regular provider sections */}
                 {Object.entries(groupedItems).map(([providerKey, models]) => {
                   const providerInfo = providers.find(
                     (p) => p.provider === providerKey
@@ -340,7 +456,7 @@ const DropdownModelProvider = ({
                   return (
                     <div
                       key={providerKey}
-                      className="bg-main-view-fg/4 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
+                      className="bg-main-view-fg/2 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
@@ -384,15 +500,20 @@ const DropdownModelProvider = ({
                           return (
                             <div
                               key={searchableModel.value}
+                              title={searchableModel.model.id}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-main-view-fg/10',
-                                isSelected && 'bg-main-view-fg/15'
+                                'hover:bg-main-view-fg/4',
+                                isSelected &&
+                                  'bg-main-view-fg/8 hover:bg-main-view-fg/8'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span className="truncate text-main-view-fg/80 text-sm">
+                                <span
+                                  className="truncate text-main-view-fg/80 text-sm"
+                                  title={searchableModel.model.id}
+                                >
                                   {searchableModel.model.id}
                                 </span>
 

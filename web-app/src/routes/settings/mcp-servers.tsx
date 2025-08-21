@@ -21,12 +21,65 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useAppState } from '@/hooks/useAppState'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
   if (!value) return value
   if (value.length <= 8) return '*'.repeat(value.length)
   return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4)
+}
+
+// Function to mask sensitive URL parameters
+const maskSensitiveUrl = (url: string) => {
+  if (!url) return url
+
+  try {
+    const urlObj = new URL(url)
+    const params = urlObj.searchParams
+
+    // List of sensitive parameter names (case-insensitive)
+    const sensitiveParams = [
+      'api_key',
+      'apikey',
+      'key',
+      'token',
+      'secret',
+      'password',
+      'pwd',
+      'auth',
+      'authorization',
+      'bearer',
+      'access_token',
+      'refresh_token',
+      'client_secret',
+      'private_key',
+      'signature',
+      'hash',
+    ]
+
+    // Mask sensitive parameters
+    sensitiveParams.forEach((paramName) => {
+      // Check both exact match and case-insensitive match
+      for (const [key, value] of params.entries()) {
+        if (key.toLowerCase() === paramName.toLowerCase()) {
+          params.set(key, maskSensitiveValue(value))
+        }
+      }
+    })
+
+    // Reconstruct URL with masked parameters
+    urlObj.search = params.toString()
+    return urlObj.toString()
+  } catch {
+    // If URL parsing fails, just mask the entire query string after '?'
+    const queryIndex = url.indexOf('?')
+    if (queryIndex === -1) return url
+
+    const baseUrl = url.substring(0, queryIndex + 1)
+    const queryString = url.substring(queryIndex + 1)
+    return baseUrl + maskSensitiveValue(queryString)
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +121,7 @@ function MCPServers() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
+  const { setErrorMessage } = useAppState()
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -199,8 +253,9 @@ function MCPServers() {
               ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
               active: false,
             })
-            toast.error(error, {
-              description: t('mcp-servers:checkParams'),
+            setErrorMessage({
+              message: error,
+              subtitle: t('mcp-servers:checkParams'),
             })
           })
           .finally(() => {
@@ -326,22 +381,56 @@ function MCPServers() {
                     }
                     descriptionOutside={
                       <div className="text-sm text-main-view-fg/70">
-                        <div>
-                          {t('mcp-servers:command')}: {config.command}
+                        <div className="mb-1">
+                          Transport:{' '}
+                          <span className="uppercase">
+                            {config.type || 'stdio'}
+                          </span>
                         </div>
-                        <div className="my-1 break-all">
-                          {t('mcp-servers:args')}: {config?.args?.join(', ')}
-                        </div>
-                        {config.env && Object.keys(config.env).length > 0 && (
-                          <div className="break-all">
-                            {t('mcp-servers:env')}:{' '}
-                            {Object.entries(config.env)
-                              .map(
-                                ([key, value]) =>
-                                  `${key}=${maskSensitiveValue(value)}`
-                              )
-                              .join(', ')}
-                          </div>
+
+                        {config.type === 'stdio' || !config.type ? (
+                          <>
+                            <div>
+                              {t('mcp-servers:command')}: {config.command}
+                            </div>
+                            <div className="my-1 break-all">
+                              {t('mcp-servers:args')}:{' '}
+                              {config?.args?.join(', ')}
+                            </div>
+                            {config.env &&
+                              Object.keys(config.env).length > 0 && (
+                                <div className="break-all">
+                                  {t('mcp-servers:env')}:{' '}
+                                  {Object.entries(config.env)
+                                    .map(
+                                      ([key, value]) =>
+                                        `${key}=${maskSensitiveValue(value)}`
+                                    )
+                                    .join(', ')}
+                                </div>
+                              )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="break-all">
+                              URL: {maskSensitiveUrl(config.url || '')}
+                            </div>
+                            {config.headers &&
+                              Object.keys(config.headers).length > 0 && (
+                                <div className="my-1 break-all">
+                                  Headers:{' '}
+                                  {Object.entries(config.headers)
+                                    .map(
+                                      ([key, value]) =>
+                                        `${key}=${maskSensitiveValue(value)}`
+                                    )
+                                    .join(', ')}
+                                </div>
+                              )}
+                            {config.timeout && (
+                              <div>Timeout: {config.timeout}s</div>
+                            )}
+                          </>
                         )}
                       </div>
                     }

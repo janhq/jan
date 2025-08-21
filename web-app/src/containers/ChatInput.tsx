@@ -1,7 +1,7 @@
 'use client'
 
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, toGigabytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/tooltip'
 import { ArrowRight } from 'lucide-react'
 import {
-  IconPaperclip,
+  IconPhoto,
   IconWorld,
   IconAtom,
   IconEye,
@@ -34,6 +34,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
+import { checkMmprojExists } from '@/services/models'
 
 type ChatInputProps = {
   className?: string
@@ -46,8 +47,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, abortControllers, loadingModel, tools } =
-    useAppState()
+  const {
+    streamingContent,
+    abortControllers,
+    loadingModel,
+    tools,
+    cancelToolCall,
+  } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
@@ -55,7 +61,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
   const maxRows = 10
 
-  const { selectedModel } = useModelProvider()
+  const { selectedModel, selectedProvider } = useModelProvider()
   const { sendMessage } = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
@@ -70,6 +76,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }>
   >([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [hasMmproj, setHasMmproj] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -91,6 +99,29 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     return () => clearInterval(intervalId)
   }, [])
 
+  // Check for mmproj existence or vision capability when model changes
+  useEffect(() => {
+    const checkMmprojSupport = async () => {
+      if (selectedModel?.id) {
+        try {
+          // Only check mmproj for llamacpp provider
+          if (selectedProvider === 'llamacpp') {
+            const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
+            setHasMmproj(hasLocalMmproj)
+          } else {
+            // For non-llamacpp providers, only check vision capability
+            setHasMmproj(true)
+          }
+        } catch (error) {
+          console.error('Error checking mmproj:', error)
+          setHasMmproj(false)
+        }
+      }
+    }
+
+    checkMmprojSupport()
+  }, [selectedModel?.id, selectedProvider])
+
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
@@ -99,11 +130,16 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim()) {
+    if (!prompt.trim() && uploadedFiles.length === 0) {
       return
     }
     setMessage('')
-    sendMessage(prompt)
+    sendMessage(
+      prompt,
+      true,
+      uploadedFiles.length > 0 ? uploadedFiles : undefined
+    )
+    setUploadedFiles([])
   }
 
   useEffect(() => {
@@ -161,8 +197,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const stopStreaming = useCallback(
     (threadId: string) => {
       abortControllers[threadId]?.abort()
+      cancelToolCall?.()
     },
-    [abortControllers]
+    [abortControllers, cancelToolCall]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -185,8 +222,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         return 'image/jpeg'
       case 'png':
         return 'image/png'
-      case 'pdf':
-        return 'application/pdf'
       default:
         return ''
     }
@@ -220,17 +255,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const detectedType = file.type || getFileTypeFromExtension(file.name)
         const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        // Check file type
-        const allowedTypes = [
-          'image/jpg',
-          'image/jpeg',
-          'image/png',
-          'application/pdf',
-        ]
+        // Check file type - images only
+        const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
 
         if (!allowedTypes.includes(actualType)) {
           setMessage(
-            `File is not supported. Only JPEG, JPG, PNG, and PDF files are allowed.`
+            `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
           )
           // Reset file input to allow re-uploading
           if (fileInputRef.current) {
@@ -281,6 +311,104 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
   }
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only allow drag if model supports mmproj
+    if (hasMmproj) {
+      setIsDragOver(true)
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set dragOver to false if we're leaving the drop zone entirely
+    // In Tauri, relatedTarget can be null, so we need to handle that case
+    const relatedTarget = e.relatedTarget as Node | null
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setIsDragOver(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Ensure drag state is maintained during drag over
+    if (hasMmproj) {
+      setIsDragOver(true)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    // Only allow drop if model supports mmproj
+    if (!hasMmproj) {
+      return
+    }
+
+    // Check if dataTransfer exists (it might not in some Tauri scenarios)
+    if (!e.dataTransfer) {
+      console.warn('No dataTransfer available in drop event')
+      return
+    }
+
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      // Create a synthetic event to reuse existing file handling logic
+      const syntheticEvent = {
+        target: {
+          files: files,
+        },
+      } as React.ChangeEvent<HTMLInputElement>
+
+      handleFileChange(syntheticEvent)
+    }
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const clipboardItems = e.clipboardData?.items
+    if (!clipboardItems) return
+
+    // Only allow paste if model supports mmproj
+    if (!hasMmproj) {
+      return
+    }
+
+    const imageItems = Array.from(clipboardItems).filter((item) =>
+      item.type.startsWith('image/')
+    )
+
+    if (imageItems.length > 0) {
+      e.preventDefault()
+
+      const files: File[] = []
+      let processedCount = 0
+
+      imageItems.forEach((item) => {
+        const file = item.getAsFile()
+        if (file) {
+          files.push(file)
+        }
+        processedCount++
+
+        // When all items are processed, handle the valid files
+        if (processedCount === imageItems.length && files.length > 0) {
+          const syntheticEvent = {
+            target: {
+              files: files,
+            },
+          } as unknown as React.ChangeEvent<HTMLInputElement>
+
+          handleFileChange(syntheticEvent)
+        }
+      })
+    }
+  }
+
   return (
     <div className="relative">
       <div className="relative">
@@ -305,8 +433,14 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           <div
             className={cn(
               'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
-              isFocused && 'ring-1 ring-main-view-fg/10'
+              isFocused && 'ring-1 ring-main-view-fg/10',
+              isDragOver && 'ring-2 ring-accent border-accent'
             )}
+            data-drop-zone={hasMmproj ? 'true' : undefined}
+            onDragEnter={hasMmproj ? handleDragEnter : undefined}
+            onDragLeave={hasMmproj ? handleDragLeave : undefined}
+            onDragOver={hasMmproj ? handleDragOver : undefined}
+            onDrop={hasMmproj ? handleDrop : undefined}
           >
             {uploadedFiles.length > 0 && (
               <div className="flex gap-3 items-center p-2 pb-0">
@@ -326,25 +460,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                           alt={`${file.name} - ${index}`}
                         />
                       )}
-                      {file.type === 'application/pdf' && (
-                        <div className="bg-main-view-fg/4 h-full rounded-lg p-2 max-w-[400px] pr-4">
-                          <div className="flex gap-2 items-center justify-center h-full">
-                            <div className="size-10 rounded-md bg-main-view shrink-0 flex items-center justify-center">
-                              <span className="uppercase font-bold">
-                                {file.name.split('.').pop()}
-                              </span>
-                            </div>
-                            <div className="truncate">
-                              <h6 className="truncate mb-0.5 text-main-view-fg/80">
-                                {file.name}
-                              </h6>
-                              <p className="text-xs text-main-view-fg/70">
-                                {toGigabytes(file.size)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                       <div
                         className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
                         onClick={() => handleRemoveFile(index)}
@@ -363,7 +478,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               rows={1}
               maxRows={10}
               value={prompt}
-              data-test-id={'chat-input'}
+              data-testid={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows
@@ -372,14 +487,21 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               }}
               onKeyDown={(e) => {
                 // e.keyCode 229 is for IME input with Safari
-                const isComposing = e.nativeEvent.isComposing || e.keyCode === 229;
-                if (e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isComposing) {
+                const isComposing =
+                  e.nativeEvent.isComposing || e.keyCode === 229
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  prompt.trim() &&
+                  !isComposing
+                ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
                   handleSendMesage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
+              onPaste={hasMmproj ? handlePaste : undefined}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
@@ -400,7 +522,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             <div className="px-1 flex items-center gap-1">
               <div
                 className={cn(
-                  'px-1 flex items-center gap-1',
+                  'px-1 flex items-center',
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -412,19 +534,22 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* File attachment - always available */}
-                <div
-                  className="h-6 hidden p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                  onClick={handleAttachmentClick}
-                >
-                  <IconPaperclip size={18} className="text-main-view-fg/50" />
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </div>
+                {/* File attachment - show only for models with mmproj */}
+                {hasMmproj && (
+                  <div
+                    className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                    onClick={handleAttachmentClick}
+                  >
+                    <IconPhoto size={18} className="text-main-view-fg/50" />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      multiple
+                      onChange={handleFileChange}
+                    />
+                  </div>
+                )}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
@@ -483,7 +608,9 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                               initialMessage={initialMessage}
                               onOpenChange={(isOpen) => {
                                 setDropdownToolsAvailable(isOpen)
-                                setTooltipToolsAvailable(false)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
                               }}
                             >
                               {(isOpen, toolsCount) => {
@@ -566,9 +693,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               </Button>
             ) : (
               <Button
-                variant={!prompt.trim() ? null : 'default'}
+                variant={
+                  !prompt.trim() && uploadedFiles.length === 0
+                    ? null
+                    : 'default'
+                }
                 size="icon"
-                disabled={!prompt.trim()}
+                disabled={!prompt.trim() && uploadedFiles.length === 0}
                 data-test-id="send-message-button"
                 onClick={() => handleSendMesage(prompt)}
               >
@@ -582,6 +713,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       </div>
+
       {message && (
         <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
           <div className="flex items-center gap-1 justify-between">

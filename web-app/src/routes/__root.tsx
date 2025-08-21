@@ -26,9 +26,10 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -64,6 +65,41 @@ const AppLayout = () => {
     },
     [setLeftPanelSize, setLeftPanel]
   )
+
+  // Prevent default drag and drop behavior globally
+  useEffect(() => {
+    const preventDefaults = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    const handleGlobalDrop = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // Only prevent if the target is not within a chat input or other valid drop zone
+      const target = e.target as Element
+      const isValidDropZone = target?.closest('[data-drop-zone="true"]') || 
+                             target?.closest('.chat-input-drop-zone') ||
+                             target?.closest('[data-tauri-drag-region]')
+      
+      if (!isValidDropZone) {
+        // Prevent the file from opening in the window
+        return false
+      }
+    }
+
+    // Add event listeners to prevent default drag/drop behavior
+    window.addEventListener('dragenter', preventDefaults)
+    window.addEventListener('dragover', preventDefaults)
+    window.addEventListener('drop', handleGlobalDrop)
+
+    return () => {
+      window.removeEventListener('dragenter', preventDefaults)
+      window.removeEventListener('dragover', preventDefaults)  
+      window.removeEventListener('drop', handleGlobalDrop)
+    }
+  }, [])
 
   return (
     <Fragment>
@@ -168,6 +204,7 @@ function RootLayout() {
         {/* <TanStackRouterDevtools position="bottom-right" /> */}
         <ToolApproval />
         <LoadModelErrorDialog />
+        <ErrorDialog />
         <OutOfContextPromiseModal />
       </TranslationProvider>
     </Fragment>

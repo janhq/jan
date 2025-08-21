@@ -29,5 +29,6 @@
   "save": "儲存",
   "createNew": "建立新助理",
   "personality": "個性",
-  "capabilities": "能力"
+  "capabilities": "能力",
+  "maxToolSteps": "最大工具步驟"
 }

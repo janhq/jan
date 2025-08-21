@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
@@ -27,8 +28,10 @@ export interface CatalogModel {
   num_quants: number
   quants: ModelQuant[]
   mmproj_models?: MMProjModel[]
+  num_mmproj: number
   created_at?: string
   readme?: string
+  tools?: boolean
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -43,7 +46,7 @@ export interface HuggingFaceRepo {
   library_name?: string
   tags: string[]
   pipeline_tag?: string
-  created_at: string
+  createdAt: string
   last_modified: string
   private: boolean
   disabled: boolean
@@ -154,22 +157,42 @@ export const fetchHuggingFaceRepo = async (
 export const convertHfRepoToCatalogModel = (
   repo: HuggingFaceRepo
 ): CatalogModel => {
+  // Format file size helper
+  const formatFileSize = (size?: number) => {
+    if (!size) return 'Unknown size'
+    if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
+    return `${(size / 1024 ** 3).toFixed(1)} GB`
+  }
+
   // Extract GGUF files from the repository siblings
   const ggufFiles =
     repo.siblings?.filter((file) =>
       file.rfilename.toLowerCase().endsWith('.gguf')
     ) || []
 
-  // Convert GGUF files to quants format
-  const quants = ggufFiles.map((file) => {
-    // Format file size
-    const formatFileSize = (size?: number) => {
-      if (!size) return 'Unknown size'
-      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
-      return `${(size / 1024 ** 3).toFixed(1)} GB`
-    }
+  // Separate regular GGUF files from mmproj files
+  const regularGgufFiles = ggufFiles.filter(
+    (file) => !file.rfilename.toLowerCase().includes('mmproj')
+  )
 
+  const mmprojFiles = ggufFiles.filter((file) =>
+    file.rfilename.toLowerCase().includes('mmproj')
+  )
+
+  // Convert regular GGUF files to quants format
+  const quants = regularGgufFiles.map((file) => {
     // Generate model_id from filename (remove .gguf extension, case-insensitive)
+    const modelId = file.rfilename.replace(/\.gguf$/i, '')
+
+    return {
+      model_id: sanitizeModelId(modelId),
+      path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+      file_size: formatFileSize(file.size),
+    }
+  })
+
+  // Convert mmproj files to mmproj_models format
+  const mmprojModels = mmprojFiles.map((file) => {
     const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
     return {
@@ -181,13 +204,15 @@ export const convertHfRepoToCatalogModel = (
 
   return {
     model_name: repo.modelId,
-    description: `**Tags**: ${repo.tags?.join(', ')}`,
     developer: repo.author,
     downloads: repo.downloads || 0,
+    created_at: repo.createdAt,
     num_quants: quants.length,
     quants: quants,
-    created_at: repo.created_at,
+    num_mmproj: mmprojModels.length,
+    mmproj_models: mmprojModels,
     readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
+    description: `**Tags**: ${repo.tags?.join(', ')}`,
   }
 }
 
@@ -312,4 +337,151 @@ export const startModel = async (
     )
     throw error
   })
+}
+
+/**
+ * Check if model support tool use capability
+ * Returned by backend engine
+ * @param modelId
+ * @returns
+ */
+export const isToolSupported = async (modelId: string): Promise<boolean> => {
+  const engine = getEngine()
+  if (!engine) return false
+
+  return engine.isToolSupported(modelId)
+}
+
+/**
+ * Checks if mmproj.gguf file exists for a given model ID in the llamacpp provider.
+ * Also checks if the model has offload_mmproj setting.
+ * If mmproj.gguf exists, adds offload_mmproj setting with value true.
+ * @param modelId - The model ID to check for mmproj.gguf
+ * @param updateProvider - Function to update the provider state
+ * @param getProviderByName - Function to get provider by name
+ * @returns Promise<{exists: boolean, settingsUpdated: boolean}> - exists: true if mmproj.gguf exists, settingsUpdated: true if settings were modified
+ */
+export const checkMmprojExistsAndUpdateOffloadMMprojSetting = async (
+  modelId: string,
+  updateProvider?: (providerName: string, data: Partial<ModelProvider>) => void,
+  getProviderByName?: (providerName: string) => ModelProvider | undefined
+): Promise<{ exists: boolean; settingsUpdated: boolean }> => {
+  let settingsUpdated = false
+
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      checkMmprojExists?: (id: string) => Promise<boolean>
+    }
+    if (engine && typeof engine.checkMmprojExists === 'function') {
+      const exists = await engine.checkMmprojExists(modelId)
+
+      // If we have the store functions, use them; otherwise fall back to localStorage
+      if (updateProvider && getProviderByName) {
+        const provider = getProviderByName('llamacpp')
+        if (provider) {
+          const model = provider.models.find((m) => m.id === modelId)
+
+          if (model?.settings) {
+            const hasOffloadMmproj = 'offload_mmproj' in model.settings
+
+            // If mmproj exists, add offload_mmproj setting (only if it doesn't exist)
+            if (exists && !hasOffloadMmproj) {
+              // Create updated models array with the new setting
+              const updatedModels = provider.models.map((m) => {
+                if (m.id === modelId) {
+                  return {
+                    ...m,
+                    settings: {
+                      ...m.settings,
+                      offload_mmproj: {
+                        key: 'offload_mmproj',
+                        title: 'Offload MMProj',
+                        description:
+                          'Offload multimodal projection layers to GPU',
+                        controller_type: 'checkbox',
+                        controller_props: {
+                          value: true,
+                        },
+                      },
+                    },
+                  }
+                }
+                return m
+              })
+
+              // Update the provider with the new models array
+              updateProvider('llamacpp', { models: updatedModels })
+              settingsUpdated = true
+            }
+          }
+        }
+      } else {
+        // Fall back to localStorage approach for backwards compatibility
+        try {
+          const modelProviderData = JSON.parse(
+            localStorage.getItem('model-provider') || '{}'
+          )
+          const llamacppProvider = modelProviderData.state?.providers?.find(
+            (p: any) => p.provider === 'llamacpp'
+          )
+          const model = llamacppProvider?.models?.find(
+            (m: any) => m.id === modelId
+          )
+
+          if (model?.settings) {
+            // If mmproj exists, add offload_mmproj setting (only if it doesn't exist)
+            if (exists) {
+              if (!model.settings.offload_mmproj) {
+                model.settings.offload_mmproj = {
+                  key: 'offload_mmproj',
+                  title: 'Offload MMProj',
+                  description: 'Offload multimodal projection layers to GPU',
+                  controller_type: 'checkbox',
+                  controller_props: {
+                    value: true,
+                  },
+                }
+                // Save updated settings back to localStorage
+                localStorage.setItem(
+                  'model-provider',
+                  JSON.stringify(modelProviderData)
+                )
+                settingsUpdated = true
+              }
+            }
+          }
+        } catch (localStorageError) {
+          console.error(
+            `Error checking localStorage for model ${modelId}:`,
+            localStorageError
+          )
+        }
+      }
+
+      return { exists, settingsUpdated }
+    }
+  } catch (error) {
+    console.error(`Error checking mmproj for model ${modelId}:`, error)
+  }
+  return { exists: false, settingsUpdated }
+}
+
+/**
+ * Checks if mmproj.gguf file exists for a given model ID in the llamacpp provider.
+ * If mmproj.gguf exists, adds offload_mmproj setting with value true.
+ * @param modelId - The model ID to check for mmproj.gguf
+ * @returns Promise<{exists: boolean, settingsUpdated: boolean}> - exists: true if mmproj.gguf exists, settingsUpdated: true if settings were modified
+ */
+export const checkMmprojExists = async (modelId: string): Promise<boolean> => {
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      checkMmprojExists?: (id: string) => Promise<boolean>
+    }
+    if (engine && typeof engine.checkMmprojExists === 'function') {
+      return await engine.checkMmprojExists(modelId)
+    }
+  } catch (error) {
+    console.error(`Error checking mmproj for model ${modelId}:`, error)
+  }
+  return false
 }
