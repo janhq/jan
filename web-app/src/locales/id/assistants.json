@@ -30,5 +30,6 @@
   "createNew": "Buat Asisten Baru",
   "personality": "Kepribadian",
   "capabilities": "Kemampuan",
+  "instructionsDateHint": "Tips: Gunakan {{current_date}} untuk menyisipkan tanggal hari ini.",
   "maxToolSteps": "Langkah alat maksimum"
 }

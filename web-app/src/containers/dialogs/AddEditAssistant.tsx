@@ -325,6 +325,9 @@ export default function AddEditAssistant({
               className="resize-none"
               rows={4}
             />
+            <div className="text-xs text-main-view-fg/60">
+              {t('assistants:instructionsDateHint')}
+            </div>
           </div>
 
           <div className="space-y-2 my-4 mt-6">
