@@ -31,6 +31,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
@@ -44,6 +45,7 @@ import {
   pullModelWithMetadata,
   fetchHuggingFaceRepo,
   convertHfRepoToCatalogModel,
+  isModelSupported,
 } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
@@ -97,6 +99,9 @@ function Hub() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
+  const [modelSupportStatus, setModelSupportStatus] = useState<
+    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
+  >({})
   const [joyrideReady, setJoyrideReady] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -268,6 +273,41 @@ function Hub() {
       })
     },
     [navigate]
+  )
+
+  const checkModelSupport = useCallback(
+    async (variant: any) => {
+      const modelKey = variant.model_id
+
+      // Don't check again if already checking or checked
+      if (modelSupportStatus[modelKey]) {
+        return
+      }
+
+      // Set loading state
+      setModelSupportStatus((prev) => ({
+        ...prev,
+        [modelKey]: 'LOADING',
+      }))
+
+      try {
+        // Use the HuggingFace path for the model
+        const modelPath = variant.path
+        const supportStatus = await isModelSupported(modelPath, 8192)
+
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: supportStatus,
+        }))
+      } catch (error) {
+        console.error('Error checking model support:', error)
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: 'RED',
+        }))
+      }
+    },
+    [modelSupportStatus]
   )
 
   const DownloadButtonPlaceholder = useMemo(() => {
@@ -616,6 +656,14 @@ function Hub() {
                                     )?.file_size
                                   }
                                 </span>
+                                <ModelInfoHoverCard
+                                  model={filteredModels[virtualItem.index]}
+                                  defaultModelQuantizations={
+                                    defaultModelQuantizations
+                                  }
+                                  modelSupportStatus={modelSupportStatus}
+                                  onCheckModelSupport={checkModelSupport}
+                                />
                                 <DownloadButtonPlaceholder
                                   model={filteredModels[virtualItem.index]}
                                 />
@@ -671,45 +719,47 @@ function Hub() {
                                     ?.length || 0}
                                 </span>
                               </div>
-                              {filteredModels[virtualItem.index].tools && (
-                                <div className="flex items-center gap-1">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconTool
-                                            size={17}
-                                            className="text-main-view-fg/50"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('tools')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </div>
-                              )}
-                              {filteredModels[virtualItem.index].num_mmproj >
-                                0 && (
-                                <div className="flex items-center gap-1">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconEye
-                                            size={17}
-                                            className="text-main-view-fg/50"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('vision')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </div>
-                              )}
+                              <div className="flex gap-1.5 items-center">
+                                {filteredModels[virtualItem.index].num_mmproj >
+                                  0 && (
+                                  <div className="flex items-center gap-1">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div>
+                                            <IconEye
+                                              size={17}
+                                              className="text-main-view-fg/50"
+                                            />
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{t('vision')}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                )}
+                                {filteredModels[virtualItem.index].tools && (
+                                  <div className="flex items-center gap-1">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div>
+                                            <IconTool
+                                              size={17}
+                                              className="text-main-view-fg/50"
+                                            />
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{t('tools')}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                )}
+                              </div>
                               {filteredModels[virtualItem.index].quants.length >
                                 1 && (
                                 <div className="flex items-center gap-2 hub-show-variants-step">
@@ -744,12 +794,75 @@ function Hub() {
                                   (variant) => (
                                     <CardItem
                                       key={variant.model_id}
-                                      title={variant.model_id}
+                                      title={
+                                        <>
+                                          <div className="flex items-center gap-1">
+                                            <span className="mr-2">
+                                              {variant.model_id}
+                                            </span>
+                                            {filteredModels[virtualItem.index]
+                                              .num_mmproj > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <TooltipProvider>
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <div>
+                                                        <IconEye
+                                                          size={17}
+                                                          className="text-main-view-fg/50"
+                                                        />
+                                                      </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      <p>{t('vision')}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TooltipProvider>
+                                              </div>
+                                            )}
+                                            {filteredModels[virtualItem.index]
+                                              .tools && (
+                                              <div className="flex items-center gap-1">
+                                                <TooltipProvider>
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <div>
+                                                        <IconTool
+                                                          size={17}
+                                                          className="text-main-view-fg/50"
+                                                        />
+                                                      </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      <p>{t('tools')}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TooltipProvider>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </>
+                                      }
                                       actions={
                                         <div className="flex items-center gap-2">
                                           <p className="text-main-view-fg/70 font-medium text-xs">
                                             {variant.file_size}
                                           </p>
+                                          <ModelInfoHoverCard
+                                            model={
+                                              filteredModels[virtualItem.index]
+                                            }
+                                            variant={variant}
+                                            defaultModelQuantizations={
+                                              defaultModelQuantizations
+                                            }
+                                            modelSupportStatus={
+                                              modelSupportStatus
+                                            }
+                                            onCheckModelSupport={
+                                              checkModelSupport
+                                            }
+                                          />
                                           {(() => {
                                             const isDownloading =
                                               localDownloadingModels.has(

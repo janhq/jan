@@ -35,7 +35,11 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  GgufMetadata,
+  readGgufMetadata,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
@@ -1742,7 +1746,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+        'Backend setup was not successful. Please restart the app in a stable internet connection.'
       )
     }
     // set envs
@@ -1842,5 +1846,135 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
+  }
+
+  /**
+   *  estimate KVCache size of from a given metadata
+   *
+   */
+  private async estimateKVCache(
+    meta: Record<string, string>,
+    ctx_size?: number
+  ): Promise<number> {
+    const arch = meta['general.architecture']
+    if (!arch) throw new Error('Invalid metadata: architecture not found')
+
+    const nLayer = Number(meta[`${arch}.block_count`])
+    if (!nLayer) throw new Error('Invalid metadata: block_count not found')
+
+    const nHead = Number(meta[`${arch}.attention.head_count`])
+    if (!nHead) throw new Error('Invalid metadata: head_count not found')
+
+    // Try to get key/value lengths first (more accurate)
+    const keyLen = Number(meta[`${arch}.attention.key_length`])
+    const valLen = Number(meta[`${arch}.attention.value_length`])
+
+    let headDim: number
+
+    if (keyLen && valLen) {
+      // Use explicit key/value lengths if available
+      logger.info(
+        `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
+      )
+      headDim = (keyLen + valLen)
+    } else {
+      // Fall back to embedding_length estimation
+      const embeddingLen = Number(meta[`${arch}.embedding_length`])
+      if (!embeddingLen)
+        throw new Error('Invalid metadata: embedding_length not found')
+
+      // Standard transformer: head_dim = embedding_dim / num_heads
+      // For KV cache: we need both K and V, so 2 * head_dim per head
+      headDim = (embeddingLen / nHead) * 2
+      logger.info(
+        `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
+      )
+    }
+    let ctxLen: number
+    if (!ctx_size) {
+      ctxLen = Number(meta[`${arch}.context_length`])
+    } else {
+      ctxLen = ctx_size
+    }
+
+    logger.info(`ctxLen: ${ctxLen}`)
+    logger.info(`nLayer: ${nLayer}`)
+    logger.info(`nHead: ${nHead}`)
+    logger.info(`headDim: ${headDim}`)
+
+    // Consider f16 by default
+    // Can be extended by checking cache-type-v and cache-type-k
+    // but we are checking overall compatibility with the default settings
+    // fp16 = 8 bits * 2 = 16
+    const bytesPerElement = 2
+
+    // Total KV cache size per token = nHead * headDim * bytesPerElement
+    const kvPerToken = nHead * headDim * bytesPerElement
+
+    return ctxLen * nLayer * kvPerToken
+  }
+
+  private async getModelSize(path: string): Promise<number> {
+    if (path.startsWith('https://')) {
+      const res = await fetch(path, { method: 'HEAD' })
+      const len = res.headers.get('content-length')
+      return len ? parseInt(len, 10) : 0
+    } else {
+      return (await fs.fileStat(path)).size
+    }
+  }
+
+  /*
+   * check the support status of a model by its path (local/remote)
+   *
+   * * Returns:
+   * - "RED"    → weights don't fit
+   * - "YELLOW" → weights fit, KV cache doesn't
+   * - "GREEN"  → both weights + KV cache fit
+   */
+  async isModelSupported(
+    path: string,
+    ctx_size?: number
+  ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
+    try {
+      const modelSize = await this.getModelSize(path)
+      logger.info(`modelSize: ${modelSize}`)
+      let gguf: GgufMetadata
+      gguf = await readGgufMetadata(path)
+      let kvCacheSize: number
+      if (ctx_size) {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
+      } else {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata)
+      }
+      // total memory consumption = model weights + kvcache + a small buffer for outputs
+      // output buffer is small so not considering here
+      const totalRequired = modelSize + kvCacheSize
+      logger.info(
+        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
+      )
+      let availableMemBytes: number
+      const devices = await this.getDevices()
+      if (devices.length > 0) {
+        // Sum free memory across all GPUs
+        availableMemBytes = devices
+          .map((d) => d.free * 1024 * 1024)
+          .reduce((a, b) => a + b, 0)
+      } else {
+        // CPU fallback
+        const sys = await getSystemUsage()
+        availableMemBytes = (sys.total_memory - sys.used_memory) * 1024 * 1024
+      }
+      // check model size wrt system memory
+      if (modelSize > availableMemBytes) {
+        return 'RED'
+      } else if (modelSize + kvCacheSize > availableMemBytes) {
+        return 'YELLOW'
+      } else {
+        return 'GREEN'
+      }
+    } catch (e) {
+      throw new Error(String(e))
+    }
   }
 }

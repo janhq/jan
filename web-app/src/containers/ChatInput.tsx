@@ -17,7 +17,6 @@ import {
   IconPhoto,
   IconWorld,
   IconAtom,
-  IconEye,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -537,7 +536,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 {/* File attachment - show only for models with mmproj */}
                 {hasMmproj && (
                   <div
-                    className="h-6 p-1 ml-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                    className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                     onClick={handleAttachmentClick}
                   >
                     <IconPhoto size={18} className="text-main-view-fg/50" />
@@ -554,20 +553,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
               </div> */}
-                {selectedModel?.capabilities?.includes('vision') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger disabled={dropdownToolsAvailable}>
-                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconEye size={18} className="text-main-view-fg/50" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vision')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>
                     <Tooltip>

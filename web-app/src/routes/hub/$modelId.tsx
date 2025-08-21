@@ -20,18 +20,23 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
   CatalogModel,
+  ModelQuant,
   convertHfRepoToCatalogModel,
   fetchHuggingFaceRepo,
   pullModelWithMetadata,
+  isModelSupported,
 } from '@/services/models'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 
 type SearchParams = {
   repo: string
 }
+
+const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetail,
@@ -56,6 +61,11 @@ function HubModelDetail() {
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
   const [isLoadingReadme, setIsLoadingReadme] = useState(false)
+
+  // State for model support status
+  const [modelSupportStatus, setModelSupportStatus] = useState<
+    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
+  >({})
 
   useEffect(() => {
     fetchSources()
@@ -130,6 +140,41 @@ function HubModelDetail() {
       return `${years} year${years > 1 ? 's' : ''} ago`
     }
   }
+
+  // Check model support function
+  const checkModelSupport = useCallback(
+    async (variant: ModelQuant) => {
+      const modelKey = variant.model_id
+
+      // Don't check again if already checking or checked
+      if (modelSupportStatus[modelKey]) {
+        return
+      }
+
+      // Set loading state
+      setModelSupportStatus((prev) => ({
+        ...prev,
+        [modelKey]: 'LOADING',
+      }))
+
+      try {
+        // Use the HuggingFace path for the model
+        const modelPath = variant.path
+        const supported = await isModelSupported(modelPath, 8192)
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: supported,
+        }))
+      } catch (error) {
+        console.error('Error checking model support:', error)
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: 'RED',
+        }))
+      }
+    },
+    [modelSupportStatus]
+  )
 
   // Extract tags from quants (model variants)
   const tags = useMemo(() => {
@@ -318,6 +363,7 @@ function HubModelDetail() {
                           <th className="text-left py-3 px-2 text-sm font-medium text-main-view-fg/70">
                             Size
                           </th>
+                          <th></th>
                           <th className="text-right py-3 px-2 text-sm font-medium text-main-view-fg/70">
                             Action
                           </th>
@@ -372,7 +418,18 @@ function HubModelDetail() {
                                   {variant.file_size}
                                 </span>
                               </td>
-                              <td className="py-3 px-2 text-right">
+                              <td>
+                                <ModelInfoHoverCard
+                                  model={modelData}
+                                  variant={variant}
+                                  defaultModelQuantizations={
+                                    defaultModelQuantizations
+                                  }
+                                  modelSupportStatus={modelSupportStatus}
+                                  onCheckModelSupport={checkModelSupport}
+                                />
+                              </td>
+                              <td className="py-3 px-2 text-right ml-auto">
                                 {(() => {
                                   if (isDownloading && !isDownloaded) {
                                     return (
