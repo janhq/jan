@@ -184,17 +184,15 @@ export const ModelInfoHoverCard = ({
               </h5>
               <div className="flex flex-wrap gap-2">
                 {model.num_mmproj > 0 && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 bg-green-500/10 rounded-md">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-green-500 font-medium">
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-main-view-fg/10 rounded-md">
+                    <span className="text-xs text-main-view-fg font-medium">
                       Vision
                     </span>
                   </div>
                 )}
                 {model.tools && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 bg-green-500/10 rounded-md">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-green-500 font-medium">
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-main-view-fg/10 rounded-md">
+                    <span className="text-xs text-main-view-fg font-medium">
                       Tools
                     </span>
                   </div>
