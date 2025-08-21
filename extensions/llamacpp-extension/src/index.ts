@@ -41,6 +41,7 @@ type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
+  llamacpp_env: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
@@ -153,6 +154,7 @@ const logger = {
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
+  llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -183,6 +185,7 @@ export default class llamacpp_extension extends AIEngine {
     this.config = loadedConfig as LlamacppConfig
 
     this.autoUnload = this.config.auto_unload
+    this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
@@ -827,6 +830,8 @@ export default class llamacpp_extension extends AIEngine {
       closure()
     } else if (key === 'auto_unload') {
       this.autoUnload = value as boolean
+    } else if (key === 'llamacpp_env') {
+      this.llamacpp_env = value as string
     }
   }
 
@@ -1253,6 +1258,27 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private parseEnvFromString(
+    target: Record<string, string>,
+    envString: string
+  ): void {
+    envString
+      .split(';')
+      .filter((pair) => pair.trim())
+      .forEach((pair) => {
+        const [key, ...valueParts] = pair.split('=')
+        const cleanKey = key?.trim()
+
+        if (
+          cleanKey &&
+          valueParts.length > 0 &&
+          !cleanKey.startsWith('LLAMA')
+        ) {
+          target[cleanKey] = valueParts.join('=').trim()
+        }
+      })
+  }
+
   override async load(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
@@ -1340,6 +1366,9 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
+
+    // set user envs
+    this.parseEnvFromString(envs, this.llamacpp_env)
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1716,6 +1745,9 @@ export default class llamacpp_extension extends AIEngine {
         `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
       )
     }
+    // set envs
+    const envs: Record<string, string> = {}
+    this.parseEnvFromString(envs, this.llamacpp_env)
 
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
@@ -1726,6 +1758,7 @@ export default class llamacpp_extension extends AIEngine {
       const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
         backendPath,
         libraryPath,
+        envs,
       })
       return dList
     } catch (error) {

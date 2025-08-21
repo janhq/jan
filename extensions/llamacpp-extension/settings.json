@@ -10,7 +10,18 @@
       "recommended": ""
     }
   },
-
+  {
+    "key": "llamacpp_env",
+    "title": "Environmental variables",
+    "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "none",
+      "placeholder": "Eg, GGML_VK_VISIBLE_DEVICES='0,1'",
+      "type": "text",
+      "textAlign": "right"
+    }
+  },
   {
     "key": "auto_update_engine",
     "title": "Auto update engine",
