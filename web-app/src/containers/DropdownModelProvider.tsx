@@ -14,13 +14,16 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { ModelSupportStatus } from '@/components/ModelSupportStatus'
+import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/consts/providers'
-import { checkMmprojExistsAndUpdateOffloadMMprojSetting, checkMmprojExists } from '@/services/models'
+import {
+  checkMmprojExistsAndUpdateOffloadMMprojSetting,
+  checkMmprojExists,
+} from '@/services/models'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -81,7 +84,6 @@ const DropdownModelProvider = ({
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-
   // Helper function to check if a model exists in providers
   const checkModelExists = useCallback(
     (providerName: string, modelId: string) => {
@@ -102,35 +104,40 @@ const DropdownModelProvider = ({
   }, [selectedModel?.settings?.ctx_len?.controller_props?.value])
 
   // Function to check if a llamacpp model has vision capabilities and update model capabilities
-  const checkAndUpdateModelVisionCapability = useCallback(async (modelId: string) => {
-    try {
-      const hasVision = await checkMmprojExists(modelId)
-      if (hasVision) {
-        // Update the model capabilities to include 'vision'
-        const provider = getProviderByName('llamacpp')
-        if (provider) {
-          const modelIndex = provider.models.findIndex(m => m.id === modelId)
-          if (modelIndex !== -1) {
-            const model = provider.models[modelIndex]
-            const capabilities = model.capabilities || []
-            
-            // Add 'vision' capability if not already present
-            if (!capabilities.includes('vision')) {
-              const updatedModels = [...provider.models]
-              updatedModels[modelIndex] = {
-                ...model,
-                capabilities: [...capabilities, 'vision']
+  const checkAndUpdateModelVisionCapability = useCallback(
+    async (modelId: string) => {
+      try {
+        const hasVision = await checkMmprojExists(modelId)
+        if (hasVision) {
+          // Update the model capabilities to include 'vision'
+          const provider = getProviderByName('llamacpp')
+          if (provider) {
+            const modelIndex = provider.models.findIndex(
+              (m) => m.id === modelId
+            )
+            if (modelIndex !== -1) {
+              const model = provider.models[modelIndex]
+              const capabilities = model.capabilities || []
+
+              // Add 'vision' capability if not already present
+              if (!capabilities.includes('vision')) {
+                const updatedModels = [...provider.models]
+                updatedModels[modelIndex] = {
+                  ...model,
+                  capabilities: [...capabilities, 'vision'],
+                }
+
+                updateProvider('llamacpp', { models: updatedModels })
               }
-              
-              updateProvider('llamacpp', { models: updatedModels })
             }
           }
         }
+      } catch (error) {
+        console.debug('Error checking mmproj for model:', modelId, error)
       }
-    } catch (error) {
-      console.debug('Error checking mmproj for model:', modelId, error)
-    }
-  }, [getProviderByName, updateProvider])
+    },
+    [getProviderByName, updateProvider]
+  )
 
   // Initialize model provider only once
   useEffect(() => {
@@ -196,9 +203,11 @@ const DropdownModelProvider = ({
   // Check vision capabilities for all llamacpp models
   useEffect(() => {
     const checkAllLlamacppModelsForVision = async () => {
-      const llamacppProvider = providers.find(p => p.provider === 'llamacpp' && p.active)
+      const llamacppProvider = providers.find(
+        (p) => p.provider === 'llamacpp' && p.active
+      )
       if (llamacppProvider) {
-        const checkPromises = llamacppProvider.models.map(model => 
+        const checkPromises = llamacppProvider.models.map((model) =>
           checkAndUpdateModelVisionCapability(model.id)
         )
         await Promise.allSettled(checkPromises)

@@ -31,7 +31,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ModelInfoHoverCard } from '@/components/ModelInfoHoverCard'
+import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
@@ -653,7 +653,9 @@ function Hub() {
                                 </span>
                                 <ModelInfoHoverCard
                                   model={filteredModels[virtualItem.index]}
-                                  defaultModelQuantizations={defaultModelQuantizations}
+                                  defaultModelQuantizations={
+                                    defaultModelQuantizations
+                                  }
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
                                 />
@@ -842,11 +844,19 @@ function Hub() {
                                             {variant.file_size}
                                           </p>
                                           <ModelInfoHoverCard
-                                            model={filteredModels[virtualItem.index]}
+                                            model={
+                                              filteredModels[virtualItem.index]
+                                            }
                                             variant={variant}
-                                            defaultModelQuantizations={defaultModelQuantizations}
-                                            modelSupportStatus={modelSupportStatus}
-                                            onCheckModelSupport={checkModelSupport}
+                                            defaultModelQuantizations={
+                                              defaultModelQuantizations
+                                            }
+                                            modelSupportStatus={
+                                              modelSupportStatus
+                                            }
+                                            onCheckModelSupport={
+                                              checkModelSupport
+                                            }
                                           />
                                           {(() => {
                                             const isDownloading =
