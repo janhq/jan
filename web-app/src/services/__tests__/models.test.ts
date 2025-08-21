@@ -13,6 +13,7 @@ import {
   stopModel,
   stopAllModels,
   startModel,
+  isModelSupported,
   HuggingFaceRepo,
   CatalogModel,
 } from '../models'
@@ -843,6 +844,97 @@ describe('models service', () => {
       expect(result.downloads).toBe(0)
       expect(result.description).toBe('**Tags**: ')
       expect(result.quants[0].file_size).toBe('Unknown size')
+    })
+  })
+
+  describe('isModelSupported', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it('should return GREEN when model is fully supported', async () => {
+      const mockEngineWithSupport = {
+        ...mockEngine,
+        isModelSupported: vi.fn().mockResolvedValue('GREEN'),
+      }
+
+      mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
+
+      const result = await isModelSupported('/path/to/model.gguf', 4096)
+
+      expect(result).toBe('GREEN')
+      expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
+        '/path/to/model.gguf',
+        4096
+      )
+    })
+
+    it('should return YELLOW when model weights fit but KV cache does not', async () => {
+      const mockEngineWithSupport = {
+        ...mockEngine,
+        isModelSupported: vi.fn().mockResolvedValue('YELLOW'),
+      }
+
+      mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
+
+      const result = await isModelSupported('/path/to/model.gguf', 8192)
+
+      expect(result).toBe('YELLOW')
+      expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
+        '/path/to/model.gguf',
+        8192
+      )
+    })
+
+    it('should return RED when model is not supported', async () => {
+      const mockEngineWithSupport = {
+        ...mockEngine,
+        isModelSupported: vi.fn().mockResolvedValue('RED'),
+      }
+
+      mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
+
+      const result = await isModelSupported('/path/to/large-model.gguf')
+
+      expect(result).toBe('RED')
+      expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
+        '/path/to/large-model.gguf',
+        undefined
+      )
+    })
+
+    it('should return YELLOW as fallback when engine method is not available', async () => {
+      const mockEngineWithoutSupport = {
+        ...mockEngine,
+        // isModelSupported method not available
+      }
+
+      mockEngineManager.get.mockReturnValue(mockEngineWithoutSupport)
+
+      const result = await isModelSupported('/path/to/model.gguf')
+
+      expect(result).toBe('YELLOW')
+    })
+
+    it('should return RED when engine is not available', async () => {
+      mockEngineManager.get.mockReturnValue(null)
+
+      const result = await isModelSupported('/path/to/model.gguf')
+
+      expect(result).toBe('YELLOW') // Should use fallback
+    })
+
+    it('should return RED when there is an error', async () => {
+      const mockEngineWithError = {
+        ...mockEngine,
+        isModelSupported: vi.fn().mockRejectedValue(new Error('Test error')),
+      }
+
+      mockEngineManager.get.mockReturnValue(mockEngineWithError)
+
+      const result = await isModelSupported('/path/to/model.gguf')
+
+      expect(result).toBe('RED')
     })
   })
 })

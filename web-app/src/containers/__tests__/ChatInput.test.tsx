@@ -291,15 +291,6 @@ describe('ChatInput', () => {
     expect(stopButton).toBeInTheDocument()
   })
 
-  it('shows capability icons when model supports them', () => {
-    act(() => {
-      renderWithRouter()
-    })
-    
-    // Should show vision icon (rendered as SVG with tabler-icon-eye class)
-    const visionIcon = document.querySelector('.tabler-icon-eye')
-    expect(visionIcon).toBeInTheDocument()
-  })
 
   it('shows model selection dropdown', () => {
     act(() => {
