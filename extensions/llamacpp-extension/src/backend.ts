@@ -43,9 +43,9 @@ export async function listSupportedBackends(): Promise<
     if (features.vulkan) supportedBackends.push('win-vulkan-x64')
   }
   // not available yet, placeholder for future
-  else if (sysType == 'windows-aarch64') {
+  else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
     supportedBackends.push('win-arm64')
-  } else if (sysType == 'linux-x86_64') {
+  } else if (sysType === 'linux-x86_64' || sysType === 'linux-x86') {
     supportedBackends.push('linux-noavx-x64')
     if (features.avx) supportedBackends.push('linux-avx-x64')
     if (features.avx2) supportedBackends.push('linux-avx2-x64')
@@ -69,11 +69,11 @@ export async function listSupportedBackends(): Promise<
     if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
   }
   // not available yet, placeholder for future
-  else if (sysType === 'linux-aarch64') {
+  else if (sysType === 'linux-aarch64' || sysType === 'linux-arm64') {
     supportedBackends.push('linux-arm64')
-  } else if (sysType === 'macos-x86_64') {
+  } else if (sysType === 'macos-x86_64' || sysType === 'macos-x86') {
     supportedBackends.push('macos-x64')
-  } else if (sysType === 'macos-aarch64') {
+  } else if (sysType === 'macos-aarch64' || sysType === 'macos-arm64') {
     supportedBackends.push('macos-arm64')
   }
 
@@ -262,10 +262,7 @@ async function _getSupportedFeatures() {
         features.cuda12 = true
     }
     // Vulkan support check - only discrete GPUs with 6GB+ VRAM
-    if (
-      gpuInfo.vulkan_info?.api_version &&
-      gpuInfo.total_memory >= 6 * 1024
-    ) {
+    if (gpuInfo.vulkan_info?.api_version && gpuInfo.total_memory >= 6 * 1024) {
       // 6GB (total_memory is in MB)
       features.vulkan = true
     }
