@@ -1084,6 +1084,8 @@ export default class llamacpp_extension extends AIEngine {
 
         // Check if this is a cancellation
         const isCancellationError = errorMessage.includes('Download cancelled') ||
+          errorMessage.includes('Validation cancelled') ||
+          errorMessage.includes('Hash computation cancelled') ||
           errorMessage.includes('cancelled') ||
           errorMessage.includes('aborted')
 

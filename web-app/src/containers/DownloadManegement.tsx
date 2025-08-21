@@ -178,7 +178,7 @@ export function DownloadManagement() {
         description: t('common:toast.modelValidationStarted.description', {
           modelId: event.modelId,
         }),
-        duration: Infinity, // Will be dismissed when validation completes or fails
+        duration: 10000,
       })
     },
     [t]

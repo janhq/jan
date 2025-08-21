@@ -18,6 +18,7 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {}", e)
 }
 
+
 // ===== VALIDATION FUNCTIONS =====
 
 /// Validates a downloaded file against expected hash and size
@@ -25,6 +26,7 @@ async fn validate_downloaded_file(
     item: &DownloadItem,
     save_path: &Path,
     app: &tauri::AppHandle,
+    cancel_token: &CancellationToken,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
     if item.sha256.is_none() && item.size.is_none() {
@@ -93,11 +95,17 @@ async fn validate_downloaded_file(
         }
     }
 
+    // Check for cancellation before expensive hash computation
+    if cancel_token.is_cancelled() {
+        log::info!("Validation cancelled for {}", item.url);
+        return Err("Validation cancelled".to_string());
+    }
+
     // Validate hash if provided (expensive check second)
     if let Some(expected_sha256) = &item.sha256 {
         log::info!("Starting Hash verification for {}", item.url);
 
-        match jan_utils::crypto::compute_file_sha256(save_path).await {
+        match jan_utils::crypto::compute_file_sha256_with_cancellation(save_path, cancel_token).await {
             Ok(computed_sha256) => {
                 if computed_sha256 != *expected_sha256 {
                     log::error!(
@@ -377,8 +385,9 @@ pub async fn _download_files_internal(
                 let item_clone = item.clone();
                 let app_clone = app.clone();
                 let path_clone = downloaded_path.clone();
+                let cancel_token_clone = cancel_token.clone();
                 let validation_task = tokio::spawn(async move {
-                    validate_downloaded_file(&item_clone, &path_clone, &app_clone).await
+                    validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone).await
                 });
                 validation_tasks.push((validation_task, downloaded_path, item.clone()));
             }
