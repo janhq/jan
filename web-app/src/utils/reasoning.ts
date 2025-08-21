@@ -5,6 +5,11 @@ import {
   chatCompletionRequestMessage,
 } from '@janhq/core'
 
+// Helper function to get reasoning content from an object
+function getReasoning(obj: { reasoning_content?: string | null; reasoning?: string | null } | null | undefined): string | null {
+  return obj?.reasoning_content ?? obj?.reasoning ?? null
+}
+
 // Extract reasoning from a message (for completed responses)
 export function extractReasoningFromMessage(
   message: chatCompletionRequestMessage | ChatCompletionMessage
@@ -12,7 +17,7 @@ export function extractReasoningFromMessage(
   if (!message) return null
 
   const extendedMessage = message as chatCompletionRequestMessage
-  return extendedMessage.reasoning || null
+  return getReasoning(extendedMessage)
 }
 
 // Extract reasoning from a chunk (for streaming responses)
@@ -22,7 +27,7 @@ function extractReasoningFromChunk(
   if (!chunk.choices?.[0]?.delta) return null
 
   const delta = chunk.choices[0].delta as chatCompletionRequestMessage
-  const reasoning = delta.reasoning
+  const reasoning = getReasoning(delta)
 
   // Return null for falsy values, non-strings, or whitespace-only strings
   if (!reasoning || typeof reasoning !== 'string' || !reasoning.trim())

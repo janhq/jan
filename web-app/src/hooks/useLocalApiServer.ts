@@ -4,8 +4,8 @@ import { localStorageKey } from '@/constants/localStorage'
 
 type LocalApiServerState = {
   // Run local API server once app opens
-  runOnStartup: boolean
-  setRunOnStartup: (value: boolean) => void
+  enableOnStartup: boolean
+  setEnableOnStartup: (value: boolean) => void
   // Server host option (127.0.0.1 or 0.0.0.0)
   serverHost: '127.0.0.1' | '0.0.0.0'
   setServerHost: (value: '127.0.0.1' | '0.0.0.0') => void
@@ -33,8 +33,8 @@ type LocalApiServerState = {
 export const useLocalApiServer = create<LocalApiServerState>()(
   persist(
     (set) => ({
-      runOnStartup: true,
-      setRunOnStartup: (value) => set({ runOnStartup: value }),
+      enableOnStartup: false,
+      setEnableOnStartup: (value) => set({ enableOnStartup: value }),
       serverHost: '127.0.0.1',
       setServerHost: (value) => set({ serverHost: value }),
       serverPort: 1337,

@@ -29,5 +29,7 @@
   "save": "Lưu",
   "createNew": "Tạo Trợ lý Mới",
   "personality": "Tính cách",
-  "capabilities": "Khả năng"
+  "capabilities": "Khả năng",
+  "instructionsDateHint": "Mẹo: Dùng {{current_date}} để chèn ngày hôm nay.",
+  "maxToolSteps": "Bước tối đa của công cụ"
 }

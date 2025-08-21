@@ -61,8 +61,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
     spellCheckChatInput: true,
     setSpellCheckChatInput: vi.fn(),
-    experimentalFeatures: false,
-    setExperimentalFeatures: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
   }),
@@ -188,12 +186,14 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
 }))
 
 vi.mock('@tauri-apps/api/webviewWindow', () => {
-  const MockWebviewWindow = vi.fn().mockImplementation((label: string, options: any) => ({
-    once: vi.fn(),
-    setFocus: vi.fn(),
-  }))
+  const MockWebviewWindow = vi
+    .fn()
+    .mockImplementation((label: string, options: any) => ({
+      once: vi.fn(),
+      setFocus: vi.fn(),
+    }))
   MockWebviewWindow.getByLabel = vi.fn().mockReturnValue(null)
-  
+
   return {
     WebviewWindow: MockWebviewWindow,
   }
@@ -299,16 +299,6 @@ describe('General Settings Route', () => {
   //   expect(screen.getByTestId('language-switcher')).toBeInTheDocument()
   // })
 
-  it('should render switches for experimental features and spell check', async () => {
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    const switches = screen.getAllByTestId('switch')
-    expect(switches.length).toBeGreaterThanOrEqual(2)
-  })
-
   it('should render huggingface token input', async () => {
     const Component = GeneralRoute.component as React.ComponentType
     await act(async () => {
@@ -334,24 +324,6 @@ describe('General Settings Route', () => {
       fireEvent.click(switches[0])
     })
     expect(switches[0]).toBeInTheDocument()
-  })
-
-  it('should handle experimental features toggle', async () => {
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    const switches = screen.getAllByTestId('switch')
-    expect(switches.length).toBeGreaterThan(0)
-
-    // Test that switches are interactive
-    if (switches.length > 1) {
-      await act(async () => {
-        fireEvent.click(switches[1])
-      })
-      expect(switches[1]).toBeInTheDocument()
-    }
   })
 
   it('should handle huggingface token change', async () => {
@@ -514,16 +486,16 @@ describe('General Settings Route', () => {
       act(() => {
         fireEvent.click(checkUpdateButton)
       })
-      
+
       // Now the button should be disabled while checking
       expect(checkUpdateButton).toBeDisabled()
-      
+
       // Resolve the promise to finish the update check
       await act(async () => {
         resolveUpdate!(null)
         await updatePromise
       })
-      
+
       // Button should be enabled again
       expect(checkUpdateButton).not.toBeDisabled()
     }

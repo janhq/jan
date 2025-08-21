@@ -7,6 +7,7 @@ export interface chatCompletionRequestMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null | Content[] // Content can be a string OR an array of content parts
   reasoning?: string | null // Some models return reasoning in completed responses
+  reasoning_content?: string | null // Some models return reasoning in completed responses
   name?: string
   tool_calls?: any[] // Simplified tool_call_id?: string
 }
