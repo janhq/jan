@@ -49,6 +49,7 @@ import { useHardware } from '@/hooks/useHardware'
 import { getConnectedServers } from '@/services/mcp'
 import { invoke } from '@tauri-apps/api/core'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import LanguageSwitcher from '@/containers/LanguageSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -282,10 +283,10 @@ function General() {
                   }
                 />
               )}
-              {/* <CardItem
+              <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
-              /> */}
+              />
             </Card>
 
             {/* Data folder */}
