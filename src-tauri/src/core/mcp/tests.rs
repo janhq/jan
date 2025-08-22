@@ -1,6 +1,6 @@
 use super::helpers::run_mcp_commands;
 use crate::core::app::commands::get_jan_data_folder_path;
-use rmcp::{service::RunningService, RoleClient};
+use crate::core::state::SharedMcpServers;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -27,7 +27,7 @@ async fn test_run_mcp_commands() {
         .expect("Failed to write to config file");
 
     // Call the run_mcp_commands function
-    let servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
+    let servers_state: SharedMcpServers =
         Arc::new(Mutex::new(HashMap::new()));
     let result = run_mcp_commands(app.handle(), servers_state).await;
 

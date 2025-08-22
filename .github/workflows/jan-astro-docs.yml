@@ -19,7 +19,7 @@ jobs:
   deploy:
     name: Deploy to CloudFlare Pages
     env:
-      CLOUDFLARE_PROJECT_NAME: astro-docs
+      CLOUDFLARE_PROJECT_NAME: astro-docs # docs.jan.ai
     runs-on: ubuntu-latest
     permissions:
       contents: write

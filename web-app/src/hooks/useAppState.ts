@@ -4,6 +4,12 @@ import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
+type AppErrorMessage = {
+  message?: string
+  title?: string
+  subtitle: string
+}
+
 type AppState = {
   streamingContent?: ThreadMessage
   loadingModel?: boolean
@@ -13,6 +19,8 @@ type AppState = {
   tokenSpeed?: TokenSpeed
   currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
+  errorMessage?: AppErrorMessage
+  cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   updateCurrentToolCall: (
@@ -21,9 +29,11 @@ type AppState = {
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
-  updateTokenSpeed: (message: ThreadMessage) => void
+  updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   resetTokenSpeed: () => void
   setOutOfContextDialog: (show: boolean) => void
+  setCancelToolCall: (cancel: (() => void) | undefined) => void
+  setErrorMessage: (error: AppErrorMessage | undefined) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -34,6 +44,7 @@ export const useAppState = create<AppState>()((set) => ({
   abortControllers: {},
   tokenSpeed: undefined,
   currentToolCall: undefined,
+  cancelToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
@@ -74,7 +85,7 @@ export const useAppState = create<AppState>()((set) => ({
       },
     }))
   },
-  updateTokenSpeed: (message) =>
+  updateTokenSpeed: (message, increment = 1) =>
     set((state) => {
       const currentTimestamp = new Date().getTime() // Get current time in milliseconds
       if (!state.tokenSpeed) {
@@ -83,7 +94,7 @@ export const useAppState = create<AppState>()((set) => ({
           tokenSpeed: {
             lastTimestamp: currentTimestamp,
             tokenSpeed: 0,
-            tokenCount: 1,
+            tokenCount: increment,
             message: message.id,
           },
         }
@@ -91,7 +102,7 @@ export const useAppState = create<AppState>()((set) => ({
 
       const timeDiffInSeconds =
         (currentTimestamp - state.tokenSpeed.lastTimestamp) / 1000 // Time difference in seconds
-      const totalTokenCount = state.tokenSpeed.tokenCount + 1
+      const totalTokenCount = state.tokenSpeed.tokenCount + increment
       const averageTokenSpeed =
         totalTokenCount / (timeDiffInSeconds > 0 ? timeDiffInSeconds : 1) // Calculate average token speed
       return {
@@ -110,6 +121,16 @@ export const useAppState = create<AppState>()((set) => ({
   setOutOfContextDialog: (show) => {
     set(() => ({
       showOutOfContextDialog: show,
+    }))
+  },
+  setCancelToolCall: (cancel) => {
+    set(() => ({
+      cancelToolCall: cancel,
+    }))
+  },
+  setErrorMessage: (error) => {
+    set(() => ({
+      errorMessage: error,
     }))
   },
 }))

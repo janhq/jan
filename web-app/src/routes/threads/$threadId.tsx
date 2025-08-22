@@ -23,6 +23,7 @@ import { ContentType, ThreadMessage } from '@janhq/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useChat } from '@/hooks/useChat'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { useTools } from '@/hooks/useTools'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -36,6 +37,8 @@ function ThreadDetail() {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasScrollbar, setHasScrollbar] = useState(false)
   const lastScrollTopRef = useRef(0)
+  const userIntendedPositionRef = useRef<number | null>(null)
+  const wasStreamingRef = useRef(false)
   const { currentThreadId, setCurrentThreadId } = useThreads()
   const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages, deleteMessage } = useMessages()
@@ -43,6 +46,7 @@ function ThreadDetail() {
   const { appMainViewBgColor, chatWidth } = useAppearance()
   const { sendMessage } = useChat()
   const isSmallScreen = useSmallScreen()
+  useTools()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -110,6 +114,8 @@ function ThreadDetail() {
       scrollToBottom()
       setIsAtBottom(true)
       setIsUserScrolling(false)
+      userIntendedPositionRef.current = null
+      wasStreamingRef.current = false
       checkScrollState()
       return
     }
@@ -121,11 +127,39 @@ function ThreadDetail() {
     scrollToBottom()
     setIsAtBottom(true)
     setIsUserScrolling(false)
+    userIntendedPositionRef.current = null
+    wasStreamingRef.current = false
     checkScrollState()
   }, [threadId])
 
   // Single useEffect for all auto-scrolling logic
   useEffect(() => {
+    // Track streaming state changes
+    const isCurrentlyStreaming = !!streamingContent
+    const justFinishedStreaming = wasStreamingRef.current && !isCurrentlyStreaming
+    wasStreamingRef.current = isCurrentlyStreaming
+
+    // If streaming just finished and user had an intended position, restore it
+    if (justFinishedStreaming && userIntendedPositionRef.current !== null) {
+      // Small delay to ensure DOM has updated
+      setTimeout(() => {
+        if (scrollContainerRef.current && userIntendedPositionRef.current !== null) {
+          scrollContainerRef.current.scrollTo({
+            top: userIntendedPositionRef.current,
+            behavior: 'smooth'
+          })
+          userIntendedPositionRef.current = null
+          setIsUserScrolling(false)
+        }
+      }, 100)
+      return
+    }
+
+    // Clear intended position when streaming starts fresh
+    if (isCurrentlyStreaming && !wasStreamingRef.current) {
+      userIntendedPositionRef.current = null
+    }
+
     // Only auto-scroll when the user is not actively scrolling
     // AND either at the bottom OR there's streaming content
     if (!isUserScrolling && (streamingContent || isAtBottom) && messagesCount) {
@@ -161,6 +195,11 @@ function ThreadDetail() {
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
+      
+      // If user scrolls during streaming and moves away from bottom, record their intended position
+      if (streamingContent && !isBottom) {
+        userIntendedPositionRef.current = scrollTop
+      }
     }
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
@@ -178,6 +217,11 @@ function ThreadDetail() {
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
+      
+      // If user scrolls during streaming and moves away from bottom, record their intended position
+      if (streamingContent && !isBottom) {
+        userIntendedPositionRef.current = scrollTop
+      }
     }
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)

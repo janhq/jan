@@ -6,4 +6,5 @@ export type MCPTool = {
   name: string
   description: string
   inputSchema: Record<string, unknown>
+  server: string
 }

@@ -249,6 +249,22 @@
     "downloadCancelled": {
       "title": "下載已取消",
       "description": "下載過程已取消"
+    },
+    "downloadFailed": {
+      "title": "下載失敗",
+      "description": "{{item}} 下載失敗"
+    },
+    "modelValidationStarted": {
+      "title": "正在驗證模型",
+      "description": "模型 \"{{modelId}}\" 下載成功。正在驗證完整性..."
+    },
+    "modelValidationFailed": {
+      "title": "模型驗證失敗",
+      "description": "已下載的模型 \"{{modelId}}\" 未通過完整性驗證並已被刪除。檔案可能損壞或被篡改。"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "下載完成",
+      "description": "模型 \"{{item}}\" 下載並驗證成功"
     }
   }
 }

@@ -194,6 +194,8 @@ fn test_download_item_with_ssl_proxy() {
         url: "https://example.com/file.zip".to_string(),
         save_path: "downloads/file.zip".to_string(),
         proxy: Some(proxy_config),
+        sha256: None,
+        size: None,
     };
 
     assert!(download_item.proxy.is_some());
@@ -211,6 +213,8 @@ fn test_client_creation_with_ssl_settings() {
         url: "https://example.com/file.zip".to_string(),
         save_path: "downloads/file.zip".to_string(),
         proxy: Some(proxy_config),
+        sha256: None,
+        size: None,
     };
 
     let header_map = HeaderMap::new();
@@ -256,6 +260,8 @@ fn test_download_item_creation() {
         url: "https://example.com/file.tar.gz".to_string(),
         save_path: "models/test.tar.gz".to_string(),
         proxy: None,
+        sha256: None,
+        size: None,
     };
 
     assert_eq!(item.url, "https://example.com/file.tar.gz");

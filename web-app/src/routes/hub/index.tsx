@@ -17,8 +17,21 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
-import { IconDownload, IconFileCode, IconSearch } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconFileCode,
+  IconEye,
+  IconSearch,
+  IconTool,
+} from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
@@ -29,9 +42,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   CatalogModel,
-  pullModel,
+  pullModelWithMetadata,
   fetchHuggingFaceRepo,
   convertHfRepoToCatalogModel,
+  isModelSupported,
 } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
@@ -85,6 +99,9 @@ function Hub() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
+  const [modelSupportStatus, setModelSupportStatus] = useState<
+    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
+  >({})
   const [joyrideReady, setJoyrideReady] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -133,18 +150,24 @@ function Hub() {
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
       // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(/^https?:\/\/[^/]+\//, '')
+      const cleanedSearchValue = debouncedSearchValue.replace(
+        /^https?:\/\/[^/]+\//,
+        ''
+      )
       filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      filtered = filtered?.filter((model) =>
-        model.quants.some((variant) =>
-          llamaProvider?.models.some(
-            (m: { id: string }) => m.id === variant.model_id
-          )
-        )
-      )
+      filtered = filtered
+        ?.map((model) => ({
+          ...model,
+          quants: model.quants.filter((variant) =>
+            llamaProvider?.models.some(
+              (m: { id: string }) => m.id === variant.model_id
+            )
+          ),
+        }))
+        .filter((model) => model.quants.length > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -252,6 +275,41 @@ function Hub() {
     [navigate]
   )
 
+  const checkModelSupport = useCallback(
+    async (variant: any) => {
+      const modelKey = variant.model_id
+
+      // Don't check again if already checking or checked
+      if (modelSupportStatus[modelKey]) {
+        return
+      }
+
+      // Set loading state
+      setModelSupportStatus((prev) => ({
+        ...prev,
+        [modelKey]: 'LOADING',
+      }))
+
+      try {
+        // Use the HuggingFace path for the model
+        const modelPath = variant.path
+        const supportStatus = await isModelSupported(modelPath, 8192)
+
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: supportStatus,
+        }))
+      } catch (error) {
+        console.error('Error checking model support:', error)
+        setModelSupportStatus((prev) => ({
+          ...prev,
+          [modelKey]: 'RED',
+        }))
+      }
+    },
+    [modelSupportStatus]
+  )
+
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
       // Check if this is a HuggingFace repository (no quants)
@@ -295,7 +353,12 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModel(modelId, modelUrl, mmprojPath)
+        pullModelWithMetadata(
+          modelId, 
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken
+        )
       }
 
       return (
@@ -419,43 +482,44 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    return (
-      <>
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
-              {
-                sortOptions.find((option) => option.value === sortSelected)
-                  ?.name
-              }
+    if (searchValue.length === 0)
+      return (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+                {
+                  sortOptions.find((option) => option.value === sortSelected)
+                    ?.name
+                }
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              {sortOptions.map((option) => (
+                <DropdownMenuItem
+                  className={cn(
+                    'cursor-pointer my-0.5',
+                    sortSelected === option.value && 'bg-main-view-fg/5'
+                  )}
+                  key={option.value}
+                  onClick={() => setSortSelected(option.value)}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showOnlyDownloaded}
+              onCheckedChange={setShowOnlyDownloaded}
+            />
+            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+              {t('hub:downloaded')}
             </span>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end">
-            {sortOptions.map((option) => (
-              <DropdownMenuItem
-                className={cn(
-                  'cursor-pointer my-0.5',
-                  sortSelected === option.value && 'bg-main-view-fg/5'
-                )}
-                key={option.value}
-                onClick={() => setSortSelected(option.value)}
-              >
-                {option.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
-          />
-          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-            {t('hub:downloaded')}
-          </span>
-        </div>
-      </>
-    )
+          </div>
+        </>
+      )
   }
 
   return (
@@ -592,6 +656,14 @@ function Hub() {
                                     )?.file_size
                                   }
                                 </span>
+                                <ModelInfoHoverCard
+                                  model={filteredModels[virtualItem.index]}
+                                  defaultModelQuantizations={
+                                    defaultModelQuantizations
+                                  }
+                                  modelSupportStatus={modelSupportStatus}
+                                  onCheckModelSupport={checkModelSupport}
+                                />
                                 <DownloadButtonPlaceholder
                                   model={filteredModels[virtualItem.index]}
                                 />
@@ -647,6 +719,47 @@ function Hub() {
                                     ?.length || 0}
                                 </span>
                               </div>
+                              <div className="flex gap-1.5 items-center">
+                                {filteredModels[virtualItem.index].num_mmproj >
+                                  0 && (
+                                  <div className="flex items-center gap-1">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div>
+                                            <IconEye
+                                              size={17}
+                                              className="text-main-view-fg/50"
+                                            />
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{t('vision')}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                )}
+                                {filteredModels[virtualItem.index].tools && (
+                                  <div className="flex items-center gap-1">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div>
+                                            <IconTool
+                                              size={17}
+                                              className="text-main-view-fg/50"
+                                            />
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{t('tools')}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                )}
+                              </div>
                               {filteredModels[virtualItem.index].quants.length >
                                 1 && (
                                 <div className="flex items-center gap-2 hub-show-variants-step">
@@ -681,12 +794,75 @@ function Hub() {
                                   (variant) => (
                                     <CardItem
                                       key={variant.model_id}
-                                      title={variant.model_id}
+                                      title={
+                                        <>
+                                          <div className="flex items-center gap-1">
+                                            <span className="mr-2">
+                                              {variant.model_id}
+                                            </span>
+                                            {filteredModels[virtualItem.index]
+                                              .num_mmproj > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <TooltipProvider>
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <div>
+                                                        <IconEye
+                                                          size={17}
+                                                          className="text-main-view-fg/50"
+                                                        />
+                                                      </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      <p>{t('vision')}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TooltipProvider>
+                                              </div>
+                                            )}
+                                            {filteredModels[virtualItem.index]
+                                              .tools && (
+                                              <div className="flex items-center gap-1">
+                                                <TooltipProvider>
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <div>
+                                                        <IconTool
+                                                          size={17}
+                                                          className="text-main-view-fg/50"
+                                                        />
+                                                      </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      <p>{t('tools')}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TooltipProvider>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </>
+                                      }
                                       actions={
                                         <div className="flex items-center gap-2">
                                           <p className="text-main-view-fg/70 font-medium text-xs">
                                             {variant.file_size}
                                           </p>
+                                          <ModelInfoHoverCard
+                                            model={
+                                              filteredModels[virtualItem.index]
+                                            }
+                                            variant={variant}
+                                            defaultModelQuantizations={
+                                              defaultModelQuantizations
+                                            }
+                                            modelSupportStatus={
+                                              modelSupportStatus
+                                            }
+                                            onCheckModelSupport={
+                                              checkModelSupport
+                                            }
+                                          />
                                           {(() => {
                                             const isDownloading =
                                               localDownloadingModels.has(
@@ -754,12 +930,13 @@ function Hub() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModel(
+                                                  pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[
                                                       virtualItem.index
-                                                    ].mmproj_models?.[0]?.path
+                                                    ].mmproj_models?.[0]?.path,
+                                                    huggingfaceToken
                                                   )
                                                 }}
                                               >

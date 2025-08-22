@@ -54,6 +54,7 @@ type Assistant = {
   description?: string
   instructions: string
   parameters: Record<string, unknown>
+  tool_steps?: number
 }
 
 type TokenSpeed = {

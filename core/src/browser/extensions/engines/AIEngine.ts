@@ -6,6 +6,8 @@ import { EngineManager } from './EngineManager'
 export interface chatCompletionRequestMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null | Content[] // Content can be a string OR an array of content parts
+  reasoning?: string | null // Some models return reasoning in completed responses
+  reasoning_content?: string | null // Some models return reasoning in completed responses
   name?: string
   tool_calls?: any[] // Simplified tool_call_id?: string
 }
@@ -192,6 +194,10 @@ export interface chatOptions {
 export interface ImportOptions {
   modelPath: string
   mmprojPath?: string
+  modelSha256?: string
+  modelSize?: number
+  mmprojSha256?: string
+  mmprojSize?: number
 }
 
 export interface importResult {
@@ -270,4 +276,10 @@ export abstract class AIEngine extends BaseExtension {
    * Optional method to get the underlying chat client
    */
   getChatClient?(sessionId: string): any
+
+  /**
+   * Check if a tool is supported by the model
+   * @param modelId
+   */
+  abstract isToolSupported(modelId: string): Promise<boolean>
 }

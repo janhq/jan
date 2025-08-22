@@ -4,20 +4,16 @@
     "title": "Switcher"
   },
   "index": "Overview",
-  "how-to-separator": {
-    "title": "HOW TO",
+  "getting-started-separator": {
+    "title": "GETTING STARTED",
     "type": "separator"
   },
+  "quickstart": "QuickStart",
   "desktop": "Install 👋 Jan",
-  "threads": "Start Chatting",
-  "jan-models": "Use Jan Models",
+  "jan-models": "Models",
   "assistants": "Create Assistants",
-
-  "tutorials-separators": {
-    "title": "TUTORIALS",
-    "type": "separator"
-  },
-  "remote-models": "Connect to Remote Models",
+  "remote-models": "Cloud Providers",
+  "mcp-examples": "Tutorials",
 
   "explanation-separator": {
     "title": "EXPLANATION",
@@ -38,7 +34,6 @@
   },
   "manage-models": "Manage Models",
   "mcp": "Model Context Protocol",
-  "mcp-examples": "MCP Examples",
 
   "localserver": {
     "title": "LOCAL SERVER",

@@ -24,7 +24,7 @@ describe('useLocalApiServer', () => {
     vi.clearAllMocks()
     // Reset store state to defaults
     const store = useLocalApiServer.getState()
-    store.setRunOnStartup(true)
+    store.setEnableOnStartup(true)
     store.setServerHost('127.0.0.1')
     store.setServerPort(1337)
     store.setApiPrefix('/v1')
@@ -37,7 +37,7 @@ describe('useLocalApiServer', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useLocalApiServer())
 
-    expect(result.current.runOnStartup).toBe(true)
+    expect(result.current.enableOnStartup).toBe(true)
     expect(result.current.serverHost).toBe('127.0.0.1')
     expect(result.current.serverPort).toBe(1337)
     expect(result.current.apiPrefix).toBe('/v1')
@@ -47,21 +47,21 @@ describe('useLocalApiServer', () => {
     expect(result.current.apiKey).toBe('')
   })
 
-  describe('runOnStartup', () => {
+  describe('enableOnStartup', () => {
     it('should set run on startup', () => {
       const { result } = renderHook(() => useLocalApiServer())
 
       act(() => {
-        result.current.setRunOnStartup(false)
+        result.current.setEnableOnStartup(false)
       })
 
-      expect(result.current.runOnStartup).toBe(false)
+      expect(result.current.enableOnStartup).toBe(false)
 
       act(() => {
-        result.current.setRunOnStartup(true)
+        result.current.setEnableOnStartup(true)
       })
 
-      expect(result.current.runOnStartup).toBe(true)
+      expect(result.current.enableOnStartup).toBe(true)
     })
   })
 
@@ -323,7 +323,7 @@ describe('useLocalApiServer', () => {
       const { result: result2 } = renderHook(() => useLocalApiServer())
 
       act(() => {
-        result1.current.setRunOnStartup(false)
+        result1.current.setEnableOnStartup(false)
         result1.current.setServerHost('0.0.0.0')
         result1.current.setServerPort(8080)
         result1.current.setApiPrefix('/api')
@@ -333,7 +333,7 @@ describe('useLocalApiServer', () => {
         result1.current.addTrustedHost('example.com')
       })
 
-      expect(result2.current.runOnStartup).toBe(false)
+      expect(result2.current.enableOnStartup).toBe(false)
       expect(result2.current.serverHost).toBe('0.0.0.0')
       expect(result2.current.serverPort).toBe(8080)
       expect(result2.current.apiPrefix).toBe('/api')

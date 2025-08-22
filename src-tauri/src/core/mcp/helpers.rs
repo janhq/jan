@@ -1,8 +1,17 @@
-use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
+use rmcp::{
+    model::{ClientCapabilities, ClientInfo, Implementation},
+    transport::{
+        streamable_http_client::StreamableHttpClientTransportConfig, SseClientTransport,
+        StreamableHttpClientTransport, TokioChildProcess,
+    },
+    ServiceExt,
+};
 use serde_json::Value;
-use std::{collections::HashMap, env, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_http::reqwest;
 use tokio::{
+    io::AsyncReadExt,
     process::Command,
     sync::Mutex,
     time::{sleep, timeout},
@@ -11,7 +20,11 @@ use tokio::{
 use super::constants::{
     MCP_BACKOFF_MULTIPLIER, MCP_BASE_RESTART_DELAY_MS, MCP_MAX_RESTART_DELAY_MS,
 };
-use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
+use crate::core::{
+    app::commands::get_jan_data_folder_path,
+    mcp::models::McpServerConfig,
+    state::{AppState, RunningServiceEnum, SharedMcpServers},
+};
 use jan_utils::can_override_npx;
 
 /// Calculate exponential backoff delay with jitter
@@ -72,7 +85,7 @@ pub fn calculate_exponential_backoff_delay(attempt: u32) -> u64 {
 /// * `Err(String)` if there was an error reading config or starting servers
 pub async fn run_mcp_commands<R: Runtime>(
     app: &AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
     let app_path_str = app_path.to_str().unwrap().to_string();
@@ -168,7 +181,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 
 /// Monitor MCP server health without removing it from the HashMap
 pub async fn monitor_mcp_server_handle(
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
 ) -> Option<rmcp::service::QuitReason> {
     log::info!("Monitoring MCP server {} health", name);
@@ -213,7 +226,16 @@ pub async fn monitor_mcp_server_handle(
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
                 // Try to cancel the service gracefully
-                let _ = service.cancel().await;
+                match service {
+                    RunningServiceEnum::NoInit(service) => {
+                        log::info!("Stopping server {name}...");
+                        let _ = service.cancel().await;
+                    }
+                    RunningServiceEnum::WithInit(service) => {
+                        log::info!("Stopping server {name} with initialization...");
+                        let _ = service.cancel().await;
+                    }
+                }
             }
             return Some(rmcp::service::QuitReason::Closed);
         }
@@ -224,7 +246,7 @@ pub async fn monitor_mcp_server_handle(
 /// Returns the result of the first start attempt, then continues with restart monitoring
 pub async fn start_mcp_server_with_restart<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: Option<u32>,
@@ -297,7 +319,7 @@ pub async fn start_mcp_server_with_restart<R: Runtime>(
 /// Helper function to handle the restart loop logic
 pub async fn start_restart_loop<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: u32,
@@ -450,9 +472,9 @@ pub async fn start_restart_loop<R: Runtime>(
     }
 }
 
-pub async fn schedule_mcp_start_task<R: Runtime>(
+async fn schedule_mcp_start_task<R: Runtime>(
     app: tauri::AppHandle<R>,
-    servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers: SharedMcpServers,
     name: String,
     config: Value,
 ) -> Result<(), String> {
@@ -463,136 +485,279 @@ pub async fn schedule_mcp_start_task<R: Runtime>(
         .expect("Executable must have a parent directory");
     let bin_path = exe_parent_path.to_path_buf();
 
-    let (command, args, envs) = extract_command_args(&config)
+    let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    let mut cmd = Command::new(command.clone());
+    if config_params.transport_type.as_deref() == Some("http") && config_params.url.is_some() {
+        let transport = StreamableHttpClientTransport::with_client(
+            reqwest::Client::builder()
+                .default_headers({
+                    // Map envs to request headers
+                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
+                    for (key, value) in config_params.headers.iter() {
+                        if let Some(v_str) = value.as_str() {
+                            // Try to map env keys to HTTP header names (case-insensitive)
+                            // Most HTTP headers are Title-Case, so we try to convert
+                            let header_name =
+                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
+                            if let Ok(header_name) = header_name {
+                                if let Ok(header_value) =
+                                    reqwest::header::HeaderValue::from_str(v_str)
+                                {
+                                    headers.insert(header_name, header_value);
+                                }
+                            }
+                        }
+                    }
+                    headers
+                })
+                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
+                .build()
+                .unwrap(),
+            StreamableHttpClientTransportConfig {
+                uri: config_params.url.unwrap().into(),
+                ..Default::default()
+            },
+        );
 
-    if command == "npx" && can_override_npx() {
-        let mut cache_dir = app_path.clone();
-        cache_dir.push(".npx");
-        let bun_x_path = format!("{}/bun", bin_path.display());
-        cmd = Command::new(bun_x_path);
-        cmd.arg("x");
-        cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
-    }
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "Jan Streamable Client".to_string(),
+                version: "0.0.1".to_string(),
+            },
+        };
+        let client = client_info.serve(transport).await.inspect_err(|e| {
+            log::error!("client error: {:?}", e);
+        });
 
-    if command == "uvx" {
-        let mut cache_dir = app_path.clone();
-        cache_dir.push(".uvx");
-        let bun_x_path = format!("{}/uv", bin_path.display());
-        cmd = Command::new(bun_x_path);
-        cmd.arg("tool");
-        cmd.arg("run");
-        cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());
-    }
+        match client {
+            Ok(client) => {
+                log::info!("Connected to server: {:?}", client.peer_info());
+                servers
+                    .lock()
+                    .await
+                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
 
-    #[cfg(windows)]
+                // Mark server as successfully connected (for restart policy)
+                {
+                    let app_state = app.state::<AppState>();
+                    let mut connected = app_state.mcp_successfully_connected.lock().await;
+                    connected.insert(name.clone(), true);
+                    log::info!("Marked MCP server {} as successfully connected", name);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to connect to server: {}", e);
+                return Err(format!("Failed to connect to server: {}", e));
+            }
+        }
+    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
     {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
-    }
-
-    let app_path_str = app_path.to_str().unwrap().to_string();
-    let log_file_path = format!("{}/logs/app.log", app_path_str);
-    match std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_file_path)
-    {
-        Ok(file) => {
-            cmd.stderr(std::process::Stdio::from(file));
-        }
-        Err(err) => {
-            log::error!("Failed to open log file: {}", err);
-        }
-    };
-
-    cmd.kill_on_drop(true);
-    log::trace!("Command: {cmd:#?}");
-
-    args.iter().filter_map(Value::as_str).for_each(|arg| {
-        cmd.arg(arg);
-    });
-    envs.iter().for_each(|(k, v)| {
-        if let Some(v_str) = v.as_str() {
-            cmd.env(k, v_str);
-        }
-    });
-
-    let process = TokioChildProcess::new(cmd).map_err(|e| {
-        log::error!("Failed to run command {name}: {e}");
-        format!("Failed to run command {name}: {e}")
-    })?;
-
-    let service = ()
-        .serve(process)
-        .await
-        .map_err(|e| format!("Failed to start MCP server {name}: {e}"))?;
-
-    // Get peer info and clone the needed values before moving the service
-    let (server_name, server_version) = {
-        let server_info = service.peer_info();
-        log::trace!("Connected to server: {server_info:#?}");
-        (
-            server_info.unwrap().server_info.name.clone(),
-            server_info.unwrap().server_info.version.clone(),
+        let transport = SseClientTransport::start_with_client(
+            reqwest::Client::builder()
+                .default_headers({
+                    // Map envs to request headers
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    for (key, value) in config_params.headers.iter() {
+                        if let Some(v_str) = value.as_str() {
+                            // Try to map env keys to HTTP header names (case-insensitive)
+                            // Most HTTP headers are Title-Case, so we try to convert
+                            let header_name =
+                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
+                            if let Ok(header_name) = header_name {
+                                if let Ok(header_value) =
+                                    reqwest::header::HeaderValue::from_str(v_str)
+                                {
+                                    headers.insert(header_name, header_value);
+                                }
+                            }
+                        }
+                    }
+                    headers
+                })
+                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
+                .build()
+                .unwrap(),
+            rmcp::transport::sse_client::SseClientConfig {
+                sse_endpoint: config_params.url.unwrap().into(),
+                ..Default::default()
+            },
         )
-    };
+        .await
+        .map_err(|e| {
+            log::error!("transport error: {:?}", e);
+            format!("Failed to start SSE transport: {}", e)
+        })?;
 
-    // Now move the service into the HashMap
-    servers.lock().await.insert(name.clone(), service);
-    log::info!("Server {name} started successfully.");
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "Jan SSE Client".to_string(),
+                version: "0.0.1".to_string(),
+            },
+        };
+        let client = client_info.serve(transport).await.map_err(|e| {
+            log::error!("client error: {:?}", e);
+            e.to_string()
+        });
 
-    // Wait a short time to verify the server is stable before marking as connected
-    // This prevents race conditions where the server quits immediately
-    let verification_delay = Duration::from_millis(500);
-    sleep(verification_delay).await;
+        match client {
+            Ok(client) => {
+                log::info!("Connected to server: {:?}", client.peer_info());
+                servers
+                    .lock()
+                    .await
+                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
 
-    // Check if server is still running after the verification delay
-    let server_still_running = {
-        let servers_map = servers.lock().await;
-        servers_map.contains_key(&name)
-    };
+                // Mark server as successfully connected (for restart policy)
+                {
+                    let app_state = app.state::<AppState>();
+                    let mut connected = app_state.mcp_successfully_connected.lock().await;
+                    connected.insert(name.clone(), true);
+                    log::info!("Marked MCP server {} as successfully connected", name);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to connect to server: {}", e);
+                return Err(format!("Failed to connect to server: {}", e));
+            }
+        }
+    } else {
+        let mut cmd = Command::new(config_params.command.clone());
+        if config_params.command.clone() == "npx" && can_override_npx() {
+            let mut cache_dir = app_path.clone();
+            cache_dir.push(".npx");
+            let bun_x_path = format!("{}/bun", bin_path.display());
+            cmd = Command::new(bun_x_path);
+            cmd.arg("x");
+            cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
+        }
+        if config_params.command.clone() == "uvx" {
+            let mut cache_dir = app_path.clone();
+            cache_dir.push(".uvx");
+            let bun_x_path = format!("{}/uv", bin_path.display());
+            cmd = Command::new(bun_x_path);
+            cmd.arg("tool");
+            cmd.arg("run");
+            cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());
+        }
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
+        }
 
-    if !server_still_running {
-        return Err(format!(
-            "MCP server {} quit immediately after starting",
-            name
-        ));
+        cmd.kill_on_drop(true);
+
+        config_params
+            .args
+            .iter()
+            .filter_map(Value::as_str)
+            .for_each(|arg| {
+                cmd.arg(arg);
+            });
+        config_params.envs.iter().for_each(|(k, v)| {
+            if let Some(v_str) = v.as_str() {
+                cmd.env(k, v_str);
+            }
+        });
+
+        let (process, stderr) = TokioChildProcess::builder(cmd)
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                log::error!("Failed to run command {name}: {e}");
+                format!("Failed to run command {name}: {e}")
+            })?;
+
+        let service = ()
+            .serve(process)
+            .await
+            .map_err(|e| format!("Failed to start MCP server {name}: {e}"));
+
+        match service {
+            Ok(server) => {
+                log::trace!("Connected to server: {:#?}", server.peer_info());
+                servers
+                    .lock()
+                    .await
+                    .insert(name.clone(), RunningServiceEnum::NoInit(server));
+                log::info!("Server {name} started successfully.");
+            }
+            Err(_) => {
+                let mut buffer = String::new();
+                let error = match stderr
+                    .expect("stderr must be piped")
+                    .read_to_string(&mut buffer)
+                    .await
+                {
+                    Ok(_) => format!("Failed to start MCP server {name}: {buffer}"),
+                    Err(_) => format!("Failed to read MCP server {name} stderr"),
+                };
+                log::error!("{error}");
+                return Err(error);
+            }
+        }
+
+        // Wait a short time to verify the server is stable before marking as connected
+        // This prevents race conditions where the server quits immediately
+        let verification_delay = Duration::from_millis(500);
+        sleep(verification_delay).await;
+
+        // Check if server is still running after the verification delay
+        let server_still_running = {
+            let servers_map = servers.lock().await;
+            servers_map.contains_key(&name)
+        };
+
+        if !server_still_running {
+            return Err(format!(
+                "MCP server {} quit immediately after starting",
+                name
+            ));
+        }
+        // Mark server as successfully connected (for restart policy)
+        {
+            let app_state = app.state::<AppState>();
+            let mut connected = app_state.mcp_successfully_connected.lock().await;
+            connected.insert(name.clone(), true);
+            log::info!("Marked MCP server {} as successfully connected", name);
+        }
     }
-
-    // Mark server as successfully connected (for restart policy)
-    {
-        let app_state = app.state::<AppState>();
-        let mut connected = app_state.mcp_successfully_connected.lock().await;
-        connected.insert(name.clone(), true);
-        log::info!("Marked MCP server {} as successfully connected", name);
-    }
-
-    // Emit event to the frontend
-    let event = format!("mcp-connected");
-    let payload = serde_json::json!({
-        "name": server_name,
-        "version": server_version,
-    });
-    app.emit(&event, payload)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
-
     Ok(())
 }
 
-pub fn extract_command_args(
-    config: &Value,
-) -> Option<(String, Vec<Value>, serde_json::Map<String, Value>)> {
+pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let obj = config.as_object()?;
     let command = obj.get("command")?.as_str()?.to_string();
     let args = obj.get("args")?.as_array()?.clone();
+    let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
+    let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
+    let timeout = obj
+        .get("timeout")
+        .and_then(|t| t.as_u64())
+        .map(Duration::from_secs);
+    let headers = obj
+        .get("headers")
+        .unwrap_or(&Value::Object(serde_json::Map::new()))
+        .as_object()?
+        .clone();
     let envs = obj
         .get("env")
         .unwrap_or(&Value::Object(serde_json::Map::new()))
         .as_object()?
         .clone();
-    Some((command, args, envs))
+    Some(McpServerConfig {
+        timeout,
+        transport_type,
+        url,
+        command,
+        args,
+        envs,
+        headers,
+    })
 }
 
 pub fn extract_active_status(config: &Value) -> Option<bool> {
@@ -604,7 +769,7 @@ pub fn extract_active_status(config: &Value) -> Option<bool> {
 /// Restart only servers that were previously active (like cortex restart behavior)
 pub async fn restart_active_mcp_servers<R: Runtime>(
     app: &AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
     let active_servers = app_state.mcp_active_servers.lock().await;
@@ -656,14 +821,21 @@ pub async fn clean_up_mcp_servers(state: State<'_, AppState>) {
     log::info!("MCP servers cleaned up successfully");
 }
 
-pub async fn stop_mcp_servers(
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
-) -> Result<(), String> {
+pub async fn stop_mcp_servers(servers_state: SharedMcpServers) -> Result<(), String> {
     let mut servers_map = servers_state.lock().await;
     let keys: Vec<String> = servers_map.keys().cloned().collect();
     for key in keys {
         if let Some(service) = servers_map.remove(&key) {
-            service.cancel().await.map_err(|e| e.to_string())?;
+            match service {
+                RunningServiceEnum::NoInit(service) => {
+                    log::info!("Stopping server {key}...");
+                    service.cancel().await.map_err(|e| e.to_string())?;
+                }
+                RunningServiceEnum::WithInit(service) => {
+                    log::info!("Stopping server {key} with initialization...");
+                    service.cancel().await.map_err(|e| e.to_string())?;
+                }
+            }
         }
     }
     drop(servers_map); // Release the lock after stopping
@@ -689,7 +861,7 @@ pub async fn reset_restart_count(restart_counts: &Arc<Mutex<HashMap<String, u32>
 /// Spawn the server monitoring task for handling restarts
 pub async fn spawn_server_monitoring_task<R: Runtime>(
     app: AppHandle<R>,
-    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    servers_state: SharedMcpServers,
     name: String,
     config: Value,
     max_restarts: u32,

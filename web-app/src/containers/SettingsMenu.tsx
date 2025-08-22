@@ -11,7 +11,6 @@ import {
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
@@ -23,7 +22,6 @@ const SettingsMenu = () => {
   const matches = useMatches()
   const navigate = useNavigate()
 
-  const { experimentalFeatures } = useGeneralSetting()
   const { providers } = useModelProvider()
 
   // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
@@ -79,15 +77,10 @@ const SettingsMenu = () => {
       title: 'common:hardware',
       route: route.settings.hardware,
     },
-    // Only show MCP Servers when experimental features are enabled
-    ...(experimentalFeatures
-      ? [
-          {
-            title: 'common:mcp-servers',
-            route: route.settings.mcp_servers,
-          },
-        ]
-      : []),
+    {
+      title: 'common:mcp-servers',
+      route: route.settings.mcp_servers,
+    },
     {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
