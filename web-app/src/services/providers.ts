@@ -182,13 +182,16 @@ export const fetchModelsFromProvider = async (
   } catch (error) {
     console.error('Error fetching models from provider:', error)
 
-    if (error instanceof Error && (
-      error.message.includes('Authentication failed') ||
-      error.message.includes('Access forbidden') ||
-      error.message.includes('Models endpoint not found') ||
-      error.message.includes('Failed to fetch models from')
-    )) {
-      throw error
+    const structuredErrorPrefixes = [
+      'Authentication failed',
+      'Access forbidden',
+      'Models endpoint not found',
+      'Failed to fetch models from'
+    ]
+
+    if (error instanceof Error &&
+        structuredErrorPrefixes.some(prefix => (error as Error).message.startsWith(prefix))) {
+      throw new Error(error.message)
     }
 
     // Provide helpful error message for network issues
