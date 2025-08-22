@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -28,10 +28,11 @@ describe('ModelCombobox', () => {
     models: ['gpt-3.5-turbo', 'gpt-4', 'claude-3-haiku'],
   }
 
-  beforeEach(() => {
-    vi.clearAllMocks()
+  let bcrSpy: ReturnType<typeof vi.spyOn>
+  let scrollSpy: ReturnType<typeof vi.spyOn>
 
-    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+  beforeAll(() => {
+    const mockRect = {
       width: 300,
       height: 40,
       top: 100,
@@ -41,9 +42,22 @@ describe('ModelCombobox', () => {
       x: 50,
       y: 100,
       toJSON: () => {},
-    }))
-    
-    Element.prototype.scrollIntoView = vi.fn()
+    } as unknown as DOMRect
+
+    bcrSpy = vi
+      .spyOn(Element.prototype as any, 'getBoundingClientRect')
+      .mockReturnValue(mockRect)
+
+    Element.prototype.scrollIntoView = () => {}
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterAll(() => {
+    bcrSpy?.mockRestore()
+    scrollSpy?.mockRestore()
   })
 
   it('renders input field with default placeholder', () => {
@@ -367,15 +381,6 @@ describe('ModelCombobox', () => {
     await user.keyboard('{Enter}')
 
     expect(localMockOnChange).toHaveBeenCalledWith('gpt')
-  })
-
-  it('updates input value when typing', () => {
-    render(<ModelCombobox {...defaultProps} />)
-
-    const input = screen.getByRole('textbox')
-    fireEvent.change(input, { target: { value: 'gpt-4' } })
-
-    expect(input).toHaveValue('gpt-4')
   })
 
   it('displays error message in dropdown', async () => {

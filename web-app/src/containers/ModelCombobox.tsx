@@ -61,7 +61,7 @@ const ErrorSection = ({ error, onRefresh, t }: { error: string; onRefresh?: () =
           size="sm"
           onClick={(e) => {
             e.stopPropagation()
-            onRefresh?.()
+            onRefresh()
           }}
           className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10 text-main-view-fg"
           aria-label="Refresh models"
@@ -171,16 +171,10 @@ function useKeyboardNavigation(
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        if (keyRepeatTimeoutRef.current) {
-          clearTimeout(keyRepeatTimeoutRef.current)
-        }
         setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev < filteredModels.length - 1 ? prev + 1 : 0))
         break
       case 'ArrowUp':
         e.preventDefault()
-        if (keyRepeatTimeoutRef.current) {
-          clearTimeout(keyRepeatTimeoutRef.current)
-        }
         setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev > 0 ? prev - 1 : filteredModels.length - 1))
         break
       case 'Enter':
@@ -195,9 +189,11 @@ function useKeyboardNavigation(
         setHighlightedIndex(-1)
         break
       case 'PageUp':
+        e.preventDefault()
         setHighlightedIndex(0)
         break
       case 'PageDown':
+        e.preventDefault()
         setHighlightedIndex(filteredModels.length - 1)
         break
     }
@@ -394,8 +390,6 @@ export function ModelCombobox({
             }}
             data-dropdown="model-combobox"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
           >
             {/* Error state */}
