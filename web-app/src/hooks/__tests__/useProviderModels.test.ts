@@ -10,15 +10,13 @@ vi.mock('@/services/providers', () => ({
 import { fetchModelsFromProvider } from '@/services/providers'
 const mockFetchModelsFromProvider = vi.mocked(fetchModelsFromProvider)
 
+import type { ModelProvider } from '@/types/modelProviders'
+
 // Mock ModelProvider type
-type MockModelProvider = {
-  active: boolean
-  provider: string
-  base_url?: string
-  api_key?: string
-  settings: any[]
-  models: any[]
-}
+type MockModelProvider = Pick<
+  ModelProvider,
+  'active' | 'provider' | 'base_url' | 'api_key' | 'settings' | 'models'
+>
 
 describe('useProviderModels', () => {
   const mockProvider: MockModelProvider = {
@@ -34,8 +32,6 @@ describe('useProviderModels', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset the cache by clearing any previous state
-    mockFetchModelsFromProvider.mockClear()
   })
 
   it('should initialize with empty state', () => {
