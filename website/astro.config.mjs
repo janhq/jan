@@ -29,19 +29,25 @@ export default defineConfig({
         starlightThemeNext(),
         starlightSidebarTopics([
           {
-            label: 'Jan Desktop',
+            label: 'Jan',
             link: '/',
+            icon: 'rocket',
+            items: [{ label: 'Ecosystem', slug: 'index' }],
+          },
+          {
+            label: 'Jan Desktop',
+            link: '/jan/quickstart',
             icon: 'rocket',
             items: [
               {
                 label: 'GETTING STARTED',
                 items: [
+                  { label: 'QuickStart', slug: 'jan/quickstart' },
                   {
                     label: 'Install 👋 Jan',
                     collapsed: false,
                     autogenerate: { directory: 'jan/installation' },
                   },
-                  { label: 'QuickStart', slug: 'jan/quickstart' },
                   {
                     label: 'Models',
                     collapsed: true,
