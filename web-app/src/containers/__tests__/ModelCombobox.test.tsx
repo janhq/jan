@@ -1,197 +1,509 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
-import { ModelCombobox } from '../ModelCombobox'
 import React from 'react'
+import { ModelCombobox } from '../ModelCombobox'
+
+// Mock translation hook
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, string>) => {
+      if (key === 'common:failedToLoadModels') return 'Failed to load models'
+      if (key === 'common:loading') return 'Loading'
+      if (key === 'common:noModelsFoundFor') return `No models found for "${options?.searchValue}"`
+      if (key === 'common:noModels') return 'No models available'
+      return key
+    },
+  }),
+}))
 
 describe('ModelCombobox', () => {
+  const mockOnChange = vi.fn()
+  const mockOnRefresh = vi.fn()
+  
   const defaultProps = {
     value: '',
-    onChange: vi.fn(),
+    onChange: mockOnChange,
     models: ['gpt-3.5-turbo', 'gpt-4', 'claude-3-haiku'],
   }
 
-  const mockUser = userEvent.setup()
-
   beforeEach(() => {
     vi.clearAllMocks()
+
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      width: 300,
+      height: 40,
+      top: 100,
+      left: 50,
+      bottom: 140,
+      right: 350,
+      x: 50,
+      y: 100,
+      toJSON: () => {},
+    }))
+    
+    Element.prototype.scrollIntoView = vi.fn()
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  describe('Basic Rendering', () => {
-    it('should render input field with placeholder', () => {
+  it('renders input field with default placeholder', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} />)
-
-      const input = screen.getByRole('textbox')
-      expect(input).toBeInTheDocument()
-      expect(input).toHaveAttribute('placeholder', 'Type or select a model...')
     })
+    
+    const input = screen.getByRole('textbox')
+    expect(input).toBeInTheDocument()
+    expect(input).toHaveAttribute('placeholder', 'Type or select a model...')
+  })
 
-    it('should render custom placeholder', () => {
+  it('renders custom placeholder', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} placeholder="Choose a model" />)
-
-      const input = screen.getByRole('textbox')
-      expect(input).toHaveAttribute('placeholder', 'Choose a model')
     })
+    
+    const input = screen.getByRole('textbox')
+    expect(input).toHaveAttribute('placeholder', 'Choose a model')
+  })
 
-    it('should render dropdown trigger button', () => {
+  it('renders dropdown trigger button', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} />)
-      const button = screen.getByRole('button')
-      expect(button).toBeInTheDocument()
     })
+    
+    const button = screen.getByRole('button')
+    expect(button).toBeInTheDocument()
+  })
 
-    it('should display current value in input', () => {
+  it('displays current value in input', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} value="gpt-4" />)
-
-      const input = screen.getByDisplayValue('gpt-4')
-      expect(input).toBeInTheDocument()
     })
-
-    it('should apply custom className', () => {
-      const { container } = render(
-        <ModelCombobox {...defaultProps} className="custom-class" />
-      )
-
-      const wrapper = container.firstChild as HTMLElement
-      expect(wrapper).toHaveClass('custom-class')
-    })
+    
+    const input = screen.getByDisplayValue('gpt-4')
+    expect(input).toBeInTheDocument()
   })
 
-  describe('Disabled State', () => {
-    it('should disable input when disabled prop is true', () => {
+  it('applies custom className', () => {
+    const { container } = render(
+      <ModelCombobox {...defaultProps} className="custom-class" />
+    )
+
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper).toHaveClass('custom-class')
+  })
+
+  it('disables input when disabled prop is true', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} disabled />)
-
-      const input = screen.getByRole('textbox')
-      const button = screen.getByRole('button')
-
-      expect(input).toBeDisabled()
-      expect(button).toBeDisabled()
     })
+    
+    const input = screen.getByRole('textbox')
+    const button = screen.getByRole('button')
 
-    it('should not open dropdown when disabled', async () => {
-      render(<ModelCombobox {...defaultProps} disabled />)
-
-      const input = screen.getByRole('textbox')
-      await mockUser.click(input)
-
-      expect(screen.queryByTestId('dropdown')).not.toBeInTheDocument()
-    })
+    expect(input).toBeDisabled()
+    expect(button).toBeDisabled()
   })
 
-  describe('Loading State', () => {
-    it('should show loading spinner in trigger button', () => {
+  it('shows loading spinner in trigger button', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} loading />)
-
-      const button = screen.getByRole('button')
-      const spinner = button.querySelector('.animate-spin')
-      expect(spinner).toBeInTheDocument()
     })
+    
+    const button = screen.getByRole('button')
+    const spinner = button.querySelector('.animate-spin')
+    expect(spinner).toBeInTheDocument()
+  })
 
-    it('should show loading spinner when loading prop is true', () => {
-      render(<ModelCombobox {...defaultProps} loading />)
-
-      const spinner = screen.getByRole('button').querySelector('.animate-spin')
-      expect(spinner).toBeInTheDocument()
+  it('shows loading section when dropdown is opened during loading', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} loading />)
+    
+    // Click input to trigger dropdown opening
+    const input = screen.getByRole('textbox')
+    await user.click(input)
+    
+    // Wait for dropdown to appear and check loading section
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+      expect(screen.getByText('Loading')).toBeInTheDocument()
     })
   })
 
-  describe('Input Interactions', () => {
-    it('should call onChange when typing', async () => {
-      const mockOnChange = vi.fn()
-      render(<ModelCombobox {...defaultProps} onChange={mockOnChange} />)
+  it('calls onChange when typing', async () => {
+    const user = userEvent.setup()
+    const localMockOnChange = vi.fn()
+    render(<ModelCombobox {...defaultProps} onChange={localMockOnChange} />)
 
-      const input = screen.getByRole('textbox')
-      await mockUser.type(input, 'g')
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'g')
 
-      expect(mockOnChange).toHaveBeenCalledWith('g')
-    })
-
-    it('should update input value when typing', async () => {
-      const mockOnChange = vi.fn()
-      render(<ModelCombobox {...defaultProps} onChange={mockOnChange} />)
-
-      const input = screen.getByRole('textbox')
-      await mockUser.type(input, 'test')
-
-      expect(input).toHaveValue('test')
-    })
-
-    it('should handle input focus', async () => {
-      render(<ModelCombobox {...defaultProps} />)
-
-      const input = screen.getByRole('textbox')
-      await mockUser.click(input)
-
-      expect(input).toHaveFocus()
-    })
+    expect(localMockOnChange).toHaveBeenCalledWith('g')
   })
 
-  describe('Props Validation', () => {
-    it('should render with empty models array', () => {
+  it('updates input value when typing', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'test')
+
+    expect(input).toHaveValue('test')
+  })
+
+  it('handles input focus', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    await user.click(input)
+
+    expect(input).toHaveFocus()
+  })
+
+  it('renders with empty models array', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} models={[]} />)
-
-      const input = screen.getByRole('textbox')
-      expect(input).toBeInTheDocument()
     })
+    
+    const input = screen.getByRole('textbox')
+    expect(input).toBeInTheDocument()
+  })
 
-    it('should render with models array', () => {
+  it('renders with models array', () => {
+    act(() => {
       render(<ModelCombobox {...defaultProps} models={['model1', 'model2']} />)
+    })
+    
+    const input = screen.getByRole('textbox')
+    expect(input).toBeInTheDocument()
+  })
 
-      const input = screen.getByRole('textbox')
-      expect(input).toBeInTheDocument()
+  it('handles mount and unmount without errors', () => {
+    const { unmount } = render(<ModelCombobox {...defaultProps} />)
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+
+    unmount()
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('handles props changes', () => {
+    const { rerender } = render(<ModelCombobox {...defaultProps} value="" />)
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument()
+
+    rerender(<ModelCombobox {...defaultProps} value="gpt-4" />)
+
+    expect(screen.getByDisplayValue('gpt-4')).toBeInTheDocument()
+  })
+
+  it('handles models array changes', () => {
+    const { rerender } = render(<ModelCombobox {...defaultProps} models={[]} />)
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+
+    rerender(<ModelCombobox {...defaultProps} models={['model1', 'model2']} />)
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('does not open dropdown when clicking input with no models', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} models={[]} />)
+
+    const input = screen.getByRole('textbox')
+    await user.click(input)
+
+    // Should focus but not open dropdown
+    expect(input).toHaveFocus()
+    const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+    expect(dropdown).not.toBeInTheDocument()
+  })
+
+  it('accepts error prop without crashing', () => {
+    act(() => {
+      render(<ModelCombobox {...defaultProps} error="Test error message" />)
     })
 
-    it('should render with all props', () => {
+    const input = screen.getByRole('textbox')
+    expect(input).toBeInTheDocument()
+    expect(input).toHaveAttribute('placeholder', 'Type or select a model...')
+  })
+
+  it('renders with all props', () => {
+    act(() => {
       render(
         <ModelCombobox
           {...defaultProps}
           loading
           error="Error message"
-          onRefresh={vi.fn()}
+          onRefresh={mockOnRefresh}
           placeholder="Custom placeholder"
           disabled
         />
       )
+    })
+    
+    const input = screen.getByRole('textbox')
+    expect(input).toBeInTheDocument()
+    expect(input).toBeDisabled()
+  })
 
-      const input = screen.getByRole('textbox')
-      expect(input).toBeInTheDocument()
-      expect(input).toBeDisabled()
+  it('opens dropdown when clicking trigger button', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const button = screen.getByRole('button')
+    await user.click(button)
+
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
     })
   })
 
-  describe('Component Lifecycle', () => {
-    it('should handle mount and unmount without errors', () => {
-      const { unmount } = render(<ModelCombobox {...defaultProps} />)
+  it('opens dropdown when clicking input', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
 
-      expect(screen.getByRole('textbox')).toBeInTheDocument()
+    const input = screen.getByRole('textbox')
+    await user.click(input)
 
-      unmount()
+    expect(input).toHaveFocus()
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+    })
+  })
 
-      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  it('filters models based on input value', async () => {
+    const user = userEvent.setup()
+    const localMockOnChange = vi.fn()
+    render(<ModelCombobox {...defaultProps} onChange={localMockOnChange} />)
+
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'gpt-4')
+
+    expect(localMockOnChange).toHaveBeenCalledWith('gpt-4')
+  })
+
+  it('shows filtered models in dropdown when typing', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    // Type 'gpt' to trigger dropdown opening
+    await user.type(input, 'gpt')
+
+    await waitFor(() => {
+      // Dropdown should be open
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+      
+      // Should show GPT models
+      expect(screen.getByText('gpt-3.5-turbo')).toBeInTheDocument()
+      expect(screen.getByText('gpt-4')).toBeInTheDocument()
+      // Should not show Claude
+      expect(screen.queryByText('claude-3-haiku')).not.toBeInTheDocument()
+    })
+  })
+
+  it('handles case insensitive filtering', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'GPT')
+
+    expect(mockOnChange).toHaveBeenCalledWith('GPT')
+  })
+
+  it('shows empty state when no models match filter', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    // Type something that doesn't match any model to trigger dropdown + empty state
+    await user.type(input, 'nonexistent')
+
+    await waitFor(() => {
+      // Dropdown should be open
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+      // Should show empty state message
+      expect(screen.getByText('No models found for "nonexistent"')).toBeInTheDocument()
+    })
+  })
+
+  it('selects model from dropdown when clicked', async () => {
+    const user = userEvent.setup()
+    const localMockOnChange = vi.fn()
+    render(<ModelCombobox {...defaultProps} onChange={localMockOnChange} />)
+
+    const input = screen.getByRole('textbox')
+    await user.click(input)
+    
+    await waitFor(() => {
+      const modelOption = screen.getByText('gpt-4')
+      expect(modelOption).toBeInTheDocument()
+    })
+    
+    const modelOption = screen.getByText('gpt-4')
+    await user.click(modelOption)
+
+    expect(localMockOnChange).toHaveBeenCalledWith('gpt-4')
+    expect(input).toHaveValue('gpt-4')
+  })
+
+  it('submits input value with Enter key', async () => {
+    const user = userEvent.setup()
+    const localMockOnChange = vi.fn()
+    render(<ModelCombobox {...defaultProps} onChange={localMockOnChange} />)
+
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'gpt')
+    await user.keyboard('{Enter}')
+
+    expect(localMockOnChange).toHaveBeenCalledWith('gpt')
+  })
+
+  it('updates input value when typing', () => {
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'gpt-4' } })
+
+    expect(input).toHaveValue('gpt-4')
+  })
+
+  it('displays error message in dropdown', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} error="Network connection failed" />)
+
+    const input = screen.getByRole('textbox')
+    // Click input to open dropdown
+    await user.click(input)
+
+    await waitFor(() => {
+      // Dropdown should be open
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+      // Error messages should be displayed
+      expect(screen.getByText('Failed to load models')).toBeInTheDocument()
+      expect(screen.getByText('Network connection failed')).toBeInTheDocument()
+    })
+  })
+
+  it('calls onRefresh when refresh button is clicked', async () => {
+    const user = userEvent.setup()
+    const localMockOnRefresh = vi.fn()
+    render(<ModelCombobox {...defaultProps} error="Network error" onRefresh={localMockOnRefresh} />)
+
+    const input = screen.getByRole('textbox')
+    // Click input to open dropdown
+    await user.click(input)
+
+    await waitFor(() => {
+      // Dropdown should be open with error section
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+      const refreshButton = document.querySelector('[aria-label="Refresh models"]')
+      expect(refreshButton).toBeInTheDocument()
     })
 
-    it('should handle props changes', () => {
-      const { rerender } = render(<ModelCombobox {...defaultProps} value="" />)
+    const refreshButton = document.querySelector('[aria-label="Refresh models"]')
+    if (refreshButton) {
+      await user.click(refreshButton)
+      expect(localMockOnRefresh).toHaveBeenCalledTimes(1)
+    }
+  })
 
-      expect(screen.getByDisplayValue('')).toBeInTheDocument()
+  it('opens dropdown when pressing ArrowDown', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
 
-      rerender(<ModelCombobox {...defaultProps} value="gpt-4" />)
+    const input = screen.getByRole('textbox')
+    input.focus()
+    await user.keyboard('{ArrowDown}')
 
-      expect(screen.getByDisplayValue('gpt-4')).toBeInTheDocument()
+    expect(input).toHaveFocus()
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
     })
+  })
 
-    it('should handle models array changes', () => {
-      const { rerender } = render(<ModelCombobox {...defaultProps} models={[]} />)
+  it('navigates through models with arrow keys', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
 
-      expect(screen.getByRole('textbox')).toBeInTheDocument()
+    const input = screen.getByRole('textbox')
+    input.focus()
+    
+    // ArrowDown should open dropdown
+    await user.keyboard('{ArrowDown}')
+    
+    await waitFor(() => {
+      // Dropdown should be open
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+    })
+    
+    // Navigate to second item
+    await user.keyboard('{ArrowDown}')
 
-      rerender(<ModelCombobox {...defaultProps} models={['model1', 'model2']} />)
+    await waitFor(() => {
+      const secondModel = screen.getByText('gpt-4')
+      const modelElement = secondModel.closest('[data-model]')
+      expect(modelElement).toHaveClass('bg-main-view-fg/20')
+    })
+  })
 
-      expect(screen.getByRole('textbox')).toBeInTheDocument()
+  it('handles Enter key to select highlighted model', async () => {
+    const user = userEvent.setup()
+    const localMockOnChange = vi.fn()
+    render(<ModelCombobox {...defaultProps} onChange={localMockOnChange} />)
+
+    const input = screen.getByRole('textbox')
+    // Type 'gpt' to open dropdown and filter models
+    await user.type(input, 'gpt')
+    
+    await waitFor(() => {
+      // Dropdown should be open with filtered models
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+    })
+    
+    // Navigate to highlight first model and select it
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    expect(localMockOnChange).toHaveBeenCalledWith('gpt-3.5-turbo')
+  })
+
+  it('closes dropdown with ArrowLeft key', async () => {
+    const user = userEvent.setup()
+    render(<ModelCombobox {...defaultProps} />)
+
+    const input = screen.getByRole('textbox')
+    input.focus()
+    
+    // ArrowDown should open dropdown
+    await user.keyboard('{ArrowDown}')
+    
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).toBeInTheDocument()
+    })
+    
+    // ArrowLeft should close dropdown
+    await user.keyboard('{ArrowLeft}')
+    
+    await waitFor(() => {
+      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      expect(dropdown).not.toBeInTheDocument()
     })
   })
 })

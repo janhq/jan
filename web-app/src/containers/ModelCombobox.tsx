@@ -6,6 +6,216 @@ import { IconChevronDown, IconLoader2, IconRefresh } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
+// Hook for the dropdown position
+function useDropdownPosition(open: boolean, containerRef: React.RefObject<HTMLDivElement | null>) {
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
+
+  const updateDropdownPosition = useCallback(() => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      })
+    }
+  }, [containerRef])
+
+  // Update the position when the dropdown opens
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => {
+        updateDropdownPosition()
+      })
+    }
+  }, [open, updateDropdownPosition])
+
+  // Update the position when the window is resized
+  useEffect(() => {
+    if (!open) return
+
+    const handleResize = () => {
+      updateDropdownPosition()
+    }
+
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('scroll', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('scroll', handleResize)
+    }
+  }, [open, updateDropdownPosition])
+
+  return { dropdownPosition, updateDropdownPosition }
+}
+
+// Components for the different sections of the dropdown
+const ErrorSection = ({ error, onRefresh, t }: { error: string; onRefresh?: () => void; t: (key: string) => string }) => (
+  <div className="px-3 py-2 text-sm text-destructive">
+    <div className="flex items-center justify-between">
+      <span className="text-destructive font-medium">{t('common:failedToLoadModels')}</span>
+      {onRefresh && (
+        <Button
+          variant="link"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRefresh?.()
+          }}
+          className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10 text-main-view-fg"
+          aria-label="Refresh models"
+        >
+          <IconRefresh className="h-3 w-3" />
+        </Button>
+      )}
+    </div>
+    <div className="text-xs text-main-view-fg/50 mt-0">{error}</div>
+  </div>
+)
+
+const LoadingSection = ({ t }: { t: (key: string) => string }) => (
+  <div className="flex items-center justify-center px-3 py-3 text-sm text-main-view-fg/50">
+    <IconLoader2 className="h-4 w-4 animate-spin mr-2 text-main-view-fg/50" />
+    <span className="text-sm text-main-view-fg/50">{t('common:loading')}</span>
+  </div>
+)
+
+const EmptySection = ({ inputValue, t }: { inputValue: string; t: (key: string, options?: Record<string, string>) => string }) => (
+  <div className="px-3 py-3 text-sm text-main-view-fg/50 text-center">
+    {inputValue.trim() ? (
+      <span className="text-main-view-fg/50">{t('common:noModelsFoundFor', { searchValue: inputValue })}</span>
+    ) : (
+      <span className="text-main-view-fg/50">{t('common:noModels')}</span>
+    )}
+  </div>
+)
+
+const ModelsList = ({
+  filteredModels,
+  value,
+  highlightedIndex,
+  onModelSelect,
+  onHighlight
+}: {
+  filteredModels: string[]
+  value: string
+  highlightedIndex: number
+  onModelSelect: (model: string) => void
+  onHighlight: (index: number) => void
+}) => (
+  <>
+    {filteredModels.map((model, index) => (
+      <div
+        key={model}
+        data-model={model}
+        onClick={(e) => {
+          e.stopPropagation()
+          onModelSelect(model)
+        }}
+        onMouseEnter={() => onHighlight(index)}
+        className={cn(
+          'cursor-pointer px-3 py-2 hover:bg-main-view-fg/15 hover:shadow-sm transition-all duration-200 text-main-view-fg',
+          value === model && 'bg-main-view-fg/12 shadow-sm',
+          highlightedIndex === index && 'bg-main-view-fg/20 shadow-md'
+        )}
+      >
+        <span className="text-sm truncate text-main-view-fg">{model}</span>
+      </div>
+    ))}
+  </>
+)
+
+// Custom hook for keyboard navigation
+function useKeyboardNavigation(
+  open: boolean,
+  setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+  models: string[],
+  filteredModels: string[],
+  highlightedIndex: number,
+  setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>,
+  onModelSelect: (model: string) => void,
+  dropdownRef: React.RefObject<HTMLDivElement | null>
+) {
+  const keyRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Scroll to the highlighted element
+  useEffect(() => {
+    if (highlightedIndex >= 0 && dropdownRef.current) {
+      requestAnimationFrame(() => {
+        const modelElements = dropdownRef.current?.querySelectorAll('[data-model]')
+        const highlightedElement = modelElements?.[highlightedIndex] as HTMLElement
+        if (highlightedElement) {
+          highlightedElement.scrollIntoView({
+            block: 'nearest',
+            behavior: 'auto'
+          })
+        }
+      })
+    }
+  }, [highlightedIndex, dropdownRef])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Open the dropdown with the arrows if closed
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      if (models.length > 0) {
+        e.preventDefault()
+        setOpen(true)
+        setHighlightedIndex(0)
+      }
+      return
+    }
+
+    if (!open) return
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        if (keyRepeatTimeoutRef.current) {
+          clearTimeout(keyRepeatTimeoutRef.current)
+        }
+        setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev < filteredModels.length - 1 ? prev + 1 : 0))
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        if (keyRepeatTimeoutRef.current) {
+          clearTimeout(keyRepeatTimeoutRef.current)
+        }
+        setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev > 0 ? prev - 1 : filteredModels.length - 1))
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (highlightedIndex >= 0 && highlightedIndex < filteredModels.length) {
+          onModelSelect(filteredModels[highlightedIndex])
+        }
+        break
+      case 'ArrowRight':
+      case 'ArrowLeft':
+        setOpen(false)
+        setHighlightedIndex(-1)
+        break
+      case 'PageUp':
+        setHighlightedIndex(0)
+        break
+      case 'PageDown':
+        setHighlightedIndex(filteredModels.length - 1)
+        break
+    }
+  }, [open, setOpen, models.length, filteredModels, highlightedIndex, setHighlightedIndex, onModelSelect])
+
+  // Cleanup the timeout
+  useEffect(() => {
+    const timeoutId = keyRepeatTimeoutRef.current
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [])
+
+  return { handleKeyDown }
+}
+
 type ModelComboboxProps = {
   value: string
   onChange: (value: string) => void
@@ -31,12 +241,10 @@ export function ModelCombobox({
 }: ModelComboboxProps) {
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(value)
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const keyRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
   const { t } = useTranslation()
 
   // Sync input value with prop value
@@ -44,47 +252,36 @@ export function ModelCombobox({
     setInputValue(value)
   }, [value])
 
-  // Simple position calculation
-  const updateDropdownPosition = useCallback(() => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect()
-      setDropdownPosition({
-        top: rect.bottom + window.scrollY + 4,
-        left: rect.left + window.scrollX,
-        width: rect.width,
-      })
-    }
-  }, [])
+  // Hook for the dropdown position
+  const { dropdownPosition } = useDropdownPosition(open, containerRef)
 
-  // Update position when opening
+  // Optimized model filtering
+  const filteredModels = useMemo(() => {
+    if (!inputValue.trim()) return models
+    const searchValue = inputValue.toLowerCase()
+    return models.filter((model) => model.toLowerCase().includes(searchValue))
+  }, [models, inputValue])
+
+  // Reset highlighted index when filtered models change
   useEffect(() => {
-    if (open) {
-      // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => {
-        updateDropdownPosition()
-      })
-    }
-  }, [open, updateDropdownPosition])
+    setHighlightedIndex(-1)
+  }, [filteredModels])
 
-  // Close dropdown when clicking outside
+  // Close the dropdown when clicking outside
   useEffect(() => {
     if (!open) return
 
     const handleClickOutside = (event: Event) => {
       const target = event.target as Node
-      // Check if click is inside our container or dropdown
       const isInsideContainer = containerRef.current?.contains(target)
       const isInsideDropdown = dropdownRef.current?.contains(target)
 
-      // Only close if click is outside both container and dropdown
       if (!isInsideContainer && !isInsideDropdown) {
         setOpen(false)
-        setDropdownPosition({ top: 0, left: 0, width: 0 })
         setHighlightedIndex(-1)
       }
     }
 
-    // Use multiple event types to ensure we catch all interactions
     const events = ['mousedown', 'touchstart']
     events.forEach(eventType => {
       document.addEventListener(eventType, handleClickOutside, { capture: true, passive: true })
@@ -97,127 +294,60 @@ export function ModelCombobox({
     }
   }, [open])
 
-  // Cleanup: close dropdown when component unmounts
+  // Cleanup: close the dropdown when the component is unmounted
   useEffect(() => {
-    const timeoutId = keyRepeatTimeoutRef.current
     return () => {
       setOpen(false)
-      setDropdownPosition({ top: 0, left: 0, width: 0 })
       setHighlightedIndex(-1)
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
     }
   }, [])
 
-    // Filter models based on input
-  const filteredModels = useMemo(() => {
-    if (!inputValue.trim()) return models
-    
-    return models.filter((model) =>
-      model.toLowerCase().includes(inputValue.toLowerCase())
-    )
-  }, [models, inputValue])
-
-  // Reset highlighted index when filtered models change
-  useEffect(() => {
-    setHighlightedIndex(-1)
-  }, [filteredModels])
-
-  // Scroll to highlighted item with debouncing to handle key repeat
-  useEffect(() => {
-    if (highlightedIndex >= 0 && dropdownRef.current && !loading && !error) {
-      // Use requestAnimationFrame to ensure smooth scrolling and avoid conflicts
-      requestAnimationFrame(() => {
-        // Find all model elements (they have the data-model attribute)
-        const modelElements = dropdownRef.current?.querySelectorAll('[data-model]')
-        const highlightedElement = modelElements?.[highlightedIndex] as HTMLElement
-        if (highlightedElement) {
-          highlightedElement.scrollIntoView({
-            block: 'nearest',
-            behavior: 'auto'
-          })
-        }
-      })
-    }
-  }, [highlightedIndex, error, loading])
-
-    // Handle input change
-  const handleInputChange = (newValue: string) => {
+  // Handler for the input change
+  const handleInputChange = useCallback((newValue: string) => {
     setInputValue(newValue)
     onChange(newValue)
-    
-    // Only open dropdown if user is actively typing and there are models
+
+    // Open the dropdown if the user types and there are models
     if (newValue.trim() && models.length > 0) {
       setOpen(true)
     } else {
-      // Don't auto-open on empty input - wait for user interaction
       setOpen(false)
     }
-  }
+  }, [onChange, models.length])
 
-  // Handle keyboard navigation
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      // Open dropdown on arrow keys if there are models
-      if (models.length > 0) {
-        e.preventDefault()
-        setOpen(true)
-        setHighlightedIndex(0)
-      }
-      return
-    }
-
-    if (!open) return
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        if (keyRepeatTimeoutRef.current) {
-          clearTimeout(keyRepeatTimeoutRef.current)
-        }
-        setHighlightedIndex((prev) => 
-          filteredModels.length === 0 ? 0 : (prev < filteredModels.length - 1 ? prev + 1 : 0)
-        )
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        if (keyRepeatTimeoutRef.current) {
-          clearTimeout(keyRepeatTimeoutRef.current)
-        }
-        setHighlightedIndex((prev) => 
-          filteredModels.length === 0 ? 0 : (prev > 0 ? prev - 1 : filteredModels.length - 1)
-        )
-        break
-      case 'Enter':
-        e.preventDefault()
-        if (highlightedIndex >= 0 && highlightedIndex < filteredModels.length) {
-          handleModelSelect(filteredModels[highlightedIndex])
-        }
-        break
-      case 'ArrowRight':
-      case 'ArrowLeft':
-        setOpen(false)
-        setHighlightedIndex(-1)
-        break
-      case 'PageUp':
-        setHighlightedIndex(0)
-        break
-      case 'PageDown':
-        setHighlightedIndex(filteredModels.length - 1)
-        break
-    }
-  }
-
-  // Handle model selection from dropdown
-  const handleModelSelect = (model: string) => {
+  // Handler for the model selection
+  const handleModelSelect = useCallback((model: string) => {
     setInputValue(model)
     onChange(model)
     setOpen(false)
-    setDropdownPosition({ top: 0, left: 0, width: 0 })
     setHighlightedIndex(-1)
     inputRef.current?.focus()
-  }
+  }, [onChange])
+
+  // Hook for the keyboard navigation
+  const { handleKeyDown } = useKeyboardNavigation(
+    open,
+    setOpen,
+    models,
+    filteredModels,
+    highlightedIndex,
+    setHighlightedIndex,
+    handleModelSelect,
+    dropdownRef
+  )
+
+  // Handler for the dropdown opening
+  const handleDropdownToggle = useCallback(() => {
+    inputRef.current?.focus()
+    setOpen(!open)
+  }, [open])
+
+  // Handler for the input click
+  const handleInputClick = useCallback(() => {
+    if (models.length > 0) {
+      setOpen(true)
+    }
+  }, [models.length])
 
   return (
     <div className={cn('relative', className)} ref={containerRef}>
@@ -227,12 +357,7 @@ export function ModelCombobox({
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          onClick={() => {
-            // Open dropdown on click if models are available
-            if (models.length > 0) {
-              setOpen(true)
-            }
-          }}
+          onClick={handleInputClick}
           placeholder={placeholder}
           disabled={disabled}
           className="pr-8"
@@ -243,14 +368,8 @@ export function ModelCombobox({
           variant="link"
           size="sm"
           disabled={disabled}
-          onMouseDown={(e) => {
-            // Prevent losing focus from input
-            e.preventDefault()
-          }}
-          onClick={() => {
-            inputRef.current?.focus()
-            setOpen(!open)
-          }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handleDropdownToggle}
           className="absolute right-1 top-1/2 h-6 w-6 p-0 -translate-y-1/2 no-underline hover:bg-main-view-fg/10"
         >
           {loading ? (
@@ -274,89 +393,30 @@ export function ModelCombobox({
               pointerEvents: 'auto',
             }}
             data-dropdown="model-combobox"
-            onPointerDown={(e) => {
-              // Prevent interaction with underlying elements
-              e.stopPropagation()
-            }}
-            onClick={(e) => {
-              // Prevent click from bubbling up and closing modal
-              e.stopPropagation()
-            }}
-            onMouseDown={(e) => {
-              // Allow default behavior for scrolling and selection
-              e.stopPropagation()
-            }}
-            onWheel={(e) => {
-              // Allow wheel events for scrolling
-              e.stopPropagation()
-            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
           >
             {/* Error state */}
-            {error && (
-              <div className="px-3 py-2 text-sm text-destructive">
-                <div className="flex items-center justify-between">
-                  <span className="text-destructive font-medium">{t('common:failedToLoadModels')}</span>
-                  {onRefresh && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onRefresh?.()
-                      }}
-                      className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10 text-main-view-fg"
-                    >
-                      <IconRefresh className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-                <div className="text-xs text-main-view-fg/50 mt-0">{error}</div>
-              </div>
-            )}
+            {error && <ErrorSection error={error} onRefresh={onRefresh} t={t} />}
 
             {/* Loading state */}
-            {loading && (
-              <div className="flex items-center justify-center px-3 py-3 text-sm text-main-view-fg/50">
-                <IconLoader2 className="h-4 w-4 animate-spin mr-2 text-main-view-fg/50" />
-                <span className="text-sm text-main-view-fg/50">{t('common:loading')}</span>
-              </div>
-            )}
+            {loading && <LoadingSection t={t} />}
 
             {/* Models list */}
             {!loading && !error && (
-              <>
-                {filteredModels.length === 0 ? (
-                  <div className="px-3 py-3 text-sm text-main-view-fg/50 text-center">
-                    {inputValue.trim() ? (
-                      <span className="text-main-view-fg/50">{t('common:noModelsFoundFor', { searchValue: inputValue })}</span>
-                    ) : (
-                      <span className="text-main-view-fg/50">{t('common:noModels')}</span>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {/* Available models */}
-                    {filteredModels.map((model, index) => (
-                      <div
-                        key={model}
-                        data-model={model}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleModelSelect(model)
-                        }}
-                        onMouseEnter={() => setHighlightedIndex(index)}
-                        className={cn(
-                          'cursor-pointer px-3 py-2 hover:bg-main-view-fg/15 hover:shadow-sm transition-all duration-200 text-main-view-fg',
-                          value === model && 'bg-main-view-fg/12 shadow-sm',
-                          highlightedIndex === index && 'bg-main-view-fg/20 shadow-md'
-                        )}
-                      >
-                        <span className="text-sm truncate text-main-view-fg">{model}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </>
+              filteredModels.length === 0 ? (
+                <EmptySection inputValue={inputValue} t={t} />
+              ) : (
+                <ModelsList
+                  filteredModels={filteredModels}
+                  value={value}
+                  highlightedIndex={highlightedIndex}
+                  onModelSelect={handleModelSelect}
+                  onHighlight={setHighlightedIndex}
+                />
+              )
             )}
           </div>,
           document.body
