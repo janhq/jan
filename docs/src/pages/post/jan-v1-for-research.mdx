@@ -1,20 +1,21 @@
 ---
-title: "Optimize Jan-V1 for Research: System Prompts & Setup Guide"
+title: "Jan v1 for Deep Research: System Prompts & Setup Guide"
 description: "Explore Jan-V1 capabilities in report generation and research tasks with prompt comparisons, examples, and customization instructions."
 keywords: ["Jan-V1", "AI research", "system prompts", "LLM optimization", "research AI", "Jan App", "model configuration"]
 readingTime: "8 min read"
 tags: Qwen, Jan-V1, Agentic
 categories: research
-ogImage: assets/images/general/og-throughput-benchmark.png
+ogImage: post/_assets/jan-research.jpeg
 date: 2025-08-15
 ---
 
-# Optimize Jan-V1 for Research: System Prompts & Setup Guide
+# Jan v1 for Deep Research: System Prompts & Setup Guide
 
+This cookbook will transform your Jan-V1 from a basic Q&A tool into a comprehensive research assistant. By the end of this guide, you'll have a custom-configured model that generates detailed reports with proper citations instead of surface-level answers.
 
 ![Jan-V1 research comparison](./_assets/deep_research_compare_jan.gif)
 
-## Key Points:
+## Key Points
 
 - **Jan-V1 includes a default chat template** that's automatically embedded in its Hugging Face configuration
 - **Use the default prompt** for daily tasks requiring short, accurate answers
@@ -280,113 +281,44 @@ This report provides a detailed comparison of three AI language models: **Jan-Na
 
 ### Example 3: Software Comparison
 
-**User Request:**
-> Compare Signal, Telegram, WhatsApp for secure messaging.
+**User Request:** "Compare Signal, Telegram, WhatsApp for secure messaging"
+
 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
 
 {/* Default Prompt Column */}
 <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-lg border">
 <h4 className="font-semibold mb-4 text-lg border-b border-gray-300 dark:border-gray-600 pb-2">Default Prompt Response</h4>
-<div className="prose prose-xs max-w-none text-xs mt-4 h-[500px] overflow-y-auto [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h5]:text-xs [&_h6]:text-xs [&_p]:text-xs [&_li]:text-xs [&_td]:text-xs [&_th]:text-xs">
-Based on the search results, here's a comparison of Signal, Telegram, and WhatsApp for secure messaging:
+<div className="prose prose-sm max-w-none text-sm mt-4">
 
-**1. End-to-End Encryption (E2EE)**
-- **Signal**: E2EE enabled by default for all chats (including groups). Open-source and transparent.
-- **Telegram**: E2EE only available in "Secret Chats" (1:1 chats), **not** default for groups or regular chats. This is a significant privacy gap.
-- **WhatsApp**: E2EE for all messages (since 2016), but metadata and server data are collected by Meta.
+**Security Overview:**
+- Signal: E2EE by default, open-source
+- Telegram: E2EE only in Secret Chats  
+- WhatsApp: E2EE but Meta data collection
+- Basic privacy comparison
+- 200 words, single citation
 
-**2. Privacy & Data Practices**
-- **Signal**: Minimal data collection; no ads or analytics. Strong privacy focus.
-- **Telegram**: Collects more metadata (e.g., chat activity, device info) compared to Signal. Groups have less privacy.
-- **WhatsApp**: Uses E2EE but shares data with Meta for ads and services (e.g., contact lists, location).
+**Strengths:** Clear recommendations  
+**Weaknesses:** Limited analysis depth
 
-**3. Security Reputation**
-- The IACR research paper (2023) confirms Signal has the strongest encryption and security features among the three.
-- CNET and Reddit analyses consistently rank Signal as the most secure option.
-
-**Key Takeaway**: Signal is the most secure for privacy-focused users due to default E2EE, minimal data collection, and open-source transparency. Telegram lags in default E2EE, while WhatsApp balances E2EE with broader data practices.
-
-For a deeper technical breakdown, the IACR paper ([eprint.iacr.org/2023/071.pdf](https://eprint.iacr.org/2023/071.pdf)) provides a formal security analysis.
 </div>
 </div>
 
 {/* Research Prompt Column */}
 <div className="bg-blue-50 dark:bg-blue-950 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
-<h4 className="font-semibold mb-4 text-lg border-b border-gray-300 dark:border-gray-600 pb-2">Research Prompt Response</h4>
-<div className="prose prose-xs max-w-none text-xs mt-4 h-[500px] overflow-y-auto [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h5]:text-xs [&_h6]:text-xs [&_p]:text-xs [&_li]:text-xs [&_td]:text-xs [&_th]:text-xs">
-# Signal vs. Telegram vs. WhatsApp: A Comprehensive Security Comparison
+<h4 className="font-semibold mb-4 text-lg border-b border-gray-300 dark:border-blue-800 pb-2">Research Prompt Response</h4>
+<div className="prose prose-sm max-w-none text-sm mt-4">
 
-## Overview
+**Comprehensive Security Analysis:**
+- Full report with methodology and detailed comparison table
+- Academic research citations (IACR 2023 study)
+- Privacy practices analysis with breach history
+- User experience and practical considerations
+- Final recommendations table by use case
+- 1000+ words, 5 authoritative references
 
-This report provides a detailed, evidence-based comparison of Signal, Telegram, and WhatsApp with respect to secure messaging capabilities. The analysis draws from authoritative sources including academic research, independent reviews, and privacy-focused publications to evaluate encryption protocols, data collection practices, security features, and real-world vulnerabilities across these three major messaging platforms.
+**Strengths:** Evidence-based analysis, academic rigor  
+**Result:** Professional security assessment format
 
-## Key Findings
-
-- **Signal emerges as the most secure option** for end-to-end encrypted messaging with robust privacy protections and open-source architecture [1][3]  
-- **WhatsApp provides strong encryption** but collects more user metadata than Signal for advertising purposes [2][3]  
-- **Telegram offers limited end-to-end encryption** (only in "Secret Chats") and has been involved in significant data breaches and law enforcement data sharing [1][4]  
-- **All three apps have self-destruct message features**, but Signal provides more granular control (e.g., messages disappearing after seconds/minutes) [3]  
-- **Signal is open-source**, while WhatsApp and Telegram have closed-source components that raise transparency concerns [1][2]  
-
-## Detailed Analysis
-
-### Encryption Protocols and Implementation
-
-| Feature | Signal | WhatsApp | Telegram |
-|---------|--------|-----------|-----------|
-| **Default E2EE** | Yes (all messages) [1][3] | Yes (all messages) [5] | No (only Secret Chats) [1][5] |
-| **Encryption Protocol** | Signal Protocol (open-source) [3][4] | Signal Protocol (Whisper) [2] | MTProto (with E2EE in Secret Chats) [1][5] |
-| **Metadata Collection** | Minimal (no metadata retention) [1][3] | Extensive (for advertising) [2][3] | Moderate (IP addresses, phone numbers) [1] |
-| **Open Source** | Full client-side code [3][4] | Partial (server code not open) [1] | Partial (client open, server code closed) [1][4] |
-
-**Signal** provides end-to-end encryption by default for all messages through its Signal Protocol, which is open-source and auditable. This ensures no backdoors or hidden vulnerabilities in the client software.
-
-**WhatsApp** uses a modified version of the Signal Protocol (called "Whisper") for end-to-end encryption but retains metadata for its advertising infrastructure. This has led to criticism from privacy advocates who note WhatsApp's data collection practices [2].
-
-**Telegram** implements end-to-end encryption only in its "Secret Chats," which are device-specific and not available on desktop browsers [1]. Public channels and groups are not encrypted, making them vulnerable to interception. Telegram's server-side encryption has been subject to scrutiny due to its closed-source nature [4].
-
-### Privacy and Data Practices
-
-Signal's privacy approach is the most stringent among the three: it does not collect user metadata beyond what is necessary for message delivery. In contrast:
-
-- **Telegram** has explicitly shared user data with law enforcement in 2024 (impacting 2,253 individuals) [1]. The platform also experienced a major data breach in 2020 affecting 42 million Iranian users [1].
-- **WhatsApp** collects user data for advertising and analytics, as evidenced by its data-sharing practices with Meta's ad ecosystem [2][3].
-
-### Security Features and Vulnerabilities
-
-- **Self-Destruct Messages**: Signal allows messages to auto-delete after seconds/minutes, while Telegram's minimum is one day [1][3].
-- **Server Security**: Signal's open-source model enables third-party audits to verify server security. Telegram has been found to store messages in plaintext for extended periods on its servers [4].
-- **Breach History**: Telegram has had multiple security incidents (e.g., 2019 Hong Kong protest data leak) [1]. WhatsApp has not had major breaches reported in public records, but its data collection creates indirect risks.
-
-### User Experience and Practical Considerations
-
-- **Group Messaging**: Telegram excels in large-scale group functionality with public channels (not encrypted), while Signal and WhatsApp limit group features [1][3].
-- **Cross-Platform Support**: Signal works across all platforms without limitations. Telegram's Secret Chats are phone-only, creating a security gap for desktop users [1].
-- **Cost**: All three apps are free, though Telegram offers a premium tier ($5/month) for additional features [1].
-
-## Critical Insights from Academic and Industry Research
-
-A 2023 academic analysis published in the Cryptology ePrint Archive confirms Signal's superior security posture through rigorous protocol evaluation [4]. The study found that while WhatsApp and Telegram offer E2EE in specific contexts, Signal's protocol is more resilient against common attacks due to its open-source implementation and lack of metadata retention.
-
-The CNET review further supports this by noting that "Telegram's server code is not open source," which creates trust gaps that Signal's transparency mitigates [1]. This aligns with the ClearVPN comparison, which states: "Signal offers robust end-to-end encryption and a self-destruct feature that makes sure your messages are always secure" [3].
-
-## Final Recommendations
-
-| User Priority | Recommended App | Reason |
-|----------------|------------------|--------|
-| Maximum privacy and security | **Signal** | Open-source, no metadata collection, all messages encrypted by default |
-| Large group collaboration | **Telegram** | Superior group/channel functionality (though public channels are unencrypted) |
-| Legacy compatibility with WhatsApp ecosystem | **WhatsApp** | Strong encryption but limited privacy features |
-
-For users prioritizing **maximum security and privacy**, Signal is the unequivocal choice based on current evidence. For those needing group communication features with some encryption, Telegram provides a middle ground. WhatsApp remains suitable for users who value convenience over extreme privacy.
-
-## References
-
-[1] https://www.cnet.com/tech/services-and-software/i-tried-signal-telegram-and-whatsapp-and-this-is-the-one-id-recommend/  
-[2] https://www.reddit.com/r/privacy/comments/1imqw72/is_it_better_if_i_shift_from_whatsapp_to_telegram/  
-[3] https://clearvpn.com/blog/signal-vs-telegram-vs-whatsapp/  
-[4] https://eprint.iacr.org/2023/071  
-[5] https://www.ccn.com/education/crypto/telegram-whatsapp-discord-signal-encryption-crypto-integration/
 </div>
 </div>
 </div>
