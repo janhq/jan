@@ -487,28 +487,4 @@ describe('ModelCombobox', () => {
 
     expect(localMockOnChange).toHaveBeenCalledWith('gpt-3.5-turbo')
   })
-
-  it('closes dropdown with ArrowLeft key', async () => {
-    const user = userEvent.setup()
-    render(<ModelCombobox {...defaultProps} />)
-
-    const input = screen.getByRole('textbox')
-    input.focus()
-    
-    // ArrowDown should open dropdown
-    await user.keyboard('{ArrowDown}')
-    
-    await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
-      expect(dropdown).toBeInTheDocument()
-    })
-    
-    // ArrowLeft should close dropdown
-    await user.keyboard('{ArrowLeft}')
-    
-    await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
-      expect(dropdown).not.toBeInTheDocument()
-    })
-  })
 })

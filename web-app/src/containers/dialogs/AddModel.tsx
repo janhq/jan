@@ -26,6 +26,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
   const { updateProvider } = useModelProvider()
   const [modelId, setModelId] = useState<string>('')
   const [open, setOpen] = useState(false)
+  const [isComboboxOpen, setIsComboboxOpen] = useState(false)
 
   // Fetch models from provider API (API key is optional)
   const { models, loading, error, refetch } = useProviderModels(
@@ -68,7 +69,13 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
           </div>
         )}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent
+        onEscapeKeyDown={(e: KeyboardEvent) => {
+          if (isComboboxOpen) {
+            e.preventDefault()
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t('providers:addModel.title')}</DialogTitle>
           <DialogDescription>
@@ -95,6 +102,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             error={error}
             onRefresh={refetch}
             placeholder={t('providers:addModel.enterModelId')}
+            onOpenChange={setIsComboboxOpen}
           />
         </div>
 

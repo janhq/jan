@@ -182,8 +182,9 @@ function useKeyboardNavigation(
           onModelSelect(filteredModels[highlightedIndex])
         }
         break
-      case 'ArrowRight':
-      case 'ArrowLeft':
+      case 'Escape':
+        e.preventDefault()
+        e.stopPropagation()
         setOpen(false)
         setHighlightedIndex(-1)
         break
@@ -194,11 +195,6 @@ function useKeyboardNavigation(
       case 'PageDown':
         e.preventDefault()
         setHighlightedIndex(filteredModels.length - 1)
-        break
-      case 'Escape':
-        e.preventDefault()
-        setOpen(false)
-        setHighlightedIndex(-1)
         break
     }
   }, [open, setOpen, models.length, filteredModels, highlightedIndex, setHighlightedIndex, onModelSelect])
@@ -216,6 +212,7 @@ type ModelComboboxProps = {
   placeholder?: string
   disabled?: boolean
   className?: string
+  onOpenChange?: (open: boolean) => void
 }
 
 export function ModelCombobox({
@@ -228,6 +225,7 @@ export function ModelCombobox({
   placeholder = 'Type or select a model...',
   disabled = false,
   className,
+  onOpenChange,
 }: ModelComboboxProps) {
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(value)
@@ -241,6 +239,11 @@ export function ModelCombobox({
   useEffect(() => {
     setInputValue(value)
   }, [value])
+
+  // Notify parent when open state changes
+  useEffect(() => {
+    onOpenChange?.(open)
+  }, [open, onOpenChange])
 
   // Hook for the dropdown position
   const { dropdownPosition } = useDropdownPosition(open, containerRef)
