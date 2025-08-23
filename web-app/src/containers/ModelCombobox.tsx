@@ -137,7 +137,6 @@ function useKeyboardNavigation(
   onModelSelect: (model: string) => void,
   dropdownRef: React.RefObject<HTMLDivElement | null>
 ) {
-  const keyRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Scroll to the highlighted element
   useEffect(() => {
@@ -203,16 +202,6 @@ function useKeyboardNavigation(
         break
     }
   }, [open, setOpen, models.length, filteredModels, highlightedIndex, setHighlightedIndex, onModelSelect])
-
-  // Cleanup the timeout
-  useEffect(() => {
-    const timeoutId = keyRepeatTimeoutRef.current
-    return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
-    }
-  }, [])
 
   return { handleKeyDown }
 }
