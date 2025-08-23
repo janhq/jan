@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchModelsFromProvider } from '@/services/providers'
-import type { ModelProvider } from '@/types/providers'
 
 type UseProviderModelsState = {
   models: string[]
