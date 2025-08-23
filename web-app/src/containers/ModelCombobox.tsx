@@ -196,6 +196,11 @@ function useKeyboardNavigation(
         e.preventDefault()
         setHighlightedIndex(filteredModels.length - 1)
         break
+      case 'Escape':
+        e.preventDefault()
+        setOpen(false)
+        setHighlightedIndex(-1)
+        break
     }
   }, [open, setOpen, models.length, filteredModels, highlightedIndex, setHighlightedIndex, onModelSelect])
 
