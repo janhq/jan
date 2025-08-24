@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { PlatformFeatures } from '@/lib/platform'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
@@ -25,7 +26,17 @@ const SettingsMenu = () => {
   const { providers } = useModelProvider()
 
   // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
-  const activeProviders = providers.filter((provider) => provider.active)
+  // On web: exclude llamacpp provider as it's not available
+  const activeProviders = providers.filter((provider) => {
+    if (!provider.active) return false
+    
+    // On web version, hide llamacpp provider
+    if (!PlatformFeatures.localInference && provider.provider === 'llama.cpp') {
+      return false
+    }
+    
+    return true
+  })
 
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
@@ -51,18 +62,22 @@ const SettingsMenu = () => {
       match.search.step === 'setup_remote_provider'
   )
 
-  const menuSettings = [
+  // Base settings available on all platforms
+  const baseMenuSettings = [
     {
       title: 'common:general',
       route: route.settings.general,
+      hasSubMenu: false,
     },
     {
       title: 'common:appearance',
       route: route.settings.appearance,
+      hasSubMenu: false,
     },
     {
       title: 'common:privacy',
       route: route.settings.privacy,
+      hasSubMenu: false,
     },
     {
       title: 'common:modelProviders',
@@ -72,27 +87,43 @@ const SettingsMenu = () => {
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
+      hasSubMenu: false,
     },
-    {
+  ]
+
+  // Desktop-only settings (hidden on web)
+  const desktopOnlySettings = [
+    ...(PlatformFeatures.hardwareMonitoring ? [{
       title: 'common:hardware',
       route: route.settings.hardware,
-    },
-    {
+      hasSubMenu: false,
+    }] : []),
+    ...(PlatformFeatures.mcpServers ? [{
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
-    },
-    {
+      hasSubMenu: false,
+    }] : []),
+    ...(PlatformFeatures.localApiServer ? [{
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
-    },
-    {
+      hasSubMenu: false,
+    }] : []),
+    ...(PlatformFeatures.httpsProxy ? [{
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
-    },
-    {
+      hasSubMenu: false,
+    }] : []),
+    ...(PlatformFeatures.extensionManagement ? [{
       title: 'common:extensions',
       route: route.settings.extensions,
-    },
+      hasSubMenu: false,
+    }] : []),
+  ]
+
+  // Combine settings based on platform
+  const menuSettings = [
+    ...baseMenuSettings,
+    ...desktopOnlySettings,
   ]
 
   const toggleProvidersExpansion = () => {

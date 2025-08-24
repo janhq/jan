@@ -1,10 +1,53 @@
 import { isDev } from '@/lib/utils'
-import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
-import { emit } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { stopAllModels } from '@/services/models'
+import { isPlatformTauri } from '@/lib/platform'
+import type { TauriUpdater, TauriEventEmitter, UpdateCheckResult, UpdateProgressEvent } from '@/types/tauri'
+
+// Dynamic imports for Tauri APIs with type adapters
+let check: TauriUpdater['check'] | null = null
+let emit: TauriEventEmitter['emit'] | null = null
+
+// Type adapter to convert Tauri Update to our UpdateCheckResult type
+const adaptTauriUpdate = (tauriUpdate: unknown): UpdateCheckResult | null => {
+  if (!tauriUpdate || typeof tauriUpdate !== 'object') return null
+  
+  const update = tauriUpdate as Record<string, unknown>
+  const manifest = update.manifest as Record<string, unknown> | undefined
+  
+  return {
+    manifest: manifest ? {
+      version: String(manifest.version || ''),
+      date: String(manifest.date || ''),
+      body: String(manifest.body || '')
+    } : undefined,
+    shouldUpdate: Boolean(manifest),
+    version: String(update.version || manifest?.version || ''),
+    downloadAndInstall: update.downloadAndInstall as ((onProgress?: (event: UpdateProgressEvent) => void) => Promise<void>) | undefined
+  }
+}
+
+if (isPlatformTauri()) {
+  import('@tauri-apps/plugin-updater').then(module => {
+    check = async () => {
+      const result = await module.check()
+      return adaptTauriUpdate(result)
+    }
+  }).catch(() => {
+    console.warn('Failed to load Tauri updater module')
+  })
+  
+  import('@tauri-apps/api/event').then(module => {
+    emit = module.emit
+  }).catch(() => {
+    console.warn('Failed to load Tauri event module')
+  })
+}
+
+// Type for update result  
+type Update = UpdateCheckResult
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -72,7 +115,7 @@ export const useAppUpdater = () => {
           syncStateToOtherInstances(newState)
         }
 
-        if (!isDev()) {
+        if (!isDev() && check) {
           // Production mode - use actual Tauri updater
           const update = await check()
 
@@ -169,13 +212,15 @@ export const useAppUpdater = () => {
       let downloaded = 0
       let contentLength = 0
       await stopAllModels()
-      emit(SystemEvent.KILL_SIDECAR)
+      if (emit) {
+        emit(SystemEvent.KILL_SIDECAR)
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      await updateState.updateInfo.downloadAndInstall((event) => {
+      await updateState.updateInfo.downloadAndInstall?.((event: UpdateProgressEvent) => {
         switch (event.event) {
           case 'Started':
-            contentLength = event.data.contentLength || 0
+            contentLength = event.data?.contentLength || 0
             setUpdateState((prev) => ({
               ...prev,
               totalBytes: contentLength,
@@ -190,7 +235,7 @@ export const useAppUpdater = () => {
             })
             break
           case 'Progress': {
-            downloaded += event.data.chunkLength
+            downloaded += event.data?.chunkLength || 0
             const progress = contentLength > 0 ? downloaded / contentLength : 0
             setUpdateState((prev) => ({
               ...prev,

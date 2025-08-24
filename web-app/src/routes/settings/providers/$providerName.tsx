@@ -4,7 +4,19 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
-import { open } from '@tauri-apps/plugin-dialog'
+import { isPlatformTauri } from '@/lib/platform'
+import type { TauriDialog } from '@/types/tauri'
+
+// Dynamic import for Tauri dialog plugin
+let open: TauriDialog['open'] | null = null
+
+if (isPlatformTauri()) {
+  import('@tauri-apps/plugin-dialog').then(module => {
+    open = module.open
+  }).catch(() => {
+    console.warn('Failed to load Tauri dialog module')
+  })
+}
 import {
   getActiveModels,
   pullModel,
@@ -101,6 +113,13 @@ function ProviderDetail() {
     if (!provider) {
       return
     }
+    
+    // Check if file dialog is available (Tauri only)
+    if (!open) {
+      console.warn('File dialog not available in web version')
+      alert('File import is not available in the web version. Please use the desktop app to import models.')
+      return
+    }
 
     setImportingModel(true)
     const selectedFile = await open({
@@ -128,7 +147,7 @@ function ProviderDetail() {
       }
 
       try {
-        await pullModel(fileName, selectedFile)
+        await pullModel(fileName as string, Array.isArray(selectedFile) ? selectedFile[0] : selectedFile)
         // Refresh the provider to update the models list
         await getProviders().then(setProviders)
         toast.success(t('providers:import'), {

@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
@@ -24,6 +26,14 @@ export const Route = createFileRoute(route.settings.hardware as any)({
 })
 
 function Hardware() {
+  return (
+    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
+      <HardwareContent />
+    </PlatformGuard>
+  )
+}
+
+function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const {

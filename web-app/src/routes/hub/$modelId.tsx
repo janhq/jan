@@ -31,6 +31,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 type SearchParams = {
   repo: string
@@ -39,11 +41,19 @@ type SearchParams = {
 const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute('/hub/$modelId')({
-  component: HubModelDetail,
+  component: HubModelDetailGuarded,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
   }),
 })
+
+function HubModelDetailGuarded() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubModelDetail />
+    </PlatformGuard>
+  )
+}
 
 function HubModelDetail() {
   const { modelId } = useParams({ from: Route.id })

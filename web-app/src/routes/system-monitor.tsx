@@ -10,10 +10,20 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { getSystemUsage } from '@/services/hardware'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
-  component: SystemMonitor,
+  component: SystemMonitorGuarded,
 })
+
+function SystemMonitorGuarded() {
+  return (
+    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
+      <SystemMonitor />
+    </PlatformGuard>
+  )
+}
 
 function SystemMonitor() {
   const { t } = useTranslation()

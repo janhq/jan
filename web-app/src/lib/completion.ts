@@ -11,8 +11,15 @@ import {
   chatCompletionChunk,
   Tool,
 } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { isPlatformTauri } from '@/lib/platform'
+import { getPlatformFetch } from '@/lib/platform/fetch'
+
+// Only import Tauri APIs for desktop version
+let invoke: any
+
+if (isPlatformTauri()) {
+  invoke = (await import('@tauri-apps/api/core')).invoke
+}
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -170,12 +177,18 @@ export const sendCompletion = async (
   if (!Object.keys(models).some((key) => key === providerName))
     providerName = 'openai-compatible'
 
+  // Get API key - use Tauri token service for desktop, provider key for web
+  let apiKey = provider.api_key
+  if (!apiKey && isPlatformTauri() && invoke) {
+    apiKey = await invoke('app_token')
+  }
+  
   const tokenJS = new TokenJS({
-    apiKey: provider.api_key ?? (await invoke('app_token')),
+    apiKey,
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
-    // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
-    ...(providerName === 'openai-compatible' && { fetch: fetchTauri }),
+    // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider on desktop
+    ...(providerName === 'openai-compatible' && { fetch: getPlatformFetch() }),
     // OpenRouter identification headers for Jan
     // ref: https://openrouter.ai/docs/api-reference/overview#headers
     ...(provider.provider === 'openrouter' && {

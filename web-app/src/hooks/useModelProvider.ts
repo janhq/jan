@@ -1,8 +1,18 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { sep } from '@tauri-apps/api/path'
 import { modelSettings } from '@/lib/predefined'
+import { isPlatformTauri } from '@/lib/platform'
+
+// Dynamic import for Tauri path separator
+let pathSep = '/'
+if (isPlatformTauri()) {
+  import('@tauri-apps/api/path').then(module => {
+    pathSep = module.sep()
+  }).catch(() => {
+    console.warn('Failed to load Tauri path module, using fallback separator')
+  })
+}
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -55,13 +65,18 @@ export const useModelProvider = create<ModelProviderState>()(
 
           let legacyModels: Model[] | undefined = []
           /// Cortex Migration
-          if (
-            localStorage.getItem('cortex_model_settings_migrated') !== 'true'
-          ) {
-            legacyModels = state.providers.find(
-              (e) => e.provider === 'llama.cpp'
-            )?.models
-            localStorage.setItem('cortex_model_settings_migrated', 'true')
+          try {
+            if (
+              localStorage.getItem('cortex_model_settings_migrated') !== 'true'
+            ) {
+              legacyModels = state.providers.find(
+                (e) => e.provider === 'llama.cpp'
+              )?.models
+              localStorage.setItem('cortex_model_settings_migrated', 'true')
+            }
+          } catch (error) {
+            console.warn('LocalStorage access failed for migration, skipping migration:', error)
+            // Fallback: assume migration was completed to avoid repeated attempts
           }
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
@@ -93,7 +108,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   ? legacyModels
                   : models
                 ).find(
-                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                  (m) => m.id.split(':').slice(0, 2).join(pathSep) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {

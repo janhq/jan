@@ -10,10 +10,21 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
 import { useAssistant } from '@/hooks/useAssistant'
 import { getAssistants } from '@/services/assistants'
-import {
-  onOpenUrl,
-  getCurrent as getCurrentDeepLinkUrls,
-} from '@tauri-apps/plugin-deep-link'
+import { isPlatformTauri } from '@/lib/platform'
+import { Assistant as CoreAssistant } from '@janhq/core'
+
+// Dynamic import for Tauri deep link plugin
+let onOpenUrl: ((handler: (urls: string[]) => void) => Promise<unknown>) | null = null
+let getCurrentDeepLinkUrls: (() => Promise<string[] | null>) | null = null
+
+if (isPlatformTauri()) {
+  import('@tauri-apps/plugin-deep-link').then(module => {
+    onOpenUrl = module.onOpenUrl
+    getCurrentDeepLinkUrls = module.getCurrent
+  }).catch(() => {
+    console.warn('Failed to load Tauri deep link module')
+  })
+}
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
@@ -31,6 +42,17 @@ export function DataProvider() {
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
+  
+  // Type adapter to convert CoreAssistant to local Assistant type
+  const adaptCoreAssistant = (coreAssistant: CoreAssistant): Assistant => ({
+    avatar: coreAssistant.avatar,
+    id: coreAssistant.id,
+    name: coreAssistant.name,
+    created_at: coreAssistant.created_at || Date.now(),
+    description: coreAssistant.description,
+    instructions: coreAssistant.instructions || '',
+    parameters: (coreAssistant as Record<string, unknown>).parameters as Record<string, unknown> || {}
+  })
   const { setThreads } = useThreads()
   const navigate = useNavigate()
 
@@ -55,15 +77,24 @@ export function DataProvider() {
       .then((data) => {
         // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
-          setAssistants(data as unknown as Assistant[])
+          const adaptedAssistants = data.map(adaptCoreAssistant)
+          setAssistants(adaptedAssistants)
           initializeWithLastUsed()
         }
       })
       .catch((error) => {
         console.warn('Failed to load assistants, keeping default:', error)
       })
-    getCurrentDeepLinkUrls().then(handleDeepLink)
-    onOpenUrl(handleDeepLink)
+    
+    // Set up deep link handling only on Tauri platform
+    if (getCurrentDeepLinkUrls && onOpenUrl) {
+      getCurrentDeepLinkUrls().then((urls) => handleDeepLink(urls || [])).catch((error: unknown) => {
+        console.warn('Failed to get current deep link URLs:', error)
+      })
+      onOpenUrl(handleDeepLink).catch((error: unknown) => {
+        console.warn('Failed to set up deep link listener:', error)
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -2,7 +2,19 @@ import { create } from 'zustand'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import { Fzf } from 'fzf'
-import { sep } from '@tauri-apps/api/path'
+import { isPlatformTauri } from '@/lib/platform'
+
+// Removed unused function - using pathSep variable directly
+
+// Dynamic import for Tauri path separator
+let pathSep = '/'
+if (isPlatformTauri()) {
+  import('@tauri-apps/api/path').then(module => {
+    pathSep = module.sep()
+  }).catch(() => {
+    console.warn('Failed to load Tauri path module, using fallback separator')
+  })
+}
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -47,7 +59,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
                 id:
                   thread.model.provider === 'llama.cpp' ||
                   thread.model.provider === 'llamacpp'
-                    ? thread.model?.id.split(':').slice(0, 2).join(sep())
+                    ? thread.model?.id.split(':').slice(0, 2).join(pathSep)
                     : thread.model?.id,
               }
             : undefined,

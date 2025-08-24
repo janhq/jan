@@ -8,11 +8,21 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { ExtensionManager } from '@/lib/extension'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.extensions as any)({
-  component: Extensions,
+  component: ExtensionsGuarded,
 })
+
+function ExtensionsGuarded() {
+  return (
+    <PlatformGuard feature={PlatformFeature.EXTENSION_MANAGEMENT}>
+      <Extensions />
+    </PlatformGuard>
+  )
+}
 
 function Extensions() {
   const { t } = useTranslation()

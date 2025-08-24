@@ -54,6 +54,8 @@ import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 type ModelProps = {
   model: CatalogModel
@@ -71,6 +73,14 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubContent />
+    </PlatformGuard>
+  )
+}
+
+function HubContent() {
   const parentRef = useRef(null)
   const { huggingfaceToken } = useGeneralSetting()
 
@@ -407,6 +417,7 @@ function Hub() {
     addLocalDownloadingModel,
     t,
     handleUseModel,
+    huggingfaceToken,
   ])
 
   const { step } = useSearch({ from: Route.id })

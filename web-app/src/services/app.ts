@@ -1,6 +1,12 @@
 import { AppConfiguration } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
 import { stopAllModels } from './models'
+import { isPlatformTauri } from '@/lib/platform'
+
+// Only import Tauri for desktop version
+let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | undefined
+if (isPlatformTauri()) {
+  invoke = (await import('@tauri-apps/api/core')).invoke
+}
 
 /**
  * @description This function is used to reset the app to its factory settings.
@@ -11,7 +17,28 @@ export const factoryReset = async () => {
   // Kill background processes and remove data folder
   await stopAllModels()
   window.localStorage.clear()
-  await invoke('factory_reset')
+  
+  if (isPlatformTauri() && invoke) {
+    await invoke('factory_reset')
+  } else {
+    // Web version: clear IndexedDB and reload
+    if ('indexedDB' in window) {
+      const databases = await indexedDB.databases()
+      await Promise.all(
+        databases.map(db => {
+          if (db.name) {
+            const deleteReq = indexedDB.deleteDatabase(db.name)
+            return new Promise((resolve, reject) => {
+              deleteReq.onsuccess = () => resolve(undefined)
+              deleteReq.onerror = () => reject(deleteReq.error)
+            })
+          }
+          return Promise.resolve()
+        })
+      )
+    }
+    window.location.reload()
+  }
 }
 
 /**
@@ -20,8 +47,20 @@ export const factoryReset = async () => {
  * @returns
  */
 export const readLogs = async () => {
-  const logData: string = (await invoke('read_logs')) ?? ''
-  return logData.split('\n').map(parseLogLine)
+  if (isPlatformTauri() && invoke) {
+    const logData: string = ((await invoke('read_logs')) as string) ?? ''
+    return logData.split('\n').map(parseLogLine)
+  }
+  
+  // Web version: return browser console logs (limited)
+  return [
+    {
+      timestamp: new Date().toISOString(),
+      level: 'info' as const,
+      target: 'web',
+      message: 'Logs not available in web version. Check browser console.'
+    }
+  ]
 }
 
 /**

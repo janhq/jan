@@ -1,6 +1,15 @@
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
+import { isPlatformTauri } from '@/lib/platform'
 
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+// Only import Tauri for desktop version
+let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | undefined
+let convertFileSrc: ((filePath: string, protocol?: string) => string) | undefined
+
+if (isPlatformTauri()) {
+  const tauriCore = await import('@tauri-apps/api/core')
+  invoke = tauriCore.invoke
+  convertFileSrc = tauriCore.convertFileSrc
+}
 
 /**
  * Extension manifest object.
@@ -143,20 +152,25 @@ export class ExtensionManager {
    * @returns An array of extensions.
    */
   async getActive(): Promise<Extension[]> {
-    const res = await invoke('get_active_extensions')
-    if (!res || !Array.isArray(res)) return []
+    if (isPlatformTauri() && invoke) {
+      const res = await invoke('get_active_extensions')
+      if (!res || !Array.isArray(res)) return []
 
-    const extensions: Extension[] = res.map((ext: ExtensionManifest) => {
-      return new Extension(
-        ext.url,
-        ext.name,
-        ext.productName,
-        ext.active,
-        ext.description,
-        ext.version
-      )
-    })
-    return extensions
+      const extensions: Extension[] = res.map((ext: ExtensionManifest) => {
+        return new Extension(
+          ext.url,
+          ext.name,
+          ext.productName,
+          ext.active,
+          ext.description,
+          ext.version
+        )
+      })
+      return extensions
+    }
+    
+    // Web version: return empty array, extensions are pre-loaded by PlatformExtensionManager
+    return []
   }
 
   /**
@@ -165,29 +179,32 @@ export class ExtensionManager {
    * @returns {void}
    */
   async activateExtension(extension: Extension) {
-    // Import class
-    const extensionUrl = extension.url
-    await import(/* @vite-ignore */ convertFileSrc(extensionUrl)).then(
-      (extensionClass) => {
-        // Register class if it has a default export
-        if (
-          typeof extensionClass.default === 'function' &&
-          extensionClass.default.prototype
-        ) {
-          this.register(
-            extension.name,
-            new extensionClass.default(
-              extension.url,
+    if (isPlatformTauri() && convertFileSrc) {
+      // Desktop version: dynamically import from filesystem
+      const extensionUrl = extension.url
+      await import(/* @vite-ignore */ convertFileSrc(extensionUrl)).then(
+        (extensionClass) => {
+          // Register class if it has a default export
+          if (
+            typeof extensionClass.default === 'function' &&
+            extensionClass.default.prototype
+          ) {
+            this.register(
               extension.name,
-              extension.productName,
-              extension.active,
-              extension.description,
-              extension.version
+              new extensionClass.default(
+                extension.url,
+                extension.name,
+                extension.productName,
+                extension.active,
+                extension.description,
+                extension.version
+              )
             )
-          )
+          }
         }
-      }
-    )
+      )
+    }
+    // Web version: extensions are pre-registered by PlatformExtensionManager
   }
 
   /**
@@ -212,14 +229,21 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    const res = (await invoke('install_extension', {
-      extensions,
-    })) as ExtensionManifest[]
-    return res.map(async (ext: ExtensionManifest) => {
-      const extension = new Extension(ext.name, ext.url)
-      await this.activateExtension(extension)
-      return extension
-    })
+    
+    if (isPlatformTauri() && invoke) {
+      const res = (await invoke('install_extension', {
+        extensions,
+      })) as ExtensionManifest[]
+      return res.map(async (ext: ExtensionManifest) => {
+        const extension = new Extension(ext.name, ext.url)
+        await this.activateExtension(extension)
+        return extension
+      })
+    }
+    
+    // Web version: extension installation not supported
+    console.warn('Extension installation not supported in web version')
+    return []
   }
 
   /**
@@ -232,7 +256,14 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    return invoke('uninstall_extension', { extensions, reload })
+    
+    if (isPlatformTauri() && invoke) {
+      return invoke('uninstall_extension', { extensions, reload })
+    }
+    
+    // Web version: extension uninstallation not supported
+    console.warn('Extension uninstallation not supported in web version')
+    return Promise.resolve(false)
   }
 
   /**

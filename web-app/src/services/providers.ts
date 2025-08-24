@@ -5,7 +5,7 @@ import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { fetchModels, isToolSupported } from './models'
 import { ExtensionManager } from '@/lib/extension'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { platformFetch } from '@/lib/platform/fetch'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = predefinedProviders.map((provider) => {
@@ -128,8 +128,8 @@ export const fetchModelsFromProvider = async (
       headers['Authorization'] = `Bearer ${provider.api_key}`
     }
 
-    // Always use Tauri's fetch to avoid CORS issues
-    const response = await fetchTauri(`${provider.base_url}/models`, {
+    // Use platform-aware fetch (Tauri on desktop, browser on web)
+    const response = await platformFetch(`${provider.base_url}/models`, {
       method: 'GET',
       headers,
     })

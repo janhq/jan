@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/resizable'
 import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 
@@ -196,17 +197,67 @@ function RootLayout() {
       <AppearanceProvider />
       <ToasterProvider />
       <TranslationProvider>
-        <ExtensionProvider>
-          <DataProvider />
-          <GlobalEventHandler />
-        </ExtensionProvider>
-        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-        {/* <TanStackRouterDevtools position="bottom-right" /> */}
-        <ToolApproval />
-        <LoadModelErrorDialog />
-        <ErrorDialog />
-        <OutOfContextPromiseModal />
+        <ErrorBoundary
+          onError={(error, errorInfo) => {
+            console.error('Application Error:', error, errorInfo)
+            // Could integrate with error reporting service here
+          }}
+        >
+          <ExtensionProvider>
+            <DataProvider />
+            <GlobalEventHandler />
+          </ExtensionProvider>
+          {isLocalAPIServerLogsRoute ? (
+            <ErrorBoundary fallback={<LogsErrorFallback />}>
+              <LogsLayout />
+            </ErrorBoundary>
+          ) : (
+            <ErrorBoundary fallback={<AppErrorFallback />}>
+              <AppLayout />
+            </ErrorBoundary>
+          )}
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+          <LoadModelErrorDialog />
+          <ErrorDialog />
+          <OutOfContextPromiseModal />
+        </ErrorBoundary>
       </TranslationProvider>
     </Fragment>
   )
 }
+
+// Error fallback components
+const AppErrorFallback = () => (
+  <div className="h-svh flex items-center justify-center bg-app">
+    <div className="text-center p-8">
+      <h2 className="text-xl font-semibold mb-4">Application Error</h2>
+      <p className="mb-4 text-muted-foreground">
+        The main application encountered an error. Please try refreshing the page.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+      >
+        Refresh Application
+      </button>
+    </div>
+  </div>
+)
+
+const LogsErrorFallback = () => (
+  <div className="h-svh flex items-center justify-center bg-app">
+    <div className="text-center p-8">
+      <h2 className="text-xl font-semibold mb-4">Logs View Error</h2>
+      <p className="mb-4 text-muted-foreground">
+        The logs view encountered an error.
+      </p>
+      <button
+        onClick={() => window.location.href = '/'}
+        className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+      >
+        Return to Main App
+      </button>
+    </div>
+  </div>
+)

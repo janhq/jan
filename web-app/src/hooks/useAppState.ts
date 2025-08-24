@@ -29,6 +29,7 @@ type AppState = {
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
+  removeAbortController: (threadId: string) => void
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   resetTokenSpeed: () => void
   setOutOfContextDialog: (show: boolean) => void
@@ -46,8 +47,9 @@ export const useAppState = create<AppState>()((set) => ({
   currentToolCall: undefined,
   cancelToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
-    const assistants = useAssistant.getState().assistants
-    const currentAssistant = useAssistant.getState().currentAssistant
+    // Get assistant state once to avoid race conditions
+    const assistantState = useAssistant.getState()
+    const { assistants, currentAssistant } = assistantState
 
     const selectedAssistant =
       assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
@@ -78,12 +80,36 @@ export const useAppState = create<AppState>()((set) => ({
   },
   setServerStatus: (value) => set({ serverStatus: value }),
   setAbortController: (threadId, controller) => {
-    set((state) => ({
-      abortControllers: {
-        ...state.abortControllers,
-        [threadId]: controller,
-      },
-    }))
+    set((state) => {
+      // Cleanup existing controller before setting new one
+      const existingController = state.abortControllers[threadId]
+      if (existingController && !existingController.signal.aborted) {
+        existingController.abort('Replaced by new controller')
+      }
+
+      return {
+        abortControllers: {
+          ...state.abortControllers,
+          [threadId]: controller,
+        },
+      }
+    })
+  },
+  removeAbortController: (threadId) => {
+    set((state) => {
+      // Abort the controller if it's still active
+      const controller = state.abortControllers[threadId]
+      if (controller && !controller.signal.aborted) {
+        controller.abort('Thread completed')
+      }
+
+      // Remove from state
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [threadId]: _, ...remainingControllers } = state.abortControllers
+      return {
+        abortControllers: remainingControllers,
+      }
+    })
   },
   updateTokenSpeed: (message, increment = 1) =>
     set((state) => {

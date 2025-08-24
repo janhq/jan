@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
@@ -88,6 +90,14 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MCP_SERVERS}>
+      <MCPServersContent />
+    </PlatformGuard>
+  )
+}
+
+function MCPServersContent() {
   const { t } = useTranslation()
   const {
     mcpServers,

@@ -1,6 +1,7 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
+import { PlatformFeatures } from '@/lib/platform'
 import {
   IconLayoutSidebar,
   IconDots,
@@ -44,7 +45,7 @@ import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 
-const mainMenus = [
+const baseMainMenus = [
   {
     title: 'common:newChat',
     icon: IconCirclePlusFilled,
@@ -56,15 +57,27 @@ const mainMenus = [
     route: route.assistant,
   },
   {
-    title: 'common:hub',
-    icon: IconAppsFilled,
-    route: route.hub.index,
-  },
-  {
     title: 'common:settings',
     icon: IconSettingsFilled,
     route: route.settings.general,
   },
+]
+
+const desktopOnlyMenus = [
+  {
+    title: 'common:hub',
+    icon: IconAppsFilled,
+    route: route.hub.index,
+  },
+]
+
+// Combine menus based on platform
+const mainMenus = [
+  baseMainMenus[0], // New Chat
+  baseMainMenus[1], // Assistants
+  // Only include hub on desktop (not web)
+  ...(PlatformFeatures.modelHub ? desktopOnlyMenus : []),
+  baseMainMenus[2], // Settings (always last)
 ]
 
 const LeftPanel = () => {
