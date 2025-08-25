@@ -1,13 +1,11 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::convert::TryFrom;
-use std::fs::File;
 use std::io::{self, BufReader, Read, Seek};
-use std::path::Path;
 
 use super::types::{GgufMetadata, GgufValueType};
 
-pub fn read_gguf_metadata<P: AsRef<Path>>(path: P) -> io::Result<GgufMetadata> {
-    let mut file = BufReader::new(File::open(path)?);
+pub fn read_gguf_metadata<R: Read + Seek>(reader: R) -> io::Result<GgufMetadata> {
+    let mut file = BufReader::new(reader);
 
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;

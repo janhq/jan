@@ -30,5 +30,6 @@
   "createNew": "建立新助理",
   "personality": "個性",
   "capabilities": "能力",
+  "instructionsDateHint": "提示：使用 {{current_date}} 插入今天的日期。",
   "maxToolSteps": "最大工具步驟"
 }

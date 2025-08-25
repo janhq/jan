@@ -21,6 +21,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useAppState } from '@/hooks/useAppState'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -120,6 +121,7 @@ function MCPServers() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
+  const { setErrorMessage } = useAppState()
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -247,13 +249,13 @@ function MCPServers() {
             getConnectedServers().then(setConnectedServers)
           })
           .catch((error) => {
-            console.log(error, 'error.mcp')
             editServer(serverKey, {
               ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
               active: false,
             })
-            toast.error(error, {
-              description: t('mcp-servers:checkParams'),
+            setErrorMessage({
+              message: error,
+              subtitle: t('mcp-servers:checkParams'),
             })
           })
           .finally(() => {

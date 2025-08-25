@@ -23,12 +23,13 @@ sysinfo = "0.34.2"
 tauri = { version = "2.5.0", default-features = false, features = [] }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 
-# Unix-specific dependencies  
+# Unix-specific dependencies
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process"] }
 

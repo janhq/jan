@@ -1,0 +1,68 @@
+{
+  "joyride": {
+    "chooseProviderTitle": "Wybierz Dostawcę",
+    "chooseProviderContent": "Wybierz swojego dostawcę i upewnij się, że masz odpowiedni klucz API.",
+    "getApiKeyTitle": "Zdobądź Swój Klucz API",
+    "getApiKeyContent": "Zaloguj się do panelu sterowania swojego dostawcy i znajdź lub wygeneruj swój klucz API.",
+    "insertApiKeyTitle": "Wprowadź Swój Klucz API",
+    "insertApiKeyContent": "Wprowadź swój klucz API, następnie połącz się z dostawcą i go aktywuj.",
+    "back": "Wstecz",
+    "close": "Zamknij",
+    "last": "Ostatni",
+    "next": "Dalej",
+    "skip": "Pomiń"
+  },
+  "refreshModelsError": "Dostawca musi mieć ustawiony adres URL i klucz API aby pobrać modele.",
+  "refreshModelsSuccess": "Dodano {{count}} model-e/i od dostawcy {{provider}}.",
+  "noNewModels": "Nie znaleziono nowych modeli. Wszystkie modele są już dodane.",
+  "refreshModelsFailed": "Nie udało się pobrać modeli od dostawcy {{provider}}. Proszę sprawdzić poprawność klucza API i adresu URL.",
+  "models": "Modele",
+  "refreshing": "Odświeżanie…",
+  "refresh": "Odśwież",
+  "import": "Importuj",
+  "importModelSuccess": "Pomyślnie zaimportowano model dostawcy {{provider}}.",
+  "importModelError": "Nie udało się zaimportować modelu:",
+  "stop": "Zatrzymaj",
+  "start": "Uruchom",
+  "noModelFound": "Brak modeli",
+  "noModelFoundDesc": "Tutaj będą wymienione dostępne modele. Odwiedź Centrum Modeli żeby jakiś pobrać.",
+  "configuration": "Ustawienia",
+  "apiEndpoint": "Punkt Końcowy API",
+  "testConnection": "Sprawdź Połączenie",
+  "addModel": {
+    "title": "Dodaj Nowy Model",
+    "description": "Dodaj nowy model do dostawcy {{provider}}.",
+    "modelId": "Identyfikator Modelu",
+    "enterModelId": "Wprowadź identyfikator modelu",
+    "exploreModels": "Zobacz listę modeli dostawcy {{provider}}",
+    "addModel": "Dodaj Model"
+  },
+  "deleteModel": {
+    "title": "Usuń Model: {{modelId}}",
+    "description": "Na pewno chcesz usunąć ten model? Tej operacji nie można cofnąć.",
+    "success": "Model {{modelId}} został usunięty.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "deleteProvider": {
+    "title": "Usuń Dostawcę",
+    "description": "Usuń dostawcę i wszystkie jego modele. Tej operacji nie można cofnąć.",
+    "success": "Dostawca {{provider}} został usunięty.",
+    "confirmTitle": "Usuń Dostawcę: {{provider}}",
+    "confirmDescription": "Na pewno chcesz usunąć tego dostawcę? Tej operacji nie można cofnąć.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "editModel": {
+    "title": "Edytuj Model: {{modelId}}",
+    "description": "Ustaw możliwości modelu za pomocą poniższych przełączników.",
+    "capabilities": "Możliwości",
+    "tools": "Narzędzia",
+    "vision": "Wizja",
+    "embeddings": "Osadzenia",
+    "notAvailable": "Jeszcze nie dostępne"
+  },
+  "addProvider": "Dodaj Dostawcę",
+  "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
+  "enterNameForProvider": "Wprowadź nazwę dostawcy"
+}

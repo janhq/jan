@@ -29,6 +29,7 @@ import {
 import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -203,6 +204,7 @@ function RootLayout() {
         {/* <TanStackRouterDevtools position="bottom-right" /> */}
         <ToolApproval />
         <LoadModelErrorDialog />
+        <ErrorDialog />
         <OutOfContextPromiseModal />
       </TranslationProvider>
     </Fragment>

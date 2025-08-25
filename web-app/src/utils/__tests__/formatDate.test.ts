@@ -38,7 +38,7 @@ describe('formatDate', () => {
       '2023-12-01T12:00:00Z'
     ]
     
-    const formatted = dates.map(formatDate)
+    const formatted = dates.map((d) => formatDate(d))
     
     expect(formatted[0]).toMatch(/Jan.*1.*2023/i)
     expect(formatted[1]).toMatch(/Feb.*1.*2023/i)
@@ -80,5 +80,24 @@ describe('formatDate', () => {
     expect(formatted).toMatch(/Jul.*4.*2023/i)
     // Should include abbreviated month name
     expect(formatted).toMatch(/Jul/i)
+  })
+
+  it('supports date-only formatting when includeTime=false', () => {
+    const date = '2023-07-04T12:00:00Z'
+    const formatted = formatDate(date, { includeTime: false })
+
+    // Long month, no time
+    expect(formatted).toMatch(/July.*4.*2023/i)
+    expect(formatted).not.toMatch(/\d{1,2}:\d{2}/i)
+    expect(formatted).not.toMatch(/(AM|PM)/i)
+  })
+
+  it('date-only formatting includes a year and omits time across edge cases', () => {
+    const oldDate = '1900-01-01T00:00:00Z'
+    const formatted = formatDate(oldDate, { includeTime: false })
+
+    expect(formatted).toMatch(/\d{4}/)
+    expect(formatted).not.toMatch(/\d{1,2}:\d{2}/i)
+    expect(formatted).not.toMatch(/(AM|PM)/i)
   })
 })

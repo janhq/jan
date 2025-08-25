@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
@@ -19,6 +20,7 @@ pub struct DeviceInfo {
 pub async fn get_devices_from_backend(
     backend_path: &str,
     library_path: Option<&str>,
+    envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
     log::info!("Getting devices from server at path: {:?}", backend_path);
 
@@ -27,6 +29,7 @@ pub async fn get_devices_from_backend(
     // Configure the command to run the server with --list-devices
     let mut command = Command::new(backend_path);
     command.arg("--list-devices");
+    command.envs(envs);
 
     // Set up library path
     setup_library_path(library_path, &mut command);

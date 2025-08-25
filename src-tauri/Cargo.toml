@@ -44,7 +44,7 @@ jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "209dbac50f51737ad953c3a2c8e28f3619b6c277", features = [
+rmcp = { version = "0.6.0", features = [
     "client",
     "transport-sse-client",
     "transport-streamable-http-client",

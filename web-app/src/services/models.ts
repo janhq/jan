@@ -62,6 +62,11 @@ export interface HuggingFaceRepo {
     rfilename: string
     size?: number
     blobId?: string
+    lfs?: {
+      sha256: string
+      size: number
+      pointerSize: number
+    }
   }>
   readme?: string
 }
@@ -126,7 +131,7 @@ export const fetchHuggingFaceRepo = async (
     }
 
     const response = await fetch(
-      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true`,
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
       {
         headers: hfToken
           ? {
@@ -237,12 +242,101 @@ export const updateModel = async (
 export const pullModel = async (
   id: string,
   modelPath: string,
-  mmprojPath?: string
+  modelSha256?: string,
+  modelSize?: number,
+  mmprojPath?: string,
+  mmprojSha256?: string,
+  mmprojSize?: number
 ) => {
   return getEngine()?.import(id, {
     modelPath,
     mmprojPath,
+    modelSha256,
+    modelSize,
+    mmprojSha256,
+    mmprojSize,
   })
+}
+
+/**
+ * Pull a model with real-time metadata fetching from HuggingFace.
+ * Extracts hash and size information from the model URL for both main model and mmproj files.
+ * @param id The model ID
+ * @param modelPath The model file URL (HuggingFace download URL)
+ * @param mmprojPath Optional mmproj file URL
+ * @param hfToken Optional HuggingFace token for authentication
+ * @returns A promise that resolves when the model download task is created.
+ */
+export const pullModelWithMetadata = async (
+  id: string,
+  modelPath: string,
+  mmprojPath?: string,
+  hfToken?: string
+) => {
+  let modelSha256: string | undefined
+  let modelSize: number | undefined
+  let mmprojSha256: string | undefined
+  let mmprojSize: number | undefined
+
+  // Extract repo ID from model URL
+  // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
+  const modelUrlMatch = modelPath.match(
+    /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
+  )
+
+  if (modelUrlMatch) {
+    const [, repoId, modelFilename] = modelUrlMatch
+
+    try {
+      // Fetch real-time metadata from HuggingFace
+      const repoInfo = await fetchHuggingFaceRepo(repoId, hfToken)
+
+      if (repoInfo?.siblings) {
+        // Find the specific model file
+        const modelFile = repoInfo.siblings.find(
+          (file) => file.rfilename === modelFilename
+        )
+        if (modelFile?.lfs) {
+          modelSha256 = modelFile.lfs.sha256
+          modelSize = modelFile.lfs.size
+        }
+
+        // If mmproj path provided, extract its metadata too
+        if (mmprojPath) {
+          const mmprojUrlMatch = mmprojPath.match(
+            /https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/main\/(.+)/
+          )
+          if (mmprojUrlMatch) {
+            const [, mmprojFilename] = mmprojUrlMatch
+            const mmprojFile = repoInfo.siblings.find(
+              (file) => file.rfilename === mmprojFilename
+            )
+            if (mmprojFile?.lfs) {
+              mmprojSha256 = mmprojFile.lfs.sha256
+              mmprojSize = mmprojFile.lfs.size
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(
+        'Failed to fetch HuggingFace metadata, proceeding without hash verification:',
+        error
+      )
+      // Continue with download even if metadata fetch fails
+    }
+  }
+
+  // Call the original pullModel with the fetched metadata
+  return pullModel(
+    id,
+    modelPath,
+    modelSha256,
+    modelSize,
+    mmprojPath,
+    mmprojSha256,
+    mmprojSize
+  )
 }
 
 /**
@@ -484,4 +578,36 @@ export const checkMmprojExists = async (modelId: string): Promise<boolean> => {
     console.error(`Error checking mmproj for model ${modelId}:`, error)
   }
   return false
+}
+
+/**
+ * Checks if a model is supported by analyzing memory requirements and system resources.
+ * @param modelPath - The path to the model file (local path or URL)
+ * @param ctxSize - The context size for the model (default: 4096)
+ * @returns Promise<'RED' | 'YELLOW' | 'GREEN'> - Support status:
+ *   - 'RED': Model weights don't fit in available memory
+ *   - 'YELLOW': Model weights fit, but KV cache doesn't
+ *   - 'GREEN': Both model weights and KV cache fit in available memory
+ */
+export const isModelSupported = async (
+  modelPath: string,
+  ctxSize?: number
+): Promise<'RED' | 'YELLOW' | 'GREEN'> => {
+  try {
+    const engine = getEngine('llamacpp') as AIEngine & {
+      isModelSupported?: (
+        path: string,
+        ctx_size?: number
+      ) => Promise<'RED' | 'YELLOW' | 'GREEN'>
+    }
+    if (engine && typeof engine.isModelSupported === 'function') {
+      return await engine.isModelSupported(modelPath, ctxSize)
+    }
+    // Fallback if method is not available
+    console.warn('isModelSupported method not available in llamacpp engine')
+    return 'YELLOW' // Conservative fallback
+  } catch (error) {
+    console.error(`Error checking model support for ${modelPath}:`, error)
+    return 'RED' // Error state, assume not supported
+  }
 }

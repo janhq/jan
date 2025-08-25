@@ -1,0 +1,10 @@
+{
+  "welcome": "Cześć, jak się masz?",
+  "description": "Jak mogę Ci pomóc?",
+  "status": {
+    "empty": "Nie znaleziono czatów"
+  },
+  "sendMessage": "Wyślij Wiadomość",
+  "newConversation": "Nowa Rozmowa",
+  "clearHistory": "Wyczyść Historię"
+}
