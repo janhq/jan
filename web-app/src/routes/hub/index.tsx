@@ -394,13 +394,13 @@ function Hub() {
       )
     }
   }, [
+    localDownloadingModels,
     downloadProcesses,
     llamaProvider?.models,
     isRecommendedModel,
-    downloadButtonRef,
-    localDownloadingModels,
-    addLocalDownloadingModel,
     t,
+    addLocalDownloadingModel,
+    huggingfaceToken,
     handleUseModel,
   ])
 
@@ -477,9 +477,9 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    if (searchValue.length === 0)
-      return (
-        <>
+    return (
+      <>
+        {searchValue.length === 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger>
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
@@ -504,17 +504,18 @@ function Hub() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={showOnlyDownloaded}
-              onCheckedChange={setShowOnlyDownloaded}
-            />
-            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-              {t('hub:downloaded')}
-            </span>
-          </div>
-        </>
-      )
+        )}
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showOnlyDownloaded}
+            onCheckedChange={setShowOnlyDownloaded}
+          />
+          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+            {t('hub:downloaded')}
+          </span>
+        </div>
+      </>
+    )
   }
 
   return (
