@@ -541,29 +541,41 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
                 {/* File attachment - show only for models with mmproj */}
                 {hasMmproj && (
-                  <div
-                    className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                    onClick={handleAttachmentClick}
-                  >
-                    <IconPhoto size={18} className="text-main-view-fg/50" />
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      multiple
-                      onChange={handleFileChange}
-                    />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                          onClick={handleAttachmentClick}
+                        >
+                          <IconPhoto
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            className="hidden"
+                            multiple
+                            onChange={handleFileChange}
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('visions')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
                 {/* Microphone - always available - Temp Hide */}
-                {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
               </div> */}
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                           <IconCodeCircle2
                             size={18}
                             className="text-main-view-fg/50"
@@ -607,7 +619,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                                 return (
                                   <div
                                     className={cn(
-                                      'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
                                       isOpen && 'bg-main-view-fg/10'
                                     )}
                                   >
@@ -638,7 +650,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                           <IconWorld
                             size={18}
                             className="text-main-view-fg/50"
@@ -655,7 +667,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                           <IconAtom
                             size={18}
                             className="text-main-view-fg/50"
