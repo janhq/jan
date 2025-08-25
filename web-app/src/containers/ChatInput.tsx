@@ -562,7 +562,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>{t('visions')}</p>
+                        <p>{t('vision')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

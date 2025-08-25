@@ -353,12 +353,7 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(
-          modelId, 
-          modelUrl,
-          mmprojPath,
-          huggingfaceToken
-        )
+        pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
       }
 
       return (
@@ -661,6 +656,18 @@ function Hub() {
                                   defaultModelQuantizations={
                                     defaultModelQuantizations
                                   }
+                                  variant={
+                                    filteredModels[
+                                      virtualItem.index
+                                    ].quants.find((m) =>
+                                      defaultModelQuantizations.some((e) =>
+                                        m.model_id.toLowerCase().includes(e)
+                                      )
+                                    ) ??
+                                    filteredModels[virtualItem.index]
+                                      .quants?.[0]
+                                  }
+                                  isDefaultVariant={true}
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
                                 />
