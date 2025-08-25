@@ -88,6 +88,18 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     }
   }
 
+    const handleRenameThread = (newTitle: string) => {
+    renameThread(thread.id, newTitle)
+    setOpenDropdown(false)
+    toast.success(t('common:toast.renameThread.title'), {
+      id: 'rename-thread',
+      description: t(
+        'common:toast.renameThread.description',
+        { newTitle }
+      ),
+    })
+  }
+
   const plainTitleForRename = useMemo(() => {
     // Basic HTML stripping for simple span tags.
     // If thread.title is undefined or null, treat as empty string before replace.
@@ -183,6 +195,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                     onKeyDown={(e) => {
                       // Prevent key from being captured by parent components
                       e.stopPropagation()
+                      if (e.key === 'Enter' && title.length > 0) {
+                        handleRenameThread(title)
+                      }
                     }}
                   />
                   <DialogFooter className="mt-2 flex items-center">
@@ -198,15 +213,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                     <Button
                       disabled={!title}
                       onClick={() => {
-                        renameThread(thread.id, title)
-                        setOpenDropdown(false)
-                        toast.success(t('common:toast.renameThread.title'), {
-                          id: 'rename-thread',
-                          description: t(
-                            'common:toast.renameThread.description',
-                            { title }
-                          ),
-                        })
+                        handleRenameThread(title)
                       }}
                     >
                       {t('common:rename')}
