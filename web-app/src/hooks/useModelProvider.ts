@@ -241,7 +241,7 @@ export const useModelProvider = create<ModelProviderState>()(
             }
 
             // Migrate model settings
-            if (provider.models) {
+            if (provider.models && provider.provider === 'llamacpp') {
               provider.models.forEach((model) => {
                 if (!model.settings) model.settings = {}
 

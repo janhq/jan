@@ -177,21 +177,13 @@ export const DialogEditModel = ({
                   {t('providers:editModel.vision')}
                 </span>
               </div>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Switch
-                    id="vision-capability"
-                    checked={capabilities.vision}
-                    disabled={true}
-                    onCheckedChange={(checked) =>
-                      handleCapabilityChange('vision', checked)
-                    }
-                  />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('providers:editModel.notAvailable')}
-                </TooltipContent>
-              </Tooltip>
+              <Switch
+                id="vision-capability"
+                checked={capabilities.vision}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('vision', checked)
+                }
+              />
             </div>
 
             <div className="flex items-center justify-between">

@@ -414,13 +414,15 @@ const DropdownModelProvider = ({
             </span>
           </button>
         </PopoverTrigger>
-        {currentModel?.settings && provider && (
-          <ModelSetting
-            model={currentModel as Model}
-            provider={provider}
-            smallIcon
-          />
-        )}
+        {currentModel?.settings &&
+          provider &&
+          provider.provider === 'llamacpp' && (
+            <ModelSetting
+              model={currentModel as Model}
+              provider={provider}
+              smallIcon
+            />
+          )}
         <ModelSupportStatus
           modelId={selectedModel?.id}
           provider={selectedProvider}
