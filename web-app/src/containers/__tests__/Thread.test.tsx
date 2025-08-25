@@ -122,4 +122,45 @@ describe('ThreadList - Rename Dialog', () => {
     const dialog = screen.queryByRole('dialog')
     expect(dialog).toBeNull()
   })
+
+  it('should call renameThread with the correct thread id and title when pressing Enter key in the rename dialog', async () => {
+    const mockRenameThread = vi.fn()
+
+    // Mock useThreads to return our spy function
+    vi.mocked(useThreads).mockReturnValue({
+      toggleFavorite: vi.fn(),
+      deleteThread: vi.fn(),
+      renameThread: mockRenameThread,
+    })
+
+    await openRenameDialog()
+
+    // Find the input field and change the title
+    const titleInput = screen.getByDisplayValue('Test Thread')
+    await user.clear(titleInput)
+    await user.type(titleInput, 'New Thread Title')
+
+    // Press the Enter key
+    await user.keyboard('{enter}') // Brackets are used for special keys
+
+    // Assert that renameThread was called with correct arguments
+    expect(mockRenameThread).toHaveBeenCalledWith('thread-1', 'New Thread Title')
+    
+    // Verify that the dialog is closed
+    const dialog = screen.queryByRole('dialog')
+    expect(dialog).toBeNull()
+  })
+
+  it('should close the rename dialog when clicking cancel button', async () => {
+    await openRenameDialog()
+
+    // Click the cancel button
+    const cancelButton = screen.getByRole('button', { name: /cancel/i })
+    await user.click(cancelButton)
+
+    // Verify that the dialog is closed
+    const dialog = screen.queryByRole('dialog') // Use queryByRole so that it
+    // returns null if not found instead of throwing an error like getByRole
+    expect(dialog).toBeNull()
+  })
 })
