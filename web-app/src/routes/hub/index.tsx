@@ -4,6 +4,8 @@ import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import {
   useState,
   useMemo,
@@ -71,6 +73,14 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubContent />
+    </PlatformGuard>
+  )
+}
+
+function HubContent() {
   const parentRef = useRef(null)
   const { huggingfaceToken } = useGeneralSetting()
 

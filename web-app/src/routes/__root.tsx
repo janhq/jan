@@ -30,8 +30,19 @@ import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
+import { 
+  getCurrentPlatform, 
+  PlatformFeatures, 
+  isFeatureAvailable,
+  PlatformFeature
+} from '@/lib/platform'
 
 export const Route = createRootRoute({
+  context: () => ({
+    platform: getCurrentPlatform(),
+    features: PlatformFeatures,
+    isFeatureAvailable: (feature: PlatformFeature) => isFeatureAvailable(feature)
+  }),
   component: RootLayout,
   errorComponent: ({ error }) => <GlobalError error={error} />,
 })

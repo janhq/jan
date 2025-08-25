@@ -13,6 +13,8 @@ import {
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
@@ -46,6 +48,14 @@ export const Route = createFileRoute('/hub/$modelId')({
 })
 
 function HubModelDetail() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubModelDetailContent />
+    </PlatformGuard>
+  )
+}
+
+function HubModelDetailContent() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()

@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -29,6 +31,14 @@ export const Route = createFileRoute(route.settings.local_api_server as any)({
 })
 
 function LocalAPIServer() {
+  return (
+    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
+      <LocalAPIServerContent />
+    </PlatformGuard>
+  )
+}
+
+function LocalAPIServerContent() {
   const { t } = useTranslation()
   const {
     corsEnabled,

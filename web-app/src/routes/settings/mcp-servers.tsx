@@ -22,6 +22,8 @@ import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -88,6 +90,14 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MCP_SERVERS}>
+      <MCPServersContent />
+    </PlatformGuard>
+  )
+}
+
+function MCPServersContent() {
   const { t } = useTranslation()
   const {
     mcpServers,

@@ -17,6 +17,8 @@ import { windowKey } from '@/constants/windows'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { stopAllModels } from '@/services/models'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -24,6 +26,14 @@ export const Route = createFileRoute(route.settings.hardware as any)({
 })
 
 function Hardware() {
+  return (
+    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
+      <HardwareContent />
+    </PlatformGuard>
+  )
+}
+
+function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const {
