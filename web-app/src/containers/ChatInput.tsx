@@ -107,9 +107,15 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           if (selectedProvider === 'llamacpp') {
             const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
-          } else {
-            // For non-llamacpp providers, only check vision capability
+          }
+          // For non-llamacpp providers, only check vision capability
+          else if (
+            selectedProvider !== 'llamacpp' &&
+            selectedModel?.capabilities?.includes('vision')
+          ) {
             setHasMmproj(true)
+          } else {
+            setHasMmproj(false)
           }
         } catch (error) {
           console.error('Error checking mmproj:', error)
@@ -119,7 +125,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.id, selectedProvider])
+  }, [selectedModel?.capabilities, selectedModel?.id, selectedProvider])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
