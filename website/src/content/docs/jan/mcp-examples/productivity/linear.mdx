@@ -13,11 +13,13 @@ keywords:
     software development,
     tool calling,
   ]
+sidebar:
+  badge:
+    text: New
+    variant: tip
 ---
 
-import { Callout, Steps } from 'nextra/components'
-
-# Linear MCP
+import { Aside } from '@astrojs/starlight/components';
 
 [Linear MCP](https://linear.app) provides comprehensive project management capabilities through natural conversation. Transform your software development workflow by managing issues, projects, and team collaboration directly through AI.
 
@@ -59,9 +61,9 @@ Linear MCP offers extensive project management capabilities:
 - Model with strong tool calling support
 - Active internet connection
 
-<Callout type="info">
+<Aside type="note">
 Linear offers a generous free tier perfect for small teams and personal projects. Unlimited users, 250 active issues, and full API access included.
-</Callout>
+</Aside>
 
 ## Setup
 
@@ -78,9 +80,9 @@ Once logged in, you'll see your workspace:
 
 ### Enable MCP in Jan
 
-<Callout type="warning">
+<Aside type="caution">
 Enable **Experimental Features** in **Settings > General** if you don't see the MCP Servers option.
-</Callout>
+</Aside>
 
 1. Go to **Settings > MCP Servers**
 2. Toggle **Allow All MCP Tool Permission** ON
@@ -128,7 +130,7 @@ You should see all Linear tools in the chat interface:
 
 Watch AI transform mundane tasks into epic narratives:
 
-![Linear MCP creating Shakespearean war epic tasks](../../../../../assets/mcplinear2.gif)
+![Linear MCP creating Shakespearean war epic tasks](/gifs/mcplinear2.gif)
 
 ## Creative Examples
 
@@ -240,9 +242,9 @@ Generate a retrospective report for our last completed cycle. List what was comp
 - Cache frequently accessed data
 - Use specific filters to reduce data
 
-<Callout type="tip">
+<Aside type="tip">
 Linear's keyboard shortcuts work great alongside MCP! Use CMD+K for quick navigation while AI handles the heavy lifting.
-</Callout>
+</Aside>
 
 ## Integration Ideas
 

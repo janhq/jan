@@ -28,22 +28,24 @@ import FAQBox from '@/components/FaqBox'
 
 ## Jan's Goal
 
-> We're working towards open superintelligence - a viable open-source alternative to platforms like ChatGPT and Claude that anyone can own and run.
+> We're working towards open superintelligence to make a viable open-source alternative to platforms like ChatGPT
+and Claude that anyone can own and run.
 
 ## What is Jan Today
 
-Jan is an open-source AI platform that runs on your hardware. We believe AI should be in the hands of many, not controlled by a few tech giants.
+Jan is an open-source AI platform that runs on your hardware. We believe AI should be in the hands of many, not
+controlled by a few tech giants.
 
 Today, Jan is:
 - **A desktop app** that runs AI models locally or connects to cloud providers
 - **A model hub** making the latest open-source models accessible
-- **A connector system** that lets AI interact with real-world tools
-- **A testing framework** that evaluates model quality transparently
+- **A connector system** that lets AI interact with real-world tools via MCP
 
 Tomorrow, Jan aims to be a complete ecosystem where open models rival or exceed closed alternatives.
 
 <Callout type="info">
-We're building this with the open-source AI community, using the best available tools, and sharing everything we learn along the way.
+We're building this with the open-source AI community, using the best available tools, and sharing everything
+we learn along the way.
 </Callout>
 
 ## The Jan Ecosystem
@@ -56,19 +58,19 @@ We're building this with the open-source AI community, using the best available 
 - **Mobile**: Jan on your phone
 - **Web**: Browser-based access at jan.ai
 - **Server**: Self-hosted for teams
-- **Extensions**: Excel, Word, and browser integrations
+- **Extensions**: Browser extension for Chrome-based browsers
 
 ### Jan Model Hub
 Making open-source AI accessible to everyone:
 - **Easy Downloads**: One-click model installation
 - **Jan Models**: Our own models optimized for local use
-  - **Jan-Nano (32k/128k)**: 4B model for research with MCP tools
-  - **Lucy**: 1.7B mobile-optimized search model
-  - **Jan-v1**: 4B reasoning and tool-use model
-- **Community Models**: Any GGUF from Hugging Face
-- **Cloud Models**: Connect your API keys for OpenAI, Anthropic, etc.
+  - **Jan-v1**: 4B reasoning model specialized in web search
+  - **Research Models**
+    - **Jan-Nano (32k/128k)**: 4B model for web search with MCP tools
+    - **Lucy**: 1.7B mobile-optimized for web search
+- **Community Models**: Any GGUF from Hugging Face works in Jan
+- **Cloud Models**: Connect your API keys for OpenAI, Anthropic, Gemini, and more
 
-Each model comes with transparent evaluations through Jan Exam.
 
 ### Jan Connectors Hub
 Connect AI to the tools you use daily via [Model Context Protocol](./mcp):
@@ -89,40 +91,27 @@ Connect AI to the tools you use daily via [Model Context Protocol](./mcp):
 - **Linear**: Project management
 - **Todoist**: Task management
 
-More connectors are added regularly by the community.
-
-### Jan Exam
-Transparent model evaluation:
-- Real-world benchmarks
-- Community-driven testing
-- Public results for all models
-- No cherry-picked metrics
-
-### Jan Family of Models
-We're training specialized models optimized for local devices:
-- **Speech Models**: Like Ichigo for voice interactions
-- **Reasoning Models**: Like Jan-v1 for tool use and complex tasks
-- **Task-Specific Models**: Optimized for search, writing, analysis
-
-These take the best of open source and tailor them for real-world use on consumer hardware.
-
 ## Core Features
 
-- **Run Models Locally**: Download any GGUF model from Hugging Face, use OpenAI's gpt-oss models, or connect to cloud providers
-- **OpenAI-Compatible API**: Local server at `localhost:1337` works with tools like [Continue](./server-examples/continue-dev) and [Cline](https://cline.bot/)
-- **Extend with MCP Tools**: Browser automation, web search, data analysis, design tools - all through natural language
-- **Your Choice of Infrastructure**: Run on your laptop, self-host on your servers (soon), or use cloud when you need it
+- **Run Models Locally**: Download any GGUF model from Hugging Face, use OpenAI's gpt-oss models,
+or connect to cloud providers
+- **OpenAI-Compatible API**: Local server at `localhost:1337` works with tools like
+[Continue](./server-examples/continue-dev) and [Cline](https://cline.bot/)
+- **Extend with MCP Tools**: Browser automation, web search, data analysis, and design tools, all
+through natural language
+- **Your Choice of Infrastructure**: Run on your laptop, self-host on your servers (soon), or use
+cloud when you need it
 
 ## Philosophy
 
 Jan is built to be user-owned:
-- **Open Source**: Apache 2.0 license - truly free
+- **Open Source**: Apache 2.0 license
 - **Local First**: Your data stays on your device. Internet is optional
 - **Privacy Focused**: We don't collect or sell user data. See our [Privacy Policy](./privacy)
 - **No Lock-in**: Export your data anytime. Use any model. Switch between local and cloud
 
 <Callout>
-The best AI is the one you control. Not the one that controls you.
+The best AI is the one you control. Not the one that other control for you.
 </Callout>
 
 ## The Path Forward
@@ -137,7 +126,7 @@ The best AI is the one you control. Not the one that controls you.
 - More specialized models that excel at specific tasks
 - Expanded app ecosystem (mobile, web, extensions)
 - Richer connector ecosystem
-- Models that approach or exceed GPT-4 class performance
+- An evaluation framework to build better models
 
 ### The Long-Term Vision
 We're working towards open superintelligence where:
@@ -147,7 +136,8 @@ We're working towards open superintelligence where:
 - AI capabilities are owned by users, not rented
 
 <Callout type="warning">
-This is an ambitious goal without a guaranteed path. We're betting on the open-source community, improved hardware, and better techniques - but we're honest that this is a journey, not a destination we've reached.
+This is an ambitious goal without a guaranteed path. We're betting on the open-source community, improved
+hardware, and better techniques, but we're honest that this is a journey, not a destination we've reached.
 </Callout>
 
 ## Quick Start
@@ -155,7 +145,7 @@ This is an ambitious goal without a guaranteed path. We're betting on the open-s
 1. [Download Jan](./quickstart) for your operating system
 2. Choose a model - download locally or add cloud API keys
 3. Start chatting or connect tools via MCP
-4. Build with our [API](https://jan.ai/api-reference)
+4. Build with our [local API](./api-server)
 
 ## Acknowledgements
 
@@ -179,11 +169,11 @@ Jan is built on the shoulders of giants:
   - Jan-Nano (32k/128k) - Research and analysis with MCP integration
   - Lucy - Mobile-optimized search (1.7B)
   - Jan-v1 - Reasoning and tool use (4B)
-  
+
   **Open Source:**
   - OpenAI's gpt-oss models (120b and 20b)
   - Any GGUF model from Hugging Face
-  
+
   **Cloud (with your API keys):**
   - OpenAI, Anthropic, Mistral, Groq, and more
 </FAQBox>
@@ -220,7 +210,7 @@ Jan is built on the shoulders of giants:
   **Local use**: Always free, no catches
   **Cloud models**: You pay providers directly (we add no markup)
   **Jan cloud**: Optional paid services coming 2025
-  
+
   The core platform will always be free and open source.
 </FAQBox>
 
@@ -243,7 +233,7 @@ Jan is built on the shoulders of giants:
   - **Jan Web**: Beta late 2025
   - **Jan Mobile**: Late 2025
   - **Jan Server**: Late 2025
-  
+
   All versions will sync seamlessly.
 </FAQBox>
 

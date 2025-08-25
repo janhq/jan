@@ -12,11 +12,13 @@ keywords:
     todo list,
     tool calling,
   ]
+sidebar:
+  badge:
+    text: New
+    variant: tip
 ---
 
-import { Callout, Steps } from 'nextra/components'
-
-# Todoist MCP
+import { Aside } from '@astrojs/starlight/components';
 
 [Todoist MCP Server](https://github.com/abhiz123/todoist-mcp-server) enables AI models to manage your Todoist tasks through natural conversation. Instead of switching between apps, you can create, update, and complete tasks by simply chatting with your AI assistant.
 
@@ -35,9 +37,9 @@ import { Callout, Steps } from 'nextra/components'
 - Model with strong tool calling support
 - Node.js installed
 
-<Callout type="info">
+<Aside type="note">
 Todoist offers a generous free tier perfect for personal task management. Premium features add labels, reminders, and more projects.
-</Callout>
+</Aside>
 
 ## Setup
 
@@ -63,9 +65,9 @@ Once logged in, you'll see your main dashboard:
 
 ### Enable MCP in Jan
 
-<Callout type="warning">
+<Aside type="caution">
 If you don't see the MCP Servers option, enable **Experimental Features** in **Settings > General** first.
-</Callout>
+</Aside>
 
 1. Go to **Settings > MCP Servers**
 2. Toggle **Allow All MCP Tool Permission** ON
@@ -78,7 +80,7 @@ Click the `+` button to add a new MCP server:
 - **Server Name**: `todoist`
 - **Command**: `npx`
 - **Arguments**: `-y @abhiz123/todoist-mcp-server`
-- **Environment Variables**: 
+- **Environment Variables**:
   - Key: `TODOIST_API_TOKEN`, Value: `your_api_token_here`
 
 ![Todoist MCP configuration in Jan](../../../../../assets/todoist4.png)
@@ -101,7 +103,7 @@ You should see the Todoist tools in the tools panel:
 
 Now you can manage your todo list through natural conversation:
 
-![Todoist MCP in action](../../../../../assets/mcptodoist_extreme.gif)
+![Todoist MCP in action](/gifs/mcptodoist_extreme.gif)
 
 ## Example Prompts
 
@@ -241,9 +243,9 @@ I'm moving to a new apartment next month. Generate a comprehensive moving checkl
 - Space out bulk operations
 - Wait a moment between large task batches
 
-<Callout type="tip">
+<Aside type="tip">
 Todoist syncs across all devices. Tasks created through Jan instantly appear on your phone, tablet, and web app!
-</Callout>
+</Aside>
 
 ## Privacy Note
 

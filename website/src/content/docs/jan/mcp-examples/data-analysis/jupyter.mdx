@@ -18,17 +18,15 @@ keywords:
   ]
 ---
 
-import { Callout } from 'nextra/components'
-
-# Jupyter MCP
+import { Aside } from '@astrojs/starlight/components';
 
 [Jupyter MCP Server](https://jupyter-mcp-server.datalayer.tech/) enables real-time interaction with Jupyter notebooks, allowing AI models to edit, execute, and document code for data analysis and visualization. Instead of just generating code suggestions, AI can actually run Python code and see the results.
 
 This integration gives Jan the ability to execute analysis, create visualizations, and iterate based on actual results - turning your AI assistant into a capable data science partner.
 
-<Callout type="info">
+<Aside type="note">
 **Breaking Change**: Version 0.11.0+ renamed `room` to `document`. Check the [release notes](https://jupyter-mcp-server.datalayer.tech/releases) for details.
-</Callout>
+</Aside>
 
 ## Available Tools
 
@@ -52,9 +50,9 @@ The Jupyter MCP Server provides [12 comprehensive tools](https://jupyter-mcp-ser
 - `read_cell`: Examine specific cell content
 - `read_all_cells`: Get complete notebook state
 
-<Callout type="warning">
+<Aside type="caution">
 The MCP connects to **one notebook at a time**, not multiple notebooks. Specify your target notebook in the configuration.
-</Callout>
+</Aside>
 
 ## Prerequisites
 
@@ -161,9 +159,9 @@ Since GPT-5 is new, you'll need to manually add it to Jan:
 
 ![Manually adding GPT-5 model name](../../../../../assets/gpt5-add.png)
 
-<Callout type="info">
+<Aside type="note">
 **About GPT-5**: OpenAI's smartest, fastest, most useful model yet. It features built-in thinking capabilities, state-of-the-art performance across coding, math, and writing, and exceptional tool use abilities. GPT-5 automatically decides when to respond quickly versus when to think longer for expert-level responses.
-</Callout>
+</Aside>
 
 ### Enable Tool Calling
 
@@ -237,9 +235,9 @@ Generate two datasets representing A/B test results for an e-commerce site. Perf
 
 ## Performance Considerations
 
-<Callout type="warning">
+<Aside type="caution">
 Multiple tools can quickly consume context windows, especially for local models. GPT-5's unified system with smart routing helps manage this, but local models may struggle with speed and context limitations.
-</Callout>
+</Aside>
 
 ### Context Management
 - Each tool call adds to conversation history
@@ -254,9 +252,9 @@ Multiple tools can quickly consume context windows, especially for local models.
 
 ## Security Considerations
 
-<Callout type="warning">
+<Aside type="caution">
 MCP provides powerful capabilities but requires careful security practices.
-</Callout>
+</Aside>
 
 ### Authentication Tokens
 - **Always use strong tokens** - avoid simple passwords

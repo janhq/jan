@@ -76,17 +76,12 @@ export default defineConfig({
                       { label: 'Groq', slug: 'jan/remote-models/groq' },
                     ],
                   },
-                ],
-              },
-              {
-                label: 'TUTORIALS',
-                items: [
                   {
-                    label: 'MCP Examples',
+                    label: 'Tutorials',
                     collapsed: true,
                     items: [
                       {
-                        label: 'Browser Control (Browserbase)',
+                        label: 'Browser Control',
                         slug: 'jan/mcp-examples/browser/browserbase',
                       },
                       {
@@ -94,11 +89,15 @@ export default defineConfig({
                         slug: 'jan/mcp-examples/data-analysis/e2b',
                       },
                       {
-                        label: 'Design Creation (Canva)',
+                        label: 'Jupyter Notebooks',
+                        slug: 'jan/mcp-examples/data-analysis/jupyter',
+                      },
+                      {
+                        label: 'Design with Canva',
                         slug: 'jan/mcp-examples/design/canva',
                       },
                       {
-                        label: 'Deep Research (Octagon)',
+                        label: 'Deep Financial Research',
                         slug: 'jan/mcp-examples/deepresearch/octagon',
                       },
                       {
@@ -106,8 +105,16 @@ export default defineConfig({
                         slug: 'jan/mcp-examples/search/serper',
                       },
                       {
-                        label: 'Web Search (Exa)',
+                        label: 'Exa Search',
                         slug: 'jan/mcp-examples/search/exa',
+                      },
+                      {
+                        label: 'Linear',
+                        slug: 'jan/mcp-examples/productivity/linear',
+                      },
+                      {
+                        label: 'Todoist',
+                        slug: 'jan/mcp-examples/productivity/todoist',
                       },
                     ],
                   },
