@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
-import { getTools } from '@/services/mcp'
+import { getServiceHub } from '@/services'
 import { MCPTool } from '@/types/completion'
-import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
 
@@ -10,7 +9,7 @@ export const useTools = () => {
 
   useEffect(() => {
     function setTools() {
-      getTools().then((data: MCPTool[]) => {
+      getServiceHub().mcp().getTools().then((data: MCPTool[]) => {
         updateTools(data)
       }).catch((error) => {
         console.error('Failed to fetch MCP tools:', error)
@@ -19,7 +18,7 @@ export const useTools = () => {
     setTools()
 
     let unsubscribe = () => {}
-    listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
+    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
     }).catch((error) => {

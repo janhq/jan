@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { restartMCPServers, updateMCPConfig } from '@/services/mcp'
+import { getServiceHub } from '@/services'
 
 // Define the structure of an MCP server configuration
 export type MCPServerConfig = {
@@ -82,7 +82,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
     }),
   syncServers: async () => {
     const mcpServers = get().mcpServers
-    await updateMCPConfig(
+    await getServiceHub().mcp().updateMCPConfig(
       JSON.stringify({
         mcpServers,
       })
@@ -90,10 +90,10 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   },
   syncServersAndRestart: async () => {
     const mcpServers = get().mcpServers
-    await updateMCPConfig(
+    await getServiceHub().mcp().updateMCPConfig(
       JSON.stringify({
         mcpServers,
       })
-    ).then(() => restartMCPServers())
+    ).then(() => getServiceHub().mcp().restartMCPServers())
   },
 }))

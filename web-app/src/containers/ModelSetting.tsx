@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/sheet'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { stopModel } from '@/services/models'
+import { getServiceHub } from '@/services'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -31,7 +31,7 @@ export function ModelSetting({
 
   // Create a debounced version of stopModel that waits 500ms after the last call
   const debouncedStopModel = debounce((modelId: string) => {
-    stopModel(modelId)
+    getServiceHub().models().stopModel(modelId)
   }, 500)
 
   const handleSettingChange = (

@@ -42,13 +42,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  CatalogModel,
-  pullModelWithMetadata,
-  fetchHuggingFaceRepo,
-  convertHfRepoToCatalogModel,
-  isModelSupported,
-} from '@/services/models'
+import { getServiceHub } from '@/services'
+import type { CatalogModel } from '@/services/models/types'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -222,13 +217,14 @@ function HubContent() {
       addModelSourceTimeoutRef.current = setTimeout(async () => {
         try {
           // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(
+          const repoInfo = await getServiceHub().models().fetchHuggingFaceRepo(
             e.target.value,
             huggingfaceToken
           )
           if (repoInfo) {
-            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+            const catalogModel = getServiceHub().models().convertHfRepoToCatalogModel(repoInfo)
             if (
+              catalogModel &&
               !sources.some(
                 (s) =>
                   catalogModel.model_name.trim().split('/').pop() ===
@@ -303,7 +299,7 @@ function HubContent() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supportStatus = await isModelSupported(modelPath, 8192)
+        const supportStatus = await getServiceHub().models().isModelSupported(modelPath, 8192)
 
         setModelSupportStatus((prev) => ({
           ...prev,
@@ -363,7 +359,7 @@ function HubContent() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(
+        getServiceHub().models().pullModelWithMetadata(
           modelId, 
           modelUrl,
           mmprojPath,
@@ -940,7 +936,7 @@ function HubContent() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModelWithMetadata(
+                                                  getServiceHub().models().pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[

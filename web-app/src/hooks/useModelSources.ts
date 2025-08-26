@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { fetchModelCatalog, CatalogModel } from '@/services/models'
+import { getServiceHub } from '@/services'
+import type { CatalogModel } from '@/services/models/types'
 import { sanitizeModelId } from '@/lib/utils'
 
 // Zustand store for model sources
@@ -21,7 +22,7 @@ export const useModelSources = create<ModelSourcesState>()(
       fetchSources: async () => {
         set({ loading: true, error: null })
         try {
-          const newSources = await fetchModelCatalog().then((catalogs) =>
+          const newSources = await getServiceHub().models().fetchModelCatalog().then((catalogs) =>
             catalogs.map((catalog) => ({
               ...catalog,
               quants: catalog.quants.map((quant) => ({

@@ -1,4 +1,4 @@
-import { createAssistant, deleteAssistant } from '@/services/assistants'
+import { getServiceHub } from '@/services'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
@@ -51,7 +51,7 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
   currentAssistant: defaultAssistant,
   addAssistant: (assistant) => {
     set({ assistants: [...get().assistants, assistant] })
-    createAssistant(assistant as unknown as CoreAssistant).catch((error) => {
+    getServiceHub().assistants().createAssistant(assistant as unknown as CoreAssistant).catch((error) => {
       console.error('Failed to create assistant:', error)
     })
   },
@@ -68,13 +68,13 @@ export const useAssistant = create<AssistantState>()((set, get) => ({
           : state.currentAssistant,
     })
     // Create assistant already cover update logic
-    createAssistant(assistant as unknown as CoreAssistant).catch((error) => {
+    getServiceHub().assistants().createAssistant(assistant as unknown as CoreAssistant).catch((error) => {
       console.error('Failed to update assistant:', error)
     })
   },
   deleteAssistant: (id) => {
     const state = get()
-    deleteAssistant(
+    getServiceHub().assistants().deleteAssistant(
       state.assistants.find((e) => e.id === id) as unknown as CoreAssistant
     ).catch((error) => {
       console.error('Failed to delete assistant:', error)

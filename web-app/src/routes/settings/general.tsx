@@ -9,8 +9,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
-import { open } from '@tauri-apps/plugin-dialog'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
 
 import {
@@ -23,11 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  factoryReset,
-  getJanDataFolder,
-  relocateJanDataFolder,
-} from '@/services/app'
+import { getServiceHub } from '@/services'
 import {
   IconBrandDiscord,
   IconBrandGithub,
@@ -37,12 +31,9 @@ import {
   IconCopy,
   IconCopyCheck,
 } from '@tabler/icons-react'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { windowKey } from '@/constants/windows'
+// import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
-import { emit } from '@tauri-apps/api/event'
-import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
@@ -81,7 +72,7 @@ function General() {
 
   useEffect(() => {
     const fetchDataFolder = async () => {
-      const path = await getJanDataFolder()
+      const path = await getServiceHub().app().getJanDataFolder()
       setJanDataFolder(path)
     }
 
@@ -91,41 +82,12 @@ function General() {
   const resetApp = async () => {
     pausePolling()
     // TODO: Loading indicator
-    await factoryReset()
+    await getServiceHub().app().factoryReset()
   }
 
   const handleOpenLogs = async () => {
     try {
-      // Check if logs window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.logsAppWindow
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing logs window')
-      } else {
-        // Create a new logs window using Tauri v2 WebviewWindow API
-        const logsWindow = new WebviewWindow(windowKey.logsAppWindow, {
-          url: route.appLogs,
-          title: 'App Logs - Jan',
-          width: 800,
-          height: 600,
-          resizable: true,
-          center: true,
-        })
-
-        // Listen for window creation
-        logsWindow.once('tauri://created', () => {
-          console.log('Logs window created')
-        })
-
-        // Listen for window errors
-        logsWindow.once('tauri://error', (e) => {
-          console.error('Error creating logs window:', e)
-        })
-      }
+      await getServiceHub().window().openLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }
@@ -142,7 +104,7 @@ function General() {
   }
 
   const handleDataFolderChange = async () => {
-    const selectedPath = await open({
+    const selectedPath = await getServiceHub().dialog().open({
       multiple: false,
       directory: true,
       defaultPath: janDataFolder,
@@ -150,7 +112,7 @@ function General() {
 
     if (selectedPath === janDataFolder) return
     if (selectedPath !== null) {
-      setSelectedNewPath(selectedPath)
+      setSelectedNewPath(selectedPath as string)
       setIsDialogOpen(true)
     }
   }
@@ -158,11 +120,11 @@ function General() {
   const confirmDataFolderChange = async () => {
     if (selectedNewPath) {
       try {
-        await stopAllModels()
-        emit(SystemEvent.KILL_SIDECAR)
+        await getServiceHub().models().stopAllModels()
+        getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
         setTimeout(async () => {
           try {
-            await relocateJanDataFolder(selectedNewPath)
+            await getServiceHub().app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
             window.core?.api?.relaunch()
@@ -180,7 +142,7 @@ function General() {
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
         // Revert the data folder path on error
-        const originalPath = await getJanDataFolder()
+        const originalPath = await getServiceHub().app().getJanDataFolder()
         setJanDataFolder(originalPath)
 
         toast.error(t('settings:general.failedToRelocateDataFolderDesc'))
@@ -369,7 +331,7 @@ function General() {
                         if (janDataFolder) {
                           try {
                             const logsPath = `${janDataFolder}/logs`
-                            await revealItemInDir(logsPath)
+                            await getServiceHub().opener().revealItemInDir(logsPath)
                           } catch (error) {
                             console.error(
                               'Failed to reveal logs folder:',

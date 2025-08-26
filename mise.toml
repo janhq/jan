@@ -77,6 +77,29 @@ run = [
 ]
 
 # ============================================================================
+# WEB APPLICATION DEVELOPMENT TASKS
+# ============================================================================
+
+[tasks.dev-web-app]
+description = "Start web application development server (matches Makefile)"
+depends = ["install-and-build"]
+run = "yarn dev:web-app"
+
+[tasks.build-web-app]
+description = "Build web application (matches Makefile)"
+depends = ["install-and-build"]
+run = "yarn build:web-app"
+
+[tasks.serve-web-app]
+description = "Serve built web application"
+run = "yarn serve:web-app"
+
+[tasks.build-serve-web-app]
+description = "Build and serve web application (matches Makefile)"
+depends = ["build-web-app"]
+run = "yarn serve:web-app"
+
+# ============================================================================
 # BUILD TASKS
 # ============================================================================
 

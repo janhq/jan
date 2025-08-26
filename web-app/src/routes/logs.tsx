@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { readLogs } from '@/services/app'
+import { getServiceHub } from '@/services'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
@@ -30,7 +30,7 @@ function LogsViewer() {
   useEffect(() => {
     let lastLogsLength = 0
     function updateLogs() {
-      readLogs().then((logData) => {
+      getServiceHub().app().readLogs().then((logData) => {
         let needScroll = false
         const filteredLogs = logData.filter(Boolean) as LogEntry[]
         if (filteredLogs.length > lastLogsLength) needScroll = true

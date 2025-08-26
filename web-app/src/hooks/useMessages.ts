@@ -1,9 +1,6 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
-import {
-  createMessage,
-  deleteMessage as deleteMessageExt,
-} from '@/services/messages'
+import { getServiceHub } from '@/services'
 import { useAssistant } from './useAssistant'
 
 type MessageState = {
@@ -42,7 +39,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
         assistant: selectedAssistant,
       },
     }
-    createMessage(newMessage).then((createdMessage) => {
+    getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
       set((state) => ({
         messages: {
           ...state.messages,
@@ -55,7 +52,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
     })
   },
   deleteMessage: (threadId, messageId) => {
-    deleteMessageExt(threadId, messageId)
+    getServiceHub().messages().deleteMessage(threadId, messageId)
     set((state) => ({
       messages: {
         ...state.messages,

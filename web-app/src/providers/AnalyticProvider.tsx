@@ -1,7 +1,7 @@
 import posthog from 'posthog-js'
 import { useEffect } from 'react'
 
-import { getAppDistinctId, updateDistinctId } from '@/services/analytic'
+import { getServiceHub } from '@/services'
 import { useAnalytic } from '@/hooks/useAnalytic'
 
 export function AnalyticProvider() {
@@ -46,14 +46,14 @@ export function AnalyticProvider() {
         },
       })
       // Attempt to restore distinct Id from app global settings
-      getAppDistinctId()
+      getServiceHub().analytic().getAppDistinctId()
         .then((id) => {
           if (id) posthog.identify(id)
         })
         .finally(() => {
           posthog.opt_in_capturing()
           posthog.register({ app_version: VERSION })
-          updateDistinctId(posthog.get_distinct_id())
+          getServiceHub().analytic().updateDistinctId(posthog.get_distinct_id())
         })
     } else {
       posthog.opt_out_capturing()

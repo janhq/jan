@@ -35,6 +35,19 @@ dev: install-and-build
 	yarn download:lib
 	yarn dev
 
+# Web application development targets
+dev-web-app: install-and-build
+	yarn dev:web-app
+
+build-web-app: install-and-build
+	yarn build:web-app
+
+serve-web-app: 
+	yarn serve:web-app
+
+build-serve-web-app: build-web-app
+	yarn serve:web-app
+
 # Linting
 lint: install-and-build
 	yarn lint

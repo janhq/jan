@@ -10,13 +10,11 @@ import { useHardware } from '@/hooks/useHardware'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
-import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { getServiceHub } from '@/services'
+import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { formatMegaBytes } from '@/lib/utils'
-import { windowKey } from '@/constants/windows'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { stopAllModels } from '@/services/models'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 
@@ -76,18 +74,18 @@ function HardwareContent() {
   useEffect(() => {
     setIsLoading(true)
     Promise.all([
-      getHardwareInfo()
-        .then((data) => {
-          setHardwareData(data)
+      getServiceHub().hardware().getHardwareInfo()
+        .then((data: HardwareData | null) => {
+          if (data) setHardwareData(data)
         })
         .catch((error) => {
           console.error('Failed to get hardware info:', error)
         }),
-      getSystemUsage()
-        .then((data) => {
-          updateSystemUsage(data)
+      getServiceHub().hardware().getSystemUsage()
+        .then((data: SystemUsage | null) => {
+          if (data) updateSystemUsage(data)
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.error('Failed to get initial system usage:', error)
         }),
     ]).finally(() => {
@@ -98,13 +96,15 @@ function HardwareContent() {
 
 
   useEffect(() => {
-    if (pollingPaused) return
+    if (pollingPaused) {
+      return
+    }
     const intervalId = setInterval(() => {
-      getSystemUsage()
-        .then((data) => {
-          updateSystemUsage(data)
+      getServiceHub().hardware().getSystemUsage()
+        .then((data: SystemUsage | null) => {
+          if (data) updateSystemUsage(data)
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.error('Failed to get system usage:', error)
         })
     }, 5000)
@@ -114,36 +114,7 @@ function HardwareContent() {
 
   const handleClickSystemMonitor = async () => {
     try {
-      // Check if system monitor window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.systemMonitorWindow
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing system monitor window')
-      } else {
-        // Create a new system monitor window
-        const monitorWindow = new WebviewWindow(windowKey.systemMonitorWindow, {
-          url: route.systemMonitor,
-          title: 'System Monitor - Jan',
-          width: 900,
-          height: 600,
-          resizable: true,
-          center: true,
-        })
-
-        // Listen for window creation
-        monitorWindow.once('tauri://created', () => {
-          console.log('System monitor window created')
-        })
-
-        // Listen for window errors
-        monitorWindow.once('tauri://error', (e) => {
-          console.error('Error creating system monitor window:', e)
-        })
-      }
+      await getServiceHub().window().openSystemMonitorWindow()
     } catch (error) {
       console.error('Failed to open system monitor window:', error)
     }
@@ -336,7 +307,7 @@ function HardwareContent() {
                                 checked={device.activated}
                                 onCheckedChange={() => {
                                   toggleDevice(device.id)
-                                  stopAllModels()
+                                  getServiceHub().models().stopAllModels()
                                 }}
                               />
                             </div>

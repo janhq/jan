@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { getLlamacppDevices, DeviceList } from '@/services/hardware'
-import { updateSettings } from '@/services/providers'
+import { getServiceHub } from '@/services'
+import type { DeviceList } from '@/services/hardware/types'
 import { useModelProvider } from './useModelProvider'
 
 interface LlamacppDevicesStore {
@@ -24,7 +24,7 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
     set({ loading: true, error: null })
 
     try {
-      const devices = await getLlamacppDevices()
+      const devices = await getServiceHub().hardware().getLlamacppDevices()
       
       // Check current device setting from provider
       const { getProviderByName } = useModelProvider.getState()
@@ -92,7 +92,7 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
         return setting
       })
 
-      await updateSettings('llamacpp', updatedSettings)
+      await getServiceHub().providers().updateSettings('llamacpp', updatedSettings)
       updateProvider('llamacpp', {
         settings: updatedSettings,
       })

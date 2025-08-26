@@ -20,14 +20,11 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import {
+import { getServiceHub } from '@/services'
+import type {
   CatalogModel,
   ModelQuant,
-  convertHfRepoToCatalogModel,
-  fetchHuggingFaceRepo,
-  pullModelWithMetadata,
-  isModelSupported,
-} from '@/services/models'
+} from '@/services/models/types'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -82,13 +79,13 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await fetchHuggingFaceRepo(
+    const repoInfo = await getServiceHub().models().fetchHuggingFaceRepo(
       search.repo || modelId,
       huggingfaceToken
     )
     if (repoInfo) {
-      const repoDetail = convertHfRepoToCatalogModel(repoInfo)
-      setRepoData(repoDetail)
+      const repoDetail = getServiceHub().models().convertHfRepoToCatalogModel(repoInfo)
+      setRepoData(repoDetail || undefined)
     }
   }, [modelId, search, huggingfaceToken])
 
@@ -170,7 +167,7 @@ function HubModelDetailContent() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supported = await isModelSupported(modelPath, 8192)
+        const supported = await getServiceHub().models().isModelSupported(modelPath, 8192)
         setModelSupportStatus((prev) => ({
           ...prev,
           [modelKey]: supported,
@@ -475,7 +472,7 @@ function HubModelDetailContent() {
                                         addLocalDownloadingModel(
                                           variant.model_id
                                         )
-                                        pullModelWithMetadata(
+                                        getServiceHub().models().pullModelWithMetadata(
                                           variant.model_id,
                                           variant.path,
                                           modelData.mmproj_models?.[0]?.path,

@@ -1,0 +1,64 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/**
+ * Default MCP Service - Generic implementation with minimal returns
+ */
+
+import { MCPTool } from '@/types/completion'
+import type { MCPServerConfig } from '@/hooks/useMCPServers'
+import type { MCPService, ToolCallResult, ToolCallWithCancellationResult } from './types'
+
+export class DefaultMCPService implements MCPService {
+  async updateMCPConfig(configs: string): Promise<void> {
+    // No-op
+  }
+
+  async restartMCPServers(): Promise<void> {
+    // No-op
+  }
+
+  async getMCPConfig(): Promise<object> {
+    return {}
+  }
+
+  async getTools(): Promise<MCPTool[]> {
+    return []
+  }
+
+  async getConnectedServers(): Promise<string[]> {
+    return []
+  }
+
+  async callTool(args: { toolName: string; arguments: object }): Promise<ToolCallResult> {
+    return {
+      error: '',
+      content: []
+    }
+  }
+
+  callToolWithCancellation(args: {
+    toolName: string
+    arguments: object
+    cancellationToken?: string
+  }): ToolCallWithCancellationResult {
+    return {
+      promise: Promise.resolve({
+        error: '',
+        content: []
+      }),
+      cancel: () => Promise.resolve(),
+      token: ''
+    }
+  }
+
+  async cancelToolCall(cancellationToken: string): Promise<void> {
+    // No-op
+  }
+
+  async activateMCPServer(name: string, config: MCPServerConfig): Promise<void> {
+    // No-op
+  }
+
+  async deactivateMCPServer(name: string): Promise<void> {
+    // No-op
+  }
+}

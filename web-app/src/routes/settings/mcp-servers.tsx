@@ -16,10 +16,9 @@ import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 import { Switch } from '@/components/ui/switch'
 import { twMerge } from 'tailwind-merge'
-import { getConnectedServers } from '@/services/mcp'
+import { getServiceHub } from '@/services'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
-import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
@@ -178,7 +177,7 @@ function MCPServersContent() {
     if (serverToDelete) {
       // Stop the server before deletion
       try {
-        await invoke('deactivate_mcp_server', { name: serverToDelete })
+        await getServiceHub().mcp().deactivateMCPServer(serverToDelete)
       } catch (error) {
         console.error('Error stopping server before deletion:', error)
       }
@@ -237,13 +236,7 @@ function MCPServersContent() {
       setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
       const config = getServerConfig(serverKey)
       if (active && config) {
-        invoke('activate_mcp_server', {
-          name: serverKey,
-          config: {
-            ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-            active,
-          },
-        })
+        getServiceHub().mcp().activateMCPServer(serverKey, config)
           .then(() => {
             // Save single server
             editServer(serverKey, {
@@ -256,7 +249,7 @@ function MCPServersContent() {
                 ? t('mcp-servers:serverStatusActive', { serverKey })
                 : t('mcp-servers:serverStatusInactive', { serverKey })
             )
-            getConnectedServers().then(setConnectedServers)
+            getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
           })
           .catch((error) => {
             editServer(serverKey, {
@@ -277,8 +270,8 @@ function MCPServersContent() {
           active,
         })
         syncServers()
-        invoke('deactivate_mcp_server', { name: serverKey }).finally(() => {
-          getConnectedServers().then(setConnectedServers)
+        getServiceHub().mcp().deactivateMCPServer(serverKey).finally(() => {
+          getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
           setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
         })
       }
@@ -286,10 +279,10 @@ function MCPServersContent() {
   }
 
   useEffect(() => {
-    getConnectedServers().then(setConnectedServers)
+    getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
 
     const intervalId = setInterval(() => {
-      getConnectedServers().then(setConnectedServers)
+      getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
     }, 3000)
 
     return () => clearInterval(intervalId)

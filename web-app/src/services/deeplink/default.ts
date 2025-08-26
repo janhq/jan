@@ -1,0 +1,18 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/**
+ * Default Deep Link Service - Generic implementation with minimal returns
+ */
+
+import type { DeepLinkService } from './types'
+
+export class DefaultDeepLinkService implements DeepLinkService {
+  async onOpenUrl(handler: (urls: string[]) => void): Promise<() => void> {
+    return () => {
+      // No-op unlisten
+    }
+  }
+
+  async getCurrent(): Promise<string[]> {
+    return []
+  }
+}

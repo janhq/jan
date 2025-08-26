@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { isModelSupported } from '@/services/models'
+import { getServiceHub } from '@/services'
 import { getJanDataFolderPath, joinPath } from '@janhq/core'
 
 interface ModelSupportStatusProps {
@@ -44,7 +44,7 @@ export const ModelSupportStatus = ({
           'model.gguf',
         ])
 
-        return await isModelSupported(modelFilePath, ctxSize)
+        return await getServiceHub().models().isModelSupported(modelFilePath, ctxSize)
       } catch (error) {
         console.error(
           'Error checking model support with constructed path:',

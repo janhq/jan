@@ -21,12 +21,10 @@ import { renderInstructions } from '@/lib/instructionTemplate'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
 
-import { stopModel, startModel, stopAllModels } from '@/services/models'
-
+import { getServiceHub } from '@/services'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
-import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import {
@@ -106,10 +104,10 @@ export const useChat = () => {
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
-      await stopAllModels()
+      await getServiceHub().models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await startModel(provider, modelId).catch(console.error)
+      await getServiceHub().models().startModel(provider.provider, modelId).catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
@@ -189,7 +187,7 @@ export const useChat = () => {
         settings: newSettings,
       }
 
-      await updateSettings(providerName, updateObj.settings ?? [])
+      await getServiceHub().providers().updateSettings(providerName, updateObj.settings ?? [])
       updateProvider(providerName, {
         ...provider,
         ...updateObj,
@@ -232,7 +230,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(activeProvider, selectedModel.id)
+          await getServiceHub().models().startModel(activeProvider.provider, selectedModel.id)
           updateLoadingModel(false)
         }
 
@@ -477,7 +475,7 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'llamacpp')
+            await getServiceHub().models().stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 

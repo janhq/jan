@@ -4,14 +4,6 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
-import { open } from '@tauri-apps/plugin-dialog'
-import {
-  getActiveModels,
-  pullModel,
-  startModel,
-  stopAllModels,
-  stopModel,
-} from '@/services/models'
 import {
   createFileRoute,
   Link,
@@ -31,11 +23,11 @@ import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
-import { updateSettings, fetchModelsFromProvider } from '@/services/providers'
+import { getServiceHub } from '@/services'
+import type { Model as CoreModel } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
-import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
@@ -77,7 +69,7 @@ function ProviderDetail() {
     },
   ]
   const { step } = useSearch({ from: Route.id })
-  const [activeModels, setActiveModels] = useState<string[]>([])
+  const [activeModels, setActiveModels] = useState<CoreModel[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [importingModel, setImportingModel] = useState(false)
@@ -103,7 +95,7 @@ function ProviderDetail() {
     }
 
     setImportingModel(true)
-    const selectedFile = await open({
+    const selectedFile = await getServiceHub().dialog().open({
       multiple: false,
       directory: false,
     })
@@ -128,9 +120,9 @@ function ProviderDetail() {
       }
 
       try {
-        await pullModel(fileName, selectedFile)
+        await getServiceHub().models().pullModel(fileName, typeof selectedFile === 'string' ? selectedFile : selectedFile?.[0])
         // Refresh the provider to update the models list
-        await getProviders().then(setProviders)
+        await getServiceHub().providers().getProviders().then(setProviders)
         toast.success(t('providers:import'), {
           id: `import-model-${provider.provider}`,
           description: t('providers:importModelSuccess', {
@@ -153,11 +145,11 @@ function ProviderDetail() {
 
   useEffect(() => {
     // Initial data fetch
-    getActiveModels().then((models) => setActiveModels(models || []))
+    getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      getActiveModels().then((models) => setActiveModels(models || []))
+      getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)
@@ -169,7 +161,7 @@ function ProviderDetail() {
 
     try {
       // Refresh providers to get updated settings from the extension
-      const updatedProviders = await getProviders()
+      const updatedProviders = await getServiceHub().providers().getProviders()
       setProviders(updatedProviders)
     } catch (error) {
       console.error('Failed to refresh settings:', error)
@@ -206,7 +198,7 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      const modelIds = await fetchModelsFromProvider(provider)
+      const modelIds = await getServiceHub().providers().fetchModelsFromProvider(provider)
 
       // Create new models from the fetched IDs
       const newModels: Model[] = modelIds.map((id) => ({
@@ -261,9 +253,10 @@ function ProviderDetail() {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
     if (provider)
-      startModel(provider, modelId)
+      getServiceHub().models().startModel(modelId, provider.provider)
         .then(() => {
-          setActiveModels((prevModels) => [...prevModels, modelId])
+          // Refresh active models after starting
+          getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
         })
         .catch((error) => {
           console.error('Error starting model:', error)
@@ -280,11 +273,10 @@ function ProviderDetail() {
   }
 
   const handleStopModel = (modelId: string) => {
-    stopModel(modelId)
+    getServiceHub().models().stopModel(modelId)
       .then(() => {
-        setActiveModels((prevModels) =>
-          prevModels.filter((model) => model !== modelId)
-        )
+        // Refresh active models after stopping
+        getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
       })
       .catch((error) => {
         console.error('Error stopping model:', error)
@@ -415,7 +407,7 @@ function ProviderDetail() {
                                   }
                                 }
 
-                                updateSettings(
+                                getServiceHub().providers().updateSettings(
                                   providerName,
                                   updateObj.settings ?? []
                                 )
@@ -424,7 +416,7 @@ function ProviderDetail() {
                                   ...updateObj,
                                 })
 
-                                stopAllModels()
+                                getServiceHub().models().stopAllModels()
                               }
                             }}
                           />
@@ -612,7 +604,7 @@ function ProviderDetail() {
                               {provider && provider.provider === 'llamacpp' && (
                                 <div className="ml-2">
                                   {activeModels.some(
-                                    (activeModel) => activeModel === model.id
+                                    (activeModel) => activeModel.id === model.id
                                   ) ? (
                                     <Button
                                       size="sm"

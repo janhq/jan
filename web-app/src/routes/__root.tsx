@@ -26,7 +26,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
@@ -36,6 +36,8 @@ import {
   isFeatureAvailable,
   PlatformFeature
 } from '@/lib/platform'
+import { initializeServiceHub } from '@/services'
+import { ServiceInitializationLoader } from '@/containers/ServiceInitializationLoader'
 
 export const Route = createRootRoute({
   context: () => ({
@@ -195,11 +197,32 @@ const LogsLayout = () => {
 
 function RootLayout() {
   const router = useRouterState()
+  const [servicesReady, setServicesReady] = useState(false)
+  const [initError, setInitError] = useState<Error | null>(null)
 
   const isLocalAPIServerLogsRoute =
     router.location.pathname === route.localApiServerlogs ||
     router.location.pathname === route.systemMonitor ||
     router.location.pathname === route.appLogs
+
+  // Initialize services on mount
+  useEffect(() => {
+    initializeServiceHub()
+      .then(() => {
+        console.log('✅ Services initialized, rendering app')
+        setServicesReady(true)
+      })
+      .catch((error) => {
+        console.error('❌ Service initialization failed:', error)
+        setInitError(error)
+        setServicesReady(true) // Still render to show error state
+      })
+  }, [])
+
+  // Block rendering until services are ready
+  if (!servicesReady) {
+    return <ServiceInitializationLoader error={initError} />
+  }
 
   return (
     <Fragment>

@@ -4,7 +4,7 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
 import { IconInfoCircle } from '@tabler/icons-react'
-import { CatalogModel, ModelQuant } from '@/services/models'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { extractDescription } from '@/lib/models'
 
 interface ModelInfoHoverCardProps {

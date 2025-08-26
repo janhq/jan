@@ -1,5 +1,6 @@
 import { CoreRoutes, APIRoutes } from '@janhq/core'
-import { invoke, InvokeArgs } from '@tauri-apps/api/core'
+import { getServiceHub } from '@/services'
+import type { InvokeArgs } from '@/services/core/types'
 
 export const AppRoutes = [
   'installExtensions',
@@ -41,7 +42,7 @@ export const APIs = {
       ...acc,
       [proxy.route]: (args?: InvokeArgs) => {
         // For each route, define a function that sends a request to the API
-        return invoke(
+        return getServiceHub().core().invoke(
           proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase(),
           args
         )

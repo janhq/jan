@@ -1,14 +1,13 @@
 import { isDev } from '@/lib/utils'
-import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
-import { emit } from '@tauri-apps/api/event'
+import type { UpdateInfo } from '@/services/updater/types'
 import { SystemEvent } from '@/types/events'
-import { stopAllModels } from '@/services/models'
+import { getServiceHub } from '@/services'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
-  updateInfo: Update | null
+  updateInfo: UpdateInfo | null
   isDownloading: boolean
   downloadProgress: number
   downloadedBytes: number
@@ -74,7 +73,7 @@ export const useAppUpdater = () => {
 
         if (!isDev()) {
           // Production mode - use actual Tauri updater
-          const update = await check()
+          const update = await getServiceHub().updater().check()
 
           if (update) {
             const newState = {
@@ -166,12 +165,14 @@ export const useAppUpdater = () => {
         isDownloading: true,
       }))
 
-      let downloaded = 0
-      let contentLength = 0
-      await stopAllModels()
-      emit(SystemEvent.KILL_SIDECAR)
+      // let downloaded = 0
+      // let contentLength = 0
+      await getServiceHub().models().stopAllModels()
+      getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
+      await getServiceHub().updater().installAndRestart() // TODO: This needs proper callback support
+      /*
       await updateState.updateInfo.downloadAndInstall((event) => {
         switch (event.event) {
           case 'Started':
@@ -220,6 +221,7 @@ export const useAppUpdater = () => {
             break
         }
       })
+      */
 
       await window.core?.api?.relaunch()
 

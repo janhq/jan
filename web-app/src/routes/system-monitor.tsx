@@ -9,7 +9,7 @@ import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { getSystemUsage } from '@/services/hardware'
+import { getServiceHub } from '@/services'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 
@@ -39,9 +39,11 @@ function SystemMonitorContent() {
   // Poll system usage every 5 seconds
   useEffect(() => {
     const intervalId = setInterval(() => {
-      getSystemUsage()
+      getServiceHub().hardware().getSystemUsage()
         .then((data) => {
-          updateSystemUsage(data)
+          if (data) {
+            updateSystemUsage(data)
+          }
         })
         .catch((error) => {
           console.error('Failed to get system usage:', error)

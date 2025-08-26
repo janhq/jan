@@ -2,8 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { parseLogLine, readLogs } from '@/services/app'
-import { listen } from '@tauri-apps/api/event'
+import { getServiceHub } from '@/services'
+import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
@@ -30,7 +30,7 @@ function LogsViewer() {
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    readLogs().then((logData) => {
+    getServiceHub().app().readLogs().then((logData) => {
       const logs = logData
         .filter((log) => log?.target === SERVER_LOG_TARGET)
         .filter(Boolean) as LogEntry[]
@@ -42,9 +42,9 @@ function LogsViewer() {
       }, 100)
     })
     let unsubscribe = () => {}
-    listen(LOG_EVENT_NAME, (event) => {
+    getServiceHub().events().listen(LOG_EVENT_NAME, (event) => {
       const { message } = event.payload as { message: string }
-      const log: LogEntry | undefined = parseLogLine(message)
+      const log: LogEntry | undefined = getServiceHub().app().parseLogLine(message)
       if (log?.target === SERVER_LOG_TARGET) {
         setLogs((prevLogs) => {
           const newLogs = [...prevLogs, log]

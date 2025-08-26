@@ -1,6 +1,6 @@
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { getServiceHub } from '@/services'
 
 /**
  * Extension manifest object.
@@ -143,7 +143,7 @@ export class ExtensionManager {
    * @returns An array of extensions.
    */
   async getActive(): Promise<Extension[]> {
-    const res = await invoke('get_active_extensions')
+    const res = await getServiceHub().core().getActiveExtensions()
     if (!res || !Array.isArray(res)) return []
 
     const extensions: Extension[] = res.map((ext: ExtensionManifest) => {
@@ -167,7 +167,7 @@ export class ExtensionManager {
   async activateExtension(extension: Extension) {
     // Import class
     const extensionUrl = extension.url
-    await import(/* @vite-ignore */ convertFileSrc(extensionUrl)).then(
+    await import(/* @vite-ignore */ getServiceHub().core().convertFileSrc(extensionUrl)).then(
       (extensionClass) => {
         // Register class if it has a default export
         if (
@@ -212,10 +212,12 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    const res = (await invoke('install_extension', {
-      extensions,
-    })) as ExtensionManifest[]
-    return res.map(async (ext: ExtensionManifest) => {
+    // Note: The Tauri backend only has 'install_extensions' (bulk install, no params)
+    // The original 'install_extension' with specific extensions doesn't exist
+    await getServiceHub().core().installExtensions()
+    
+    // Return the expected format based on original implementation
+    return extensions.map(async (ext: ExtensionManifest) => {
       const extension = new Extension(ext.name, ext.url)
       await this.activateExtension(extension)
       return extension
@@ -223,16 +225,18 @@ export class ExtensionManager {
   }
 
   /**
-   * Uninstall provided extensions
+   * Uninstall provided extensions - NOT IMPLEMENTED in Tauri backend
+   * This is a placeholder that warns about the missing functionality.
    * @param {Array.<string>} extensions List of names of extensions to uninstall.
    * @param {boolean} reload Whether to reload all renderers after updating the extensions.
-   * @returns {Promise.<boolean>} Whether uninstalling the extensions was successful.
+   * @returns {Promise.<void>}
    */
-  uninstall(extensions: string[], reload = true) {
+  async uninstall(extensions: string[], reload = true) {
     if (typeof window === 'undefined') {
       return
     }
-    return invoke('uninstall_extension', { extensions, reload })
+    console.warn('Uninstall individual extensions not implemented in Tauri backend')
+    console.warn('Extensions to uninstall:', extensions, 'reload:', reload)
   }
 
   /**

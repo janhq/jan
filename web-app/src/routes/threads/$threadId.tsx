@@ -14,7 +14,7 @@ import { ThreadContent } from '@/containers/ThreadContent'
 import { StreamingContent } from '@/containers/StreamingContent'
 
 import { useMessages } from '@/hooks/useMessages'
-import { fetchMessages } from '@/services/messages'
+import { getServiceHub } from '@/services'
 import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
@@ -86,7 +86,7 @@ function ThreadDetail() {
   }, [threadId, currentThreadId, assistants])
 
   useEffect(() => {
-    fetchMessages(threadId).then((fetchedMessages) => {
+    getServiceHub().messages().fetchMessages(threadId).then((fetchedMessages) => {
       if (fetchedMessages) {
         // Update the messages in the store
         setMessages(threadId, fetchedMessages)
