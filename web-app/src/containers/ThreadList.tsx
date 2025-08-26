@@ -88,7 +88,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     }
   }
 
-    const handleRenameThread = (newTitle: string) => {
+  const handleRenameThread = (newTitle: string) => {
     renameThread(thread.id, newTitle)
     setOpenDropdown(false)
     toast.success(t('common:toast.renameThread.title'), {
