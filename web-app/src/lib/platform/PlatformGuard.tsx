@@ -1,11 +1,7 @@
-/**
- * Platform Guard Component
- * Conditionally renders components based on platform feature availability
- */
-
 import { ReactNode } from 'react'
 import { PlatformFeature } from './types'
-import { PlatformFeatures, getUnavailableFeatureMessage } from './utils'
+import { getUnavailableFeatureMessage } from './utils'
+import { PlatformFeatures } from './const'
 
 interface PlatformGuardProps {
   feature: PlatformFeature
@@ -14,9 +10,6 @@ interface PlatformGuardProps {
   showMessage?: boolean
 }
 
-/**
- * Component that only renders children if the specified feature is available on current platform
- */
 export const PlatformGuard = ({
   feature,
   children,
