@@ -374,12 +374,65 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
   }
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const clipboardItems = e.clipboardData?.items
-    if (!clipboardItems) return
-
+  const handlePaste = async (e: React.ClipboardEvent) => {
     // Only allow paste if model supports mmproj
     if (!hasMmproj) {
+      return
+    }
+
+    const clipboardItems = e.clipboardData?.items
+
+    // Linux fallback: Use modern Clipboard API if clipboardData.items is unavailable
+    if (
+      !clipboardItems &&
+      navigator.clipboard &&
+      'read' in navigator.clipboard
+    ) {
+      e.preventDefault()
+
+      try {
+        const clipboardContents = await navigator.clipboard.read()
+        const files: File[] = []
+
+        for (const item of clipboardContents) {
+          const imageTypes = item.types.filter((type) =>
+            type.startsWith('image/')
+          )
+
+          for (const type of imageTypes) {
+            try {
+              const blob = await item.getType(type)
+              // Convert blob to File
+              const file = new File(
+                [blob],
+                `pasted-image.${type.split('/')[1]}`,
+                { type }
+              )
+              files.push(file)
+            } catch (error) {
+              console.error('Error reading clipboard item:', error)
+            }
+          }
+        }
+
+        if (files.length > 0) {
+          const syntheticEvent = {
+            target: {
+              files: files,
+            },
+          } as unknown as React.ChangeEvent<HTMLInputElement>
+
+          handleFileChange(syntheticEvent)
+        }
+        return
+      } catch (error) {
+        console.error('Error reading clipboard contents:', error)
+        return
+      }
+    }
+
+    // Original logic for browsers with working clipboardData.items
+    if (!clipboardItems) {
       return
     }
 
