@@ -18,7 +18,7 @@ export class DefaultProvidersService implements ProvidersService {
     // No-op
   }
 
-  getTauriFetch(): typeof fetch {
+  fetch(): typeof fetch {
     return fetch
   }
 }

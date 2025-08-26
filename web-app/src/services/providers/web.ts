@@ -193,7 +193,7 @@ export class WebProvidersService implements ProvidersService {
       )
   }
 
-  getTauriFetch(): typeof fetch {
+  fetch(): typeof fetch {
     // Web implementation uses regular fetch
     return fetch
   }

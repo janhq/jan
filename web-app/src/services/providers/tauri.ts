@@ -15,7 +15,7 @@ import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 
 export class TauriProvidersService extends DefaultProvidersService {
-  getTauriFetch(): typeof fetch {
+  fetch(): typeof fetch {
     // Tauri implementation uses Tauri's fetch to avoid CORS issues
     return fetchTauri as typeof fetch
   }

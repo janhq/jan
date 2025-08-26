@@ -173,7 +173,7 @@ export const sendCompletion = async (
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
     // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
-    ...(providerName === 'openai-compatible' && { fetch: getServiceHub().providers().getTauriFetch() }),
+    ...(providerName === 'openai-compatible' && { fetch: getServiceHub().providers().fetch() }),
     // OpenRouter identification headers for Jan
     // ref: https://openrouter.ai/docs/api-reference/overview#headers
     ...(provider.provider === 'openrouter' && {
