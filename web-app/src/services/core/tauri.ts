@@ -49,6 +49,24 @@ export class TauriCoreService extends DefaultCoreService {
     }
   }
 
+  async installExtension(extensions: ExtensionManifest[]): Promise<ExtensionManifest[]> {
+    try {
+      return await this.invoke<ExtensionManifest[]>('install_extension', { extensions })
+    } catch (error) {
+      console.error('Error installing extension in Tauri, falling back to default:', error)
+      return super.installExtension(extensions)
+    }
+  }
+
+  async uninstallExtension(extensions: string[], reload = true): Promise<boolean> {
+    try {
+      return await this.invoke<boolean>('uninstall_extension', { extensions, reload })
+    } catch (error) {
+      console.error('Error uninstalling extension in Tauri, falling back to default:', error)
+      return super.uninstallExtension(extensions, reload)
+    }
+  }
+
   // App token
   async getAppToken(): Promise<string | null> {
     try {

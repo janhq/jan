@@ -23,7 +23,6 @@ import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { Model as CoreModel } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
@@ -69,7 +68,7 @@ function ProviderDetail() {
     },
   ]
   const { step } = useSearch({ from: Route.id })
-  const [activeModels, setActiveModels] = useState<CoreModel[]>([])
+  const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [importingModel, setImportingModel] = useState(false)
@@ -606,7 +605,7 @@ function ProviderDetail() {
                               {provider && provider.provider === 'llamacpp' && (
                                 <div className="ml-2">
                                   {activeModels.some(
-                                    (activeModel) => activeModel.id === model.id
+                                    (activeModel) => activeModel === model.id
                                   ) ? (
                                     <Button
                                       size="sm"

@@ -16,6 +16,8 @@ export interface CoreService {
   // Extension management
   getActiveExtensions(): Promise<ExtensionManifest[]>
   installExtensions(): Promise<void>
+  installExtension(extensions: ExtensionManifest[]): Promise<ExtensionManifest[]>
+  uninstallExtension(extensions: string[], reload?: boolean): Promise<boolean>
   
   // App token
   getAppToken(): Promise<string | null>

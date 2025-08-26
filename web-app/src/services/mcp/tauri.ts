@@ -5,7 +5,9 @@
  * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
+import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
+import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -129,6 +131,30 @@ export class TauriMCPService extends DefaultMCPService {
     } catch (error) {
       console.error('Error canceling tool call in Tauri, falling back to default:', error)
       return super.cancelToolCall(cancellationToken)
+    }
+  }
+
+  /**
+   * MOVED FROM: invoke('activate_mcp_server') calls in route files
+   */
+  async activateMCPServer(name: string, config: MCPServerConfig): Promise<void> {
+    try {
+      return await invoke('activate_mcp_server', { name, config })
+    } catch (error) {
+      console.error('Error activating MCP server in Tauri, falling back to default:', error)
+      return super.activateMCPServer(name, config)
+    }
+  }
+
+  /**
+   * MOVED FROM: invoke('deactivate_mcp_server') calls in route files
+   */
+  async deactivateMCPServer(name: string): Promise<void> {
+    try {
+      return await invoke('deactivate_mcp_server', { name })
+    } catch (error) {
+      console.error('Error deactivating MCP server in Tauri, falling back to default:', error)
+      return super.deactivateMCPServer(name)
     }
   }
 }

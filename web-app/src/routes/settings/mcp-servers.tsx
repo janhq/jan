@@ -237,7 +237,10 @@ function MCPServersContent() {
       setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
       const config = getServerConfig(serverKey)
       if (active && config) {
-        serviceHub.mcp().activateMCPServer(serverKey, config)
+        serviceHub.mcp().activateMCPServer(serverKey, {
+          ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
+          active,
+        })
           .then(() => {
             // Save single server
             editServer(serverKey, {

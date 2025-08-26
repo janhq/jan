@@ -212,12 +212,8 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    // Note: The Tauri backend only has 'install_extensions' (bulk install, no params)
-    // The original 'install_extension' with specific extensions doesn't exist
-    await getServiceHub().core().installExtensions()
-    
-    // Return the expected format based on original implementation
-    return extensions.map(async (ext: ExtensionManifest) => {
+    const res = await getServiceHub().core().installExtension(extensions)
+    return res.map(async (ext: ExtensionManifest) => {
       const extension = new Extension(ext.name, ext.url)
       await this.activateExtension(extension)
       return extension
@@ -225,18 +221,16 @@ export class ExtensionManager {
   }
 
   /**
-   * Uninstall provided extensions - NOT IMPLEMENTED in Tauri backend
-   * This is a placeholder that warns about the missing functionality.
+   * Uninstall provided extensions
    * @param {Array.<string>} extensions List of names of extensions to uninstall.
    * @param {boolean} reload Whether to reload all renderers after updating the extensions.
-   * @returns {Promise.<void>}
+   * @returns {Promise.<boolean>} Whether uninstalling the extensions was successful.
    */
   async uninstall(extensions: string[], reload = true) {
     if (typeof window === 'undefined') {
       return
     }
-    console.warn('Uninstall individual extensions not implemented in Tauri backend')
-    console.warn('Extensions to uninstall:', extensions, 'reload:', reload)
+    return await getServiceHub().core().uninstallExtension(extensions, reload)
   }
 
   /**
