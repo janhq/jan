@@ -7,12 +7,12 @@
       "appimage": {
         "bundleMediaFramework": false,
         "files": {
-          "LICENSE": "resources/LICENSE"
+          "usr/lib/Jan/resources": "resources/LICENSE"
         }
       },
       "deb": {
         "files": {
-          "LICENSE": "resources/LICENSE",
+          "usr/lib/Jan/resources": "resources/LICENSE",
           "usr/bin/bun": "resources/bin/bun",
           "usr/lib/Jan/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"
         }
