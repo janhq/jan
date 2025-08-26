@@ -163,20 +163,31 @@ export const useAppUpdater = () => {
       setUpdateState((prev) => ({
         ...prev,
         isDownloading: true,
+        downloadProgress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
       }))
 
-      // let downloaded = 0
-      // let contentLength = 0
+      // Emit app update download started event
+      events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+      })
+
+      // Stop all models and kill sidecar before updating
       await getServiceHub().models().stopAllModels()
       getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      await getServiceHub().updater().installAndRestart() // TODO: This needs proper callback support
-      /*
-      await updateState.updateInfo.downloadAndInstall((event) => {
+      // Track progress with service method
+      let downloaded = 0
+      let contentLength = 0
+
+      await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {
           case 'Started':
-            contentLength = event.data.contentLength || 0
+            contentLength = event.data?.contentLength || 0
             setUpdateState((prev) => ({
               ...prev,
               totalBytes: contentLength,
@@ -191,7 +202,7 @@ export const useAppUpdater = () => {
             })
             break
           case 'Progress': {
-            downloaded += event.data.chunkLength
+            downloaded += event.data?.chunkLength || 0
             const progress = contentLength > 0 ? downloaded / contentLength : 0
             setUpdateState((prev) => ({
               ...prev,
@@ -221,11 +232,11 @@ export const useAppUpdater = () => {
             break
         }
       })
-      */
 
+      // Relaunch the app
       await window.core?.api?.relaunch()
 
-      console.log('Update installed')
+      console.log('Update installed and app will restart')
     } catch (error) {
       console.error('Error downloading update:', error)
       setUpdateState((prev) => ({
