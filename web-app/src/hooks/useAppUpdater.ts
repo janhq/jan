@@ -163,21 +163,13 @@ export const useAppUpdater = () => {
       setUpdateState((prev) => ({
         ...prev,
         isDownloading: true,
-        downloadProgress: 0,
-        downloadedBytes: 0,
-        totalBytes: 0,
       }))
-      
-      // Track progress with service method
+
       let downloaded = 0
       let contentLength = 0
-
-      // Stop all models and kill sidecar before updating
       await getServiceHub().models().stopAllModels()
       getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      
 
       await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {
@@ -228,10 +220,9 @@ export const useAppUpdater = () => {
         }
       })
 
-      // Relaunch the app
       await window.core?.api?.relaunch()
 
-      console.log('Update installed and app will restart')
+      console.log('Update installed')
     } catch (error) {
       console.error('Error downloading update:', error)
       setUpdateState((prev) => ({
