@@ -5,11 +5,11 @@ import {
 } from '@/components/ui/hover-card'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { CatalogModel, ModelQuant } from '@/services/models'
-import { extractDescription } from '@/lib/models'
 
 interface ModelInfoHoverCardProps {
   model: CatalogModel
   variant?: ModelQuant
+  isDefaultVariant?: boolean
   defaultModelQuantizations: string[]
   modelSupportStatus: Record<string, string>
   onCheckModelSupport: (variant: ModelQuant) => void
@@ -19,12 +19,12 @@ interface ModelInfoHoverCardProps {
 export const ModelInfoHoverCard = ({
   model,
   variant,
+  isDefaultVariant,
   defaultModelQuantizations,
   modelSupportStatus,
   onCheckModelSupport,
   children,
 }: ModelInfoHoverCardProps) => {
-  const isVariantMode = !!variant
   const displayVariant =
     variant ||
     model.quants.find((m) =>
@@ -95,8 +95,8 @@ export const ModelInfoHoverCard = ({
         {children || (
           <div className="cursor-pointer">
             <IconInfoCircle
-              size={14}
-              className="mt-0.5 text-main-view-fg/50 hover:text-main-view-fg/80 transition-colors"
+              size={isDefaultVariant ? 20 : 14}
+              className="mt-0.5 text-main-view-fg/80 hover:text-main-view-fg/80 transition-colors"
             />
           </div>
         )}
@@ -106,10 +106,10 @@ export const ModelInfoHoverCard = ({
           {/* Header */}
           <div className="border-b border-main-view-fg/10 pb-3">
             <h4 className="text-sm font-semibold text-main-view-fg">
-              {isVariantMode ? variant.model_id : model.model_name}
+              {!isDefaultVariant ? variant?.model_id : model?.model_name}
             </h4>
             <p className="text-xs text-main-view-fg/60 mt-1">
-              {isVariantMode
+              {!isDefaultVariant
                 ? 'Model Variant Information'
                 : 'Model Information'}
             </p>
@@ -118,57 +118,21 @@ export const ModelInfoHoverCard = ({
           {/* Main Info Grid */}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="space-y-2">
-              {isVariantMode ? (
-                <>
-                  <div>
-                    <span className="text-main-view-fg/50 block">
-                      File Size
-                    </span>
-                    <span className="text-main-view-fg font-medium mt-1 inline-block">
-                      {variant.file_size}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-main-view-fg/50 block">
-                      Quantization
-                    </span>
-                    <span className="text-main-view-fg font-medium mt-1 inline-block">
-                      {variant.model_id.split('-').pop()?.toUpperCase() ||
-                        'N/A'}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <span className="text-main-view-fg/50 block">
-                      Downloads
-                    </span>
-                    <span className="text-main-view-fg font-medium mt-1 inline-block">
-                      {model.downloads?.toLocaleString() || '0'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-main-view-fg/50 block">Variants</span>
-                    <span className="text-main-view-fg font-medium mt-1 inline-block">
-                      {model.quants?.length || 0}
-                    </span>
-                  </div>
-                </>
-              )}
+              <>
+                <div>
+                  <span className="text-main-view-fg/50 block">
+                    {isDefaultVariant
+                      ? 'Maybe Default Quantization'
+                      : 'Quantization'}
+                  </span>
+                  <span className="text-main-view-fg font-medium mt-1 inline-block">
+                    {variant?.model_id.split('-').pop()?.toUpperCase() || 'N/A'}
+                  </span>
+                </div>
+              </>
             </div>
 
             <div className="space-y-2">
-              {!isVariantMode && (
-                <div>
-                  <span className="text-main-view-fg/50 block">
-                    Default Size
-                  </span>
-                  <span className="text-main-view-fg font-medium mt-1 inline-block">
-                    {displayVariant?.file_size || 'N/A'}
-                  </span>
-                </div>
-              )}
               <div>
                 <span className="text-main-view-fg/50 block">
                   Compatibility
@@ -204,21 +168,6 @@ export const ModelInfoHoverCard = ({
               </div>
             </div>
           )}
-
-          {/* Content Section */}
-          <div className="border-t border-main-view-fg/10 pt-3">
-            <h5 className="text-xs font-medium text-main-view-fg/70 mb-1">
-              {isVariantMode ? 'Download URL' : 'Description'}
-            </h5>
-            <div className="text-xs text-main-view-fg/60 bg-main-view-fg/5 rounded p-2">
-              {isVariantMode ? (
-                <div className="font-mono break-all">{variant.path}</div>
-              ) : (
-                extractDescription(model?.description) ||
-                'No description available'
-              )}
-            </div>
-          </div>
         </div>
       </HoverCardContent>
     </HoverCard>

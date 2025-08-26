@@ -491,7 +491,7 @@ export const checkMmprojExistsAndUpdateOffloadMMprojSetting = async (
                         key: 'offload_mmproj',
                         title: 'Offload MMProj',
                         description:
-                          'Offload multimodal projection layers to GPU',
+                          'Offload multimodal projection model to GPU',
                         controller_type: 'checkbox',
                         controller_props: {
                           value: true,
