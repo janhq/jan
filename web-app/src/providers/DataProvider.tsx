@@ -158,7 +158,7 @@ export function DataProvider() {
       setServerStatus('pending')
 
       // Start the model first
-      serviceHub.models().startModel(modelToStart.model, modelToStart.provider.provider)
+      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 

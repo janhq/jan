@@ -253,7 +253,7 @@ function ProviderDetail() {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
     if (provider)
-      serviceHub.models().startModel(modelId, provider.provider)
+      serviceHub.models().startModel(provider, modelId)
         .then(() => {
           // Refresh active models after starting
           serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))

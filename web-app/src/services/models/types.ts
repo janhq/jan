@@ -70,12 +70,20 @@ export interface HuggingFaceRepo {
 }
 
 export interface ModelsService {
-  fetchModels(): Promise<CoreModel[] | undefined>
+  fetchModels(): Promise<any>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchHuggingFaceRepo(repoId: string, hfToken?: string): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel | null
-  updateModel(model: CoreModel): Promise<CoreModel | undefined>
-  pullModel(model: string, filePath?: string): Promise<void>
+  updateModel(model: Partial<CoreModel>): Promise<void>
+  pullModel(
+    id: string,
+    modelPath: string,
+    modelSha256?: string,
+    modelSize?: number,
+    mmprojPath?: string,
+    mmprojSha256?: string,
+    mmprojSize?: number
+  ): Promise<void>
   pullModelWithMetadata(
     modelId: string,
     modelUrl: string,
@@ -84,10 +92,10 @@ export interface ModelsService {
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string): Promise<void>
-  getActiveModels(provider?: string): Promise<CoreModel[]>
+  getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<void>
   stopAllModels(): Promise<void>
-  startModel(id: string, provider?: string): Promise<SessionInfo | undefined>
+  startModel(provider: ProviderObject, model: string): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
     modelId: string,

@@ -8,6 +8,7 @@ import {
   AIEngine,
   EngineManager,
   SessionInfo,
+  SettingComponentProps,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type { ModelsService, ModelCatalog, HuggingFaceRepo, CatalogModel } from './types'
@@ -23,21 +24,8 @@ export class DefaultModelsService implements ModelsService {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
 
-  async fetchModels(): Promise<CoreModel[] | undefined> {
-    const modelInfos = await this.getEngine()?.list()
-    // Convert modelInfo[] to CoreModel[] 
-    return modelInfos?.map(modelInfo => ({
-      ...modelInfo,
-      // Add any missing CoreModel properties with defaults
-      name: modelInfo.name || modelInfo.id,
-      object: 'model',
-      version: 1,
-      format: 'gguf',
-      sources: [],
-      architecture: 'llama',
-      metadata: {},
-      size: modelInfo.sizeBytes || 0,
-    } as unknown as CoreModel))
+  async fetchModels(): Promise<any> {
+    return this.getEngine()?.list()
   }
 
   async fetchModelCatalog(): Promise<ModelCatalog> {
@@ -104,75 +92,88 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel | null {
-    try {
-      const ggufFiles =
-        repo.siblings?.filter((file) => file.rfilename.endsWith('.gguf')) ?? []
+  convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
+    // Format file size helper
+    const formatFileSize = (size?: number) => {
+      if (!size) return 'Unknown size'
+      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
+      return `${(size / 1024 ** 3).toFixed(1)} GB`
+    }
 
-      if (ggufFiles.length === 0) {
-        return null // No GGUF files, not a compatible model
-      }
+    // Extract GGUF files from the repository siblings
+    const ggufFiles =
+      repo.siblings?.filter((file) =>
+        file.rfilename.toLowerCase().endsWith('.gguf')
+      ) || []
 
-      // Extract model name from repo ID (e.g., "TheBloke/Llama-2-7B-GGUF" -> "Llama-2-7B-GGUF")
-      const modelName = repo.modelId.split('/').pop() ?? repo.modelId
+    // Separate regular GGUF files from mmproj files
+    const regularGgufFiles = ggufFiles.filter(
+      (file) => !file.rfilename.toLowerCase().includes('mmproj')
+    )
 
-      // Convert GGUF files to model quants
-      const quants = ggufFiles.map((file) => ({
-        model_id: sanitizeModelId(file.rfilename.replace('.gguf', '')),
+    const mmprojFiles = ggufFiles.filter((file) =>
+      file.rfilename.toLowerCase().includes('mmproj')
+    )
+
+    // Convert regular GGUF files to quants format
+    const quants = regularGgufFiles.map((file) => {
+      // Generate model_id from filename (remove .gguf extension, case-insensitive)
+      const modelId = file.rfilename.replace(/\.gguf$/i, '')
+
+      return {
+        model_id: sanitizeModelId(modelId),
         path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: file.lfs?.size
-          ? `${(file.lfs.size / 1024 / 1024 / 1024).toFixed(2)} GB`
-          : 'Unknown',
-      }))
-
-      // Check for vision/multimodal support
-      const mmprojFiles =
-        repo.siblings?.filter((file) => file.rfilename.includes('mmproj')) ?? []
-      const mmproj_models = mmprojFiles.map((file) => ({
-        model_id: sanitizeModelId(file.rfilename.replace('.gguf', '')),
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: file.lfs?.size
-          ? `${(file.lfs.size / 1024 / 1024 / 1024).toFixed(2)} GB`
-          : 'Unknown',
-      }))
-
-      const catalogModel: CatalogModel = {
-        model_name: modelName,
-        description: repo.cardData?.license
-          ? `Licensed under ${repo.cardData.license}`
-          : 'No description available',
-        developer: repo.author,
-        downloads: repo.downloads,
-        num_quants: quants.length,
-        quants,
-        mmproj_models: mmproj_models.length > 0 ? mmproj_models : undefined,
-        num_mmproj: mmproj_models.length,
-        created_at: repo.createdAt,
-        readme: repo.readme,
-        tools: repo.tags?.includes('tool-use') || repo.tags?.includes('function-calling'),
+        file_size: formatFileSize(file.size),
       }
+    })
 
-      return catalogModel
-    } catch (error) {
-      console.error('Error converting HuggingFace repo to catalog model:', error)
-      return null
+    // Convert mmproj files to mmproj_models format
+    const mmprojModels = mmprojFiles.map((file) => {
+      const modelId = file.rfilename.replace(/\.gguf$/i, '')
+
+      return {
+        model_id: sanitizeModelId(modelId),
+        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+        file_size: formatFileSize(file.size),
+      }
+    })
+
+    return {
+      model_name: repo.modelId,
+      developer: repo.author,
+      downloads: repo.downloads || 0,
+      created_at: repo.createdAt,
+      num_quants: quants.length,
+      quants: quants,
+      num_mmproj: mmprojModels.length,
+      mmproj_models: mmprojModels,
+      readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
+      description: `**Tags**: ${repo.tags?.join(', ')}`,
     }
   }
 
-  async updateModel(model: CoreModel): Promise<CoreModel | undefined> {
-    // AIEngine doesn't have an update method, so we return the model as-is
-    // This might need to be handled differently based on the specific use case
-    console.warn('updateModel called but AIEngine does not support update operation')
-    return model
+  async updateModel(model: Partial<CoreModel>): Promise<void> {
+    if (model.settings)
+      this.getEngine()?.updateSettings(model.settings as SettingComponentProps[])
   }
 
-  async pullModel(model: string, filePath?: string): Promise<void> {
-    if (filePath) {
-      await this.getEngine()?.import(model, { modelPath: filePath })
-    } else {
-      // For models without file path, we might need to handle differently
-      console.warn('pullModel called without filePath, AIEngine requires import options')
-    }
+  async pullModel(
+    id: string,
+    modelPath: string,
+    modelSha256?: string,
+    modelSize?: number,
+    mmprojPath?: string,
+    mmprojSha256?: string,
+    mmprojSize?: number
+  ): Promise<void> {
+    return this.getEngine()?.import(id, {
+      modelPath,
+      mmprojPath,
+      modelSha256,
+      modelSize,
+      mmprojSha256,
+      mmprojSize,
+    })
   }
 
   async pullModelWithMetadata(
@@ -188,54 +189,68 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    await this.getEngine()?.abortImport(id)
+    return this.getEngine()?.abortImport(id)
   }
 
   async deleteModel(id: string): Promise<void> {
-    await this.getEngine()?.delete(id)
+    return this.getEngine()?.delete(id)
   }
 
-  async getActiveModels(provider?: string): Promise<CoreModel[]> {
-    const engine = provider
-      ? (EngineManager.instance().get(provider) as AIEngine | undefined)
-      : this.getEngine()
-    const modelIds = await engine?.getLoadedModels()
-    // Convert model IDs to CoreModel objects
-    // This is a simplified implementation - might need more complete model info
-    return (modelIds ?? []).map(id => ({ id, name: id } as CoreModel))
+  async getActiveModels(provider?: string): Promise<string[]> {
+    return this.getEngine(provider)?.getLoadedModels() ?? []
   }
 
   async stopModel(model: string, provider?: string): Promise<void> {
-    const engine = provider
-      ? (EngineManager.instance().get(provider) as AIEngine | undefined)
-      : this.getEngine()
-    await engine?.unload(model)
+    this.getEngine(provider)?.unload(model)
   }
 
   async stopAllModels(): Promise<void> {
-    for (const [, value] of EngineManager.instance().engines) {
-      if ('stopAllModels' in value && typeof value.stopAllModels === 'function') {
-        await (value as { stopAllModels: () => Promise<void> }).stopAllModels()
-      }
-    }
+    const models = await this.getActiveModels()
+    if (models) await Promise.all(models.map((model) => this.stopModel(model)))
   }
 
-  async startModel(id: string, provider?: string): Promise<SessionInfo | undefined> {
-    const engine = provider
-      ? (EngineManager.instance().get(provider) as AIEngine | undefined)
-      : this.getEngine()
-    return engine?.load(id)
+  async startModel(provider: ProviderObject, model: string): Promise<SessionInfo | undefined> {
+    const engine = this.getEngine(provider.provider)
+    if (!engine) return undefined
+
+    const loadedModels = await engine.getLoadedModels()
+    if (loadedModels.includes(model)) return undefined
+
+    // Find the model configuration to get settings
+    const modelConfig = provider.models.find((m) => m.id === model)
+
+    // Key mapping function to transform setting keys
+    const mapSettingKey = (key: string): string => {
+      const keyMappings: Record<string, string> = {
+        ctx_len: 'ctx_size',
+        ngl: 'n_gpu_layers',
+      }
+      return keyMappings[key] || key
+    }
+
+    const settings = modelConfig?.settings
+      ? Object.fromEntries(
+          Object.entries(modelConfig.settings).map(([key, value]) => [
+            mapSettingKey(key),
+            value.controller_props?.value,
+          ])
+        )
+      : undefined
+
+    return engine.load(model, settings).catch((error) => {
+      console.error(
+        `Failed to start model ${model} for provider ${provider.provider}:`,
+        error
+      )
+      throw error
+    })
   }
 
   async isToolSupported(modelId: string): Promise<boolean> {
-    const models = await this.fetchModels()
-    const model = models?.find((e) => e.id === modelId)
-    if (!model) return false
-    const settings = model.settings as unknown as Record<string, unknown>
-    if (settings && typeof settings === 'object') {
-      return 'tool_choice' in settings
-    }
-    return false
+    const engine = this.getEngine()
+    if (!engine) return false
+
+    return engine.isToolSupported(modelId)
   }
 
   async checkMmprojExistsAndUpdateOffloadMMprojSetting(
@@ -273,7 +288,8 @@ export class DefaultModelsService implements ModelsService {
                         offload_mmproj: {
                           key: 'offload_mmproj',
                           title: 'Offload MMProj',
-                          description: 'Offload multimodal projection model to GPU',
+                          description:
+                            'Offload multimodal projection model to GPU',
                           controller_type: 'checkbox',
                           controller_props: {
                             value: true,
@@ -311,7 +327,7 @@ export class DefaultModelsService implements ModelsService {
                   model.settings.offload_mmproj = {
                     key: 'offload_mmproj',
                     title: 'Offload MMProj',
-                    description: 'Offload multimodal projection model to GPU',
+                    description: 'Offload multimodal projection layers to GPU',
                     controller_type: 'checkbox',
                     controller_props: {
                       value: true,

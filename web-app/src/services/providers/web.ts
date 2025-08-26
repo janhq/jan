@@ -7,7 +7,6 @@ import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
-import { getServiceHub } from '@/hooks/useServiceHub'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import type { ProvidersService } from './types'
@@ -50,7 +49,7 @@ export class WebProvidersService implements ProvidersService {
 
     const runtimeProviders: ModelProvider[] = []
     for (const [providerName, value] of EngineManager.instance().engines) {
-      const models = (await getServiceHub().models().fetchModels()) ?? []
+      const models = (await value.list()) ?? []
       const provider: ModelProvider = {
         active: false,
         persist: true,
@@ -79,7 +78,7 @@ export class WebProvidersService implements ProvidersService {
                 capabilities:
                   'capabilities' in model
                     ? (model.capabilities as string[])
-                    : (await getServiceHub().models().isToolSupported(model.id))
+                    : (await value.isToolSupported(model.id))
                       ? [ModelCapabilities.TOOLS]
                       : [],
                 provider: providerName,

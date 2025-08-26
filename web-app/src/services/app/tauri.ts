@@ -7,7 +7,6 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
-import { getServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
 
@@ -18,7 +17,15 @@ export class TauriAppService extends DefaultAppService {
   async factoryReset(): Promise<void> {
     try {
       // Kill background processes and remove data folder
-      await getServiceHub().models().stopAllModels()
+      // Note: We can't import stopAllModels directly to avoid circular dependency
+      // Instead we'll use the engine manager directly
+      const { EngineManager } = await import('@janhq/core')
+      for (const [, engine] of EngineManager.instance().engines) {
+        const activeModels = await engine.getLoadedModels()
+        if (activeModels) {
+          await Promise.all(activeModels.map((model: string) => engine.unload(model)))
+        }
+      }
       window.localStorage.clear()
       await invoke('factory_reset')
     } catch (error) {

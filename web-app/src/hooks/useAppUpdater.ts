@@ -167,22 +167,17 @@ export const useAppUpdater = () => {
         downloadedBytes: 0,
         totalBytes: 0,
       }))
-
-      // Emit app update download started event
-      events.emit(AppEvent.onAppUpdateDownloadUpdate, {
-        progress: 0,
-        downloadedBytes: 0,
-        totalBytes: 0,
-      })
+      
+      // Track progress with service method
+      let downloaded = 0
+      let contentLength = 0
 
       // Stop all models and kill sidecar before updating
       await getServiceHub().models().stopAllModels()
       getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      // Track progress with service method
-      let downloaded = 0
-      let contentLength = 0
+      
 
       await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {

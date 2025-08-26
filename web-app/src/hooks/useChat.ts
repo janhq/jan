@@ -108,7 +108,7 @@ export const useChat = () => {
       await serviceHub.models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await serviceHub.models().startModel(provider.provider, modelId).catch(console.error)
+      await serviceHub.models().startModel(provider, modelId).catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
@@ -231,7 +231,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await serviceHub.models().startModel(activeProvider.provider, selectedModel.id)
+          await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
 
