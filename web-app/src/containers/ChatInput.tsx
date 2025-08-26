@@ -381,13 +381,53 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     const clipboardItems = e.clipboardData?.items
+    let hasProcessedImage = false
 
-    // Linux fallback: Use modern Clipboard API if clipboardData.items is unavailable
-    if (
-      !clipboardItems &&
-      navigator.clipboard &&
-      'read' in navigator.clipboard
-    ) {
+    // Try clipboardData.items first (traditional method)
+    if (clipboardItems && clipboardItems.length > 0) {
+      const imageItems = Array.from(clipboardItems).filter((item) =>
+        item.type.startsWith('image/')
+      )
+
+      if (imageItems.length > 0) {
+        e.preventDefault()
+
+        const files: File[] = []
+        let processedCount = 0
+
+        imageItems.forEach((item) => {
+          const file = item.getAsFile()
+          if (file) {
+            files.push(file)
+          }
+          processedCount++
+
+          // When all items are processed, handle the valid files
+          if (processedCount === imageItems.length) {
+            if (files.length > 0) {
+              const syntheticEvent = {
+                target: {
+                  files: files,
+                },
+              } as unknown as React.ChangeEvent<HTMLInputElement>
+
+              handleFileChange(syntheticEvent)
+              hasProcessedImage = true
+            }
+          }
+        })
+        
+        // If we found image items but couldn't get files, fall through to modern API
+        if (processedCount === imageItems.length && !hasProcessedImage) {
+          // Continue to modern clipboard API fallback below
+        } else {
+          return // Successfully processed with traditional method
+        }
+      }
+    }
+
+    // Modern Clipboard API fallback (for Linux, images copied from web, etc.)
+    if (navigator.clipboard && 'read' in navigator.clipboard) {
       e.preventDefault()
 
       try {
@@ -402,10 +442,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           for (const type of imageTypes) {
             try {
               const blob = await item.getType(type)
-              // Convert blob to File
+              // Convert blob to File with better naming
+              const extension = type.split('/')[1] || 'png'
               const file = new File(
                 [blob],
-                `pasted-image.${type.split('/')[1]}`,
+                `pasted-image-${Date.now()}.${extension}`,
                 { type }
               )
               files.push(file)
@@ -423,47 +464,16 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           } as unknown as React.ChangeEvent<HTMLInputElement>
 
           handleFileChange(syntheticEvent)
+          return
         }
-        return
       } catch (error) {
-        console.error('Error reading clipboard contents:', error)
-        return
+        console.error('Clipboard API access failed:', error)
       }
     }
 
-    // Original logic for browsers with working clipboardData.items
-    if (!clipboardItems) {
-      return
-    }
-
-    const imageItems = Array.from(clipboardItems).filter((item) =>
-      item.type.startsWith('image/')
-    )
-
-    if (imageItems.length > 0) {
-      e.preventDefault()
-
-      const files: File[] = []
-      let processedCount = 0
-
-      imageItems.forEach((item) => {
-        const file = item.getAsFile()
-        if (file) {
-          files.push(file)
-        }
-        processedCount++
-
-        // When all items are processed, handle the valid files
-        if (processedCount === imageItems.length && files.length > 0) {
-          const syntheticEvent = {
-            target: {
-              files: files,
-            },
-          } as unknown as React.ChangeEvent<HTMLInputElement>
-
-          handleFileChange(syntheticEvent)
-        }
-      })
+    // If we reach here, no image was found or processed
+    if (!hasProcessedImage) {
+      console.log('No image data found in clipboard or clipboard access failed')
     }
   }
 
