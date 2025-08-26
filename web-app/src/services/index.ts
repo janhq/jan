@@ -1,6 +1,6 @@
 /**
  * Service Hub - Centralized service initialization and access
- * 
+ *
  * This hub initializes all platform services once at app startup,
  * then provides synchronous access to service instances throughout the app.
  */
@@ -47,11 +47,7 @@ import type { PathService } from './path/types'
 import type { CoreService } from './core/types'
 import type { DeepLinkService } from './deeplink/types'
 
-// Global service hub instance
-let serviceHub: ServiceHub | null = null
-let initializationPromise: Promise<void> | null = null
-
-interface ServiceHub {
+export interface ServiceHub {
   // Service getters - all synchronous after initialization
   theme(): ThemeService
   window(): WindowService
@@ -100,8 +96,11 @@ class PlatformServiceHub implements ServiceHub {
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    console.log('Initializing service hub for platform:', isPlatformTauri() ? 'Tauri' : 'Web')
-    
+    console.log(
+      'Initializing service hub for platform:',
+      isPlatformTauri() ? 'Tauri' : 'Web'
+    )
+
     try {
       if (isPlatformTauri()) {
         const [
@@ -117,7 +116,7 @@ class PlatformServiceHub implements ServiceHub {
           updaterModule,
           pathModule,
           coreModule,
-          deepLinkModule
+          deepLinkModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -131,7 +130,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./updater/tauri'),
           import('./path/tauri'),
           import('./core/tauri'),
-          import('./deeplink/tauri')
+          import('./deeplink/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -161,7 +160,7 @@ class PlatformServiceHub implements ServiceHub {
           mcpModule,
           openerModule,
           providersModule,
-          updaterModule
+          updaterModule,
         ] = await Promise.all([
           import('./theme/web'),
           import('./app/web'),
@@ -175,7 +174,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./mcp/web'),
           import('./opener/web'),
           import('./providers/web'),
-          import('./updater/web')
+          import('./updater/web'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -192,7 +191,7 @@ class PlatformServiceHub implements ServiceHub {
         this.providersService = new providersModule.WebProvidersService()
         this.updaterService = new updaterModule.WebUpdaterService()
       }
-      
+
       this.initialized = true
       console.log('Service hub initialized successfully')
     } catch (error) {
@@ -204,7 +203,9 @@ class PlatformServiceHub implements ServiceHub {
 
   private ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error('Service hub not initialized. Call initializeServiceHub() first.')
+      throw new Error(
+        'Service hub not initialized. Call initializeServiceHub() first.'
+      )
     }
   }
 
@@ -300,37 +301,8 @@ class PlatformServiceHub implements ServiceHub {
   }
 }
 
-/**
- * Initialize the service hub - call this once at app startup
- */
-export async function initializeServiceHub(): Promise<void> {
-  if (initializationPromise) {
-    return initializationPromise
-  }
-
-  initializationPromise = (async () => {
-    if (!serviceHub) {
-      serviceHub = new PlatformServiceHub()
-    }
-    await (serviceHub as PlatformServiceHub).initialize()
-  })()
-
-  return initializationPromise
-}
-
-/**
- * Get the initialized service hub
- */
-export function getServiceHub(): ServiceHub {
-  if (!serviceHub) {
-    throw new Error('Service hub not initialized. Call initializeServiceHub() first.')
-  }
+export async function initializeServiceHub(): Promise<ServiceHub> {
+  const serviceHub = new PlatformServiceHub()
+  await serviceHub.initialize()
   return serviceHub
-}
-
-/**
- * Check if service hub is initialized
- */
-export function isServiceHubInitialized(): boolean {
-  return serviceHub !== null && (serviceHub as PlatformServiceHub)['initialized']
 }

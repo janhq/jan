@@ -42,7 +42,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
@@ -78,6 +78,7 @@ function Hub() {
 function HubContent() {
   const parentRef = useRef(null)
   const { huggingfaceToken } = useGeneralSetting()
+  const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -217,12 +218,12 @@ function HubContent() {
       addModelSourceTimeoutRef.current = setTimeout(async () => {
         try {
           // Fetch HuggingFace repository information
-          const repoInfo = await getServiceHub().models().fetchHuggingFaceRepo(
+          const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(
             e.target.value,
             huggingfaceToken
           )
           if (repoInfo) {
-            const catalogModel = getServiceHub().models().convertHfRepoToCatalogModel(repoInfo)
+            const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
             if (
               catalogModel &&
               !sources.some(
@@ -299,7 +300,7 @@ function HubContent() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supportStatus = await getServiceHub().models().isModelSupported(modelPath, 8192)
+        const supportStatus = await serviceHub.models().isModelSupported(modelPath, 8192)
 
         setModelSupportStatus((prev) => ({
           ...prev,
@@ -313,7 +314,7 @@ function HubContent() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
   const DownloadButtonPlaceholder = useMemo(() => {
@@ -359,7 +360,7 @@ function HubContent() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        getServiceHub().models().pullModelWithMetadata(
+        serviceHub.models().pullModelWithMetadata(
           modelId, 
           modelUrl,
           mmprojPath,
@@ -413,6 +414,7 @@ function HubContent() {
     addLocalDownloadingModel,
     huggingfaceToken,
     handleUseModel,
+    serviceHub,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -949,7 +951,7 @@ function HubContent() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  getServiceHub().models().pullModelWithMetadata(
+                                                  serviceHub.models().pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[

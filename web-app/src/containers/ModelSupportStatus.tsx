@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 interface ModelSupportStatusProps {
   modelId: string | undefined
@@ -25,6 +25,7 @@ export const ModelSupportStatus = ({
   const [modelSupportStatus, setModelSupportStatus] = useState<
     'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null
   >(null)
+  const serviceHub = useServiceHub()
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
@@ -46,7 +47,7 @@ export const ModelSupportStatus = ({
 
         // Check if the standard model.gguf file exists
         if (await fs.existsSync(ggufModelPath)) {
-          return await getServiceHub().models().isModelSupported(ggufModelPath, ctxSize)
+          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
         }
 
         // If model.gguf doesn't exist, try reading from model.yml (for imported models)
@@ -66,7 +67,7 @@ export const ModelSupportStatus = ({
         }
 
         // Read the model configuration to get the actual model path
-        const modelConfig = await getServiceHub().app().readYaml<{ model_path: string }>(
+        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
           `llamacpp/models/${id}/model.yml`
         )
 
@@ -77,7 +78,7 @@ export const ModelSupportStatus = ({
             ? modelConfig.model_path // absolute path, use as-is
             : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
 
-        return await getServiceHub().models().isModelSupported(actualModelPath, ctxSize)
+        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
       } catch (error) {
         console.error(
           'Error checking model support with path resolution:',

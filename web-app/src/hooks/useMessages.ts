@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from './useAssistant'
 
 type MessageState = {

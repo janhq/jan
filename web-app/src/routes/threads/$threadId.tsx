@@ -14,7 +14,7 @@ import { ThreadContent } from '@/containers/ThreadContent'
 import { StreamingContent } from '@/containers/StreamingContent'
 
 import { useMessages } from '@/hooks/useMessages'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
@@ -32,6 +32,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 
 function ThreadDetail() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -86,14 +87,14 @@ function ThreadDetail() {
   }, [threadId, currentThreadId, assistants])
 
   useEffect(() => {
-    getServiceHub().messages().fetchMessages(threadId).then((fetchedMessages) => {
+    serviceHub.messages().fetchMessages(threadId).then((fetchedMessages) => {
       if (fetchedMessages) {
         // Update the messages in the store
         setMessages(threadId, fetchedMessages)
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId])
+  }, [threadId, serviceHub])
 
   useEffect(() => {
     return () => {

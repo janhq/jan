@@ -1,4 +1,4 @@
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'

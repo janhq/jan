@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { DeviceList } from '@/services/hardware/types'
 import { useModelProvider } from './useModelProvider'
 

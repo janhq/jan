@@ -16,7 +16,7 @@ import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 import { Switch } from '@/components/ui/switch'
 import { twMerge } from 'tailwind-merge'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -98,6 +98,7 @@ function MCPServers() {
 
 function MCPServersContent() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const {
     mcpServers,
     addServer,
@@ -177,7 +178,7 @@ function MCPServersContent() {
     if (serverToDelete) {
       // Stop the server before deletion
       try {
-        await getServiceHub().mcp().deactivateMCPServer(serverToDelete)
+        await serviceHub.mcp().deactivateMCPServer(serverToDelete)
       } catch (error) {
         console.error('Error stopping server before deletion:', error)
       }
@@ -236,7 +237,7 @@ function MCPServersContent() {
       setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
       const config = getServerConfig(serverKey)
       if (active && config) {
-        getServiceHub().mcp().activateMCPServer(serverKey, config)
+        serviceHub.mcp().activateMCPServer(serverKey, config)
           .then(() => {
             // Save single server
             editServer(serverKey, {
@@ -249,7 +250,7 @@ function MCPServersContent() {
                 ? t('mcp-servers:serverStatusActive', { serverKey })
                 : t('mcp-servers:serverStatusInactive', { serverKey })
             )
-            getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
+            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
           })
           .catch((error) => {
             editServer(serverKey, {
@@ -270,8 +271,8 @@ function MCPServersContent() {
           active,
         })
         syncServers()
-        getServiceHub().mcp().deactivateMCPServer(serverKey).finally(() => {
-          getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
+        serviceHub.mcp().deactivateMCPServer(serverKey).finally(() => {
+          serviceHub.mcp().getConnectedServers().then(setConnectedServers)
           setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
         })
       }
@@ -279,14 +280,14 @@ function MCPServersContent() {
   }
 
   useEffect(() => {
-    getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
+    serviceHub.mcp().getConnectedServers().then(setConnectedServers)
 
     const intervalId = setInterval(() => {
-      getServiceHub().mcp().getConnectedServers().then(setConnectedServers)
+      serviceHub.mcp().getConnectedServers().then(setConnectedServers)
     }, 3000)
 
     return () => clearInterval(intervalId)
-  }, [setConnectedServers])
+  }, [serviceHub, setConnectedServers])
 
   return (
     <div className="flex flex-col h-full">

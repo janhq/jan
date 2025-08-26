@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { ulid } from 'ulidx'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 
 type ThreadState = {

@@ -32,7 +32,7 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 type ChatInputProps = {
   className?: string
@@ -45,6 +45,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  const serviceHub = useServiceHub()
   const {
     streamingContent,
     abortControllers,
@@ -81,7 +82,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   useEffect(() => {
     const checkConnectedServers = async () => {
       try {
-        const servers = await getServiceHub().mcp().getConnectedServers()
+        const servers = await serviceHub.mcp().getConnectedServers()
         setConnectedServers(servers)
       } catch (error) {
         console.error('Failed to get connected servers:', error)
@@ -104,7 +105,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         try {
           // Only check mmproj for llamacpp provider
           if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await getServiceHub().models().checkMmprojExists(selectedModel.id)
+            const hasLocalMmproj = await serviceHub.models().checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
           }
           // For non-llamacpp providers, only check vision capability

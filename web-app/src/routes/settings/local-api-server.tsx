@@ -13,7 +13,7 @@ import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
@@ -37,6 +37,7 @@ function LocalAPIServer() {
 
 function LocalAPIServerContent() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const {
     corsEnabled,
     setCorsEnabled,
@@ -60,7 +61,7 @@ function LocalAPIServerContent() {
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      getServiceHub().app().getServerStatus().then((running) => {
+      serviceHub.app().getServerStatus().then((running) => {
         if (running) {
           setServerStatus('running')
         }
@@ -142,7 +143,7 @@ function LocalAPIServerContent() {
       setServerStatus('pending')
 
       // Start the model first
-      getServiceHub().models().startModel(modelToStart.model, modelToStart.provider.provider)
+      serviceHub.models().startModel(modelToStart.model, modelToStart.provider.provider)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 
@@ -180,7 +181,7 @@ function LocalAPIServerContent() {
 
   const handleOpenLogs = async () => {
     try {
-      await getServiceHub().window().openLocalApiServerLogsWindow()
+      await serviceHub.window().openLocalApiServerLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }

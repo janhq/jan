@@ -10,7 +10,7 @@ import { useHardware } from '@/hooks/useHardware'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
@@ -34,6 +34,7 @@ function Hardware() {
 function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
+  const serviceHub = useServiceHub()
   const {
     hardwareData,
     systemUsage,
@@ -74,14 +75,14 @@ function HardwareContent() {
   useEffect(() => {
     setIsLoading(true)
     Promise.all([
-      getServiceHub().hardware().getHardwareInfo()
+      serviceHub.hardware().getHardwareInfo()
         .then((data: HardwareData | null) => {
           if (data) setHardwareData(data)
         })
         .catch((error) => {
           console.error('Failed to get hardware info:', error)
         }),
-      getServiceHub().hardware().getSystemUsage()
+      serviceHub.hardware().getSystemUsage()
         .then((data: SystemUsage | null) => {
           if (data) updateSystemUsage(data)
         })
@@ -100,7 +101,7 @@ function HardwareContent() {
       return
     }
     const intervalId = setInterval(() => {
-      getServiceHub().hardware().getSystemUsage()
+      serviceHub.hardware().getSystemUsage()
         .then((data: SystemUsage | null) => {
           if (data) updateSystemUsage(data)
         })
@@ -114,7 +115,7 @@ function HardwareContent() {
 
   const handleClickSystemMonitor = async () => {
     try {
-      await getServiceHub().window().openSystemMonitorWindow()
+      await serviceHub.window().openSystemMonitorWindow()
     } catch (error) {
       console.error('Failed to open system monitor window:', error)
     }
@@ -307,7 +308,7 @@ function HardwareContent() {
                                 checked={device.activated}
                                 onCheckedChange={() => {
                                   toggleDevice(device.id)
-                                  getServiceHub().models().stopAllModels()
+                                  serviceHub.models().stopAllModels()
                                 }}
                               />
                             </div>

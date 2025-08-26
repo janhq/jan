@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -23,13 +22,13 @@ import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import type { Model as CoreModel } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
 import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { toast } from 'sonner'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -47,6 +46,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const steps = [
     {
@@ -95,7 +95,7 @@ function ProviderDetail() {
     }
 
     setImportingModel(true)
-    const selectedFile = await getServiceHub().dialog().open({
+    const selectedFile = await serviceHub.dialog().open({
       multiple: false,
       directory: false,
     })
@@ -120,9 +120,9 @@ function ProviderDetail() {
       }
 
       try {
-        await getServiceHub().models().pullModel(fileName, typeof selectedFile === 'string' ? selectedFile : selectedFile?.[0])
+        await serviceHub.models().pullModel(fileName, typeof selectedFile === 'string' ? selectedFile : selectedFile?.[0])
         // Refresh the provider to update the models list
-        await getServiceHub().providers().getProviders().then(setProviders)
+        await serviceHub.providers().getProviders().then(setProviders)
         toast.success(t('providers:import'), {
           id: `import-model-${provider.provider}`,
           description: t('providers:importModelSuccess', {
@@ -145,28 +145,28 @@ function ProviderDetail() {
 
   useEffect(() => {
     // Initial data fetch
-    getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
+    serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
+      serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setActiveModels])
+  }, [serviceHub, setActiveModels])
 
   // Auto-refresh provider settings to get updated backend configuration
-  const refreshSettings = async () => {
+  const refreshSettings = useCallback(async () => {
     if (!provider) return
 
     try {
       // Refresh providers to get updated settings from the extension
-      const updatedProviders = await getServiceHub().providers().getProviders()
+      const updatedProviders = await serviceHub.providers().getProviders()
       setProviders(updatedProviders)
     } catch (error) {
       console.error('Failed to refresh settings:', error)
     }
-  }
+  }, [provider, serviceHub, setProviders])
 
   // Auto-refresh settings when provider changes or when llamacpp needs backend config
   useEffect(() => {
@@ -175,7 +175,7 @@ function ProviderDetail() {
       const intervalId = setInterval(refreshSettings, 3000)
       return () => clearInterval(intervalId)
     }
-  }, [provider, needsBackendConfig])
+  }, [provider, needsBackendConfig, refreshSettings])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
@@ -198,7 +198,7 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      const modelIds = await getServiceHub().providers().fetchModelsFromProvider(provider)
+      const modelIds = await serviceHub.providers().fetchModelsFromProvider(provider)
 
       // Create new models from the fetched IDs
       const newModels: Model[] = modelIds.map((id) => ({
@@ -253,10 +253,10 @@ function ProviderDetail() {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
     if (provider)
-      getServiceHub().models().startModel(modelId, provider.provider)
+      serviceHub.models().startModel(modelId, provider.provider)
         .then(() => {
           // Refresh active models after starting
-          getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
+          serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
         })
         .catch((error) => {
           console.error('Error starting model:', error)
@@ -273,10 +273,10 @@ function ProviderDetail() {
   }
 
   const handleStopModel = (modelId: string) => {
-    getServiceHub().models().stopModel(modelId)
+    serviceHub.models().stopModel(modelId)
       .then(() => {
         // Refresh active models after stopping
-        getServiceHub().models().getActiveModels().then((models) => setActiveModels(models || []))
+        serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
       })
       .catch((error) => {
         console.error('Error stopping model:', error)
@@ -407,7 +407,7 @@ function ProviderDetail() {
                                   }
                                 }
 
-                                getServiceHub().providers().updateSettings(
+                                serviceHub.providers().updateSettings(
                                   providerName,
                                   updateObj.settings ?? []
                                 )
@@ -416,7 +416,7 @@ function ProviderDetail() {
                                   ...updateObj,
                                 })
 
-                                getServiceHub().models().stopAllModels()
+                                serviceHub.models().stopAllModels()
                               }
                             }}
                           />

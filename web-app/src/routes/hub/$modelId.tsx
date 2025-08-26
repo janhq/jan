@@ -20,7 +20,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import type {
   CatalogModel,
   ModelQuant,
@@ -63,6 +63,7 @@ function HubModelDetailContent() {
   const llamaProvider = getProviderByName('llamacpp')
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
+  const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
 
   // State for README content
@@ -79,12 +80,12 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await getServiceHub().models().fetchHuggingFaceRepo(
+    const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(
       search.repo || modelId,
       huggingfaceToken
     )
     if (repoInfo) {
-      const repoDetail = getServiceHub().models().convertHfRepoToCatalogModel(repoInfo)
+      const repoDetail = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
       setRepoData(repoDetail || undefined)
     }
   }, [modelId, search, huggingfaceToken])
@@ -167,7 +168,7 @@ function HubModelDetailContent() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supported = await getServiceHub().models().isModelSupported(modelPath, 8192)
+        const supported = await serviceHub.models().isModelSupported(modelPath, 8192)
         setModelSupportStatus((prev) => ({
           ...prev,
           [modelKey]: supported,
@@ -472,7 +473,7 @@ function HubModelDetailContent() {
                                         addLocalDownloadingModel(
                                           variant.model_id
                                         )
-                                        getServiceHub().models().pullModelWithMetadata(
+                                        serviceHub.models().pullModelWithMetadata(
                                           variant.model_id,
                                           variant.path,
                                           modelData.mmproj_models?.[0]?.path,

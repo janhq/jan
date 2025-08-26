@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,6 +18,7 @@ export function DownloadManagement() {
   const { t } = useTranslation()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
+  const serviceHub = useServiceHub()
   const {
     downloads,
     updateProgress,
@@ -390,7 +391,7 @@ export function DownloadManagement() {
                           className="text-main-view-fg/70 cursor-pointer"
                           title="Cancel download"
                           onClick={() => {
-                            getServiceHub().models().abortDownload(download.name).then(() => {
+                            serviceHub.models().abortDownload(download.name).then(() => {
                               toast.info(
                                 t('common:toast.downloadCancelled.title'),
                                 {

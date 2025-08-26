@@ -9,7 +9,7 @@ import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 
@@ -28,6 +28,7 @@ function SystemMonitor() {
 function SystemMonitorContent() {
   const { t } = useTranslation()
   const { hardwareData, systemUsage, updateSystemUsage } = useHardware()
+  const serviceHub = useServiceHub()
 
   const { devices: llamacppDevices, fetchDevices } = useLlamacppDevices()
 
@@ -39,7 +40,7 @@ function SystemMonitorContent() {
   // Poll system usage every 5 seconds
   useEffect(() => {
     const intervalId = setInterval(() => {
-      getServiceHub().hardware().getSystemUsage()
+      serviceHub.hardware().getSystemUsage()
         .then((data) => {
           if (data) {
             updateSystemUsage(data)
@@ -51,7 +52,7 @@ function SystemMonitorContent() {
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [updateSystemUsage])
+  }, [updateSystemUsage, serviceHub])
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =

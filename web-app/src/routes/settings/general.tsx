@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   IconBrandDiscord,
   IconBrandGithub,
@@ -52,6 +52,7 @@ function General() {
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
+  const serviceHub = useServiceHub()
 
   const openFileTitle = (): string => {
     if (IS_MACOS) {
@@ -72,7 +73,7 @@ function General() {
 
   useEffect(() => {
     const fetchDataFolder = async () => {
-      const path = await getServiceHub().app().getJanDataFolder()
+      const path = await serviceHub.app().getJanDataFolder()
       setJanDataFolder(path)
     }
 
@@ -82,12 +83,12 @@ function General() {
   const resetApp = async () => {
     pausePolling()
     // TODO: Loading indicator
-    await getServiceHub().app().factoryReset()
+    await serviceHub.app().factoryReset()
   }
 
   const handleOpenLogs = async () => {
     try {
-      await getServiceHub().window().openLogsWindow()
+      await serviceHub.window().openLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }
@@ -104,7 +105,7 @@ function General() {
   }
 
   const handleDataFolderChange = async () => {
-    const selectedPath = await getServiceHub().dialog().open({
+    const selectedPath = await serviceHub.dialog().open({
       multiple: false,
       directory: true,
       defaultPath: janDataFolder,
@@ -120,11 +121,11 @@ function General() {
   const confirmDataFolderChange = async () => {
     if (selectedNewPath) {
       try {
-        await getServiceHub().models().stopAllModels()
-        getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
+        await serviceHub.models().stopAllModels()
+        serviceHub.events().emit(SystemEvent.KILL_SIDECAR)
         setTimeout(async () => {
           try {
-            await getServiceHub().app().relocateJanDataFolder(selectedNewPath)
+            await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
             window.core?.api?.relaunch()
@@ -142,7 +143,7 @@ function General() {
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
         // Revert the data folder path on error
-        const originalPath = await getServiceHub().app().getJanDataFolder()
+        const originalPath = await serviceHub.app().getJanDataFolder()
         setJanDataFolder(originalPath)
 
         toast.error(t('settings:general.failedToRelocateDataFolderDesc'))
@@ -331,7 +332,7 @@ function General() {
                         if (janDataFolder) {
                           try {
                             const logsPath = `${janDataFolder}/logs`
-                            await getServiceHub().opener().revealItemInDir(logsPath)
+                            await serviceHub.opener().revealItemInDir(logsPath)
                           } catch (error) {
                             console.error(
                               'Failed to reveal logs folder:',

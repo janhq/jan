@@ -30,21 +30,11 @@ import { useCallback, useEffect, useState } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
-import { 
-  getCurrentPlatform, 
-  PlatformFeatures, 
-  isFeatureAvailable,
-  PlatformFeature
-} from '@/lib/platform'
 import { initializeServiceHub } from '@/services'
 import { ServiceInitializationLoader } from '@/containers/ServiceInitializationLoader'
+import { initializeServiceHubStore } from '@/hooks/useServiceHub'
 
 export const Route = createRootRoute({
-  context: () => ({
-    platform: getCurrentPlatform(),
-    features: PlatformFeatures,
-    isFeatureAvailable: (feature: PlatformFeature) => isFeatureAvailable(feature)
-  }),
   component: RootLayout,
   errorComponent: ({ error }) => <GlobalError error={error} />,
 })
@@ -89,13 +79,14 @@ const AppLayout = () => {
     const handleGlobalDrop = (e: DragEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // Only prevent if the target is not within a chat input or other valid drop zone
       const target = e.target as Element
-      const isValidDropZone = target?.closest('[data-drop-zone="true"]') || 
-                             target?.closest('.chat-input-drop-zone') ||
-                             target?.closest('[data-tauri-drag-region]')
-      
+      const isValidDropZone =
+        target?.closest('[data-drop-zone="true"]') ||
+        target?.closest('.chat-input-drop-zone') ||
+        target?.closest('[data-tauri-drag-region]')
+
       if (!isValidDropZone) {
         // Prevent the file from opening in the window
         return false
@@ -109,7 +100,7 @@ const AppLayout = () => {
 
     return () => {
       window.removeEventListener('dragenter', preventDefaults)
-      window.removeEventListener('dragover', preventDefaults)  
+      window.removeEventListener('dragover', preventDefaults)
       window.removeEventListener('drop', handleGlobalDrop)
     }
   }, [])
@@ -197,8 +188,8 @@ const LogsLayout = () => {
 
 function RootLayout() {
   const router = useRouterState()
-  const [servicesReady, setServicesReady] = useState(false)
   const [initError, setInitError] = useState<Error | null>(null)
+  const [servicesReady, setServicesReady] = useState(false)
 
   const isLocalAPIServerLogsRoute =
     router.location.pathname === route.localApiServerlogs ||
@@ -208,12 +199,13 @@ function RootLayout() {
   // Initialize services on mount
   useEffect(() => {
     initializeServiceHub()
-      .then(() => {
-        console.log('✅ Services initialized, rendering app')
+      .then((hub) => {
+        console.log('Services initialized, initializing Zustand store')
+        initializeServiceHubStore(hub)
         setServicesReady(true)
       })
       .catch((error) => {
-        console.error('❌ Service initialization failed:', error)
+        console.error('Service initialization failed:', error)
         setInitError(error)
         setServicesReady(true) // Still render to show error state
       })

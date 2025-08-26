@@ -11,7 +11,7 @@ import {
   chatCompletionChunk,
   Tool,
 } from '@janhq/core'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,

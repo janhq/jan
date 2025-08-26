@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { events } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 /**
  * GlobalEventHandler handles global events that should be processed across all screens
@@ -9,6 +9,7 @@ import { getServiceHub } from '@/services'
  */
 export function GlobalEventHandler() {
   const { setProviders } = useModelProvider()
+  const serviceHub = useServiceHub()
 
   // Handle settingsChanged event globally
   useEffect(() => {
@@ -22,7 +23,7 @@ export function GlobalEventHandler() {
       if (event.key === 'version_backend') {
         try {
           // Refresh providers to get updated settings from the extension
-          const updatedProviders = await getServiceHub().providers().getProviders()
+          const updatedProviders = await serviceHub.providers().getProviders()
           setProviders(updatedProviders)
           console.log('Providers refreshed after version_backend change')
         } catch (error) {
@@ -47,7 +48,7 @@ export function GlobalEventHandler() {
     return () => {
       events.off('settingsChanged', handleSettingsChanged)
     }
-  }, [setProviders])
+  }, [setProviders, serviceHub])
 
   // This component doesn't render anything
   return null

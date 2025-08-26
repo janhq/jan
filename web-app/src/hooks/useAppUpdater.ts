@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import type { UpdateInfo } from '@/services/updater/types'
 import { SystemEvent } from '@/types/events'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 export interface UpdateState {
   isUpdateAvailable: boolean

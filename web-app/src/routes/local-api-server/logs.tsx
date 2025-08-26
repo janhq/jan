@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
@@ -28,9 +28,10 @@ function LogsViewer() {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
+  const serviceHub = useServiceHub()
 
   useEffect(() => {
-    getServiceHub().app().readLogs().then((logData) => {
+    serviceHub.app().readLogs().then((logData) => {
       const logs = logData
         .filter((log) => log?.target === SERVER_LOG_TARGET)
         .filter(Boolean) as LogEntry[]
@@ -42,9 +43,9 @@ function LogsViewer() {
       }, 100)
     })
     let unsubscribe = () => {}
-    getServiceHub().events().listen(LOG_EVENT_NAME, (event) => {
+    serviceHub.events().listen(LOG_EVENT_NAME, (event) => {
       const { message } = event.payload as { message: string }
-      const log: LogEntry | undefined = getServiceHub().app().parseLogLine(message)
+      const log: LogEntry | undefined = serviceHub.app().parseLogLine(message)
       if (log?.target === SERVER_LOG_TARGET) {
         setLogs((prevLogs) => {
           const newLogs = [...prevLogs, log]

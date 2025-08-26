@@ -7,7 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
-import { getServiceHub } from '../index'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
 

@@ -1,11 +1,12 @@
 import posthog from 'posthog-js'
 import { useEffect } from 'react'
 
-import { getServiceHub } from '@/services'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
 
 export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
+  const serviceHub = useServiceHub()
 
   useEffect(() => {
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
@@ -46,19 +47,19 @@ export function AnalyticProvider() {
         },
       })
       // Attempt to restore distinct Id from app global settings
-      getServiceHub().analytic().getAppDistinctId()
+      serviceHub.analytic().getAppDistinctId()
         .then((id) => {
           if (id) posthog.identify(id)
         })
         .finally(() => {
           posthog.opt_in_capturing()
           posthog.register({ app_version: VERSION })
-          getServiceHub().analytic().updateDistinctId(posthog.get_distinct_id())
+          serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
         })
     } else {
       posthog.opt_out_capturing()
     }
-  }, [productAnalytic])
+  }, [productAnalytic, serviceHub])
 
   // This component doesn't render anything
   return null

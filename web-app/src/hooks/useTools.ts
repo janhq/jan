@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { MCPTool } from '@/types/completion'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'

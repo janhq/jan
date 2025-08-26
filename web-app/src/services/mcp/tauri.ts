@@ -4,7 +4,7 @@
  * Currently uses default implementation as MCP is handled through window.core API
  */
 
-import { getServiceHub } from '../index'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {

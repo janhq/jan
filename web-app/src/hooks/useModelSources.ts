@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
 import { sanitizeModelId } from '@/lib/utils'
 

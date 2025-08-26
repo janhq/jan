@@ -1,6 +1,6 @@
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 /**
  * Extension manifest object.

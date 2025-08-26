@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { ThemeMode } from '@/services/theme/types'
 import { localStorageKey } from '@/constants/localStorage'
 

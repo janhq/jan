@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 // Define the structure of an MCP server configuration
 export type MCPServerConfig = {

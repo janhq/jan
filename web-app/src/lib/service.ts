@@ -1,5 +1,5 @@
 import { CoreRoutes, APIRoutes } from '@janhq/core'
-import { getServiceHub } from '@/services'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { InvokeArgs } from '@/services/core/types'
 
 export const AppRoutes = [
