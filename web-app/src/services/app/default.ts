@@ -34,4 +34,8 @@ export class DefaultAppService implements AppService {
   async getServerStatus(): Promise<boolean> {
     return false
   }
+
+  async readYaml<T = unknown>(path: string): Promise<T> {
+    throw new Error('readYaml not implemented in default app service')
+  }
 }

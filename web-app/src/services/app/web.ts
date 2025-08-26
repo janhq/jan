@@ -40,4 +40,9 @@ export class WebAppService implements AppService {
     console.log('Server status not available in web mode')
     return false
   }
+
+  async readYaml<T = unknown>(_path: string): Promise<T> {
+    console.log('YAML reading not available in web mode')
+    throw new Error('readYaml not implemented in web app service')
+  }
 }

@@ -16,4 +16,5 @@ export interface AppService {
   getJanDataFolder(): Promise<string | undefined>
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
+  readYaml<T = unknown>(path: string): Promise<T>
 }

@@ -103,4 +103,13 @@ export class TauriAppService extends DefaultAppService {
       return super.getServerStatus()
     }
   }
+
+  async readYaml<T = unknown>(path: string): Promise<T> {
+    try {
+      return await invoke<T>('read_yaml', { path })
+    } catch (error) {
+      console.error('Error reading YAML in Tauri, falling back to default:', error)
+      return super.readYaml<T>(path)
+    }
+  }
 }

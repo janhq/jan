@@ -273,7 +273,7 @@ export class DefaultModelsService implements ModelsService {
                         offload_mmproj: {
                           key: 'offload_mmproj',
                           title: 'Offload MMProj',
-                          description: 'Offload multimodal projection layers to GPU',
+                          description: 'Offload multimodal projection model to GPU',
                           controller_type: 'checkbox',
                           controller_props: {
                             value: true,
@@ -311,7 +311,7 @@ export class DefaultModelsService implements ModelsService {
                   model.settings.offload_mmproj = {
                     key: 'offload_mmproj',
                     title: 'Offload MMProj',
-                    description: 'Offload multimodal projection layers to GPU',
+                    description: 'Offload multimodal projection model to GPU',
                     controller_type: 'checkbox',
                     controller_props: {
                       value: true,
