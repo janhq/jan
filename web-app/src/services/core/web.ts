@@ -29,6 +29,16 @@ export class WebCoreService implements CoreService {
     console.warn('Extension installation not available in web environment')
   }
 
+  async installExtension(extensions: ExtensionManifest[]): Promise<ExtensionManifest[]> {
+    console.warn('Extension installation not available in web environment')
+    return extensions
+  }
+
+  async uninstallExtension(extensions: string[], reload = true): Promise<boolean> {
+    console.warn('Extension uninstallation not available in web environment')
+    return false
+  }
+
   // App token - web fallback
   async getAppToken(): Promise<string | null> {
     console.warn('App token not available in web environment')

@@ -1,5 +1,6 @@
 import { CoreRoutes, APIRoutes } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
 
 export const AppRoutes = [
@@ -41,11 +42,17 @@ export const APIs = {
     return {
       ...acc,
       [proxy.route]: (args?: InvokeArgs) => {
-        // For each route, define a function that sends a request to the API
-        return getServiceHub().core().invoke(
-          proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase(),
-          args
-        )
+        if (isPlatformTauri()) {
+          // For Tauri platform, use the service hub to invoke commands
+          return getServiceHub().core().invoke(
+            proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase(),
+            args
+          )
+        } else {
+          // For Web platform, provide fallback implementations
+          console.warn(`API call '${proxy.route}' not supported in web environment`, args)
+          return Promise.resolve(null)
+        }
       },
     }
   }, {}),
