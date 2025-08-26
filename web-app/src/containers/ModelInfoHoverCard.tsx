@@ -4,7 +4,7 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
 import { IconInfoCircle } from '@tabler/icons-react'
-import type { CatalogModel, ModelQuant } from '@/services/models'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 
 
 interface ModelInfoHoverCardProps {
@@ -28,7 +28,7 @@ export const ModelInfoHoverCard = ({
 }: ModelInfoHoverCardProps) => {
   const displayVariant =
     variant ||
-    model.quants.find((m) =>
+    model.quants.find((m: ModelQuant) =>
       defaultModelQuantizations.some((e) =>
         m.model_id.toLowerCase().includes(e)
       )

@@ -4,7 +4,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { getServiceHub } from '@/services'
 import { useEffect } from 'react'
-import { useMCPServers } from '@/hooks/useMCPServers'
+import { useMCPServers, type MCPServers } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -41,7 +41,7 @@ export function DataProvider() {
   useEffect(() => {
     console.log('Initializing DataProvider...')
     getServiceHub().providers().getProviders().then(setProviders)
-    getServiceHub().mcp().getMCPConfig().then((data) => setServers((data as any).mcpServers ?? []))
+    getServiceHub().mcp().getMCPConfig().then((data) => setServers(data as MCPServers))
     getServiceHub().assistants().getAssistants()
       .then((data) => {
         // Only update assistants if we have valid data
