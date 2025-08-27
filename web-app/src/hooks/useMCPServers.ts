@@ -27,6 +27,11 @@ type MCPServerStoreState = {
   setLeftPanel: (value: boolean) => void
   addServer: (key: string, config: MCPServerConfig) => void
   editServer: (key: string, config: MCPServerConfig) => void
+  renameServer: (
+    oldKey: string,
+    newKey: string,
+    config: MCPServerConfig
+  ) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
   syncServers: () => Promise<void>
@@ -47,7 +52,10 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
-      const mcpServers = { ...state.mcpServers, [key]: config }
+      // Remove the key first if it exists to maintain insertion order
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [key]: _, ...restServers } = state.mcpServers
+      const mcpServers = { [key]: config, ...restServers }
       return { mcpServers }
     }),
 
@@ -58,6 +66,27 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
       if (!state.mcpServers[key]) return state
 
       const mcpServers = { ...state.mcpServers, [key]: config }
+      return { mcpServers }
+    }),
+
+  // Rename a server while preserving its position
+  renameServer: (oldKey, newKey, config) =>
+    set((state) => {
+      // Only proceed if the server exists
+      if (!state.mcpServers[oldKey]) return state
+
+      const entries = Object.entries(state.mcpServers)
+      const mcpServers: MCPServers = {}
+
+      // Rebuild the object with the same order, replacing the old key with the new key
+      entries.forEach(([key, serverConfig]) => {
+        if (key === oldKey) {
+          mcpServers[newKey] = config
+        } else {
+          mcpServers[key] = serverConfig
+        }
+      })
+
       return { mcpServers }
     }),
   setServers: (servers) =>
