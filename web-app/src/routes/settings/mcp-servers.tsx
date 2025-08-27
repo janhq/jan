@@ -360,7 +360,9 @@ function MCPServers() {
                 {t('mcp-servers:noServers')}
               </div>
             ) : (
-              Object.entries(mcpServers).map(([key, config], index) => (
+              Object.entries(mcpServers)
+                .sort(([, a], [, b]) => (b.lastModified || 0) - (a.lastModified || 0))
+                .map(([key, config], index) => (
                 <Card key={`${key}-${index}`}>
                   <CardItem
                     align="start"

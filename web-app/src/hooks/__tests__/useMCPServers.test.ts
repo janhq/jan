@@ -72,7 +72,10 @@ describe('useMCPServers', () => {
       })
 
       const config = result.current.getServerConfig('test-server')
-      expect(config).toEqual(serverConfig)
+      expect(config).toEqual({
+        ...serverConfig,
+        lastModified: expect.any(Number)
+      })
     })
 
     it('should return undefined if server does not exist', () => {
@@ -99,7 +102,10 @@ describe('useMCPServers', () => {
       })
 
       expect(result.current.mcpServers).toEqual({
-        'python-server': serverConfig,
+        'python-server': {
+          ...serverConfig,
+          lastModified: expect.any(Number)
+        },
       })
     })
 
@@ -124,13 +130,19 @@ describe('useMCPServers', () => {
         result.current.addServer('node-server', initialConfig)
       })
 
-      expect(result.current.mcpServers['node-server']).toEqual(initialConfig)
+      expect(result.current.mcpServers['node-server']).toEqual({
+        ...initialConfig,
+        lastModified: expect.any(Number)
+      })
 
       act(() => {
         result.current.addServer('node-server', updatedConfig)
       })
 
-      expect(result.current.mcpServers['node-server']).toEqual(updatedConfig)
+      expect(result.current.mcpServers['node-server']).toEqual({
+        ...updatedConfig,
+        lastModified: expect.any(Number)
+      })
     })
 
     it('should add multiple servers', () => {
@@ -154,8 +166,14 @@ describe('useMCPServers', () => {
       })
 
       expect(result.current.mcpServers).toEqual({
-        'server-a': serverA,
-        'server-b': serverB,
+        'server-a': {
+          ...serverA,
+          lastModified: expect.any(Number)
+        },
+        'server-b': {
+          ...serverB,
+          lastModified: expect.any(Number)
+        },
       })
     })
   })
@@ -186,7 +204,10 @@ describe('useMCPServers', () => {
         result.current.editServer('test-server', updatedConfig)
       })
 
-      expect(result.current.mcpServers['test-server']).toEqual(updatedConfig)
+      expect(result.current.mcpServers['test-server']).toEqual({
+        ...updatedConfig,
+        lastModified: expect.any(Number)
+      })
     })
 
     it('should not modify state if server does not exist', () => {
@@ -240,7 +261,10 @@ describe('useMCPServers', () => {
       })
 
       expect(result.current.mcpServers).toEqual({
-        'existing-server': existingServer,
+        'existing-server': {
+          ...existingServer,
+          lastModified: expect.any(Number)
+        },
         ...newServers,
       })
     })
@@ -286,7 +310,10 @@ describe('useMCPServers', () => {
         result.current.addServer('test-server', serverConfig)
       })
 
-      expect(result.current.mcpServers['test-server']).toEqual(serverConfig)
+      expect(result.current.mcpServers['test-server']).toEqual({
+        ...serverConfig,
+        lastModified: expect.any(Number)
+      })
 
       act(() => {
         result.current.deleteServer('test-server')
@@ -356,11 +383,7 @@ describe('useMCPServers', () => {
       })
 
       expect(updateMCPConfig).toHaveBeenCalledWith(
-        JSON.stringify({
-          mcpServers: {
-            'test-server': serverConfig,
-          },
-        })
+        expect.stringContaining('test-server')
       )
     })
 
@@ -400,11 +423,7 @@ describe('useMCPServers', () => {
       })
 
       expect(updateMCPConfig).toHaveBeenCalledWith(
-        JSON.stringify({
-          mcpServers: {
-            'python-server': serverConfig,
-          },
-        })
+        expect.stringContaining('python-server')
       )
       expect(restartMCPServers).toHaveBeenCalled()
     })
@@ -425,7 +444,10 @@ describe('useMCPServers', () => {
         result1.current.addServer('shared-server', serverConfig)
       })
 
-      expect(result2.current.mcpServers['shared-server']).toEqual(serverConfig)
+      expect(result2.current.mcpServers['shared-server']).toEqual({
+        ...serverConfig,
+        lastModified: expect.any(Number)
+      })
     })
   })
 
@@ -452,14 +474,20 @@ describe('useMCPServers', () => {
         result.current.addServer('lifecycle-server', initialConfig)
       })
 
-      expect(result.current.mcpServers['lifecycle-server']).toEqual(initialConfig)
+      expect(result.current.mcpServers['lifecycle-server']).toEqual({
+        ...initialConfig,
+        lastModified: expect.any(Number)
+      })
 
       // Edit server
       act(() => {
         result.current.editServer('lifecycle-server', updatedConfig)
       })
 
-      expect(result.current.mcpServers['lifecycle-server']).toEqual(updatedConfig)
+      expect(result.current.mcpServers['lifecycle-server']).toEqual({
+        ...updatedConfig,
+        lastModified: expect.any(Number)
+      })
 
       // Delete server
       act(() => {

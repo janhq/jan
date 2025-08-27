@@ -11,6 +11,7 @@ export type MCPServerConfig = {
   url?: string
   headers?: Record<string, string>
   timeout?: number
+  lastModified?: number // Timestamp for sorting (new/edited servers on top)
 }
 
 // Define the structure of all MCP servers
@@ -47,7 +48,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
-      const mcpServers = { ...state.mcpServers, [key]: config }
+      const mcpServers = { ...state.mcpServers, [key]: { ...config, lastModified: Date.now() } }
       return { mcpServers }
     }),
 
@@ -57,7 +58,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
       // Only proceed if the server exists
       if (!state.mcpServers[key]) return state
 
-      const mcpServers = { ...state.mcpServers, [key]: config }
+      const mcpServers = { ...state.mcpServers, [key]: { ...config, lastModified: Date.now() } }
       return { mcpServers }
     }),
   setServers: (servers) =>
