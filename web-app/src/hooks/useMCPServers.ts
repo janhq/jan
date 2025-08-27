@@ -27,7 +27,11 @@ type MCPServerStoreState = {
   setLeftPanel: (value: boolean) => void
   addServer: (key: string, config: MCPServerConfig) => void
   editServer: (key: string, config: MCPServerConfig) => void
-  renameServer: (oldKey: string, newKey: string, config: MCPServerConfig) => void
+  renameServer: (
+    oldKey: string,
+    newKey: string,
+    config: MCPServerConfig
+  ) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
   syncServers: () => Promise<void>
@@ -48,7 +52,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
-      const mcpServers = { ...state.mcpServers, [key]: config }
+      const mcpServers = { [key]: config, ...state.mcpServers }
       return { mcpServers }
     }),
 
