@@ -52,7 +52,10 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
-      const mcpServers = { [key]: config, ...state.mcpServers }
+      // Remove the key first if it exists to maintain insertion order
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [key]: _, ...restServers } = state.mcpServers
+      const mcpServers = { [key]: config, ...restServers }
       return { mcpServers }
     }),
 
