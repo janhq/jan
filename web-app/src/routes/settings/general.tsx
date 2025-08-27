@@ -38,6 +38,8 @@ import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -187,7 +189,7 @@ function General() {
                   </span>
                 }
               />
-              {!AUTO_UPDATER_DISABLED && (
+              {!AUTO_UPDATER_DISABLED && PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
                   description={t('settings:general.checkForUpdatesDesc')}
@@ -215,7 +217,8 @@ function General() {
               />
             </Card>
 
-            {/* Data folder */}
+            {/* Data folder - Desktop only */}
+            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
             <Card title={t('common:dataFolder')}>
               <CardItem
                 title={t('settings:dataFolder.appData', {
@@ -355,7 +358,9 @@ function General() {
                 }
               />
             </Card>
-            {/* Advanced */}
+            )}
+            {/* Advanced - Desktop only */}
+            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
             <Card title="Advanced">
               <CardItem
                 title={t('settings:others.resetFactory', {
@@ -404,6 +409,7 @@ function General() {
                 }
               />
             </Card>
+            )}
 
             {/* Other */}
             <Card title={t('common:others')}>

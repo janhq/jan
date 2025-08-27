@@ -19,6 +19,9 @@ export enum PlatformFeature {
   // Extension installation/management
   EXTENSION_MANAGEMENT = 'extensionManagement',
 
+  // Local model inference (llama.cpp)
+  LOCAL_INFERENCE = 'localInference',
+
   // MCP (Model Context Protocol) servers
   MCP_SERVERS = 'mcpServers',
 

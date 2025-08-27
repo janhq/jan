@@ -17,6 +17,9 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Extension installation/management
   [PlatformFeature.EXTENSION_MANAGEMENT]: true,
 
+  // Local model inference (llama.cpp)
+  [PlatformFeature.LOCAL_INFERENCE]: isPlatformTauri(),
+
   // MCP (Model Context Protocol) servers
   [PlatformFeature.MCP_SERVERS]: isPlatformTauri(),
 

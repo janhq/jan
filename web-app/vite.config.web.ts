@@ -48,7 +48,6 @@ export default defineConfig({
     IS_TAURI: JSON.stringify(false),
     // Disable auto-updater on web (not applicable)
     AUTO_UPDATER_DISABLED: JSON.stringify(true),
-    // Add other missing constants
     IS_MACOS: JSON.stringify(false),
     IS_WINDOWS: JSON.stringify(false),
     IS_LINUX: JSON.stringify(false),
