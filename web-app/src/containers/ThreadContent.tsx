@@ -40,6 +40,7 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -152,6 +153,7 @@ export const ThreadContent = memo(
     }
   ) => {
     const { t } = useTranslation()
+    const { selectedModel } = useModelProvider()
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -517,7 +519,7 @@ export const ThreadContent = memo(
                       </DialogContent>
                     </Dialog>
 
-                    {item.isLastMessage && (
+                    {item.isLastMessage && selectedModel && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
