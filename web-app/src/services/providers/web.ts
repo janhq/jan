@@ -8,7 +8,6 @@ import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import type { ProvidersService } from './types'
 
 export class WebProvidersService implements ProvidersService {
@@ -125,8 +124,8 @@ export class WebProvidersService implements ProvidersService {
         headers['Authorization'] = `Bearer ${provider.api_key}`
       }
 
-      // Always use Tauri's fetch to avoid CORS issues
-      const response = await fetchTauri(`${provider.base_url}/models`, {
+      // Use browser's native fetch for web environment
+      const response = await fetch(`${provider.base_url}/models`, {
         method: 'GET',
         headers,
       })

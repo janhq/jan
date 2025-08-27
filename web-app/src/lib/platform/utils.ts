@@ -3,7 +3,10 @@ import { Platform, PlatformFeature } from './types'
 declare const IS_TAURI: boolean
 
 export const isPlatformTauri = (): boolean => {
-  return typeof IS_TAURI !== 'undefined' && IS_TAURI === true
+  return (
+    typeof IS_TAURI !== 'undefined' &&
+    (IS_TAURI === true || (IS_TAURI as unknown as string) === 'true')
+  )
 }
 
 export const getCurrentPlatform = (): Platform => {

@@ -21,15 +21,15 @@ export class WebMCPService implements MCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
-    return window.core?.api?.getTools() ?? []
+    return await window.core?.api?.getTools() ?? []
   }
 
   async getConnectedServers(): Promise<string[]> {
-    return window.core?.api?.getConnectedServers() ?? []
+    return await window.core?.api?.getConnectedServers() ?? []
   }
 
   async callTool(args: { toolName: string; arguments: object }): Promise<ToolCallResult> {
-    return window.core?.api?.callTool(args) ?? { error: 'API not available', content: [] }
+    return await window.core?.api?.callTool(args) ?? { error: 'API not available', content: [] }
   }
 
   callToolWithCancellation(args: {

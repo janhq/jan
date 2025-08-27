@@ -51,7 +51,7 @@ function LogsViewer() {
     return () => {
       clearInterval(intervalId)
     }
-  }, [])
+  }, [serviceHub])
 
   // Function to scroll to the bottom of the logs container
   const scrollToBottom = () => {

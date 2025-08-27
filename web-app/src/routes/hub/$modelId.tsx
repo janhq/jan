@@ -88,7 +88,7 @@ function HubModelDetailContent() {
       const repoDetail = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
       setRepoData(repoDetail || undefined)
     }
-  }, [modelId, search, huggingfaceToken])
+  }, [serviceHub, modelId, search, huggingfaceToken])
 
   useEffect(() => {
     fetchRepo()

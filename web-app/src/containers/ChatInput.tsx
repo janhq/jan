@@ -96,12 +96,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const intervalId = setInterval(checkConnectedServers, 3000)
 
     return () => clearInterval(intervalId)
-  }, [])
+  }, [serviceHub])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
     const checkMmprojSupport = async () => {
-      if (selectedModel?.id) {
+      if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
           if (selectedProvider === 'llamacpp') {
@@ -125,7 +125,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.capabilities, selectedModel?.id, selectedProvider])
+  }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0

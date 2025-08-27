@@ -62,7 +62,7 @@ function LogsViewer() {
     return () => {
       unsubscribe()
     }
-  }, [])
+  }, [serviceHub])
 
   // Function to scroll to the bottom of the logs container
   const scrollToBottom = () => {

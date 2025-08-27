@@ -82,12 +82,12 @@ run = [
 
 [tasks.dev-web-app]
 description = "Start web application development server (matches Makefile)"
-depends = ["install-and-build"]
+depends = ["install"]
 run = "yarn dev:web-app"
 
 [tasks.build-web-app]
 description = "Build web application (matches Makefile)"
-depends = ["install-and-build"]
+depends = ["install"]
 run = "yarn build:web-app"
 
 [tasks.serve-web-app]

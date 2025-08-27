@@ -68,7 +68,7 @@ function LocalAPIServerContent() {
       })
     }
     checkServerStatus()
-  }, [setServerStatus])
+  }, [serviceHub, setServerStatus])
 
   const handleApiKeyValidation = (isValid: boolean) => {
     setIsApiKeyEmpty(!isValid)

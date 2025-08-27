@@ -78,7 +78,7 @@ function General() {
     }
 
     fetchDataFolder()
-  }, [])
+  }, [serviceHub])
 
   const resetApp = async () => {
     pausePolling()

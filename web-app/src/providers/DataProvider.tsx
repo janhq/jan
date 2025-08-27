@@ -57,7 +57,7 @@ export function DataProvider() {
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
     serviceHub.deeplink().onOpenUrl(handleDeepLink)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub])
 
   useEffect(() => {
     serviceHub.threads().fetchThreads().then((threads) => {
@@ -69,7 +69,7 @@ export function DataProvider() {
       )
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub, setThreads, setMessages])
 
   // Check for app updates
   useEffect(() => {
@@ -86,7 +86,7 @@ export function DataProvider() {
       serviceHub.providers().getProviders().then(setProviders)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub, setProviders])
 
   const getLastUsedModel = (): { provider: string; model: string } | null => {
     try {
@@ -182,7 +182,7 @@ export function DataProvider() {
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub])
 
   const handleDeepLink = (urls: string[] | null) => {
     if (!urls) return

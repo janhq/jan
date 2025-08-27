@@ -92,7 +92,7 @@ function HardwareContent() {
     ]).finally(() => {
       setIsLoading(false)
     })
-  }, [setHardwareData, updateSystemUsage])
+  }, [serviceHub, setHardwareData, updateSystemUsage])
 
 
 
@@ -111,7 +111,7 @@ function HardwareContent() {
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [updateSystemUsage, pollingPaused])
+  }, [serviceHub, updateSystemUsage, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {

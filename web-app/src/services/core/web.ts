@@ -14,15 +14,57 @@ export class WebCoreService implements CoreService {
   }
 
   convertFileSrc(filePath: string, _protocol?: string): string {
-    // Web fallback - return the path as-is or convert to data URL if needed
+    // For web extensions, handle special web:// URLs
+    if (filePath.startsWith('web://')) {
+      const extensionName = filePath.replace('web://', '')
+      return `@jan/extensions-web/${extensionName}`
+    }
     console.warn(`Cannot convert file src in web environment: ${filePath}`)
     return filePath
   }
 
-  // Extension management - web fallbacks
+  // Extension management - web implementation
   async getActiveExtensions(): Promise<ExtensionManifest[]> {
-    console.warn('Extension management not available in web environment')
-    return []
+    try {
+      const { WEB_EXTENSIONS } = await import('@jan/extensions-web')
+      const manifests: ExtensionManifest[] = []
+      
+      // Create manifests and register extensions
+      for (const [name, loader] of Object.entries(WEB_EXTENSIONS)) {
+        try {
+          // Load the extension module
+          const extensionModule = await loader()
+          const ExtensionClass = extensionModule.default
+          
+          // Create manifest data with extension instance
+          const manifest = {
+            url: `web://${name}`,
+            name,
+            productName: name,
+            active: true,
+            description: `Web extension: ${name}`,
+            version: '1.0.0',
+            extensionInstance: new ExtensionClass(
+              `web://${name}`,
+              name,
+              name, // productName
+              true, // active
+              `Web extension: ${name}`, // description
+              '1.0.0' // version
+            )
+          }
+          
+          manifests.push(manifest)
+        } catch (error) {
+          console.error(`Failed to register web extension '${name}':`, error)
+        }
+      }
+      
+      return manifests
+    } catch (error) {
+      console.error('Failed to get web extensions:', error)
+      return []
+    }
   }
 
   async installExtensions(): Promise<void> {

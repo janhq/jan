@@ -35,11 +35,14 @@ dev: install-and-build
 	yarn download:lib
 	yarn dev
 
-# Web application development targets
-dev-web-app: install-and-build
+# Web application targets
+install-web-app: config-yarn
+	yarn install
+
+dev-web-app: install-web-app
 	yarn dev:web-app
 
-build-web-app: install-and-build
+build-web-app: install-web-app
 	yarn build:web-app
 
 serve-web-app: 

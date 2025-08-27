@@ -15,7 +15,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.HARDWARE_MONITORING]: isPlatformTauri(),
 
   // Extension installation/management
-  [PlatformFeature.EXTENSION_MANAGEMENT]: isPlatformTauri(),
+  [PlatformFeature.EXTENSION_MANAGEMENT]: true,
 
   // MCP (Model Context Protocol) servers
   [PlatformFeature.MCP_SERVERS]: isPlatformTauri(),
