@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { ulid } from 'ulidx'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -296,6 +297,7 @@ export const useChat = () => {
           let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
+          const streamingMessageId = ulid() // Generate a single ID for this streaming session
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
@@ -344,7 +346,8 @@ export const useChat = () => {
                         ...e,
                         state: 'pending',
                       })),
-                    }
+                    },
+                    streamingMessageId
                   )
                   updateStreamingContent(currentContent)
                   if (pendingDeltaCount > 0) {
@@ -373,7 +376,8 @@ export const useChat = () => {
                       ...e,
                       state: 'pending',
                     })),
-                  }
+                  },
+                  streamingMessageId
                 )
                 updateStreamingContent(currentContent)
                 if (pendingDeltaCount > 0) {
