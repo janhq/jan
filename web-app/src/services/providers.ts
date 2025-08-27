@@ -1,12 +1,9 @@
 import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
-import {
-  DefaultToolUseSupportedModels,
-  ModelCapabilities,
-} from '@/types/models'
+import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
-import { fetchModels } from './models'
+import { fetchModels, isToolSupported } from './models'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
@@ -65,52 +62,41 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
           controller_props: setting.controllerProps as unknown,
         }
       }) as ProviderSetting[],
-      models: models.map((model) => ({
-        id: model.id,
-        model: model.id,
-        name: model.name,
-        description: model.description,
-        capabilities:
-          'capabilities' in model
-            ? (model.capabilities as string[])
-            : [
-                ModelCapabilities.COMPLETION,
-                ...(Object.values(DefaultToolUseSupportedModels).some((v) =>
-                  model.id.toLowerCase().includes(v.toLowerCase())
-                )
-                  ? [ModelCapabilities.TOOLS]
-                  : []),
-              ],
-        provider: providerName,
-        settings: Object.values(modelSettings).reduce(
-          (acc, setting) => {
-            let value = setting.controller_props.value
-            if (setting.key === 'ctx_len') {
-              value = 8192 // Default context length for Llama.cpp models
-            }
-            // Set temperature to 0.6 for DefaultToolUseSupportedModels
-            if (
-              Object.values(DefaultToolUseSupportedModels).some((v) =>
-                model.id.toLowerCase().includes(v.toLowerCase())
-              )
-            ) {
-              if (setting.key === 'temperature') value = 0.7 // Default temperature for tool-supported models
-              if (setting.key === 'top_k') value = 20 // Default top_k for tool-supported models
-              if (setting.key === 'top_p') value = 0.8 // Default top_p for tool-supported models
-              if (setting.key === 'min_p') value = 0 // Default min_p for tool-supported models
-            }
-            acc[setting.key] = {
-              ...setting,
-              controller_props: {
-                ...setting.controller_props,
-                value: value,
-              },
-            }
-            return acc
-          },
-          {} as Record<string, ProviderSetting>
-        ),
-      })),
+      models: await Promise.all(
+        models.map(
+          async (model) =>
+            ({
+              id: model.id,
+              model: model.id,
+              name: model.name,
+              description: model.description,
+              capabilities:
+                'capabilities' in model
+                  ? (model.capabilities as string[])
+                  : (await isToolSupported(model.id))
+                    ? [ModelCapabilities.TOOLS]
+                    : [],
+              provider: providerName,
+              settings: Object.values(modelSettings).reduce(
+                (acc, setting) => {
+                  let value = setting.controller_props.value
+                  if (setting.key === 'ctx_len') {
+                    value = 8192 // Default context length for Llama.cpp models
+                  }
+                  acc[setting.key] = {
+                    ...setting,
+                    controller_props: {
+                      ...setting.controller_props,
+                      value: value,
+                    },
+                  }
+                  return acc
+                },
+                {} as Record<string, ProviderSetting>
+              ),
+            }) as Model
+        )
+      ),
     }
     runtimeProviders.push(provider)
   }

@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'window', {
     localStorage: localStorageMock,
     core: {
       api: {
-        getSystemInfo: vi.fn(),
+        // getSystemInfo: vi.fn(),
       },
       extensionManager: {
         getByName: vi.fn().mockReturnValue({
@@ -30,6 +30,10 @@ Object.defineProperty(globalThis, 'window', {
     },
   },
 })
+
+vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
+  getSystemInfo: vi.fn(),
+}));
 
 // Mock Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({

@@ -1,4 +1,4 @@
-import { useAppearance } from '@/hooks/useAppearance'
+import { useAppearance, isDefaultColorDestructive } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -7,17 +7,21 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppDestructiveColor() {
   const { appDestructiveBgColor, setAppDestructiveBgColor } = useAppearance()
+  const { isDark } = useTheme()
 
   const predefineAppDestructiveBgColor: RgbaColor[] = [
-    {
-      r: 220,
-      g: 45,
-      b: 45,
-      a: 1,
-    },
+    isDark
+      ? { r: 144, g: 60, b: 60, a: 1 }
+      : {
+          r: 217,
+          g: 95,
+          b: 95,
+          a: 1,
+        },
     {
       r: 220,
       g: 100,
@@ -42,10 +46,11 @@ export function ColorPickerAppDestructiveColor() {
     <div className="flex items-center gap-1.5">
       {predefineAppDestructiveBgColor.map((item, i) => {
         const isSelected =
-          item.r === appDestructiveBgColor.r &&
+          (item.r === appDestructiveBgColor.r &&
           item.g === appDestructiveBgColor.g &&
           item.b === appDestructiveBgColor.b &&
-          item.a === appDestructiveBgColor.a
+          item.a === appDestructiveBgColor.a) ||
+          (isDefaultColorDestructive(appDestructiveBgColor) && isDefaultColorDestructive(item))
         return (
           <div
             key={i}

@@ -5,6 +5,7 @@ export const AppRoutes = [
   'installExtensions',
   'getTools',
   'callTool',
+  'cancelToolCall',
   'listThreads',
   'createThread',
   'modifyThread',
@@ -22,8 +23,6 @@ export const AppRoutes = [
   'getConnectedServers',
   'readLogs',
   'changeAppDataFolder',
-  'getSystemInfo',
-  'getSystemUsage',
 ]
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({

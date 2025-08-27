@@ -249,6 +249,22 @@
     "downloadCancelled": {
       "title": "Đã hủy tải xuống",
       "description": "Quá trình tải xuống đã bị hủy"
+    },
+    "downloadFailed": {
+      "title": "Tải xuống thất bại",
+      "description": "Tải xuống {{item}} thất bại"
+    },
+    "modelValidationStarted": {
+      "title": "Đang xác thực mô hình",
+      "description": "Đã tải xuống mô hình \"{{modelId}}\" thành công. Đang xác minh tính toàn vẹn..."
+    },
+    "modelValidationFailed": {
+      "title": "Xác thực mô hình thất bại",
+      "description": "Mô hình đã tải xuống \"{{modelId}}\" không vượt qua kiểm tra tính toàn vẹn và đã bị xóa. Tệp có thể bị hỏng hoặc bị giả mạo."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Tải xuống hoàn tất",
+      "description": "Mô hình \"{{item}}\" đã được tải xuống và xác minh thành công"
     }
   }
 }

@@ -1,0 +1,28 @@
+[package]
+name = "tauri-plugin-hardware"
+version = "0.6.599"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin for hardware information and GPU monitoring"
+license = "MIT"
+repository = "https://github.com/menloresearch/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-hardware"
+
+[dependencies]
+ash = "0.38.0"
+libc = "0.2"
+log = "0.4"
+nvml-wrapper = "0.10.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sysinfo = "0.34.2"
+tauri = { version = "2.5.0", default-features = false, features = ["test"] }
+
+# Windows-specific dependencies
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8"
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

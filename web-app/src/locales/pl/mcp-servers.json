@@ -1,0 +1,43 @@
+{
+  "editServer": "Edytuj Serwer MCP",
+  "addServer": "Dodaj Serwer MCP",
+  "serverName": "Nazwa Serwera",
+  "enterServerName": "Wprowadź nazwę serwera",
+  "command": "Polecenie",
+  "enterCommand": "Wprowadź polecenie (uvx lub npx)",
+  "arguments": "Argumenty",
+  "argument": "{{index}}. argument",
+  "envVars": "Zmienne Środowiskowe",
+  "key": "Klucz",
+  "value": "Wartość",
+  "save": "Zapisz",
+  "status": "Stan",
+  "connected": "Połączono",
+  "disconnected": "Rozłączono",
+  "deleteServer": {
+    "title": "Usuń Serwer MCP",
+    "description": "Na pewno chcesz usunąć serwer MCP {{serverName}}? Tej operacji nie można cofnąć.",
+    "delete": "Usuń"
+  },
+  "editJson": {
+    "title": "Edytuj JSON Serwera MCP: {{serverName}}",
+    "titleAll": "Edytuj JSON Wszystkich Serwerów MCP",
+    "placeholder": "Wprowadź konfigurację JSON",
+    "errorParse": "Błąd parsowania wstępnych danych",
+    "errorPaste": "Wprowadzono JSON o niepoprawnym formacie",
+    "errorFormat": "Niepoprawny format JSON",
+    "save": "Zapisz"
+  },
+  "checkParams": "Proszę sprawdzić parametry we wprowadzeniu.",
+  "title": "Serwery MCP",
+  "experimental": "Eksperymentalne",
+  "editAllJson": "Edytuj JSON Wszystkich Serwerów",
+  "findMore": "Znajdź więcej serwerów MCP na",
+  "allowPermissions": "Pozwalaj na Wszystkie Użycia Narzędzi MCP",
+  "allowPermissionsDesc": "Po włączeniu będzie automatycznie zezwalać na wszystkie użycia narzędzi MCP bez wyświetlania próśb o zgodę.",
+  "noServers": "Nie znaleziono serwerów MCP",
+  "args": "Argumenty",
+  "env": "Zmienne Środowiskowe",
+  "serverStatusActive": "Pomyślnie aktywowano serwer {{serverKey}}",
+  "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}"
+}

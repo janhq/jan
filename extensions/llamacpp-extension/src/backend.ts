@@ -2,6 +2,7 @@ import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { dirname } from '@tauri-apps/api/path'
+import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
@@ -10,7 +11,7 @@ import { dirname } from '@tauri-apps/api/path'
 export async function listSupportedBackends(): Promise<
   { version: string; backend: string }[]
 > {
-  const sysInfo = await window.core.api.getSystemInfo()
+  const sysInfo = await getSystemInfo()
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
@@ -42,9 +43,9 @@ export async function listSupportedBackends(): Promise<
     if (features.vulkan) supportedBackends.push('win-vulkan-x64')
   }
   // not available yet, placeholder for future
-  else if (sysType == 'windows-aarch64') {
+  else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
     supportedBackends.push('win-arm64')
-  } else if (sysType == 'linux-x86_64') {
+  } else if (sysType === 'linux-x86_64' || sysType === 'linux-x86') {
     supportedBackends.push('linux-noavx-x64')
     if (features.avx) supportedBackends.push('linux-avx-x64')
     if (features.avx2) supportedBackends.push('linux-avx2-x64')
@@ -68,11 +69,11 @@ export async function listSupportedBackends(): Promise<
     if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
   }
   // not available yet, placeholder for future
-  else if (sysType === 'linux-aarch64') {
+  else if (sysType === 'linux-aarch64' || sysType === 'linux-arm64') {
     supportedBackends.push('linux-arm64')
-  } else if (sysType === 'macos-x86_64') {
+  } else if (sysType === 'macos-x86_64' || sysType === 'macos-x86') {
     supportedBackends.push('macos-x64')
-  } else if (sysType === 'macos-aarch64') {
+  } else if (sysType === 'macos-aarch64' || sysType === 'macos-arm64') {
     supportedBackends.push('macos-arm64')
   }
 
@@ -229,7 +230,7 @@ export async function downloadBackend(
 }
 
 async function _getSupportedFeatures() {
-  const sysInfo = await window.core.api.getSystemInfo()
+  const sysInfo = await getSystemInfo()
   const features = {
     avx: sysInfo.cpu.extensions.includes('avx'),
     avx2: sysInfo.cpu.extensions.includes('avx2'),
@@ -261,11 +262,7 @@ async function _getSupportedFeatures() {
         features.cuda12 = true
     }
     // Vulkan support check - only discrete GPUs with 6GB+ VRAM
-    if (
-      gpuInfo.vulkan_info?.api_version &&
-      gpuInfo.vulkan_info?.device_type === 'DISCRETE_GPU' &&
-      gpuInfo.total_memory >= 6 * 1024
-    ) {
+    if (gpuInfo.vulkan_info?.api_version && gpuInfo.total_memory >= 6 * 1024) {
       // 6GB (total_memory is in MB)
       features.vulkan = true
     }
@@ -289,7 +286,7 @@ async function _fetchGithubReleases(
 }
 
 async function _isCudaInstalled(version: string): Promise<boolean> {
-  const sysInfo = await window.core.api.getSystemInfo()
+  const sysInfo = await getSystemInfo()
   const os_type = sysInfo.os_type
 
   // not sure the reason behind this naming convention

@@ -11,11 +11,6 @@
     "type": "page",
     "title": "Documentation"
   },
-  "cortex": {
-    "type": "page",
-    "title": "Cortex",
-    "display": "hidden"
-  },
   "platforms": {
     "type": "page",
     "title": "Platforms",

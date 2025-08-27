@@ -53,6 +53,7 @@ docs/.next/
 
 ## cargo
 target
+Cargo.lock
 
 ## test
 test-data

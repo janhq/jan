@@ -9,6 +9,11 @@
     "core:window:allow-set-theme",
     "log:default",
     "core:webview:allow-create-webview-window",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "hardware:allow-get-system-info",
+    "hardware:allow-get-system-usage",
+    "llamacpp:allow-get-devices",
+    "llamacpp:allow-read-gguf-metadata",
+    "deep-link:allow-get-current"
   ]
 }

@@ -17,4 +17,7 @@ export default defineConfig({
     IS_MAC: JSON.stringify(process.platform === 'darwin'),
     IS_LINUX: JSON.stringify(process.platform === 'linux'),
   },
+  inject: {
+      fetch: ['@tauri-apps/plugin-http', 'fetch'],
+  },
 })

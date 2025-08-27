@@ -249,6 +249,22 @@
     "downloadCancelled": {
       "title": "Unduhan Dibatalkan",
       "description": "Proses unduhan telah dibatalkan"
+    },
+    "downloadFailed": {
+      "title": "Unduhan Gagal",
+      "description": "Unduhan {{item}} gagal"
+    },
+    "modelValidationStarted": {
+      "title": "Memvalidasi Model",
+      "description": "Model \"{{modelId}}\" berhasil diunduh. Memverifikasi integritas..."
+    },
+    "modelValidationFailed": {
+      "title": "Validasi Model Gagal",
+      "description": "Model yang diunduh \"{{modelId}}\" gagal verifikasi integritas dan telah dihapus. File mungkin rusak atau telah dimanipulasi."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Unduhan Selesai",
+      "description": "Model \"{{item}}\" berhasil diunduh dan diverifikasi"
     }
   }
 }

@@ -19,9 +19,12 @@ import {
   ImportOptions,
   chatCompletionRequest,
   events,
+  AppEvent,
+  DownloadEvent,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
+import { listen } from '@tauri-apps/api/event'
 
 import {
   listSupportedBackends,
@@ -32,13 +35,20 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
+import {
+  GgufMetadata,
+  readGgufMetadata,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
+  llamacpp_env: string
   chat_template: string
   n_gpu_layers: number
+  offload_mmproj: boolean
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -68,6 +78,8 @@ interface DownloadItem {
   url: string
   save_path: string
   proxy?: Record<string, string | string[] | boolean>
+  sha256?: string
+  size?: number
 }
 
 interface ModelConfig {
@@ -76,6 +88,9 @@ interface ModelConfig {
   name: string // user-friendly
   // some model info that we cache upon import
   size_bytes: number
+  sha256?: string
+  mmproj_sha256?: string
+  mmproj_size_bytes?: number
 }
 
 interface EmbeddingResponse {
@@ -100,6 +115,7 @@ interface DeviceList {
   mem: number
   free: number
 }
+
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -142,6 +158,7 @@ const logger = {
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
+  llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -150,6 +167,7 @@ export default class llamacpp_extension extends AIEngine {
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  private unlistenValidationStarted?: () => void
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -171,12 +189,26 @@ export default class llamacpp_extension extends AIEngine {
     this.config = loadedConfig as LlamacppConfig
 
     this.autoUnload = this.config.auto_unload
+    this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
       await getJanDataFolderPath(),
       this.providerId,
     ])
+
+    // Set up validation event listeners to bridge Tauri events to frontend
+    this.unlistenValidationStarted = await listen<{
+      modelId: string
+      downloadType: string
+    }>('onModelValidationStarted', (event) => {
+      console.debug(
+        'LlamaCPP: bridging onModelValidationStarted event',
+        event.payload
+      )
+      events.emit(DownloadEvent.onModelValidationStarted, event.payload)
+    })
+
     this.configureBackends()
   }
 
@@ -770,6 +802,11 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onUnload(): Promise<void> {
     // Terminate all active sessions
+
+    // Clean up validation event listeners
+    if (this.unlistenValidationStarted) {
+      this.unlistenValidationStarted()
+    }
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -797,11 +834,13 @@ export default class llamacpp_extension extends AIEngine {
       closure()
     } else if (key === 'auto_unload') {
       this.autoUnload = value as boolean
+    } else if (key === 'llamacpp_env') {
+      this.llamacpp_env = value as string
     }
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
-    const hash = await invoke<string>('generate_api_key', {
+    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
       modelId: modelId + port,
       apiSecret: this.apiSecret,
     })
@@ -1002,6 +1041,9 @@ export default class llamacpp_extension extends AIEngine {
           url: path,
           save_path: localPath,
           proxy: getProxyConfig(),
+          sha256:
+            saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
+          size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
         })
         return localPath
       }
@@ -1019,8 +1061,6 @@ export default class llamacpp_extension extends AIEngine {
       : undefined
 
     if (downloadItems.length > 0) {
-      let downloadCompleted = false
-
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
@@ -1030,7 +1070,6 @@ export default class llamacpp_extension extends AIEngine {
             size: { transferred, total },
             downloadType: 'Model',
           })
-          downloadCompleted = transferred === total
         }
         const downloadManager = window.core.extensionManager.getByName(
           '@janhq/download-extension'
@@ -1041,24 +1080,102 @@ export default class llamacpp_extension extends AIEngine {
           onProgress
         )
 
-        const eventName = downloadCompleted
-          ? 'onFileDownloadSuccess'
-          : 'onFileDownloadStopped'
-        events.emit(eventName, { modelId, downloadType: 'Model' })
+        // If we reach here, download completed successfully (including validation)
+        // The downloadFiles function only returns successfully if all files downloaded AND validated
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId,
+          downloadType: 'Model',
+        })
       } catch (error) {
         logger.error('Error downloading model:', modelId, opts, error)
-        events.emit('onFileDownloadError', { modelId, downloadType: 'Model' })
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+
+        // Check if this is a cancellation
+        const isCancellationError =
+          errorMessage.includes('Download cancelled') ||
+          errorMessage.includes('Validation cancelled') ||
+          errorMessage.includes('Hash computation cancelled') ||
+          errorMessage.includes('cancelled') ||
+          errorMessage.includes('aborted')
+
+        // Check if this is a validation failure
+        const isValidationError =
+          errorMessage.includes('Hash verification failed') ||
+          errorMessage.includes('Size verification failed') ||
+          errorMessage.includes('Failed to verify file')
+
+        if (isCancellationError) {
+          logger.info('Download cancelled for model:', modelId)
+          // Emit download stopped event instead of error
+          events.emit(DownloadEvent.onFileDownloadStopped, {
+            modelId,
+            downloadType: 'Model',
+          })
+        } else if (isValidationError) {
+          logger.error(
+            'Validation failed for model:',
+            modelId,
+            'Error:',
+            errorMessage
+          )
+
+          // Cancel any other download tasks for this model
+          try {
+            this.abortImport(modelId)
+          } catch (cancelError) {
+            logger.warn('Failed to cancel download task:', cancelError)
+          }
+
+          // Emit validation failure event
+          events.emit(DownloadEvent.onModelValidationFailed, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+            reason: 'validation_failed',
+          })
+        } else {
+          // Regular download error
+          events.emit(DownloadEvent.onFileDownloadError, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+          })
+        }
         throw error
       }
     }
 
-    // TODO: check if files are valid GGUF files
-    // NOTE: modelPath and mmprojPath can be either relative to Jan's data folder (if they are downloaded)
-    // or absolute paths (if they are provided as local files)
+    // Validate GGUF files
     const janDataFolderPath = await getJanDataFolderPath()
-    let size_bytes = (
-      await fs.fileStat(await joinPath([janDataFolderPath, modelPath]))
-    ).size
+    const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+
+    try {
+      // Validate main model file
+      const modelMetadata = await readGgufMetadata(fullModelPath)
+      logger.info(
+        `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
+      )
+
+      // Validate mmproj file if present
+      if (mmprojPath) {
+        const fullMmprojPath = await joinPath([janDataFolderPath, mmprojPath])
+        const mmprojMetadata = await readGgufMetadata(fullMmprojPath)
+        logger.info(
+          `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
+        )
+      }
+    } catch (error) {
+      logger.error('GGUF validation failed:', error)
+      throw new Error(
+        `Invalid GGUF file(s): ${
+          error.message || 'File format validation failed'
+        }`
+      )
+    }
+
+    // Calculate file sizes
+    let size_bytes = (await fs.fileStat(fullModelPath)).size
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
@@ -1072,21 +1189,65 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_path: mmprojPath,
       name: modelId,
       size_bytes,
+      model_sha256: opts.modelSha256,
+      model_size_bytes: opts.modelSize,
+      mmproj_sha256: opts.mmprojSha256,
+      mmproj_size_bytes: opts.mmprojSize,
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
       data: modelConfig,
       savePath: configPath,
     })
+    events.emit(AppEvent.onModelImported, {
+      modelId,
+      modelPath,
+      mmprojPath,
+      size_bytes,
+      model_sha256: opts.modelSha256,
+      model_size_bytes: opts.modelSize,
+      mmproj_sha256: opts.mmprojSha256,
+      mmproj_size_bytes: opts.mmprojSize,
+    })
+  }
+
+  /**
+   * Deletes the entire model folder for a given modelId
+   * @param modelId The model ID to delete
+   */
+  private async deleteModelFolder(modelId: string): Promise<void> {
+    try {
+      const modelDir = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+      ])
+
+      if (await fs.existsSync(modelDir)) {
+        logger.info(`Cleaning up model directory: ${modelDir}`)
+        await fs.rm(modelDir)
+      }
+    } catch (deleteError) {
+      logger.warn('Failed to delete model directory:', deleteError)
+    }
   }
 
   override async abortImport(modelId: string): Promise<void> {
-    // prepand provider name to avoid name collision
+    // Cancel any active download task
+    // prepend provider name to avoid name collision
     const taskId = this.createDownloadTaskId(modelId)
     const downloadManager = window.core.extensionManager.getByName(
       '@janhq/download-extension'
     )
-    await downloadManager.cancelDownload(taskId)
+
+    try {
+      await downloadManager.cancelDownload(taskId)
+    } catch (cancelError) {
+      logger.warn('Failed to cancel download task:', cancelError)
+    }
+
+    // Delete the entire model folder if it exists (for validation failures)
+    await this.deleteModelFolder(modelId)
   }
 
   /**
@@ -1094,12 +1255,33 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async getRandomPort(): Promise<number> {
     try {
-      const port = await invoke<number>('get_random_port')
+      const port = await invoke<number>('plugin:llamacpp|get_random_port')
       return port
     } catch {
       logger.error('Unable to find a suitable port')
       throw new Error('Unable to find a suitable port for model')
     }
+  }
+
+  private parseEnvFromString(
+    target: Record<string, string>,
+    envString: string
+  ): void {
+    envString
+      .split(';')
+      .filter((pair) => pair.trim())
+      .forEach((pair) => {
+        const [key, ...valueParts] = pair.split('=')
+        const cleanKey = key?.trim()
+
+        if (
+          cleanKey &&
+          valueParts.length > 0 &&
+          !cleanKey.startsWith('LLAMA')
+        ) {
+          target[cleanKey] = valueParts.join('=').trim()
+        }
+      })
   }
 
   override async load(
@@ -1161,11 +1343,12 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     const args: string[] = []
+    const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+        'Initial setup for the backend failed due to a network issue. Please restart the app!'
       )
     }
 
@@ -1187,7 +1370,10 @@ export default class llamacpp_extension extends AIEngine {
     // disable llama-server webui
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
-    args.push('--api-key', api_key)
+    envs['LLAMA_API_KEY'] = api_key
+
+    // set user envs
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1196,7 +1382,6 @@ export default class llamacpp_extension extends AIEngine {
       modelConfig.model_path,
     ])
     args.push('--jinja')
-    args.push('--reasoning-format', 'none')
     args.push('-m', modelPath)
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
@@ -1206,6 +1391,10 @@ export default class llamacpp_extension extends AIEngine {
     // Takes a regex with matching tensor name as input
     if (cfg.override_tensor_buffer_t)
       args.push('--override-tensor', cfg.override_tensor_buffer_t)
+    // offload multimodal projector model to the GPU by default. if there is not enough memory
+    // turn this setting off will keep the projector model on the CPU but the image processing can
+    // take longer
+    if (cfg.offload_mmproj === false) args.push('--no-mmproj-offload')
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
@@ -1272,11 +1461,15 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>('load_llama_model', {
-        backendPath,
-        libraryPath,
-        args,
-      })
+      const sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|load_llama_model',
+        {
+          backendPath,
+          libraryPath,
+          args,
+          envs,
+        }
+      )
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1292,9 +1485,12 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await invoke<UnloadResult>('unload_llama_model', {
-        pid: pid,
-      })
+      const result = await invoke<UnloadResult>(
+        'plugin:llamacpp|unload_llama_model',
+        {
+          pid: pid,
+        }
+      )
 
       // If successful, remove from active sessions
       if (result.success) {
@@ -1363,7 +1559,11 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      signal: abortController?.signal,
+      connectTimeout: 600000, // 10 minutes
+      signal: AbortSignal.any([
+        AbortSignal.timeout(600000),
+        abortController?.signal,
+      ]),
     })
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
@@ -1430,9 +1630,12 @@ export default class llamacpp_extension extends AIEngine {
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
-      let sInfo = await invoke<SessionInfo>('find_session_by_model', {
-        modelId,
-      })
+      let sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|find_session_by_model',
+        {
+          modelId,
+        }
+      )
       return sInfo
     } catch (e) {
       logger.error(e)
@@ -1449,7 +1652,7 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
     // check if the process is alive
-    const result = await invoke<boolean>('is_process_running', {
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
     if (result) {
@@ -1509,11 +1712,33 @@ export default class llamacpp_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
-      let models: string[] = await invoke<string[]>('get_loaded_models')
+      let models: string[] = await invoke<string[]>(
+        'plugin:llamacpp|get_loaded_models'
+      )
       return models
     } catch (e) {
       logger.error(e)
       throw new Error(e)
+    }
+  }
+
+  /**
+   * Check if mmproj.gguf file exists for a given model ID
+   * @param modelId - The model ID to check for mmproj.gguf
+   * @returns Promise<boolean> - true if mmproj.gguf exists, false otherwise
+   */
+  async checkMmprojExists(modelId: string): Promise<boolean> {
+    try {
+      const mmprojPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'mmproj.gguf',
+      ])
+      return await fs.existsSync(mmprojPath)
+    } catch (e) {
+      logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
+      return false
     }
   }
 
@@ -1522,9 +1747,12 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+        'Backend setup was not successful. Please restart the app in a stable internet connection.'
       )
     }
+    // set envs
+    const envs: Record<string, string> = {}
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
@@ -1532,14 +1760,15 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
     const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
     try {
-      const dList = await invoke<DeviceList[]>('get_devices', {
+      const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
         backendPath,
         libraryPath,
+        envs,
       })
       return dList
     } catch (error) {
       logger.error('Failed to query devices:\n', error)
-      throw new Error(`Failed to load llama-server: ${error}`)
+      throw new Error('Failed to load llamacpp backend')
     }
   }
 
@@ -1590,5 +1819,163 @@ export default class llamacpp_extension extends AIEngine {
   // Optional method for direct client access
   override getChatClient(sessionId: string): any {
     throw new Error('method not implemented yet')
+  }
+
+  /**
+   * Check if a tool is supported by the model
+   * Currently read from GGUF chat_template
+   * @param modelId
+   * @returns
+   */
+  async isToolSupported(modelId: string): Promise<boolean> {
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelConfigPath = await joinPath([
+      this.providerPath,
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: modelConfigPath,
+    })
+    // model option is required
+    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    const modelPath = await joinPath([
+      janDataFolderPath,
+      modelConfig.model_path,
+    ])
+    return (await readGgufMetadata(modelPath)).metadata?.[
+      'tokenizer.chat_template'
+    ]?.includes('tools')
+  }
+
+  /**
+   *  estimate KVCache size of from a given metadata
+   *
+   */
+  private async estimateKVCache(
+    meta: Record<string, string>,
+    ctx_size?: number
+  ): Promise<number> {
+    const arch = meta['general.architecture']
+    if (!arch) throw new Error('Invalid metadata: architecture not found')
+
+    const nLayer = Number(meta[`${arch}.block_count`])
+    if (!nLayer) throw new Error('Invalid metadata: block_count not found')
+
+    const nHead = Number(meta[`${arch}.attention.head_count`])
+    if (!nHead) throw new Error('Invalid metadata: head_count not found')
+
+    // Try to get key/value lengths first (more accurate)
+    const keyLen = Number(meta[`${arch}.attention.key_length`])
+    const valLen = Number(meta[`${arch}.attention.value_length`])
+
+    let headDim: number
+
+    if (keyLen && valLen) {
+      // Use explicit key/value lengths if available
+      logger.info(
+        `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
+      )
+      headDim = keyLen + valLen
+    } else {
+      // Fall back to embedding_length estimation
+      const embeddingLen = Number(meta[`${arch}.embedding_length`])
+      if (!embeddingLen)
+        throw new Error('Invalid metadata: embedding_length not found')
+
+      // Standard transformer: head_dim = embedding_dim / num_heads
+      // For KV cache: we need both K and V, so 2 * head_dim per head
+      headDim = (embeddingLen / nHead) * 2
+      logger.info(
+        `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
+      )
+    }
+    let ctxLen: number
+    if (!ctx_size) {
+      ctxLen = Number(meta[`${arch}.context_length`])
+    } else {
+      ctxLen = ctx_size
+    }
+
+    logger.info(`ctxLen: ${ctxLen}`)
+    logger.info(`nLayer: ${nLayer}`)
+    logger.info(`nHead: ${nHead}`)
+    logger.info(`headDim: ${headDim}`)
+
+    // Consider f16 by default
+    // Can be extended by checking cache-type-v and cache-type-k
+    // but we are checking overall compatibility with the default settings
+    // fp16 = 8 bits * 2 = 16
+    const bytesPerElement = 2
+
+    // Total KV cache size per token = nHead * headDim * bytesPerElement
+    const kvPerToken = nHead * headDim * bytesPerElement
+
+    return ctxLen * nLayer * kvPerToken
+  }
+
+  private async getModelSize(path: string): Promise<number> {
+    if (path.startsWith('https://')) {
+      const res = await fetch(path, { method: 'HEAD' })
+      const len = res.headers.get('content-length')
+      return len ? parseInt(len, 10) : 0
+    } else {
+      return (await fs.fileStat(path)).size
+    }
+  }
+
+  /*
+   * check the support status of a model by its path (local/remote)
+   *
+   * * Returns:
+   * - "RED"    → weights don't fit
+   * - "YELLOW" → weights fit, KV cache doesn't
+   * - "GREEN"  → both weights + KV cache fit
+   */
+  async isModelSupported(
+    path: string,
+    ctx_size?: number
+  ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
+    try {
+      const modelSize = await this.getModelSize(path)
+      logger.info(`modelSize: ${modelSize}`)
+      let gguf: GgufMetadata
+      gguf = await readGgufMetadata(path)
+      let kvCacheSize: number
+      if (ctx_size) {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
+      } else {
+        kvCacheSize = await this.estimateKVCache(gguf.metadata)
+      }
+      // total memory consumption = model weights + kvcache + a small buffer for outputs
+      // output buffer is small so not considering here
+      const totalRequired = modelSize + kvCacheSize
+      logger.info(
+        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
+      )
+      let availableMemBytes: number
+      const devices = await this.getDevices()
+      if (devices.length > 0) {
+        // Sum free memory across all GPUs
+        availableMemBytes = devices
+          .map((d) => d.free * 1024 * 1024)
+          .reduce((a, b) => a + b, 0)
+      } else {
+        // CPU fallback
+        const sys = await getSystemUsage()
+        availableMemBytes = (sys.total_memory - sys.used_memory) * 1024 * 1024
+      }
+      // check model size wrt system memory
+      if (modelSize > availableMemBytes) {
+        return 'RED'
+      } else if (modelSize + kvCacheSize > availableMemBytes) {
+        return 'YELLOW'
+      } else {
+        return 'GREEN'
+      }
+    } catch (e) {
+      throw new Error(String(e))
+    }
   }
 }

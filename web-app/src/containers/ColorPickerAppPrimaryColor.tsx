@@ -1,4 +1,4 @@
-import { useAppearance } from '@/hooks/useAppearance'
+import { useAppearance, isDefaultColorPrimary } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -42,10 +42,11 @@ export function ColorPickerAppPrimaryColor() {
     <div className="flex items-center gap-1.5">
       {predefineappPrimaryBgColor.map((item, i) => {
         const isSelected =
-          item.r === appPrimaryBgColor.r &&
+          (item.r === appPrimaryBgColor.r &&
           item.g === appPrimaryBgColor.g &&
           item.b === appPrimaryBgColor.b &&
-          item.a === appPrimaryBgColor.a
+          item.a === appPrimaryBgColor.a) ||
+          (isDefaultColorPrimary(appPrimaryBgColor) && isDefaultColorPrimary(item))
         return (
           <div
             key={i}

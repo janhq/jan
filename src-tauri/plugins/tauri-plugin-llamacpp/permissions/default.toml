@@ -1,0 +1,21 @@
+[default]
+description = "Default permissions for the llamacpp plugin"
+permissions = [
+    # Cleanup commands
+    "allow-cleanup-llama-processes",
+    
+    # LlamaCpp server commands
+    "allow-load-llama-model",
+    "allow-unload-llama-model", 
+    "allow-get-devices",
+    "allow-generate-api-key",
+    "allow-is-process-running",
+    "allow-get-random-port",
+    "allow-find-session-by-model",
+    "allow-get-loaded-models",
+    "allow-get-all-sessions",
+    "allow-get-session-by-model",
+    
+    # GGUF commands
+    "allow-read-gguf-metadata"
+]

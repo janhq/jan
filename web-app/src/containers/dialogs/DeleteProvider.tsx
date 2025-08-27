@@ -18,6 +18,7 @@ import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { predefinedProviders } from '@/consts/providers'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type Props = {
   provider?: ProviderObject
@@ -25,6 +26,7 @@ type Props = {
 const DeleteProvider = ({ provider }: Props) => {
   const { t } = useTranslation()
   const { deleteProvider, providers } = useModelProvider()
+  const { favoriteModels, removeFavorite } = useFavoriteModel()
   const router = useRouter()
   if (
     !provider ||
@@ -34,6 +36,14 @@ const DeleteProvider = ({ provider }: Props) => {
     return null
 
   const removeProvider = async () => {
+    // Remove favorite models that belong to this provider
+    const providerModelIds = provider.models.map((model) => model.id)
+    favoriteModels.forEach((favoriteModel) => {
+      if (providerModelIds.includes(favoriteModel.id)) {
+        removeFavorite(favoriteModel.id)
+      }
+    })
+    
     deleteProvider(provider.provider)
     toast.success(t('providers:deleteProvider.title'), {
       id: `delete-provider-${provider.provider}`,

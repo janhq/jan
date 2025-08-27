@@ -37,7 +37,7 @@
   "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
   "reportIssue": "Report Issue",
   "credits": "Credits",
-  "creditsDesc1": "Jan is built with ❤️ by the Menlo Team.",
+  "creditsDesc1": "👋 Jan is built with ❤️ by the Menlo Research team.",
   "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
   "appVersion": "App Version",
   "dataFolder": {
@@ -160,6 +160,9 @@
     "serverLogs": "Server Logs",
     "serverLogsDesc": "View detailed logs of the local API server.",
     "openLogs": "Open Logs",
+    "startupConfiguration": "Startup Configuration",
+    "runOnStartup": "Enable by default on startup",
+    "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",
@@ -231,7 +234,7 @@
     "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
     "reportIssue": "Report Issue",
     "credits": "Credits",
-    "creditsDesc1": "Jan is built with ❤️ by the Menlo Team.",
+    "creditsDesc1": "👋 Jan is built with ❤️ by the Menlo Research team.",
     "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community."
   },
   "extensions": {

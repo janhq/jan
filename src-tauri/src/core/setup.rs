@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Listener, Manager};
+use tauri::{App, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 // use tokio::sync::Mutex;
 // use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
@@ -13,9 +13,8 @@ use tauri_plugin_store::StoreExt;
 
 // MCP
 use super::{
-    cmd::{get_jan_data_folder_path, get_jan_extensions_path},
-    mcp::run_mcp_commands,
-    state::AppState,
+    app::commands::get_jan_data_folder_path, extensions::commands::get_jan_extensions_path,
+    mcp::helpers::run_mcp_commands, state::AppState,
 };
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
@@ -165,7 +164,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     Ok(())
 }
 
-fn extract_extension_manifest<R: Read>(
+pub fn extract_extension_manifest<R: Read>(
     archive: &mut Archive<R>,
 ) -> Result<Option<serde_json::Value>, String> {
     let entry = archive

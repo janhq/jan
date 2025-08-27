@@ -261,6 +261,18 @@
     "downloadFailed": {
       "title": "Download Failed",
       "description": "{{item}} download failed"
+    },
+    "modelValidationStarted": {
+      "title": "Validating Model",
+      "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."
+    },
+    "modelValidationFailed": {
+      "title": "Model Validation Failed",
+      "description": "The downloaded model \"{{modelId}}\" failed integrity verification and was removed. The file may be corrupted or tampered with."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download Complete",
+      "description": "Model \"{{item}}\" downloaded and verified successfully"
     }
   }
 }

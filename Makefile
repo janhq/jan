@@ -26,6 +26,7 @@ else ifeq ($(shell uname -s),Linux)
 	chmod +x src-tauri/build-utils/*
 endif
 	yarn install
+	yarn build:tauri:plugin:api
 	yarn build:core
 	yarn build:extensions
 
@@ -46,6 +47,8 @@ test: lint
 	yarn copy:assets:tauri
 	yarn build:icon
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 
 # Builds and publishes the app
 build-and-publish: install-and-build

@@ -46,9 +46,7 @@ import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
-import { getConnectedServers } from '@/services/mcp'
-import { invoke } from '@tauri-apps/api/core'
-import { useMCPServers } from '@/hooks/useMCPServers'
+import LanguageSwitcher from '@/containers/LanguageSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -60,8 +58,6 @@ function General() {
   const {
     spellCheckChatInput,
     setSpellCheckChatInput,
-    experimentalFeatures,
-    setExperimentalFeatures,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -209,38 +205,6 @@ function General() {
     }
   }, [t, checkForUpdate])
 
-  const handleStopAllMCPServers = async () => {
-    try {
-      const connectedServers = await getConnectedServers()
-
-      // Stop each connected server
-      const stopPromises = connectedServers.map((serverName) =>
-        invoke('deactivate_mcp_server', { name: serverName }).catch((error) => {
-          console.error(`Error stopping MCP server ${serverName}:`, error)
-          return Promise.resolve() // Continue with other servers even if one fails
-        })
-      )
-
-      await Promise.all(stopPromises)
-
-      // Update server configs to set active: false for stopped servers
-      const { mcpServers, editServer } = useMCPServers.getState()
-      connectedServers.forEach((serverName) => {
-        const serverConfig = mcpServers[serverName]
-        if (serverConfig) {
-          editServer(serverName, { ...serverConfig, active: false })
-        }
-      })
-
-      if (connectedServers.length > 0) {
-        toast.success(`Stopped ${connectedServers.length} MCP server(s)`)
-      }
-    } catch (error) {
-      console.error('Error stopping MCP servers:', error)
-      toast.error('Failed to stop MCP servers')
-    }
-  }
-
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -260,30 +224,32 @@ function General() {
                   </span>
                 }
               />
+              {!AUTO_UPDATER_DISABLED && (
+                <CardItem
+                  title={t('settings:general.checkForUpdates')}
+                  description={t('settings:general.checkForUpdatesDesc')}
+                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                  actions={
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleCheckForUpdate}
+                      disabled={isCheckingUpdate}
+                    >
+                      <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        {isCheckingUpdate
+                          ? t('settings:general.checkingForUpdates')
+                          : t('settings:general.checkForUpdates')}
+                      </div>
+                    </Button>
+                  }
+                />
+              )}
               <CardItem
-                title={t('settings:general.checkForUpdates')}
-                description={t('settings:general.checkForUpdatesDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                actions={
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="p-0"
-                    onClick={handleCheckForUpdate}
-                    disabled={isCheckingUpdate}
-                  >
-                    <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                      {isCheckingUpdate
-                        ? t('settings:general.checkingForUpdates')
-                        : t('settings:general.checkForUpdates')}
-                    </div>
-                  </Button>
-                }
-              />
-              {/* <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
-              /> */}
+              />
             </Card>
 
             {/* Data folder */}
@@ -428,19 +394,6 @@ function General() {
             </Card>
             {/* Advanced */}
             <Card title="Advanced">
-              <CardItem
-                title="Experimental Features"
-                description="Enable experimental features. They may be unstable or change at any time."
-                actions={
-                  <Switch
-                    checked={experimentalFeatures}
-                    onCheckedChange={async (e) => {
-                      await handleStopAllMCPServers()
-                      setExperimentalFeatures(e)
-                    }}
-                  />
-                }
-              />
               <CardItem
                 title={t('settings:others.resetFactory', {
                   ns: 'settings',

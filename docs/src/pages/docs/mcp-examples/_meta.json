@@ -1,0 +1,20 @@
+{
+  "browser": {
+    "title": "Browser Automation"
+  },
+  "data-analysis": {
+    "title": "Data Analysis"
+  },
+  "search": {
+    "title": "Search & Research"
+  },
+  "design": {
+    "title": "Design Tools"
+  },
+  "deepresearch": {
+    "title": "Deep Research"
+  },
+  "productivity": {
+    "title": "Productivity"
+  }
+}
