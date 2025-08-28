@@ -178,7 +178,7 @@ export function DownloadManagement() {
         description: t('common:toast.modelValidationStarted.description', {
           modelId: event.modelId,
         }),
-        duration: 10000,
+        duration: Infinity,
       })
     },
     [t]
@@ -199,7 +199,7 @@ export function DownloadManagement() {
         description: t('common:toast.modelValidationFailed.description', {
           modelId: event.modelId,
         }),
-        duration: 30000, // Requires manual dismissal for security-critical message
+        duration: 30000,
       })
     },
     [removeDownload, removeLocalDownloadingModel, t]
@@ -244,9 +244,12 @@ export function DownloadManagement() {
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
         id: 'download-complete',
-        description: t('common:toast.downloadAndVerificationComplete.description', {
-          item: state.modelId,
-        }),
+        description: t(
+          'common:toast.downloadAndVerificationComplete.description',
+          {
+            item: state.modelId,
+          }
+        ),
       })
     },
     [removeDownload, removeLocalDownloadingModel, t]
@@ -260,7 +263,10 @@ export function DownloadManagement() {
     events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
     events.on(DownloadEvent.onModelValidationStarted, onModelValidationStarted)
     events.on(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
-    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      onFileDownloadAndVerificationSuccess
+    )
 
     // Register app update event listeners
     events.on(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
@@ -278,7 +284,10 @@ export function DownloadManagement() {
         onModelValidationStarted
       )
       events.off(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
-      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
+      events.off(
+        DownloadEvent.onFileDownloadAndVerificationSuccess,
+        onFileDownloadAndVerificationSuccess
+      )
 
       // Unregister app update event listeners
       events.off(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)

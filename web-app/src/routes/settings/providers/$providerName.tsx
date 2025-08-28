@@ -584,10 +584,12 @@ function ProviderDetail() {
                           }
                           actions={
                             <div className="flex items-center gap-0.5">
-                              <DialogEditModel
-                                provider={provider}
-                                modelId={model.id}
-                              />
+                              {provider && provider.provider !== 'llamacpp' && (
+                                <DialogEditModel
+                                  provider={provider}
+                                  modelId={model.id}
+                                />
+                              )}
                               {model.settings && (
                                 <ModelSetting
                                   provider={provider}
