@@ -73,7 +73,7 @@ export default defineConfig({
                           },
                           {
                             label: 'Jan Nano 128k',
-                            slug: 'jan/jan-models/jan-nano-32',
+                            slug: 'jan/jan-models/jan-nano-128',
                           },
                           {
                             label: 'Lucy',
