@@ -14,7 +14,7 @@ const __dirname = dirname(__filename)
 // https://astro.build/config
 export default defineConfig({
   // Deploy to the new v2 subdomain
-  site: 'https://v2.jan.ai',
+  site: 'https://docs.jan.ai',
   integrations: [
     mermaid({
       theme: 'default',
