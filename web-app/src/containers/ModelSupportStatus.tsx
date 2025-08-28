@@ -24,7 +24,7 @@ export const ModelSupportStatus = ({
   className,
 }: ModelSupportStatusProps) => {
   const [modelSupportStatus, setModelSupportStatus] = useState<
-    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null
+    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
   >(null)
 
   // Helper function to check model support with proper path resolution
@@ -32,7 +32,7 @@ export const ModelSupportStatus = ({
     async (
       id: string,
       ctxSize: number
-    ): Promise<'RED' | 'YELLOW' | 'GREEN' | null> => {
+    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
       try {
         const janDataFolder = await getJanDataFolderPath()
 
