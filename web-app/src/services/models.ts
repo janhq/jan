@@ -592,7 +592,7 @@ export const checkMmprojExists = async (modelId: string): Promise<boolean> => {
 export const isModelSupported = async (
   modelPath: string,
   ctxSize?: number
-): Promise<'RED' | 'YELLOW' | 'GREEN'> => {
+): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'> => {
   try {
     const engine = getEngine('llamacpp') as AIEngine & {
       isModelSupported?: (
@@ -600,6 +600,7 @@ export const isModelSupported = async (
         ctx_size?: number
       ) => Promise<'RED' | 'YELLOW' | 'GREEN'>
     }
+    console.log(engine, 'engine')
     if (engine && typeof engine.isModelSupported === 'function') {
       return await engine.isModelSupported(modelPath, ctxSize)
     }
@@ -608,6 +609,6 @@ export const isModelSupported = async (
     return 'YELLOW' // Conservative fallback
   } catch (error) {
     console.error(`Error checking model support for ${modelPath}:`, error)
-    return 'RED' // Error state, assume not supported
+    return 'GREY' // Error state, assume not supported
   }
 }
