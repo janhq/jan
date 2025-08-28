@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,7 +7,6 @@ import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { memo, useState, useMemo } from 'react'
-import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -74,8 +72,6 @@ function RenderMarkdownComponent({
 
         // Generate a stable ID based on code content and language
         const codeId = `code-${hashString(code.substring(0, 40) + language)}`
-
-        const shouldVirtualize = code.split('\n').length > 300
 
         return !isInline && !isUser ? (
           <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
@@ -147,11 +143,6 @@ function RenderMarkdownComponent({
                 overflow: 'auto',
                 border: 'none',
               }}
-              renderer={
-                shouldVirtualize
-                  ? (virtualizedRenderer() as (props: any) => React.ReactNode)
-                  : undefined
-              }
               PreTag="div"
               CodeTag={'code'}
               {...props}

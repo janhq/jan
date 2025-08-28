@@ -353,12 +353,7 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(
-          modelId, 
-          modelUrl,
-          mmprojPath,
-          huggingfaceToken
-        )
+        pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
       }
 
       return (
@@ -399,13 +394,13 @@ function Hub() {
       )
     }
   }, [
+    localDownloadingModels,
     downloadProcesses,
     llamaProvider?.models,
     isRecommendedModel,
-    downloadButtonRef,
-    localDownloadingModels,
-    addLocalDownloadingModel,
     t,
+    addLocalDownloadingModel,
+    huggingfaceToken,
     handleUseModel,
   ])
 
@@ -482,9 +477,9 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    if (searchValue.length === 0)
-      return (
-        <>
+    return (
+      <>
+        {searchValue.length === 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger>
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
@@ -509,17 +504,18 @@ function Hub() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={showOnlyDownloaded}
-              onCheckedChange={setShowOnlyDownloaded}
-            />
-            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-              {t('hub:downloaded')}
-            </span>
-          </div>
-        </>
-      )
+        )}
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showOnlyDownloaded}
+            onCheckedChange={setShowOnlyDownloaded}
+          />
+          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+            {t('hub:downloaded')}
+          </span>
+        </div>
+      </>
+    )
   }
 
   return (
@@ -661,6 +657,18 @@ function Hub() {
                                   defaultModelQuantizations={
                                     defaultModelQuantizations
                                   }
+                                  variant={
+                                    filteredModels[
+                                      virtualItem.index
+                                    ].quants.find((m) =>
+                                      defaultModelQuantizations.some((e) =>
+                                        m.model_id.toLowerCase().includes(e)
+                                      )
+                                    ) ??
+                                    filteredModels[virtualItem.index]
+                                      .quants?.[0]
+                                  }
+                                  isDefaultVariant={true}
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
                                 />
