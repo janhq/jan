@@ -22,8 +22,20 @@ export default defineConfig({
     }),
     starlight({
       title: '👋 Jan',
-
       favicon: 'jan2.png',
+      head: [
+        {
+          tag: 'script',
+          content: `
+            document.addEventListener('DOMContentLoaded', function() {
+              const logoLink = document.querySelector('a[href="/"]');
+              if (logoLink) {
+                logoLink.href = 'https://jan.ai';
+              }
+            });
+          `,
+        },
+      ],
       plugins: [
         // starlightThemeRapide(),
         starlightThemeNext(),
