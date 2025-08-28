@@ -64,7 +64,7 @@ function HubModelDetail() {
 
   // State for model support status
   const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
+    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
   >({})
 
   useEffect(() => {
