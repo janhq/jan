@@ -600,7 +600,6 @@ export const isModelSupported = async (
         ctx_size?: number
       ) => Promise<'RED' | 'YELLOW' | 'GREEN'>
     }
-    console.log(engine, 'engine')
     if (engine && typeof engine.isModelSupported === 'function') {
       return await engine.isModelSupported(modelPath, ctxSize)
     }
