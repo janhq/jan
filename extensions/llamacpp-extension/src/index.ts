@@ -1968,7 +1968,8 @@ export default class llamacpp_extension extends AIEngine {
       }
 
       // Use 80% of total memory as the usable limit
-      const usableMemBytes = totalMemBytes * 0.8
+      const USABLE_MEMORY_PERCENTAGE = 0.8
+      const usableMemBytes = totalMemBytes * USABLE_MEMORY_PERCENTAGE
 
       // check model size wrt 80% of system memory
       if (modelSize > usableMemBytes) {
