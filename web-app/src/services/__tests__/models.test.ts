@@ -924,7 +924,7 @@ describe('models service', () => {
       expect(result).toBe('YELLOW') // Should use fallback
     })
 
-    it('should return RED when there is an error', async () => {
+    it('should return GREY when there is an error', async () => {
       const mockEngineWithError = {
         ...mockEngine,
         isModelSupported: vi.fn().mockRejectedValue(new Error('Test error')),
@@ -934,7 +934,7 @@ describe('models service', () => {
 
       const result = await isModelSupported('/path/to/model.gguf')
 
-      expect(result).toBe('RED')
+      expect(result).toBe('GREY')
     })
   })
 })

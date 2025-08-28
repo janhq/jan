@@ -23,7 +23,7 @@
     "serve:web-app": "yarn workspace @janhq/web-app serve:web",
     "build:serve:web-app": "yarn build:web-app && yarn serve:web-app",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
-    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
+    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:tauri:win32": "yarn download:bin && yarn tauri build",

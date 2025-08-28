@@ -103,6 +103,7 @@ function MCPServersContent() {
     mcpServers,
     addServer,
     editServer,
+    renameServer,
     deleteServer,
     syncServers,
     syncServersAndRestart,
@@ -147,22 +148,27 @@ function MCPServersContent() {
   }
 
   const handleSaveServer = async (name: string, config: MCPServerConfig) => {
-    toggleServer(name, false)
     if (editingKey) {
-      // If server name changed, delete old one and add new one
+      // If server name changed, rename it while preserving position
       if (editingKey !== name) {
-        deleteServer(editingKey)
-        addServer(name, config)
+        toggleServer(editingKey, false)
+        renameServer(editingKey, name, config)
+        toggleServer(name, true)
+        // Restart servers to update tool references with new server name
+        syncServersAndRestart()
       } else {
+        toggleServer(editingKey, false)
         editServer(editingKey, config)
+        toggleServer(editingKey, true)
+        syncServers()
       }
     } else {
       // Add new server
+      toggleServer(name, false)
       addServer(name, config)
+      toggleServer(name, true)
+      syncServers()
     }
-
-    syncServers()
-    toggleServer(name, true)
   }
 
   const handleEdit = (serverKey: string) => {
