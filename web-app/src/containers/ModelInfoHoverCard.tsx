@@ -79,6 +79,15 @@ export const ModelInfoHoverCard = ({
           </span>
         </div>
       )
+    } else if (status === 'GREY') {
+      return (
+        <div className="flex items-start gap-2">
+          <div className="size-2 shrink-0 bg-neutral-500 rounded-full mt-1"></div>
+          <span className="text-neutral-500 font-medium">
+            Unable to determine model compatibility with your current device
+          </span>
+        </div>
+      )
     } else {
       return (
         <div className="flex items-start gap-2">
@@ -121,9 +130,7 @@ export const ModelInfoHoverCard = ({
               <>
                 <div>
                   <span className="text-main-view-fg/50 block">
-                    {isDefaultVariant
-                      ? 'Maybe Default Quantization'
-                      : 'Quantization'}
+                    {isDefaultVariant ? 'Default Quantization' : 'Quantization'}
                   </span>
                   <span className="text-main-view-fg font-medium mt-1 inline-block">
                     {variant?.model_id.split('-').pop()?.toUpperCase() || 'N/A'}
