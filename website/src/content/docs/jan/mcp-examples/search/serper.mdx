@@ -9,7 +9,9 @@ sidebar:
 
 import { Aside } from '@astrojs/starlight/components';
 
-[Serper](https://serper.dev) provides Google search results through a simple API, making it perfect for giving AI models access to current web information. The Serper MCP integration enables Jan models to search the web and retrieve real-time information.
+[Serper](https://serper.dev) provides Google search results through a simple API, making it
+perfect for giving AI models access to current web information. The Serper MCP integration
+enables Jan models to search the web and retrieve real-time information.
 
 ## Available Tools
 
@@ -18,7 +20,6 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## Prerequisites
 
-- Jan with experimental features enabled
 - Serper API key from [serper.dev](https://serper.dev)
 - Model with tool calling support (recommended: Jan v1)
 
@@ -27,13 +28,6 @@ Serper offers 2,500 free searches upon signup - enough for extensive testing and
 </Aside>
 
 ## Setup
-
-### Enable Experimental Features
-
-1. Go to **Settings** > **General**
-2. Toggle **Experimental Features** ON
-
-![Enable experimental features](../../../../../assets/enable_mcp.png)
 
 ### Enable MCP
 
@@ -78,12 +72,7 @@ Jan v1 is optimized for tool calling and works excellently with Serper:
 
 ### Enable Tool Calling
 
-1. Go to **Settings** > **Model Providers** > **Llama.cpp**
-2. Find Jan v1 in your models list
-3. Click the edit icon
-4. Toggle **Tools** ON
-
-![Enable tools for Jan v1](../../../../../assets/toggle_tools.png)
+Tool calling is now enabled by default on Jan.
 
 ## Usage
 
@@ -102,7 +91,8 @@ What are the latest developments in quantum computing this week?
 
 **Comparative Analysis:**
 ```
-What are the main differences between the Rust programming language and C++? Be spicy, hot takes are encouraged. 😌
+What are the main differences between the Rust programming language and C++? Be spicy, hot
+takes are encouraged. 😌
 ```
 
 
@@ -140,12 +130,10 @@ What restaurants opened in San Francisco this month? Focus on Japanese cuisine.
 **No search results:**
 - Verify API key is correct
 - Check remaining credits at serper.dev
-- Ensure MCP server shows as active
 
 **Tools not appearing:**
-- Confirm experimental features are enabled
-- Verify tool calling is enabled for your model
 - Restart Jan after configuration changes
+- Ensure MCP Server shows as active
 
 **Poor search quality:**
 - Use more specific search terms
@@ -164,4 +152,6 @@ Each search query consumes one API credit. Monitor usage at serper.dev dashboard
 
 ## Next Steps
 
-Serper MCP enables Jan v1 to access current web information, making it a powerful research assistant. Combine with other MCP tools for even more capabilities - use Serper for search, then E2B for data analysis, or Jupyter for visualization.
+Serper MCP enables models to access current web information, making them powerful research
+assistants. Combine with other MCP tools for even more capabilities - use Serper for search,
+then E2B for data analysis, or Jupyter for visualization.
