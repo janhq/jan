@@ -7,9 +7,10 @@
       "layout": "raw"
     }
   },
-  "docs": {
+  "Documentation": {
     "type": "page",
-    "title": "Documentation"
+    "title": "Documentation",
+    "href": "https://docs.jan.ai"
   },
   "platforms": {
     "type": "page",
