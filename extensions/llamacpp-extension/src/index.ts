@@ -1954,22 +1954,27 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
       )
-      let availableMemBytes: number
+      let totalMemBytes: number
       const devices = await this.getDevices()
       if (devices.length > 0) {
-        // Sum free memory across all GPUs
-        availableMemBytes = devices
-          .map((d) => d.free * 1024 * 1024)
+        // Sum total memory across all GPUs
+        totalMemBytes = devices
+          .map((d) => d.mem * 1024 * 1024)
           .reduce((a, b) => a + b, 0)
       } else {
         // CPU fallback
         const sys = await getSystemUsage()
-        availableMemBytes = (sys.total_memory - sys.used_memory) * 1024 * 1024
+        totalMemBytes = sys.total_memory * 1024 * 1024
       }
-      // check model size wrt system memory
-      if (modelSize > availableMemBytes) {
+
+      // Use 80% of total memory as the usable limit
+      const USABLE_MEMORY_PERCENTAGE = 0.8
+      const usableMemBytes = totalMemBytes * USABLE_MEMORY_PERCENTAGE
+
+      // check model size wrt 80% of system memory
+      if (modelSize > usableMemBytes) {
         return 'RED'
-      } else if (modelSize + kvCacheSize > availableMemBytes) {
+      } else if (modelSize + kvCacheSize > usableMemBytes) {
         return 'YELLOW'
       } else {
         return 'GREEN'
