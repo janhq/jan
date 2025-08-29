@@ -7,20 +7,9 @@ vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: vi.fn().mockReturnValue(false)
 }))
 
-// Mock problematic imports
-vi.mock('@jan/extensions-web', async () => {
-  return {
-    WEB_EXTENSIONS: {},
-  }
-})
-
-// Mock core service to avoid extension import issues
-vi.mock('../core/web', () => ({
-  WebCoreService: class {
-    async getActiveExtensions() {
-      return []
-    }
-  }
+// Mock @jan/extensions-web to return empty extensions for testing
+vi.mock('@jan/extensions-web', () => ({
+  WEB_EXTENSIONS: {}
 }))
 
 // Mock console to avoid noise in tests
