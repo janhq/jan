@@ -48,7 +48,7 @@ outputs = ['core/dist']
 [tasks.build-extensions]
 description = "Build extensions"
 depends = ["build-core"]
-run = "yarn build:extensions"
+run = "yarn build:extensions && yarn build:extensions-web"
 sources = ['extensions/**/*']
 outputs = ['pre-install/*.tgz']
 

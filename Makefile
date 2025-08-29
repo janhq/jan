@@ -28,7 +28,7 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
-	yarn build:extensions
+	yarn build:extensions && yarn build:extensions-web
 
 dev: install-and-build
 	yarn download:bin
