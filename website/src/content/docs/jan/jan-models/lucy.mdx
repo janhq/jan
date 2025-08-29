@@ -5,15 +5,12 @@ description: Compact 1.7B model optimized for web search with tool calling
 
 import { Aside } from '@astrojs/starlight/components';
 
-![Lucy](../../../../assets/lucy.jpeg)
 
 ## Overview
 
 Lucy is a 1.7B parameter model built on Qwen3-1.7B, optimized for web search through tool calling. The model has been trained to work effectively with search APIs like Serper, enabling web search capabilities in resource-constrained environments.
 
 ## Performance
-
-### SimpleQA Benchmark
 
 Lucy achieves competitive performance on SimpleQA despite its small size:
 
@@ -23,7 +20,7 @@ The benchmark shows Lucy (1.7B) compared against models ranging from 4B to 600B+
 
 ## Requirements
 
-- **Memory**: 
+- **Memory**:
   - Minimum: 4GB RAM (with Q4 quantization)
   - Recommended: 8GB RAM (with Q8 quantization)
 - **Search API**: Serper API key required for web search functionality
@@ -100,12 +97,12 @@ Min-p: 0.0
 
 ```bibtex
 @misc{dao2025lucyedgerunningagenticweb,
-      title={Lucy: edgerunning agentic web search on mobile with machine generated task vectors}, 
+      title={Lucy: edgerunning agentic web search on mobile with machine generated task vectors},
       author={Alan Dao and Dinh Bach Vu and Alex Nguyen and Norapat Buppodom},
       year={2025},
       eprint={2508.00360},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2508.00360}, 
+      url={https://arxiv.org/abs/2508.00360},
 }
 ```
