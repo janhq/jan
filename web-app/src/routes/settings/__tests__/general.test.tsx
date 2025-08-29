@@ -167,14 +167,37 @@ vi.mock('@/components/ui/dialog', () => ({
   ),
 }))
 
-vi.mock('@/services/app', () => ({
-  factoryReset: vi.fn(),
-  getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
-  relocateJanDataFolder: vi.fn(),
+vi.mock('@/services/app/web', () => ({
+  WebAppService: vi.fn().mockImplementation(() => ({
+    factoryReset: vi.fn(),
+    getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
+    relocateJanDataFolder: vi.fn(),
+  })),
 }))
 
-vi.mock('@/services/models', () => ({
-  stopAllModels: vi.fn(),
+vi.mock('@/services/models/default', () => ({
+  DefaultModelsService: vi.fn().mockImplementation(() => ({
+    stopAllModels: vi.fn(),
+  })),
+}))
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({
+    app: () => ({
+      factoryReset: vi.fn(),
+      getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
+      relocateJanDataFolder: vi.fn(),
+    }),
+    models: () => ({
+      stopAllModels: vi.fn(),
+    }),
+    dialog: () => ({
+      open: vi.fn().mockResolvedValue('/test/path'),
+    }),
+    events: () => ({
+      emit: vi.fn(),
+    }),
+  }),
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -236,6 +259,18 @@ vi.mock('@/types/events', () => ({
   },
 }))
 
+vi.mock('@/lib/platform/const', () => ({
+  PlatformFeatures: {
+    SYSTEM_INTEGRATIONS: true,
+  },
+}))
+
+vi.mock('@/lib/platform/types', () => ({
+  PlatformFeature: {
+    SYSTEM_INTEGRATIONS: 'SYSTEM_INTEGRATIONS',
+  },
+}))
+
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: (path: string) => (config: any) => ({
     ...config,
@@ -247,6 +282,7 @@ vi.mock('@tanstack/react-router', () => ({
 global.VERSION = '1.0.0'
 global.IS_MACOS = false
 global.IS_WINDOWS = true
+global.AUTO_UPDATER_DISABLED = false
 global.window = {
   ...global.window,
   core: {

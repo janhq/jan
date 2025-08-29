@@ -1,22 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-import {
-  fetchModels,
-  fetchModelCatalog,
-  fetchHuggingFaceRepo,
-  convertHfRepoToCatalogModel,
-  updateModel,
-  pullModel,
-  abortDownload,
-  deleteModel,
-  getActiveModels,
-  stopModel,
-  stopAllModels,
-  startModel,
-  isModelSupported,
-  HuggingFaceRepo,
-  CatalogModel,
-} from '../models'
+import { DefaultModelsService } from '../models/default'
+import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, Model } from '@janhq/core'
 
 // Mock EngineManager
@@ -36,7 +20,9 @@ Object.defineProperty(global, 'MODEL_CATALOG_URL', {
   configurable: true,
 })
 
-describe('models service', () => {
+describe('DefaultModelsService', () => {
+  let modelsService: DefaultModelsService
+  
   const mockEngine = {
     list: vi.fn(),
     updateSettings: vi.fn(),
@@ -46,6 +32,9 @@ describe('models service', () => {
     getLoadedModels: vi.fn(),
     unload: vi.fn(),
     load: vi.fn(),
+    isModelSupported: vi.fn(),
+    isToolSupported: vi.fn(),
+    checkMmprojExists: vi.fn(),
   }
 
   const mockEngineManager = {
@@ -53,6 +42,7 @@ describe('models service', () => {
   }
 
   beforeEach(() => {
+    modelsService = new DefaultModelsService()
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
   })
@@ -65,7 +55,7 @@ describe('models service', () => {
       ]
       mockEngine.list.mockResolvedValue(mockModels)
 
-      const result = await fetchModels()
+      const result = await modelsService.fetchModels()
 
       expect(result).toEqual(mockModels)
       expect(mockEngine.list).toHaveBeenCalled()
@@ -90,7 +80,7 @@ describe('models service', () => {
         json: vi.fn().mockResolvedValue(mockCatalog),
       })
 
-      const result = await fetchModelCatalog()
+      const result = await modelsService.fetchModelCatalog()
 
       expect(result).toEqual(mockCatalog)
     })
@@ -102,7 +92,7 @@ describe('models service', () => {
         statusText: 'Not Found',
       })
 
-      await expect(fetchModelCatalog()).rejects.toThrow(
+      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
         'Failed to fetch model catalog: 404 Not Found'
       )
     })
@@ -110,7 +100,7 @@ describe('models service', () => {
     it('should handle network error', async () => {
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
-      await expect(fetchModelCatalog()).rejects.toThrow(
+      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
         'Failed to fetch model catalog: Network error'
       )
     })
@@ -123,7 +113,7 @@ describe('models service', () => {
         settings: [{ key: 'temperature', value: 0.7 }],
       }
 
-      await updateModel(model as any)
+      await modelsService.updateModel(model as any)
 
       expect(mockEngine.updateSettings).toHaveBeenCalledWith(model.settings)
     })
@@ -131,7 +121,7 @@ describe('models service', () => {
     it('should handle model without settings', async () => {
       const model = { id: 'model1' }
 
-      await updateModel(model)
+      await modelsService.updateModel(model)
 
       expect(mockEngine.updateSettings).not.toHaveBeenCalled()
     })
@@ -142,7 +132,7 @@ describe('models service', () => {
       const id = 'model1'
       const modelPath = '/path/to/model'
 
-      await pullModel(id, modelPath)
+      await modelsService.pullModel(id, modelPath)
 
       expect(mockEngine.import).toHaveBeenCalledWith(id, { modelPath })
     })
@@ -152,7 +142,7 @@ describe('models service', () => {
     it('should abort download successfully', async () => {
       const id = 'model1'
 
-      await abortDownload(id)
+      await modelsService.abortDownload(id)
 
       expect(mockEngine.abortImport).toHaveBeenCalledWith(id)
     })
@@ -162,7 +152,7 @@ describe('models service', () => {
     it('should delete model successfully', async () => {
       const id = 'model1'
 
-      await deleteModel(id)
+      await modelsService.deleteModel(id)
 
       expect(mockEngine.delete).toHaveBeenCalledWith(id)
     })
@@ -173,7 +163,7 @@ describe('models service', () => {
       const mockActiveModels = ['model1', 'model2']
       mockEngine.getLoadedModels.mockResolvedValue(mockActiveModels)
 
-      const result = await getActiveModels()
+      const result = await modelsService.getActiveModels()
 
       expect(result).toEqual(mockActiveModels)
       expect(mockEngine.getLoadedModels).toHaveBeenCalled()
@@ -185,7 +175,7 @@ describe('models service', () => {
       const model = 'model1'
       const provider = 'openai'
 
-      await stopModel(model, provider)
+      await modelsService.stopModel(model, provider)
 
       expect(mockEngine.unload).toHaveBeenCalledWith(model)
     })
@@ -196,7 +186,7 @@ describe('models service', () => {
       const mockActiveModels = ['model1', 'model2']
       mockEngine.getLoadedModels.mockResolvedValue(mockActiveModels)
 
-      await stopAllModels()
+      await modelsService.stopAllModels()
 
       expect(mockEngine.unload).toHaveBeenCalledTimes(2)
       expect(mockEngine.unload).toHaveBeenCalledWith('model1')
@@ -206,7 +196,7 @@ describe('models service', () => {
     it('should handle empty active models', async () => {
       mockEngine.getLoadedModels.mockResolvedValue(null)
 
-      await stopAllModels()
+      await modelsService.stopAllModels()
 
       expect(mockEngine.unload).not.toHaveBeenCalled()
     })
@@ -230,7 +220,7 @@ describe('models service', () => {
       })
       mockEngine.load.mockResolvedValue(mockSession)
 
-      const result = await startModel(provider, model)
+      const result = await modelsService.startModel(provider, model)
 
       expect(result).toEqual(mockSession)
       expect(mockEngine.load).toHaveBeenCalledWith(model, {
@@ -256,7 +246,7 @@ describe('models service', () => {
       })
       mockEngine.load.mockRejectedValue(error)
 
-      await expect(startModel(provider, model)).rejects.toThrow(error)
+      await expect(modelsService.startModel(provider, model)).rejects.toThrow(error)
     })
     it('should not load model again', async () => {
       const mockSettings = {
@@ -273,7 +263,7 @@ describe('models service', () => {
         includes: () => true,
       })
       expect(mockEngine.load).toBeCalledTimes(0)
-      await expect(startModel(provider, model)).resolves.toBe(undefined)
+      await expect(modelsService.startModel(provider, model)).resolves.toBe(undefined)
     })
   })
 
@@ -322,7 +312,7 @@ describe('models service', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toEqual(mockRepoData)
       expect(fetch).toHaveBeenCalledWith(
@@ -341,7 +331,7 @@ describe('models service', () => {
       })
 
       // Test with full URL
-      await fetchHuggingFaceRepo(
+      await modelsService.fetchHuggingFaceRepo(
         'https://huggingface.co/microsoft/DialoGPT-medium'
       )
       expect(fetch).toHaveBeenCalledWith(
@@ -352,7 +342,7 @@ describe('models service', () => {
       )
 
       // Test with domain prefix
-      await fetchHuggingFaceRepo('huggingface.co/microsoft/DialoGPT-medium')
+      await modelsService.fetchHuggingFaceRepo('huggingface.co/microsoft/DialoGPT-medium')
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
@@ -361,7 +351,7 @@ describe('models service', () => {
       )
 
       // Test with trailing slash
-      await fetchHuggingFaceRepo('microsoft/DialoGPT-medium/')
+      await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium/')
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
@@ -372,13 +362,13 @@ describe('models service', () => {
 
     it('should return null for invalid repository IDs', async () => {
       // Test empty string
-      expect(await fetchHuggingFaceRepo('')).toBeNull()
+      expect(await modelsService.fetchHuggingFaceRepo('')).toBeNull()
 
       // Test string without slash
-      expect(await fetchHuggingFaceRepo('invalid-repo')).toBeNull()
+      expect(await modelsService.fetchHuggingFaceRepo('invalid-repo')).toBeNull()
 
       // Test whitespace only
-      expect(await fetchHuggingFaceRepo('   ')).toBeNull()
+      expect(await modelsService.fetchHuggingFaceRepo('   ')).toBeNull()
     })
 
     it('should return null for 404 responses', async () => {
@@ -388,7 +378,7 @@ describe('models service', () => {
         statusText: 'Not Found',
       })
 
-      const result = await fetchHuggingFaceRepo('nonexistent/model')
+      const result = await modelsService.fetchHuggingFaceRepo('nonexistent/model')
 
       expect(result).toBeNull()
       expect(fetch).toHaveBeenCalledWith(
@@ -408,7 +398,7 @@ describe('models service', () => {
         statusText: 'Internal Server Error',
       })
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toBeNull()
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -424,7 +414,7 @@ describe('models service', () => {
 
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toBeNull()
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -458,7 +448,7 @@ describe('models service', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toEqual(mockRepoData)
     })
@@ -497,7 +487,7 @@ describe('models service', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toEqual(mockRepoData)
     })
@@ -541,7 +531,7 @@ describe('models service', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
 
       expect(result).toEqual(mockRepoData)
       // Verify the GGUF file is present in siblings
@@ -586,7 +576,7 @@ describe('models service', () => {
     }
 
     it('should convert HuggingFace repo to catalog model format', () => {
-      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       const expected: CatalogModel = {
         model_name: 'microsoft/DialoGPT-medium',
@@ -633,7 +623,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithoutGGUF)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithoutGGUF)
 
       expect(result.num_quants).toBe(0)
       expect(result.quants).toEqual([])
@@ -645,7 +635,7 @@ describe('models service', () => {
         siblings: undefined,
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithoutSiblings)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithoutSiblings)
 
       expect(result.num_quants).toBe(0)
       expect(result.quants).toEqual([])
@@ -673,7 +663,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithVariousFileSizes)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithVariousFileSizes)
 
       expect(result.quants[0].file_size).toBe('500.0 MB')
       expect(result.quants[1].file_size).toBe('3.5 GB')
@@ -686,7 +676,7 @@ describe('models service', () => {
         tags: [],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithEmptyTags)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithEmptyTags)
 
       expect(result.description).toBe('**Tags**: ')
     })
@@ -697,7 +687,7 @@ describe('models service', () => {
         downloads: undefined as any,
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithoutDownloads)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithoutDownloads)
 
       expect(result.downloads).toBe(0)
     })
@@ -724,7 +714,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithVariousGGUF)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithVariousGGUF)
 
       expect(result.quants[0].model_id).toBe('model')
       expect(result.quants[1].model_id).toBe('MODEL')
@@ -732,7 +722,7 @@ describe('models service', () => {
     })
 
     it('should generate correct download paths', () => {
-      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       expect(result.quants[0].path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
@@ -743,7 +733,7 @@ describe('models service', () => {
     })
 
     it('should generate correct readme URL', () => {
-      const result = convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       expect(result.readme).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md'
@@ -777,7 +767,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithMixedCase)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithMixedCase)
 
       expect(result.num_quants).toBe(3)
       expect(result.quants).toHaveLength(3)
@@ -808,7 +798,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(repoWithEdgeCases)
+      const result = modelsService.convertHfRepoToCatalogModel(repoWithEdgeCases)
 
       expect(result.quants[0].file_size).toBe('0.0 MB')
       expect(result.quants[1].file_size).toBe('1.0 GB')
@@ -837,7 +827,7 @@ describe('models service', () => {
         ],
       }
 
-      const result = convertHfRepoToCatalogModel(minimalRepo)
+      const result = modelsService.convertHfRepoToCatalogModel(minimalRepo)
 
       expect(result.model_name).toBe('minimal/repo')
       expect(result.developer).toBe('minimal')
@@ -860,7 +850,7 @@ describe('models service', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await isModelSupported('/path/to/model.gguf', 4096)
+      const result = await modelsService.isModelSupported('/path/to/model.gguf', 4096)
 
       expect(result).toBe('GREEN')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
@@ -877,7 +867,7 @@ describe('models service', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await isModelSupported('/path/to/model.gguf', 8192)
+      const result = await modelsService.isModelSupported('/path/to/model.gguf', 8192)
 
       expect(result).toBe('YELLOW')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
@@ -894,7 +884,7 @@ describe('models service', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await isModelSupported('/path/to/large-model.gguf')
+      const result = await modelsService.isModelSupported('/path/to/large-model.gguf')
 
       expect(result).toBe('RED')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
@@ -906,12 +896,12 @@ describe('models service', () => {
     it('should return YELLOW as fallback when engine method is not available', async () => {
       const mockEngineWithoutSupport = {
         ...mockEngine,
-        // isModelSupported method not available
+        isModelSupported: undefined, // Explicitly remove the method
       }
 
       mockEngineManager.get.mockReturnValue(mockEngineWithoutSupport)
 
-      const result = await isModelSupported('/path/to/model.gguf')
+      const result = await modelsService.isModelSupported('/path/to/model.gguf')
 
       expect(result).toBe('YELLOW')
     })
@@ -919,7 +909,7 @@ describe('models service', () => {
     it('should return RED when engine is not available', async () => {
       mockEngineManager.get.mockReturnValue(null)
 
-      const result = await isModelSupported('/path/to/model.gguf')
+      const result = await modelsService.isModelSupported('/path/to/model.gguf')
 
       expect(result).toBe('YELLOW') // Should use fallback
     })
@@ -932,7 +922,7 @@ describe('models service', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithError)
 
-      const result = await isModelSupported('/path/to/model.gguf')
+      const result = await modelsService.isModelSupported('/path/to/model.gguf')
 
       expect(result).toBe('GREY')
     })
