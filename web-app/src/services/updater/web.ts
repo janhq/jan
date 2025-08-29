@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Web Updater Service - Web implementation
  * Provides fallback implementations for update operations
@@ -21,6 +20,7 @@ export class WebUpdaterService implements UpdaterService {
   async downloadAndInstallWithProgress(
     progressCallback: (event: UpdateProgressEvent) => void
   ): Promise<void> {
+    console.log('downloadAndInstallWithProgress called with callback:', typeof progressCallback)
     // Web fallback - no download capability
     console.warn('Download with progress not supported in web environment')
     // Could potentially redirect to download page or show update notification

@@ -19,6 +19,7 @@ export class DefaultHardwareService implements HardwareService {
   }
 
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
-    // No-op
+    console.log('setActiveGpus called with data:', data)
+    // No-op - not implemented in default service
   }
 }

@@ -7,10 +7,12 @@ import type { OpenerService } from './types'
 
 export class DefaultOpenerService implements OpenerService {
   async revealItemInDir(path: string): Promise<void> {
-    // No-op
+    console.log('revealItemInDir called with path:', path)
+    // No-op - not implemented in default service
   }
 
   async openPath(path: string): Promise<void> {
-    // No-op
+    console.log('openPath called with path:', path)
+    // No-op - not implemented in default service
   }
 }

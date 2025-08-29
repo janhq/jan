@@ -183,6 +183,7 @@ export class DefaultModelsService implements ModelsService {
     mmprojPath?: string,
     huggingfaceToken?: string
   ): Promise<void> {
+    console.log('pullModelWithMetadata called:', { modelId, modelUrl, mmprojPath, huggingfaceToken })
     await this.getEngine()?.import(modelId, { 
       modelPath: modelUrl,
       mmprojPath: mmprojPath 
@@ -360,6 +361,7 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async checkMmprojExists(modelId: string): Promise<boolean> {
+    console.log('checkMmprojExists called with modelId:', modelId)
     // AIEngine doesn't have checkMmprojExists method
     // This might be a legacy method or extension-specific
     // For now, return false as a safe default

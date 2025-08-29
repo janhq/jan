@@ -77,6 +77,7 @@ export class WebCoreService implements CoreService {
   }
 
   async uninstallExtension(extensions: string[], reload = true): Promise<boolean> {
+    console.log('uninstallExtension called:', { extensions, reload })
     console.warn('Extension uninstallation not available in web environment')
     return false
   }

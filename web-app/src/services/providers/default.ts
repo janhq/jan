@@ -11,11 +11,13 @@ export class DefaultProvidersService implements ProvidersService {
   }
 
   async fetchModelsFromProvider(provider: ModelProvider): Promise<string[]> {
+    console.log('fetchModelsFromProvider called with provider:', provider)
     return []
   }
 
   async updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void> {
-    // No-op
+    console.log('updateSettings called:', { providerName, settings })
+    // No-op - not implemented in default service
   }
 
   fetch(): typeof fetch {

@@ -13,16 +13,21 @@ export class DefaultWindowService implements WindowService {
       async show() { /* No-op */ },
       async hide() { /* No-op */ },
       async focus() { /* No-op */ },
-      async setTitle(title: string) { /* No-op */ }
+      async setTitle(title: string) { 
+        console.log('window.setTitle called with title:', title)
+        /* No-op */ 
+      }
     }
   }
 
   async getWebviewWindowByLabel(label: string): Promise<WebviewWindowInstance | null> {
+    console.log('getWebviewWindowByLabel called with label:', label)
     return null
   }
 
   async openWindow(config: WindowConfig): Promise<void> {
-    // No-op
+    console.log('openWindow called with config:', config)
+    // No-op - not implemented in default service
   }
 
   async openLogsWindow(): Promise<void> {
