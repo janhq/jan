@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import starlightThemeNext from 'starlight-theme-next'
 import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
 import mermaid from 'astro-mermaid'
