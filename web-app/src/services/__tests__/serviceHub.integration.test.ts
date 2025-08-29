@@ -8,9 +8,11 @@ vi.mock('@/lib/platform/utils', () => ({
 }))
 
 // Mock problematic imports
-vi.mock('@jan/extensions-web', () => ({
-  WEB_EXTENSIONS: {}
-}))
+vi.mock('@jan/extensions-web', async () => {
+  return {
+    WEB_EXTENSIONS: {},
+  }
+})
 
 // Mock core service to avoid extension import issues
 vi.mock('../core/web', () => ({
