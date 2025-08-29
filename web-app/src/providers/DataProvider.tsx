@@ -68,7 +68,6 @@ export function DataProvider() {
         )
       )
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub, setThreads, setMessages])
 
   // Check for app updates
@@ -85,7 +84,6 @@ export function DataProvider() {
     events.on(AppEvent.onModelImported, () => {
       serviceHub.providers().getProviders().then(setProviders)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub, setProviders])
 
   const getLastUsedModel = (): { provider: string; model: string } | null => {

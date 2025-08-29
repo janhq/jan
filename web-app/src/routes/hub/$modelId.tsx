@@ -181,7 +181,7 @@ function HubModelDetailContent() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
   // Extract tags from quants (model variants)

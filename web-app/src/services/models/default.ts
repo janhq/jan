@@ -9,6 +9,7 @@ import {
   EngineManager,
   SessionInfo,
   SettingComponentProps,
+  modelInfo,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type { ModelsService, ModelCatalog, HuggingFaceRepo, CatalogModel } from './types'
@@ -24,8 +25,8 @@ export class DefaultModelsService implements ModelsService {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
 
-  async fetchModels(): Promise<any> {
-    return this.getEngine()?.list()
+  async fetchModels(): Promise<modelInfo[]> {
+    return this.getEngine()?.list() ?? []
   }
 
   async fetchModelCatalog(): Promise<ModelCatalog> {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Web Updater Service - Web implementation
  * Provides fallback implementations for update operations

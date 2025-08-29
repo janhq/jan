@@ -88,7 +88,7 @@ export const ModelSupportStatus = ({
         return null
       }
     },
-    []
+    [serviceHub]
   )
 
   // Helper function to get icon color based on model support status

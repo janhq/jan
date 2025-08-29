@@ -112,7 +112,7 @@ export const useChat = () => {
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
-    [updateLoadingModel]
+    [updateLoadingModel, serviceHub]
   )
 
   const increaseModelContextSize = useCallback(
@@ -197,7 +197,7 @@ export const useChat = () => {
       if (updatedProvider) await restartModel(updatedProvider, modelId)
       return updatedProvider
     },
-    [updateProvider, getProviderByName, restartModel]
+    [updateProvider, getProviderByName, restartModel, serviceHub]
   )
 
   const sendMessage = useCallback(
@@ -550,6 +550,7 @@ export const useChat = () => {
       increaseModelContextSize,
       toggleOnContextShifting,
       setModelLoadError,
+      serviceHub,
     ]
   )
 

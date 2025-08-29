@@ -134,7 +134,7 @@ const DropdownModelProvider = ({
         console.debug('Error checking mmproj for model:', modelId, error)
       }
     },
-    [getProviderByName, updateProvider]
+    [getProviderByName, updateProvider, serviceHub]
   )
 
   // Initialize model provider only once
@@ -189,6 +189,7 @@ const DropdownModelProvider = ({
     updateProvider,
     getProviderByName,
     checkAndUpdateModelVisionCapability,
+    serviceHub,
   ])
 
   // Update display model when selection changes
@@ -380,6 +381,7 @@ const DropdownModelProvider = ({
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
+      serviceHub,
     ]
   )
 

@@ -2,7 +2,7 @@
  * Models Service Types
  */
 
-import { SessionInfo } from '@janhq/core'
+import { SessionInfo, modelInfo } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -70,7 +70,7 @@ export interface HuggingFaceRepo {
 }
 
 export interface ModelsService {
-  fetchModels(): Promise<any>
+  fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchHuggingFaceRepo(repoId: string, hfToken?: string): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel | null
