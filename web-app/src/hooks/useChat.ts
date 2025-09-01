@@ -209,8 +209,10 @@ export const useChat = () => {
         name: string
         type: string
         size: number
-        base64: string
-        dataUrl: string
+        base64?: string
+        dataUrl?: string
+        textContent?: string
+        isTextFile?: boolean
       }>
     ) => {
       const activeThread = await getCurrentThread()

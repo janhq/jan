@@ -57,8 +57,10 @@ export const newUserThreadContent = (
     name: string
     type: string
     size: number
-    base64: string
-    dataUrl: string
+    base64?: string
+    dataUrl?: string
+    textContent?: string
+    isTextFile?: boolean
   }>
 ): ThreadMessage => {
   const contentParts = [
@@ -74,7 +76,16 @@ export const newUserThreadContent = (
   // Add attachments to content array
   if (attachments) {
     attachments.forEach((attachment) => {
-      if (attachment.type.startsWith('image/')) {
+      if (attachment.isTextFile && attachment.textContent) {
+        // Add text file content as a separate text block with file context
+        contentParts.push({
+          type: ContentType.Text,
+          text: {
+            value: `\n\n--- File: ${attachment.name} (${attachment.type}) ---\n${attachment.textContent}\n--- End of ${attachment.name} ---`,
+            annotations: [],
+          },
+        })
+      } else if (attachment.type.startsWith('image/') && attachment.base64) {
         contentParts.push({
           type: ContentType.Image,
           image_url: {

@@ -14,13 +14,14 @@ import {
 } from '@/components/ui/tooltip'
 import { ArrowRight } from 'lucide-react'
 import {
-  IconPhoto,
   IconWorld,
   IconAtom,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
+  IconPaperclip,
+  IconFileText,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -42,7 +43,7 @@ type ChatInputProps = {
   initialMessage?: boolean
 }
 
-const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
+function ChatInput({ model, className, initialMessage }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -70,10 +71,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       name: string
       type: string
       size: number
-      base64: string
-      dataUrl: string
+      base64?: string
+      dataUrl?: string
+      textContent?: string
+      isTextFile?: boolean
     }>
-  >([])
+  >([]);
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
@@ -227,29 +230,89 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         return 'image/jpeg'
       case 'png':
         return 'image/png'
+      case 'txt':
+        return 'text/plain'
+      case 'csv':
+        return 'text/csv'
+      case 'json':
+        return 'application/json'
+      case 'md':
+      case 'markdown':
+        return 'text/markdown'
+      case 'xml':
+        return 'application/xml'
+      case 'yaml':
+      case 'yml':
+        return 'application/x-yaml'
+      case 'js':
+        return 'text/javascript'
+      case 'ts':
+        return 'text/typescript'
+      case 'py':
+        return 'text/x-python'
+      case 'html':
+        return 'text/html'
+      case 'css':
+        return 'text/css'
       default:
         return ''
     }
+  }
+
+  const isTextFile = (mimeType: string): boolean => {
+    const textTypes = [
+      'text/plain',
+      'text/csv',
+      'application/json',
+      'text/markdown',
+      'application/xml',
+      'application/x-yaml',
+      'text/javascript',
+      'text/typescript',
+      'text/x-python',
+      'text/html',
+      'text/css'
+    ]
+    return textTypes.includes(mimeType) || mimeType.startsWith('text/')
+  }
+
+  const isImageFile = (mimeType: string): boolean => {
+    return mimeType.startsWith('image/')
+  }
+
+  const validateFileSize = (file: File): boolean => {
+    const maxSize = 10 * 1024 * 1024 // 10MB for images
+    const maxTextSize = 1 * 1024 * 1024 // 1MB for text files
+    const detectedType = file.type || getFileTypeFromExtension(file.name)
+    
+    if (isTextFile(detectedType)) {
+      return file.size <= maxTextSize
+    } else if (isImageFile(detectedType)) {
+      return file.size <= maxSize
+    }
+    return false
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
 
     if (files && files.length > 0) {
-      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
       const newFiles: Array<{
         name: string
         type: string
         size: number
-        base64: string
-        dataUrl: string
+        base64?: string
+        dataUrl?: string
+        textContent?: string
+        isTextFile?: boolean
       }> = []
 
       Array.from(files).forEach((file) => {
         // Check file size
-        if (file.size > maxSize) {
-          setMessage(`File is too large. Maximum size is 10MB.`)
-          // Reset file input to allow re-uploading
+        if (!validateFileSize(file)) {
+          const detectedType = file.type || getFileTypeFromExtension(file.name)
+          const maxSizeText = isTextFile(detectedType) ? '1MB' : '10MB'
+          setMessage(`File "${file.name}" is too large. Maximum size is ${maxSizeText}.`)
           if (fileInputRef.current) {
             fileInputRef.current.value = ''
           }
@@ -260,54 +323,124 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const detectedType = file.type || getFileTypeFromExtension(file.name)
         const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        // Check file type - images only
-        const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+        // Check file type - support both images and text files
+        const allowedImageTypes = ['image/jpg', 'image/jpeg', 'image/png']
+        const allowedTextTypes = [
+          'text/plain',
+          'text/csv', 
+          'application/json',
+          'text/markdown',
+          'application/xml',
+          'application/x-yaml',
+          'text/javascript',
+          'text/typescript',
+          'text/x-python',
+          'text/html',
+          'text/css'
+        ]
 
-        if (!allowedTypes.includes(actualType)) {
+        const isValidImageFile = allowedImageTypes.includes(actualType)
+        const isValidTextFile = allowedTextTypes.includes(actualType) || actualType.startsWith('text/')
+
+        if (!isValidImageFile && !isValidTextFile) {
           setMessage(
-            `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
+            `File type "${actualType}" not supported. Supported formats: Images (JPEG, PNG) and Text files (TXT, CSV, JSON, MD, XML, YAML, JS, TS, PY, HTML, CSS).`
           )
-          // Reset file input to allow re-uploading
           if (fileInputRef.current) {
             fileInputRef.current.value = ''
           }
           return
         }
 
-        const reader = new FileReader()
-        reader.onload = () => {
-          const result = reader.result
-          if (typeof result === 'string') {
-            const base64String = result.split(',')[1]
-            const fileData = {
-              name: file.name,
-              size: file.size,
-              type: actualType,
-              base64: base64String,
-              dataUrl: result,
-            }
-            newFiles.push(fileData)
-            // Update state
-            if (
-              newFiles.length ===
-              Array.from(files).filter((f) => {
-                const fType = getFileTypeFromExtension(f.name) || f.type
-                return f.size <= maxSize && allowedTypes.includes(fType)
-              }).length
-            ) {
-              setUploadedFiles((prev) => {
-                const updated = [...prev, ...newFiles]
-                return updated
-              })
-              // Reset the file input value to allow re-uploading the same file
-              if (fileInputRef.current) {
-                fileInputRef.current.value = ''
-                setMessage('')
+        if (isValidTextFile) {
+          // Handle text files
+          const reader = new FileReader()
+          reader.onload = () => {
+            const result = reader.result
+            if (typeof result === 'string') {
+              try {
+                // Validate text content
+                if (result.length > 100000) { // 100KB text limit
+                  setMessage(`Text file "${file.name}" content is too large. Maximum text content is 100KB.`)
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ''
+                  }
+                  return
+                }
+
+                const fileData = {
+                  name: file.name,
+                  size: file.size,
+                  type: actualType,
+                  textContent: result,
+                  isTextFile: true,
+                }
+                newFiles.push(fileData)
+                
+                // Update state when all files are processed
+                if (newFiles.length === Array.from(files).filter(f => {
+                  const fType = getFileTypeFromExtension(f.name) || f.type
+                  return validateFileSize(f) && (allowedImageTypes.includes(fType) || allowedTextTypes.includes(fType) || fType.startsWith('text/'))
+                }).length) {
+                  setUploadedFiles((prev) => {
+                    const updated = [...prev, ...newFiles]
+                    return updated
+                  })
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ''
+                    setMessage('')
+                  }
+                }
+              } catch (error) {
+                setMessage(`Error reading file "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`)
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = ''
+                }
               }
             }
           }
+          reader.onerror = () => {
+            setMessage(`Error reading file "${file.name}"`)
+            if (fileInputRef.current) {
+              fileInputRef.current.value = ''
+            }
+          }
+          reader.readAsText(file)
+        } else if (isValidImageFile) {
+          // Handle image files (existing logic)
+          const reader = new FileReader()
+          reader.onload = () => {
+            const result = reader.result
+            if (typeof result === 'string') {
+              const base64String = result.split(',')[1]
+              const fileData = {
+                name: file.name,
+                size: file.size,
+                type: actualType,
+                base64: base64String,
+                dataUrl: result,
+                isTextFile: false,
+              }
+              newFiles.push(fileData)
+              
+              // Update state when all files are processed
+              if (newFiles.length === Array.from(files).filter(f => {
+                const fType = getFileTypeFromExtension(f.name) || f.type
+                return validateFileSize(f) && (allowedImageTypes.includes(fType) || allowedTextTypes.includes(fType) || fType.startsWith('text/'))
+              }).length) {
+                setUploadedFiles((prev) => {
+                  const updated = [...prev, ...newFiles]
+                  return updated
+                })
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = ''
+                  setMessage('')
+                }
+              }
+            }
+          }
+          reader.readAsDataURL(file)
         }
-        reader.readAsDataURL(file)
       })
     }
 
@@ -482,27 +615,37 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-[2px] rounded-lg',
-            Boolean(streamingContent) && 'opacity-70'
+            'relative flex flex-col gap-2 rounded-lg border border-main-view-fg/20 bg-main-view-bg p-3 transition-all duration-200 ease-in-out',
+            className,
+            isDragOver && 'border-blue-500 bg-blue-50/10',
+            isFocused && 'ring-1 ring-main-view-fg/10',
+            isDragOver && 'ring-2 ring-accent'
           )}
+          data-drop-zone="true"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
         >
           {streamingContent && (
-            <div className="absolute inset-0">
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-lg">
               <MovingBorder rx="10%" ry="10%">
                 <div
                   className={cn(
-                    'h-100 w-100 bg-[radial-gradient(var(--app-primary),transparent_60%)]'
+                    // small, clipped glow that travels along the border only
+                    'size-10 rounded-full',
+                    'bg-[radial-gradient(circle_at_center,var(--app-primary),transparent_60%)]',
+                    'opacity-70 blur-md'
                   )}
                 />
               </MovingBorder>
             </div>
           )}
 
+          {/* SINGLE framing element kept above; remove border/rounded from this inner wrapper */}
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
-              isFocused && 'ring-1 ring-main-view-fg/10',
-              isDragOver && 'ring-2 ring-accent border-accent'
+              'relative z-20 px-0 pb-10 text-main-view-fg bg-main-view'
             )}
             data-drop-zone={hasMmproj ? 'true' : undefined}
             onDragEnter={hasMmproj ? handleDragEnter : undefined}
@@ -518,15 +661,24 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                       key={index}
                       className={cn(
                         'relative border border-main-view-fg/5 rounded-lg',
-                        file.type.startsWith('image/') ? 'size-14' : 'h-14 '
+                        file.isTextFile ? 'h-14 min-w-14 px-3 flex items-center' : 'size-14'
                       )}
                     >
-                      {file.type.startsWith('image/') && (
-                        <img
-                          className="object-cover w-full h-full rounded-lg"
-                          src={file.dataUrl}
-                          alt={`${file.name} - ${index}`}
-                        />
+                      {file.isTextFile ? (
+                        <div className="flex items-center gap-2 max-w-32">
+                          <IconFileText className="text-main-view-fg/70 flex-shrink-0" size={16} />
+                          <span className="text-xs text-main-view-fg/70 truncate">
+                            {file.name}
+                          </span>
+                        </div>
+                      ) : (
+                        file.dataUrl && (
+                          <img
+                            className="object-cover w-full h-full rounded-lg"
+                            src={file.dataUrl}
+                            alt={`${file.name} - ${index}`}
+                          />
+                        )
                       )}
                       <div
                         className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
@@ -602,34 +754,33 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* File attachment - show only for models with mmproj */}
-                {hasMmproj && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                          onClick={handleAttachmentClick}
-                        >
-                          <IconPhoto
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            multiple
-                            onChange={handleFileChange}
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vision')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                {/* File attachment - now available for all models */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                        onClick={handleAttachmentClick}
+                      >
+                        <IconPaperclip
+                          size={18}
+                          className="text-main-view-fg/50"
+                        />
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          multiple
+                          onChange={handleFileChange}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{hasMmproj ? t('vision') : 'Attach files'}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {/* Removed stray `)` here to fix the syntax error */}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />

@@ -78,8 +78,10 @@ export class CompletionMessagesBuilder {
       name: string
       type: string
       size: number
-      base64: string
-      dataUrl: string
+      base64?: string
+      dataUrl?: string
+      textContent?: string
+      isTextFile?: boolean
     }>
   ) {
     // Ensure no consecutive user messages
@@ -96,9 +98,12 @@ export class CompletionMessagesBuilder {
         },
       ]
 
-      // Add attachments (images and PDFs)
+      // Add attachments (images and text files)
       attachments.forEach((attachment) => {
-        if (attachment.type.startsWith('image/')) {
+        if (attachment.isTextFile && attachment.textContent) {
+          // For text files, append content to the main text with clear delimiters
+          messageContent[0].text += `\n\n--- File: ${attachment.name} (${attachment.type}) ---\n${attachment.textContent}\n--- End of ${attachment.name} ---`
+        } else if (attachment.type.startsWith('image/') && attachment.base64) {
           messageContent.push({
             type: 'image_url',
             image_url: {
