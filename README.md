@@ -1,4 +1,5 @@
-# Jan - Local AI Assistant
+# Jan - Local AI Assistant 
+## This fork supports text file attachments.
 
 ![Jan AI](docs/src/pages/docs/_assets/jan-app.png)
 
