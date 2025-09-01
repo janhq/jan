@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/quickstart">Getting Started</a>
+  <a href="https://jan.ai/docs/quickstart">Getting Started</a>˛
   - <a href="https://jan.ai/docs">Docs</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
   - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a>
@@ -148,6 +148,52 @@ If things go sideways:
 ## Contributing
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.
+
+## Contributions
+
+The following contributions are attributed to [@gdmka](https://github.com/gdmka).
+- Contribution window: 2025-09-01 02:47:34 +0200 – 2025-09-01 21:33:47 +0200
+- Summary by type (areas):
+  - Features/Enhancements: 2 areas (3 commits)
+    - File attachments in chat input and message pipeline
+    - Full-width display for model names (UI readability)
+  - Bug fixes: 1
+    - Revert debug behavior in model provider onOpenChange
+
+Detailed entries:
+- 2025-09-01 21:33:47 +0200 — “naive implementation of file attachment”
+  - Type: feature
+  - Commit: 1dd198a (full: 1dd198ae2be6fec11cdfb9c9b57802a268f7d7aa)
+  - Files: 4 | +265 / -96
+    - web-app/src/containers/ChatInput.tsx (+238 / -87)
+    - web-app/src/hooks/useChat.ts (+4 / -2)
+    - web-app/src/lib/completion.ts (+14 / -3)
+    - web-app/src/lib/messages.ts (+9 / -4)
+  - Key areas: chat composer UI; chat state and completion plumbing; message serialization
+  - Significance: enables file uploads from the composer; foundational integration across UI and pipeline
+
+- 2025-09-01 19:02:30 +0200 — “revert debug setOpen to original onOpenChange”
+  - Type: bugfix
+  - Commit: c4897b3 (full: c4897b392e84ea7a95e6476acfa73b03ae707141)
+  - Files: 1 | +1 / -1
+    - web-app/src/containers/DropdownModelProvider.tsx (+1 / -1)
+  - Key areas: provider dropdown event handling
+  - Significance: restores expected open/close behavior; prevents UI misbehavior introduced by debug code
+
+- 2025-09-01 02:47:34 +0200 — “add full-width model names” (two commits)
+  - Type: enhancement (UI)
+  - Commits:
+    - 64d12d6 (full: 64d12d6dcbbe5943c074396a8453060992db9701)
+    - 35cab335 (full: 35cab3350c3658cfbfe2099a7bef9fbd49acdfe9)
+  - Files per commit: 2 | (+9 / -10) each
+    - web-app/src/containers/ChatInput.tsx (+2 / -2)
+    - web-app/src/containers/DropdownModelProvider.tsx (+7 / -8)
+  - Key areas: chat input presentation; provider dropdown layout
+  - Significance: improves readability and reduces truncation for long model names
+
+Notes:
+- Counts are derived from git numstat for the specified email.
+- Enhancements are grouped by area for clarity (model name readability delivered via two commits).
 
 ## Links
 

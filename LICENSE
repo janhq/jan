@@ -17,3 +17,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 Attribution is requested in user-facing documentation and materials, where appropriate.
+
+Additional Attribution
+- Contributions by: @gdmka
+- Contribution window: 2025-09-01 02:47:34 +0200 – 2025-09-01 21:33:47 +0200
+- Nature of contributions:
+  - Feature: initial implementation of file attachments across chat UI and pipeline
+  - Enhancement: full-width model name presentation (two commits)
+  - Bug fix: revert debug behavior to restore onOpenChange handling in provider dropdown
