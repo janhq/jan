@@ -84,7 +84,7 @@ run = [
 description = "Build complete application (matches Makefile)"
 depends = ["install-and-build"]
 run = [
-  "yarn copy:lib",
+  "yarn download:bin",
   "yarn build"
 ]
 
