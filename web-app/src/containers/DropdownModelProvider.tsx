@@ -392,12 +392,12 @@ const DropdownModelProvider = ({
   const provider = getProviderByName(selectedProvider)
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px] mr-0.5">
+    <Popover open={open} onOpenChange={setOpen}>
+      <div className="flex items-center gap-1.5 w-full">
         <PopoverTrigger asChild>
           <button
-            title={displayModel}
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-38"
+            type="button"
+            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 w-full"
           >
             {provider && (
               <div className="shrink-0">
@@ -507,7 +507,7 @@ const DropdownModelProvider = ({
                                 provider={searchableModel.provider}
                               />
                             </div>
-                            <span className="truncate text-main-view-fg/80 text-sm">
+                            <span className="text-main-view-fg/80 text-sm">
                               {searchableModel.model.id}
                             </span>
                             <div className="flex-1"></div>
@@ -545,7 +545,7 @@ const DropdownModelProvider = ({
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
                           <ProvidersAvatar provider={providerInfo} />
-                          <span className="capitalize truncate text-sm font-medium text-main-view-fg/80">
+                          <span className="capitalize text-sm font-medium text-main-view-fg/80">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                         </div>
@@ -594,12 +594,11 @@ const DropdownModelProvider = ({
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <span
-                                  className="truncate text-main-view-fg/80 text-sm"
+                                  className="text-main-view-fg/80 text-sm"
                                   title={searchableModel.model.id}
                                 >
                                   {searchableModel.model.id}
                                 </span>
-
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (
                                   <div className="flex-shrink-0 -mr-1.5">
