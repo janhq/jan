@@ -392,7 +392,7 @@ const DropdownModelProvider = ({
   const provider = getProviderByName(selectedProvider)
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <div className="flex items-center gap-1.5 w-full">
         <PopoverTrigger asChild>
           <button
