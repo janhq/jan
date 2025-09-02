@@ -15,6 +15,7 @@ export default defineConfig({
           '@janhq/core': 'JanCore'
         }
       }
-    }
+    },
+    emptyOutDir: false // Don't clean the output directory
   }
 })

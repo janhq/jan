@@ -2,14 +2,16 @@
  * Web Extension Types
  */
 
-import type { AssistantExtension, ConversationalExtension } from '@janhq/core'
+import type { AssistantExtension, ConversationalExtension, BaseExtension } from '@janhq/core'
+
+type ExtensionConstructorParams = ConstructorParameters<typeof BaseExtension>
 
 export interface AssistantWebModule {
-  default: typeof AssistantExtension
+  default: new (...args: ExtensionConstructorParams) => AssistantExtension
 }
 
 export interface ConversationalWebModule {
-  default: typeof ConversationalExtension
+  default: new (...args: ExtensionConstructorParams) => ConversationalExtension
 }
 
 export type WebExtensionModule = AssistantWebModule | ConversationalWebModule

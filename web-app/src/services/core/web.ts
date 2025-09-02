@@ -6,6 +6,7 @@
 
 import type { ExtensionManifest } from '@/lib/extension'
 import type { CoreService, InvokeArgs } from './types'
+import type { WebExtensionRegistry, WebExtensionName } from '@jan/extensions-web'
 
 export class WebCoreService implements CoreService {
   async invoke<T = unknown>(command: string, args?: InvokeArgs): Promise<T> {
@@ -30,7 +31,8 @@ export class WebCoreService implements CoreService {
       const manifests: ExtensionManifest[] = []
       
       // Create manifests and register extensions
-      for (const [name, loader] of Object.entries(WEB_EXTENSIONS)) {
+      const entries = Object.entries(WEB_EXTENSIONS) as [WebExtensionName, WebExtensionRegistry[WebExtensionName]][]
+      for (const [name, loader] of entries) {
         try {
           // Load the extension module
           const extensionModule = await loader()
