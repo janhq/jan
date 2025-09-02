@@ -51,24 +51,10 @@ function useDropdownPosition(open: boolean, containerRef: React.RefObject<HTMLDi
 }
 
 // Components for the different sections of the dropdown
-const ErrorSection = ({ error, onRefresh, t }: { error: string; onRefresh?: () => void; t: (key: string) => string }) => (
+const ErrorSection = ({ error, t }: { error: string; t: (key: string) => string }) => (
   <div className="px-3 py-2 text-sm text-destructive">
     <div className="flex items-center justify-between">
       <span className="text-destructive font-medium">{t('common:failedToLoadModels')}</span>
-      {onRefresh && (
-        <Button
-          variant="link"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRefresh()
-          }}
-          className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10 text-main-view-fg"
-          aria-label="Refresh models"
-        >
-          <IconRefresh className="h-3 w-3" />
-        </Button>
-      )}
     </div>
     <div className="text-xs text-main-view-fg/50 mt-0">{error}</div>
   </div>
@@ -83,11 +69,15 @@ const LoadingSection = ({ t }: { t: (key: string) => string }) => (
 
 const EmptySection = ({ inputValue, t }: { inputValue: string; t: (key: string, options?: Record<string, string>) => string }) => (
   <div className="px-3 py-3 text-sm text-main-view-fg/50 text-center">
-    {inputValue.trim() ? (
-      <span className="text-main-view-fg/50">{t('common:noModelsFoundFor', { searchValue: inputValue })}</span>
-    ) : (
-      <span className="text-main-view-fg/50">{t('common:noModels')}</span>
-    )}
+    <div className="flex items-center justify-between">
+      <div className="flex-1">
+        {inputValue.trim() ? (
+          <span className="text-main-view-fg/50">{t('common:noModelsFoundFor', { searchValue: inputValue })}</span>
+        ) : (
+          <span className="text-main-view-fg/50">{t('common:noModels')}</span>
+        )}
+      </div>
+    </div>
   </div>
 )
 
@@ -353,24 +343,46 @@ export function ModelCombobox({
           onClick={handleInputClick}
           placeholder={placeholder}
           disabled={disabled}
-          className="pr-8"
+          className="pr-16"
         />
 
-        {/* Dropdown trigger button */}
-        <Button
-          variant="link"
-          size="sm"
-          disabled={disabled}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={handleDropdownToggle}
-          className="absolute right-1 top-1/2 h-6 w-6 p-0 -translate-y-1/2 no-underline hover:bg-main-view-fg/10"
-        >
-          {loading ? (
-            <IconLoader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <IconChevronDown className="h-3 w-3 opacity-50" />
+        {/* Input action buttons */}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
+          {onRefresh && (
+            <Button
+              variant="link"
+              size="sm"
+              disabled={disabled || loading}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onRefresh()
+              }}
+              className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10"
+              aria-label="Refresh models"
+            >
+              {loading ? (
+                <IconLoader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <IconRefresh className="h-3 w-3 opacity-70" />
+              )}
+            </Button>
           )}
-        </Button>
+          <Button
+            variant="link"
+            size="sm"
+            disabled={disabled}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleDropdownToggle}
+            className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10"
+          >
+            {loading ? (
+              <IconLoader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <IconChevronDown className="h-3 w-3 opacity-50" />
+            )}
+          </Button>
+        </div>
 
         {/* Custom dropdown rendered as portal */}
         {open && dropdownPosition.width > 0 && createPortal(
@@ -390,7 +402,7 @@ export function ModelCombobox({
             onWheel={(e) => e.stopPropagation()}
           >
             {/* Error state */}
-            {error && <ErrorSection error={error} onRefresh={onRefresh} t={t} />}
+            {error && <ErrorSection error={error} t={t} />}
 
             {/* Loading state */}
             {loading && <LoadingSection t={t} />}
