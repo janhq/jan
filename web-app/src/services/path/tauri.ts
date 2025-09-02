@@ -3,7 +3,6 @@
  */
 
 import { sep as getSep, join, dirname, basename, extname } from '@tauri-apps/api/path'
-// import type { PathService } from './types'
 import { DefaultPathService } from './default'
 
 export class TauriPathService extends DefaultPathService {

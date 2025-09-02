@@ -3,7 +3,6 @@
  */
 
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-// import type { OpenerService } from './types'
 import { DefaultOpenerService } from './default'
 
 export class TauriOpenerService extends DefaultOpenerService {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { WebMCPService } from '../mcp/web'
+import { TauriMCPService } from '../mcp/tauri'
 import { MCPTool } from '@/types/completion'
 
 // Mock the global window.core.api
@@ -22,11 +22,11 @@ Object.defineProperty(global, 'window', {
   writable: true,
 })
 
-describe('WebMCPService', () => {
-  let mcpService: WebMCPService
+describe('TauriMCPService', () => {
+  let mcpService: TauriMCPService
 
   beforeEach(() => {
-    mcpService = new WebMCPService()
+    mcpService = new TauriMCPService()
     vi.clearAllMocks()
   })
 
@@ -53,12 +53,12 @@ describe('WebMCPService', () => {
       })
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const testConfig = '{"server1": {}}'
       const mockError = new Error('Failed to save config')
       mockCore.api.saveMcpConfigs.mockRejectedValue(mockError)
 
-      await expect(mcpService.updateMCPConfig(testConfig)).rejects.toThrow('Failed to save config')
+      await expect(mcpService.updateMCPConfig(testConfig)).resolves.toBeUndefined()
       expect(mockCore.api.saveMcpConfigs).toHaveBeenCalledWith({
         configs: testConfig,
       })
@@ -88,11 +88,11 @@ describe('WebMCPService', () => {
       expect(mockCore.api.restartMcpServers).toHaveBeenCalledWith()
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const mockError = new Error('Failed to restart servers')
       mockCore.api.restartMcpServers.mockRejectedValue(mockError)
 
-      await expect(mcpService.restartMCPServers()).rejects.toThrow('Failed to restart servers')
+      await expect(mcpService.restartMCPServers()).resolves.toBeUndefined()
       expect(mockCore.api.restartMcpServers).toHaveBeenCalledWith()
     })
 
@@ -147,18 +147,20 @@ describe('WebMCPService', () => {
       expect(result).toEqual({})
     })
 
-    it('should handle invalid JSON gracefully', async () => {
+    it('should handle invalid JSON by falling back to default service', async () => {
       const invalidJson = '{"invalid": json}'
       mockCore.api.getMcpConfigs.mockResolvedValue(invalidJson)
 
-      await expect(mcpService.getMCPConfig()).rejects.toThrow()
+      const result = await mcpService.getMCPConfig()
+      expect(result).toEqual({})
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const mockError = new Error('Failed to get config')
       mockCore.api.getMcpConfigs.mockRejectedValue(mockError)
 
-      await expect(mcpService.getMCPConfig()).rejects.toThrow('Failed to get config')
+      const result = await mcpService.getMCPConfig()
+      expect(result).toEqual({})
     })
   })
 
@@ -210,14 +212,15 @@ describe('WebMCPService', () => {
       expect(Array.isArray(result)).toBe(true)
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const mockError = new Error('Failed to get tools')
       mockCore.api.getTools.mockRejectedValue(mockError)
 
-      await expect(mcpService.getTools()).rejects.toThrow('Failed to get tools')
+      const result = await mcpService.getTools()
+      expect(result).toEqual([])
     })
 
-    it('should handle undefined window.core.api', async () => {
+    it('should handle undefined window.core.api by falling back to default service', async () => {
       const originalCore = window.core
       // @ts-ignore
       window.core = undefined
@@ -251,14 +254,15 @@ describe('WebMCPService', () => {
       expect(Array.isArray(result)).toBe(true)
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const mockError = new Error('Failed to get connected servers')
       mockCore.api.getConnectedServers.mockRejectedValue(mockError)
 
-      await expect(mcpService.getConnectedServers()).rejects.toThrow('Failed to get connected servers')
+      const result = await mcpService.getConnectedServers()
+      expect(result).toEqual([])
     })
 
-    it('should handle undefined window.core.api', async () => {
+    it('should handle undefined window.core.api by falling back to default service', async () => {
       const originalCore = window.core
       // @ts-ignore
       window.core = undefined
@@ -333,7 +337,7 @@ describe('WebMCPService', () => {
       expect(result).toEqual(mockResult)
     })
 
-    it('should handle API rejection', async () => {
+    it('should handle API rejection by falling back to default service', async () => {
       const toolArgs = {
         toolName: 'file_read',
         arguments: { path: '/path/to/file.txt' },
@@ -342,10 +346,11 @@ describe('WebMCPService', () => {
       const mockError = new Error('Tool execution failed')
       mockCore.api.callTool.mockRejectedValue(mockError)
 
-      await expect(mcpService.callTool(toolArgs)).rejects.toThrow('Tool execution failed')
+      const result = await mcpService.callTool(toolArgs)
+      expect(result).toEqual({ error: '', content: [] })
     })
 
-    it('should handle undefined window.core.api', async () => {
+    it('should handle undefined window.core.api by falling back to default service', async () => {
       const originalCore = window.core
       // @ts-ignore
       window.core = undefined
@@ -357,7 +362,7 @@ describe('WebMCPService', () => {
 
       const result = await mcpService.callTool(toolArgs)
 
-      expect(result).toEqual({ error: 'API not available', content: [] })
+      expect(result).toEqual({ error: '', content: [] })
 
       window.core = originalCore
     })

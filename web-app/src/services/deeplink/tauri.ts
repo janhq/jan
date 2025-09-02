@@ -3,7 +3,6 @@
  */
 
 import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link'
-// import type { DeepLinkService } from './types'
 import { DefaultDeepLinkService } from './default'
 
 export class TauriDeepLinkService extends DefaultDeepLinkService {

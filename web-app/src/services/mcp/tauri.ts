@@ -39,7 +39,8 @@ export class TauriMCPService extends DefaultMCPService {
 
   async getTools(): Promise<MCPTool[]> {
     try {
-      return await window.core?.api?.getTools()
+      const result = await window.core?.api?.getTools()
+      return result ?? super.getTools()
     } catch (error) {
       console.error('Error getting tools in Tauri, falling back to default:', error)
       return super.getTools()
@@ -48,7 +49,8 @@ export class TauriMCPService extends DefaultMCPService {
 
   async getConnectedServers(): Promise<string[]> {
     try {
-      return await window.core?.api?.getConnectedServers()
+      const result = await window.core?.api?.getConnectedServers()
+      return result ?? super.getConnectedServers()
     } catch (error) {
       console.error('Error getting connected servers in Tauri, falling back to default:', error)
       return super.getConnectedServers()
@@ -60,7 +62,8 @@ export class TauriMCPService extends DefaultMCPService {
     arguments: object
   }): Promise<{ error: string; content: { text: string }[] }> {
     try {
-      return await window.core?.api?.callTool(args)
+      const result = await window.core?.api?.callTool(args)
+      return result ?? super.callTool(args)
     } catch (error) {
       console.error('Error calling tool in Tauri, falling back to default:', error)
       return super.callTool(args)
@@ -84,7 +87,7 @@ export class TauriMCPService extends DefaultMCPService {
       const promise = window.core?.api?.callTool({
         ...args,
         cancellationToken: token
-      })
+      }) ?? Promise.resolve({ error: 'API not available', content: [] })
       
       // Create cancel function
       const cancel = async () => {
