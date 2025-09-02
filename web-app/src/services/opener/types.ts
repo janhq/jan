@@ -5,5 +5,4 @@
 
 export interface OpenerService {
   revealItemInDir(path: string): Promise<void>
-  openPath(path: string): Promise<void>
 }

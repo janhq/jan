@@ -252,6 +252,7 @@ function ProviderDetail() {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
     if (provider)
+      // Original: startModel(provider, modelId).then(() => { setActiveModels((prevModels) => [...prevModels, modelId]) })
       serviceHub.models().startModel(provider, modelId)
         .then(() => {
           // Refresh active models after starting
@@ -272,6 +273,7 @@ function ProviderDetail() {
   }
 
   const handleStopModel = (modelId: string) => {
+    // Original: stopModel(modelId).then(() => { setActiveModels((prevModels) => prevModels.filter((model) => model !== modelId)) })
     serviceHub.models().stopModel(modelId)
       .then(() => {
         // Refresh active models after stopping

@@ -1,8 +1,5 @@
 /**
  * Tauri MCP Service - Desktop implementation
- * 
- * MOVED FROM: src/services/mcp.ts
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -11,9 +8,6 @@ import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
-  /**
-   * MOVED FROM: updateMCPConfig function in src/services/mcp.ts
-   */
   async updateMCPConfig(configs: string): Promise<void> {
     try {
       await window.core?.api?.saveMcpConfigs({ configs })
@@ -23,9 +17,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: restartMCPServers function in src/services/mcp.ts
-   */
   async restartMCPServers(): Promise<void> {
     try {
       await window.core?.api?.restartMcpServers()
@@ -35,9 +26,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: getMCPConfig function in src/services/mcp.ts
-   */
   async getMCPConfig(): Promise<object> {
     try {
       const configString = (await window.core?.api?.getMcpConfigs()) ?? '{}'
@@ -49,9 +37,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: getTools function in src/services/mcp.ts
-   */
   async getTools(): Promise<MCPTool[]> {
     try {
       return await window.core?.api?.getTools()
@@ -61,9 +46,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: getConnectedServers function in src/services/mcp.ts
-   */
   async getConnectedServers(): Promise<string[]> {
     try {
       return await window.core?.api?.getConnectedServers()
@@ -73,9 +55,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: callTool function in src/services/mcp.ts
-   */
   async callTool(args: {
     toolName: string
     arguments: object
@@ -88,9 +67,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: callToolWithCancellation function in src/services/mcp.ts
-   */
   callToolWithCancellation(args: {
     toolName: string
     arguments: object
@@ -122,9 +98,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: cancelToolCall function in src/services/mcp.ts
-   */
   async cancelToolCall(cancellationToken: string): Promise<void> {
     try {
       return await window.core?.api?.cancelToolCall({ cancellationToken })
@@ -134,9 +107,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: invoke('activate_mcp_server') calls in route files
-   */
   async activateMCPServer(name: string, config: MCPServerConfig): Promise<void> {
     try {
       return await invoke('activate_mcp_server', { name, config })
@@ -146,9 +116,6 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  /**
-   * MOVED FROM: invoke('deactivate_mcp_server') calls in route files
-   */
   async deactivateMCPServer(name: string): Promise<void> {
     try {
       return await invoke('deactivate_mcp_server', { name })

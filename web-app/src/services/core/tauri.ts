@@ -1,8 +1,5 @@
 /**
  * Tauri Core Service - Desktop implementation
- * 
- * MOVED FROM: lib/service.ts, lib/completion.ts, lib/extension.ts (invoke calls)
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
@@ -13,7 +10,6 @@ import { DefaultCoreService } from './default'
 export class TauriCoreService extends DefaultCoreService {
   async invoke<T = unknown>(command: string, args?: InvokeArgs): Promise<T> {
     try {
-      // MOVED FROM lib files - exact same implementation
       return await invoke<T>(command, args)
     } catch (error) {
       console.error(`Error invoking Tauri command '${command}' in Tauri, falling back to default:`, error)

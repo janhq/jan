@@ -1,8 +1,5 @@
 /**
  * Tauri Window Service - Desktop implementation
- * 
- * MOVED FROM: src/routes/settings/general.tsx, src/routes/settings/hardware.tsx, etc.
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -12,7 +9,6 @@ import { DefaultWindowService } from './default'
 export class TauriWindowService extends DefaultWindowService {
   async createWebviewWindow(config: WindowConfig): Promise<WebviewWindowInstance> {
     try {
-      // MOVED FROM settings pages - exact same implementation
       const webviewWindow = new WebviewWindow(config.label, {
         url: config.url,
         title: config.title,
@@ -52,7 +48,6 @@ export class TauriWindowService extends DefaultWindowService {
 
   async getWebviewWindowByLabel(label: string): Promise<WebviewWindowInstance | null> {
     try {
-      // MOVED FROM settings pages - exact same implementation
       const existingWindow = await WebviewWindow.getByLabel(label)
       
       if (existingWindow) {
@@ -96,7 +91,6 @@ export class TauriWindowService extends DefaultWindowService {
 
   async openLogsWindow(): Promise<void> {
     try {
-      // MOVED FROM routes/settings/general.tsx - exact same implementation
       await this.openWindow({
         url: '/app-logs',
         label: 'logs-app-window',

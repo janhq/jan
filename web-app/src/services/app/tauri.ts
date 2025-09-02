@@ -1,8 +1,5 @@
 /**
  * Tauri App Service - Desktop implementation
- * 
- * MOVED FROM: src/services/app.ts
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -11,9 +8,6 @@ import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
 
 export class TauriAppService extends DefaultAppService {
-  /**
-   * MOVED FROM: factoryReset function in src/services/app.ts
-   */
   async factoryReset(): Promise<void> {
     try {
       // Kill background processes and remove data folder
@@ -34,9 +28,6 @@ export class TauriAppService extends DefaultAppService {
     }
   }
 
-  /**
-   * MOVED FROM: readLogs function in src/services/app.ts
-   */
   async readLogs(): Promise<LogEntry[]> {
     try {
       const logData: string = (await invoke('read_logs')) ?? ''
@@ -47,9 +38,6 @@ export class TauriAppService extends DefaultAppService {
     }
   }
 
-  /**
-   * MOVED FROM: getJanDataFolder function in src/services/app.ts
-   */
   async getJanDataFolder(): Promise<string | undefined> {
     try {
       const appConfiguration: AppConfiguration | undefined =
@@ -62,9 +50,6 @@ export class TauriAppService extends DefaultAppService {
     }
   }
 
-  /**
-   * MOVED FROM: relocateJanDataFolder function in src/services/app.ts
-   */
   async relocateJanDataFolder(path: string): Promise<void> {
     try {
       await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
@@ -74,10 +59,6 @@ export class TauriAppService extends DefaultAppService {
     }
   }
 
-  /**
-   * MOVED FROM: parseLogLine function in src/services/app.ts
-   * Helper function for parsing log entries - PUBLIC METHOD
-   */
   parseLogLine(line: string): LogEntry {
     const regex = /^\[(.*?)\]\[(.*?)\]\[(.*?)\]\[(.*?)\]\s(.*)$/
     const match = line.match(regex)

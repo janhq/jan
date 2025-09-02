@@ -153,28 +153,20 @@ class PlatformServiceHub implements ServiceHub {
           pathModule,
           coreModule,
           dialogModule,
-          hardwareModule,
           eventsModule,
           windowModule,
           deepLinkModule,
-          mcpModule,
-          openerModule,
           providersModule,
-          updaterModule,
         ] = await Promise.all([
           import('./theme/web'),
           import('./app/web'),
           import('./path/web'),
           import('./core/web'),
           import('./dialog/web'),
-          import('./hardware/web'),
           import('./events/web'),
           import('./window/web'),
           import('./deeplink/web'),
-          import('./mcp/web'),
-          import('./opener/web'),
           import('./providers/web'),
-          import('./updater/web'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -182,14 +174,10 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.WebPathService()
         this.coreService = new coreModule.WebCoreService()
         this.dialogService = new dialogModule.WebDialogService()
-        this.hardwareService = new hardwareModule.WebHardwareService()
         this.eventsService = new eventsModule.WebEventsService()
         this.windowService = new windowModule.WebWindowService()
         this.deepLinkService = new deepLinkModule.WebDeepLinkService()
-        this.mcpService = new mcpModule.WebMCPService()
-        this.openerService = new openerModule.WebOpenerService()
         this.providersService = new providersModule.WebProvidersService()
-        this.updaterService = new updaterModule.WebUpdaterService()
       }
 
       this.initialized = true

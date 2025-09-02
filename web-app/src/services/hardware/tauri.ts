@@ -1,8 +1,5 @@
 /**
  * Tauri Hardware Service - Desktop implementation
- * 
- * MOVED FROM: src/services/hardware.ts
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -10,9 +7,6 @@ import type { HardwareData, SystemUsage, DeviceList } from './types'
 import { DefaultHardwareService } from './default'
 
 export class TauriHardwareService extends DefaultHardwareService {
-  /**
-   * MOVED FROM: getHardwareInfo function in src/services/hardware.ts
-   */
   async getHardwareInfo(): Promise<HardwareData | null> {
     try {
       return invoke('plugin:hardware|get_system_info') as Promise<HardwareData>
@@ -22,9 +16,6 @@ export class TauriHardwareService extends DefaultHardwareService {
     }
   }
 
-  /**
-   * MOVED FROM: getSystemUsage function in src/services/hardware.ts
-   */
   async getSystemUsage(): Promise<SystemUsage | null> {
     try {
       return invoke('plugin:hardware|get_system_usage') as Promise<SystemUsage>
@@ -34,9 +25,6 @@ export class TauriHardwareService extends DefaultHardwareService {
     }
   }
 
-  /**
-   * MOVED FROM: getLlamacppDevices function in src/services/hardware.ts
-   */
   async getLlamacppDevices(): Promise<DeviceList[]> {
     try {
       const extensionManager = window.core.extensionManager
@@ -53,9 +41,6 @@ export class TauriHardwareService extends DefaultHardwareService {
     }
   }
 
-  /**
-   * MOVED FROM: setActiveGpus function in src/services/hardware.ts
-   */
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
     try {
       // TODO: llama.cpp extension should handle this

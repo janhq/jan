@@ -1,8 +1,5 @@
 /**
  * Tauri Providers Service - Desktop implementation
- * 
- * MOVED FROM: src/services/providers.ts
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { models as providerModels } from 'token.js'
@@ -20,9 +17,6 @@ export class TauriProvidersService extends DefaultProvidersService {
     return fetchTauri as typeof fetch
   }
 
-  /**
-   * MOVED FROM: getProviders function in src/services/providers.ts
-   */
   async getProviders(): Promise<ModelProvider[]> {
     try {
       const builtinProviders = predefinedProviders.map((provider) => {
@@ -125,9 +119,6 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
   }
 
-  /**
-   * MOVED FROM: fetchModelsFromProvider function in src/services/providers.ts
-   */
   async fetchModelsFromProvider(provider: ModelProvider): Promise<string[]> {
     if (!provider.base_url) {
       throw new Error('Provider must have base_url configured')
@@ -194,9 +185,6 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
   }
 
-  /**
-   * MOVED FROM: updateSettings function in src/services/providers.ts
-   */
   async updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void> {
     try {
       return ExtensionManager.getInstance()

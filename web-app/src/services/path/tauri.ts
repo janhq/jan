@@ -1,8 +1,5 @@
 /**
  * Tauri Path Service - Desktop implementation
- * 
- * MOVED FROM: hooks/useThreads.ts, hooks/useModelProvider.ts (sep imports)
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { sep as getSep, join, dirname, basename, extname } from '@tauri-apps/api/path'
@@ -12,7 +9,6 @@ import { DefaultPathService } from './default'
 export class TauriPathService extends DefaultPathService {
   sep(): string {
     try {
-      // MOVED FROM hook files - exact same implementation  
       // Note: sep() is synchronous in Tauri v2 (unlike other path functions)
       return getSep() as unknown as string
     } catch (error) {

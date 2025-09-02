@@ -1,8 +1,5 @@
 /**
  * Tauri Updater Service - Desktop implementation
- * 
- * MOVED FROM: hooks/useAppUpdater.ts
- * NO IMPLEMENTATION CHANGES - EXACT SAME LOGIC MOVED HERE
  */
 
 import { check, Update } from '@tauri-apps/plugin-updater'

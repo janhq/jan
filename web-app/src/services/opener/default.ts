@@ -10,9 +10,4 @@ export class DefaultOpenerService implements OpenerService {
     console.log('revealItemInDir called with path:', path)
     // No-op - not implemented in default service
   }
-
-  async openPath(path: string): Promise<void> {
-    console.log('openPath called with path:', path)
-    // No-op - not implemented in default service
-  }
 }
