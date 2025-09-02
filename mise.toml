@@ -80,9 +80,22 @@ run = [
 # BUILD TASKS
 # ============================================================================
 
+[tasks.install-rust-targets]
+description = "Install required Rust targets for MacOS universal builds"
+run = '''
+#!/usr/bin/env bash
+# Check if we're on macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "Detected macOS, installing universal build targets..."
+  rustup target add x86_64-apple-darwin
+  rustup target add aarch64-apple-darwin
+  echo "Rust targets installed successfully!"
+fi
+'''
+
 [tasks.build]
 description = "Build complete application (matches Makefile)"
-depends = ["install-and-build"]
+depends = ["install-rust-targets", "install-and-build"]
 run = [
   "yarn download:bin",
   "yarn build"
