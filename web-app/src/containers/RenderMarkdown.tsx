@@ -6,7 +6,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState, useMemo, useRef } from 'react'
+import { memo, useState, useMemo, useRef, useEffect } from 'react'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -41,7 +41,7 @@ function RenderMarkdownComponent({
   const codeBlockIds = useRef(new Map<string, string>())
 
   // Clear ID map when content changes
-  useMemo(() => {
+  useEffect(() => {
     codeBlockIds.current.clear()
   }, [content])
 
