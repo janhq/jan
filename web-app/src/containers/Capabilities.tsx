@@ -7,7 +7,7 @@ import {
 import {
   IconEye,
   IconTool,
-  IconAtom,
+  IconBrain,
   IconWorld,
   IconCodeCircle2,
 } from '@tabler/icons-react'
@@ -30,7 +30,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
-          icon = <IconAtom className="size-3.5" />
+          icon = <IconBrain className="size-3.5" />
         } else if (capability === 'embeddings') {
           icon = <IconCodeCircle2 className="size-3.5" />
         } else if (capability === 'web_search') {

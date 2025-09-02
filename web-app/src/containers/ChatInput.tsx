@@ -12,15 +12,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { ArrowRight } from 'lucide-react'
 import {
   IconPhoto,
   IconWorld,
-  IconAtom,
+  IconBrain,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
+  IconChevronUp,
+  IconChevronDown,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -33,7 +40,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
-import { checkMmprojExists } from '@/services/models'
+import { checkMmprojExists, stopModel } from '@/services/models'
 
 type ChatInputProps = {
   className?: string
@@ -61,6 +68,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const maxRows = 10
 
   const { selectedModel, selectedProvider } = useModelProvider()
+
   const { sendMessage } = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
@@ -77,6 +85,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [reasoningEffortOpen, setReasoningEffortOpen] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -654,6 +663,114 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   </TooltipProvider>
                 )}
 
+                {selectedModel?.capabilities?.includes('reasoning') && (
+                  <div className="flex gap-0.5 items-center">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer"
+                            onClick={async () => {
+                              if (
+                                selectedModel?.reasoning &&
+                                selectedProvider
+                              ) {
+                                // Toggle reasoning budget
+                                selectedModel.reasoning.reasoning_budget =
+                                  !selectedModel.reasoning.reasoning_budget
+
+                                // If model is loaded, restart it with new settings
+                                try {
+                                  await stopModel(selectedModel.id)
+                                } catch (error) {
+                                  console.error(
+                                    'Error restarting model with new reasoning budget:',
+                                    error
+                                  )
+                                }
+                              }
+                            }}
+                          >
+                            <IconBrain
+                              size={18}
+                              className={
+                                selectedModel?.reasoning?.reasoning_budget
+                                  ? 'text-main-view-fg/50'
+                                  : 'text-main-view-fg/20'
+                              }
+                            />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {t('reasoning')}:{' '}
+                            {selectedModel?.reasoning?.reasoning_budget
+                              ? 'On'
+                              : 'Off'}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    {selectedModel?.reasoning?.reasoning_budget &&
+                      selectedModel?.reasoning?.reasoning_effort && (
+                        <Popover
+                          open={reasoningEffortOpen}
+                          onOpenChange={setReasoningEffortOpen}
+                        >
+                          <PopoverTrigger asChild>
+                            <div className="h-7 mr-1 text-sm rounded-sm text-main-view-fg/70 cursor-pointer flex items-center gap-1">
+                              <span className="capitalize">
+                                {selectedModel?.reasoning?.reasoning_effort ||
+                                  'auto'}
+                              </span>
+                              {reasoningEffortOpen ? (
+                                <IconChevronUp
+                                  size={12}
+                                  className="text-main-view-fg/50"
+                                />
+                              ) : (
+                                <IconChevronDown
+                                  size={12}
+                                  className="text-main-view-fg/50"
+                                />
+                              )}
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-24 p-0" align="start">
+                            <div className="py-1">
+                              {['auto', 'low', 'medium', 'high'].map(
+                                (effort) => (
+                                  <div
+                                    key={effort}
+                                    className="px-2 py-1.5 text-sm cursor-pointer hover:bg-main-view-fg/20 capitalize"
+                                    onClick={async () => {
+                                      if (selectedModel?.reasoning) {
+                                        selectedModel.reasoning.reasoning_effort =
+                                          effort
+                                        setReasoningEffortOpen(false)
+                                        // Restart model with new reasoning effort
+                                        try {
+                                          await stopModel(selectedModel.id)
+                                        } catch (error) {
+                                          console.error(
+                                            'Error restarting model with new reasoning effort:',
+                                            error
+                                          )
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    {effort}
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                  </div>
+                )}
+
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
                     <TooltipProvider>
@@ -724,23 +841,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {selectedModel?.capabilities?.includes('reasoning') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconAtom
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('reasoning')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

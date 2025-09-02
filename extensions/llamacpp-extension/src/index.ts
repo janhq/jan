@@ -71,6 +71,7 @@ type LlamacppConfig = {
   rope_scale: number
   rope_freq_base: number
   rope_freq_scale: number
+  reasoning_budget: boolean
   ctx_shift: boolean
 }
 
@@ -1389,6 +1390,9 @@ export default class llamacpp_extension extends AIEngine {
     // This is an expert level settings and should only be used by people
     // who knows what they are doing.
     // Takes a regex with matching tensor name as input
+    if (!cfg.reasoning_budget) {
+      args.push('--reasoning-budget', '0')
+    }
     if (cfg.override_tensor_buffer_t)
       args.push('--override-tensor', cfg.override_tensor_buffer_t)
     // offload multimodal projector model to the GPU by default. if there is not enough memory
@@ -1827,7 +1831,10 @@ export default class llamacpp_extension extends AIEngine {
    * @param modelId
    * @returns
    */
-  async isToolSupported(modelId: string): Promise<boolean> {
+  async isModelCapabilitySupported(
+    modelId: string,
+    capability: string
+  ): Promise<boolean> {
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
       this.providerPath,
@@ -1846,7 +1853,7 @@ export default class llamacpp_extension extends AIEngine {
     ])
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
-    ]?.includes('tools')
+    ]?.includes(capability)
   }
 
   /**

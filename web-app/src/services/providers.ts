@@ -3,7 +3,7 @@ import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
-import { fetchModels, isToolSupported } from './models'
+import { fetchModels, isModelCapabilitySupported } from './models'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
@@ -63,39 +63,56 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         }
       }) as ProviderSetting[],
       models: await Promise.all(
-        models.map(
-          async (model) =>
-            ({
-              id: model.id,
-              model: model.id,
-              name: model.name,
-              description: model.description,
-              capabilities:
-                'capabilities' in model
-                  ? (model.capabilities as string[])
-                  : (await isToolSupported(model.id))
-                    ? [ModelCapabilities.TOOLS]
-                    : [],
-              provider: providerName,
-              settings: Object.values(modelSettings).reduce(
-                (acc, setting) => {
-                  let value = setting.controller_props.value
-                  if (setting.key === 'ctx_len') {
-                    value = 8192 // Default context length for Llama.cpp models
-                  }
-                  acc[setting.key] = {
-                    ...setting,
-                    controller_props: {
-                      ...setting.controller_props,
-                      value: value,
-                    },
-                  }
-                  return acc
-                },
-                {} as Record<string, ProviderSetting>
-              ),
-            }) as Model
-        )
+        models.map(async (model) => {
+          return {
+            id: model.id,
+            model: model.id,
+            name: model.name,
+            description: model.description,
+            capabilities: [
+              ...(model.capabilities?.includes(ModelCapabilities.TOOLS) ||
+              (await isModelCapabilitySupported(model.id, 'tools'))
+                ? [ModelCapabilities.TOOLS]
+                : []),
+              ...(model.capabilities?.includes(ModelCapabilities.REASONING) ||
+              (await isModelCapabilitySupported(model.id, 'reasoning'))
+                ? [ModelCapabilities.REASONING]
+                : []),
+            ],
+            provider: providerName,
+            settings: Object.values(modelSettings).reduce(
+              (acc, setting) => {
+                let value = setting.controller_props.value
+                if (setting.key === 'ctx_len') {
+                  value = 8192 // Default context length for Llama.cpp models
+                }
+                acc[setting.key] = {
+                  ...setting,
+                  controller_props: {
+                    ...setting.controller_props,
+                    value: value,
+                  },
+                }
+                return acc
+              },
+              {} as Record<string, ProviderSetting>
+            ),
+            ...(model.capabilities?.includes(ModelCapabilities.REASONING) ||
+            (await isModelCapabilitySupported(model.id, 'reasoning'))
+              ? {
+                  reasoning: {
+                    reasoning_budget: true,
+                    ...((await isModelCapabilitySupported(
+                      model.id,
+                      'reasoning_effort'
+                    ))
+                      ? { reasoning_effort: 'auto' }
+                      : {}),
+                  },
+                }
+              : {}),
+          } as Model
+        })
       ),
     }
     runtimeProviders.push(provider)

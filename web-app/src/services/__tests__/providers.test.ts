@@ -69,7 +69,7 @@ vi.mock('../models', () => ({
       { id: 'llama-2-7b', name: 'Llama 2 7B', description: 'Llama model' },
     ])
   ),
-  isToolSupported: vi.fn(() => Promise.resolve(false)),
+  isModelCapabilitySupported: vi.fn(() => Promise.resolve(false)),
 }))
 
 vi.mock('@/lib/extension', () => ({

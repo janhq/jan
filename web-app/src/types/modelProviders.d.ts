@@ -33,6 +33,8 @@ type Model = {
   format?: string
   capabilities?: string[]
   settings?: Record<string, ProviderSetting>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  reasoning?: Record<string, any>
 }
 
 /**

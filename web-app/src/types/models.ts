@@ -7,6 +7,7 @@ export enum ModelCapabilities {
   COMPLETION = 'completion',
   TOOLS = 'tools',
   EMBEDDINGS = 'embeddings',
+  REASONING = 'reasoning',
   IMAGE_GENERATION = 'image_generation',
   AUDIO_GENERATION = 'audio_generation',
   TEXT_TO_IMAGE = 'text_to_image',

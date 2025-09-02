@@ -415,14 +415,19 @@ export const startModel = async (
     return keyMappings[key] || key
   }
 
-  const settings = modelConfig?.settings
-    ? Object.fromEntries(
-        Object.entries(modelConfig.settings).map(([key, value]) => [
-          mapSettingKey(key),
-          value.controller_props?.value,
-        ])
-      )
-    : undefined
+  const settings = {
+    ...(modelConfig?.settings
+      ? Object.fromEntries(
+          Object.entries(modelConfig.settings).map(([key, value]) => [
+            mapSettingKey(key),
+            value.controller_props?.value,
+          ])
+        )
+      : {}),
+    ...(modelConfig?.reasoning?.reasoning_budget !== undefined && {
+      reasoning_budget: modelConfig.reasoning.reasoning_budget,
+    }),
+  }
 
   return engine.load(model, settings).catch((error) => {
     console.error(
@@ -439,11 +444,14 @@ export const startModel = async (
  * @param modelId
  * @returns
  */
-export const isToolSupported = async (modelId: string): Promise<boolean> => {
+export const isModelCapabilitySupported = async (
+  modelId: string,
+  capability: string
+): Promise<boolean> => {
   const engine = getEngine()
   if (!engine) return false
 
-  return engine.isToolSupported(modelId)
+  return engine.isModelCapabilitySupported(modelId, capability)
 }
 
 /**

@@ -8,6 +8,7 @@ export interface chatCompletionRequestMessage {
   content: string | null | Content[] // Content can be a string OR an array of content parts
   reasoning?: string | null // Some models return reasoning in completed responses
   reasoning_content?: string | null // Some models return reasoning in completed responses
+  reasoning_effort?: string | null
   name?: string
   tool_calls?: any[] // Simplified tool_call_id?: string
 }
@@ -281,5 +282,5 @@ export abstract class AIEngine extends BaseExtension {
    * Check if a tool is supported by the model
    * @param modelId
    */
-  abstract isToolSupported(modelId: string): Promise<boolean>
+  abstract isModelCapabilitySupported(modelId: string, capability: string): Promise<boolean>
 }
