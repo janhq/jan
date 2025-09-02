@@ -1,8 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import starlightThemeNext from 'starlight-theme-next'
-// import starlightThemeRapide from 'starlight-theme-rapide'
+import starlightThemeRapide from 'starlight-theme-rapide'
 import starlightSidebarTopics from 'starlight-sidebar-topics'
 import mermaid from 'astro-mermaid'
 import { fileURLToPath } from 'url'
@@ -37,8 +36,7 @@ export default defineConfig({
         },
       ],
       plugins: [
-        // starlightThemeRapide(),
-        starlightThemeNext(),
+        starlightThemeRapide(),
         starlightSidebarTopics([
           {
             label: 'Jan',
@@ -208,7 +206,7 @@ export default defineConfig({
                 items: [
                   {
                     label: 'Local API Server',
-                    collapsed: false,
+                    collapsed: true,
                     items: [
                       { label: 'Overview', slug: 'local-server' },
                       {
