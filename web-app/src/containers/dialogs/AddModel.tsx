@@ -95,6 +95,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             <span className="text-destructive">*</span>
           </label>
           <ModelCombobox
+            key={`${provider.provider}-${provider.base_url || ''}`}
             value={modelId}
             onChange={setModelId}
             models={models}

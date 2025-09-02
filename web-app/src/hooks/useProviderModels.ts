@@ -16,6 +16,7 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const prevProviderKey = useRef<string>('')
+  const requestIdRef = useRef(0)
 
   const fetchModels = useCallback(async () => {
     if (!provider || !provider.base_url) {
@@ -44,11 +45,13 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
       return
     }
 
+    const currentRequestId = ++requestIdRef.current
     setLoading(true)
     setError(null)
 
     try {
       const fetchedModels = await fetchModelsFromProvider(provider)
+      if (currentRequestId !== requestIdRef.current) return
       const sortedModels = fetchedModels.sort((a, b) => a.localeCompare(b))
 
       setModels(sortedModels)
@@ -59,11 +62,12 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
         timestamp: Date.now(),
       })
     } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch models'
       setError(errorMessage)
       console.error(`Error fetching models from ${provider.provider}:`, err)
     } finally {
-      setLoading(false)
+      if (currentRequestId === requestIdRef.current) setLoading(false)
     }
   }, [provider])
 
