@@ -1,8 +1,13 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
-export function ApiPrefixInput() {
+export function ApiPrefixInput({
+  isServerRunning,
+}: {
+  isServerRunning?: boolean
+}) {
   const { apiPrefix, setApiPrefix } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(apiPrefix)
 
@@ -27,7 +32,10 @@ export function ApiPrefixInput() {
       value={inputValue}
       onChange={handleChange}
       onBlur={handleBlur}
-      className="w-24 h-8 text-sm"
+      className={cn(
+        'w-24 h-8 text-sm',
+        isServerRunning && 'opacity-50 pointer-events-none'
+      )}
       placeholder="/v1"
     />
   )
