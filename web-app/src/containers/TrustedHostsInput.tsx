@@ -2,8 +2,13 @@ import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cn } from '@/lib/utils'
 
-export function TrustedHostsInput() {
+export function TrustedHostsInput({
+  isServerRunning,
+}: {
+  isServerRunning?: boolean
+}) {
   const { trustedHosts, setTrustedHosts } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(trustedHosts.join(', '))
   const { t } = useTranslation()
@@ -38,8 +43,11 @@ export function TrustedHostsInput() {
       value={inputValue}
       onChange={handleChange}
       onBlur={handleBlur}
-      className="w-full h-8 text-sm"
       placeholder={t('common:enterTrustedHosts')}
+      className={cn(
+        'w-24 h-8 text-sm',
+        isServerRunning && 'opacity-50 pointer-events-none'
+      )}
     />
   )
 }
