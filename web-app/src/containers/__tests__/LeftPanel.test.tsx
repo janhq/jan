@@ -6,7 +6,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 // Mock global constants
 Object.defineProperty(global, 'IS_WINDOWS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_LINUX', { value: false, writable: true })
-Object.defineProperty(global, 'IS_TAURI', { value: true, writable: true })
+Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
 Object.defineProperty(global, 'IS_MACOS', { value: false, writable: true })
 
 // Mock all dependencies
@@ -71,19 +71,6 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
-// Mock platform features to enable Hub
-vi.mock('@/lib/platform/const', () => ({
-  PlatformFeatures: {
-    HARDWARE_MONITORING: true,
-    EXTENSION_MANAGEMENT: true,
-    LOCAL_INFERENCE: true,
-    MCP_SERVERS: true,
-    LOCAL_API_SERVER: true,
-    MODEL_HUB: true,
-    SYSTEM_INTEGRATIONS: true,
-    HTTPS_PROXY: true,
-  }
-}))
 
 vi.mock('@/hooks/useEvent', () => ({
   useEvent: () => ({
@@ -161,8 +148,8 @@ describe('LeftPanel', () => {
     
     expect(screen.getByText('common:newChat')).toBeDefined()
     expect(screen.getByText('common:assistants')).toBeDefined()
+    expect(screen.getByText('common:hub')).toBeDefined()
     expect(screen.getByText('common:settings')).toBeDefined()
-    // Hub menu is conditionally rendered based on platform features
   })
 
   it('should render search input', () => {
@@ -224,8 +211,8 @@ describe('LeftPanel', () => {
     // Check for navigation elements  
     expect(screen.getByText('common:newChat')).toBeDefined()
     expect(screen.getByText('common:assistants')).toBeDefined()
+    expect(screen.getByText('common:hub')).toBeDefined()
     expect(screen.getByText('common:settings')).toBeDefined()
-    // Hub menu is conditionally rendered based on platform features
   })
 
   it('should have sidebar toggle functionality', () => {

@@ -259,17 +259,6 @@ vi.mock('@/types/events', () => ({
   },
 }))
 
-vi.mock('@/lib/platform/const', () => ({
-  PlatformFeatures: {
-    SYSTEM_INTEGRATIONS: true,
-  },
-}))
-
-vi.mock('@/lib/platform/types', () => ({
-  PlatformFeature: {
-    SYSTEM_INTEGRATIONS: 'SYSTEM_INTEGRATIONS',
-  },
-}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: (path: string) => (config: any) => ({
