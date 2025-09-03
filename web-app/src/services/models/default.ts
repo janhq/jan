@@ -13,9 +13,6 @@ import {
 import { Model as CoreModel } from '@janhq/core'
 import type { ModelsService, ModelCatalog, HuggingFaceRepo, CatalogModel } from './types'
 
-// Model catalog URL
-const MODEL_CATALOG_URL = 'https://raw.githubusercontent.com/menloresearch/cortex.llamacpp/main/models.json'
-
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
 
