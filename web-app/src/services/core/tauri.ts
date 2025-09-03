@@ -12,8 +12,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return await invoke<T>(command, args)
     } catch (error) {
-      console.error(`Error invoking Tauri command '${command}' in Tauri, falling back to default:`, error)
-      return super.invoke<T>(command, args)
+      console.error(`Error invoking Tauri command '${command}' in Tauri:`, error)
+      throw error
     }
   }
 
@@ -21,8 +21,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return convertFileSrc(filePath, protocol)
     } catch (error) {
-      console.error('Error converting file src in Tauri, falling back to default:', error)
-      return super.convertFileSrc(filePath, protocol)
+      console.error('Error converting file src in Tauri:', error)
+      return filePath
     }
   }
 
@@ -31,8 +31,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return await this.invoke<ExtensionManifest[]>('get_active_extensions')
     } catch (error) {
-      console.error('Error getting active extensions in Tauri, falling back to default:', error)
-      return super.getActiveExtensions()
+      console.error('Error getting active extensions in Tauri:', error)
+      return []
     }
   }
 
@@ -40,8 +40,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return await this.invoke<void>('install_extensions')
     } catch (error) {
-      console.error('Error installing extensions in Tauri, falling back to default:', error)
-      return super.installExtensions()
+      console.error('Error installing extensions in Tauri:', error)
+      throw error
     }
   }
 
@@ -49,8 +49,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return await this.invoke<ExtensionManifest[]>('install_extension', { extensions })
     } catch (error) {
-      console.error('Error installing extension in Tauri, falling back to default:', error)
-      return super.installExtension(extensions)
+      console.error('Error installing extension in Tauri:', error)
+      return []
     }
   }
 
@@ -58,8 +58,8 @@ export class TauriCoreService extends DefaultCoreService {
     try {
       return await this.invoke<boolean>('uninstall_extension', { extensions, reload })
     } catch (error) {
-      console.error('Error uninstalling extension in Tauri, falling back to default:', error)
-      return super.uninstallExtension(extensions, reload)
+      console.error('Error uninstalling extension in Tauri:', error)
+      return false
     }
   }
 
@@ -69,8 +69,8 @@ export class TauriCoreService extends DefaultCoreService {
       const result = await this.invoke<string | null>('app_token')
       return result
     } catch (error) {
-      console.error('Error getting app token in Tauri, falling back to default:', error)
-      return super.getAppToken()
+      console.error('Error getting app token in Tauri:', error)
+      return null
     }
   }
 }

@@ -41,8 +41,8 @@ export class TauriWindowService extends DefaultWindowService {
         }
       }
     } catch (error) {
-      console.error('Error creating Tauri window, falling back to default:', error)
-      return super.createWebviewWindow(config)
+      console.error('Error creating Tauri window:', error)
+      throw error
     }
   }
 
@@ -73,8 +73,8 @@ export class TauriWindowService extends DefaultWindowService {
       
       return null
     } catch (error) {
-      console.error('Error getting Tauri window by label, falling back to default:', error)
-      return super.getWebviewWindowByLabel(label)
+      console.error('Error getting Tauri window by label:', error)
+      return null
     }
   }
 
@@ -101,8 +101,8 @@ export class TauriWindowService extends DefaultWindowService {
         center: true,
       })
     } catch (error) {
-      console.error('Error opening logs window in Tauri, falling back to default:', error)
-      return super.openLogsWindow()
+      console.error('Error opening logs window in Tauri:', error)
+      throw error
     }
   }
 
@@ -118,8 +118,8 @@ export class TauriWindowService extends DefaultWindowService {
         center: true,
       })
     } catch (error) {
-      console.error('Error opening system monitor window in Tauri, falling back to default:', error)
-      return super.openSystemMonitorWindow()
+      console.error('Error opening system monitor window in Tauri:', error)
+      throw error
     }
   }
 
@@ -135,8 +135,8 @@ export class TauriWindowService extends DefaultWindowService {
         center: true,
       })
     } catch (error) {
-      console.error('Error opening local API server logs window in Tauri, falling back to default:', error)
-      return super.openLocalApiServerLogsWindow()
+      console.error('Error opening local API server logs window in Tauri:', error)
+      throw error
     }
   }
 }

@@ -114,8 +114,8 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       return runtimeProviders.concat(builtinProviders as ModelProvider[])
     } catch (error) {
-      console.error('Error getting providers in Tauri, falling back to default:', error)
-      return super.getProviders()
+      console.error('Error getting providers in Tauri:', error)
+      return []
     }
   }
 
@@ -203,8 +203,8 @@ export class TauriProvidersService extends DefaultProvidersService {
           })) as SettingComponentProps[]
         )
     } catch (error) {
-      console.error('Error updating settings in Tauri, falling back to default:', error)
-      return super.updateSettings(providerName, settings)
+      console.error('Error updating settings in Tauri:', error)
+      throw error
     }
   }
 }

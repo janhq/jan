@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Default Deep Link Service - Generic implementation with minimal returns
  */

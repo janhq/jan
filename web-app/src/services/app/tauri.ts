@@ -9,33 +9,23 @@ import { DefaultAppService } from './default'
 
 export class TauriAppService extends DefaultAppService {
   async factoryReset(): Promise<void> {
-    try {
-      // Kill background processes and remove data folder
-      // Note: We can't import stopAllModels directly to avoid circular dependency
-      // Instead we'll use the engine manager directly
-      const { EngineManager } = await import('@janhq/core')
-      for (const [, engine] of EngineManager.instance().engines) {
-        const activeModels = await engine.getLoadedModels()
-        if (activeModels) {
-          await Promise.all(activeModels.map((model: string) => engine.unload(model)))
-        }
+    // Kill background processes and remove data folder
+    // Note: We can't import stopAllModels directly to avoid circular dependency
+    // Instead we'll use the engine manager directly
+    const { EngineManager } = await import('@janhq/core')
+    for (const [, engine] of EngineManager.instance().engines) {
+      const activeModels = await engine.getLoadedModels()
+      if (activeModels) {
+        await Promise.all(activeModels.map((model: string) => engine.unload(model)))
       }
-      window.localStorage.clear()
-      await invoke('factory_reset')
-    } catch (error) {
-      console.error('Error in Tauri factory reset, falling back to default:', error)
-      return super.factoryReset()
     }
+    window.localStorage.clear()
+    await invoke('factory_reset')
   }
 
   async readLogs(): Promise<LogEntry[]> {
-    try {
-      const logData: string = (await invoke('read_logs')) ?? ''
-      return logData.split('\n').map(this.parseLogLine)
-    } catch (error) {
-      console.error('Error reading logs in Tauri, falling back to default:', error)
-      return super.readLogs()
-    }
+    const logData: string = (await invoke('read_logs')) ?? ''
+    return logData.split('\n').map(this.parseLogLine)
   }
 
   async getJanDataFolder(): Promise<string | undefined> {
@@ -45,18 +35,13 @@ export class TauriAppService extends DefaultAppService {
 
       return appConfiguration?.data_folder
     } catch (error) {
-      console.error('Failed to get Jan data folder in Tauri, falling back to default:', error)
-      return super.getJanDataFolder()
+      console.error('Failed to get Jan data folder:', error)
+      return undefined
     }
   }
 
   async relocateJanDataFolder(path: string): Promise<void> {
-    try {
-      await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
-    } catch (error) {
-      console.error('Error relocating Jan data folder in Tauri, falling back to default:', error)
-      return super.relocateJanDataFolder(path)
-    }
+    await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
   }
 
   parseLogLine(line: string): LogEntry {
@@ -84,20 +69,10 @@ export class TauriAppService extends DefaultAppService {
   }
 
   async getServerStatus(): Promise<boolean> {
-    try {
-      return await invoke<boolean>('get_server_status')
-    } catch (error) {
-      console.error('Error getting server status in Tauri, falling back to default:', error)
-      return super.getServerStatus()
-    }
+    return await invoke<boolean>('get_server_status')
   }
 
   async readYaml<T = unknown>(path: string): Promise<T> {
-    try {
-      return await invoke<T>('read_yaml', { path })
-    } catch (error) {
-      console.error('Error reading YAML in Tauri, falling back to default:', error)
-      return super.readYaml<T>(path)
-    }
+    return await invoke<T>('read_yaml', { path })
   }
 }

@@ -12,9 +12,8 @@ export class TauriThemeService extends DefaultThemeService {
       const tauriTheme = theme as Theme | null
       await getCurrentWindow().setTheme(tauriTheme)
     } catch (error) {
-      console.error('Error setting theme in Tauri, falling back to default:', error)
-      // Fallback to default implementation
-      return super.setTheme(theme)
+      console.error('Error setting theme in Tauri:', error)
+      throw error
     }
   }
 

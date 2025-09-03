@@ -1,11 +1,10 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Default MCP Service - Generic implementation with minimal returns
  */
 
 import { MCPTool } from '@/types/completion'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
-import type { MCPService, ToolCallResult, ToolCallWithCancellationResult } from './types'
+import type { MCPService, MCPConfig, ToolCallResult, ToolCallWithCancellationResult } from './types'
 
 export class DefaultMCPService implements MCPService {
   async updateMCPConfig(configs: string): Promise<void> {
@@ -17,7 +16,7 @@ export class DefaultMCPService implements MCPService {
     // No-op
   }
 
-  async getMCPConfig(): Promise<object> {
+  async getMCPConfig(): Promise<MCPConfig> {
     return {}
   }
 

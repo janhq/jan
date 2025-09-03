@@ -19,8 +19,8 @@ export class TauriUpdaterService extends DefaultUpdaterService {
         body: update.body,
       }
     } catch (error) {
-      console.error('Error checking for updates in Tauri, falling back to default:', error)
-      return super.check()
+      console.error('Error checking for updates in Tauri:', error)
+      return null
     }
   }
 
@@ -32,8 +32,8 @@ export class TauriUpdaterService extends DefaultUpdaterService {
         // Note: Auto-restart happens after installation
       }
     } catch (error) {
-      console.error('Error installing update in Tauri, falling back to default:', error)
-      return super.installAndRestart()
+      console.error('Error installing update in Tauri:', error)
+      throw error
     }
   }
 
@@ -56,8 +56,8 @@ export class TauriUpdaterService extends DefaultUpdaterService {
         }
       })
     } catch (error) {
-      console.error('Error downloading update with progress in Tauri, falling back to default:', error)
-      return super.downloadAndInstallWithProgress(progressCallback)
+      console.error('Error downloading update with progress in Tauri:', error)
+      throw error
     }
   }
 }

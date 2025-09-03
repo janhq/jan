@@ -10,8 +10,8 @@ export class TauriDeepLinkService extends DefaultDeepLinkService {
     try {
       return await onOpenUrl(handler)
     } catch (error) {
-      console.error('Error setting up deep link handler in Tauri, falling back to default:', error)
-      return super.onOpenUrl(handler)
+      console.error('Error setting up deep link handler in Tauri:', error)
+      return () => {}
     }
   }
 
@@ -20,8 +20,8 @@ export class TauriDeepLinkService extends DefaultDeepLinkService {
       const result = await getCurrent()
       return result ?? []
     } catch (error) {
-      console.error('Error getting current deep links in Tauri, falling back to default:', error)
-      return super.getCurrent()
+      console.error('Error getting current deep links in Tauri:', error)
+      return []
     }
   }
 }

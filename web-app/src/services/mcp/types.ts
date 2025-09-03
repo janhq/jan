@@ -3,7 +3,11 @@
  */
 
 import { MCPTool } from '@/types/completion'
-import type { MCPServerConfig } from '@/hooks/useMCPServers'
+import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
+
+export interface MCPConfig {
+  mcpServers?: MCPServers
+}
 
 export interface ToolCallResult {
   error: string
@@ -19,7 +23,7 @@ export interface ToolCallWithCancellationResult {
 export interface MCPService {
   updateMCPConfig(configs: string): Promise<void>
   restartMCPServers(): Promise<void>
-  getMCPConfig(): Promise<object>
+  getMCPConfig(): Promise<MCPConfig>
   getTools(): Promise<MCPTool[]>
   getConnectedServers(): Promise<string[]>
   callTool(args: { toolName: string; arguments: object }): Promise<ToolCallResult>

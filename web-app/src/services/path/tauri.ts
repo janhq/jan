@@ -11,8 +11,8 @@ export class TauriPathService extends DefaultPathService {
       // Note: sep() is synchronous in Tauri v2 (unlike other path functions)
       return getSep() as unknown as string
     } catch (error) {
-      console.error('Error getting path separator in Tauri, falling back to default:', error)
-      return super.sep()
+      console.error('Error getting path separator in Tauri:', error)
+      return '/'
     }
   }
 
@@ -20,8 +20,8 @@ export class TauriPathService extends DefaultPathService {
     try {
       return await join(...segments)
     } catch (error) {
-      console.error('Error joining paths in Tauri, falling back to default:', error)
-      return super.join(...segments)
+      console.error('Error joining paths in Tauri:', error)
+      return segments.join('/')
     }
   }
 
@@ -29,8 +29,9 @@ export class TauriPathService extends DefaultPathService {
     try {
       return await dirname(path)
     } catch (error) {
-      console.error('Error getting dirname in Tauri, falling back to default:', error)
-      return super.dirname(path)
+      console.error('Error getting dirname in Tauri:', error)
+      const lastSlash = path.lastIndexOf('/')
+      return lastSlash > 0 ? path.substring(0, lastSlash) : '.'
     }
   }
 
@@ -38,8 +39,9 @@ export class TauriPathService extends DefaultPathService {
     try {
       return await basename(path)
     } catch (error) {
-      console.error('Error getting basename in Tauri, falling back to default:', error)
-      return super.basename(path)
+      console.error('Error getting basename in Tauri:', error)
+      const lastSlash = path.lastIndexOf('/')
+      return lastSlash >= 0 ? path.substring(lastSlash + 1) : path
     }
   }
 
@@ -47,8 +49,10 @@ export class TauriPathService extends DefaultPathService {
     try {
       return await extname(path)
     } catch (error) {
-      console.error('Error getting extname in Tauri, falling back to default:', error)
-      return super.extname(path)
+      console.error('Error getting extname in Tauri:', error)
+      const lastDot = path.lastIndexOf('.')
+      const lastSlash = path.lastIndexOf('/')
+      return lastDot > lastSlash ? path.substring(lastDot) : ''
     }
   }
 }

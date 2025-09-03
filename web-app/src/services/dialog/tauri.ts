@@ -11,8 +11,8 @@ export class TauriDialogService extends DefaultDialogService {
     try {
       return await open(options)
     } catch (error) {
-      console.error('Error opening dialog in Tauri, falling back to default:', error)
-      return super.open(options)
+      console.error('Error opening dialog in Tauri:', error)
+      return null
     }
   }
 
@@ -20,8 +20,8 @@ export class TauriDialogService extends DefaultDialogService {
     try {
       return await save(options)
     } catch (error) {
-      console.error('Error opening save dialog in Tauri, falling back to default:', error)
-      return super.save(options)
+      console.error('Error opening save dialog in Tauri:', error)
+      return null
     }
   }
 }

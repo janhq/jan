@@ -10,8 +10,8 @@ export class TauriOpenerService extends DefaultOpenerService {
     try {
       await revealItemInDir(path)
     } catch (error) {
-      console.error('Error revealing item in directory in Tauri, falling back to default:', error)
-      return super.revealItemInDir(path)
+      console.error('Error revealing item in directory in Tauri:', error)
+      throw error
     }
   }
 }
