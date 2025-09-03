@@ -165,13 +165,6 @@ pub fn read_yaml(app: tauri::AppHandle, path: &str) -> Result<serde_json::Value,
 pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result<(), String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !path_buf.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: path {} is not under jan_data_folder {}",
-            path_buf.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
 
     let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
     if !output_dir_buf.starts_with(&jan_data_folder) {

@@ -31,6 +31,7 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
+  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
@@ -712,6 +713,47 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private parseBackendVersion(v: string): number {
+    // Remove any leading non‑digit characters (e.g. the "b")
+    const numeric = v.replace(/^[^\d]*/, '')
+    const n = Number(numeric)
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  async checkBackendForUpdates(): Promise<{
+    updateNeeded: boolean
+    newVersion: string
+  }> {
+    // Parse current backend configuration
+    const [currentVersion, currentBackend] = (
+      this.config.version_backend || ''
+    ).split('/')
+
+    if (!currentVersion || !currentBackend) {
+      logger.warn(
+        `Invalid current backend format: ${this.config.version_backend}`
+      )
+      return { updateNeeded: false, newVersion: '0' }
+    }
+
+    // Find the latest version for the currently selected backend type
+    const version_backends = await listSupportedBackends()
+    const targetBackendString = this.findLatestVersionForBackend(
+      version_backends,
+      currentBackend
+    )
+    const [latestVersion] = targetBackendString.split('/')
+    if (this.parseBackendVersion(latestVersion) > this.parseBackendVersion(currentVersion)) {
+      logger.info(`New update available: ${latestVersion}`)
+      return { updateNeeded: true, newVersion: latestVersion }
+    } else {
+      logger.info(
+        `Already at latest version: ${currentVersion} = ${latestVersion}`
+      )
+      return { updateNeeded: false, newVersion: '0' }
+    }
+  }
+
   private async removeOldBackend(
     latestVersion: string,
     backendType: string
@@ -1014,6 +1056,40 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     localStorage.setItem('cortex_models_migrated', 'true')
+  }
+
+  /*
+   * Manually installs a supported backend archive
+   *
+   */
+  async installBackend(path: string): Promise<void> {
+    const platformName = IS_WINDOWS ? 'win' : 'linux'
+    const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
+    const archiveName = await basename(path)
+
+    let binPath: string
+
+    if ((await fs.existsSync(path)) && path.endsWith('tar.gz')) {
+      const match = re.exec(archiveName)
+      const [, version, backend] = match
+      if (!version && !backend) {
+        throw new Error(`Invalid backend archive name: ${archiveName}`)
+      }
+      const backendDir = await getBackendDir(backend, version)
+      await invoke('decompress', { path: path, outputDir: backendDir })
+      if (platformName == 'win')
+        binPath = await joinPath([
+          backendDir,
+          'build',
+          'bin',
+          'llama-server.exe',
+        ])
+      else
+        binPath = await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+      if (!fs.existsSync(binPath)) {
+        throw new Error('Not a supported backend archive!')
+      }
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
@@ -1438,7 +1514,11 @@ export default class llamacpp_extension extends AIEngine {
 
     // Boolean flags
     if (!cfg.ctx_shift) args.push('--no-context-shift')
-    if (cfg.flash_attn) args.push('--flash-attn')
+    if (Number(version.replace(/^b/, '')) >= 6325) {
+      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
+    } else {
+      if (cfg.flash_attn) args.push('--flash-attn')
+    }
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
