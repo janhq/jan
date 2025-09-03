@@ -10,11 +10,11 @@ import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
   async updateMCPConfig(configs: string): Promise<void> {
-    return await window.core?.api?.saveMcpConfigs({ configs })
+    await window.core?.api?.saveMcpConfigs({ configs })
   }
 
   async restartMCPServers(): Promise<void> {
-    return await window.core?.api?.restartMcpServers()
+    await window.core?.api?.restartMcpServers()
   }
 
   async getMCPConfig(): Promise<MCPConfig> {
@@ -24,18 +24,18 @@ export class TauriMCPService extends DefaultMCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
-    return await window.core?.api?.getTools()
+    return window.core?.api?.getTools()
   }
 
   async getConnectedServers(): Promise<string[]> {
-    return await window.core?.api?.getConnectedServers()
+    return window.core?.api?.getConnectedServers()
   }
 
   async callTool(args: {
     toolName: string
     arguments: object
   }): Promise<{ error: string; content: { text: string }[] }> {
-    return await window.core?.api?.callTool(args)
+    return window.core?.api?.callTool(args)
   }
 
   callToolWithCancellation(args: {
