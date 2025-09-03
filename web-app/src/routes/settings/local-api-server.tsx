@@ -53,7 +53,8 @@ function LocalAPIServerContent() {
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
-  const { selectedModel, selectedProvider, getProviderByName } = useModelProvider()
+  const { selectedModel, selectedProvider, getProviderByName } =
+    useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
@@ -269,38 +270,31 @@ function LocalAPIServerContent() {
               <CardItem
                 title={t('settings:localApiServer.serverHost')}
                 description={t('settings:localApiServer.serverHostDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<ServerHostSwitcher />}
+                actions={
+                  <ServerHostSwitcher isServerRunning={isServerRunning} />
+                }
               />
               <CardItem
                 title={t('settings:localApiServer.serverPort')}
                 description={t('settings:localApiServer.serverPortDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<PortInput />}
+                actions={<PortInput isServerRunning={isServerRunning} />}
               />
               <CardItem
                 title={t('settings:localApiServer.apiPrefix')}
                 description={t('settings:localApiServer.apiPrefixDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<ApiPrefixInput />}
+                actions={<ApiPrefixInput isServerRunning={isServerRunning} />}
               />
               <CardItem
                 title={t('settings:localApiServer.apiKey')}
                 description={t('settings:localApiServer.apiKeyDesc')}
                 className={cn(
                   'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isServerRunning && 'opacity-50 pointer-events-none',
                   isApiKeyEmpty && showApiKeyError && 'pb-6'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"
                 actions={
                   <ApiKeyInput
+                    isServerRunning={isServerRunning}
                     showError={showApiKeyError}
                     onValidationChange={handleApiKeyValidation}
                   />
@@ -310,11 +304,12 @@ function LocalAPIServerContent() {
                 title={t('settings:localApiServer.trustedHosts')}
                 description={t('settings:localApiServer.trustedHostsDesc')}
                 className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isServerRunning && 'opacity-50 pointer-events-none'
+                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"
-                actions={<TrustedHostsInput />}
+                actions={
+                  <TrustedHostsInput isServerRunning={isServerRunning} />
+                }
               />
             </Card>
 

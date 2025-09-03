@@ -1,8 +1,9 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
-export function PortInput() {
+export function PortInput({ isServerRunning }: { isServerRunning?: boolean }) {
   const { serverPort, setServerPort } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(serverPort.toString())
 
@@ -29,7 +30,10 @@ export function PortInput() {
       value={inputValue}
       onChange={handleChange}
       onBlur={handleBlur}
-      className="w-24 h-8 text-sm"
+      className={cn(
+        'w-24 h-8 text-sm',
+        isServerRunning && 'opacity-50 pointer-events-none'
+      )}
     />
   )
 }

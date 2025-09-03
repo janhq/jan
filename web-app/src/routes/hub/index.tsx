@@ -200,47 +200,50 @@ function HubContent() {
     fetchSources()
   }, [fetchSources])
 
+  const fetchHuggingFaceModel = async (searchValue: string) => {
+    if (
+      !searchValue.length ||
+      (!searchValue.includes('/') && !searchValue.startsWith('http'))
+    ) {
+      return
+    }
+
+    setIsSearching(true)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+
+    addModelSourceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+        if (repoInfo) {
+          const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
+          if (
+            !sources.some(
+              (s) =>
+                catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim() &&
+                catalogModel.developer.trim() === s.developer?.trim()
+            )
+          ) {
+            setHuggingFaceRepo(catalogModel)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching repository info:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 500)
+  }
+
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
 
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    if (
-      e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http'))
-    ) {
-      setIsSearching(true)
-
-      addModelSourceTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Fetch HuggingFace repository information
-          const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(
-            e.target.value,
-            huggingfaceToken
-          )
-          if (repoInfo) {
-            const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
-            if (
-              catalogModel &&
-              !sources.some(
-                (s) =>
-                  catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim()
-              )
-            ) {
-              setHuggingFaceRepo(catalogModel)
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching repository info:', error)
-        } finally {
-          setIsSearching(false)
-        }
-      }, 500)
+    if (!showOnlyDownloaded) {
+      fetchHuggingFaceModel(e.target.value)
     }
   }
 
@@ -521,7 +524,15 @@ function HubContent() {
         <div className="flex items-center gap-2">
           <Switch
             checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
+            onCheckedChange={(checked) => {
+              setShowOnlyDownloaded(checked)
+              if (checked) {
+                setHuggingFaceRepo(null)
+              } else {
+                // Re-trigger HuggingFace search when switching back to "All models"
+                fetchHuggingFaceModel(searchValue)
+              }
+            }}
           />
           <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
             {t('hub:downloaded')}

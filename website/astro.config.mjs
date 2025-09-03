@@ -22,6 +22,9 @@ export default defineConfig({
     starlight({
       title: '👋 Jan',
       favicon: 'jan2.png',
+      customCss: [
+        './src/styles/global.css',
+      ],
       head: [
         {
           tag: 'script',
