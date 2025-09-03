@@ -748,15 +748,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                                         selectedModel.reasoning.reasoning_effort =
                                           effort
                                         setReasoningEffortOpen(false)
-                                        // Restart model with new reasoning effort
-                                        try {
-                                          await stopModel(selectedModel.id)
-                                        } catch (error) {
-                                          console.error(
-                                            'Error restarting model with new reasoning effort:',
-                                            error
-                                          )
-                                        }
                                       }
                                     }}
                                   >
