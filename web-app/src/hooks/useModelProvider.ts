@@ -77,6 +77,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 ('id' in e || 'model' in e) &&
                 typeof (e.id ?? e.model) === 'string'
             )
+            console.log(models, 'models')
             const mergedModels = [
               ...(provider?.models ?? []).filter(
                 (e) =>
@@ -99,7 +100,10 @@ export const useModelProvider = create<ModelProviderState>()(
               return {
                 ...model,
                 settings: settings,
-                capabilities: existingModel?.capabilities || model.capabilities,
+                capabilities:
+                  provider.provider === 'llamacpp'
+                    ? model.capabilities
+                    : existingModel?.capabilities || model.capabilities,
               }
             })
 
