@@ -70,12 +70,10 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
             name: model.name,
             description: model.description,
             capabilities: [
-              ...(model.capabilities?.includes(ModelCapabilities.TOOLS) ||
-              (await isModelCapabilitySupported(model.id, 'tools'))
+              ...((await isModelCapabilitySupported(model.id, 'tools'))
                 ? [ModelCapabilities.TOOLS]
                 : []),
-              ...(model.capabilities?.includes(ModelCapabilities.REASONING) ||
-              (await isModelCapabilitySupported(model.id, 'reasoning'))
+              ...((await isModelCapabilitySupported(model.id, 'reasoning'))
                 ? [ModelCapabilities.REASONING]
                 : []),
             ],
