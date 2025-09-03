@@ -194,48 +194,50 @@ function Hub() {
     fetchSources()
   }, [fetchSources])
 
+  const fetchHuggingFaceModel = async (searchValue: string) => {
+    if (
+      !searchValue.length ||
+      (!searchValue.includes('/') && !searchValue.startsWith('http'))
+    ) {
+      return
+    }
+
+    setIsSearching(true)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+
+    addModelSourceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const repoInfo = await fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+        if (repoInfo) {
+          const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+          if (
+            !sources.some(
+              (s) =>
+                catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim() &&
+                catalogModel.developer.trim() === s.developer?.trim()
+            )
+          ) {
+            setHuggingFaceRepo(catalogModel)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching repository info:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 500)
+  }
+
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
 
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    if (
-      e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http')) &&
-      !showOnlyDownloaded
-    ) {
-      setIsSearching(true)
-
-      addModelSourceTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(
-            e.target.value,
-            huggingfaceToken
-          )
-          if (repoInfo) {
-            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            if (
-              !sources.some(
-                (s) =>
-                  catalogModel.model_name.trim().split('/').pop() ===
-                    s.model_name.trim() &&
-                  catalogModel.developer.trim() === s.developer?.trim()
-              )
-            ) {
-              setHuggingFaceRepo(catalogModel)
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching repository info:', error)
-        } finally {
-          setIsSearching(false)
-        }
-      }, 500)
+    if (!showOnlyDownloaded) {
+      fetchHuggingFaceModel(e.target.value)
     }
   }
 
@@ -514,40 +516,9 @@ function Hub() {
               setShowOnlyDownloaded(checked)
               if (checked) {
                 setHuggingFaceRepo(null)
-              } else if (
-                searchValue.length &&
-                (searchValue.includes('/') || searchValue.startsWith('http'))
-              ) {
+              } else {
                 // Re-trigger HuggingFace search when switching back to "All models"
-                setIsSearching(true)
-                if (addModelSourceTimeoutRef.current) {
-                  clearTimeout(addModelSourceTimeoutRef.current)
-                }
-                addModelSourceTimeoutRef.current = setTimeout(async () => {
-                  try {
-                    const repoInfo = await fetchHuggingFaceRepo(
-                      searchValue,
-                      huggingfaceToken
-                    )
-                    if (repoInfo) {
-                      const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-                      if (
-                        !sources.some(
-                          (s) =>
-                            catalogModel.model_name.trim().split('/').pop() ===
-                              s.model_name.trim() &&
-                            catalogModel.developer.trim() === s.developer?.trim()
-                        )
-                      ) {
-                        setHuggingFaceRepo(catalogModel)
-                      }
-                    }
-                  } catch (error) {
-                    console.error('Error fetching repository info:', error)
-                  } finally {
-                    setIsSearching(false)
-                  }
-                }, 500)
+                fetchHuggingFaceModel(searchValue)
               }
             }}
           />
