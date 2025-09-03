@@ -205,7 +205,8 @@ function Hub() {
 
     if (
       e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http'))
+      (e.target.value.includes('/') || e.target.value.startsWith('http')) &&
+      !showOnlyDownloaded
     ) {
       setIsSearching(true)
 
@@ -222,7 +223,8 @@ function Hub() {
               !sources.some(
                 (s) =>
                   catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim()
+                    s.model_name.trim() &&
+                  catalogModel.developer.trim() === s.developer?.trim()
               )
             ) {
               setHuggingFaceRepo(catalogModel)
@@ -508,7 +510,46 @@ function Hub() {
         <div className="flex items-center gap-2">
           <Switch
             checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
+            onCheckedChange={(checked) => {
+              setShowOnlyDownloaded(checked)
+              if (checked) {
+                setHuggingFaceRepo(null)
+              } else if (
+                searchValue.length &&
+                (searchValue.includes('/') || searchValue.startsWith('http'))
+              ) {
+                // Re-trigger HuggingFace search when switching back to "All models"
+                setIsSearching(true)
+                if (addModelSourceTimeoutRef.current) {
+                  clearTimeout(addModelSourceTimeoutRef.current)
+                }
+                addModelSourceTimeoutRef.current = setTimeout(async () => {
+                  try {
+                    const repoInfo = await fetchHuggingFaceRepo(
+                      searchValue,
+                      huggingfaceToken
+                    )
+                    if (repoInfo) {
+                      const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+                      if (
+                        !sources.some(
+                          (s) =>
+                            catalogModel.model_name.trim().split('/').pop() ===
+                              s.model_name.trim() &&
+                            catalogModel.developer.trim() === s.developer?.trim()
+                        )
+                      ) {
+                        setHuggingFaceRepo(catalogModel)
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error fetching repository info:', error)
+                  } finally {
+                    setIsSearching(false)
+                  }
+                }, 500)
+              }
+            }}
           />
           <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
             {t('hub:downloaded')}
