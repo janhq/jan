@@ -174,16 +174,75 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async pullModelWithMetadata(
-    modelId: string,
-    modelUrl: string,
+    id: string,
+    modelPath: string,
     mmprojPath?: string,
-    huggingfaceToken?: string
+    hfToken?: string
   ): Promise<void> {
-    console.log('pullModelWithMetadata called:', { modelId, modelUrl, mmprojPath, huggingfaceToken })
-    await this.getEngine()?.import(modelId, { 
-      modelPath: modelUrl,
-      mmprojPath: mmprojPath 
-    })
+    let modelSha256: string | undefined
+    let modelSize: number | undefined
+    let mmprojSha256: string | undefined
+    let mmprojSize: number | undefined
+
+    // Extract repo ID from model URL
+    // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
+    const modelUrlMatch = modelPath.match(
+      /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
+    )
+
+    if (modelUrlMatch) {
+      const [, repoId, modelFilename] = modelUrlMatch
+
+      try {
+        // Fetch real-time metadata from HuggingFace
+        const repoInfo = await this.fetchHuggingFaceRepo(repoId, hfToken)
+
+        if (repoInfo?.siblings) {
+          // Find the specific model file
+          const modelFile = repoInfo.siblings.find(
+            (file) => file.rfilename === modelFilename
+          )
+          if (modelFile?.lfs) {
+            modelSha256 = modelFile.lfs.sha256
+            modelSize = modelFile.lfs.size
+          }
+
+          // If mmproj path provided, extract its metadata too
+          if (mmprojPath) {
+            const mmprojUrlMatch = mmprojPath.match(
+              /https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/main\/(.+)/
+            )
+            if (mmprojUrlMatch) {
+              const [, mmprojFilename] = mmprojUrlMatch
+              const mmprojFile = repoInfo.siblings.find(
+                (file) => file.rfilename === mmprojFilename
+              )
+              if (mmprojFile?.lfs) {
+                mmprojSha256 = mmprojFile.lfs.sha256
+                mmprojSize = mmprojFile.lfs.size
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(
+          'Failed to fetch HuggingFace metadata, proceeding without hash verification:',
+          error
+        )
+        // Continue with download even if metadata fetch fails
+      }
+    }
+
+    // Call the original pullModel with the fetched metadata
+    return this.pullModel(
+      id,
+      modelPath,
+      modelSha256,
+      modelSize,
+      mmprojPath,
+      mmprojSha256,
+      mmprojSize
+    )
   }
 
   async abortDownload(id: string): Promise<void> {
@@ -357,11 +416,16 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async checkMmprojExists(modelId: string): Promise<boolean> {
-    console.log('checkMmprojExists called with modelId:', modelId)
-    // AIEngine doesn't have checkMmprojExists method
-    // This might be a legacy method or extension-specific
-    // For now, return false as a safe default
-    console.warn('checkMmprojExists called but AIEngine does not support this operation')
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        checkMmprojExists?: (id: string) => Promise<boolean>
+      }
+      if (engine && typeof engine.checkMmprojExists === 'function') {
+        return await engine.checkMmprojExists(modelId)
+      }
+    } catch (error) {
+      console.error(`Error checking mmproj for model ${modelId}:`, error)
+    }
     return false
   }
 

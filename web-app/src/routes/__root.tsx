@@ -26,13 +26,11 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
-import { initializeServiceHub } from '@/services'
-import { ServiceInitializationLoader } from '@/containers/ServiceInitializationLoader'
-import { initializeServiceHubStore } from '@/hooks/useServiceHub'
+import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -188,51 +186,31 @@ const LogsLayout = () => {
 
 function RootLayout() {
   const router = useRouterState()
-  const [initError, setInitError] = useState<Error | null>(null)
-  const [servicesReady, setServicesReady] = useState(false)
 
   const isLocalAPIServerLogsRoute =
     router.location.pathname === route.localApiServerlogs ||
     router.location.pathname === route.systemMonitor ||
     router.location.pathname === route.appLogs
 
-  // Initialize services on mount
-  useEffect(() => {
-    initializeServiceHub()
-      .then((hub) => {
-        console.log('Services initialized, initializing Zustand store')
-        initializeServiceHubStore(hub)
-        setServicesReady(true)
-      })
-      .catch((error) => {
-        console.error('Service initialization failed:', error)
-        setInitError(error)
-        setServicesReady(true) // Still render to show error state
-      })
-  }, [])
-
-  // Block rendering until services are ready
-  if (!servicesReady) {
-    return <ServiceInitializationLoader error={initError} />
-  }
-
   return (
     <Fragment>
-      <ThemeProvider />
-      <AppearanceProvider />
-      <ToasterProvider />
-      <TranslationProvider>
-        <ExtensionProvider>
-          <DataProvider />
-          <GlobalEventHandler />
-        </ExtensionProvider>
-        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-        {/* <TanStackRouterDevtools position="bottom-right" /> */}
-        <ToolApproval />
-        <LoadModelErrorDialog />
-        <ErrorDialog />
-        <OutOfContextPromiseModal />
-      </TranslationProvider>
+      <ServiceHubProvider>
+        <ThemeProvider />
+        <AppearanceProvider />
+        <ToasterProvider />
+        <TranslationProvider>
+          <ExtensionProvider>
+            <DataProvider />
+            <GlobalEventHandler />
+          </ExtensionProvider>
+          {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+          <LoadModelErrorDialog />
+          <ErrorDialog />
+          <OutOfContextPromiseModal />
+        </TranslationProvider>
+      </ServiceHubProvider>
     </Fragment>
   )
 }

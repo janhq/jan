@@ -1,18 +1,47 @@
 /**
- * EventEmitter class for backward compatibility
+ * EventEmitter class - matches jan-dev implementation
  * Used by ExtensionProvider to set window.core.events
  */
 
-export class EventEmitter extends EventTarget {
-  emit(event: string, detail?: unknown) {
-    this.dispatchEvent(new CustomEvent(event, { detail }))
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
+export class EventEmitter {
+  private handlers: Map<string, Function[]>
+
+  constructor() {
+    this.handlers = new Map<string, Function[]>()
   }
 
-  on(event: string, handler: EventListener) {
-    this.addEventListener(event, handler)
+  public on(eventName: string, handler: Function): void {
+    if (!this.handlers.has(eventName)) {
+      this.handlers.set(eventName, [])
+    }
+
+    this.handlers.get(eventName)?.push(handler)
   }
 
-  off(event: string, handler: EventListener) {
-    this.removeEventListener(event, handler)
+  public off(eventName: string, handler: Function): void {
+    if (!this.handlers.has(eventName)) {
+      return
+    }
+
+    const handlers = this.handlers.get(eventName)
+    const index = handlers?.indexOf(handler)
+
+    if (index !== undefined && index !== -1) {
+      handlers?.splice(index, 1)
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public emit(eventName: string, args: any): void {
+    if (!this.handlers.has(eventName)) {
+      return
+    }
+
+    const handlers = this.handlers.get(eventName)
+
+    handlers?.forEach((handler) => {
+      handler(args)
+    })
   }
 }

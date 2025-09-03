@@ -73,7 +73,7 @@ export interface ModelsService {
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchHuggingFaceRepo(repoId: string, hfToken?: string): Promise<HuggingFaceRepo | null>
-  convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel | null
+  convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
   updateModel(model: Partial<CoreModel>): Promise<void>
   pullModel(
     id: string,
@@ -85,10 +85,10 @@ export interface ModelsService {
     mmprojSize?: number
   ): Promise<void>
   pullModelWithMetadata(
-    modelId: string,
-    modelUrl: string,
+    id: string,
+    modelPath: string,
     mmprojPath?: string,
-    huggingfaceToken?: string
+    hfToken?: string
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string): Promise<void>

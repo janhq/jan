@@ -9,9 +9,8 @@ describe('EventEmitter', () => {
   })
 
   describe('constructor', () => {
-    it('should create an instance extending EventTarget', () => {
+    it('should create an instance of EventEmitter', () => {
       expect(eventEmitter).toBeInstanceOf(EventEmitter)
-      expect(eventEmitter).toBeInstanceOf(EventTarget)
     })
   })
 
@@ -23,9 +22,7 @@ describe('EventEmitter', () => {
       eventEmitter.emit('test-event', 'test-data')
       
       expect(handler).toHaveBeenCalledOnce()
-      const event = handler.mock.calls[0][0]
-      expect(event).toBeInstanceOf(CustomEvent)
-      expect(event.detail).toBe('test-data')
+      expect(handler).toHaveBeenCalledWith('test-data')
     })
 
     it('should register multiple handlers for the same event', () => {
@@ -71,7 +68,7 @@ describe('EventEmitter', () => {
   })
 
   describe('emit method', () => {
-    it('should emit events with data in detail property', () => {
+    it('should emit events with data', () => {
       const handler = vi.fn()
       const testData = { message: 'test', number: 42 }
       
@@ -79,8 +76,7 @@ describe('EventEmitter', () => {
       eventEmitter.emit('test-event', testData)
       
       expect(handler).toHaveBeenCalledOnce()
-      const event = handler.mock.calls[0][0]
-      expect(event.detail).toEqual(testData)
+      expect(handler).toHaveBeenCalledWith(testData)
     })
 
     it('should emit events without data', () => {
@@ -90,8 +86,7 @@ describe('EventEmitter', () => {
       eventEmitter.emit('test-event')
       
       expect(handler).toHaveBeenCalledOnce()
-      const event = handler.mock.calls[0][0]
-      expect(event.detail).toBeNull()
+      expect(handler).toHaveBeenCalledWith(undefined)
     })
 
     it('should handle different event types independently', () => {
@@ -106,8 +101,8 @@ describe('EventEmitter', () => {
       
       expect(handler1).toHaveBeenCalledOnce()
       expect(handler2).toHaveBeenCalledOnce()
-      expect(handler1.mock.calls[0][0].detail).toBe('data1')
-      expect(handler2.mock.calls[0][0].detail).toBe('data2')
+      expect(handler1).toHaveBeenCalledWith('data1')
+      expect(handler2).toHaveBeenCalledWith('data2')
     })
   })
 
@@ -121,7 +116,7 @@ describe('EventEmitter', () => {
       // Emit event
       eventEmitter.emit('lifecycle-event', 'lifecycle-data')
       expect(handler).toHaveBeenCalledOnce()
-      expect(handler.mock.calls[0][0].detail).toBe('lifecycle-data')
+      expect(handler).toHaveBeenCalledWith('lifecycle-data')
       
       // Remove handler
       eventEmitter.off('lifecycle-event', handler)
@@ -144,7 +139,7 @@ describe('EventEmitter', () => {
       eventEmitter.emit('complex-event', complexData)
       
       expect(handler).toHaveBeenCalledOnce()
-      expect(handler.mock.calls[0][0].detail).toEqual(complexData)
+      expect(handler).toHaveBeenCalledWith(complexData)
     })
   })
 })
