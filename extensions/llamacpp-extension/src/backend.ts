@@ -77,7 +77,7 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
 
-  const releases = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  const { releases } = await _fetchReleasesWithFallback('menloresearch', 'llama.cpp')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
   releases.splice(10) // keep only the latest 10 releases
 
@@ -145,14 +145,15 @@ export async function isBackendInstalled(
 
 export async function downloadBackend(
   backend: string,
-  version: string
+  version: string,
+  source: 'github' | 'cdn' = 'github'
 ): Promise<void> {
   const janDataFolderPath = await getJanDataFolderPath()
   const llamacppPath = await joinPath([janDataFolderPath, 'llamacpp'])
   const backendDir = await getBackendDir(backend, version)
   const libDir = await joinPath([llamacppPath, 'lib'])
 
-  const downloadManager = window.core.extensionManager.getByName(
+  const downloadManager = (window as any).core.extensionManager.getByName(
     '@janhq/download-extension'
   )
 
@@ -161,9 +162,15 @@ export async function downloadBackend(
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
 
+  // Build URLs per source
+  const backendUrl =
+    source === 'github'
+      ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
+      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+
   const downloadItems = [
     {
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`,
+      url: backendUrl,
       save_path: await joinPath([backendDir, 'backend.tar.gz']),
       proxy: proxyConfig,
     },
@@ -172,13 +179,19 @@ export async function downloadBackend(
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
   if (backend.includes('cu11.7') && !(await _isCudaInstalled('11.7'))) {
     downloadItems.push({
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
+      url:
+        source === 'github'
+          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
+          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda11.tar.gz']),
       proxy: proxyConfig,
     })
   } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
+      url:
+        source === 'github'
+          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
+          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda12.tar.gz']),
       proxy: proxyConfig,
     })
@@ -188,7 +201,7 @@ export async function downloadBackend(
   const downloadType = 'Engine'
 
   console.log(
-    `Downloading backend ${backend} version ${version}: ${JSON.stringify(
+    `Downloading backend ${backend} version ${version} from ${source}: ${JSON.stringify(
       downloadItems
     )}`
   )
@@ -223,6 +236,11 @@ export async function downloadBackend(
 
     events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
+    // Fallback: if GitHub fails, retry once with CDN
+    if (source === 'github') {
+      console.warn(`GitHub download failed, falling back to CDN:`, error)
+      return await downloadBackend(backend, version, 'cdn')
+    }
     console.error(`Failed to download backend ${backend}: `, error)
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
@@ -270,20 +288,31 @@ async function _getSupportedFeatures() {
   return features
 }
 
-async function _fetchGithubReleases(
+/**
+ * Fetch releases with GitHub-first strategy and fallback to CDN on any error.
+ * CDN endpoint is expected to mirror GitHub releases JSON shape.
+ */
+async function _fetchReleasesWithFallback(
   owner: string,
   repo: string
-): Promise<any[]> {
-  // by default, it's per_page=30 and page=1 -> the latest 30 releases
-  const url = `https://api.github.com/repos/${owner}/${repo}/releases`
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch releases from ${url}: ${response.statusText}`
-    )
+): Promise<{ releases: any[]; source: 'github' | 'cdn' }> {
+  const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases`
+  try {
+    const response = await fetch(githubUrl)
+    if (!response.ok) throw new Error(`GitHub error: ${response.status} ${response.statusText}`)
+    const releases = await response.json()
+    return { releases, source: 'github' }
+  } catch (_err) {
+    const cdnUrl = 'https://catalog.jan.ai/llama.cpp/releases/releases.json'
+    const response = await fetch(cdnUrl)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch releases from both sources. CDN error: ${response.status} ${response.statusText}`)
+    }
+    const releases = await response.json()
+    return { releases, source: 'cdn' }
   }
-  return response.json()
 }
+
 
 async function _isCudaInstalled(version: string): Promise<boolean> {
   const sysInfo = await getSystemInfo()
