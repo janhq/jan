@@ -427,6 +427,10 @@ export const startModel = async (
     ...(modelConfig?.reasoning?.reasoning_budget !== undefined && {
       reasoning_budget: modelConfig.reasoning.reasoning_budget,
     }),
+    ...(modelConfig?.reasoning?.reasoning_budget &&
+      modelConfig?.reasoning?.reasoning_effort !== undefined && {
+        chat_template_kwargs: `{"reasoning_effort":"${modelConfig.reasoning.reasoning_effort}"}`,
+      }),
   }
 
   return engine.load(model, settings).catch((error) => {

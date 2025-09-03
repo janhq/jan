@@ -58,6 +58,7 @@ type LlamacppConfig = {
   ubatch_size: number
   device: string
   split_mode: string
+  chat_template_kwargs: string
   main_gpu: number
   flash_attn: boolean
   cont_batching: boolean
@@ -1392,6 +1393,9 @@ export default class llamacpp_extension extends AIEngine {
     // Takes a regex with matching tensor name as input
     if (!cfg.reasoning_budget) {
       args.push('--reasoning-budget', '0')
+    }
+    if (cfg.chat_template_kwargs) {
+      args.push('--chat-template-kwargs', cfg.chat_template_kwargs)
     }
     if (cfg.override_tensor_buffer_t)
       args.push('--override-tensor', cfg.override_tensor_buffer_t)

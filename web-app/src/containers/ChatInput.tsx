@@ -721,7 +721,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                             <div className="h-7 mr-1 text-sm rounded-sm text-main-view-fg/70 cursor-pointer flex items-center gap-1">
                               <span className="capitalize">
                                 {selectedModel?.reasoning?.reasoning_effort ||
-                                  'auto'}
+                                  'medium'}
                               </span>
                               {reasoningEffortOpen ? (
                                 <IconChevronUp
@@ -738,23 +738,30 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                           </PopoverTrigger>
                           <PopoverContent className="w-24 p-0" align="start">
                             <div className="py-1">
-                              {['auto', 'low', 'medium', 'high'].map(
-                                (effort) => (
-                                  <div
-                                    key={effort}
-                                    className="px-2 py-1.5 text-sm cursor-pointer hover:bg-main-view-fg/20 capitalize"
-                                    onClick={async () => {
-                                      if (selectedModel?.reasoning) {
-                                        selectedModel.reasoning.reasoning_effort =
-                                          effort
-                                        setReasoningEffortOpen(false)
+                              {['low', 'medium', 'high'].map((effort) => (
+                                <div
+                                  key={effort}
+                                  className="px-2 py-1.5 text-sm cursor-pointer hover:bg-main-view-fg/20 capitalize"
+                                  onClick={async () => {
+                                    if (selectedModel?.reasoning) {
+                                      selectedModel.reasoning.reasoning_effort =
+                                        effort
+                                      setReasoningEffortOpen(false)
+                                      // Restart model with new reasoning effort
+                                      try {
+                                        await stopModel(selectedModel.id)
+                                      } catch (error) {
+                                        console.error(
+                                          'Error restarting model with new reasoning effort:',
+                                          error
+                                        )
                                       }
-                                    }}
-                                  >
-                                    {effort}
-                                  </div>
-                                )
-                              )}
+                                    }
+                                  }}
+                                >
+                                  {effort}
+                                </div>
+                              ))}
                             </div>
                           </PopoverContent>
                         </Popover>

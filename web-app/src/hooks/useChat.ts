@@ -289,10 +289,6 @@ export const useChat = () => {
             {
               ...modelSettings,
               ...currentAssistant.parameters,
-              ...(selectedModel?.reasoning?.reasoning_budget &&
-                selectedModel?.reasoning?.reasoning_effort !== 'auto' && {
-                  reasoning_effort: selectedModel?.reasoning?.reasoning_effort,
-                }),
             } as unknown as Record<string, object>
           )
 

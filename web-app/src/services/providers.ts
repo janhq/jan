@@ -104,7 +104,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
                       model.id,
                       'reasoning_effort'
                     ))
-                      ? { reasoning_effort: 'auto' }
+                      ? { reasoning_effort: 'medium' }
                       : {}),
                   },
                 }
