@@ -44,8 +44,9 @@ export default defineConfig({
     },
   },
   define: {
+    IS_TAURI: JSON.stringify(process.env.IS_TAURI),
     // Platform detection constants for web version
-    IS_TAURI: JSON.stringify(false),
+    IS_WEB_APP: JSON.stringify(true),
     // Disable auto-updater on web (not applicable)
     AUTO_UPDATER_DISABLED: JSON.stringify(true),
     IS_MACOS: JSON.stringify(false),

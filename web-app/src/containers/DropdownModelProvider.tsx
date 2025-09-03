@@ -148,7 +148,6 @@ const DropdownModelProvider = ({
         }
         // Check mmproj existence for llamacpp models
         if (model?.provider === 'llamacpp') {
-          // const _provider = getProviderByName(model.provider)
           await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
             model.id as string,
             updateProvider,
@@ -163,7 +162,6 @@ const DropdownModelProvider = ({
         if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
           selectModelProvider(lastUsed.provider, lastUsed.model)
           if (lastUsed.provider === 'llamacpp') {
-            // const _provider = getProviderByName(lastUsed.provider)
             await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
               lastUsed.model,
               updateProvider,
