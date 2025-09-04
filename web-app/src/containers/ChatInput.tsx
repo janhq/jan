@@ -32,8 +32,7 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { getConnectedServers } from '@/services/mcp'
-import { checkMmprojExists } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 type ChatInputProps = {
   className?: string
@@ -46,6 +45,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  const serviceHub = useServiceHub()
   const {
     streamingContent,
     abortControllers,
@@ -82,7 +82,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   useEffect(() => {
     const checkConnectedServers = async () => {
       try {
-        const servers = await getConnectedServers()
+        const servers = await serviceHub.mcp().getConnectedServers()
         setConnectedServers(servers)
       } catch (error) {
         console.error('Failed to get connected servers:', error)
@@ -96,16 +96,16 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const intervalId = setInterval(checkConnectedServers, 3000)
 
     return () => clearInterval(intervalId)
-  }, [])
+  }, [serviceHub])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
     const checkMmprojSupport = async () => {
-      if (selectedModel?.id) {
+      if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
           if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
+            const hasLocalMmproj = await serviceHub.models().checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
           }
           // For non-llamacpp providers, only check vision capability
@@ -125,7 +125,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.capabilities, selectedModel?.id, selectedProvider])
+  }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0

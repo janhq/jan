@@ -11,17 +11,16 @@ import { PortInput } from '@/containers/PortInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { startModel } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
-import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -29,7 +28,16 @@ export const Route = createFileRoute(route.settings.local_api_server as any)({
 })
 
 function LocalAPIServer() {
+  return (
+    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
+      <LocalAPIServerContent />
+    </PlatformGuard>
+  )
+}
+
+function LocalAPIServerContent() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const {
     corsEnabled,
     setCorsEnabled,
@@ -54,14 +62,14 @@ function LocalAPIServer() {
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      invoke('get_server_status').then((running) => {
+      serviceHub.app().getServerStatus().then((running) => {
         if (running) {
           setServerStatus('running')
         }
       })
     }
     checkServerStatus()
-  }, [setServerStatus])
+  }, [serviceHub, setServerStatus])
 
   const handleApiKeyValidation = (isValid: boolean) => {
     setIsApiKeyEmpty(!isValid)
@@ -136,7 +144,7 @@ function LocalAPIServer() {
       setServerStatus('pending')
 
       // Start the model first
-      startModel(modelToStart.provider, modelToStart.model)
+      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 
@@ -174,39 +182,7 @@ function LocalAPIServer() {
 
   const handleOpenLogs = async () => {
     try {
-      // Check if logs window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.logsWindowLocalApiServer
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing logs window')
-      } else {
-        // Create a new logs window using Tauri v2 WebviewWindow API
-        const logsWindow = new WebviewWindow(
-          windowKey.logsWindowLocalApiServer,
-          {
-            url: route.localApiServerlogs,
-            title: 'Local API server Logs - Jan',
-            width: 800,
-            height: 600,
-            resizable: true,
-            center: true,
-          }
-        )
-
-        // Listen for window creation
-        logsWindow.once('tauri://created', () => {
-          console.log('Logs window created')
-        })
-
-        // Listen for window errors
-        logsWindow.once('tauri://error', (e) => {
-          console.error('Error creating logs window:', e)
-        })
-      }
+      await serviceHub.window().openLocalApiServerLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }

@@ -1,11 +1,36 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useLlamacppDevices } from '../useLlamacppDevices'
-import { getLlamacppDevices } from '../../services/hardware'
 
-// Mock the hardware service
-vi.mock('@/services/hardware', () => ({
-  getLlamacppDevices: vi.fn(),
+// Mock the ServiceHub
+const mockGetLlamacppDevices = vi.fn()
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    hardware: () => ({
+      getLlamacppDevices: mockGetLlamacppDevices,
+    }),
+    providers: () => ({
+      updateSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  }),
+}))
+
+// Mock useModelProvider
+const mockUpdateProvider = vi.fn()
+vi.mock('../useModelProvider', () => ({
+  useModelProvider: {
+    getState: () => ({
+      getProviderByName: () => ({
+        settings: [
+          {
+            key: 'device',
+            controller_props: { value: '' },
+          },
+        ],
+      }),
+      updateProvider: mockUpdateProvider,
+    }),
+  },
 }))
 
 // Mock the window.core object
@@ -19,7 +44,6 @@ Object.defineProperty(window, 'core', {
 })
 
 describe('useLlamacppDevices', () => {
-  const mockGetLlamacppDevices = vi.mocked(getLlamacppDevices)
 
   beforeEach(() => {
     vi.clearAllMocks()

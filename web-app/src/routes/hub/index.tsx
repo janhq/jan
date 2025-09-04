@@ -4,6 +4,8 @@ import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import {
   useState,
   useMemo,
@@ -40,13 +42,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  CatalogModel,
-  pullModelWithMetadata,
-  fetchHuggingFaceRepo,
-  convertHfRepoToCatalogModel,
-  isModelSupported,
-} from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { CatalogModel } from '@/services/models/types'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -71,8 +68,17 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubContent />
+    </PlatformGuard>
+  )
+}
+
+function HubContent() {
   const parentRef = useRef(null)
   const { huggingfaceToken } = useGeneralSetting()
+  const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -209,9 +215,9 @@ function Hub() {
 
     addModelSourceTimeoutRef.current = setTimeout(async () => {
       try {
-        const repoInfo = await fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+        const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(searchValue, huggingfaceToken)
         if (repoInfo) {
-          const catalogModel = convertHfRepoToCatalogModel(repoInfo)
+          const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
           if (
             !sources.some(
               (s) =>
@@ -297,7 +303,7 @@ function Hub() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supportStatus = await isModelSupported(modelPath, 8192)
+        const supportStatus = await serviceHub.models().isModelSupported(modelPath, 8192)
 
         setModelSupportStatus((prev) => ({
           ...prev,
@@ -311,7 +317,7 @@ function Hub() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
   const DownloadButtonPlaceholder = useMemo(() => {
@@ -357,7 +363,12 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
+        serviceHub.models().pullModelWithMetadata(
+          modelId, 
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken
+        )
       }
 
       return (
@@ -406,6 +417,7 @@ function Hub() {
     addLocalDownloadingModel,
     huggingfaceToken,
     handleUseModel,
+    serviceHub,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -950,7 +962,7 @@ function Hub() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModelWithMetadata(
+                                                  serviceHub.models().pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[

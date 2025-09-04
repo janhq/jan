@@ -20,10 +20,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/consts/providers'
-import {
-  checkMmprojExistsAndUpdateOffloadMMprojSetting,
-  checkMmprojExists,
-} from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -78,6 +75,7 @@ const DropdownModelProvider = ({
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
+  const serviceHub = useServiceHub()
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -107,7 +105,7 @@ const DropdownModelProvider = ({
   const checkAndUpdateModelVisionCapability = useCallback(
     async (modelId: string) => {
       try {
-        const hasVision = await checkMmprojExists(modelId)
+        const hasVision = await serviceHub.models().checkMmprojExists(modelId)
         if (hasVision) {
           // Update the model capabilities to include 'vision'
           const provider = getProviderByName('llamacpp')
@@ -136,7 +134,7 @@ const DropdownModelProvider = ({
         console.debug('Error checking mmproj for model:', modelId, error)
       }
     },
-    [getProviderByName, updateProvider]
+    [getProviderByName, updateProvider, serviceHub]
   )
 
   // Initialize model provider only once
@@ -150,7 +148,7 @@ const DropdownModelProvider = ({
         }
         // Check mmproj existence for llamacpp models
         if (model?.provider === 'llamacpp') {
-          await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+          await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
             model.id as string,
             updateProvider,
             getProviderByName
@@ -164,7 +162,7 @@ const DropdownModelProvider = ({
         if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
           selectModelProvider(lastUsed.provider, lastUsed.model)
           if (lastUsed.provider === 'llamacpp') {
-            await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
               lastUsed.model,
               updateProvider,
               getProviderByName
@@ -189,6 +187,7 @@ const DropdownModelProvider = ({
     updateProvider,
     getProviderByName,
     checkAndUpdateModelVisionCapability,
+    serviceHub,
   ])
 
   // Update display model when selection changes
@@ -354,7 +353,7 @@ const DropdownModelProvider = ({
 
       // Check mmproj existence for llamacpp models
       if (searchableModel.provider.provider === 'llamacpp') {
-        await checkMmprojExistsAndUpdateOffloadMMprojSetting(
+        await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
           searchableModel.model.id,
           updateProvider,
           getProviderByName
@@ -380,6 +379,7 @@ const DropdownModelProvider = ({
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
+      serviceHub,
     ]
   )
 

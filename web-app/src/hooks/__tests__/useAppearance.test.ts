@@ -31,7 +31,7 @@ vi.mock('zustand/middleware', () => ({
 // Mock global constants
 Object.defineProperty(global, 'IS_WINDOWS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_LINUX', { value: false, writable: true })
-Object.defineProperty(global, 'IS_TAURI', { value: false, writable: true })
+Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
 
 describe('useAppearance', () => {
   beforeEach(() => {
@@ -154,8 +154,8 @@ describe('useAppearance', () => {
 
 
   describe('Platform-specific behavior', () => {
-    it('should use alpha 1 for non-Tauri environments', () => {
-      Object.defineProperty(global, 'IS_TAURI', { value: false })
+    it('should use alpha 1 for web environments', () => {
+      Object.defineProperty(global, 'IS_WEB_APP', { value: false })
       Object.defineProperty(global, 'IS_WINDOWS', { value: true })
       
       const { result } = renderHook(() => useAppearance())

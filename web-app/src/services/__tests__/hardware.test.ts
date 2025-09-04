@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getHardwareInfo, getSystemUsage, setActiveGpus } from '../hardware'
+import { TauriHardwareService } from '../hardware/tauri'
 import { HardwareData, SystemUsage } from '@/hooks/useHardware'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -8,8 +8,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
-describe('hardware service', () => {
+describe('TauriHardwareService', () => {
+  let hardwareService: TauriHardwareService
+
   beforeEach(() => {
+    hardwareService = new TauriHardwareService()
     vi.clearAllMocks()
   })
 
@@ -50,7 +53,7 @@ describe('hardware service', () => {
 
       vi.mocked(invoke).mockResolvedValue(mockHardwareData)
 
-      const result = await getHardwareInfo()
+      const result = await hardwareService.getHardwareInfo()
 
       expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
       expect(result).toEqual(mockHardwareData)
@@ -60,7 +63,7 @@ describe('hardware service', () => {
       const mockError = new Error('Failed to get hardware info')
       vi.mocked(invoke).mockRejectedValue(mockError)
 
-      await expect(getHardwareInfo()).rejects.toThrow('Failed to get hardware info')
+      await expect(hardwareService.getHardwareInfo()).rejects.toThrow('Failed to get hardware info')
       expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
     })
 
@@ -81,7 +84,7 @@ describe('hardware service', () => {
 
       vi.mocked(invoke).mockResolvedValue(mockHardwareData)
 
-      const result = await getHardwareInfo()
+      const result = await hardwareService.getHardwareInfo()
 
       expect(result).toBeDefined()
       expect(result.cpu).toBeDefined()
@@ -110,7 +113,7 @@ describe('hardware service', () => {
 
       vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
 
-      const result = await getSystemUsage()
+      const result = await hardwareService.getSystemUsage()
 
       expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
       expect(result).toEqual(mockSystemUsage)
@@ -120,7 +123,7 @@ describe('hardware service', () => {
       const mockError = new Error('Failed to get system usage')
       vi.mocked(invoke).mockRejectedValue(mockError)
 
-      await expect(getSystemUsage()).rejects.toThrow('Failed to get system usage')
+      await expect(hardwareService.getSystemUsage()).rejects.toThrow('Failed to get system usage')
       expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
     })
 
@@ -134,7 +137,7 @@ describe('hardware service', () => {
 
       vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
 
-      const result = await getSystemUsage()
+      const result = await hardwareService.getSystemUsage()
 
       expect(result).toBeDefined()
       expect(typeof result.cpu).toBe('number')
@@ -164,7 +167,7 @@ describe('hardware service', () => {
 
       vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
 
-      const result = await getSystemUsage()
+      const result = await hardwareService.getSystemUsage()
 
       expect(result.gpus).toHaveLength(2)
       expect(result.gpus[0].uuid).toBe('gpu-uuid-1')
@@ -186,7 +189,7 @@ describe('hardware service', () => {
     it('should log the provided GPU data', async () => {
       const gpuData = { gpus: [0, 1, 2] }
 
-      await setActiveGpus(gpuData)
+      await hardwareService.setActiveGpus(gpuData)
 
       expect(consoleSpy).toHaveBeenCalledWith(gpuData)
     })
@@ -194,7 +197,7 @@ describe('hardware service', () => {
     it('should handle empty GPU array', async () => {
       const gpuData = { gpus: [] }
 
-      await setActiveGpus(gpuData)
+      await hardwareService.setActiveGpus(gpuData)
 
       expect(consoleSpy).toHaveBeenCalledWith(gpuData)
     })
@@ -202,7 +205,7 @@ describe('hardware service', () => {
     it('should handle single GPU', async () => {
       const gpuData = { gpus: [1] }
 
-      await setActiveGpus(gpuData)
+      await hardwareService.setActiveGpus(gpuData)
 
       expect(consoleSpy).toHaveBeenCalledWith(gpuData)
     })
@@ -210,13 +213,13 @@ describe('hardware service', () => {
     it('should complete successfully', async () => {
       const gpuData = { gpus: [0, 1] }
 
-      await expect(setActiveGpus(gpuData)).resolves.toBeUndefined()
+      await expect(hardwareService.setActiveGpus(gpuData)).resolves.toBeUndefined()
     })
 
     it('should not throw any errors', async () => {
       const gpuData = { gpus: [0, 1, 2, 3] }
 
-      expect(() => setActiveGpus(gpuData)).not.toThrow()
+      expect(() => hardwareService.setActiveGpus(gpuData)).not.toThrow()
     })
   })
 
@@ -248,8 +251,8 @@ describe('hardware service', () => {
         .mockResolvedValueOnce(mockSystemUsage)
 
       const [hardwareResult, usageResult] = await Promise.all([
-        getHardwareInfo(),
-        getSystemUsage(),
+        hardwareService.getHardwareInfo(),
+        hardwareService.getSystemUsage(),
       ])
 
       expect(hardwareResult).toEqual(mockHardwareData)

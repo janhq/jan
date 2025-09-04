@@ -25,7 +25,7 @@ import { useCallback, useState } from 'react'
 import { openAIProviderSettings } from '@/consts/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
-import { stopAllModels } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -34,6 +34,7 @@ export const Route = createFileRoute(route.settings.model_providers as any)({
 
 function ModelProviders() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { providers, addProvider, updateProvider } = useModelProvider()
   const navigate = useNavigate()
   const [name, setName] = useState('')
@@ -172,7 +173,7 @@ function ModelProviders() {
                         checked={provider.active}
                         onCheckedChange={async (e) => {
                           if (!e && provider.provider.toLowerCase() === 'llamacpp') {
-                            await stopAllModels()
+                            await serviceHub.models().stopAllModels()
                           }
                           updateProvider(provider.provider, {
                             ...provider,

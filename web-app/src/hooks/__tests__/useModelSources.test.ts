@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useModelSources } from '../useModelSources'
-import type { CatalogModel } from '@/services/models'
+import type { CatalogModel } from '@/services/models/types'
 
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
@@ -20,9 +20,15 @@ vi.mock('zustand/middleware', () => ({
   }),
 }))
 
-// Mock the fetchModelCatalog service
-vi.mock('@/services/models', () => ({
-  fetchModelCatalog: vi.fn(),
+// Mock the ServiceHub
+const mockFetchModelCatalog = vi.fn()
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    models: () => ({
+      fetchModelCatalog: mockFetchModelCatalog,
+    }),
+  }),
 }))
 
 // Mock the sanitizeModelId function
@@ -31,13 +37,8 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 describe('useModelSources', () => {
-  let mockFetchModelCatalog: any
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
-    // Get the mocked function
-    const { fetchModelCatalog } = await import('@/services/models')
-    mockFetchModelCatalog = fetchModelCatalog as any
 
     // Reset store state to defaults
     useModelSources.setState({
