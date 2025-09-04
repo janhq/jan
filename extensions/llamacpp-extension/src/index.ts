@@ -548,6 +548,76 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  async updateBackend(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    try {
+      if (!targetBackendString)
+        throw new Error(
+          `Invalid backend string: ${targetBackendString} supplied to update function`
+        )
+
+      const [version, backend] = targetBackendString.split('/')
+
+      logger.info(
+        `Updating backend to ${targetBackendString} (backend type: ${backend})`
+      )
+
+      // Download new backend
+      await this.ensureBackendReady(backend, version)
+
+      // Add delay on Windows
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+
+      // Update configuration
+      this.config.version_backend = targetBackendString
+
+      // Store the backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== backend) {
+        this.setStoredBackendType(backend)
+        logger.info(`Updated stored backend type preference: ${backend}`)
+      }
+
+      // Update settings
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+
+      logger.info(`Successfully updated to backend: ${targetBackendString}`)
+
+      // Emit for updating frontend
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+        )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
+
+      // Clean up old versions of the same backend type
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      await this.removeOldBackend(version, backend)
+
+      return { wasUpdated: true, newBackend: targetBackendString }
+    } catch (error) {
+      logger.error('Backend update failed:', error)
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+  }
+
   private async handleAutoUpdate(
     bestAvailableBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
@@ -572,46 +642,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         'No valid backend currently selected, using best available backend'
       )
-      try {
-        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
 
-        // Download new backend
-        await this.ensureBackendReady(bestBackend, bestVersion)
-
-        // Add delay on Windows
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-
-        // Update configuration
-        this.config.version_backend = bestAvailableBackendString
-
-        // Store the backend type preference only if it changed
-        const currentStoredBackend = this.getStoredBackendType()
-        if (currentStoredBackend !== bestBackend) {
-          this.setStoredBackendType(bestBackend)
-          logger.info(`Stored new backend type preference: ${bestBackend}`)
-        }
-
-        // Update settings
-        const settings = await this.getSettings()
-        await this.updateSettings(
-          settings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = bestAvailableBackendString
-            }
-            return item
-          })
-        )
-
-        logger.info(
-          `Successfully set initial backend: ${bestAvailableBackendString}`
-        )
-        return { wasUpdated: true, newBackend: bestAvailableBackendString }
-      } catch (error) {
-        logger.error('Failed to set initial backend:', error)
-        return { wasUpdated: false, newBackend: this.config.version_backend }
-      }
+      return await this.updateBackend(bestAvailableBackendString)
     }
 
     // Parse current backend configuration
@@ -651,66 +683,11 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Perform version update for the same backend type
-    try {
-      logger.info(
-        `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
-      )
+    logger.info(
+      `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+    )
 
-      // Download new version of the same backend type
-      await this.ensureBackendReady(currentBackend, latestVersion)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Update stored backend type preference only if it changed
-      const currentStoredBackend = this.getStoredBackendType()
-      if (currentStoredBackend !== currentBackend) {
-        this.setStoredBackendType(currentBackend)
-        logger.info(`Updated stored backend type preference: ${currentBackend}`)
-      }
-
-      // Update settings
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      logger.info(
-        `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
-      )
-
-      // Emit for updating fe
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions of the same backend type
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-      await this.removeOldBackend(latestVersion, currentBackend)
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Auto-update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
+    return await this.updateBackend(targetBackendString)
   }
 
   private parseBackendVersion(v: string): number {
@@ -743,7 +720,10 @@ export default class llamacpp_extension extends AIEngine {
       currentBackend
     )
     const [latestVersion] = targetBackendString.split('/')
-    if (this.parseBackendVersion(latestVersion) > this.parseBackendVersion(currentVersion)) {
+    if (
+      this.parseBackendVersion(latestVersion) >
+      this.parseBackendVersion(currentVersion)
+    ) {
       logger.info(`New update available: ${latestVersion}`)
       return { updateNeeded: true, newVersion: latestVersion }
     } else {
