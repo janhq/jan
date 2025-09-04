@@ -77,7 +77,7 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
 
-  const { releases } = await _fetchReleasesWithFallback('menloresearch', 'llama.cpp')
+  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
   releases.splice(10) // keep only the latest 10 releases
 
@@ -153,7 +153,7 @@ export async function downloadBackend(
   const backendDir = await getBackendDir(backend, version)
   const libDir = await joinPath([llamacppPath, 'lib'])
 
-  const downloadManager = (window as any).core.extensionManager.getByName(
+  const downloadManager = window.core.extensionManager.getByName(
     '@janhq/download-extension'
   )
 
@@ -292,7 +292,7 @@ async function _getSupportedFeatures() {
  * Fetch releases with GitHub-first strategy and fallback to CDN on any error.
  * CDN endpoint is expected to mirror GitHub releases JSON shape.
  */
-async function _fetchReleasesWithFallback(
+async function _fetchGithubReleases(
   owner: string,
   repo: string
 ): Promise<{ releases: any[]; source: 'github' | 'cdn' }> {
