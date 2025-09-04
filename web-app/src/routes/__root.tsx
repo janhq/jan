@@ -202,8 +202,9 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
+            {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
-          {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+          {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />
           <LoadModelErrorDialog />
