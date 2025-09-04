@@ -92,7 +92,7 @@ export class TauriWindowService extends DefaultWindowService {
   async openLogsWindow(): Promise<void> {
     try {
       await this.openWindow({
-        url: '/app-logs',
+        url: '/logs',
         label: 'logs-app-window',
         title: 'App Logs - Jan',
         width: 800,
