@@ -31,6 +31,8 @@ import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -162,7 +164,7 @@ const AppLayout = () => {
           </div>
         )}
       </main>
-      {productAnalyticPrompt && <PromptAnalytic />}
+      {PlatformFeatures[PlatformFeature.ANALYTICS] && productAnalyticPrompt && <PromptAnalytic />}
     </Fragment>
   )
 }

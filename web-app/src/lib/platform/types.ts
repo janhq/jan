@@ -36,4 +36,10 @@ export enum PlatformFeature {
 
   // HTTPS proxy
   HTTPS_PROXY = 'httpsProxy',
+  
+  // Default model providers (OpenAI, Anthropic, etc.)
+  DEFAULT_PROVIDERS = 'defaultProviders',
+  
+  // Analytics and telemetry
+  ANALYTICS = 'analytics',
 }

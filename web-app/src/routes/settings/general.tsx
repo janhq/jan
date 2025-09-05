@@ -181,14 +181,16 @@ function General() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
             <Card title={t('common:general')}>
-              <CardItem
-                title={t('settings:general.appVersion')}
-                actions={
-                  <span className="text-main-view-fg/80 font-medium">
-                    v{VERSION}
-                  </span>
-                }
-              />
+              {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
+                <CardItem
+                  title={t('settings:general.appVersion')}
+                  actions={
+                    <span className="text-main-view-fg/80 font-medium">
+                      v{VERSION}
+                    </span>
+                  }
+                />
+              )}
               {!AUTO_UPDATER_DISABLED && PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
@@ -427,23 +429,25 @@ function General() {
                   />
                 }
               />
-              <CardItem
-                title={t('settings:general.huggingfaceToken', {
-                  ns: 'settings',
-                })}
-                description={t('settings:general.huggingfaceTokenDesc', {
-                  ns: 'settings',
-                })}
-                actions={
-                  <Input
-                    id="hf-token"
-                    value={huggingfaceToken || ''}
-                    onChange={(e) => setHuggingfaceToken(e.target.value)}
-                    placeholder={'hf_xxx'}
-                    required
-                  />
-                }
-              />
+              {PlatformFeatures[PlatformFeature.MODEL_HUB] && (
+                <CardItem
+                  title={t('settings:general.huggingfaceToken', {
+                    ns: 'settings',
+                  })}
+                  description={t('settings:general.huggingfaceTokenDesc', {
+                    ns: 'settings',
+                  })}
+                  actions={
+                    <Input
+                      id="hf-token"
+                      value={huggingfaceToken || ''}
+                      onChange={(e) => setHuggingfaceToken(e.target.value)}
+                      placeholder={'hf_xxx'}
+                      required
+                    />
+                  }
+                />
+              )}
             </Card>
 
             {/* Resources */}

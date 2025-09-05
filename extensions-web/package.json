@@ -20,15 +20,15 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@janhq/core": "workspace:*"
-  },
   "devDependencies": {
+    "@janhq/core": "workspace:*",
     "typescript": "^5.3.3",
     "vite": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zustand": "^5.0.8"
   },
   "peerDependencies": {
-    "@janhq/core": "*"
+    "@janhq/core": "*",
+    "zustand": "^5.0.0"
   }
 }

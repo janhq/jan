@@ -18,6 +18,8 @@ vi.mock('@/lib/platform/const', () => ({
     modelHub: true,
     systemIntegrations: true,
     httpsProxy: true,
+    defaultProviders: true,
+    analytics: true,
   }
 }))
 
@@ -33,6 +35,7 @@ const mockServiceHub = {
     maximize: vi.fn(),
     close: vi.fn(),
     isMaximized: vi.fn().mockResolvedValue(false),
+    openLogsWindow: vi.fn().mockResolvedValue(undefined),
   }),
   events: () => ({
     emit: vi.fn().mockResolvedValue(undefined),
@@ -52,6 +55,8 @@ const mockServiceHub = {
     getAppSettings: vi.fn().mockResolvedValue({}),
     updateAppSettings: vi.fn().mockResolvedValue(undefined),
     getSystemInfo: vi.fn().mockResolvedValue({}),
+    relocateJanDataFolder: vi.fn().mockResolvedValue(undefined),
+    getJanDataFolder: vi.fn().mockResolvedValue('/mock/jan/data'),
   }),
   analytic: () => ({
     track: vi.fn(),
@@ -104,6 +109,9 @@ const mockServiceHub = {
     deleteModel: vi.fn().mockResolvedValue(undefined),
     updateModel: vi.fn().mockResolvedValue(undefined),
     startModel: vi.fn().mockResolvedValue(undefined),
+    isModelSupported: vi.fn().mockResolvedValue('GREEN'),
+    checkMmprojExists: vi.fn().mockResolvedValue(true),
+    stopAllModels: vi.fn().mockResolvedValue(undefined),
   }),
   assistants: () => ({
     getAssistants: vi.fn().mockResolvedValue([]),
@@ -119,6 +127,7 @@ const mockServiceHub = {
   }),
   opener: () => ({
     open: vi.fn().mockResolvedValue(undefined),
+    revealItemInDir: vi.fn().mockResolvedValue(undefined),
   }),
   updater: () => ({
     checkForUpdates: vi.fn().mockResolvedValue(null),
@@ -167,6 +176,32 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: vi.fn(),
   })),
 })
+
+// Mock globalThis.core.api for @janhq/core functions
+;(globalThis as any).core = {
+  api: {
+    getJanDataFolderPath: vi.fn().mockResolvedValue('/mock/jan/data'),
+    openFileExplorer: vi.fn().mockResolvedValue(undefined),
+    joinPath: vi.fn((paths: string[]) => paths.join('/')),
+  }
+}
+
+// Mock globalThis.fs for @janhq/core fs functions
+;(globalThis as any).fs = {
+  existsSync: vi.fn().mockResolvedValue(false),
+  readFile: vi.fn().mockResolvedValue(''),
+  writeFile: vi.fn().mockResolvedValue(undefined),
+  readdir: vi.fn().mockResolvedValue([]),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  unlink: vi.fn().mockResolvedValue(undefined),
+  rmdir: vi.fn().mockResolvedValue(undefined),
+}
+
+// Mock window.electronAPI for electron API access
+;(window as any).electronAPI = {
+  showOpenDialog: vi.fn().mockResolvedValue({ canceled: true, filePaths: [] }),
+  invokeLocalLLM: vi.fn().mockResolvedValue(null),
+}
 
 // runs a cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {

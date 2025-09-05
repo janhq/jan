@@ -34,4 +34,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // HTTPS proxy
   [PlatformFeature.HTTPS_PROXY]: isPlatformTauri(),
+  
+  // Default model providers (OpenAI, Anthropic, etc.) - disabled for web-only Jan builds
+  [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
+
+  // Analytics and telemetry - disabled for web
+  [PlatformFeature.ANALYTICS]: isPlatformTauri(),
 }
