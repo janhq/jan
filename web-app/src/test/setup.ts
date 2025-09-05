@@ -20,6 +20,8 @@ vi.mock('@/lib/platform/const', () => ({
     httpsProxy: true,
     defaultProviders: true,
     analytics: true,
+    webAutoModelSelection: true,
+    modelProviderSettings: true,
   }
 }))
 
@@ -30,7 +32,7 @@ const mockServiceHub = {
     setTheme: vi.fn(),
     toggleTheme: vi.fn(),
   }),
-  window: () => ({
+  window: vi.fn().mockReturnValue({
     minimize: vi.fn(),
     maximize: vi.fn(),
     close: vi.fn(),
@@ -44,7 +46,7 @@ const mockServiceHub = {
   hardware: () => ({
     getHardwareInfo: vi.fn().mockResolvedValue(null),
     getSystemUsage: vi.fn().mockResolvedValue(null),
-    getLlamacppDevices: vi.fn().mockResolvedValue([]),
+    getLlamacppDevices: vi.fn().mockResolvedValue([]), // cspell: disable-line
     setActiveGpus: vi.fn().mockResolvedValue(undefined),
     // Legacy methods for backward compatibility
     getGpuInfo: vi.fn().mockResolvedValue([]),
@@ -110,7 +112,7 @@ const mockServiceHub = {
     updateModel: vi.fn().mockResolvedValue(undefined),
     startModel: vi.fn().mockResolvedValue(undefined),
     isModelSupported: vi.fn().mockResolvedValue('GREEN'),
-    checkMmprojExists: vi.fn().mockResolvedValue(true),
+    checkMmprojExists: vi.fn().mockResolvedValue(true), // cspell: disable-line
     stopAllModels: vi.fn().mockResolvedValue(undefined),
   }),
   assistants: () => ({
@@ -125,7 +127,7 @@ const mockServiceHub = {
     save: vi.fn().mockResolvedValue('/path/to/file'),
     message: vi.fn().mockResolvedValue(undefined),
   }),
-  opener: () => ({
+  opener: vi.fn().mockReturnValue({
     open: vi.fn().mockResolvedValue(undefined),
     revealItemInDir: vi.fn().mockResolvedValue(undefined),
   }),
@@ -134,7 +136,7 @@ const mockServiceHub = {
     installUpdate: vi.fn().mockResolvedValue(undefined),
     downloadAndInstallWithProgress: vi.fn().mockResolvedValue(undefined),
   }),
-  path: () => ({
+  path: vi.fn().mockReturnValue({
     sep: () => '/',
     join: vi.fn((...args) => args.join('/')),
     resolve: vi.fn((path) => path),
@@ -146,7 +148,7 @@ const mockServiceHub = {
     stopCore: vi.fn().mockResolvedValue(undefined),
     getCoreStatus: vi.fn().mockResolvedValue('stopped'),
   }),
-  deeplink: () => ({
+  deeplink: () => ({ // cspell: disable-line
     register: vi.fn().mockResolvedValue(undefined),
     handle: vi.fn().mockResolvedValue(undefined),
     getCurrent: vi.fn().mockResolvedValue(null),
@@ -177,16 +179,16 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
-// Mock globalThis.core.api for @janhq/core functions
+// Mock globalThis.core.api for @janhq/core functions // cspell: disable-line
 ;(globalThis as Record<string, unknown>).core = {
   api: {
     getJanDataFolderPath: vi.fn().mockResolvedValue('/mock/jan/data'),
     openFileExplorer: vi.fn().mockResolvedValue(undefined),
-    joinPath: vi.fn((paths: string[]) => paths.join('/')),
+    joinPath: vi.fn((...paths: string[]) => paths.join('/')),
   }
 }
 
-// Mock globalThis.fs for @janhq/core fs functions
+// Mock globalThis.fs for @janhq/core fs functions // cspell: disable-line
 ;(globalThis as Record<string, unknown>).fs = {
   existsSync: vi.fn().mockResolvedValue(false),
   readFile: vi.fn().mockResolvedValue(''),
