@@ -59,7 +59,8 @@ export default defineConfig({
               }
 
               // Add navigation to regular docs pages
-              setTimeout(() => {
+              // Add navigation to docs pages with retry logic
+              function addNavigation(retries = 0) {
                 const currentPath = window.location.pathname;
 
                 // Skip if page has its own navigation
@@ -76,34 +77,49 @@ export default defineConfig({
                   const searchContainer = header.querySelector('[class*="search"]')?.parentElement;
                   const targetContainer = searchContainer || header.querySelector('.sl-flex') || header;
 
-                  // Create navigation container
-                  const nav = document.createElement('nav');
-                  nav.className = 'custom-nav-links';
-                  nav.setAttribute('aria-label', 'Product Navigation');
+                  if (targetContainer) {
+                    // Create navigation container
+                    const nav = document.createElement('nav');
+                    nav.className = 'custom-nav-links';
+                    nav.setAttribute('aria-label', 'Product Navigation');
 
-                  // Create links from configuration
-                  JAN_NAV_CONFIG.links.forEach(link => {
-                    const a = document.createElement('a');
-                    a.href = link.href;
-                    a.textContent = link.text;
-                    a.className = 'nav-link';
+                    // Create links from configuration
+                    JAN_NAV_CONFIG.links.forEach(link => {
+                      const a = document.createElement('a');
+                      a.href = link.href;
+                      a.textContent = link.text;
+                      a.className = 'nav-link';
 
-                    // Set active state
-                    if (link.isActive(currentPath)) {
-                      a.setAttribute('aria-current', 'page');
+                      // Set active state
+                      if (link.isActive(currentPath)) {
+                        a.setAttribute('aria-current', 'page');
+                      }
+
+                      nav.appendChild(a);
+                    });
+
+                    // Insert navigation in the optimal position
+                    if (searchContainer) {
+                      targetContainer.insertBefore(nav, searchContainer);
+                    } else {
+                      targetContainer.appendChild(nav);
                     }
-
-                    nav.appendChild(a);
-                  });
-
-                  // Insert navigation in the optimal position
-                  if (searchContainer) {
-                    targetContainer.insertBefore(nav, searchContainer);
-                  } else {
-                    targetContainer.appendChild(nav);
+                  } else if (retries < 3) {
+                    // Retry if container not found yet
+                    setTimeout(() => addNavigation(retries + 1), 200);
                   }
+                } else if (retries < 3) {
+                  // Retry if header/title not found yet
+                  setTimeout(() => addNavigation(retries + 1), 200);
                 }
-              }, 100);
+              }
+
+              // Start navigation injection
+              if (document.readyState === 'loading') {
+                setTimeout(() => addNavigation(), 100);
+              } else {
+                addNavigation();
+              }
             });
           `,
         },
