@@ -7,11 +7,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   IconPencil,
@@ -19,7 +15,7 @@ import {
   IconTool,
   // IconWorld,
   // IconAtom,
-  IconCodeCircle2,
+  // IconCodeCircle2,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -177,24 +173,16 @@ export const DialogEditModel = ({
                   {t('providers:editModel.vision')}
                 </span>
               </div>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Switch
-                    id="vision-capability"
-                    checked={capabilities.vision}
-                    disabled={true}
-                    onCheckedChange={(checked) =>
-                      handleCapabilityChange('vision', checked)
-                    }
-                  />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('providers:editModel.notAvailable')}
-                </TooltipContent>
-              </Tooltip>
+              <Switch
+                id="vision-capability"
+                checked={capabilities.vision}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('vision', checked)
+                }
+              />
             </div>
 
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">
@@ -216,7 +204,7 @@ export const DialogEditModel = ({
                   {t('providers:editModel.notAvailable')}
                 </TooltipContent>
               </Tooltip>
-            </div>
+            </div> */}
 
             {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">

@@ -1,15 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  getProviders,
-  fetchModelsFromProvider,
-  updateSettings,
-} from '../providers'
+import { WebProvidersService } from '../providers/web'
 import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/consts/providers'
 import { EngineManager } from '@janhq/core'
-import { fetchModels } from '../models'
 import { ExtensionManager } from '@/lib/extension'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
 // Mock dependencies
 vi.mock('token.js', () => ({
@@ -45,6 +39,12 @@ vi.mock('@janhq/core', () => ({
           'llamacpp',
           {
             inferenceUrl: 'http://localhost:1337/chat/completions',
+            list: vi.fn(() => 
+              Promise.resolve([
+                { id: 'llama-2-7b', name: 'Llama 2 7B', description: 'Llama model' }
+              ])
+            ),
+            isToolSupported: vi.fn(() => Promise.resolve(false)),
             getSettings: vi.fn(() =>
               Promise.resolve([
                 {
@@ -63,15 +63,6 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
-vi.mock('../models', () => ({
-  fetchModels: vi.fn(() =>
-    Promise.resolve([
-      { id: 'llama-2-7b', name: 'Llama 2 7B', description: 'Llama model' },
-    ])
-  ),
-  isToolSupported: vi.fn(() => Promise.resolve(false)),
-}))
-
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: vi.fn(() => ({
@@ -80,9 +71,8 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@tauri-apps/plugin-http', () => ({
-  fetch: vi.fn(),
-}))
+// Mock global fetch
+global.fetch = vi.fn()
 
 vi.mock('@/types/models', () => ({
   ModelCapabilities: {
@@ -108,14 +98,17 @@ vi.mock('@/lib/predefined', () => ({
   },
 }))
 
-describe('providers service', () => {
+describe('WebProvidersService', () => {
+  let providersService: WebProvidersService
+
   beforeEach(() => {
+    providersService = new WebProvidersService()
     vi.clearAllMocks()
   })
 
   describe('getProviders', () => {
     it('should return builtin and runtime providers', async () => {
-      const providers = await getProviders()
+      const providers = await providersService.getProviders()
 
       expect(providers).toHaveLength(2) // 1 runtime + 1 builtin (mocked)
       expect(providers.some((p) => p.provider === 'llamacpp')).toBe(true)
@@ -123,7 +116,7 @@ describe('providers service', () => {
     })
 
     it('should map builtin provider models correctly', async () => {
-      const providers = await getProviders()
+      const providers = await providersService.getProviders()
       const openaiProvider = providers.find((p) => p.provider === 'openai')
 
       expect(openaiProvider).toBeDefined()
@@ -133,7 +126,7 @@ describe('providers service', () => {
     })
 
     it('should create runtime providers from engine manager', async () => {
-      const providers = await getProviders()
+      const providers = await providersService.getProviders()
       const llamacppProvider = providers.find((p) => p.provider === 'llamacpp')
 
       expect(llamacppProvider).toBeDefined()
@@ -151,7 +144,7 @@ describe('providers service', () => {
           data: [{ id: 'gpt-3.5-turbo' }, { id: 'gpt-4' }],
         }),
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'openai',
@@ -159,9 +152,9 @@ describe('providers service', () => {
         api_key: 'test-key',
       }
 
-      const models = await fetchModelsFromProvider(provider)
+      const models = await providersService.fetchModelsFromProvider(provider)
 
-      expect(fetchTauri).toHaveBeenCalledWith(
+      expect(global.fetch).toHaveBeenCalledWith(
         'https://api.openai.com/v1/models',
         {
           method: 'GET',
@@ -180,7 +173,7 @@ describe('providers service', () => {
         ok: true,
         json: vi.fn().mockResolvedValue(['model1', 'model2']),
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'custom',
@@ -188,7 +181,7 @@ describe('providers service', () => {
         api_key: '',
       }
 
-      const models = await fetchModelsFromProvider(provider)
+      const models = await providersService.fetchModelsFromProvider(provider)
 
       expect(models).toEqual(['model1', 'model2'])
     })
@@ -200,14 +193,14 @@ describe('providers service', () => {
           models: [{ id: 'model1' }, 'model2'],
         }),
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
       }
 
-      const models = await fetchModelsFromProvider(provider)
+      const models = await providersService.fetchModelsFromProvider(provider)
 
       expect(models).toEqual(['model1', 'model2'])
     })
@@ -217,7 +210,7 @@ describe('providers service', () => {
         provider: 'custom',
       }
 
-      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+      await expect(providersService.fetchModelsFromProvider(provider)).rejects.toThrow(
         'Provider must have base_url configured'
       )
     })
@@ -228,14 +221,14 @@ describe('providers service', () => {
         status: 404,
         statusText: 'Not Found',
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
       }
 
-      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+      await expect(providersService.fetchModelsFromProvider(provider)).rejects.toThrow(
         'Models endpoint not found for custom. Check the base URL configuration.'
       )
     })
@@ -246,14 +239,14 @@ describe('providers service', () => {
         status: 403,
         statusText: 'Forbidden',
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
       } as ModelProvider
 
-      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+      await expect(providersService.fetchModelsFromProvider(provider)).rejects.toThrow(
         'Access forbidden: Check your API key permissions for custom'
       )
     })
@@ -264,27 +257,27 @@ describe('providers service', () => {
         status: 401,
         statusText: 'Unauthorized',
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
       } as ModelProvider
 
-      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+      await expect(providersService.fetchModelsFromProvider(provider)).rejects.toThrow(
         'Authentication failed: API key is required or invalid for custom'
       )
     })
 
     it('should handle network errors gracefully', async () => {
-      vi.mocked(fetchTauri).mockRejectedValue(new Error('fetch failed'))
+      vi.mocked(global.fetch).mockRejectedValue(new Error('fetch failed'))
 
       const provider = {
         provider: 'custom',
         base_url: 'https://api.custom.com',
       }
 
-      await expect(fetchModelsFromProvider(provider)).rejects.toThrow(
+      await expect(providersService.fetchModelsFromProvider(provider)).rejects.toThrow(
         'Cannot connect to custom at https://api.custom.com. Please check that the service is running and accessible.'
       )
     })
@@ -294,7 +287,7 @@ describe('providers service', () => {
         ok: true,
         json: vi.fn().mockResolvedValue({ unexpected: 'format' }),
       }
-      vi.mocked(fetchTauri).mockResolvedValue(mockResponse as any)
+      vi.mocked(global.fetch).mockResolvedValue(mockResponse as any)
 
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -303,7 +296,7 @@ describe('providers service', () => {
         base_url: 'https://api.custom.com',
       }
 
-      const models = await fetchModelsFromProvider(provider)
+      const models = await providersService.fetchModelsFromProvider(provider)
 
       expect(models).toEqual([])
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -337,7 +330,7 @@ describe('providers service', () => {
         },
       ]
 
-      await updateSettings('openai', settings)
+      await providersService.updateSettings('openai', settings)
 
       expect(mockExtensionManager.getEngine).toHaveBeenCalledWith('openai')
       expect(mockEngine.updateSettings).toHaveBeenCalledWith([
@@ -363,7 +356,7 @@ describe('providers service', () => {
 
       const settings = []
 
-      const result = await updateSettings('nonexistent', settings)
+      const result = await providersService.updateSettings('nonexistent', settings)
 
       expect(result).toBeUndefined()
     })
@@ -389,7 +382,7 @@ describe('providers service', () => {
         },
       ]
 
-      await updateSettings('openai', settings)
+      await providersService.updateSettings('openai', settings)
 
       expect(mockEngine.updateSettings).toHaveBeenCalledWith([
         {

@@ -6,8 +6,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { isModelSupported } from '@/services/models'
-import { getJanDataFolderPath, joinPath } from '@janhq/core'
+import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 interface ModelSupportStatusProps {
   modelId: string | undefined
@@ -23,20 +23,21 @@ export const ModelSupportStatus = ({
   className,
 }: ModelSupportStatusProps) => {
   const [modelSupportStatus, setModelSupportStatus] = useState<
-    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null
+    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
   >(null)
+  const serviceHub = useServiceHub()
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
     async (
       id: string,
       ctxSize: number
-    ): Promise<'RED' | 'YELLOW' | 'GREEN'> => {
+    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
       try {
-        // Get Jan's data folder path and construct the full model file path
-        // Following the llamacpp extension structure: <Jan's data folder>/llamacpp/models/<modelId>/model.gguf
         const janDataFolder = await getJanDataFolderPath()
-        const modelFilePath = await joinPath([
+
+        // First try the standard downloaded model path
+        const ggufModelPath = await joinPath([
           janDataFolder,
           'llamacpp',
           'models',
@@ -44,17 +45,50 @@ export const ModelSupportStatus = ({
           'model.gguf',
         ])
 
-        return await isModelSupported(modelFilePath, ctxSize)
+        // Check if the standard model.gguf file exists
+        if (await fs.existsSync(ggufModelPath)) {
+          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
+        }
+
+        // If model.gguf doesn't exist, try reading from model.yml (for imported models)
+        const modelConfigPath = await joinPath([
+          janDataFolder,
+          'llamacpp',
+          'models',
+          id,
+          'model.yml',
+        ])
+
+        if (!(await fs.existsSync(modelConfigPath))) {
+          console.error(
+            `Neither model.gguf nor model.yml found for model: ${id}`
+          )
+          return null
+        }
+
+        // Read the model configuration to get the actual model path
+        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
+          `llamacpp/models/${id}/model.yml`
+        )
+
+        // Handle both absolute and relative paths
+        const actualModelPath =
+          modelConfig.model_path.startsWith('/') ||
+          modelConfig.model_path.match(/^[A-Za-z]:/)
+            ? modelConfig.model_path // absolute path, use as-is
+            : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
+
+        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
       } catch (error) {
         console.error(
-          'Error checking model support with constructed path:',
+          'Error checking model support with path resolution:',
           error
         )
         // If path construction or model support check fails, assume not supported
-        return 'RED'
+        return null
       }
     },
-    []
+    [serviceHub]
   )
 
   // Helper function to get icon color based on model support status

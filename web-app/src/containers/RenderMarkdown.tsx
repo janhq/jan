@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -7,8 +6,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState, useMemo } from 'react'
-import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
+import { memo, useState, useMemo, useRef, useEffect } from 'react'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -39,6 +37,13 @@ function RenderMarkdownComponent({
 
   // State for tracking which code block has been copied
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Map to store unique IDs for code blocks based on content and position
+  const codeBlockIds = useRef(new Map<string, string>())
+
+  // Clear ID map when content changes
+  useEffect(() => {
+    codeBlockIds.current.clear()
+  }, [content])
 
   // Function to handle copying code to clipboard
   const handleCopy = (code: string, id: string) => {
@@ -51,17 +56,6 @@ function RenderMarkdownComponent({
     }, 2000)
   }
 
-  // Simple hash function for strings
-  const hashString = (str: string): string => {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = (hash << 5) - hash + char
-      hash = hash & hash // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(36)
-  }
-
   // Default components for syntax highlighting and emoji rendering
   const defaultComponents: Components = useMemo(
     () => ({
@@ -72,10 +66,13 @@ function RenderMarkdownComponent({
 
         const code = String(children).replace(/\n$/, '')
 
-        // Generate a stable ID based on code content and language
-        const codeId = `code-${hashString(code.substring(0, 40) + language)}`
-
-        const shouldVirtualize = code.split('\n').length > 300
+        // Generate a unique ID based on content and language
+        const contentKey = `${code}-${language}`
+        let codeId = codeBlockIds.current.get(contentKey)
+        if (!codeId) {
+          codeId = `code-${codeBlockIds.current.size}`
+          codeBlockIds.current.set(contentKey, codeId)
+        }
 
         return !isInline && !isUser ? (
           <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
@@ -147,11 +144,6 @@ function RenderMarkdownComponent({
                 overflow: 'auto',
                 border: 'none',
               }}
-              renderer={
-                shouldVirtualize
-                  ? (virtualizedRenderer() as (props: any) => React.ReactNode)
-                  : undefined
-              }
               PreTag="div"
               CodeTag={'code'}
               {...props}
@@ -164,7 +156,7 @@ function RenderMarkdownComponent({
         )
       },
     }),
-    [codeBlockStyle, showLineNumbers, copiedId, handleCopy, hashString]
+    [codeBlockStyle, showLineNumbers, copiedId]
   )
 
   // Memoize the remarkPlugins to prevent unnecessary re-renders

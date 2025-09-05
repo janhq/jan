@@ -28,12 +28,28 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
-	yarn build:extensions
+	yarn build:extensions && yarn build:extensions-web
 
 dev: install-and-build
 	yarn download:bin
 	yarn download:lib
 	yarn dev
+
+# Web application targets
+install-web-app: config-yarn
+	yarn install
+
+dev-web-app: install-web-app
+	yarn dev:web-app
+
+build-web-app: install-web-app
+	yarn build:web-app
+
+serve-web-app: 
+	yarn serve:web-app
+
+build-serve-web-app: build-web-app
+	yarn serve:web-app
 
 # Linting
 lint: install-and-build

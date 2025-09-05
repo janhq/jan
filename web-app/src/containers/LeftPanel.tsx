@@ -43,27 +43,33 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 const mainMenus = [
   {
     title: 'common:newChat',
     icon: IconCirclePlusFilled,
     route: route.home,
+    isEnabled: true,
   },
   {
     title: 'common:assistants',
     icon: IconClipboardSmileFilled,
     route: route.assistant,
+    isEnabled: true,
   },
   {
     title: 'common:hub',
     icon: IconAppsFilled,
     route: route.hub.index,
+    isEnabled: PlatformFeatures[PlatformFeature.MODEL_HUB],
   },
   {
     title: 'common:settings',
     icon: IconSettingsFilled,
     route: route.settings.general,
+    isEnabled: true,
   },
 ]
 
@@ -473,6 +479,9 @@ const LeftPanel = () => {
 
           <div className="space-y-1 shrink-0 py-1 mt-2">
             {mainMenus.map((menu) => {
+              if (!menu.isEnabled) {
+                  return null
+              }
               const isActive =
                 currentPath.includes(route.settings.index) &&
                 menu.route.includes(route.settings.index)

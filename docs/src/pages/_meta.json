@@ -9,7 +9,13 @@
   },
   "docs": {
     "type": "page",
-    "title": "Documentation"
+    "title": "Docs",
+    "display": "hidden"
+  },
+  "Documentation": {
+    "type": "page",
+    "title": "Documentation",
+    "href": "https://docs.jan.ai"
   },
   "platforms": {
     "type": "page",

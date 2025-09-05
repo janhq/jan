@@ -1064,7 +1064,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
-          events.emit('onFileDownloadUpdate', {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
             percent: transferred / total,
             size: { transferred, total },
@@ -1082,9 +1082,9 @@ export default class llamacpp_extension extends AIEngine {
 
         // If we reach here, download completed successfully (including validation)
         // The downloadFiles function only returns successfully if all files downloaded AND validated
-        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, { 
-          modelId, 
-          downloadType: 'Model' 
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId,
+          downloadType: 'Model',
         })
       } catch (error) {
         logger.error('Error downloading model:', modelId, opts, error)
@@ -1092,7 +1092,8 @@ export default class llamacpp_extension extends AIEngine {
           error instanceof Error ? error.message : String(error)
 
         // Check if this is a cancellation
-        const isCancellationError = errorMessage.includes('Download cancelled') ||
+        const isCancellationError =
+          errorMessage.includes('Download cancelled') ||
           errorMessage.includes('Validation cancelled') ||
           errorMessage.includes('Hash computation cancelled') ||
           errorMessage.includes('cancelled') ||
@@ -1372,7 +1373,7 @@ export default class llamacpp_extension extends AIEngine {
     envs['LLAMA_API_KEY'] = api_key
 
     // set user envs
-    this.parseEnvFromString(envs, this.llamacpp_env)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
@@ -1751,7 +1752,7 @@ export default class llamacpp_extension extends AIEngine {
     }
     // set envs
     const envs: Record<string, string> = {}
-    this.parseEnvFromString(envs, this.llamacpp_env)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
@@ -1767,7 +1768,7 @@ export default class llamacpp_extension extends AIEngine {
       return dList
     } catch (error) {
       logger.error('Failed to query devices:\n', error)
-      throw new Error("Failed to load llamacpp backend")
+      throw new Error('Failed to load llamacpp backend')
     }
   }
 
@@ -1876,7 +1877,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
       )
-      headDim = (keyLen + valLen)
+      headDim = keyLen + valLen
     } else {
       // Fall back to embedding_length estimation
       const embeddingLen = Number(meta[`${arch}.embedding_length`])
@@ -1953,22 +1954,27 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
       )
-      let availableMemBytes: number
+      let totalMemBytes: number
       const devices = await this.getDevices()
       if (devices.length > 0) {
-        // Sum free memory across all GPUs
-        availableMemBytes = devices
-          .map((d) => d.free * 1024 * 1024)
+        // Sum total memory across all GPUs
+        totalMemBytes = devices
+          .map((d) => d.mem * 1024 * 1024)
           .reduce((a, b) => a + b, 0)
       } else {
         // CPU fallback
         const sys = await getSystemUsage()
-        availableMemBytes = (sys.total_memory - sys.used_memory) * 1024 * 1024
+        totalMemBytes = sys.total_memory * 1024 * 1024
       }
-      // check model size wrt system memory
-      if (modelSize > availableMemBytes) {
+
+      // Use 80% of total memory as the usable limit
+      const USABLE_MEMORY_PERCENTAGE = 0.8
+      const usableMemBytes = totalMemBytes * USABLE_MEMORY_PERCENTAGE
+
+      // check model size wrt 80% of system memory
+      if (modelSize > usableMemBytes) {
         return 'RED'
-      } else if (modelSize + kvCacheSize > availableMemBytes) {
+      } else if (modelSize + kvCacheSize > usableMemBytes) {
         return 'YELLOW'
       } else {
         return 'GREEN'

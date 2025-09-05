@@ -4,6 +4,8 @@ import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import {
   useState,
   useMemo,
@@ -40,13 +42,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  CatalogModel,
-  pullModelWithMetadata,
-  fetchHuggingFaceRepo,
-  convertHfRepoToCatalogModel,
-  isModelSupported,
-} from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { CatalogModel } from '@/services/models/types'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -71,8 +68,17 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubContent />
+    </PlatformGuard>
+  )
+}
+
+function HubContent() {
   const parentRef = useRef(null)
   const { huggingfaceToken } = useGeneralSetting()
+  const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -194,46 +200,50 @@ function Hub() {
     fetchSources()
   }, [fetchSources])
 
+  const fetchHuggingFaceModel = async (searchValue: string) => {
+    if (
+      !searchValue.length ||
+      (!searchValue.includes('/') && !searchValue.startsWith('http'))
+    ) {
+      return
+    }
+
+    setIsSearching(true)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+
+    addModelSourceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const repoInfo = await serviceHub.models().fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+        if (repoInfo) {
+          const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
+          if (
+            !sources.some(
+              (s) =>
+                catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim() &&
+                catalogModel.developer.trim() === s.developer?.trim()
+            )
+          ) {
+            setHuggingFaceRepo(catalogModel)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching repository info:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 500)
+  }
+
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
 
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    if (
-      e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http'))
-    ) {
-      setIsSearching(true)
-
-      addModelSourceTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(
-            e.target.value,
-            huggingfaceToken
-          )
-          if (repoInfo) {
-            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            if (
-              !sources.some(
-                (s) =>
-                  catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim()
-              )
-            ) {
-              setHuggingFaceRepo(catalogModel)
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching repository info:', error)
-        } finally {
-          setIsSearching(false)
-        }
-      }, 500)
+    if (!showOnlyDownloaded) {
+      fetchHuggingFaceModel(e.target.value)
     }
   }
 
@@ -293,7 +303,7 @@ function Hub() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supportStatus = await isModelSupported(modelPath, 8192)
+        const supportStatus = await serviceHub.models().isModelSupported(modelPath, 8192)
 
         setModelSupportStatus((prev) => ({
           ...prev,
@@ -307,7 +317,7 @@ function Hub() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
   const DownloadButtonPlaceholder = useMemo(() => {
@@ -353,7 +363,7 @@ function Hub() {
         // Immediately set local downloading state
         addLocalDownloadingModel(modelId)
         const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(
+        serviceHub.models().pullModelWithMetadata(
           modelId, 
           modelUrl,
           mmprojPath,
@@ -399,14 +409,15 @@ function Hub() {
       )
     }
   }, [
+    localDownloadingModels,
     downloadProcesses,
     llamaProvider?.models,
     isRecommendedModel,
-    downloadButtonRef,
-    localDownloadingModels,
-    addLocalDownloadingModel,
     t,
+    addLocalDownloadingModel,
+    huggingfaceToken,
     handleUseModel,
+    serviceHub,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -482,9 +493,9 @@ function Hub() {
   const isLastStep = currentStepIndex === steps.length - 1
 
   const renderFilter = () => {
-    if (searchValue.length === 0)
-      return (
-        <>
+    return (
+      <>
+        {searchValue.length === 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger>
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
@@ -509,17 +520,26 @@ function Hub() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={showOnlyDownloaded}
-              onCheckedChange={setShowOnlyDownloaded}
-            />
-            <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-              {t('hub:downloaded')}
-            </span>
-          </div>
-        </>
-      )
+        )}
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showOnlyDownloaded}
+            onCheckedChange={(checked) => {
+              setShowOnlyDownloaded(checked)
+              if (checked) {
+                setHuggingFaceRepo(null)
+              } else {
+                // Re-trigger HuggingFace search when switching back to "All models"
+                fetchHuggingFaceModel(searchValue)
+              }
+            }}
+          />
+          <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+            {t('hub:downloaded')}
+          </span>
+        </div>
+      </>
+    )
   }
 
   return (
@@ -661,6 +681,18 @@ function Hub() {
                                   defaultModelQuantizations={
                                     defaultModelQuantizations
                                   }
+                                  variant={
+                                    filteredModels[
+                                      virtualItem.index
+                                    ].quants.find((m) =>
+                                      defaultModelQuantizations.some((e) =>
+                                        m.model_id.toLowerCase().includes(e)
+                                      )
+                                    ) ??
+                                    filteredModels[virtualItem.index]
+                                      .quants?.[0]
+                                  }
+                                  isDefaultVariant={true}
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
                                 />
@@ -930,7 +962,7 @@ function Hub() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModelWithMetadata(
+                                                  serviceHub.models().pullModelWithMetadata(
                                                     variant.model_id,
                                                     variant.path,
                                                     filteredModels[

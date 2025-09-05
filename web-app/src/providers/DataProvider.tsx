@@ -2,25 +2,16 @@ import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { fetchMessages } from '@/services/messages'
-import { getProviders } from '@/services/providers'
-import { fetchThreads } from '@/services/threads'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
 import { useMCPServers } from '@/hooks/useMCPServers'
-import { getMCPConfig } from '@/services/mcp'
 import { useAssistant } from '@/hooks/useAssistant'
-import { getAssistants } from '@/services/assistants'
-import {
-  onOpenUrl,
-  getCurrent as getCurrentDeepLinkUrls,
-} from '@tauri-apps/plugin-deep-link'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
-import { startModel } from '@/services/models'
 import { localStorageKey } from '@/constants/localStorage'
 
 export function DataProvider() {
@@ -33,6 +24,7 @@ export function DataProvider() {
   const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
+  const serviceHub = useServiceHub()
 
   // Local API Server hooks
   const {
@@ -49,9 +41,9 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    getProviders().then(setProviders)
-    getMCPConfig().then((data) => setServers(data.mcpServers ?? []))
-    getAssistants()
+    serviceHub.providers().getProviders().then(setProviders)
+    serviceHub.mcp().getMCPConfig().then((data) => setServers(data.mcpServers ?? {}))
+    serviceHub.assistants().getAssistants()
       .then((data) => {
         // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
@@ -62,22 +54,21 @@ export function DataProvider() {
       .catch((error) => {
         console.warn('Failed to load assistants, keeping default:', error)
       })
-    getCurrentDeepLinkUrls().then(handleDeepLink)
-    onOpenUrl(handleDeepLink)
+    serviceHub.deeplink().getCurrent().then(handleDeepLink)
+    serviceHub.deeplink().onOpenUrl(handleDeepLink)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub])
 
   useEffect(() => {
-    fetchThreads().then((threads) => {
+    serviceHub.threads().fetchThreads().then((threads) => {
       setThreads(threads)
       threads.forEach((thread) =>
-        fetchMessages(thread.id).then((messages) =>
+        serviceHub.messages().fetchMessages(thread.id).then((messages) =>
           setMessages(thread.id, messages)
         )
       )
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub, setThreads, setMessages])
 
   // Check for app updates
   useEffect(() => {
@@ -91,10 +82,9 @@ export function DataProvider() {
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
-      getProviders().then(setProviders)
+      serviceHub.providers().getProviders().then(setProviders)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub, setProviders])
 
   const getLastUsedModel = (): { provider: string; model: string } | null => {
     try {
@@ -166,7 +156,7 @@ export function DataProvider() {
       setServerStatus('pending')
 
       // Start the model first
-      startModel(modelToStart.provider, modelToStart.model)
+      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 
@@ -190,7 +180,7 @@ export function DataProvider() {
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceHub])
 
   const handleDeepLink = (urls: string[] | null) => {
     if (!urls) return

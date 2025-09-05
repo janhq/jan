@@ -8,6 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getProviderLogo(provider: string) {
   switch (provider) {
+    case 'jan':
+      return '/images/model-provider/jan.png'
     case 'llamacpp':
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
@@ -33,6 +35,8 @@ export function getProviderLogo(provider: string) {
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
+    case 'jan':
+      return 'Jan'
     case 'llamacpp':
       return 'Llama.cpp'
     case 'openai':

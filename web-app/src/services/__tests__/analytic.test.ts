@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { updateDistinctId, getAppDistinctId } from '../analytic'
+import { DefaultAnalyticService } from '../analytic/default'
 
 // Mock window.core API
 const mockGetAppConfigurations = vi.fn()
@@ -18,9 +18,12 @@ Object.defineProperty(window, 'core', {
   value: mockCore,
 })
 
-describe('analytic service', () => {
+describe('DefaultAnalyticService', () => {
+  let analyticService: DefaultAnalyticService
+
   beforeEach(() => {
     vi.clearAllMocks()
+    analyticService = new DefaultAnalyticService()
   })
 
   describe('updateDistinctId', () => {
@@ -33,7 +36,7 @@ describe('analytic service', () => {
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       mockUpdateAppConfiguration.mockResolvedValue(undefined)
       
-      await updateDistinctId('new-distinct-id')
+      await analyticService.updateDistinctId('new-distinct-id')
       
       expect(mockGetAppConfigurations).toHaveBeenCalledTimes(1)
       expect(mockUpdateAppConfiguration).toHaveBeenCalledWith({
@@ -52,7 +55,7 @@ describe('analytic service', () => {
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       mockUpdateAppConfiguration.mockResolvedValue(undefined)
       
-      await updateDistinctId('first-distinct-id')
+      await analyticService.updateDistinctId('first-distinct-id')
       
       expect(mockUpdateAppConfiguration).toHaveBeenCalledWith({
         configuration: {
@@ -70,7 +73,7 @@ describe('analytic service', () => {
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       mockUpdateAppConfiguration.mockResolvedValue(undefined)
       
-      await updateDistinctId('')
+      await analyticService.updateDistinctId('')
       
       expect(mockUpdateAppConfiguration).toHaveBeenCalledWith({
         configuration: {
@@ -86,7 +89,7 @@ describe('analytic service', () => {
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       mockUpdateAppConfiguration.mockResolvedValue(undefined)
       
-      await updateDistinctId(uuidId)
+      await analyticService.updateDistinctId(uuidId)
       
       expect(mockUpdateAppConfiguration).toHaveBeenCalledWith({
         configuration: {
@@ -98,7 +101,7 @@ describe('analytic service', () => {
     it('should handle API errors gracefully', async () => {
       mockGetAppConfigurations.mockRejectedValue(new Error('API Error'))
       
-      await expect(updateDistinctId('test-id')).rejects.toThrow('API Error')
+      await expect(analyticService.updateDistinctId('test-id')).rejects.toThrow('API Error')
       expect(mockUpdateAppConfiguration).not.toHaveBeenCalled()
     })
 
@@ -108,7 +111,7 @@ describe('analytic service', () => {
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       mockUpdateAppConfiguration.mockRejectedValue(new Error('Update Error'))
       
-      await expect(updateDistinctId('new-id')).rejects.toThrow('Update Error')
+      await expect(analyticService.updateDistinctId('new-id')).rejects.toThrow('Update Error')
     })
   })
 
@@ -121,7 +124,7 @@ describe('analytic service', () => {
       
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       
-      const result = await getAppDistinctId()
+      const result = await analyticService.getAppDistinctId()
       
       expect(result).toBe('test-distinct-id')
       expect(mockGetAppConfigurations).toHaveBeenCalledTimes(1)
@@ -134,7 +137,7 @@ describe('analytic service', () => {
       
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       
-      const result = await getAppDistinctId()
+      const result = await analyticService.getAppDistinctId()
       
       expect(result).toBeUndefined()
     })
@@ -146,7 +149,7 @@ describe('analytic service', () => {
       
       mockGetAppConfigurations.mockResolvedValue(mockConfiguration)
       
-      const result = await getAppDistinctId()
+      const result = await analyticService.getAppDistinctId()
       
       expect(result).toBe('')
     })
@@ -154,19 +157,19 @@ describe('analytic service', () => {
     it('should handle null configuration', async () => {
       mockGetAppConfigurations.mockResolvedValue(null)
       
-      await expect(getAppDistinctId()).rejects.toThrow()
+      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
     })
 
     it('should handle undefined configuration', async () => {
       mockGetAppConfigurations.mockResolvedValue(undefined)
       
-      await expect(getAppDistinctId()).rejects.toThrow()
+      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
     })
 
     it('should handle API errors', async () => {
       mockGetAppConfigurations.mockRejectedValue(new Error('Get Config Error'))
       
-      await expect(getAppDistinctId()).rejects.toThrow('Get Config Error')
+      await expect(analyticService.getAppDistinctId()).rejects.toThrow('Get Config Error')
     })
 
     it('should handle different types of distinct_id values', async () => {
@@ -175,7 +178,7 @@ describe('analytic service', () => {
         distinct_id: '550e8400-e29b-41d4-a716-446655440000',
       })
       
-      let result = await getAppDistinctId()
+      let result = await analyticService.getAppDistinctId()
       expect(result).toBe('550e8400-e29b-41d4-a716-446655440000')
       
       // Test with simple string
@@ -183,7 +186,7 @@ describe('analytic service', () => {
         distinct_id: 'user123',
       })
       
-      result = await getAppDistinctId()
+      result = await analyticService.getAppDistinctId()
       expect(result).toBe('user123')
       
       // Test with numeric string
@@ -191,7 +194,7 @@ describe('analytic service', () => {
         distinct_id: '12345',
       })
       
-      result = await getAppDistinctId()
+      result = await analyticService.getAppDistinctId()
       expect(result).toBe('12345')
     })
   })
@@ -212,10 +215,10 @@ describe('analytic service', () => {
       })
       
       // Update the distinct id
-      await updateDistinctId(newId)
+      await analyticService.updateDistinctId(newId)
       
       // Retrieve the distinct id
-      const retrievedId = await getAppDistinctId()
+      const retrievedId = await analyticService.getAppDistinctId()
       
       expect(retrievedId).toBe(newId)
       expect(mockGetAppConfigurations).toHaveBeenCalledTimes(2)
@@ -233,8 +236,8 @@ describe('analytic service', () => {
         value: undefined,
       })
       
-      await expect(updateDistinctId('test')).rejects.toThrow()
-      await expect(getAppDistinctId()).rejects.toThrow()
+      await expect(analyticService.updateDistinctId('test')).rejects.toThrow()
+      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
       
       // Restore core
       Object.defineProperty(window, 'core', {
@@ -252,8 +255,8 @@ describe('analytic service', () => {
         value: {},
       })
       
-      await expect(updateDistinctId('test')).rejects.toThrow()
-      await expect(getAppDistinctId()).rejects.toThrow()
+      await expect(analyticService.updateDistinctId('test')).rejects.toThrow()
+      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
       
       // Restore core
       Object.defineProperty(window, 'core', {

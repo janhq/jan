@@ -14,6 +14,18 @@ on:
     # Review gh actions docs if you want to further define triggers, paths, etc
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
   workflow_dispatch:
+    inputs:
+      update_cloud_spec:
+        description: 'Update Jan Server API specification'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  schedule:
+    # Run daily at 2 AM UTC to sync with Jan Server updates
+    - cron: '0 2 * * *'
 
 jobs:
   deploy:
@@ -56,9 +68,44 @@ jobs:
       - name: Install dependencies
         working-directory: website
         run: bun install
+
+      - name: Update Jan Server API Spec (Scheduled/Manual)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.update_cloud_spec == 'true')
+        working-directory: website
+        continue-on-error: true
+        run: |
+          echo "📡 Updating Jan Server API specification..."
+          bun run generate:cloud-spec
+
+          # Check if the spec file was updated
+          if git diff --quiet public/openapi/cloud-openapi.json; then
+            echo "✅ No changes to API specification"
+          else
+            echo "📝 API specification updated"
+            # Commit the changes if this is a scheduled run on main branch
+            if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+              git config --local user.email "github-actions[bot]@users.noreply.github.com"
+              git config --local user.name "github-actions[bot]"
+              git add public/openapi/cloud-openapi.json
+              git commit -m "chore: update Jan Server API specification [skip ci]"
+              git push
+            fi
+          fi
+        env:
+          JAN_SERVER_SPEC_URL: ${{ secrets.JAN_SERVER_SPEC_URL || 'https://api.jan.ai/api/swagger/doc.json' }}
+          JAN_SERVER_PROD_URL: ${{ secrets.JAN_SERVER_PROD_URL || 'https://api.jan.ai/v1' }}
       - name: Build website
         working-directory: website
-        run: bun run build
+        run: |
+          # For PR and regular pushes, skip cloud spec generation in prebuild
+          # It will use the existing committed spec or fallback
+          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "push" ]; then
+            echo "Using existing cloud spec for build"
+            export SKIP_CLOUD_SPEC_UPDATE=true
+          fi
+          bun run build
+        env:
+          SKIP_CLOUD_SPEC_UPDATE: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
       - name: copy redirects and headers
         continue-on-error: true
