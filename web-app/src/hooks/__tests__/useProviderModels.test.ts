@@ -1,22 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useProviderModels } from '../useProviderModels'
+import { WebProvidersService } from '../../services/providers/web'
 
-// Mock the providers service
-vi.mock('@/services/providers', () => ({
-  fetchModelsFromProvider: vi.fn(),
-}))
+let fetchModelsSpy: ReturnType<typeof vi.spyOn>
 
-import { fetchModelsFromProvider } from '@/services/providers'
-const mockFetchModelsFromProvider = vi.mocked(fetchModelsFromProvider)
-
-import type { ModelProvider } from '@/types/modelProviders'
-
-// Mock ModelProvider type
-type MockModelProvider = Pick<
-  ModelProvider,
-  'active' | 'provider' | 'base_url' | 'api_key' | 'settings' | 'models'
->
+// Local minimal provider type for tests
+type MockModelProvider = {
+  active: boolean
+  provider: string
+  base_url?: string
+  api_key?: string
+  settings: any[]
+  models: any[]
+}
 
 describe('useProviderModels', () => {
   const mockProvider: MockModelProvider = {
@@ -31,7 +28,12 @@ describe('useProviderModels', () => {
   const mockModels = ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo']
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.clearAllMocks()
+    fetchModelsSpy = vi.spyOn(
+      WebProvidersService.prototype,
+      'fetchModelsFromProvider'
+    )
   })
 
   it('should initialize with empty state', () => {
@@ -45,17 +47,17 @@ describe('useProviderModels', () => {
 
   it('should not fetch models when provider is undefined', () => {
     renderHook(() => useProviderModels(undefined))
-    expect(mockFetchModelsFromProvider).not.toHaveBeenCalled()
+    expect(fetchModelsSpy).not.toHaveBeenCalled()
   })
 
   it('should not fetch models when provider has no base_url', () => {
     const providerWithoutUrl = { ...mockProvider, base_url: undefined }
     renderHook(() => useProviderModels(providerWithoutUrl))
-    expect(mockFetchModelsFromProvider).not.toHaveBeenCalled()
+    expect(fetchModelsSpy).not.toHaveBeenCalled()
   })
 
   it('should fetch and sort models', async () => {
-    mockFetchModelsFromProvider.mockResolvedValueOnce(mockModels)
+    fetchModelsSpy.mockResolvedValueOnce(mockModels)
 
     const { result } = renderHook(() => useProviderModels(mockProvider))
 
@@ -66,11 +68,11 @@ describe('useProviderModels', () => {
     // Should be sorted alphabetically
     expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
     expect(result.current.error).toBe(null)
-    expect(mockFetchModelsFromProvider).toHaveBeenCalledWith(mockProvider)
+    expect(fetchModelsSpy).toHaveBeenCalledWith(mockProvider)
   })
 
   it('should clear models when switching to invalid provider', async () => {
-    mockFetchModelsFromProvider.mockResolvedValueOnce(mockModels)
+    fetchModelsSpy.mockResolvedValueOnce(mockModels)
 
     const { result, rerender } = renderHook(
       ({ provider }) => useProviderModels(provider),
@@ -96,6 +98,6 @@ describe('useProviderModels', () => {
 
     result.current.refetch()
 
-    expect(mockFetchModelsFromProvider).not.toHaveBeenCalled()
+    expect(fetchModelsSpy).not.toHaveBeenCalled()
   })
 })

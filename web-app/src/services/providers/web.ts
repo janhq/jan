@@ -138,9 +138,24 @@ export class WebProvidersService implements ProvidersService {
       })
 
       if (!response.ok) {
-        throw new Error(
-          `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
-        )
+        // Provide more specific error messages based on status code
+        if (response.status === 401) {
+          throw new Error(
+            `Authentication failed: API key is required or invalid for ${provider.provider}`
+          )
+        } else if (response.status === 403) {
+          throw new Error(
+            `Access forbidden: Check your API key permissions for ${provider.provider}`
+          )
+        } else if (response.status === 404) {
+          throw new Error(
+            `Models endpoint not found for ${provider.provider}. Check the base URL configuration.`
+          )
+        } else {
+          throw new Error(
+            `Failed to fetch models from ${provider.provider}: ${response.status} ${response.statusText}`
+          )
+        }
       }
 
       const data = await response.json()
@@ -170,13 +185,28 @@ export class WebProvidersService implements ProvidersService {
     } catch (error) {
       console.error('Error fetching models from provider:', error)
 
+      const structuredErrorPrefixes = [
+        'Authentication failed',
+        'Access forbidden',
+        'Models endpoint not found',
+        'Failed to fetch models from'
+      ]
+
+      if (error instanceof Error &&
+          structuredErrorPrefixes.some(prefix => (error as Error).message.startsWith(prefix))) {
+        throw new Error(error.message)
+      }
+
       // Provide helpful error message for any connection errors
       if (error instanceof Error && error.message.includes('Cannot connect')) {
-        throw error
+        throw new Error(
+          `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
+        )
       }
-      
+
+      // Generic fallback
       throw new Error(
-        `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
+        `Unexpected error while fetching models from ${provider.provider}: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
     }
   }

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchModelsFromProvider } from '@/services/providers'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { WebProvidersService } from '../services/providers/web'
 
 type UseProviderModelsState = {
   models: string[]
@@ -12,6 +12,7 @@ const modelsCache = new Map<string, { models: string[]; timestamp: number }>()
 const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
 export const useProviderModels = (provider?: ModelProvider): UseProviderModelsState => {
+  const providersService = useMemo(() => new WebProvidersService(), [])
   const [models, setModels] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +51,7 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
     setError(null)
 
     try {
-      const fetchedModels = await fetchModelsFromProvider(provider)
+      const fetchedModels = await providersService.fetchModelsFromProvider(provider)
       if (currentRequestId !== requestIdRef.current) return
       const sortedModels = fetchedModels.sort((a, b) => a.localeCompare(b))
 
@@ -69,7 +70,7 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
     } finally {
       if (currentRequestId === requestIdRef.current) setLoading(false)
     }
-  }, [provider])
+  }, [provider, providersService])
 
   const refetch = useCallback(() => {
     if (provider) {
