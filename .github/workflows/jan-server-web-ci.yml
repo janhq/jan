@@ -44,7 +44,7 @@ jobs:
         run: |
           SERVICE_NAME=jan-server/web
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            IMAGE_TAG="jan-server/web-preview:dev-${{ github.sha }}"
+            IMAGE_TAG="jan-server/web:preview-${{ github.sha }}"
           else
             IMAGE_TAG="jan-server/web:dev-${{ github.sha }}"
           fi
