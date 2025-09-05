@@ -4,9 +4,27 @@ on:
   push:
     branches:
       - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yml'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'extensions-web/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'Dockerfile'
   pull_request:
     branches:
       - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yml'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'extensions-web/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'Dockerfile'
 
 jobs:
   build-and-preview:
@@ -34,9 +52,7 @@ jobs:
             && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
             && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
             && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-            && sudo apt update \
-            && sudo apt install gh -y
-          sudo apt-get update
+            && sudo apt update
           sudo apt-get install -y jq gettext
       
       - name: Set image tag and service name
@@ -95,23 +111,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          DOMAIN="https://pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.menlo.ai"
-          COMMENT_BODY="🌐 Preview available: [${DOMAIN}](${DOMAIN})"
-
-          echo "🔍 Looking for existing preview comment..."
-
-          COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
-            --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- preview-url -->")) | .id')
-
-          if [[ -n "$COMMENT_ID" ]]; then
-            echo "✏️ Updating existing comment ID $COMMENT_ID"
-            gh api repos/${{ github.repository }}/issues/comments/${COMMENT_ID} \
-              --method PATCH \
-              --field "body=${COMMENT_BODY}"
-          else
-            echo "💬 Creating new comment"
-            gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
-              --method POST \
-              --field "body=${COMMENT_BODY}"
-          fi
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            Preview URL: https://pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.menlo.ai
