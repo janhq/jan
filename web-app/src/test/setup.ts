@@ -178,7 +178,7 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock globalThis.core.api for @janhq/core functions
-;(globalThis as any).core = {
+;(globalThis as Record<string, unknown>).core = {
   api: {
     getJanDataFolderPath: vi.fn().mockResolvedValue('/mock/jan/data'),
     openFileExplorer: vi.fn().mockResolvedValue(undefined),
@@ -187,7 +187,7 @@ Object.defineProperty(window, 'matchMedia', {
 }
 
 // Mock globalThis.fs for @janhq/core fs functions
-;(globalThis as any).fs = {
+;(globalThis as Record<string, unknown>).fs = {
   existsSync: vi.fn().mockResolvedValue(false),
   readFile: vi.fn().mockResolvedValue(''),
   writeFile: vi.fn().mockResolvedValue(undefined),
@@ -197,11 +197,6 @@ Object.defineProperty(window, 'matchMedia', {
   rmdir: vi.fn().mockResolvedValue(undefined),
 }
 
-// Mock window.electronAPI for electron API access
-;(window as any).electronAPI = {
-  showOpenDialog: vi.fn().mockResolvedValue({ canceled: true, filePaths: [] }),
-  invokeLocalLLM: vi.fn().mockResolvedValue(null),
-}
 
 // runs a cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {
