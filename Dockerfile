@@ -38,8 +38,8 @@ FROM nginx:alpine
 # Copy static files from build stage
 COPY --from=builder /app/web-app/dist-web /usr/share/nginx/html
 
-# Copy nginx configuration for SPA (if custom config is needed)
-# COPY nginx.conf /etc/nginx/nginx.conf
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose port 80
 EXPOSE 80
