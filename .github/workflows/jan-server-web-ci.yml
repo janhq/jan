@@ -42,16 +42,15 @@ jobs:
       - name: Set image tag and service name
         id: vars
         run: |
-          SERVICE_NAME=jan-server/web
+          SERVICE_NAME=jan-server-web
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            IMAGE_TAG="jan-server/web-preview:dev-${{ github.sha }}"
+            IMAGE_TAG="web:preview-${{ github.sha }}"
           else
-            IMAGE_TAG="jan-server/web:dev-${{ github.sha }}"
+            IMAGE_TAG="web:dev-${{ github.sha }}"
           fi
-
           echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "FULL_IMAGE=registry.menlo.ai/library/${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "FULL_IMAGE=registry.menlo.ai/jan-server/${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       - name: Build docker image
         run: |
