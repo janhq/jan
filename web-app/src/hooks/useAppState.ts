@@ -17,6 +17,7 @@ type AppState = {
   abortControllers: Record<string, AbortController>
   currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
+  cancelToolCall?: () => void
 
   // === NEW PER-THREAD STATE ===
   promptsByThread: Record<string, string>
@@ -46,6 +47,7 @@ type AppState = {
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   resetTokenSpeed: () => void
   setOutOfContextDialog: (show: boolean) => void
+  setCancelToolCall: (cancel: (() => void) | undefined) => void
 
   // === NEW THREAD-AWARE METHODS ===
   setThreadPrompt: (threadId: string, prompt: string) => void
@@ -88,6 +90,7 @@ export const useAppState = create<AppState>()((set, get) => ({
   abortControllers: {},
   currentToolCall: undefined,
   showOutOfContextDialog: undefined,
+  cancelToolCall: undefined,
 
   // === NEW PER-THREAD STATE ===
   promptsByThread: {},
@@ -174,6 +177,11 @@ export const useAppState = create<AppState>()((set, get) => ({
   setOutOfContextDialog: (show) => {
     set(() => ({
       showOutOfContextDialog: show,
+    }))
+  },
+  setCancelToolCall: (cancel) => {
+    set(() => ({
+      cancelToolCall: cancel,
     }))
   },
   setQueuedMessage: (message) => {

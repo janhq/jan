@@ -52,6 +52,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     loadingModel,
     tools,
     cancelToolCall,
+    addToThreadQueue,
+    getThreadQueueLength,
   } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
@@ -59,6 +61,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { spellCheckChatInput } = useGeneralSetting()
 
   const maxRows = 10
+
+  // Get current thread's queue information
+  const currentThreadQueueLength = currentThreadId
+    ? getThreadQueueLength(currentThreadId)
+    : 0
 
   const { selectedModel, selectedProvider } = useModelProvider()
   const { sendMessage } = useChat()
@@ -545,7 +552,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
             )}
             <TextareaAutosize
               ref={textareaRef}
-              disabled={Boolean(queuedMessage)}
               minRows={2}
               rows={1}
               maxRows={10}
@@ -561,16 +567,22 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  prompt.trim() &&
-                  !isComposing
-                ) {
-                  e.preventDefault()
-                  // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
-                  // When Shift+Enter is pressed, a new line is added (default behavior)
+                if (e.key === 'Enter' && !isComposing) {
+                  if (!e.shiftKey && prompt.trim()) {
+                    // Enter: Queue if streaming, send if not
+                    e.preventDefault()
+                    if (streamingContent) {
+                      // Always queue when AI is responding (no limitations)
+                      if (currentThreadId) {
+                        addToThreadQueue(currentThreadId, prompt.trim())
+                        setPrompt('')
+                      }
+                    } else {
+                      // If not streaming, send immediately
+                      handleSendMesage(prompt)
+                    }
+                  }
+                  // Shift+Enter: Allow default behavior (new line)
                 }
               }}
               onPaste={handlePaste}
@@ -750,11 +762,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               </div>
             </div>
 
-            {/* Queue indicator */}
-            {queuedMessage && (
+            {/* Enhanced Queue Indicator */}
+            {currentThreadQueueLength > 0 && (
               <div className="flex items-center gap-2">
                 <div className="bg-accent text-accent-fg text-xs px-2 py-1 rounded-full font-medium">
-                  Message queued
+                  {currentThreadQueueLength} message
+                  {currentThreadQueueLength === 1 ? '' : 's'} queued
                 </div>
               </div>
             )}
