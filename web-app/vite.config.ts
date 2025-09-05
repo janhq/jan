@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
+      IS_WEB_APP: JSON.stringify(false),
       IS_MACOS: JSON.stringify(
         process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
       ),

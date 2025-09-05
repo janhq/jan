@@ -1,12 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  updateMCPConfig,
-  restartMCPServers,
-  getMCPConfig,
-  getTools,
-  getConnectedServers,
-  callTool,
-} from '../mcp'
+import { TauriMCPService } from '../mcp/tauri'
 import { MCPTool } from '@/types/completion'
 
 // Mock the global window.core.api
@@ -29,8 +22,11 @@ Object.defineProperty(global, 'window', {
   writable: true,
 })
 
-describe('mcp service', () => {
+describe('TauriMCPService', () => {
+  let mcpService: TauriMCPService
+
   beforeEach(() => {
+    mcpService = new TauriMCPService()
     vi.clearAllMocks()
   })
 
@@ -39,7 +35,7 @@ describe('mcp service', () => {
       const testConfig = '{"server1": {"path": "/path/to/server"}, "server2": {"command": "node server.js"}}'
       mockCore.api.saveMcpConfigs.mockResolvedValue(undefined)
 
-      await updateMCPConfig(testConfig)
+      await mcpService.updateMCPConfig(testConfig)
 
       expect(mockCore.api.saveMcpConfigs).toHaveBeenCalledWith({
         configs: testConfig,
@@ -50,7 +46,7 @@ describe('mcp service', () => {
       const emptyConfig = ''
       mockCore.api.saveMcpConfigs.mockResolvedValue(undefined)
 
-      await updateMCPConfig(emptyConfig)
+      await mcpService.updateMCPConfig(emptyConfig)
 
       expect(mockCore.api.saveMcpConfigs).toHaveBeenCalledWith({
         configs: emptyConfig,
@@ -62,7 +58,7 @@ describe('mcp service', () => {
       const mockError = new Error('Failed to save config')
       mockCore.api.saveMcpConfigs.mockRejectedValue(mockError)
 
-      await expect(updateMCPConfig(testConfig)).rejects.toThrow('Failed to save config')
+      await expect(mcpService.updateMCPConfig(testConfig)).rejects.toThrow('Failed to save config')
       expect(mockCore.api.saveMcpConfigs).toHaveBeenCalledWith({
         configs: testConfig,
       })
@@ -76,7 +72,7 @@ describe('mcp service', () => {
 
       const testConfig = '{"server1": {}}'
 
-      await expect(updateMCPConfig(testConfig)).resolves.toBeUndefined()
+      await expect(mcpService.updateMCPConfig(testConfig)).resolves.toBeUndefined()
 
       // Restore original core
       window.core = originalCore
@@ -87,7 +83,7 @@ describe('mcp service', () => {
     it('should call restartMcpServers API', async () => {
       mockCore.api.restartMcpServers.mockResolvedValue(undefined)
 
-      await restartMCPServers()
+      await mcpService.restartMCPServers()
 
       expect(mockCore.api.restartMcpServers).toHaveBeenCalledWith()
     })
@@ -96,7 +92,7 @@ describe('mcp service', () => {
       const mockError = new Error('Failed to restart servers')
       mockCore.api.restartMcpServers.mockRejectedValue(mockError)
 
-      await expect(restartMCPServers()).rejects.toThrow('Failed to restart servers')
+      await expect(mcpService.restartMCPServers()).rejects.toThrow('Failed to restart servers')
       expect(mockCore.api.restartMcpServers).toHaveBeenCalledWith()
     })
 
@@ -105,7 +101,7 @@ describe('mcp service', () => {
       // @ts-ignore
       window.core = undefined
 
-      await expect(restartMCPServers()).resolves.toBeUndefined()
+      await expect(mcpService.restartMCPServers()).resolves.toBeUndefined()
 
       window.core = originalCore
     })
@@ -121,7 +117,7 @@ describe('mcp service', () => {
 
       mockCore.api.getMcpConfigs.mockResolvedValue(mockConfigString)
 
-      const result = await getMCPConfig()
+      const result = await mcpService.getMCPConfig()
 
       expect(mockCore.api.getMcpConfigs).toHaveBeenCalledWith()
       expect(result).toEqual(expectedConfig)
@@ -130,7 +126,7 @@ describe('mcp service', () => {
     it('should return empty object when config is null', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue(null)
 
-      const result = await getMCPConfig()
+      const result = await mcpService.getMCPConfig()
 
       expect(result).toEqual({})
     })
@@ -138,7 +134,7 @@ describe('mcp service', () => {
     it('should return empty object when config is undefined', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue(undefined)
 
-      const result = await getMCPConfig()
+      const result = await mcpService.getMCPConfig()
 
       expect(result).toEqual({})
     })
@@ -146,7 +142,7 @@ describe('mcp service', () => {
     it('should return empty object when config is empty string', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue('')
 
-      const result = await getMCPConfig()
+      const result = await mcpService.getMCPConfig()
 
       expect(result).toEqual({})
     })
@@ -155,14 +151,14 @@ describe('mcp service', () => {
       const invalidJson = '{"invalid": json}'
       mockCore.api.getMcpConfigs.mockResolvedValue(invalidJson)
 
-      await expect(getMCPConfig()).rejects.toThrow()
+      await expect(mcpService.getMCPConfig()).rejects.toThrow()
     })
 
     it('should handle API rejection', async () => {
       const mockError = new Error('Failed to get config')
       mockCore.api.getMcpConfigs.mockRejectedValue(mockError)
 
-      await expect(getMCPConfig()).rejects.toThrow('Failed to get config')
+      await expect(mcpService.getMCPConfig()).rejects.toThrow('Failed to get config')
     })
   })
 
@@ -196,7 +192,7 @@ describe('mcp service', () => {
 
       mockCore.api.getTools.mockResolvedValue(mockTools)
 
-      const result = await getTools()
+      const result = await mcpService.getTools()
 
       expect(mockCore.api.getTools).toHaveBeenCalledWith()
       expect(result).toEqual(mockTools)
@@ -208,7 +204,7 @@ describe('mcp service', () => {
     it('should return empty array when no tools available', async () => {
       mockCore.api.getTools.mockResolvedValue([])
 
-      const result = await getTools()
+      const result = await mcpService.getTools()
 
       expect(result).toEqual([])
       expect(Array.isArray(result)).toBe(true)
@@ -218,7 +214,7 @@ describe('mcp service', () => {
       const mockError = new Error('Failed to get tools')
       mockCore.api.getTools.mockRejectedValue(mockError)
 
-      await expect(getTools()).rejects.toThrow('Failed to get tools')
+      await expect(mcpService.getTools()).rejects.toThrow('Failed to get tools')
     })
 
     it('should handle undefined window.core.api', async () => {
@@ -226,7 +222,7 @@ describe('mcp service', () => {
       // @ts-ignore
       window.core = undefined
 
-      const result = await getTools()
+      const result = await mcpService.getTools()
 
       expect(result).toBeUndefined()
 
@@ -239,7 +235,7 @@ describe('mcp service', () => {
       const mockServers = ['filesystem', 'database', 'search']
       mockCore.api.getConnectedServers.mockResolvedValue(mockServers)
 
-      const result = await getConnectedServers()
+      const result = await mcpService.getConnectedServers()
 
       expect(mockCore.api.getConnectedServers).toHaveBeenCalledWith()
       expect(result).toEqual(mockServers)
@@ -249,7 +245,7 @@ describe('mcp service', () => {
     it('should return empty array when no servers connected', async () => {
       mockCore.api.getConnectedServers.mockResolvedValue([])
 
-      const result = await getConnectedServers()
+      const result = await mcpService.getConnectedServers()
 
       expect(result).toEqual([])
       expect(Array.isArray(result)).toBe(true)
@@ -259,7 +255,7 @@ describe('mcp service', () => {
       const mockError = new Error('Failed to get connected servers')
       mockCore.api.getConnectedServers.mockRejectedValue(mockError)
 
-      await expect(getConnectedServers()).rejects.toThrow('Failed to get connected servers')
+      await expect(mcpService.getConnectedServers()).rejects.toThrow('Failed to get connected servers')
     })
 
     it('should handle undefined window.core.api', async () => {
@@ -267,7 +263,7 @@ describe('mcp service', () => {
       // @ts-ignore
       window.core = undefined
 
-      const result = await getConnectedServers()
+      const result = await mcpService.getConnectedServers()
 
       expect(result).toBeUndefined()
 
@@ -289,7 +285,7 @@ describe('mcp service', () => {
 
       mockCore.api.callTool.mockResolvedValue(mockResult)
 
-      const result = await callTool(toolArgs)
+      const result = await mcpService.callTool(toolArgs)
 
       expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
       expect(result).toEqual(mockResult)
@@ -308,7 +304,7 @@ describe('mcp service', () => {
 
       mockCore.api.callTool.mockResolvedValue(mockResult)
 
-      const result = await callTool(toolArgs)
+      const result = await mcpService.callTool(toolArgs)
 
       expect(result.error).toBe('File not found')
       expect(result.content).toEqual([])
@@ -331,7 +327,7 @@ describe('mcp service', () => {
 
       mockCore.api.callTool.mockResolvedValue(mockResult)
 
-      const result = await callTool(toolArgs)
+      const result = await mcpService.callTool(toolArgs)
 
       expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
       expect(result).toEqual(mockResult)
@@ -346,7 +342,7 @@ describe('mcp service', () => {
       const mockError = new Error('Tool execution failed')
       mockCore.api.callTool.mockRejectedValue(mockError)
 
-      await expect(callTool(toolArgs)).rejects.toThrow('Tool execution failed')
+      await expect(mcpService.callTool(toolArgs)).rejects.toThrow('Tool execution failed')
     })
 
     it('should handle undefined window.core.api', async () => {
@@ -359,7 +355,7 @@ describe('mcp service', () => {
         arguments: {},
       }
 
-      const result = await callTool(toolArgs)
+      const result = await mcpService.callTool(toolArgs)
 
       expect(result).toBeUndefined()
 
@@ -379,7 +375,7 @@ describe('mcp service', () => {
 
       mockCore.api.callTool.mockResolvedValue(mockResult)
 
-      const result = await callTool(toolArgs)
+      const result = await mcpService.callTool(toolArgs)
 
       expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
       expect(result).toEqual(mockResult)
@@ -409,11 +405,11 @@ describe('mcp service', () => {
       mockCore.api.callTool.mockResolvedValue(toolResult)
 
       // Execute workflow
-      await updateMCPConfig(config)
-      await restartMCPServers()
-      const availableTools = await getTools()
-      const connectedServers = await getConnectedServers()
-      const result = await callTool({
+      await mcpService.updateMCPConfig(config)
+      await mcpService.restartMCPServers()
+      const availableTools = await mcpService.getTools()
+      const connectedServers = await mcpService.getConnectedServers()
+      const result = await mcpService.callTool({
         toolName: 'read_file',
         arguments: { path: '/test.txt' },
       })

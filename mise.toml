@@ -48,7 +48,7 @@ outputs = ['core/dist']
 [tasks.build-extensions]
 description = "Build extensions"
 depends = ["build-core"]
-run = "yarn build:extensions"
+run = "yarn build:extensions && yarn build:extensions-web"
 sources = ['extensions/**/*']
 outputs = ['pre-install/*.tgz']
 
@@ -77,14 +77,50 @@ run = [
 ]
 
 # ============================================================================
+# WEB APPLICATION DEVELOPMENT TASKS
+# ============================================================================
+
+[tasks.dev-web-app]
+description = "Start web application development server (matches Makefile)"
+depends = ["install"]
+run = "yarn dev:web-app"
+
+[tasks.build-web-app]
+description = "Build web application (matches Makefile)"
+depends = ["install"]
+run = "yarn build:web-app"
+
+[tasks.serve-web-app]
+description = "Serve built web application"
+run = "yarn serve:web-app"
+
+[tasks.build-serve-web-app]
+description = "Build and serve web application (matches Makefile)"
+depends = ["build-web-app"]
+run = "yarn serve:web-app"
+
+# ============================================================================
 # BUILD TASKS
 # ============================================================================
 
+[tasks.install-rust-targets]
+description = "Install required Rust targets for MacOS universal builds"
+run = '''
+#!/usr/bin/env bash
+# Check if we're on macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "Detected macOS, installing universal build targets..."
+  rustup target add x86_64-apple-darwin
+  rustup target add aarch64-apple-darwin
+  echo "Rust targets installed successfully!"
+fi
+'''
+
 [tasks.build]
 description = "Build complete application (matches Makefile)"
-depends = ["install-and-build"]
+depends = ["install-rust-targets", "install-and-build"]
 run = [
-  "yarn copy:lib",
+  "yarn download:bin",
   "yarn build"
 ]
 

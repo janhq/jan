@@ -67,13 +67,24 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
-vi.mock('@/services/mcp', () => ({
-  getConnectedServers: vi.fn(() => Promise.resolve([])),
-}))
+// Mock the ServiceHub
+const mockGetConnectedServers = vi.fn(() => Promise.resolve([]))
+const mockStopAllModels = vi.fn()
+const mockCheckMmprojExists = vi.fn(() => Promise.resolve(true))
 
-vi.mock('@/services/models', () => ({
-  stopAllModels: vi.fn(),
-  checkMmprojExists: vi.fn(() => Promise.resolve(true)),
+const mockServiceHub = {
+  mcp: () => ({
+    getConnectedServers: mockGetConnectedServers,
+  }),
+  models: () => ({
+    stopAllModels: mockStopAllModels,
+    checkMmprojExists: mockCheckMmprojExists,
+  }),
+}
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => mockServiceHub,
+  useServiceHub: () => mockServiceHub,
 }))
 
 vi.mock('../MovingBorder', () => ({
@@ -366,8 +377,7 @@ describe('ChatInput', () => {
 
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
-    const { getConnectedServers } = await import('@/services/mcp')
-    vi.mocked(getConnectedServers).mockResolvedValue(['server1'])
+    mockGetConnectedServers.mockResolvedValue(['server1'])
     
     renderWithRouter()
     

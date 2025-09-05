@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
@@ -25,7 +27,17 @@ const SettingsMenu = () => {
   const { providers } = useModelProvider()
 
   // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
-  const activeProviders = providers.filter((provider) => provider.active)
+  // On web: exclude llamacpp provider as it's not available
+  const activeProviders = providers.filter((provider) => {
+    if (!provider.active) return false
+    
+    // On web version, hide llamacpp provider
+    if (!PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && provider.provider === 'llama.cpp') {
+      return false
+    }
+    
+    return true
+  })
 
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
@@ -55,43 +67,62 @@ const SettingsMenu = () => {
     {
       title: 'common:general',
       route: route.settings.general,
+      hasSubMenu: false,
+      isEnabled: true,
     },
     {
       title: 'common:appearance',
       route: route.settings.appearance,
+      hasSubMenu: false,
+      isEnabled: true,
     },
     {
       title: 'common:privacy',
       route: route.settings.privacy,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.ANALYTICS],
     },
     {
       title: 'common:modelProviders',
       route: route.settings.model_providers,
       hasSubMenu: activeProviders.length > 0,
+      isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
     },
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
+      hasSubMenu: false,
+      isEnabled: true,
     },
     {
       title: 'common:hardware',
       route: route.settings.hardware,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.HARDWARE_MONITORING],
     },
     {
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS],
     },
     {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.LOCAL_API_SERVER],
     },
     {
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.HTTPS_PROXY],
     },
     {
       title: 'common:extensions',
       route: route.settings.extensions,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.EXTENSION_MANAGEMENT],
     },
   ]
 
@@ -126,7 +157,11 @@ const SettingsMenu = () => {
         )}
       >
         <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
-          {menuSettings.map((menu) => (
+          {menuSettings.map((menu) => {
+            if (!menu.isEnabled) {
+              return null
+            }
+            return (
             <div key={menu.title}>
               <Link
                 to={menu.route}
@@ -198,7 +233,8 @@ const SettingsMenu = () => {
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </>

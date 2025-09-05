@@ -11,7 +11,7 @@ function SetupScreen() {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
   const firstItemRemoteProvider =
-    providers.length > 0 ? providers[1].provider : 'openai'
+    providers.length > 0 ? providers[1]?.provider : 'openai'
 
   // Check if setup tour has been completed
   const isSetupCompleted =

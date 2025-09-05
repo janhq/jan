@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { sep } from '@tauri-apps/api/path'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 
 type ModelProviderState = {
@@ -93,7 +93,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   ? legacyModels
                   : models
                 ).find(
-                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                  (m) => m.id.split(':').slice(0, 2).join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {

@@ -35,11 +35,12 @@ function Index() {
   useTools()
 
   // Conditional to check if there are any valid providers
-  // required min 1 api_key or 1 model in llama.cpp
+  // required min 1 api_key or 1 model in llama.cpp or jan provider
   const hasValidProviders = providers.some(
     (provider) =>
       provider.api_key?.length ||
-      (provider.provider === 'llamacpp' && provider.models.length)
+      (provider.provider === 'llamacpp' && provider.models.length) ||
+      (provider.provider === 'jan' && provider.models.length)
   )
 
   useEffect(() => {

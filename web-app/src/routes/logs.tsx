@@ -2,13 +2,23 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { readLogs } from '@/services/app'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.appLogs as any)({
-  component: LogsViewer,
+  component: LogsViewerGuarded,
 })
+
+function LogsViewerGuarded() {
+  return (
+    <PlatformGuard feature={PlatformFeature.SYSTEM_INTEGRATIONS}>
+      <LogsViewer />
+    </PlatformGuard>
+  )
+}
 
 // Define log entry type
 
@@ -16,11 +26,12 @@ function LogsViewer() {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
+  const serviceHub = useServiceHub()
 
   useEffect(() => {
     let lastLogsLength = 0
     function updateLogs() {
-      readLogs().then((logData) => {
+      serviceHub.app().readLogs().then((logData) => {
         let needScroll = false
         const filteredLogs = logData.filter(Boolean) as LogEntry[]
         if (filteredLogs.length > lastLogsLength) needScroll = true
@@ -40,7 +51,7 @@ function LogsViewer() {
     return () => {
       clearInterval(intervalId)
     }
-  }, [])
+  }, [serviceHub])
 
   // Function to scroll to the bottom of the logs container
   const scrollToBottom = () => {

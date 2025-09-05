@@ -10,8 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { deleteModel } from '@/services/models'
-import { getProviders } from '@/services/providers'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 import { IconTrash } from '@tabler/icons-react'
 
@@ -33,14 +32,15 @@ export const DialogDeleteModel = ({
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const { setProviders, deleteModel: deleteModelCache } = useModelProvider()
   const { removeFavorite } = useFavoriteModel()
+  const serviceHub = useServiceHub()
 
   const removeModel = async () => {
     // Remove model from favorites if it exists
     removeFavorite(selectedModelId)
     
     deleteModelCache(selectedModelId)
-    deleteModel(selectedModelId).then(() => {
-      getProviders().then((providers) => {
+    serviceHub.models().deleteModel(selectedModelId).then(() => {
+      serviceHub.providers().getProviders().then((providers) => {
         // Filter out the deleted model from all providers
         const filteredProviders = providers.map((provider) => ({
           ...provider,

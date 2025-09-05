@@ -2,14 +2,24 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { parseLogLine, readLogs } from '@/services/app'
-import { listen } from '@tauri-apps/api/event'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.localApiServerlogs as any)({
-  component: LogsViewer,
+  component: LocalApiServerLogsGuarded,
 })
+
+function LocalApiServerLogsGuarded() {
+  return (
+    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
+      <LogsViewer />
+    </PlatformGuard>
+  )
+}
 
 const SERVER_LOG_TARGET = 'app_lib::core::server::proxy'
 const LOG_EVENT_NAME = 'log://log'
@@ -18,9 +28,10 @@ function LogsViewer() {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
+  const serviceHub = useServiceHub()
 
   useEffect(() => {
-    readLogs().then((logData) => {
+    serviceHub.app().readLogs().then((logData) => {
       const logs = logData
         .filter((log) => log?.target === SERVER_LOG_TARGET)
         .filter(Boolean) as LogEntry[]
@@ -32,9 +43,9 @@ function LogsViewer() {
       }, 100)
     })
     let unsubscribe = () => {}
-    listen(LOG_EVENT_NAME, (event) => {
+    serviceHub.events().listen(LOG_EVENT_NAME, (event) => {
       const { message } = event.payload as { message: string }
-      const log: LogEntry | undefined = parseLogLine(message)
+      const log: LogEntry | undefined = serviceHub.app().parseLogLine(message)
       if (log?.target === SERVER_LOG_TARGET) {
         setLogs((prevLogs) => {
           const newLogs = [...prevLogs, log]
@@ -51,7 +62,7 @@ function LogsViewer() {
     return () => {
       unsubscribe()
     }
-  }, [])
+  }, [serviceHub])
 
   // Function to scroll to the bottom of the logs container
   const scrollToBottom = () => {
