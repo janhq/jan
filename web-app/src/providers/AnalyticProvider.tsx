@@ -3,12 +3,18 @@ import { useEffect } from 'react'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
   const serviceHub = useServiceHub()
 
   useEffect(() => {
+    // Early exit if analytics are disabled for this platform
+    if (!PlatformFeatures[PlatformFeature.ANALYTICS]) {
+      return
+    }
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
       console.warn(
         'PostHog not initialized: Missing POSTHOG_KEY or POSTHOG_HOST environment variables'

@@ -480,7 +480,7 @@ const LeftPanel = () => {
           <div className="space-y-1 shrink-0 py-1 mt-2">
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
-                  return <></>
+                  return null
               }
               const isActive =
                 currentPath.includes(route.settings.index) &&

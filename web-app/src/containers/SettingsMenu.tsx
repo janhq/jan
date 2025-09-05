@@ -80,13 +80,13 @@ const SettingsMenu = () => {
       title: 'common:privacy',
       route: route.settings.privacy,
       hasSubMenu: false,
-      isEnabled: true,
+      isEnabled: PlatformFeatures[PlatformFeature.ANALYTICS],
     },
     {
       title: 'common:modelProviders',
       route: route.settings.model_providers,
       hasSubMenu: activeProviders.length > 0,
-      isEnabled: true,
+      isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
     },
     {
       title: 'common:keyboardShortcuts',
@@ -159,7 +159,7 @@ const SettingsMenu = () => {
         <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
           {menuSettings.map((menu) => {
             if (!menu.isEnabled) {
-              return <></>
+              return null
             }
             return (
             <div key={menu.title}>

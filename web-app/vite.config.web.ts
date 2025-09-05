@@ -64,4 +64,6 @@ export default defineConfig({
     port: 3001,
     strictPort: true,
   },
+  // Enable SPA mode - fallback to index.html for all routes
+  appType: 'spa',
 })

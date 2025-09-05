@@ -9,43 +9,11 @@ import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import type { ProvidersService } from './types'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export class WebProvidersService implements ProvidersService {
   async getProviders(): Promise<ModelProvider[]> {
-    const builtinProviders = predefinedProviders.map((provider) => {
-      let models = provider.models as Model[]
-      if (Object.keys(providerModels).includes(provider.provider)) {
-        const builtInModels = providerModels[
-          provider.provider as unknown as keyof typeof providerModels
-        ].models as unknown as string[]
-
-        if (Array.isArray(builtInModels))
-          models = builtInModels.map((model) => {
-            const modelManifest = models.find((e) => e.id === model)
-            // TODO: Check chat_template for tool call support
-            const capabilities = [
-              ModelCapabilities.COMPLETION,
-              (
-                providerModels[
-                  provider.provider as unknown as keyof typeof providerModels
-                ].supportsToolCalls as unknown as string[]
-              ).includes(model)
-                ? ModelCapabilities.TOOLS
-                : undefined,
-            ].filter(Boolean) as string[]
-            return {
-              ...(modelManifest ?? { id: model, name: model }),
-              capabilities,
-            } as Model
-          })
-      }
-
-      return {
-        ...provider,
-        models,
-      }
-    })
-
     const runtimeProviders: ModelProvider[] = []
     for (const [providerName, value] of EngineManager.instance().engines) {
       const models = (await value.list()) ?? []
@@ -105,6 +73,45 @@ export class WebProvidersService implements ProvidersService {
       runtimeProviders.push(provider)
     }
 
+    if (!PlatformFeatures[PlatformFeature.DEFAULT_PROVIDERS]) {
+      return runtimeProviders
+    }
+
+    const builtinProviders = predefinedProviders.map((provider) => {
+      let models = provider.models as Model[]
+      if (Object.keys(providerModels).includes(provider.provider)) {
+        const builtInModels = providerModels[
+          provider.provider as unknown as keyof typeof providerModels
+        ].models as unknown as string[]
+
+        if (Array.isArray(builtInModels)) {
+          models = builtInModels.map((model) => {
+            const modelManifest = models.find((e) => e.id === model)
+            // TODO: Check chat_template for tool call support
+            const capabilities = [
+              ModelCapabilities.COMPLETION,
+              (
+                providerModels[
+                  provider.provider as unknown as keyof typeof providerModels
+                ].supportsToolCalls as unknown as string[]
+              ).includes(model)
+                ? ModelCapabilities.TOOLS
+                : undefined,
+            ].filter(Boolean) as string[]
+            return {
+              ...(modelManifest ?? { id: model, name: model }),
+              capabilities,
+            } as Model
+          })
+        }
+      }
+
+      return {
+        ...provider,
+        models,
+      }
+    })
+
     return runtimeProviders.concat(builtinProviders as ModelProvider[])
   }
 
@@ -132,7 +139,7 @@ export class WebProvidersService implements ProvidersService {
 
       if (!response.ok) {
         throw new Error(
-          `Failed to fetch models: ${response.status} ${response.statusText}`
+          `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
         )
       }
 
@@ -163,14 +170,14 @@ export class WebProvidersService implements ProvidersService {
     } catch (error) {
       console.error('Error fetching models from provider:', error)
 
-      // Provide helpful error message
-      if (error instanceof Error && error.message.includes('fetch')) {
-        throw new Error(
-          `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
-        )
+      // Provide helpful error message for any connection errors
+      if (error instanceof Error && error.message.includes('Cannot connect')) {
+        throw error
       }
-
-      throw error
+      
+      throw new Error(
+        `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
+      )
     }
   }
 
