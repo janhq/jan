@@ -12,7 +12,6 @@ on:
       - 'extensions-web/**'
       - 'Makefile'
       - 'package.json'
-      - 'mise.toml'
       - 'Dockerfile'
   pull_request:
     branches:
@@ -25,7 +24,6 @@ on:
       - 'extensions-web/**'
       - 'Makefile'
       - 'package.json'
-      - 'mise.toml'
       - 'Dockerfile'
 
 jobs:
