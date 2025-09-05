@@ -42,7 +42,7 @@ jobs:
       - name: Set image tag and service name
         id: vars
         run: |
-          SERVICE_NAME=jan-server/web
+          SERVICE_NAME=jan-server-web
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             IMAGE_TAG="jan-server/web:preview-${{ github.sha }}"
           else
