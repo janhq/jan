@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Jan API",
+    "title": "👋Jan API",
     "description": "OpenAI-compatible API for local inference with Jan. Run AI models locally with complete privacy using llama.cpp's high-performance inference engine. Supports GGUF models with CPU and GPU acceleration. No authentication required for local usage.",
     "version": "0.3.14",
     "contact": {
@@ -49,9 +49,7 @@
   "paths": {
     "/v1/completions": {
       "post": {
-        "tags": [
-          "Completions"
-        ],
+        "tags": ["Completions"],
         "summary": "Create completion",
         "description": "Creates a completion for the provided prompt and parameters. This endpoint is compatible with OpenAI's completions API.",
         "operationId": "create_completion",
@@ -92,11 +90,7 @@
                     "prompt": "# Python function to calculate fibonacci\ndef fibonacci(n):",
                     "max_tokens": 200,
                     "temperature": 0.3,
-                    "stop": [
-                      "\n\n",
-                      "def ",
-                      "class "
-                    ]
+                    "stop": ["\n\n", "def ", "class "]
                   }
                 },
                 "streaming": {
@@ -157,9 +151,7 @@
     },
     "/v1/chat/completions": {
       "post": {
-        "tags": [
-          "Chat"
-        ],
+        "tags": ["Chat"],
         "summary": "Create chat completion",
         "description": "Creates a model response for the given chat conversation. This endpoint is compatible with OpenAI's chat completions API.",
         "operationId": "create_chat_completion",
@@ -319,9 +311,7 @@
     },
     "/v1/models": {
       "get": {
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "summary": "List available models",
         "description": "Lists the currently available models and provides basic information about each one such as the owner and availability.",
         "operationId": "list_models",
@@ -370,9 +360,7 @@
     },
     "/extras/tokenize": {
       "post": {
-        "tags": [
-          "Extras"
-        ],
+        "tags": ["Extras"],
         "summary": "Tokenize text",
         "description": "Convert text input into tokens using the model's tokenizer.",
         "operationId": "tokenize",
@@ -399,12 +387,7 @@
                   "$ref": "#/components/schemas/TokenizeResponse"
                 },
                 "example": {
-                  "tokens": [
-                    15339,
-                    11,
-                    1917,
-                    0
-                  ]
+                  "tokens": [15339, 11, 1917, 0]
                 }
               }
             }
@@ -414,9 +397,7 @@
     },
     "/extras/tokenize/count": {
       "post": {
-        "tags": [
-          "Extras"
-        ],
+        "tags": ["Extras"],
         "summary": "Count tokens",
         "description": "Count the number of tokens in the provided text.",
         "operationId": "count_tokens",
@@ -472,9 +453,7 @@
             ]
           }
         },
-        "required": [
-          "input"
-        ]
+        "required": ["input"]
       },
       "TokenizeResponse": {
         "type": "object",
@@ -487,9 +466,7 @@
             "description": "Array of token IDs"
           }
         },
-        "required": [
-          "tokens"
-        ]
+        "required": ["tokens"]
       },
       "TokenCountResponse": {
         "type": "object",
@@ -499,9 +476,7 @@
             "description": "Number of tokens"
           }
         },
-        "required": [
-          "count"
-        ]
+        "required": ["count"]
       }
     },
     "securitySchemes": {
@@ -530,10 +505,7 @@
       "no_telemetry": true,
       "offline_capable": true
     },
-    "model_formats": [
-      "GGUF",
-      "GGML"
-    ],
+    "model_formats": ["GGUF", "GGML"],
     "default_settings": {
       "context_length": 4096,
       "batch_size": 512,
