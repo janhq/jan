@@ -72,29 +72,24 @@ export const useJanProviderStore = create<JanProviderStore>((set) => ({
 
 // Export a store instance for non-React usage
 export const janProviderStore = {
+  // Store access methods
   getState: useJanProviderStore.getState,
   setState: useJanProviderStore.setState,
   subscribe: useJanProviderStore.subscribe,
   
-  // Action methods for easier non-React usage
+  // Direct action methods
   setAuthenticated: (isAuthenticated: boolean) =>
     useJanProviderStore.getState().setAuthenticated(isAuthenticated),
-  
   setInitializing: (isInitializing: boolean) =>
     useJanProviderStore.getState().setInitializing(isInitializing),
-  
   setModels: (models: JanModel[]) =>
     useJanProviderStore.getState().setModels(models),
-  
   setLoadingModels: (isLoadingModels: boolean) =>
     useJanProviderStore.getState().setLoadingModels(isLoadingModels),
-  
   setError: (error: string | null) =>
     useJanProviderStore.getState().setError(error),
-  
   clearError: () =>
     useJanProviderStore.getState().clearError(),
-  
   reset: () =>
     useJanProviderStore.getState().reset(),
 }

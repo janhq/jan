@@ -16,6 +16,8 @@ export interface JanModelsResponse {
 export interface JanChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+  reasoning?: string
+  reasoning_content?: string
 }
 
 export interface JanChatCompletionRequest {
@@ -59,6 +61,8 @@ export interface JanChatCompletionChunk {
     delta: {
       role?: string
       content?: string
+      reasoning?: string
+      reasoning_content?: string
     }
     finish_reason: string | null
   }>

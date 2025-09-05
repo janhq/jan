@@ -42,4 +42,10 @@ export enum PlatformFeature {
   
   // Analytics and telemetry
   ANALYTICS = 'analytics',
+  
+  // Web-specific automatic model selection from jan provider
+  WEB_AUTO_MODEL_SELECTION = 'webAutoModelSelection',
+  
+  // Model provider settings page management
+  MODEL_PROVIDER_SETTINGS = 'modelProviderSettings',
 }

@@ -86,7 +86,7 @@ const SettingsMenu = () => {
       title: 'common:modelProviders',
       route: route.settings.model_providers,
       hasSubMenu: activeProviders.length > 0,
-      isEnabled: true,
+      isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
     },
     {
       title: 'common:keyboardShortcuts',

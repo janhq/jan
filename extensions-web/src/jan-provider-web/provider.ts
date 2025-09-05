@@ -12,7 +12,7 @@ import {
   chatCompletion,
   chatCompletionChunk,
   ImportOptions,
-} from '@janhq/core'
+} from '@janhq/core' // cspell: disable-line
 import { janApiClient, JanChatMessage } from './api'
 import { janProviderStore } from './store'
 
@@ -69,7 +69,7 @@ export default class JanProviderWeb extends AIEngine {
     }
   }
 
-  async load(modelId: string, settings?: any): Promise<SessionInfo> {
+  async load(modelId: string, _settings?: any): Promise<SessionInfo> {
     try {
       // For Jan API, we don't actually "load" models in the traditional sense
       // We just create a session reference for tracking
@@ -174,6 +174,8 @@ export default class JanProviderWeb extends AIEngine {
             message: {
               role: choice.message.role,
               content: choice.message.content,
+              reasoning: choice.message.reasoning,
+              reasoning_content: choice.message.reasoning_content,
             },
             finish_reason: (choice.finish_reason || 'stop') as 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call',
           })),
@@ -229,6 +231,8 @@ export default class JanProviderWeb extends AIEngine {
               delta: {
                 role: choice.delta.role,
                 content: choice.delta.content,
+                reasoning: choice.delta.reasoning,
+                reasoning_content: choice.delta.reasoning_content,
               },
               finish_reason: choice.finish_reason,
             })),
@@ -284,7 +288,7 @@ export default class JanProviderWeb extends AIEngine {
     throw new Error(`Delete operation not supported for remote Jan API model: ${modelId}`)
   }
 
-  async import(modelId: string, opts: ImportOptions): Promise<void> {
+  async import(modelId: string, _opts: ImportOptions): Promise<void> {
     throw new Error(`Import operation not supported for remote Jan API model: ${modelId}`)
   }
 
