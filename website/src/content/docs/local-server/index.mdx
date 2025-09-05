@@ -3,7 +3,7 @@ title: Local API Server
 description: Build AI applications with Jan's OpenAI-compatible API server.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, LinkCard } from '@astrojs/starlight/components';
 
 Jan provides an OpenAI-compatible API server that runs entirely on your computer. Use the same API patterns you know from OpenAI, but with complete control over your models and data.
 
@@ -31,9 +31,16 @@ curl http://localhost:1337/v1/chat/completions \
 
 ## Documentation
 
+- [**API Reference**](/api) - Interactive API documentation with Try It Out
 - [**API Configuration**](./api-server) - Server settings, authentication, CORS
 - [**Engine Settings**](./llama-cpp) - Configure llama.cpp for your hardware
 - [**Server Settings**](./settings) - Advanced configuration options
+
+<LinkCard
+  title="API Reference"
+  description="Learn how to get started with the API Reference"
+  href="/api"
+/>
 
 ## Integration Examples
 
@@ -94,10 +101,10 @@ Jan implements the core OpenAI API endpoints. Some advanced features like functi
 
 ## Why Use Jan's API?
 
-**Privacy** - Your data stays on your machine with local models  
-**Cost** - No API fees for local model usage  
-**Control** - Choose your models, parameters, and hardware  
-**Flexibility** - Mix local and cloud models as needed  
+**Privacy** - Your data stays on your machine with local models
+**Cost** - No API fees for local model usage
+**Control** - Choose your models, parameters, and hardware
+**Flexibility** - Mix local and cloud models as needed
 
 ## Related Resources
 
