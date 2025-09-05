@@ -1,0 +1,3978 @@
+{
+  "schemes": [],
+  "swagger": "2.0",
+  "info": {
+    "description": "OpenAI-compatible API for Jan Server powered by vLLM. High-performance, scalable inference service with automatic batching and optimized memory management.",
+    "title": "👋Jan Server API",
+    "contact": {
+      "name": "Jan Server Support",
+      "url": "https://jan.ai/support",
+      "email": "support@jan.ai"
+    },
+    "version": "1.0",
+    "x-logo": {
+      "url": "https://jan.ai/logo.png",
+      "altText": "👋Jan Server API"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://github.com/menloresearch/jan/blob/main/LICENSE"
+    }
+  },
+  "host": "",
+  "basePath": "/",
+  "paths": {
+    "/jan/v1/auth/google/callback": {
+      "post": {
+        "description": "Handles the callback from the Google OAuth2 provider to exchange the authorization code for a token, verify the user, and issue access and refresh tokens.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Authentication"
+        ],
+        "summary": "Google OAuth2 Callback",
+        "parameters": [
+          {
+            "description": "Request body containing the authorization code and state",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_auth_google.GoogleCallbackRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully authenticated and returned tokens",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_google_GoogleCallbackResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request (e.g., invalid state, missing code, or invalid claims)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (e.g., a user claim is not found or is invalid in the context)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/jan/v1/auth/google/login": {
+      "get": {
+        "description": "Redirects the user to the Google OAuth2 authorization page to initiate the login process.",
+        "tags": [
+          "Jan",
+          "Jan-Authentication"
+        ],
+        "summary": "Google OAuth2 Login",
+        "responses": {
+          "307": {
+            "description": "Redirects to Google's login page"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/jan/v1/auth/guest-login": {
+      "post": {
+        "description": "JWT-base Guest Login.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Authentication"
+        ],
+        "summary": "Guest Login",
+        "responses": {
+          "200": {
+            "description": "Successfully refreshed the access token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_RefreshTokenResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g., invalid refresh token)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (e.g., expired or missing refresh token)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/jan/v1/auth/me": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves the profile of the authenticated user based on the provided JWT.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Authentication"
+        ],
+        "summary": "Get user profile",
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved user profile",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_GetMeResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (e.g., missing or invalid JWT)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/auth/refresh-token": {
+      "get": {
+        "description": "Use a valid refresh token to obtain a new access token. The refresh token is typically sent in a cookie.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Authentication"
+        ],
+        "summary": "Refresh an access token",
+        "responses": {
+          "200": {
+            "description": "Successfully refreshed the access token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_RefreshTokenResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g., invalid refresh token)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (e.g., expired or missing refresh token)",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/jan/v1/chat/completions": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Generates a model response for the given chat conversation.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Chat"
+        ],
+        "summary": "Create a chat completion",
+        "parameters": [
+          {
+            "description": "Chat completion request payload",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/openai.ChatCompletionRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_chat.ChatCompletionResponseSwagger"
+            }
+          },
+          "400": {
+            "description": "Invalid request payload",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/conversations": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new conversation for the authenticated user",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Create a conversation",
+        "parameters": [
+          {
+            "description": "Create conversation request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateConversationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/conversations/{conversation_id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a conversation by its ID",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Get a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation details",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Deletes a conversation and all its items",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Delete a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.DeletedConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Updates conversation metadata",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Update a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Update conversation request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.UpdateConversationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/conversations/{conversation_id}/items": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Lists all items in a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "List items in a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "Number of items to return (1-100)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Cursor for pagination",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Order of items (asc/desc)",
+            "name": "order",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of items",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemListResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Adds multiple items to a conversation",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Create items in a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Create items request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateItemsRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created items",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemListResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/conversations/{conversation_id}/items/{item_id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a specific item from a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Get an item from a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Item ID",
+            "name": "item_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item details",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Deletes a specific item from a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Conversations"
+        ],
+        "summary": "Delete an item from a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Item ID",
+            "name": "item_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/organizations": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a list of organizations owned by the authenticated user.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "List organizations",
+        "parameters": [
+          {
+            "type": "integer",
+            "default": 10,
+            "description": "Number of organizations to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "default": 0,
+            "description": "Offset for pagination",
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved organizations.",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_OrganizationResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid pagination parameters.",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token.",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/organizations/{org_public_id}/api_keys": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a list of all API keys associated with an organization.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "List API keys for a specific organization",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Organization Public ID",
+            "name": "org_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "default": 0,
+            "description": "offset for pagination",
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "default": 10,
+            "description": "Number of items per page",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of API keys retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_api_keys_ApiKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid pagination parameters",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found, e.g., organization not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new API key with administrative permissions for a specific organization.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "Create a new organization-level admin key",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Organization Public ID",
+            "name": "org_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Request body for creating an admin key",
+            "name": "requestBody",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_api_keys.CreateAdminKeyRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin API key created successfully",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_organization_api_keys_ApiKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid payload or missing IDs",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found, e.g., organization not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/organizations/{org_public_id}/projects": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "List all projects within a given organization.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "List projects",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Organization Public ID",
+            "name": "org_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "default": 10,
+            "description": "Number of projects to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "default": 0,
+            "description": "Offset for pagination",
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved projects",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_projects_ProjectResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid pagination parameters or organization ID",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found, e.g., organization not found or no projects found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/jan/v1/organizations/{org_public_id}/projects/{project_public_id}/api_keys": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "List API keys for a specific project.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "List new project API key",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Organization Public ID",
+            "name": "org_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Project Public ID",
+            "name": "project_public_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key created successfully",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_organization_projects_api_keys_ApiKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid payload or missing IDs",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found, e.g., project or organization not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new API key for a specific project.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan",
+          "Jan-Organizations"
+        ],
+        "summary": "Create a new project API key",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Organization Public ID",
+            "name": "org_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Project Public ID",
+            "name": "project_public_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Request body for creating an API key",
+            "name": "requestBody",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_projects_api_keys.CreateApiKeyRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key created successfully",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_organization_projects_api_keys_ApiKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request, e.g., invalid payload or missing IDs",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized, e.g., invalid or missing token",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found, e.g., project or organization not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Generates a model response for the given chat conversation.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Chat"
+        ],
+        "summary": "Create a chat completion",
+        "parameters": [
+          {
+            "description": "Chat completion request payload",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/openai.ChatCompletionRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_chat.ChatCompletionResponseSwagger"
+            }
+          },
+          "400": {
+            "description": "Invalid request payload",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new conversation for the authenticated user",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Create a conversation",
+        "parameters": [
+          {
+            "description": "Create conversation request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateConversationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversation_id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a conversation by its ID",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Get a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation details",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Deletes a conversation and all its items",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Delete a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.DeletedConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Updates conversation metadata",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Update a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Update conversation request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.UpdateConversationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversation_id}/items": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Lists all items in a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "List items in a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "Number of items to return (1-100)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Cursor for pagination",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Order of items (asc/desc)",
+            "name": "order",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of items",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemListResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Adds multiple items to a conversation",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Create items in a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Create items request",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateItemsRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created items",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemListResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversation_id}/items/{item_id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a specific item from a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Get an item from a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Item ID",
+            "name": "item_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item details",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Deletes a specific item from a conversation",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Conversations"
+        ],
+        "summary": "Delete an item from a conversation",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Conversation ID",
+            "name": "conversation_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Item ID",
+            "name": "item_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated conversation",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/mcp": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Handles Model Context Protocol (MCP) requests over an HTTP stream. The response is sent as a continuous stream of data.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "text/event-stream"
+        ],
+        "tags": [
+          "MCP"
+        ],
+        "summary": "MCP streamable endpoint",
+        "parameters": [
+          {
+            "description": "MCP request payload",
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Streamed response (SSE or chunked transfer)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a list of available models that can be used for chat completions or other tasks.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Models"
+        ],
+        "summary": "List available models",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1.ModelsResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/organization/admin_api_keys": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a paginated list of all admin API keys for the authenticated organization.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "List Admin API Keys",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <admin_api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "default": 20,
+            "description": "The maximum number of items to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "A cursor for use in pagination. The ID of the last object from the previous page",
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the list of admin API keys",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.AdminApiKeyListResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new admin API key for an organization. Requires a valid admin API key in the Authorization header.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Create Admin API Key",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <admin_api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "description": "API key creation request",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.CreateOrganizationAdminAPIKeyRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully created admin API key",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.OrganizationAdminAPIKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid payload",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/organization/admin_api_keys/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a specific admin API key by its ID.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Get Admin API Key",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <admin_api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ID of the admin API key",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the admin API key",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.OrganizationAdminAPIKeyResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found - API key with the given ID does not exist or does not belong to the organization",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Deletes an admin API key by its ID.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Delete Admin API Key",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <admin_api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ID of the admin API key to delete",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully deleted the admin API key",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.AdminAPIKeyDeletedResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found - API key with the given ID does not exist or does not belong to the organization",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/organization/projects": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a paginated list of all projects for the authenticated organization.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "List Projects",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "default": 20,
+            "description": "The maximum number of items to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "A cursor for use in pagination. The ID of the last object from the previous page",
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Whether to include archived projects.",
+            "name": "include_archived",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the list of projects",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectListResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Creates a new project for an organization.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Create Project",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "description": "Project creation request",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.CreateProjectRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully created project",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid payload",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/organization/projects/{project_id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieves a specific project by its ID.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Get Project",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ID of the project",
+            "name": "project_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the project",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found - project with the given ID does not exist or does not belong to the organization",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Updates a specific project by its ID.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Update Project",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ID of the project to update",
+            "name": "project_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Project update request",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.UpdateProjectRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully updated the project",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid payload",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found - project with the given ID does not exist",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/organization/projects/{project_id}/archive": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Archives a specific project by its ID, making it inactive.",
+        "tags": [
+          "Platform",
+          "Platform-Organizations"
+        ],
+        "summary": "Archive Project",
+        "parameters": [
+          {
+            "type": "string",
+            "default": "\"Bearer <api_key>\"",
+            "description": "Bearer token",
+            "name": "Authorization",
+            "in": "header",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ID of the project to archive",
+            "name": "project_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully archived the project",
+            "schema": {
+              "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not Found - project with the given ID does not exist",
+            "schema": {
+              "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "description": "Returns the current build version of the API server.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Jan Server"
+        ],
+        "summary": "Get API build version",
+        "responses": {
+          "200": {
+            "description": "version info",
+            "schema": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "app_interfaces_http_routes_jan_v1_auth.GetMeResponse": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_auth.RefreshTokenResponse": {
+      "type": "object",
+      "properties": {
+        "access_token": {
+          "type": "string"
+        },
+        "expires_in": {
+          "type": "integer"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_auth_google.GoogleCallbackRequest": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_auth_google.GoogleCallbackResponse": {
+      "type": "object",
+      "properties": {
+        "access_token": {
+          "type": "string"
+        },
+        "expires_in": {
+          "type": "integer"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_chat.ChatCompletionResponseSwagger": {
+      "type": "object",
+      "properties": {
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.ChatCompletionChoice"
+          }
+        },
+        "created": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/definitions/openai.Usage"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization.OrganizationResponse": {
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "publicID": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization_api_keys.ApiKeyResponse": {
+      "type": "object",
+      "properties": {
+        "apikeyType": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "last_usedAt": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        },
+        "plaintextHint": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization_api_keys.CreateAdminKeyRequest": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization_projects.ProjectResponse": {
+      "type": "object",
+      "properties": {
+        "archivedAt": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationID": {
+          "type": "integer"
+        },
+        "publicID": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization_projects_api_keys.ApiKeyResponse": {
+      "type": "object",
+      "properties": {
+        "apikeyType": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "last_usedAt": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        },
+        "plaintextHint": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_jan_v1_organization_projects_api_keys.CreateApiKeyRequest": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1.Model": {
+      "type": "object",
+      "properties": {
+        "created": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "owned_by": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1.ModelsResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_v1.Model"
+          }
+        },
+        "object": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_chat.ChatCompletionResponseSwagger": {
+      "type": "object",
+      "properties": {
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.ChatCompletionChoice"
+          }
+        },
+        "created": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/definitions/openai.Usage"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization.AdminAPIKeyDeletedResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization.AdminApiKeyListResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.OrganizationAdminAPIKeyResponse"
+          }
+        },
+        "first_id": {
+          "type": "string"
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "last_id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string",
+          "example": "list"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization.CreateOrganizationAdminAPIKeyRequest": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "My Admin API Key"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization.OrganizationAdminAPIKeyResponse": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "integer",
+          "example": 1698765432
+        },
+        "id": {
+          "type": "string",
+          "example": "key_1234567890"
+        },
+        "last_used_at": {
+          "type": "integer",
+          "example": 1698765432
+        },
+        "name": {
+          "type": "string",
+          "example": "My Admin API Key"
+        },
+        "object": {
+          "type": "string",
+          "example": "api_key"
+        },
+        "owner": {
+          "$ref": "#/definitions/app_interfaces_http_routes_v1_organization.Owner"
+        },
+        "redacted_value": {
+          "type": "string",
+          "example": "sk-...abcd"
+        },
+        "value": {
+          "type": "string",
+          "example": "sk-abcdef1234567890"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization.Owner": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "integer",
+          "example": 1698765432
+        },
+        "id": {
+          "type": "string",
+          "example": "user_1234567890"
+        },
+        "name": {
+          "type": "string",
+          "example": "John Doe"
+        },
+        "object": {
+          "type": "string",
+          "example": "user"
+        },
+        "role": {
+          "type": "string",
+          "example": "admin"
+        },
+        "type": {
+          "type": "string",
+          "example": "user"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization_projects.CreateProjectRequest": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "New AI Project"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization_projects.ProjectListResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_v1_organization_projects.ProjectResponse"
+          }
+        },
+        "first_id": {
+          "type": "string"
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "last_id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string",
+          "example": "list"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization_projects.ProjectResponse": {
+      "type": "object",
+      "properties": {
+        "archived_at": {
+          "type": "integer",
+          "example": 1698765432
+        },
+        "created_at": {
+          "type": "integer",
+          "example": 1698765432
+        },
+        "id": {
+          "type": "string",
+          "example": "proj_1234567890"
+        },
+        "name": {
+          "type": "string",
+          "example": "My First Project"
+        },
+        "object": {
+          "type": "string",
+          "example": "project"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "app_interfaces_http_routes_v1_organization_projects.UpdateProjectRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Updated AI Project"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.AnnotationResponse": {
+      "type": "object",
+      "properties": {
+        "end_index": {
+          "type": "integer"
+        },
+        "file_id": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "start_index": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ContentResponse": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.FileContentResponse"
+        },
+        "image": {
+          "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ImageContentResponse"
+        },
+        "input_text": {
+          "type": "string"
+        },
+        "output_text": {
+          "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.OutputTextResponse"
+        },
+        "text": {
+          "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.TextResponse"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationContentRequest": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemListResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemResponse"
+          }
+        },
+        "first_id": {
+          "type": "string"
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "last_id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemRequest": {
+      "type": "object",
+      "required": [
+        "content",
+        "type"
+      ],
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationContentRequest"
+          }
+        },
+        "role": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemResponse": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ContentResponse"
+          }
+        },
+        "created_at": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationResponse": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "object": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateConversationRequest": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemRequest"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.CreateItemsRequest": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ConversationItemRequest"
+          }
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.DeletedConversationResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.FileContentResponse": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "type": "string"
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.ImageContentResponse": {
+      "type": "object",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "file_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.OutputTextResponse": {
+      "type": "object",
+      "properties": {
+        "annotations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.AnnotationResponse"
+          }
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.TextResponse": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_handlers_conversation.UpdateConversationRequest": {
+      "type": "object",
+      "required": [
+        "metadata"
+      ],
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_GetMeResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_auth.GetMeResponse"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_RefreshTokenResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_auth.RefreshTokenResponse"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_auth_google_GoogleCallbackResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_auth_google.GoogleCallbackResponse"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_organization_api_keys_ApiKeyResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_api_keys.ApiKeyResponse"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.GeneralResponse-app_interfaces_http_routes_jan_v1_organization_projects_api_keys_ApiKeyResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_projects_api_keys.ApiKeyResponse"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_OrganizationResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization.OrganizationResponse"
+          }
+        },
+        "status": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_api_keys_ApiKeyResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_api_keys.ApiKeyResponse"
+          }
+        },
+        "status": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
+    "menlo_ai_jan-api-gateway_app_interfaces_http_responses.ListResponse-app_interfaces_http_routes_jan_v1_organization_projects_ProjectResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/app_interfaces_http_routes_jan_v1_organization_projects.ProjectResponse"
+          }
+        },
+        "status": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
+    "openai.ChatCompletionChoice": {
+      "type": "object",
+      "properties": {
+        "content_filter_results": {
+          "$ref": "#/definitions/openai.ContentFilterResults"
+        },
+        "finish_reason": {
+          "description": "FinishReason\nstop: API returned complete message,\nor a message terminated by one of the stop sequences provided via the stop parameter\nlength: Incomplete model output due to max_tokens parameter or token limit\nfunction_call: The model decided to call a function\ncontent_filter: Omitted content due to a flag from our content filters\nnull: API response still in progress or incomplete",
+          "allOf": [
+            {
+              "$ref": "#/definitions/openai.FinishReason"
+            }
+          ]
+        },
+        "index": {
+          "type": "integer"
+        },
+        "logprobs": {
+          "$ref": "#/definitions/openai.LogProbs"
+        },
+        "message": {
+          "$ref": "#/definitions/openai.ChatCompletionMessage"
+        }
+      }
+    },
+    "openai.ChatCompletionMessage": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "function_call": {
+          "$ref": "#/definitions/openai.FunctionCall"
+        },
+        "multiContent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.ChatMessagePart"
+          }
+        },
+        "name": {
+          "description": "This property isn't in the official documentation, but it's in\nthe documentation for the official library for python:\n- https://github.com/openai/openai-python/blob/main/chatml.md\n- https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb",
+          "type": "string"
+        },
+        "reasoning_content": {
+          "description": "This property is used for the \"reasoning\" feature supported by deepseek-reasoner\nwhich is not in the official documentation.\nthe doc from deepseek:\n- https://api-docs.deepseek.com/api/create-chat-completion#responses",
+          "type": "string"
+        },
+        "refusal": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "tool_call_id": {
+          "description": "For Role=tool prompts this should be set to the ID given in the assistant's prior request to call a tool.",
+          "type": "string"
+        },
+        "tool_calls": {
+          "description": "For Role=assistant prompts this may be set to the tool calls generated by the model, such as function calls.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.ToolCall"
+          }
+        }
+      }
+    },
+    "openai.ChatCompletionRequest": {
+      "type": "object",
+      "properties": {
+        "chat_template_kwargs": {
+          "description": "ChatTemplateKwargs provides a way to add non-standard parameters to the request body.\nAdditional kwargs to pass to the template renderer. Will be accessible by the chat template.\nSuch as think mode for qwen3. \"chat_template_kwargs\": {\"enable_thinking\": false}\nhttps://qwen.readthedocs.io/en/latest/deployment/vllm.html#thinking-non-thinking-modes",
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "frequency_penalty": {
+          "type": "number"
+        },
+        "function_call": {
+          "description": "Deprecated: use ToolChoice instead."
+        },
+        "functions": {
+          "description": "Deprecated: use Tools instead.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.FunctionDefinition"
+          }
+        },
+        "guided_choice": {
+          "description": "GuidedChoice is a vLLM-specific extension that restricts the model's output\nto one of the predefined string choices provided in this field. This feature\nis used to constrain the model's responses to a controlled set of options,\nensuring predictable and consistent outputs in scenarios where specific\nchoices are required.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "logit_bias": {
+          "description": "LogitBias is must be a token id string (specified by their token ID in the tokenizer), not a word string.\nincorrect: `\"logit_bias\":{\"You\": 6}`, correct: `\"logit_bias\":{\"1639\": 6}`\nrefs: https://platform.openai.com/docs/api-reference/chat/create#chat/create-logit_bias",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "logprobs": {
+          "description": "LogProbs indicates whether to return log probabilities of the output tokens or not.\nIf true, returns the log probabilities of each output token returned in the content of message.\nThis option is currently not available on the gpt-4-vision-preview model.",
+          "type": "boolean"
+        },
+        "max_completion_tokens": {
+          "description": "MaxCompletionTokens An upper bound for the number of tokens that can be generated for a completion,\nincluding visible output tokens and reasoning tokens https://platform.openai.com/docs/guides/reasoning",
+          "type": "integer"
+        },
+        "max_tokens": {
+          "description": "MaxTokens The maximum number of tokens that can be generated in the chat completion.\nThis value can be used to control costs for text generated via API.\nDeprecated: use MaxCompletionTokens. Not compatible with o1-series models.\nrefs: https://platform.openai.com/docs/api-reference/chat/create#chat-create-max_tokens",
+          "type": "integer"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.ChatCompletionMessage"
+          }
+        },
+        "metadata": {
+          "description": "Metadata to store with the completion.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "model": {
+          "type": "string"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "parallel_tool_calls": {
+          "description": "Disable the default behavior of parallel tool calls by setting it: false."
+        },
+        "prediction": {
+          "description": "Configuration for a predicted output.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/openai.Prediction"
+            }
+          ]
+        },
+        "presence_penalty": {
+          "type": "number"
+        },
+        "reasoning_effort": {
+          "description": "Controls effort on reasoning for reasoning models. It can be set to \"low\", \"medium\", or \"high\".",
+          "type": "string"
+        },
+        "response_format": {
+          "$ref": "#/definitions/openai.ChatCompletionResponseFormat"
+        },
+        "safety_identifier": {
+          "description": "A stable identifier used to help detect users of your application that may be violating OpenAI's usage policies.\nThe IDs should be a string that uniquely identifies each user.\nWe recommend hashing their username or email address, in order to avoid sending us any identifying information.\nhttps://platform.openai.com/docs/api-reference/chat/create#chat_create-safety_identifier",
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "service_tier": {
+          "description": "Specifies the latency tier to use for processing the request.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/openai.ServiceTier"
+            }
+          ]
+        },
+        "stop": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "store": {
+          "description": "Store can be set to true to store the output of this completion request for use in distillations and evals.\nhttps://platform.openai.com/docs/api-reference/chat/create#chat-create-store",
+          "type": "boolean"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "stream_options": {
+          "description": "Options for streaming response. Only set this when you set stream: true.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/openai.StreamOptions"
+            }
+          ]
+        },
+        "temperature": {
+          "type": "number"
+        },
+        "tool_choice": {
+          "description": "This can be either a string or an ToolChoice object."
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.Tool"
+          }
+        },
+        "top_logprobs": {
+          "description": "TopLogProbs is an integer between 0 and 5 specifying the number of most likely tokens to return at each\ntoken position, each with an associated log probability.\nlogprobs must be set to true if this parameter is used.",
+          "type": "integer"
+        },
+        "top_p": {
+          "type": "number"
+        },
+        "user": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.ChatCompletionResponseFormat": {
+      "type": "object",
+      "properties": {
+        "json_schema": {
+          "$ref": "#/definitions/openai.ChatCompletionResponseFormatJSONSchema"
+        },
+        "type": {
+          "$ref": "#/definitions/openai.ChatCompletionResponseFormatType"
+        }
+      }
+    },
+    "openai.ChatCompletionResponseFormatJSONSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "schema": {},
+        "strict": {
+          "type": "boolean"
+        }
+      }
+    },
+    "openai.ChatCompletionResponseFormatType": {
+      "type": "string",
+      "enum": [
+        "json_object",
+        "json_schema",
+        "text"
+      ],
+      "x-enum-varnames": [
+        "ChatCompletionResponseFormatTypeJSONObject",
+        "ChatCompletionResponseFormatTypeJSONSchema",
+        "ChatCompletionResponseFormatTypeText"
+      ]
+    },
+    "openai.ChatMessageImageURL": {
+      "type": "object",
+      "properties": {
+        "detail": {
+          "$ref": "#/definitions/openai.ImageURLDetail"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.ChatMessagePart": {
+      "type": "object",
+      "properties": {
+        "image_url": {
+          "$ref": "#/definitions/openai.ChatMessageImageURL"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/openai.ChatMessagePartType"
+        }
+      }
+    },
+    "openai.ChatMessagePartType": {
+      "type": "string",
+      "enum": [
+        "text",
+        "image_url"
+      ],
+      "x-enum-varnames": [
+        "ChatMessagePartTypeText",
+        "ChatMessagePartTypeImageURL"
+      ]
+    },
+    "openai.CompletionTokensDetails": {
+      "type": "object",
+      "properties": {
+        "accepted_prediction_tokens": {
+          "type": "integer"
+        },
+        "audio_tokens": {
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "type": "integer"
+        },
+        "rejected_prediction_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "openai.ContentFilterResults": {
+      "type": "object",
+      "properties": {
+        "hate": {
+          "$ref": "#/definitions/openai.Hate"
+        },
+        "jailbreak": {
+          "$ref": "#/definitions/openai.JailBreak"
+        },
+        "profanity": {
+          "$ref": "#/definitions/openai.Profanity"
+        },
+        "self_harm": {
+          "$ref": "#/definitions/openai.SelfHarm"
+        },
+        "sexual": {
+          "$ref": "#/definitions/openai.Sexual"
+        },
+        "violence": {
+          "$ref": "#/definitions/openai.Violence"
+        }
+      }
+    },
+    "openai.FinishReason": {
+      "type": "string",
+      "enum": [
+        "stop",
+        "length",
+        "function_call",
+        "tool_calls",
+        "content_filter",
+        "null"
+      ],
+      "x-enum-varnames": [
+        "FinishReasonStop",
+        "FinishReasonLength",
+        "FinishReasonFunctionCall",
+        "FinishReasonToolCalls",
+        "FinishReasonContentFilter",
+        "FinishReasonNull"
+      ]
+    },
+    "openai.FunctionCall": {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "description": "call function with arguments in JSON format",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.FunctionDefinition": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "description": "Parameters is an object describing the function.\nYou can pass json.RawMessage to describe the schema,\nor you can pass in a struct which serializes to the proper JSON schema.\nThe jsonschema package is provided for convenience, but you should\nconsider another specialized library if you require more complex schemas."
+        },
+        "strict": {
+          "type": "boolean"
+        }
+      }
+    },
+    "openai.Hate": {
+      "type": "object",
+      "properties": {
+        "filtered": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.ImageURLDetail": {
+      "type": "string",
+      "enum": [
+        "high",
+        "low",
+        "auto"
+      ],
+      "x-enum-varnames": [
+        "ImageURLDetailHigh",
+        "ImageURLDetailLow",
+        "ImageURLDetailAuto"
+      ]
+    },
+    "openai.JailBreak": {
+      "type": "object",
+      "properties": {
+        "detected": {
+          "type": "boolean"
+        },
+        "filtered": {
+          "type": "boolean"
+        }
+      }
+    },
+    "openai.LogProb": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "description": "Omitting the field if it is null",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "logprob": {
+          "type": "number"
+        },
+        "token": {
+          "type": "string"
+        },
+        "top_logprobs": {
+          "description": "TopLogProbs is a list of the most likely tokens and their log probability, at this token position.\nIn rare cases, there may be fewer than the number of requested top_logprobs returned.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.TopLogProbs"
+          }
+        }
+      }
+    },
+    "openai.LogProbs": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "description": "Content is a list of message content tokens with log probability information.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/openai.LogProb"
+          }
+        }
+      }
+    },
+    "openai.Prediction": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.Profanity": {
+      "type": "object",
+      "properties": {
+        "detected": {
+          "type": "boolean"
+        },
+        "filtered": {
+          "type": "boolean"
+        }
+      }
+    },
+    "openai.PromptTokensDetails": {
+      "type": "object",
+      "properties": {
+        "audio_tokens": {
+          "type": "integer"
+        },
+        "cached_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "openai.SelfHarm": {
+      "type": "object",
+      "properties": {
+        "filtered": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.ServiceTier": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "default",
+        "flex",
+        "priority"
+      ],
+      "x-enum-varnames": [
+        "ServiceTierAuto",
+        "ServiceTierDefault",
+        "ServiceTierFlex",
+        "ServiceTierPriority"
+      ]
+    },
+    "openai.Sexual": {
+      "type": "object",
+      "properties": {
+        "filtered": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.StreamOptions": {
+      "type": "object",
+      "properties": {
+        "include_usage": {
+          "description": "If set, an additional chunk will be streamed before the data: [DONE] message.\nThe usage field on this chunk shows the token usage statistics for the entire request,\nand the choices field will always be an empty array.\nAll other chunks will also include a usage field, but with a null value.",
+          "type": "boolean"
+        }
+      }
+    },
+    "openai.Tool": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/openai.FunctionDefinition"
+        },
+        "type": {
+          "$ref": "#/definitions/openai.ToolType"
+        }
+      }
+    },
+    "openai.ToolCall": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/openai.FunctionCall"
+        },
+        "id": {
+          "type": "string"
+        },
+        "index": {
+          "description": "Index is not nil only in chat completion chunk object",
+          "type": "integer"
+        },
+        "type": {
+          "$ref": "#/definitions/openai.ToolType"
+        }
+      }
+    },
+    "openai.ToolType": {
+      "type": "string",
+      "enum": [
+        "function"
+      ],
+      "x-enum-varnames": [
+        "ToolTypeFunction"
+      ]
+    },
+    "openai.TopLogProbs": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "logprob": {
+          "type": "number"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "openai.Usage": {
+      "type": "object",
+      "properties": {
+        "completion_tokens": {
+          "type": "integer"
+        },
+        "completion_tokens_details": {
+          "$ref": "#/definitions/openai.CompletionTokensDetails"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "prompt_tokens_details": {
+          "$ref": "#/definitions/openai.PromptTokensDetails"
+        },
+        "total_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "openai.Violence": {
+      "type": "object",
+      "properties": {
+        "filtered": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "BearerAuth": {
+      "description": "Type \"Bearer\" followed by a space and JWT token.",
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.jan.ai/v1",
+      "description": "Jan Server API (Production)"
+    },
+    {
+      "url": "https://staging-api.jan.ai/v1",
+      "description": "Jan Server API (Staging)"
+    },
+    {
+      "url": "http://localhost:8000/v1",
+      "description": "Jan Server (Local Development)"
+    },
+    {
+      "url": "http://jan-server.local:8000/v1",
+      "description": "Jan Server (Minikube)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Models",
+      "description": "List and describe available models"
+    },
+    {
+      "name": "Chat",
+      "description": "Chat completion endpoints for conversational AI"
+    },
+    {
+      "name": "Completions",
+      "description": "Text completion endpoints"
+    },
+    {
+      "name": "Embeddings",
+      "description": "Generate embeddings for text"
+    },
+    {
+      "name": "Usage",
+      "description": "Monitor API usage and quotas"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter your Jan Server API key. Configure authentication in your server settings."
+      }
+    }
+  },
+  "x-jan-server-features": {
+    "vllm": {
+      "version": "0.5.0",
+      "features": [
+        "PagedAttention for efficient memory management",
+        "Continuous batching for high throughput",
+        "Tensor parallelism for multi-GPU serving",
+        "Quantization support (AWQ, GPTQ, SqueezeLLM)",
+        "Speculative decoding",
+        "LoRA adapter support"
+      ]
+    },
+    "scaling": {
+      "auto_scaling": true,
+      "min_replicas": 1,
+      "max_replicas": 100,
+      "target_qps": 100
+    },
+    "limits": {
+      "max_tokens_per_request": 32768,
+      "max_batch_size": 256,
+      "timeout_seconds": 300
+    }
+  }
+}
