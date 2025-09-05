@@ -5,30 +5,30 @@ on:
     branches:
       - dev
     paths:
-      - '.github/workflows/jan-server-web-ci.yaml'
-      - 'src-tauri/**'
+      - '.github/workflows/jan-server-web-ci.yml'
       - 'core/**'
       - 'web-app/**'
       - 'extensions/**'
-      - 'scripts/**'
+      - 'extensions-web/**'
       - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
       - 'mise.toml'
+      - 'Dockerfile'
   pull_request:
     branches:
       - dev
     paths:
-      - '.github/workflows/jan-server-web-ci.yaml'
-      - 'src-tauri/**'
+      - '.github/workflows/jan-server-web-ci.yml'
       - 'core/**'
       - 'web-app/**'
       - 'extensions/**'
-      - 'scripts/**'
+      - 'extensions-web/**'
       - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
       - 'mise.toml'
+      - 'Dockerfile'
 
 jobs:
   build-and-preview:
