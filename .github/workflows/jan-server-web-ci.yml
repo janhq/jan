@@ -4,9 +4,31 @@ on:
   push:
     branches:
       - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yaml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'mise.toml'
   pull_request:
     branches:
       - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yaml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'mise.toml'
 
 jobs:
   build-and-preview:
