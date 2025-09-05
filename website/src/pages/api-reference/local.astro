@@ -1,0 +1,222 @@
+---
+import ApiReferenceLayout from '../../components/ApiReferenceLayout.astro'
+import ScalarApiReferenceMulti from '../../components/react/ScalarApiReferenceMulti.jsx'
+
+const title = 'Jan Local API Reference'
+const description = 'OpenAI-compatible API documentation for Jan running locally with llama.cpp'
+---
+
+<ApiReferenceLayout title={title} description={description}>
+  <div class="api-header-section">
+    <div class="api-header-content">
+      <div class="breadcrumb">
+        <a href="/api">API Documentation</a>
+        <span class="separator">/</span>
+        <span>Local API</span>
+      </div>
+      <h1>Local API Reference</h1>
+      <p class="subtitle">
+        Run Jan locally on your machine with llama.cpp's high-performance inference engine
+      </p>
+      <div class="quick-info">
+        <div class="info-item">
+          <span class="info-label">Base URL:</span>
+          <code>http://localhost:1337</code>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Engine:</span>
+          <span class="engine-badge">llama.cpp</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Format:</span>
+          <span>OpenAI Compatible</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="api-notice">
+    <div class="notice-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+    </div>
+    <div class="notice-content">
+      <strong>Getting Started:</strong> Make sure Jan is running locally on your machine.
+      You can start the server by launching the Jan application or running the CLI command.
+      Default port is 1337, but you can configure it in your settings.
+    </div>
+  </div>
+
+  <div id="scalar-container">
+    <ScalarApiReferenceMulti
+      client:load
+      specUrl="/openapi/openapi.json"
+      title="Jan Local API"
+      description="OpenAI-compatible API for local inference with llama.cpp"
+      deployment="local"
+    />
+  </div>
+
+  <style>
+    .api-header-section {
+      background: linear-gradient(180deg, var(--sl-color-bg-nav) 0%, transparent 100%);
+      padding: 2rem 2rem 3rem;
+      border-bottom: 1px solid var(--sl-color-hairline);
+    }
+
+    .api-header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .breadcrumb a {
+      color: var(--sl-color-gray-3);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .breadcrumb a:hover {
+      color: var(--sl-color-accent, #22c55e);
+    }
+
+    .separator {
+      color: var(--sl-color-gray-5);
+    }
+
+    .api-header-section h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--sl-color-text);
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: var(--sl-color-gray-2);
+      margin-bottom: 2rem;
+      max-width: 700px;
+    }
+
+    .quick-info {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2rem;
+      padding: 1.5rem;
+      background: var(--sl-color-bg);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 8px;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .info-label {
+      color: var(--sl-color-gray-4);
+      font-size: 0.9rem;
+    }
+
+    .info-item code {
+      padding: 0.25rem 0.5rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Monaco', monospace;
+      font-size: 0.9rem;
+      color: var(--sl-color-accent, #22c55e);
+    }
+
+    .engine-badge {
+      padding: 0.25rem 0.75rem;
+      background: linear-gradient(135deg, var(--sl-color-accent, #22c55e) 0%, #16a34a 100%);
+      color: white;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .api-notice {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 1.5rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 8px;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    .notice-icon {
+      flex-shrink: 0;
+      color: var(--sl-color-accent, #22c55e);
+    }
+
+    .notice-content {
+      flex: 1;
+      color: var(--sl-color-gray-2);
+      line-height: 1.6;
+    }
+
+    .notice-content strong {
+      color: var(--sl-color-text);
+    }
+
+    #scalar-container {
+      width: 100%;
+      min-height: calc(100vh - 80px);
+      position: relative;
+    }
+
+    /* Minimal styling to preserve Scalar's native functionality */
+    #scalar-container :global(.scalar-api-reference) {
+      padding-top: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .api-header-section {
+        padding: 1rem;
+      }
+
+      .api-header-section h1 {
+        font-size: 1.75rem;
+      }
+
+      .subtitle {
+        font-size: 1rem;
+      }
+
+      .quick-info {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .api-notice {
+        margin: 1rem;
+        padding: 1rem;
+      }
+
+      #scalar-container {
+        min-height: calc(100vh - 60px);
+      }
+    }
+  </style>
+</ApiReferenceLayout>
