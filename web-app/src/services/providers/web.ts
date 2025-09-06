@@ -198,7 +198,7 @@ export class WebProvidersService implements ProvidersService {
       }
 
       // Provide helpful error message for any connection errors
-      if (error instanceof Error && error.message.includes('Cannot connect')) {
+      if (error instanceof Error && error.message.includes('fetch')) {
         throw new Error(
           `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
         )
