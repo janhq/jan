@@ -1,7 +1,12 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { RouterProvider, createRouter, createRootRoute, createMemoryHistory } from '@tanstack/react-router'
+import {
+  RouterProvider,
+  createRouter,
+  createRootRoute,
+  createMemoryHistory,
+} from '@tanstack/react-router'
 import ChatInput from '../ChatInput'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
@@ -29,6 +34,7 @@ vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(() => ({
     streamingContent: '',
     abortController: null,
+    setQueuedMessage: vi.fn(),
   })),
 }))
 
@@ -88,7 +94,9 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 vi.mock('../MovingBorder', () => ({
-  MovingBorder: ({ children }: { children: React.ReactNode }) => <div data-testid="moving-border">{children}</div>,
+  MovingBorder: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="moving-border">{children}</div>
+  ),
 }))
 
 describe('ChatInput', () => {
@@ -101,7 +109,7 @@ describe('ChatInput', () => {
       component: MockComponent,
     })
 
-    return createRouter({ 
+    return createRouter({
       routeTree: rootRoute,
       history: createMemoryHistory({
         initialEntries: ['/'],
@@ -116,32 +124,32 @@ describe('ChatInput', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    
+
     // Set up default mock returns
     vi.mocked(usePrompt).mockReturnValue({
       prompt: '',
       setPrompt: mockSetPrompt,
     })
-    
+
     vi.mocked(useThreads).mockReturnValue({
       currentThreadId: 'test-thread-id',
       getCurrentThread: vi.fn(),
       setCurrentThreadId: vi.fn(),
     })
-    
+
     vi.mocked(useAppState).mockReturnValue({
       streamingContent: null,
       abortControllers: {},
       loadingModel: false,
       tools: [],
     })
-    
+
     vi.mocked(useGeneralSetting).mockReturnValue({
       spellCheckChatInput: true,
       allowSendWhenUnloaded: false,
       experimentalFeatures: true,
     })
-    
+
     vi.mocked(useModelProvider).mockReturnValue({
       selectedModel: {
         id: 'test-model',
@@ -154,9 +162,9 @@ describe('ChatInput', () => {
             {
               id: 'test-model',
               capabilities: ['tools', 'vision'],
-            }
-          ]
-        }
+            },
+          ],
+        },
       ],
       getModelBy: vi.fn(() => ({
         id: 'test-model',
@@ -172,7 +180,7 @@ describe('ChatInput', () => {
       deleteModel: vi.fn(),
       deletedModels: [],
     })
-    
+
     vi.mocked(useChat).mockReturnValue({
       sendMessage: mockSendMessage,
     })
@@ -182,18 +190,23 @@ describe('ChatInput', () => {
     act(() => {
       renderWithRouter()
     })
-    
+
     const textarea = screen.getByRole('textbox')
     expect(textarea).toBeInTheDocument()
-    expect(textarea).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
+    expect(textarea).toHaveAttribute(
+      'placeholder',
+      'common:placeholder.chatInput'
+    )
   })
 
   it('renders send button', () => {
     act(() => {
       renderWithRouter()
     })
-    
-    const sendButton = document.querySelector('[data-test-id="send-message-button"]')
+
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     expect(sendButton).toBeInTheDocument()
   })
 
@@ -201,8 +214,10 @@ describe('ChatInput', () => {
     act(() => {
       renderWithRouter()
     })
-    
-    const sendButton = document.querySelector('[data-test-id="send-message-button"]')
+
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     expect(sendButton).toBeDisabled()
   })
 
@@ -212,22 +227,24 @@ describe('ChatInput', () => {
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
     })
-    
+
     act(() => {
       renderWithRouter()
     })
-    
-    const sendButton = document.querySelector('[data-test-id="send-message-button"]')
+
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     expect(sendButton).not.toBeDisabled()
   })
 
   it('calls setPrompt when typing in textarea', async () => {
     const user = userEvent.setup()
     renderWithRouter()
-    
+
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, 'Hello')
-    
+
     // setPrompt is called for each character typed
     expect(mockSetPrompt).toHaveBeenCalledTimes(5)
     expect(mockSetPrompt).toHaveBeenLastCalledWith('o')
@@ -235,52 +252,54 @@ describe('ChatInput', () => {
 
   it('calls sendMessage when send button is clicked', async () => {
     const user = userEvent.setup()
-    
+
     // Mock prompt with content
     vi.mocked(usePrompt).mockReturnValue({
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
     })
-    
+
     renderWithRouter()
-    
-    const sendButton = document.querySelector('[data-test-id="send-message-button"]')
+
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     await user.click(sendButton)
-    
+
     expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('sends message when Enter key is pressed', async () => {
     const user = userEvent.setup()
-    
+
     // Mock prompt with content
     vi.mocked(usePrompt).mockReturnValue({
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
     })
-    
+
     renderWithRouter()
-    
+
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, '{Enter}')
-    
+
     expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
   })
 
   it('does not send message when Shift+Enter is pressed', async () => {
     const user = userEvent.setup()
-    
+
     // Mock prompt with content
     vi.mocked(usePrompt).mockReturnValue({
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
     })
-    
+
     renderWithRouter()
-    
+
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, '{Shift>}{Enter}{/Shift}')
-    
+
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
@@ -292,30 +311,41 @@ describe('ChatInput', () => {
       loadingModel: false,
       tools: [],
     })
-    
+
     act(() => {
       renderWithRouter()
     })
-    
+
     // Stop button should be rendered (as SVG with tabler-icon-player-stop-filled class)
     const stopButton = document.querySelector('.tabler-icon-player-stop-filled')
     expect(stopButton).toBeInTheDocument()
   })
 
+  it('shows capability icons when model supports them', () => {
+    act(() => {
+      renderWithRouter()
+    })
+
+    // Should show vision icon (rendered as SVG with tabler-icon-eye class)
+    const visionIcon = document.querySelector('.tabler-icon-eye')
+    expect(visionIcon).toBeInTheDocument()
+  })
 
   it('shows model selection dropdown', () => {
     act(() => {
       renderWithRouter()
     })
-    
+
     // Model selection dropdown should be rendered (look for popover trigger)
-    const modelDropdown = document.querySelector('[data-slot="popover-trigger"]')
+    const modelDropdown = document.querySelector(
+      '[data-slot="popover-trigger"]'
+    )
     expect(modelDropdown).toBeInTheDocument()
   })
 
   it('shows error message when no model is selected', async () => {
     const user = userEvent.setup()
-    
+
     // Mock no selected model and prompt with content
     vi.mocked(useModelProvider).mockReturnValue({
       selectedModel: null,
@@ -331,17 +361,19 @@ describe('ChatInput', () => {
       deleteModel: vi.fn(),
       deletedModels: [],
     })
-    
+
     vi.mocked(usePrompt).mockReturnValue({
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
     })
-    
+
     renderWithRouter()
-    
-    const sendButton = document.querySelector('[data-test-id="send-message-button"]')
+
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     await user.click(sendButton)
-    
+
     // The component should still render without crashing when no model is selected
     expect(sendButton).toBeInTheDocument()
   })
@@ -349,7 +381,7 @@ describe('ChatInput', () => {
   it('handles file upload', async () => {
     const user = userEvent.setup()
     renderWithRouter()
-    
+
     // Wait for async effects to complete (mmproj check)
     await waitFor(() => {
       // File upload is rendered as hidden input element
@@ -366,11 +398,11 @@ describe('ChatInput', () => {
       loadingModel: false,
       tools: [],
     })
-    
+
     act(() => {
       renderWithRouter()
     })
-    
+
     const textarea = screen.getByTestId('chat-input')
     expect(textarea).toBeDisabled()
   })
@@ -378,9 +410,9 @@ describe('ChatInput', () => {
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
-    
+
     renderWithRouter()
-    
+
     await waitFor(() => {
       // Tools dropdown should be rendered (as SVG icon with tabler-icon-tool class)
       const toolsIcon = document.querySelector('.tabler-icon-tool')
@@ -407,7 +439,7 @@ describe('ChatInput', () => {
       deleteModel: vi.fn(),
       deletedModels: [],
     })
-    
+
     // This test ensures the component renders without errors when using selectedProvider
     expect(() => renderWithRouter()).not.toThrow()
   })
