@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import {
   RouterProvider,
@@ -142,6 +142,8 @@ describe('ChatInput', () => {
       abortControllers: {},
       loadingModel: false,
       tools: [],
+      addToThreadQueue: vi.fn(),
+      getThreadQueueLength: vi.fn(() => 0),
     })
 
     vi.mocked(useGeneralSetting).mockReturnValue({
@@ -250,13 +252,23 @@ describe('ChatInput', () => {
     expect(mockSetPrompt).toHaveBeenLastCalledWith('o')
   })
 
-  it('calls sendMessage when send button is clicked', async () => {
+  it('queues message when send button is clicked', async () => {
     const user = userEvent.setup()
+    const mockAddToThreadQueue = vi.fn()
 
     // Mock prompt with content
     vi.mocked(usePrompt).mockReturnValue({
       prompt: 'Hello world',
       setPrompt: mockSetPrompt,
+    })
+
+    vi.mocked(useAppState).mockReturnValue({
+      streamingContent: null,
+      abortControllers: {},
+      loadingModel: false,
+      tools: [],
+      addToThreadQueue: mockAddToThreadQueue,
+      getThreadQueueLength: vi.fn(() => 0),
     })
 
     renderWithRouter()
@@ -266,11 +278,16 @@ describe('ChatInput', () => {
     )
     await user.click(sendButton)
 
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
+    expect(mockAddToThreadQueue).toHaveBeenCalledWith(
+      'test-thread-id',
+      'Hello world'
+    )
+    expect(mockSetPrompt).toHaveBeenCalledWith('')
   })
 
-  it('sends message when Enter key is pressed', async () => {
+  it('queues message when Enter key is pressed', async () => {
     const user = userEvent.setup()
+    const mockAddToThreadQueue = vi.fn()
 
     // Mock prompt with content
     vi.mocked(usePrompt).mockReturnValue({
@@ -278,12 +295,25 @@ describe('ChatInput', () => {
       setPrompt: mockSetPrompt,
     })
 
+    vi.mocked(useAppState).mockReturnValue({
+      streamingContent: null,
+      abortControllers: {},
+      loadingModel: false,
+      tools: [],
+      addToThreadQueue: mockAddToThreadQueue,
+      getThreadQueueLength: vi.fn(() => 0),
+    })
+
     renderWithRouter()
 
     const textarea = screen.getByRole('textbox')
     await user.type(textarea, '{Enter}')
 
-    expect(mockSendMessage).toHaveBeenCalledWith('Hello world', true, undefined)
+    expect(mockAddToThreadQueue).toHaveBeenCalledWith(
+      'test-thread-id',
+      'Hello world'
+    )
+    expect(mockSetPrompt).toHaveBeenCalledWith('')
   })
 
   it('does not send message when Shift+Enter is pressed', async () => {
@@ -310,6 +340,8 @@ describe('ChatInput', () => {
       abortControllers: {},
       loadingModel: false,
       tools: [],
+      addToThreadQueue: vi.fn(),
+      getThreadQueueLength: vi.fn(() => 0),
     })
 
     act(() => {
@@ -390,21 +422,24 @@ describe('ChatInput', () => {
     })
   })
 
-  it('disables input when streaming', () => {
+  it('allows input when streaming (for queueing)', () => {
     // Mock streaming state
     vi.mocked(useAppState).mockReturnValue({
       streamingContent: { thread_id: 'test-thread' },
       abortControllers: {},
       loadingModel: false,
       tools: [],
+      addToThreadQueue: vi.fn(),
+      getThreadQueueLength: vi.fn(() => 0),
     })
 
     act(() => {
       renderWithRouter()
     })
 
-    const textarea = screen.getByTestId('chat-input')
-    expect(textarea).toBeDisabled()
+    const textarea = screen.getByRole('textbox')
+    // Textarea should remain enabled to allow message queueing during streaming
+    expect(textarea).not.toBeDisabled()
   })
 
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
