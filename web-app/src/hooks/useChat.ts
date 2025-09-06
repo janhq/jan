@@ -33,7 +33,7 @@ import {
 } from '@/utils/reasoning'
 
 export const useChat = () => {
-  const { prompt, setPrompt } = usePrompt()
+  const { prompt } = usePrompt()
   const {
     tools,
     updateTokenSpeed,
@@ -41,7 +41,6 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
-    removeFromThreadQueue,
   } = useAppState()
   const { assistants, currentAssistant } = useAssistant()
   const { updateProvider } = useModelProvider()
@@ -240,7 +239,7 @@ export const useChat = () => {
       updateStreamingContent(emptyThreadContent)
       // Do not add new message on retry
       if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message, attachments))
+        addMessage(newUserThreadContent(activeThread.id, message, options?.attachments))
       updateThreadTimestamp(activeThread.id)
 
       // Clear thread-specific prompt (only affects the processing thread)
@@ -257,7 +256,7 @@ export const useChat = () => {
           messages,
           renderInstructions(currentAssistant?.instructions)
         )
-        if (troubleshooting) builder.addUserMessage(message, attachments)
+        if (troubleshooting) builder.addUserMessage(message, options?.attachments)
 
         let isCompleted = false
 
@@ -559,7 +558,6 @@ export const useChat = () => {
       updateStreamingContent,
       addMessage,
       updateThreadTimestamp,
-      setPrompt,
       selectedModel,
       currentAssistant,
       tools,
@@ -574,7 +572,7 @@ export const useChat = () => {
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
-      removeFromThreadQueue,
+      getThreadById,
     ]
   )
 

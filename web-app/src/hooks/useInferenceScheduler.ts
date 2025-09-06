@@ -122,7 +122,7 @@ export const useInferenceScheduler = () => {
       // Start processing with lock already acquired
       ;(async () => {
         try {
-          await sendMessage(nextMessage, true, threadId) // Pass explicit thread ID
+          await sendMessage(nextMessage, true, { explicitThreadId: threadId })
         } catch (error) {
           console.error(`Error processing message in thread ${threadId}:`, error)
         } finally {
