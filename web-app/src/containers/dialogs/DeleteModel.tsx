@@ -37,29 +37,35 @@ export const DialogDeleteModel = ({
   const removeModel = async () => {
     // Remove model from favorites if it exists
     removeFavorite(selectedModelId)
-    
+
     deleteModelCache(selectedModelId)
-    serviceHub.models().deleteModel(selectedModelId).then(() => {
-      serviceHub.providers().getProviders().then((providers) => {
-        // Filter out the deleted model from all providers
-        const filteredProviders = providers.map((provider) => ({
-          ...provider,
-          models: provider.models.filter(
-            (model) => model.id !== selectedModelId
-          ),
-        }))
-        setProviders(filteredProviders)
+    serviceHub
+      .models()
+      .deleteModel(selectedModelId)
+      .then(() => {
+        serviceHub
+          .providers()
+          .getProviders()
+          .then((providers) => {
+            // Filter out the deleted model from all providers
+            const filteredProviders = providers.map((provider) => ({
+              ...provider,
+              models: provider.models.filter(
+                (model) => model.id !== selectedModelId
+              ),
+            }))
+            setProviders(filteredProviders)
+          })
+        toast.success(
+          t('providers:deleteModel.title', { modelId: selectedModel?.id }),
+          {
+            id: `delete-model-${selectedModel?.id}`,
+            description: t('providers:deleteModel.success', {
+              modelId: selectedModel?.id,
+            }),
+          }
+        )
       })
-      toast.success(
-        t('providers:deleteModel.title', { modelId: selectedModel?.id }),
-        {
-          id: `delete-model-${selectedModel?.id}`,
-          description: t('providers:deleteModel.success', {
-            modelId: selectedModel?.id,
-          }),
-        }
-      )
-    })
   }
 
   // Initialize with the provided model ID or the first model if available
@@ -105,7 +111,7 @@ export const DialogDeleteModel = ({
             </Button>
           </DialogClose>
           <DialogClose asChild>
-            <Button variant="destructive" size="sm" onClick={removeModel}>
+            <Button variant="destructive" size="sm" onClick={removeModel} autoFocus>
               {t('providers:deleteModel.delete')}
             </Button>
           </DialogClose>
