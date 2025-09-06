@@ -206,38 +206,34 @@ export const useChat = () => {
     },
     [updateProvider, getProviderByName, restartModel, serviceHub]
   )
-
   const sendMessage = useCallback(
-<<<<<<< HEAD
     async (
       message: string,
       troubleshooting = true,
-      attachments?: Array<{
-        name: string
-        type: string
-        size: number
-        base64: string
-        dataUrl: string
-      }>
+      options?: {
+        attachments?: Array<{
+          name: string
+          type: string
+          size: number
+          base64: string
+          dataUrl: string
+        }>
+        explicitThreadId?: string
+      }
     ) => {
-      const activeThread = await getCurrentThread()
-=======
-    async (message: string, troubleshooting = true, explicitThreadId?: string) => {
-      // Use explicit thread ID if provided, otherwise fall back to current thread
-      const activeThread = explicitThreadId 
-        ? await getThreadById(explicitThreadId)
+      // Use explicitThreadId if provided, otherwise fall back to current thread
+      const activeThread = options?.explicitThreadId
+        ? await getThreadById(options.explicitThreadId)
         : await getCurrentThread()
->>>>>>> 8d45a8e0 (feat(chat): integrate message queueing with chat interface)
 
       resetTokenSpeed()
-      
       let activeProvider = currentProviderId
         ? getProviderByName(currentProviderId)
         : provider
       if (!activeThread || !activeProvider) return
-      
+
       // Processing state is managed by scheduler
-      
+
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
@@ -246,7 +242,7 @@ export const useChat = () => {
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
-      
+
       // Clear thread-specific prompt (only affects the processing thread)
       const { clearThreadPrompt } = useAppState.getState()
       clearThreadPrompt(activeThread.id)
@@ -547,7 +543,7 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
-        
+
         // Processing state managed by scheduler
         // Scheduler will handle processing the next queued message
       }
