@@ -60,6 +60,7 @@ export const useChat = () => {
     getCurrentThread: retrieveThread,
     createThread,
     updateThreadTimestamp,
+    getThreadById,
   } = useThreads()
   const { getMessages, addMessage } = useMessages()
   const { setModelLoadError } = useModelLoad()
@@ -207,6 +208,7 @@ export const useChat = () => {
   )
 
   const sendMessage = useCallback(
+<<<<<<< HEAD
     async (
       message: string,
       troubleshooting = true,
@@ -219,12 +221,23 @@ export const useChat = () => {
       }>
     ) => {
       const activeThread = await getCurrentThread()
+=======
+    async (message: string, troubleshooting = true, explicitThreadId?: string) => {
+      // Use explicit thread ID if provided, otherwise fall back to current thread
+      const activeThread = explicitThreadId 
+        ? await getThreadById(explicitThreadId)
+        : await getCurrentThread()
+>>>>>>> 8d45a8e0 (feat(chat): integrate message queueing with chat interface)
 
       resetTokenSpeed()
+      
       let activeProvider = currentProviderId
         ? getProviderByName(currentProviderId)
         : provider
       if (!activeThread || !activeProvider) return
+      
+      // Processing state is managed by scheduler
+      
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
@@ -233,7 +246,10 @@ export const useChat = () => {
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
-      setPrompt('')
+      
+      // Clear thread-specific prompt (only affects the processing thread)
+      const { clearThreadPrompt } = useAppState.getState()
+      clearThreadPrompt(activeThread.id)
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
@@ -531,15 +547,9 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
-
-        // Process next queued message if available
-        const nextMessage = removeFromThreadQueue(activeThread.id)
-        if (nextMessage) {
-          // Small delay to ensure UI has updated, then send next queued message
-          setTimeout(() => {
-            sendMessage(nextMessage, true)
-          }, 100)
-        }
+        
+        // Processing state managed by scheduler
+        // Scheduler will handle processing the next queued message
       }
     },
     [

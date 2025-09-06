@@ -27,12 +27,15 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
-import { MovingBorder } from './MovingBorder'
 import { useChat } from '@/hooks/useChat'
+import { MovingBorder } from './MovingBorder'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { getConnectedServers } from '@/services/mcp'
+import { useRouter } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 type ChatInputProps = {
   className?: string
@@ -54,11 +57,22 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     cancelToolCall,
     addToThreadQueue,
     getThreadQueueLength,
+    setThreadPrompt,
+    getThreadPrompt,
   } = useAppState()
-  const { prompt, setPrompt } = usePrompt()
-  const { currentThreadId } = useThreads()
+  const { prompt: globalPrompt, setPrompt: setGlobalPrompt } = usePrompt()
+  const { currentThreadId, createThread } = useThreads()
+
+  // Use thread-aware prompt state
+  const prompt = currentThreadId
+    ? getThreadPrompt(currentThreadId)
+    : globalPrompt
+  const setPrompt = currentThreadId
+    ? (value: string) => setThreadPrompt(currentThreadId, value)
+    : setGlobalPrompt
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
+  const router = useRouter()
 
   const maxRows = 10
 
@@ -139,7 +153,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
-  const handleSendMesage = (prompt: string) => {
+  const handleSendMesage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -148,12 +162,42 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       return
     }
     setMessage('')
-    sendMessage(
-      prompt,
-      true,
-      uploadedFiles.length > 0 ? uploadedFiles : undefined
-    )
-    setUploadedFiles([])
+
+    // Create thread if none exists, otherwise use current thread
+    if (!currentThreadId) {
+      try {
+        // Create a new thread for the initial message
+        if (!selectedModel) {
+          setMessage('Please select a model to create a new conversation.')
+          return
+        }
+        const threadModel: ThreadModel = {
+          id: selectedModel.id,
+          provider: selectedProvider,
+        }
+        const newThread = await createThread(
+          threadModel,
+          prompt.trim().slice(0, 50)
+        )
+
+        // Navigate to the new thread
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: newThread.id },
+        })
+
+        // Queue the message after navigation
+        addToThreadQueue(newThread.id, prompt.trim())
+      } catch (error) {
+        console.error('Failed to create thread:', error)
+        setMessage('Failed to create new conversation.')
+        return
+      }
+    } else {
+      // Always queue messages - let scheduler decide when to process
+      addToThreadQueue(currentThreadId, prompt.trim())
+    }
+    setPrompt('')
   }
 
   useEffect(() => {
@@ -567,23 +611,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !isComposing) {
-                  if (!e.shiftKey && prompt.trim()) {
-                    // Enter: Queue if streaming, send if not
-                    e.preventDefault()
-                    if (streamingContent) {
-                      // Always queue when AI is responding (no limitations)
-                      if (currentThreadId) {
-                        addToThreadQueue(currentThreadId, prompt.trim())
-                        setPrompt('')
-                      }
-                    } else {
-                      // If not streaming, send immediately
-                      handleSendMesage(prompt)
-                    }
-                  }
-                  // Shift+Enter: Allow default behavior (new line)
+                if (e.key === 'Enter' && !isComposing && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendMesage(prompt) // Use same handler as send button
                 }
+                // Shift+Enter: Allow default behavior (new line)
               }}
               onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}

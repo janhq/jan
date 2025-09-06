@@ -15,6 +15,7 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useAutoScheduler } from '@/hooks/useInferenceScheduler'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
@@ -46,6 +47,9 @@ const AppLayout = () => {
     setLeftPanelSize,
   } = useLeftPanel()
   const isSmallScreen = useSmallScreen()
+
+  // Initialize auto-scheduler for inference coordination
+  useAutoScheduler()
 
   // Minimum width threshold for auto-close (10% of screen width)
   const MIN_PANEL_WIDTH_THRESHOLD = 14
