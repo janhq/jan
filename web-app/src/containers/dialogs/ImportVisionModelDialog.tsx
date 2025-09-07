@@ -42,12 +42,6 @@ export const ImportVisionModelDialog = ({
     const selectedFile = await serviceHub.dialog().open({
       multiple: false,
       directory: false,
-      filters: [
-        {
-          name: type === 'model' ? 'GGUF Files' : 'MMPROJ Files',
-          extensions: type === 'model' ? ['gguf'] : ['gguf'],
-        },
-      ],
     })
 
     if (selectedFile && typeof selectedFile === 'string') {
