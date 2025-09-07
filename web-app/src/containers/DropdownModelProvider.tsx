@@ -139,7 +139,7 @@ const DropdownModelProvider = ({
     [getProviderByName, updateProvider, serviceHub]
   )
 
-  // Initialize model provider only once
+  // Initialize model provider - avoid race conditions with manual selections
   useEffect(() => {
     const initializeModel = async () => {
       // Auto select model when existing thread is passed
@@ -150,11 +150,13 @@ const DropdownModelProvider = ({
         }
         // Check mmproj existence for llamacpp models
         if (model?.provider === 'llamacpp') {
-          await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
-            model.id as string,
-            updateProvider,
-            getProviderByName
-          )
+          await serviceHub
+            .models()
+            .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+              model.id as string,
+              updateProvider,
+              getProviderByName
+            )
           // Also check vision capability
           await checkAndUpdateModelVisionCapability(model.id as string)
         }
@@ -164,11 +166,13 @@ const DropdownModelProvider = ({
         if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
           selectModelProvider(lastUsed.provider, lastUsed.model)
           if (lastUsed.provider === 'llamacpp') {
-            await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
-              lastUsed.model,
-              updateProvider,
-              getProviderByName
-            )
+            await serviceHub
+              .models()
+              .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+                lastUsed.model,
+                updateProvider,
+                getProviderByName
+              )
             // Also check vision capability
             await checkAndUpdateModelVisionCapability(lastUsed.model)
           }
@@ -186,19 +190,28 @@ const DropdownModelProvider = ({
           }
           selectModelProvider('', '')
         }
-      } else if (PlatformFeatures[PlatformFeature.WEB_AUTO_MODEL_SELECTION] && !selectedModel) {
-        // For web-only builds, always auto-select the first model from jan provider if none is selected
-        const janProvider = providers.find(
-          (p) => p.provider === 'jan' && p.active && p.models.length > 0
-        )
-        if (janProvider && janProvider.models.length > 0) {
-          const firstModel = janProvider.models[0]
-          selectModelProvider(janProvider.provider, firstModel.id)
+      } else {
+        // Get current state for web auto-selection check
+        const currentState = { selectedModel, selectedProvider }
+        if (
+          PlatformFeatures[PlatformFeature.WEB_AUTO_MODEL_SELECTION] &&
+          !currentState.selectedModel &&
+          !currentState.selectedProvider
+        ) {
+          // For web-only builds, auto-select the first model from jan provider only if nothing is selected
+          const janProvider = providers.find(
+            (p) => p.provider === 'jan' && p.active && p.models.length > 0
+          )
+          if (janProvider && janProvider.models.length > 0) {
+            const firstModel = janProvider.models[0]
+            selectModelProvider(janProvider.provider, firstModel.id)
+          }
         }
       }
     }
 
     initializeModel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     model,
     selectModelProvider,
@@ -210,7 +223,7 @@ const DropdownModelProvider = ({
     getProviderByName,
     checkAndUpdateModelVisionCapability,
     serviceHub,
-    selectedModel,
+    // selectedModel and selectedProvider intentionally excluded to prevent race conditions
   ])
 
   // Update display model when selection changes
@@ -376,11 +389,13 @@ const DropdownModelProvider = ({
 
       // Check mmproj existence for llamacpp models
       if (searchableModel.provider.provider === 'llamacpp') {
-        await serviceHub.models().checkMmprojExistsAndUpdateOffloadMMprojSetting(
-          searchableModel.model.id,
-          updateProvider,
-          getProviderByName
-        )
+        await serviceHub
+          .models()
+          .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            searchableModel.model.id,
+            updateProvider,
+            getProviderByName
+          )
         // Also check vision capability
         await checkAndUpdateModelVisionCapability(searchableModel.model.id)
       }
@@ -572,7 +587,9 @@ const DropdownModelProvider = ({
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                         </div>
-                        {PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS] && (
+                        {PlatformFeatures[
+                          PlatformFeature.MODEL_PROVIDER_SETTINGS
+                        ] && (
                           <div
                             className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                             onClick={(e) => {
