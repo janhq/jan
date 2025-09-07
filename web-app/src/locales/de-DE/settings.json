@@ -180,7 +180,9 @@
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Erlaube Cross-Origin-Anfragen an den API-Server.",
     "verboseLogs": "Ausführliche Server Logs",
-    "verboseLogsDesc": "Aktiviere detaillierte Server Logs zum Debuggen"
+    "verboseLogsDesc": "Aktiviere detaillierte Server Logs zum Debuggen",
+    "proxyTimeout": "Zeitüberschreitung bei der Anfrage",
+    "proxyTimeoutDesc": "Wartezeit auf eine Antwort vom lokalen Modell in Sekunden."
   },
   "privacy": {
     "analytics": "Analytik",

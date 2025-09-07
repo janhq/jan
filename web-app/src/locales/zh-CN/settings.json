@@ -180,7 +180,9 @@
     "cors": "跨源资源共享 (CORS)",
     "corsDesc": "允许跨源请求访问 API 服务器。",
     "verboseLogs": "详细服务器日志",
-    "verboseLogsDesc": "启用详细服务器日志以进行调试。"
+    "verboseLogsDesc": "启用详细服务器日志以进行调试。",
+    "proxyTimeout": "请求超时",
+    "proxyTimeoutDesc": "等待本地模型响应的时间（单位：秒）。"
   },
   "privacy": {
     "analytics": "分析",

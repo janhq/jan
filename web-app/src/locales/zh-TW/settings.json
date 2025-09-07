@@ -180,7 +180,9 @@
     "cors": "跨來源資源共用 (CORS)",
     "corsDesc": "允許跨來源請求存取 API 伺服器。",
     "verboseLogs": "詳細伺服器日誌",
-    "verboseLogsDesc": "啟用詳細伺服器日誌以進行偵錯。"
+    "verboseLogsDesc": "啟用詳細伺服器日誌以進行偵錯。",
+    "proxyTimeout": "請求逾時",
+    "proxyTimeoutDesc": "等待本地模型回應的時間（秒）。"
   },
   "privacy": {
     "analytics": "分析",

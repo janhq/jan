@@ -13,6 +13,7 @@ pub async fn start_server<R: Runtime>(
     prefix: String,
     api_key: String,
     trusted_hosts: Vec<String>,
+    proxy_timeout: u64,
 ) -> Result<bool, String> {
     let server_handle = state.server_handle.clone();
     let plugin_state: State<LlamacppState> = app_handle.state();
@@ -26,6 +27,7 @@ pub async fn start_server<R: Runtime>(
         prefix,
         api_key,
         vec![trusted_hosts],
+        proxy_timeout,
     )
     .await
     .map_err(|e| e.to_string())?;
