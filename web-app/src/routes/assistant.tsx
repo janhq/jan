@@ -7,15 +7,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import HeaderPage from '@/containers/HeaderPage'
 import { IconCirclePlus, IconPencil, IconTrash } from '@tabler/icons-react'
 import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+import { DeleteAssistantDialog } from '@/containers/dialogs'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -64,7 +56,8 @@ function Assistant() {
       <div className="h-full p-4 overflow-y-auto">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {assistants
-            .slice().sort((a, b) => a.created_at - b.created_at)
+            .slice()
+            .sort((a, b) => a.created_at - b.created_at)
             .map((assistant) => (
               <div
                 className="bg-main-view-fg/3 p-3 rounded-md"
@@ -134,27 +127,11 @@ function Assistant() {
           }
           onSave={handleSave}
         />
-        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('assistants:deleteConfirmation')}</DialogTitle>
-              <DialogDescription>
-                {t('assistants:deleteConfirmationDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="link"
-                onClick={() => setDeleteConfirmOpen(false)}
-              >
-                {t('assistants:cancel')}
-              </Button>
-              <Button variant="destructive" onClick={confirmDelete} autoFocus>
-                {t('assistants:delete')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <DeleteAssistantDialog
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          onConfirm={confirmDelete}
+        />
       </div>
     </div>
   )

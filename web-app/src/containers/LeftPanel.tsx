@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
@@ -6,7 +6,6 @@ import {
   IconDots,
   IconCirclePlusFilled,
   IconSettingsFilled,
-  IconTrash,
   IconStar,
   IconMessageFilled,
   IconAppsFilled,
@@ -27,17 +26,6 @@ import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo, useState, useEffect, useRef } from 'react'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
@@ -45,6 +33,7 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { DeleteAllThreadsDialog } from '@/containers/dialogs'
 
 const mainMenus = [
   {
@@ -76,7 +65,6 @@ const mainMenus = [
 const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
 
   const isSmallScreen = useSmallScreen()
@@ -362,80 +350,25 @@ const LeftPanel = () => {
                       {t('common:recents')}
                     </span>
                     <div className="relative">
-                      <Dialog>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                            >
-                              <IconDots
-                                size={18}
-                                className="text-left-panel-fg/60"
-                              />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent side="bottom" align="end">
-                            <DialogTrigger asChild>
-                              <DropdownMenuItem
-                                onSelect={(e) => e.preventDefault()}
-                              >
-                                <IconTrash size={16} />
-                                <span>{t('common:deleteAll')}</span>
-                              </DropdownMenuItem>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>
-                                  {t('common:dialogs.deleteAllThreads.title')}
-                                </DialogTitle>
-                                <DialogDescription>
-                                  {t(
-                                    'common:dialogs.deleteAllThreads.description'
-                                  )}
-                                </DialogDescription>
-                                <DialogFooter className="mt-2">
-                                  <DialogClose asChild>
-                                    <Button
-                                      variant="link"
-                                      size="sm"
-                                      className="hover:no-underline"
-                                    >
-                                      {t('common:cancel')}
-                                    </Button>
-                                  </DialogClose>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => {
-                                      deleteAllThreads()
-                                      toast.success(
-                                        t(
-                                          'common:toast.deleteAllThreads.title'
-                                        ),
-                                        {
-                                          id: 'delete-all-thread',
-                                          description: t(
-                                            'common:toast.deleteAllThreads.description'
-                                          ),
-                                        }
-                                      )
-                                      setTimeout(() => {
-                                        navigate({ to: route.home })
-                                      }, 0)
-                                    }}
-                                  >
-                                    {t('common:deleteAll')}
-                                  </Button>
-                                </DialogFooter>
-                              </DialogHeader>
-                            </DialogContent>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </Dialog>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                            }}
+                          >
+                            <IconDots
+                              size={18}
+                              className="text-left-panel-fg/60"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent side="bottom" align="end">
+                          <DeleteAllThreadsDialog onDeleteAll={deleteAllThreads} />
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )}

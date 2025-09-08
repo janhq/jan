@@ -15,14 +15,11 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   IconDots,
   IconStarFilled,
-  IconTrash,
-  IconEdit,
   IconStar,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
-import { route } from '@/constants/routes'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 import {
@@ -33,19 +30,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { DialogClose, DialogFooter, DialogHeader } from '@/components/ui/dialog'
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { memo, useMemo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
-import { toast } from 'sonner'
-import { Input } from '@/components/ui/input'
+import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
+import { route } from '@/constants/routes'
 
 const SortableItem = memo(({ thread }: { thread: Thread }) => {
   const {
@@ -94,9 +82,6 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
   }, [thread.title])
 
-  const [title, setTitle] = useState(
-    plainTitleForRename || t('common:newThread')
-  )
 
   return (
     <div
@@ -156,116 +141,19 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                 <span>{t('common:star')}</span>
               </DropdownMenuItem>
             )}
-            <Dialog
-              onOpenChange={(open) => {
-                if (open) {
-                  setTitle(plainTitleForRename || t('common:newThread'))
-                } else {
-                  setOpenDropdown(false)
-                }
-              }}
-            >
-              <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                  <IconEdit />
-                  <span>{t('common:rename')}</span>
-                </DropdownMenuItem>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t('common:threadTitle')}</DialogTitle>
-                  <Input
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value)
-                    }}
-                    className="mt-2"
-                    onKeyDown={(e) => {
-                      // Prevent key from being captured by parent components
-                      e.stopPropagation()
-                    }}
-                  />
-                  <DialogFooter className="mt-2 flex items-center">
-                    <DialogClose asChild>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="hover:no-underline"
-                      >
-                        {t('common:cancel')}
-                      </Button>
-                    </DialogClose>
-                    <Button
-                      disabled={!title}
-                      onClick={() => {
-                        renameThread(thread.id, title)
-                        setOpenDropdown(false)
-                        toast.success(t('common:toast.renameThread.title'), {
-                          id: 'rename-thread',
-                          description: t(
-                            'common:toast.renameThread.description',
-                            { title }
-                          ),
-                        })
-                      }}
-                    >
-                      {t('common:rename')}
-                    </Button>
-                  </DialogFooter>
-                </DialogHeader>
-              </DialogContent>
-            </Dialog>
+            <RenameThreadDialog
+              thread={thread}
+              plainTitleForRename={plainTitleForRename}
+              onRename={renameThread}
+              onDropdownClose={() => setOpenDropdown(false)}
+            />
 
             <DropdownMenuSeparator />
-            <Dialog
-              onOpenChange={(open) => {
-                if (!open) setOpenDropdown(false)
-              }}
-            >
-              <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                  <IconTrash />
-                  <span>{t('common:delete')}</span>
-                </DropdownMenuItem>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t('common:deleteThread')}</DialogTitle>
-                  <DialogDescription>
-                    {t('common:dialogs.deleteThread.description')}
-                  </DialogDescription>
-                  <DialogFooter className="mt-2 flex items-center">
-                    <DialogClose asChild>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="hover:no-underline"
-                      >
-                        {t('common:cancel')}
-                      </Button>
-                    </DialogClose>
-                    <Button
-                      variant="destructive"
-                      onClick={() => {
-                        deleteThread(thread.id)
-                        setOpenDropdown(false)
-                        toast.success(t('common:toast.deleteThread.title'), {
-                          id: 'delete-thread',
-                          description: t(
-                            'common:toast.deleteThread.description'
-                          ),
-                        })
-                        setTimeout(() => {
-                          navigate({ to: route.home })
-                        }, 0)
-                      }}
-                    >
-                      {t('common:delete')}
-                    </Button>
-                  </DialogFooter>
-                </DialogHeader>
-              </DialogContent>
-            </Dialog>
+            <DeleteThreadDialog
+              thread={thread}
+              onDelete={deleteThread}
+              onDropdownClose={() => setOpenDropdown(false)}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

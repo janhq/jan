@@ -10,17 +10,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
-
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { FactoryResetDialog } from '@/containers/dialogs'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   IconBrandDiscord,
@@ -372,42 +362,11 @@ function General() {
                   ns: 'settings',
                 })}
                 actions={
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="destructive" size="sm">
-                        {t('common:reset')}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>
-                          {t('settings:general.factoryResetTitle')}
-                        </DialogTitle>
-                        <DialogDescription>
-                          {t('settings:general.factoryResetDesc')}
-                        </DialogDescription>
-                        <DialogFooter className="mt-2 flex items-center">
-                          <DialogClose asChild>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                            >
-                              {t('settings:general.cancel')}
-                            </Button>
-                          </DialogClose>
-                          <DialogClose asChild>
-                            <Button
-                              variant="destructive"
-                              onClick={() => resetApp()}
-                            >
-                              {t('settings:general.reset')}
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogHeader>
-                    </DialogContent>
-                  </Dialog>
+                  <FactoryResetDialog onReset={resetApp}>
+                    <Button variant="destructive" size="sm">
+                      {t('common:reset')}
+                    </Button>
+                  </FactoryResetDialog>
                 }
               />
             </Card>
