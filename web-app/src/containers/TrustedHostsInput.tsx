@@ -45,7 +45,7 @@ export function TrustedHostsInput({
       onBlur={handleBlur}
       placeholder={t('common:enterTrustedHosts')}
       className={cn(
-        'w-24 h-8 text-sm',
+        'h-8 text-sm',
         isServerRunning && 'opacity-50 pointer-events-none'
       )}
     />
