@@ -314,7 +314,14 @@ export const ImportVisionModelDialog = ({
               <Switch
                 id="vision-model"
                 checked={isVisionModel}
-                onCheckedChange={setIsVisionModel}
+                onCheckedChange={(checked) => {
+                  setIsVisionModel(checked)
+                  if (!checked) {
+                    setMmProjFile(null)
+                    setMmprojValidationError(null)
+                    setIsValidatingMmproj(false)
+                  }
+                }}
                 className="mt-1"
               />
             </div>
