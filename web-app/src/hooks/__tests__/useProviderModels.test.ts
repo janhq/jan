@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useProviderModels } from '../useProviderModels'
-import { WebProvidersService } from '../../services/providers/web'
-
-let fetchModelsSpy: ReturnType<typeof vi.spyOn>
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 // Local minimal provider type for tests
 type MockModelProvider = {
@@ -27,13 +25,17 @@ describe('useProviderModels', () => {
 
   const mockModels = ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo']
 
+  let fetchModelsSpy: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
-    fetchModelsSpy = vi.spyOn(
-      WebProvidersService.prototype,
-      'fetchModelsFromProvider'
-    )
+    const hub = (useServiceHub as unknown as () => any)()
+    const mockedFetch = vi.fn()
+    vi.spyOn(hub, 'providers').mockReturnValue({
+      fetchModelsFromProvider: mockedFetch,
+    } as any)
+    fetchModelsSpy = mockedFetch
   })
 
   it('should initialize with empty state', () => {
@@ -62,11 +64,9 @@ describe('useProviderModels', () => {
     const { result } = renderHook(() => useProviderModels(mockProvider))
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+      expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
     })
 
-    // Should be sorted alphabetically
-    expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
     expect(result.current.error).toBe(null)
     expect(fetchModelsSpy).toHaveBeenCalledWith(mockProvider)
   })
@@ -80,10 +80,9 @@ describe('useProviderModels', () => {
     )
 
     await waitFor(() => {
+      expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
       expect(result.current.loading).toBe(false)
-    })
-
-    expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
+    }, { timeout: 500 })
 
     // Switch to invalid provider
     rerender({ provider: { ...mockProvider, base_url: undefined } })
