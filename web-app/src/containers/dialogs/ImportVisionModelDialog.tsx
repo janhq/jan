@@ -59,24 +59,24 @@ export const ImportVisionModelDialog = ({
     try {
       console.log(`Reading GGUF metadata for ${fileType}:`, filePath)
 
-      // Try to use the validateGgufFile method if available
-      if (typeof serviceHub.models().validateGgufFile === 'function') {
-        const result = await serviceHub.models().validateGgufFile(filePath)
+      // Handle validation differently for model files vs mmproj files
+      if (fileType === 'model') {
+        // For model files, use the standard validateGgufFile method
+        if (typeof serviceHub.models().validateGgufFile === 'function') {
+          const result = await serviceHub.models().validateGgufFile(filePath)
 
-        if (result.metadata) {
-          // Log full metadata for debugging
-          console.log(
-            `Full GGUF metadata for ${fileType}:`,
-            JSON.stringify(result.metadata, null, 2)
-          )
+          if (result.metadata) {
+            // Log full metadata for debugging
+            console.log(
+              `Full GGUF metadata for ${fileType}:`,
+              JSON.stringify(result.metadata, null, 2)
+            )
 
-          // Check architecture from metadata
-          const architecture =
-            result.metadata.metadata?.['general.architecture']
-          console.log(`${fileType} architecture:`, architecture)
+            // Check architecture from metadata
+            const architecture =
+              result.metadata.metadata?.['general.architecture']
+            console.log(`${fileType} architecture:`, architecture)
 
-          // Validate based on file type
-          if (fileType === 'model') {
             // Model files should NOT be clip
             if (architecture === 'clip') {
               const errorMessage =
@@ -92,33 +92,15 @@ export const ImportVisionModelDialog = ({
                 architecture
               )
             }
-          } else {
-            // MMProj files MUST be clip
-            if (architecture !== 'clip') {
-              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
-              setMmprojValidationError(errorMessage)
-              console.error(
-                'Non-CLIP architecture detected in mmproj file:',
-                architecture
-              )
-            } else {
-              console.log(
-                'MMProj validation passed. Architecture:',
-                architecture
-              )
-            }
+          }
+
+          if (!result.isValid) {
+            setValidationError(result.error || 'Model validation failed')
+            console.error('Model validation failed:', result.error)
           }
         }
-
-        if (!result.isValid && fileType === 'model') {
-          setValidationError(result.error || 'Model validation failed')
-          console.error('Model validation failed:', result.error)
-        } else if (!result.isValid && fileType === 'mmproj') {
-          setMmprojValidationError(result.error || 'MMProj validation failed')
-          console.error('MMProj validation failed:', result.error)
-        }
       } else {
-        // Fallback: Try to call the Tauri plugin directly if available
+        // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
         try {
           // Import the readGgufMetadata function directly from Tauri
           const { invoke } = await import('@tauri-apps/api/core')
@@ -138,47 +120,26 @@ export const ImportVisionModelDialog = ({
           ).metadata?.['general.architecture']
           console.log(`${fileType} architecture:`, architecture)
 
-          if (fileType === 'model') {
-            // Model files should NOT be clip
-            if (architecture === 'clip') {
-              const errorMessage =
-                'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
-              setValidationError(errorMessage)
-              console.error(
-                'CLIP architecture detected in model file:',
-                architecture
-              )
-            } else {
-              console.log(
-                'Model validation passed. Architecture:',
-                architecture
-              )
-            }
+          // MMProj files MUST be clip
+          if (architecture !== 'clip') {
+            const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+            setMmprojValidationError(errorMessage)
+            console.error(
+              'Non-CLIP architecture detected in mmproj file:',
+              architecture
+            )
           } else {
-            // MMProj files MUST be clip
-            if (architecture !== 'clip') {
-              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
-              setMmprojValidationError(errorMessage)
-              console.error(
-                'Non-CLIP architecture detected in mmproj file:',
-                architecture
-              )
-            } else {
-              console.log(
-                'MMProj validation passed. Architecture:',
-                architecture
-              )
-            }
+            console.log(
+              'MMProj validation passed. Architecture:',
+              architecture
+            )
           }
-        } catch (tauriError) {
-          console.warn(
-            `Tauri validation fallback failed for ${fileType}:`,
-            tauriError
-          )
-          // Final fallback: just warn and allow
-          console.log(
-            `${fileType} validation skipped - validation service not available`
-          )
+        } catch (directError) {
+          console.error('Failed to validate mmproj file directly:', directError)
+          const errorMessage = `Failed to read MMProj metadata: ${
+            directError instanceof Error ? directError.message : 'Unknown error'
+          }`
+          setMmprojValidationError(errorMessage)
         }
       }
     } catch (error) {
