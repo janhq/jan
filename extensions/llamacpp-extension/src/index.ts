@@ -1729,6 +1729,22 @@ export default class llamacpp_extension extends AIEngine {
    */
   async checkMmprojExists(modelId: string): Promise<boolean> {
     try {
+      const modelConfigPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+
+      // If mmproj_path is not defined in YAML, return false
+      if (modelConfig.mmproj_path) {
+        return true
+      }
+
       const mmprojPath = await joinPath([
         await this.getProviderPath(),
         'models',

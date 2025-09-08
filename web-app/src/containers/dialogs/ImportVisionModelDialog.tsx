@@ -22,7 +22,7 @@ import {
 type ImportVisionModelDialogProps = {
   provider: ModelProvider
   trigger?: React.ReactNode
-  onSuccess?: () => void
+  onSuccess?: (importedModelName?: string) => void
 }
 
 export const ImportVisionModelDialog = ({
@@ -114,7 +114,7 @@ export const ImportVisionModelDialog = ({
       // Reset form and close dialog
       resetForm()
       setOpen(false)
-      onSuccess?.()
+      onSuccess?.(modelName)
     } catch (error) {
       console.error('Import model error:', error)
       toast.error('Failed to import model', {

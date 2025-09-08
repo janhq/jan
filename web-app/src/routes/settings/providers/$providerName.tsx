@@ -90,9 +90,45 @@ function ProviderDetail() {
           !setting.controller_props.value)
     )
 
-  const handleModelImportSuccess = async () => {
+  const handleModelImportSuccess = async (importedModelName?: string) => {
     // Refresh the provider to update the models list
     await serviceHub.providers().getProviders().then(setProviders)
+    
+    // If a model was imported and it might have vision capabilities, check and update
+    if (importedModelName && providerName === 'llamacpp') {
+      try {
+        const mmprojExists = await serviceHub.models().checkMmprojExists(importedModelName)
+        if (mmprojExists) {
+          // Get the updated provider after refresh
+          const { getProviderByName, updateProvider: updateProviderState } = useModelProvider.getState()
+          const llamacppProvider = getProviderByName('llamacpp')
+          
+          if (llamacppProvider) {
+            const modelIndex = llamacppProvider.models.findIndex(
+              (m: Model) => m.id === importedModelName
+            )
+            if (modelIndex !== -1) {
+              const model = llamacppProvider.models[modelIndex]
+              const capabilities = model.capabilities || []
+
+              // Add 'vision' capability if not already present
+              if (!capabilities.includes('vision')) {
+                const updatedModels = [...llamacppProvider.models]
+                updatedModels[modelIndex] = {
+                  ...model,
+                  capabilities: [...capabilities, 'vision'],
+                }
+
+                updateProviderState('llamacpp', { models: updatedModels })
+                console.log(`Vision capability added to model after provider refresh: ${importedModelName}`)
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking mmproj existence after import:', error)
+      }
+    }
   }
 
   useEffect(() => {
