@@ -13,7 +13,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
-  IconFileImport,
   IconLoader2,
   IconEye,
   IconCheck,
@@ -430,10 +429,10 @@ export const ImportVisionModelDialog = ({
                           className="text-destructive mt-0.5 flex-shrink-0"
                         />
                         <div>
-                          <p className="text-sm font-medium text-destructive-fg">
+                          <p className="text-sm font-medium text-destructive">
                             Model Validation Error
                           </p>
-                          <p className="text-sm text-destructive-fg/70 mt-1">
+                          <p className="text-sm text-destructive/90 mt-1">
                             {validationError}
                           </p>
                         </div>
@@ -459,10 +458,10 @@ export const ImportVisionModelDialog = ({
               ) : (
                 <Button
                   type="button"
-                  variant="default"
+                  variant="link"
                   onClick={() => handleFileSelect('model')}
                   disabled={importing}
-                  className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view"
+                  className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view text-main-view-fg/50 hover:text-main-view-fg"
                 >
                   Select GGUF File
                 </Button>
@@ -522,10 +521,10 @@ export const ImportVisionModelDialog = ({
                             className="text-destructive mt-0.5 flex-shrink-0"
                           />
                           <div>
-                            <p className="text-sm font-medium text-destructive-fg">
+                            <p className="text-sm font-medium text-destructive">
                               MMProj Validation Error
                             </p>
-                            <p className="text-sm text-destructive-fg/70 mt-1">
+                            <p className="text-sm text-destructive/90 mt-1">
                               {mmprojValidationError}
                             </p>
                           </div>
@@ -551,12 +550,11 @@ export const ImportVisionModelDialog = ({
                 ) : (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="link"
                     onClick={() => handleFileSelect('mmproj')}
                     disabled={importing}
-                    className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view"
+                    className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view text-main-view-fg/50 hover:text-main-view-fg"
                   >
-                    <IconFileImport size={18} className="mr-2" />
                     Select MMPROJ File
                   </Button>
                 )}
