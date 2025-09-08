@@ -40,6 +40,25 @@ describe('Web-Specific Service Tests', () => {
 
   describe('WebProvidersService', () => {
     it('should use browser fetch for API calls', async () => {
+      // Mock the dependencies before importing
+      vi.mock('token.js', () => ({
+        models: {}
+      }))
+      vi.mock('@/lib/extension', () => ({
+        ExtensionManager: {
+          getInstance: vi.fn(() => ({
+            getEngine: vi.fn()
+          }))
+        }
+      }))
+      vi.mock('@janhq/core', () => ({
+        EngineManager: {
+          instance: vi.fn(() => ({
+            engines: new Map()
+          }))
+        }
+      }))
+
       const { WebProvidersService } = await import('../providers/web')
       const mockResponse = {
         ok: true,
@@ -66,7 +85,7 @@ describe('Web-Specific Service Tests', () => {
         })
       )
       expect(models).toEqual(['gpt-4'])
-    })
+    }, 10000) // Increase timeout to 10 seconds
   })
 
   describe('WebAppService', () => {

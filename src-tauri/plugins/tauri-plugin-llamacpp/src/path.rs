@@ -145,3 +145,152 @@ pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathB
 
    Ok(Some(mmproj_path_pb))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_validate_binary_path_existing() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        
+        let result = validate_binary_path(path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from(path));
+    }
+
+    #[test]
+    fn test_validate_binary_path_nonexistent() {
+        let nonexistent_path = "/tmp/definitely_does_not_exist_123456789";
+        let result = validate_binary_path(nonexistent_path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_model_path_valid() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        
+        let mut args = vec!["-m".to_string(), path.to_string(), "--verbose".to_string()];
+        let result = validate_model_path(&mut args);
+        
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from(path));
+        // Args should be updated with the path
+        assert_eq!(args[1], temp_file.path().display().to_string());
+    }
+
+    #[test]
+    fn test_validate_model_path_missing_flag() {
+        let mut args = vec!["--verbose".to_string(), "value".to_string()];
+        let result = validate_model_path(&mut args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_model_path_missing_value() {
+        let mut args = vec!["-m".to_string()];
+        let result = validate_model_path(&mut args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_model_path_nonexistent_file() {
+        let nonexistent_path = "/tmp/nonexistent_model_123456789.gguf";
+        let mut args = vec!["-m".to_string(), nonexistent_path.to_string()];
+        let result = validate_model_path(&mut args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_mmproj_path_valid() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        
+        let mut args = vec!["--mmproj".to_string(), path.to_string(), "--verbose".to_string()];
+        let result = validate_mmproj_path(&mut args);
+        
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
+        // Args should be updated with the path
+        assert_eq!(args[1], temp_file.path().display().to_string());
+    }
+
+    #[test]
+    fn test_validate_mmproj_path_missing() {
+        let mut args = vec!["--verbose".to_string(), "value".to_string()];
+        let result = validate_mmproj_path(&mut args);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none()); // mmproj is optional
+    }
+
+    #[test]
+    fn test_validate_mmproj_path_missing_value() {
+        let mut args = vec!["--mmproj".to_string()];
+        let result = validate_mmproj_path(&mut args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_mmproj_path_nonexistent_file() {
+        let nonexistent_path = "/tmp/nonexistent_mmproj_123456789.gguf";
+        let mut args = vec!["--mmproj".to_string(), nonexistent_path.to_string()];
+        let result = validate_mmproj_path(&mut args);
+        assert!(result.is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_get_short_path() {
+        // Test with a real path that should exist on Windows
+        use std::env;
+        if let Ok(temp_dir) = env::var("TEMP") {
+            let result = get_short_path(&temp_dir);
+            // Should return some short path or None (both are valid)
+            // We can't assert the exact value as it depends on the system
+            println!("Short path result: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_validate_model_path_multiple_m_flags() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        
+        // Multiple -m flags - should use the first one
+        let mut args = vec![
+            "-m".to_string(), 
+            path.to_string(),
+            "--verbose".to_string(),
+            "-m".to_string(),
+            "another_path".to_string()
+        ];
+        let result = validate_model_path(&mut args);
+        
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from(path));
+    }
+
+    #[test]
+    fn test_validate_mmproj_path_multiple_flags() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        
+        // Multiple --mmproj flags - should use the first one
+        let mut args = vec![
+            "--mmproj".to_string(), 
+            path.to_string(),
+            "--verbose".to_string(),
+            "--mmproj".to_string(),
+            "another_path".to_string()
+        ];
+        let result = validate_mmproj_path(&mut args);
+        
+        assert!(result.is_ok());
+        let result_path = result.unwrap();
+        assert!(result_path.is_some());
+        assert_eq!(result_path.unwrap(), PathBuf::from(path));
+    }
+}

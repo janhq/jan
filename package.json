@@ -1,6 +1,7 @@
 {
   "name": "jan-app",
   "private": true,
+  "type": "module",
   "workspaces": {
     "packages": [
       "core",
