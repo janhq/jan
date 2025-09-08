@@ -1,0 +1,257 @@
+---
+import ApiReferenceLayout from '../components/ApiReferenceLayout.astro'
+
+const title = 'Jan API Documentation'
+const description = 'OpenAI-compatible API for local and server deployments'
+---
+
+<ApiReferenceLayout title={title} description={description}>
+  <div class="api-docs">
+    <header class="docs-header">
+      <h1>👋Jan API Documentation</h1>
+      <p>OpenAI-compatible API for local and server deployments</p>
+    </header>
+
+    <div class="deployment-options">
+      <div class="option local">
+        <div class="option-header">
+          <h2>Local API</h2>
+          <span class="engine">llama.cpp</span>
+        </div>
+        <p>Run Jan locally with complete privacy.</p>
+        <div class="option-details">
+          <code>http://localhost:1337/v1</code>
+          <span class="features">Privacy-first • GGUF models • CPU/GPU</span>
+        </div>
+        <a href="/api-reference/local" class="docs-link">View Documentation →</a>
+      </div>
+
+      <div class="option server">
+        <div class="option-header">
+          <h2>Jan Server</h2>
+          <span class="engine">vLLM</span>
+        </div>
+        <p>Self-hostable server for high-throughput inference.</p>
+        <div class="option-details">
+          <code>http://your-server:8000/v1</code>
+          <span class="features">Open source • Auto-scaling • Multi-GPU</span>
+        </div>
+        <a href="/api-reference/cloud" class="docs-link">View Documentation →</a>
+      </div>
+    </div>
+
+    <section class="quick-start">
+      <h3>Quick Start</h3>
+      <div class="start-steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <span>Choose deployment type</span>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <span>Start your server</span>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <span>Make API requests</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <style>
+    .api-docs {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .docs-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .docs-header h1 {
+      font-size: 2.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--sl-color-text);
+    }
+
+    .docs-header p {
+      font-size: 1.1rem;
+      color: var(--sl-color-gray-2);
+    }
+
+    .deployment-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+
+    .option {
+      padding: 1.5rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+
+    .option:hover {
+      border-color: var(--sl-color-accent);
+    }
+
+    .option-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .option-header h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0;
+      color: var(--sl-color-text);
+    }
+
+    .engine {
+      padding: 0.2rem 0.5rem;
+      background: var(--sl-color-hairline);
+      color: var(--sl-color-gray-2);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .local .engine {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .server .engine {
+      background: rgba(168, 85, 247, 0.2);
+      color: #a855f7;
+    }
+
+    .option p {
+      color: var(--sl-color-gray-3);
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .option-details {
+      margin-bottom: 1rem;
+    }
+
+    .option-details code {
+      display: block;
+      padding: 0.5rem;
+      background: var(--sl-color-bg);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 4px;
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 0.85rem;
+      color: var(--sl-color-gray-2);
+      margin-bottom: 0.5rem;
+    }
+
+    .features {
+      font-size: 0.9rem;
+      color: var(--sl-color-gray-4);
+    }
+
+    .docs-link {
+      color: var(--sl-color-accent);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .docs-link:hover {
+      color: var(--sl-color-text);
+    }
+
+    .local .docs-link {
+      color: #22c55e;
+    }
+
+    .local .docs-link:hover {
+      color: #16a34a;
+    }
+
+    .server .docs-link {
+      color: #a855f7;
+    }
+
+    .server .docs-link:hover {
+      color: #9333ea;
+    }
+
+    .quick-start {
+      padding: 1.5rem;
+      background: var(--sl-color-bg-nav);
+      border-radius: 8px;
+    }
+
+    .quick-start h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--sl-color-text);
+    }
+
+    .start-steps {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .step-num {
+      width: 1.5rem;
+      height: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--sl-color-accent);
+      color: white;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .step span:last-child {
+      color: var(--sl-color-gray-2);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+      .api-docs {
+        padding: 1rem;
+      }
+
+      .docs-header h1 {
+        font-size: 2rem;
+      }
+
+      .deployment-options {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .start-steps {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+    }
+  </style>
+</ApiReferenceLayout>

@@ -3,10 +3,17 @@ import { renderHook, act } from '@testing-library/react'
 import { useMessages } from '../useMessages'
 import { ThreadMessage } from '@janhq/core'
 
-// Mock dependencies
-vi.mock('@/services/messages', () => ({
-  createMessage: vi.fn(),
-  deleteMessage: vi.fn(),
+// Mock the ServiceHub
+const mockCreateMessage = vi.fn()
+const mockDeleteMessage = vi.fn()
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    messages: () => ({
+      createMessage: mockCreateMessage,
+      deleteMessage: mockDeleteMessage,
+    }),
+  }),
 }))
 
 vi.mock('./useAssistant', () => ({
@@ -19,15 +26,18 @@ vi.mock('./useAssistant', () => ({
         instructions: 'Test instructions',
         parameters: 'test parameters',
       },
+      assistants: [{
+        id: 'test-assistant',
+        name: 'Test Assistant',
+        avatar: 'test-avatar.png',
+        instructions: 'Test instructions',
+        parameters: 'test parameters',
+      }],
     })),
   },
 }))
 
-import { createMessage, deleteMessage } from '@/services/messages'
-
 describe('useMessages', () => {
-  const mockCreateMessage = createMessage as any
-  const mockDeleteMessage = deleteMessage as any
 
   beforeEach(() => {
     vi.clearAllMocks()

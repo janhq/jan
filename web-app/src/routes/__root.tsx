@@ -30,6 +30,9 @@ import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
+import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -76,13 +79,14 @@ const AppLayout = () => {
     const handleGlobalDrop = (e: DragEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // Only prevent if the target is not within a chat input or other valid drop zone
       const target = e.target as Element
-      const isValidDropZone = target?.closest('[data-drop-zone="true"]') || 
-                             target?.closest('.chat-input-drop-zone') ||
-                             target?.closest('[data-tauri-drag-region]')
-      
+      const isValidDropZone =
+        target?.closest('[data-drop-zone="true"]') ||
+        target?.closest('.chat-input-drop-zone') ||
+        target?.closest('[data-tauri-drag-region]')
+
       if (!isValidDropZone) {
         // Prevent the file from opening in the window
         return false
@@ -96,7 +100,7 @@ const AppLayout = () => {
 
     return () => {
       window.removeEventListener('dragenter', preventDefaults)
-      window.removeEventListener('dragover', preventDefaults)  
+      window.removeEventListener('dragover', preventDefaults)
       window.removeEventListener('drop', handleGlobalDrop)
     }
   }, [])
@@ -160,7 +164,7 @@ const AppLayout = () => {
           </div>
         )}
       </main>
-      {productAnalyticPrompt && <PromptAnalytic />}
+      {PlatformFeatures[PlatformFeature.ANALYTICS] && productAnalyticPrompt && <PromptAnalytic />}
     </Fragment>
   )
 }
@@ -192,21 +196,24 @@ function RootLayout() {
 
   return (
     <Fragment>
-      <ThemeProvider />
-      <AppearanceProvider />
-      <ToasterProvider />
-      <TranslationProvider>
-        <ExtensionProvider>
-          <DataProvider />
-          <GlobalEventHandler />
-        </ExtensionProvider>
-        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-        {/* <TanStackRouterDevtools position="bottom-right" /> */}
-        <ToolApproval />
-        <LoadModelErrorDialog />
-        <ErrorDialog />
-        <OutOfContextPromiseModal />
-      </TranslationProvider>
+      <ServiceHubProvider>
+        <ThemeProvider />
+        <AppearanceProvider />
+        <ToasterProvider />
+        <TranslationProvider>
+          <ExtensionProvider>
+            <DataProvider />
+            <GlobalEventHandler />
+            {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+          </ExtensionProvider>
+          {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+          <LoadModelErrorDialog />
+          <ErrorDialog />
+          <OutOfContextPromiseModal />
+        </TranslationProvider>
+      </ServiceHubProvider>
     </Fragment>
   )
 }

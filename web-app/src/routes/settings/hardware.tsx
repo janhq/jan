@@ -10,13 +10,13 @@ import { useHardware } from '@/hooks/useHardware'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
-import { getHardwareInfo, getSystemUsage } from '@/services/hardware'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { formatMegaBytes } from '@/lib/utils'
-import { windowKey } from '@/constants/windows'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { stopAllModels } from '@/services/models'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -24,8 +24,17 @@ export const Route = createFileRoute(route.settings.hardware as any)({
 })
 
 function Hardware() {
+  return (
+    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
+      <HardwareContent />
+    </PlatformGuard>
+  )
+}
+
+function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
+  const serviceHub = useServiceHub()
   const {
     hardwareData,
     systemUsage,
@@ -66,74 +75,47 @@ function Hardware() {
   useEffect(() => {
     setIsLoading(true)
     Promise.all([
-      getHardwareInfo()
-        .then((data) => {
-          setHardwareData(data)
+      serviceHub.hardware().getHardwareInfo()
+        .then((data: HardwareData | null) => {
+          if (data) setHardwareData(data)
         })
         .catch((error) => {
           console.error('Failed to get hardware info:', error)
         }),
-      getSystemUsage()
-        .then((data) => {
-          updateSystemUsage(data)
+      serviceHub.hardware().getSystemUsage()
+        .then((data: SystemUsage | null) => {
+          if (data) updateSystemUsage(data)
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.error('Failed to get initial system usage:', error)
         }),
     ]).finally(() => {
       setIsLoading(false)
     })
-  }, [setHardwareData, updateSystemUsage])
+  }, [serviceHub, setHardwareData, updateSystemUsage])
 
 
 
   useEffect(() => {
-    if (pollingPaused) return
+    if (pollingPaused) {
+      return
+    }
     const intervalId = setInterval(() => {
-      getSystemUsage()
-        .then((data) => {
-          updateSystemUsage(data)
+      serviceHub.hardware().getSystemUsage()
+        .then((data: SystemUsage | null) => {
+          if (data) updateSystemUsage(data)
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.error('Failed to get system usage:', error)
         })
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [updateSystemUsage, pollingPaused])
+  }, [serviceHub, updateSystemUsage, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {
-      // Check if system monitor window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.systemMonitorWindow
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing system monitor window')
-      } else {
-        // Create a new system monitor window
-        const monitorWindow = new WebviewWindow(windowKey.systemMonitorWindow, {
-          url: route.systemMonitor,
-          title: 'System Monitor - Jan',
-          width: 900,
-          height: 600,
-          resizable: true,
-          center: true,
-        })
-
-        // Listen for window creation
-        monitorWindow.once('tauri://created', () => {
-          console.log('System monitor window created')
-        })
-
-        // Listen for window errors
-        monitorWindow.once('tauri://error', (e) => {
-          console.error('Error creating system monitor window:', e)
-        })
-      }
+      await serviceHub.window().openSystemMonitorWindow()
     } catch (error) {
       console.error('Failed to open system monitor window:', error)
     }
@@ -326,7 +308,7 @@ function Hardware() {
                                 checked={device.activated}
                                 onCheckedChange={() => {
                                   toggleDevice(device.id)
-                                  stopAllModels()
+                                  serviceHub.models().stopAllModels()
                                 }}
                               />
                             </div>

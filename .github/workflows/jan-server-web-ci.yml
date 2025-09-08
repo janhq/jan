@@ -1,0 +1,115 @@
+name: Jan Web Server build image and push to Harbor Registry
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yml'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions-web/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'Dockerfile'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/jan-server-web-ci.yml'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions-web/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'Dockerfile'
+
+jobs:
+  build-and-preview:
+    runs-on: [ubuntu-24-04-docker]
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Login to Harbor Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.menlo.ai
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Install dependencies
+        run: |
+          (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+            && sudo mkdir -p -m 755 /etc/apt/keyrings \
+            && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+            && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+            && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+            && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+            && sudo apt update
+          sudo apt-get install -y jq gettext
+      
+      - name: Set image tag and service name
+        id: vars
+        run: |
+          SERVICE_NAME=jan-server-web
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            IMAGE_TAG="web:preview-${{ github.sha }}"
+          else
+            IMAGE_TAG="web:dev-${{ github.sha }}"
+          fi
+          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "FULL_IMAGE=registry.menlo.ai/jan-server/${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build docker image
+        run: |
+          docker build -t ${{ steps.vars.outputs.FULL_IMAGE }} .
+
+      - name: Push docker image
+        run: |
+          docker push ${{ steps.vars.outputs.FULL_IMAGE }}
+
+      - name: Checkout preview URL repo
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: menloresearch/infra-domains
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+          path: preview-repo
+
+      - name: Generate preview manifest
+        if: github.event_name == 'pull_request'
+        run: |
+          cd preview-repo/kubernetes
+          bash template/generate.sh \
+            template/preview-url-template.yaml \
+            preview-url/pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml \
+            ${{ github.sha }} \
+            ${{ steps.vars.outputs.SERVICE_NAME }} \
+            ${{ steps.vars.outputs.FULL_IMAGE }} \
+            80
+
+      - name: Commit and push preview manifest
+        if: github.event_name == 'pull_request'
+        run: |
+          cd preview-repo
+          git config user.name "preview-bot"
+          git config user.email "preview-bot@users.noreply.github.com"
+          git add kubernetes/preview-url/pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml
+          git commit -m "feat(preview): add pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml"
+          git push origin main
+          sleep 180
+
+      - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            Preview URL: https://pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.menlo.ai

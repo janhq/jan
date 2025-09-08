@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchMessages, createMessage, deleteMessage } from '../messages'
+import { DefaultMessagesService } from '../messages/default'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum } from '@janhq/core'
 
@@ -12,7 +12,9 @@ vi.mock('@/lib/extension', () => ({
   }
 }))
 
-describe('messages service', () => {
+describe('DefaultMessagesService', () => {
+  let messagesService: DefaultMessagesService
+  
   const mockExtension = {
     listMessages: vi.fn(),
     createMessage: vi.fn(),
@@ -24,6 +26,7 @@ describe('messages service', () => {
   }
 
   beforeEach(() => {
+    messagesService = new DefaultMessagesService()
     vi.clearAllMocks()
     vi.mocked(ExtensionManager.getInstance).mockReturnValue(mockExtensionManager)
     mockExtensionManager.get.mockReturnValue(mockExtension)
@@ -38,7 +41,7 @@ describe('messages service', () => {
       ]
       mockExtension.listMessages.mockResolvedValue(mockMessages)
 
-      const result = await fetchMessages(threadId)
+      const result = await messagesService.fetchMessages(threadId)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.listMessages).toHaveBeenCalledWith(threadId)
@@ -49,7 +52,7 @@ describe('messages service', () => {
       mockExtensionManager.get.mockReturnValue(null)
       const threadId = 'thread-123'
 
-      const result = await fetchMessages(threadId)
+      const result = await messagesService.fetchMessages(threadId)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(result).toEqual([])
@@ -60,7 +63,7 @@ describe('messages service', () => {
       const error = new Error('Failed to list messages')
       mockExtension.listMessages.mockRejectedValue(error)
 
-      const result = await fetchMessages(threadId)
+      const result = await messagesService.fetchMessages(threadId)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.listMessages).toHaveBeenCalledWith(threadId)
@@ -71,7 +74,7 @@ describe('messages service', () => {
       const threadId = 'thread-123'
       mockExtension.listMessages.mockReturnValue(undefined)
 
-      const result = await fetchMessages(threadId)
+      const result = await messagesService.fetchMessages(threadId)
 
       expect(result).toEqual([])
     })
@@ -82,7 +85,7 @@ describe('messages service', () => {
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
       mockExtension.createMessage.mockResolvedValue(message)
 
-      const result = await createMessage(message)
+      const result = await messagesService.createMessage(message)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.createMessage).toHaveBeenCalledWith(message)
@@ -93,7 +96,7 @@ describe('messages service', () => {
       mockExtensionManager.get.mockReturnValue(null)
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
 
-      const result = await createMessage(message)
+      const result = await messagesService.createMessage(message)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(result).toEqual(message)
@@ -104,7 +107,7 @@ describe('messages service', () => {
       const error = new Error('Failed to create message')
       mockExtension.createMessage.mockRejectedValue(error)
 
-      const result = await createMessage(message)
+      const result = await messagesService.createMessage(message)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.createMessage).toHaveBeenCalledWith(message)
@@ -115,7 +118,7 @@ describe('messages service', () => {
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
       mockExtension.createMessage.mockReturnValue(undefined)
 
-      const result = await createMessage(message)
+      const result = await messagesService.createMessage(message)
 
       expect(result).toEqual(message)
     })
@@ -127,19 +130,19 @@ describe('messages service', () => {
       const messageId = 'msg-1'
       mockExtension.deleteMessage.mockResolvedValue(undefined)
 
-      const result = await deleteMessage(threadId, messageId)
+      const result = await messagesService.deleteMessage(threadId, messageId)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.deleteMessage).toHaveBeenCalledWith(threadId, messageId)
       expect(result).toBeUndefined()
     })
 
-    it('should return undefined when extension not found', () => {
+    it('should return undefined when extension not found', async () => {
       mockExtensionManager.get.mockReturnValue(null)
       const threadId = 'thread-123'
       const messageId = 'msg-1'
 
-      const result = deleteMessage(threadId, messageId)
+      const result = await messagesService.deleteMessage(threadId, messageId)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(result).toBeUndefined()
@@ -152,7 +155,7 @@ describe('messages service', () => {
       mockExtension.deleteMessage.mockRejectedValue(error)
 
       // Since deleteMessage doesn't have error handling, the error will propagate
-      expect(() => deleteMessage(threadId, messageId)).not.toThrow()
+      await expect(messagesService.deleteMessage(threadId, messageId)).rejects.toThrow('Failed to delete message')
     })
   })
 })

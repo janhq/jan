@@ -32,8 +32,7 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { getConnectedServers } from '@/services/mcp'
-import { checkMmprojExists } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 type ChatInputProps = {
   className?: string
@@ -46,6 +45,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  const serviceHub = useServiceHub()
   const {
     streamingContent,
     abortControllers,
@@ -82,7 +82,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   useEffect(() => {
     const checkConnectedServers = async () => {
       try {
-        const servers = await getConnectedServers()
+        const servers = await serviceHub.mcp().getConnectedServers()
         setConnectedServers(servers)
       } catch (error) {
         console.error('Failed to get connected servers:', error)
@@ -96,16 +96,16 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const intervalId = setInterval(checkConnectedServers, 3000)
 
     return () => clearInterval(intervalId)
-  }, [])
+  }, [serviceHub])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
     const checkMmprojSupport = async () => {
-      if (selectedModel?.id) {
+      if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
           if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
+            const hasLocalMmproj = await serviceHub.models().checkMmprojExists(selectedModel.id)
             setHasMmproj(hasLocalMmproj)
           }
           // For non-llamacpp providers, only check vision capability
@@ -125,7 +125,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.capabilities, selectedModel?.id, selectedProvider])
+  }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
@@ -375,106 +375,108 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   }
 
   const handlePaste = async (e: React.ClipboardEvent) => {
-    // Only allow paste if model supports mmproj
-    if (!hasMmproj) {
-      return
-    }
+    // Only process images if model supports mmproj
+    if (hasMmproj) {
+      const clipboardItems = e.clipboardData?.items
+      let hasProcessedImage = false
 
-    const clipboardItems = e.clipboardData?.items
-    let hasProcessedImage = false
+      // Try clipboardData.items first (traditional method)
+      if (clipboardItems && clipboardItems.length > 0) {
+        const imageItems = Array.from(clipboardItems).filter((item) =>
+          item.type.startsWith('image/')
+        )
 
-    // Try clipboardData.items first (traditional method)
-    if (clipboardItems && clipboardItems.length > 0) {
-      const imageItems = Array.from(clipboardItems).filter((item) =>
-        item.type.startsWith('image/')
-      )
+        if (imageItems.length > 0) {
+          e.preventDefault()
 
-      if (imageItems.length > 0) {
-        e.preventDefault()
+          const files: File[] = []
+          let processedCount = 0
 
-        const files: File[] = []
-        let processedCount = 0
-
-        imageItems.forEach((item) => {
-          const file = item.getAsFile()
-          if (file) {
-            files.push(file)
-          }
-          processedCount++
-
-          // When all items are processed, handle the valid files
-          if (processedCount === imageItems.length) {
-            if (files.length > 0) {
-              const syntheticEvent = {
-                target: {
-                  files: files,
-                },
-              } as unknown as React.ChangeEvent<HTMLInputElement>
-
-              handleFileChange(syntheticEvent)
-              hasProcessedImage = true
-            }
-          }
-        })
-        
-        // If we found image items but couldn't get files, fall through to modern API
-        if (processedCount === imageItems.length && !hasProcessedImage) {
-          // Continue to modern clipboard API fallback below
-        } else {
-          return // Successfully processed with traditional method
-        }
-      }
-    }
-
-    // Modern Clipboard API fallback (for Linux, images copied from web, etc.)
-    if (navigator.clipboard && 'read' in navigator.clipboard) {
-      e.preventDefault()
-
-      try {
-        const clipboardContents = await navigator.clipboard.read()
-        const files: File[] = []
-
-        for (const item of clipboardContents) {
-          const imageTypes = item.types.filter((type) =>
-            type.startsWith('image/')
-          )
-
-          for (const type of imageTypes) {
-            try {
-              const blob = await item.getType(type)
-              // Convert blob to File with better naming
-              const extension = type.split('/')[1] || 'png'
-              const file = new File(
-                [blob],
-                `pasted-image-${Date.now()}.${extension}`,
-                { type }
-              )
+          imageItems.forEach((item) => {
+            const file = item.getAsFile()
+            if (file) {
               files.push(file)
-            } catch (error) {
-              console.error('Error reading clipboard item:', error)
             }
+            processedCount++
+
+            // When all items are processed, handle the valid files
+            if (processedCount === imageItems.length) {
+              if (files.length > 0) {
+                const syntheticEvent = {
+                  target: {
+                    files: files,
+                  },
+                } as unknown as React.ChangeEvent<HTMLInputElement>
+
+                handleFileChange(syntheticEvent)
+                hasProcessedImage = true
+              }
+            }
+          })
+
+          // If we found image items but couldn't get files, fall through to modern API
+          if (processedCount === imageItems.length && !hasProcessedImage) {
+            // Continue to modern clipboard API fallback below
+          } else {
+            return // Successfully processed with traditional method
           }
         }
-
-        if (files.length > 0) {
-          const syntheticEvent = {
-            target: {
-              files: files,
-            },
-          } as unknown as React.ChangeEvent<HTMLInputElement>
-
-          handleFileChange(syntheticEvent)
-          return
-        }
-      } catch (error) {
-        console.error('Clipboard API access failed:', error)
       }
-    }
 
-    // If we reach here, no image was found or processed
-    if (!hasProcessedImage) {
-      console.log('No image data found in clipboard or clipboard access failed')
+      // Modern Clipboard API fallback (for Linux, images copied from web, etc.)
+      if (
+        navigator.clipboard &&
+        'read' in navigator.clipboard &&
+        !hasProcessedImage
+      ) {
+        try {
+          const clipboardContents = await navigator.clipboard.read()
+          const files: File[] = []
+
+          for (const item of clipboardContents) {
+            const imageTypes = item.types.filter((type) =>
+              type.startsWith('image/')
+            )
+
+            for (const type of imageTypes) {
+              try {
+                const blob = await item.getType(type)
+                // Convert blob to File with better naming
+                const extension = type.split('/')[1] || 'png'
+                const file = new File(
+                  [blob],
+                  `pasted-image-${Date.now()}.${extension}`,
+                  { type }
+                )
+                files.push(file)
+              } catch (error) {
+                console.error('Error reading clipboard item:', error)
+              }
+            }
+          }
+
+          if (files.length > 0) {
+            e.preventDefault()
+            const syntheticEvent = {
+              target: {
+                files: files,
+              },
+            } as unknown as React.ChangeEvent<HTMLInputElement>
+
+            handleFileChange(syntheticEvent)
+            return
+          }
+        } catch (error) {
+          console.error('Clipboard API access failed:', error)
+        }
+      }
+
+      // If we reach here, no image was found - allow normal text pasting to continue
+      console.log(
+        'No image data found in clipboard, allowing normal text paste'
+      )
     }
+    // If hasMmproj is false or no images found, allow normal text pasting to continue
   }
 
   return (
@@ -569,7 +571,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
-              onPaste={hasMmproj ? handlePaste : undefined}
+              onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}

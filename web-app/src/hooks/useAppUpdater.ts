@@ -1,14 +1,13 @@
 import { isDev } from '@/lib/utils'
-import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
-import { emit } from '@tauri-apps/api/event'
+import type { UpdateInfo } from '@/services/updater/types'
 import { SystemEvent } from '@/types/events'
-import { stopAllModels } from '@/services/models'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
-  updateInfo: Update | null
+  updateInfo: UpdateInfo | null
   isDownloading: boolean
   downloadProgress: number
   downloadedBytes: number
@@ -74,7 +73,7 @@ export const useAppUpdater = () => {
 
         if (!isDev()) {
           // Production mode - use actual Tauri updater
-          const update = await check()
+          const update = await getServiceHub().updater().check()
 
           if (update) {
             const newState = {
@@ -168,14 +167,14 @@ export const useAppUpdater = () => {
 
       let downloaded = 0
       let contentLength = 0
-      await stopAllModels()
-      emit(SystemEvent.KILL_SIDECAR)
+      await getServiceHub().models().stopAllModels()
+      getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      await updateState.updateInfo.downloadAndInstall((event) => {
+      await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {
           case 'Started':
-            contentLength = event.data.contentLength || 0
+            contentLength = event.data?.contentLength || 0
             setUpdateState((prev) => ({
               ...prev,
               totalBytes: contentLength,
@@ -190,7 +189,7 @@ export const useAppUpdater = () => {
             })
             break
           case 'Progress': {
-            downloaded += event.data.chunkLength
+            downloaded += event.data?.chunkLength || 0
             const progress = contentLength > 0 ? downloaded / contentLength : 0
             setUpdateState((prev) => ({
               ...prev,

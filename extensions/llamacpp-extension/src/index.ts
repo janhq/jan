@@ -1064,7 +1064,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
-          events.emit('onFileDownloadUpdate', {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
             percent: transferred / total,
             size: { transferred, total },

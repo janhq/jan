@@ -22,7 +22,7 @@ banner:
     We just launched something cool! 👋Jan now <a href="./jan/multi-modal">supports image 🖼️ attachments</a> 🎉
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, LinkCard } from '@astrojs/starlight/components';
 
 
 ![Jan's Cover Image](../../assets/jan_loaded.png)
@@ -121,11 +121,10 @@ The best AI is the one you control. Not the one that other control for you.
 - Run powerful models locally on consumer hardware
 - Connect to any cloud provider with your API keys
 - Use MCP tools for real-world tasks
-- Access transparent model evaluations
 
 ### What We're Building
 - More specialized models that excel at specific tasks
-- Expanded app ecosystem (mobile, web, extensions)
+- Expanded app ecosystem (mobile, self-hosted server, web, extensions)
 - Richer connector ecosystem
 - An evaluation framework to build better models
 
@@ -147,6 +146,13 @@ hardware, and better techniques, but we're honest that this is a journey, not a 
 2. Choose a model - download locally or add cloud API keys
 3. Start chatting or connect tools via MCP
 4. Build with our [local API](./api-server)
+5. Explore the [API Reference](/api) for Local and Server endpoints
+
+<LinkCard
+  title="API Reference"
+  description="Learn how to get started with the API Reference"
+  href="/api"
+/>
 
 ## Acknowledgements
 

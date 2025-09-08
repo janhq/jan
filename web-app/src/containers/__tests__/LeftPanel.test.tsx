@@ -6,7 +6,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 // Mock global constants
 Object.defineProperty(global, 'IS_WINDOWS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_LINUX', { value: false, writable: true })
-Object.defineProperty(global, 'IS_TAURI', { value: false, writable: true })
+Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
 Object.defineProperty(global, 'IS_MACOS', { value: false, writable: true })
 
 // Mock all dependencies
@@ -70,6 +70,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string) => key,
   }),
 }))
+
 
 vi.mock('@/hooks/useEvent', () => ({
   useEvent: () => ({

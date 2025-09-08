@@ -3,15 +3,18 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useState, useEffect, useCallback } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cn } from '@/lib/utils'
 
 interface ApiKeyInputProps {
   showError?: boolean
   onValidationChange?: (isValid: boolean) => void
+  isServerRunning?: boolean
 }
 
 export function ApiKeyInput({
   showError = false,
   onValidationChange,
+  isServerRunning,
 }: ApiKeyInputProps) {
   const { apiKey, setApiKey } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(apiKey.toString())
@@ -19,16 +22,19 @@ export function ApiKeyInput({
   const [error, setError] = useState('')
   const { t } = useTranslation()
 
-  const validateApiKey = useCallback((value: string) => {
-    if (!value || value.trim().length === 0) {
-      setError(t('common:apiKeyRequired'))
-      onValidationChange?.(false)
-      return false
-    }
-    setError('')
-    onValidationChange?.(true)
-    return true
-  }, [onValidationChange, t])
+  const validateApiKey = useCallback(
+    (value: string) => {
+      if (!value || value.trim().length === 0) {
+        setError(t('common:apiKeyRequired'))
+        onValidationChange?.(false)
+        return false
+      }
+      setError('')
+      onValidationChange?.(true)
+      return true
+    },
+    [onValidationChange, t]
+  )
 
   useEffect(() => {
     if (showError) {
@@ -64,11 +70,12 @@ export function ApiKeyInput({
         value={inputValue}
         onChange={handleChange}
         onBlur={handleBlur}
-        className={`w-full text-sm pr-10 ${
-          hasError
-            ? 'border-1 border-destructive focus:border-destructive focus:ring-destructive'
-            : ''
-        }`}
+        className={cn(
+          'w-full text-sm pr-10',
+          hasError &&
+            'border-1 border-destructive focus:border-destructive focus:ring-destructive',
+          isServerRunning && 'opacity-50 pointer-events-none'
+        )}
         placeholder={t('common:enterApiKey')}
       />
       <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">

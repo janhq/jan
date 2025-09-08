@@ -34,8 +34,26 @@ vi.mock('@/types/events', () => ({
   },
 }))
 
-vi.mock('@/services/models', () => ({
-  stopAllModels: vi.fn(),
+// Mock the ServiceHub
+const mockStopAllModels = vi.fn()
+const mockUpdaterCheck = vi.fn()
+const mockUpdaterDownloadAndInstall = vi.fn()
+const mockUpdaterDownloadAndInstallWithProgress = vi.fn()
+const mockEventsEmit = vi.fn()
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    models: () => ({
+      stopAllModels: mockStopAllModels,
+    }),
+    updater: () => ({
+      check: mockUpdaterCheck,
+      downloadAndInstall: mockUpdaterDownloadAndInstall,
+      downloadAndInstallWithProgress: mockUpdaterDownloadAndInstallWithProgress,
+    }),
+    events: () => ({
+      emit: mockEventsEmit,
+    }),
+  }),
 }))
 
 // Mock global window.core
@@ -58,14 +76,11 @@ import { isDev } from '@/lib/utils'
 import { check } from '@tauri-apps/plugin-updater'
 import { events } from '@janhq/core'
 import { emit } from '@tauri-apps/api/event'
-import { stopAllModels } from '@/services/models'
 
 describe('useAppUpdater', () => {
   const mockEvents = events as any
-  const mockCheck = check as any
   const mockIsDev = isDev as any
   const mockEmit = emit as any
-  const mockStopAllModels = stopAllModels as any
   const mockRelaunch = window.core?.api?.relaunch as any
 
   beforeEach(() => {
@@ -131,7 +146,7 @@ describe('useAppUpdater', () => {
         version: '1.2.0',
         downloadAndInstall: vi.fn(),
       }
-      mockCheck.mockResolvedValue(mockUpdate)
+      mockUpdaterCheck.mockResolvedValue(mockUpdate)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -140,7 +155,7 @@ describe('useAppUpdater', () => {
         updateResult = await result.current.checkForUpdate()
       })
 
-      expect(mockCheck).toHaveBeenCalled()
+      expect(mockUpdaterCheck).toHaveBeenCalled()
       expect(result.current.updateState.isUpdateAvailable).toBe(true)
       expect(result.current.updateState.updateInfo).toBe(mockUpdate)
       expect(result.current.updateState.remindMeLater).toBe(false)
@@ -148,7 +163,7 @@ describe('useAppUpdater', () => {
     })
 
     it('should handle no update available', async () => {
-      mockCheck.mockResolvedValue(null)
+      mockUpdaterCheck.mockResolvedValue(null)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -164,7 +179,7 @@ describe('useAppUpdater', () => {
 
     it('should handle errors during update check', async () => {
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockCheck.mockRejectedValue(new Error('Network error'))
+      mockUpdaterCheck.mockRejectedValue(new Error('Network error'))
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -185,7 +200,7 @@ describe('useAppUpdater', () => {
     })
 
     it('should reset remindMeLater when requested', async () => {
-      mockCheck.mockResolvedValue(null)
+      mockUpdaterCheck.mockResolvedValue(null)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -213,7 +228,7 @@ describe('useAppUpdater', () => {
         updateResult = await result.current.checkForUpdate()
       })
 
-      expect(mockCheck).not.toHaveBeenCalled()
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
       expect(result.current.updateState.isUpdateAvailable).toBe(false)
       expect(updateResult).toBe(null)
     })
@@ -258,7 +273,7 @@ describe('useAppUpdater', () => {
       }
 
       // Mock check to return the update
-      mockCheck.mockResolvedValue(mockUpdate)
+      mockUpdaterCheck.mockResolvedValue(mockUpdate)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -268,7 +283,7 @@ describe('useAppUpdater', () => {
       })
 
       // Mock the download and install process
-      mockDownloadAndInstall.mockImplementation(async (progressCallback) => {
+      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(async (progressCallback) => {
         // Simulate download events
         progressCallback({
           event: 'Started',
@@ -292,8 +307,8 @@ describe('useAppUpdater', () => {
       })
 
       expect(mockStopAllModels).toHaveBeenCalled()
-      expect(mockEmit).toHaveBeenCalledWith('KILL_SIDECAR')
-      expect(mockDownloadAndInstall).toHaveBeenCalled()
+      expect(mockEventsEmit).toHaveBeenCalledWith('KILL_SIDECAR')
+      expect(mockUpdaterDownloadAndInstallWithProgress).toHaveBeenCalled()
       expect(mockRelaunch).toHaveBeenCalled()
     })
 
@@ -306,7 +321,7 @@ describe('useAppUpdater', () => {
       }
 
       // Mock check to return the update
-      mockCheck.mockResolvedValue(mockUpdate)
+      mockUpdaterCheck.mockResolvedValue(mockUpdate)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -315,7 +330,7 @@ describe('useAppUpdater', () => {
         await result.current.checkForUpdate()
       })
 
-      mockDownloadAndInstall.mockRejectedValue(new Error('Download failed'))
+      mockUpdaterDownloadAndInstallWithProgress.mockRejectedValue(new Error('Download failed'))
 
       await act(async () => {
         await result.current.downloadAndInstallUpdate()
@@ -351,7 +366,7 @@ describe('useAppUpdater', () => {
       }
 
       // Mock check to return the update
-      mockCheck.mockResolvedValue(mockUpdate)
+      mockUpdaterCheck.mockResolvedValue(mockUpdate)
 
       const { result } = renderHook(() => useAppUpdater())
 
@@ -360,7 +375,7 @@ describe('useAppUpdater', () => {
         await result.current.checkForUpdate()
       })
 
-      mockDownloadAndInstall.mockImplementation(async (progressCallback) => {
+      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(async (progressCallback) => {
         progressCallback({
           event: 'Started',
           data: { contentLength: 2000 },

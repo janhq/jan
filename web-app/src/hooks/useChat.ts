@@ -21,12 +21,10 @@ import { renderInstructions } from '@/lib/instructionTemplate'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
 
-import { stopModel, startModel, stopAllModels } from '@/services/models'
-
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
-import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import {
@@ -46,6 +44,7 @@ export const useChat = () => {
   } = useAppState()
   const { assistants, currentAssistant } = useAssistant()
   const { updateProvider } = useModelProvider()
+  const serviceHub = useServiceHub()
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
     useToolApproval()
@@ -106,14 +105,14 @@ export const useChat = () => {
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
-      await stopAllModels()
+      await serviceHub.models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await startModel(provider, modelId).catch(console.error)
+      await serviceHub.models().startModel(provider, modelId).catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
-    [updateLoadingModel]
+    [updateLoadingModel, serviceHub]
   )
 
   const increaseModelContextSize = useCallback(
@@ -189,7 +188,7 @@ export const useChat = () => {
         settings: newSettings,
       }
 
-      await updateSettings(providerName, updateObj.settings ?? [])
+      await serviceHub.providers().updateSettings(providerName, updateObj.settings ?? [])
       updateProvider(providerName, {
         ...provider,
         ...updateObj,
@@ -198,7 +197,7 @@ export const useChat = () => {
       if (updatedProvider) await restartModel(updatedProvider, modelId)
       return updatedProvider
     },
-    [updateProvider, getProviderByName, restartModel]
+    [updateProvider, getProviderByName, restartModel, serviceHub]
   )
 
   const sendMessage = useCallback(
@@ -232,7 +231,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(activeProvider, selectedModel.id)
+          await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
 
@@ -477,7 +476,7 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'llamacpp')
+            await serviceHub.models().stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -551,6 +550,7 @@ export const useChat = () => {
       increaseModelContextSize,
       toggleOnContextShifting,
       setModelLoadError,
+      serviceHub,
     ]
   )
 

@@ -4,6 +4,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { cn } from '@/lib/utils'
 
@@ -12,12 +13,19 @@ const hostOptions = [
   { value: '0.0.0.0', label: '0.0.0.0' },
 ]
 
-export function ServerHostSwitcher() {
+export function ServerHostSwitcher({
+  isServerRunning,
+}: {
+  isServerRunning?: boolean
+}) {
   const { serverHost, setServerHost } = useLocalApiServer()
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger
+        asChild
+        className={cn(isServerRunning && 'opacity-50 pointer-events-none')}
+      >
         <span
           title="Edit Server Host"
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"

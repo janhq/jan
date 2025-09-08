@@ -1,0 +1,331 @@
+---
+import ApiReferenceLayout from '../../components/ApiReferenceLayout.astro'
+import ScalarApiReferenceMulti from '../../components/react/ScalarApiReferenceMulti.jsx'
+
+const title = 'Jan Server API Reference'
+const description = 'OpenAI-compatible API documentation for Jan Server powered by vLLM'
+---
+
+<ApiReferenceLayout title={title} description={description}>
+  <div class="api-header-section">
+    <div class="api-header-content">
+      <div class="breadcrumb">
+        <a href="/api">API Documentation</a>
+        <span class="separator">/</span>
+        <span>Jan Server</span>
+      </div>
+      <h1>Jan Server API Reference</h1>
+      <p class="subtitle">
+        Self-hostable Jan Server powered by vLLM for high-throughput serving
+      </p>
+      <div class="quick-info">
+        <div class="info-item">
+          <span class="info-label">Base URL:</span>
+          <code>http://your-server:8000/v1</code>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Engine:</span>
+          <span class="engine-badge">vLLM</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Format:</span>
+          <span>OpenAI Compatible</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="api-notice">
+    <div class="notice-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    </div>
+    <div class="notice-content">
+      <strong>Authentication Required:</strong> All requests to Jan Server require authentication.
+      Include your API key in the <code>Authorization</code> header as <code>Bearer YOUR_API_KEY</code>.
+      Configure authentication in your server settings.
+    </div>
+  </div>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+        </svg>
+      </div>
+      <h3>High Performance</h3>
+      <p>Powered by vLLM's PagedAttention for efficient memory usage and high throughput</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="6"></circle>
+        </svg>
+      </div>
+      <h3>Auto-Scaling</h3>
+      <p>Automatically scales to handle your workload with intelligent load balancing</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+          <path d="M2 17l10 5 10-5"></path>
+          <path d="M2 12l10 5 10-5"></path>
+        </svg>
+      </div>
+      <h3>Multi-Model Support</h3>
+      <p>Support for various model formats and sizes with optimized serving configurations</p>
+    </div>
+  </div>
+
+  <div id="scalar-container">
+    <ScalarApiReferenceMulti
+      client:load
+      specUrl="/openapi/cloud-openapi.json"
+      title="Jan Server API"
+      description="OpenAI-compatible API for server inference with vLLM"
+      deployment="cloud"
+    />
+  </div>
+
+  <style>
+    .api-header-section {
+      background: linear-gradient(180deg, var(--sl-color-bg-nav) 0%, transparent 100%);
+      padding: 2rem 2rem 3rem;
+      border-bottom: 1px solid var(--sl-color-hairline);
+    }
+
+    .api-header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .breadcrumb a {
+      color: var(--sl-color-gray-3);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .breadcrumb a:hover {
+      color: #a855f7;
+    }
+
+    .separator {
+      color: var(--sl-color-gray-5);
+    }
+
+    .api-header-section h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--sl-color-text);
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: var(--sl-color-gray-2);
+      margin-bottom: 2rem;
+      max-width: 700px;
+    }
+
+    .quick-info {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2rem;
+      padding: 1.5rem;
+      background: var(--sl-color-bg);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 8px;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .info-label {
+      color: var(--sl-color-gray-4);
+      font-size: 0.9rem;
+    }
+
+    .info-item code {
+      padding: 0.25rem 0.5rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Monaco', monospace;
+      font-size: 0.9rem;
+      color: #a855f7;
+    }
+
+    .engine-badge {
+      padding: 0.25rem 0.75rem;
+      background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+      color: white;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .api-notice {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 8px;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    .notice-icon {
+      flex-shrink: 0;
+      color: #a855f7;
+    }
+
+    .notice-content {
+      flex: 1;
+      color: var(--sl-color-gray-2);
+      line-height: 1.6;
+    }
+
+    .notice-content strong {
+      color: var(--sl-color-text);
+    }
+
+    .notice-content code {
+      padding: 0.2rem 0.4rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Monaco', monospace;
+      font-size: 0.85rem;
+      color: #a855f7;
+    }
+
+    .notice-content a {
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .notice-content a:hover {
+      color: #9333ea;
+      text-decoration: underline;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .feature-card {
+      padding: 1.5rem;
+      background: var(--sl-color-bg-nav);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-2px);
+      border-color: #a855f7;
+      box-shadow: 0 8px 16px rgba(168, 85, 247, 0.1);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%);
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      color: #a855f7;
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--sl-color-text);
+    }
+
+    .feature-card p {
+      color: var(--sl-color-gray-3);
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    #scalar-container {
+      width: 100%;
+      min-height: calc(100vh - 80px);
+      position: relative;
+    }
+
+    /* Minimal styling to preserve Scalar's native functionality */
+    #scalar-container :global(.scalar-api-reference) {
+      padding-top: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .api-header-section {
+        padding: 1rem;
+      }
+
+      .api-header-section h1 {
+        font-size: 1.75rem;
+      }
+
+      .subtitle {
+        font-size: 1rem;
+      }
+
+      .quick-info {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .api-notice {
+        margin: 1rem;
+        padding: 1rem;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+        padding: 0 1rem;
+      }
+
+      #scalar-container {
+        min-height: calc(100vh - 60px);
+      }
+    }
+  </style>
+</ApiReferenceLayout>
