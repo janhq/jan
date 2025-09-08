@@ -35,10 +35,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import {
-  GgufMetadata,
-  readGgufMetadata,
-} from '@janhq/tauri-plugin-llamacpp-api'
+import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
@@ -46,6 +43,7 @@ type LlamacppConfig = {
   auto_update_engine: boolean
   auto_unload: boolean
   llamacpp_env: string
+  memory_util: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
@@ -72,6 +70,13 @@ type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   ctx_shift: boolean
+}
+
+type ModelPlan = {
+  gpuLayers: number
+  maxContextLength: number
+  noOffloadKVCache: boolean
+  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
 interface DownloadItem {
@@ -114,6 +119,12 @@ interface DeviceList {
   name: string
   mem: number
   free: number
+}
+
+interface SystemMemory {
+  totalVRAM: number
+  totalRAM: number
+  totalMemory: number
 }
 
 /**
@@ -159,6 +170,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   llamacpp_env: string = ''
+  memoryMode: string = 'high'
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -190,6 +202,7 @@ export default class llamacpp_extension extends AIEngine {
 
     this.autoUnload = this.config.auto_unload
     this.llamacpp_env = this.config.llamacpp_env
+    this.memoryMode = this.config.memory_util
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
@@ -836,6 +849,8 @@ export default class llamacpp_extension extends AIEngine {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
+    } else if (key === 'memory_util') {
+      this.memoryMode = value as string
     }
   }
 
@@ -1864,10 +1879,153 @@ export default class llamacpp_extension extends AIEngine {
       'tokenizer.chat_template'
     ]?.includes('tools')
   }
+  /**
+   * Get total system memory including both VRAM and RAM
+   */
+  private async getTotalSystemMemory(): Promise<SystemMemory> {
+    const devices = await this.getDevices()
+    let totalVRAM = 0
+
+    if (devices.length > 0) {
+      // Sum total VRAM across all GPUs
+      totalVRAM = devices
+        .map((d) => d.mem * 1024 * 1024)
+        .reduce((a, b) => a + b, 0)
+    }
+
+    // Get system RAM
+    const sys = await getSystemUsage()
+    const totalRAM = sys.total_memory * 1024 * 1024
+
+    const totalMemory = totalVRAM + totalRAM
+
+    logger.info(
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
+    )
+
+    return {
+      totalVRAM,
+      totalRAM,
+      totalMemory,
+    }
+  }
+  private async getKVCachePerToken(
+    meta: Record<string, string>
+  ): Promise<number> {
+    const arch = meta['general.architecture']
+    if (!arch) throw new Error('Invalid metadata: architecture not found')
+
+    const nLayer = Number(meta[`${arch}.block_count`])
+    const nHead = Number(meta[`${arch}.attention.head_count`])
+    if (!nLayer || !nHead) {
+      throw new Error('Invalid metadata: block_count or head_count not found')
+    }
+
+    const keyLen = Number(meta[`${arch}.attention.key_length`])
+    const valLen = Number(meta[`${arch}.attention.value_length`])
+    let headDim: number
+    if (keyLen && valLen) {
+      headDim = keyLen + valLen
+    } else {
+      const embeddingLen = Number(meta[`${arch}.embedding_length`])
+      if (!embeddingLen)
+        throw new Error('Invalid metadata: embedding_length not found')
+      headDim = (embeddingLen / nHead) * 2
+    }
+
+    const bytesPerElement = 2 // fp16
+    return nHead * headDim * bytesPerElement * nLayer
+  }
+
+  private async getLayerSize(
+    path: string,
+    meta: Record<string, string>
+  ): Promise<{ layerSize: number; totalLayers: number }> {
+    const modelSize = await this.getModelSize(path)
+    const arch = meta['general.architecture']
+    const totalLayers = Number(meta[`${arch}.block_count`])
+    if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
+    return { layerSize: modelSize / totalLayers, totalLayers }
+  }
+
+  async planModelLoad(path: string, requestedCtx?: number): Promise<ModelPlan> {
+    const modelSize = await this.getModelSize(path)
+    const memoryInfo = await this.getTotalSystemMemory()
+    const gguf = await readGgufMetadata(path)
+
+    const { layerSize, totalLayers } = await this.getLayerSize(
+      path,
+      gguf.metadata
+    )
+    const kvCachePerToken = await this.getKVCachePerToken(gguf.metadata)
+
+    // VRAM budget (70% heuristic)
+    const USABLE_VRAM_PERCENTAGE = 0.7
+    const usableVRAM = memoryInfo.totalVRAM * USABLE_VRAM_PERCENTAGE
+
+    // System RAM budget (depends on this.memoryMode: low/medium/high)
+    const memoryPercentages = { high: 0.7, medium: 0.5, low: 0.4 }
+    const usableSystemMemory =
+      memoryInfo.totalMemory * memoryPercentages[this.memoryMode]
+
+    // --- GPU layers ---
+    let gpuLayers = 0
+    if (modelSize <= usableVRAM) {
+      gpuLayers = totalLayers
+    } else {
+      gpuLayers = Math.floor(usableVRAM / layerSize)
+    }
+
+    // --- Context length & KV cache ---
+    let availableForKVCache = usableVRAM - modelSize
+    let maxContextLength = 0
+    let noOffloadKVCache = false
+    let mode: ModelPlan['mode'] = 'Unsupported'
+
+    if (availableForKVCache > 0) {
+      maxContextLength = Math.floor(availableForKVCache / kvCachePerToken)
+      noOffloadKVCache = false
+      mode = 'GPU'
+    }
+
+    // fallback: system RAM for KV cache
+    if (maxContextLength <= 0) {
+      availableForKVCache = usableSystemMemory - modelSize
+      if (availableForKVCache > 0) {
+        maxContextLength = Math.floor(availableForKVCache / kvCachePerToken)
+        noOffloadKVCache = true // KV cache forced to CPU
+        mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+      }
+    }
+
+    // still too big: safe reduction per layer
+    if (maxContextLength <= 0) {
+      const safeTokensPerLayer = Math.floor(
+        usableSystemMemory / ((kvCachePerToken / totalLayers) * 2)
+      )
+      maxContextLength = Math.max(0, safeTokensPerLayer)
+      noOffloadKVCache = true
+      mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+    }
+
+    // enforce user-requested context
+    if (requestedCtx) {
+      maxContextLength = Math.min(maxContextLength, requestedCtx)
+    }
+
+    if (gpuLayers <= 0 && maxContextLength <= 0) {
+      mode = 'Unsupported'
+    }
+
+    logger.info(
+      `Plan for ${path}: gpuLayers=${gpuLayers}, maxContextLength=${maxContextLength}, noOffloadKVCache=${noOffloadKVCache}, mode=${mode}`
+    )
+
+    return { gpuLayers, maxContextLength, noOffloadKVCache, mode }
+  }
 
   /**
-   *  estimate KVCache size of from a given metadata
-   *
+   * estimate KVCache size from a given metadata
    */
   private async estimateKVCache(
     meta: Record<string, string>,
@@ -1907,6 +2065,7 @@ export default class llamacpp_extension extends AIEngine {
         `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
       )
     }
+
     let ctxLen: number
     if (!ctx_size) {
       ctxLen = Number(meta[`${arch}.context_length`])
@@ -1941,13 +2100,13 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /*
-   * check the support status of a model by its path (local/remote)
+  /**
+   * Check the support status of a model by its path (local/remote)
    *
-   * * Returns:
-   * - "RED"    → weights don't fit
-   * - "YELLOW" → weights fit, KV cache doesn't
-   * - "GREEN"  → both weights + KV cache fit
+   * Returns:
+   * - "RED"    → weights don't fit in total memory
+   * - "YELLOW" → weights fit in VRAM but need system RAM, or KV cache doesn't fit
+   * - "GREEN"  → both weights + KV cache fit in VRAM
    */
   async isModelSupported(
     path: string,
@@ -1955,46 +2114,48 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
       const modelSize = await this.getModelSize(path)
+      const memoryInfo = await this.getTotalSystemMemory()
+
       logger.info(`modelSize: ${modelSize}`)
-      let gguf: GgufMetadata
-      gguf = await readGgufMetadata(path)
+
+      const gguf = await readGgufMetadata(path)
       let kvCacheSize: number
       if (ctx_size) {
         kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
       } else {
         kvCacheSize = await this.estimateKVCache(gguf.metadata)
       }
-      // total memory consumption = model weights + kvcache + a small buffer for outputs
-      // output buffer is small so not considering here
+
+      // Total memory consumption = model weights + kvcache
       const totalRequired = modelSize + kvCacheSize
       logger.info(
         `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
       )
-      let totalMemBytes: number
-      const devices = await this.getDevices()
-      if (devices.length > 0) {
-        // Sum total memory across all GPUs
-        totalMemBytes = devices
-          .map((d) => d.mem * 1024 * 1024)
-          .reduce((a, b) => a + b, 0)
-      } else {
-        // CPU fallback
-        const sys = await getSystemUsage()
-        totalMemBytes = sys.total_memory * 1024 * 1024
-      }
 
       // Use 80% of total memory as the usable limit
       const USABLE_MEMORY_PERCENTAGE = 0.8
-      const usableMemBytes = totalMemBytes * USABLE_MEMORY_PERCENTAGE
+      const usableTotalMemory =
+        memoryInfo.totalMemory * USABLE_MEMORY_PERCENTAGE
+      const usableVRAM = memoryInfo.totalVRAM * USABLE_MEMORY_PERCENTAGE
 
-      // check model size wrt 80% of system memory
-      if (modelSize > usableMemBytes) {
+      // Check if model fits in total memory at all
+      if (modelSize > usableTotalMemory) {
         return 'RED'
-      } else if (modelSize + kvCacheSize > usableMemBytes) {
-        return 'YELLOW'
-      } else {
+      }
+
+      // Check if everything fits in VRAM (ideal case)
+      if (totalRequired <= usableVRAM) {
         return 'GREEN'
       }
+
+      // Check if model fits in VRAM but total requirement exceeds VRAM
+      // OR if total requirement fits in total memory but not in VRAM
+      if (modelSize <= usableVRAM || totalRequired <= usableTotalMemory) {
+        return 'YELLOW'
+      }
+
+      // If we get here, nothing fits properly
+      return 'RED'
     } catch (e) {
       throw new Error(String(e))
     }
