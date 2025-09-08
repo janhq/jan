@@ -17,6 +17,7 @@ import {
   IconLoader2,
   IconEye,
   IconCheck,
+  IconAlertTriangle,
 } from '@tabler/icons-react'
 
 type ImportVisionModelDialogProps = {
@@ -37,6 +38,175 @@ export const ImportVisionModelDialog = ({
   const [modelFile, setModelFile] = useState<string | null>(null)
   const [mmProjFile, setMmProjFile] = useState<string | null>(null)
   const [modelName, setModelName] = useState('')
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [isValidating, setIsValidating] = useState(false)
+  const [mmprojValidationError, setMmprojValidationError] = useState<
+    string | null
+  >(null)
+  const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
+
+  const validateGgufFile = async (
+    filePath: string,
+    fileType: 'model' | 'mmproj'
+  ): Promise<void> => {
+    if (fileType === 'model') {
+      setIsValidating(true)
+      setValidationError(null)
+    } else {
+      setIsValidatingMmproj(true)
+      setMmprojValidationError(null)
+    }
+
+    try {
+      console.log(`Reading GGUF metadata for ${fileType}:`, filePath)
+
+      // Try to use the validateGgufFile method if available
+      if (typeof serviceHub.models().validateGgufFile === 'function') {
+        const result = await serviceHub.models().validateGgufFile(filePath)
+
+        if (result.metadata) {
+          // Log full metadata for debugging
+          console.log(
+            `Full GGUF metadata for ${fileType}:`,
+            JSON.stringify(result.metadata, null, 2)
+          )
+
+          // Check architecture from metadata
+          const architecture =
+            result.metadata.metadata?.['general.architecture']
+          console.log(`${fileType} architecture:`, architecture)
+
+          // Validate based on file type
+          if (fileType === 'model') {
+            // Model files should NOT be clip
+            if (architecture === 'clip') {
+              const errorMessage =
+                'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+              setValidationError(errorMessage)
+              console.error(
+                'CLIP architecture detected in model file:',
+                architecture
+              )
+            } else {
+              console.log(
+                'Model validation passed. Architecture:',
+                architecture
+              )
+            }
+          } else {
+            // MMProj files MUST be clip
+            if (architecture !== 'clip') {
+              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+              setMmprojValidationError(errorMessage)
+              console.error(
+                'Non-CLIP architecture detected in mmproj file:',
+                architecture
+              )
+            } else {
+              console.log(
+                'MMProj validation passed. Architecture:',
+                architecture
+              )
+            }
+          }
+        }
+
+        if (!result.isValid && fileType === 'model') {
+          setValidationError(result.error || 'Model validation failed')
+          console.error('Model validation failed:', result.error)
+        } else if (!result.isValid && fileType === 'mmproj') {
+          setMmprojValidationError(result.error || 'MMProj validation failed')
+          console.error('MMProj validation failed:', result.error)
+        }
+      } else {
+        // Fallback: Try to call the Tauri plugin directly if available
+        try {
+          // Import the readGgufMetadata function directly from Tauri
+          const { invoke } = await import('@tauri-apps/api/core')
+
+          const metadata = await invoke('plugin:llamacpp|read_gguf_metadata', {
+            path: filePath,
+          })
+
+          console.log(
+            `Full GGUF metadata for ${fileType}:`,
+            JSON.stringify(metadata, null, 2)
+          )
+
+          // Check if architecture matches expected type
+          const architecture = (
+            metadata as { metadata?: Record<string, string> }
+          ).metadata?.['general.architecture']
+          console.log(`${fileType} architecture:`, architecture)
+
+          if (fileType === 'model') {
+            // Model files should NOT be clip
+            if (architecture === 'clip') {
+              const errorMessage =
+                'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+              setValidationError(errorMessage)
+              console.error(
+                'CLIP architecture detected in model file:',
+                architecture
+              )
+            } else {
+              console.log(
+                'Model validation passed. Architecture:',
+                architecture
+              )
+            }
+          } else {
+            // MMProj files MUST be clip
+            if (architecture !== 'clip') {
+              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+              setMmprojValidationError(errorMessage)
+              console.error(
+                'Non-CLIP architecture detected in mmproj file:',
+                architecture
+              )
+            } else {
+              console.log(
+                'MMProj validation passed. Architecture:',
+                architecture
+              )
+            }
+          }
+        } catch (tauriError) {
+          console.warn(
+            `Tauri validation fallback failed for ${fileType}:`,
+            tauriError
+          )
+          // Final fallback: just warn and allow
+          console.log(
+            `${fileType} validation skipped - validation service not available`
+          )
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to validate ${fileType} file:`, error)
+      const errorMessage = `Failed to read ${fileType} metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+
+      if (fileType === 'model') {
+        setValidationError(errorMessage)
+      } else {
+        setMmprojValidationError(errorMessage)
+      }
+    } finally {
+      if (fileType === 'model') {
+        setIsValidating(false)
+      } else {
+        setIsValidatingMmproj(false)
+      }
+    }
+  }
+
+  const validateModelFile = async (filePath: string): Promise<void> => {
+    await validateGgufFile(filePath, 'model')
+  }
+
+  const validateMmprojFile = async (filePath: string): Promise<void> => {
+    await validateGgufFile(filePath, 'mmproj')
+  }
 
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
     const selectedFile = await serviceHub.dialog().open({
@@ -55,8 +225,13 @@ export const ImportVisionModelDialog = ({
           .replace(/\.(gguf|GGUF)$/, '')
           .replace(/[^a-zA-Z0-9/_.-]/g, '') // Remove any characters not allowed in model IDs
         setModelName(sanitizedName)
+
+        // Validate the selected model file
+        await validateModelFile(selectedFile)
       } else {
         setMmProjFile(selectedFile)
+        // Validate the selected mmproj file
+        await validateMmprojFile(selectedFile)
       }
     }
   }
@@ -131,6 +306,10 @@ export const ImportVisionModelDialog = ({
     setMmProjFile(null)
     setModelName('')
     setIsVisionModel(false)
+    setValidationError(null)
+    setIsValidating(false)
+    setMmprojValidationError(null)
+    setIsValidatingMmproj(false)
   }
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -209,24 +388,73 @@ export const ImportVisionModelDialog = ({
               </div>
 
               {modelFile ? (
-                <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <IconCheck size={16} className="text-accent" />
-                      <span className="text-sm font-medium text-main-view-fg">
-                        {modelFile.split(/[\\/]/).pop()}
-                      </span>
+                <div className="space-y-2">
+                  <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {isValidating ? (
+                          <IconLoader2
+                            size={16}
+                            className="text-accent animate-spin"
+                          />
+                        ) : validationError ? (
+                          <IconAlertTriangle
+                            size={16}
+                            className="text-destructive"
+                          />
+                        ) : (
+                          <IconCheck size={16} className="text-accent" />
+                        )}
+                        <span className="text-sm font-medium text-main-view-fg">
+                          {modelFile.split(/[\\/]/).pop()}
+                        </span>
+                      </div>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => handleFileSelect('model')}
+                        disabled={importing || isValidating}
+                        className="text-accent hover:text-accent/80"
+                      >
+                        Change
+                      </Button>
                     </div>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => handleFileSelect('model')}
-                      disabled={importing}
-                      className="text-accent hover:text-accent/80"
-                    >
-                      Change
-                    </Button>
                   </div>
+
+                  {/* Validation Error Display */}
+                  {validationError && (
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <IconAlertTriangle
+                          size={16}
+                          className="text-destructive mt-0.5 flex-shrink-0"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-destructive-fg">
+                            Model Validation Error
+                          </p>
+                          <p className="text-sm text-destructive-fg/70 mt-1">
+                            {validationError}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Validation Loading State */}
+                  {isValidating && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <IconLoader2
+                          size={16}
+                          className="text-blue-500 animate-spin"
+                        />
+                        <p className="text-sm text-blue-700">
+                          Validating model file...
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <Button
@@ -252,24 +480,73 @@ export const ImportVisionModelDialog = ({
                 </div>
 
                 {mmProjFile ? (
-                  <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <IconCheck size={16} className="text-accent" />
-                        <span className="text-sm font-medium text-main-view-fg">
-                          {mmProjFile.split(/[\\/]/).pop()}
-                        </span>
+                  <div className="space-y-2">
+                    <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {isValidatingMmproj ? (
+                            <IconLoader2
+                              size={16}
+                              className="text-accent animate-spin"
+                            />
+                          ) : mmprojValidationError ? (
+                            <IconAlertTriangle
+                              size={16}
+                              className="text-destructive"
+                            />
+                          ) : (
+                            <IconCheck size={16} className="text-accent" />
+                          )}
+                          <span className="text-sm font-medium text-main-view-fg">
+                            {mmProjFile.split(/[\\/]/).pop()}
+                          </span>
+                        </div>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() => handleFileSelect('mmproj')}
+                          disabled={importing || isValidatingMmproj}
+                          className="text-accent hover:text-accent/80"
+                        >
+                          Change
+                        </Button>
                       </div>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        onClick={() => handleFileSelect('mmproj')}
-                        disabled={importing}
-                        className="text-accent hover:text-accent/80"
-                      >
-                        Change
-                      </Button>
                     </div>
+
+                    {/* MMProj Validation Error Display */}
+                    {mmprojValidationError && (
+                      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <IconAlertTriangle
+                            size={16}
+                            className="text-destructive mt-0.5 flex-shrink-0"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-destructive-fg">
+                              MMProj Validation Error
+                            </p>
+                            <p className="text-sm text-destructive-fg/70 mt-1">
+                              {mmprojValidationError}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* MMProj Validation Loading State */}
+                    {isValidatingMmproj && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <IconLoader2
+                            size={16}
+                            className="text-blue-500 animate-spin"
+                          />
+                          <p className="text-sm text-blue-700">
+                            Validating MMProj file...
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <Button
@@ -303,7 +580,11 @@ export const ImportVisionModelDialog = ({
               importing ||
               !modelFile ||
               !modelName ||
-              (isVisionModel && !mmProjFile)
+              (isVisionModel && !mmProjFile) ||
+              validationError !== null ||
+              isValidating ||
+              mmprojValidationError !== null ||
+              isValidatingMmproj
             }
             className="flex-1"
           >

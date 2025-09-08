@@ -1999,4 +1999,47 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(String(e))
     }
   }
+
+  /**
+   * Validate GGUF file and check for unsupported architectures like CLIP
+   */
+  async validateGgufFile(filePath: string): Promise<{
+    isValid: boolean
+    error?: string
+    metadata?: GgufMetadata
+  }> {
+    try {
+      logger.info(`Validating GGUF file: ${filePath}`)
+      const metadata = await readGgufMetadata(filePath)
+      
+      // Log full metadata for debugging
+      logger.info('Full GGUF metadata:', JSON.stringify(metadata, null, 2))
+      
+      // Check if architecture is 'clip' which is not supported for text generation
+      const architecture = metadata.metadata?.['general.architecture']
+      logger.info(`Model architecture: ${architecture}`)
+      
+      if (architecture === 'clip') {
+        const errorMessage = 'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+        logger.error('CLIP architecture detected:', architecture)
+        return {
+          isValid: false,
+          error: errorMessage,
+          metadata
+        }
+      }
+      
+      logger.info('Model validation passed. Architecture:', architecture)
+      return {
+        isValid: true,
+        metadata
+      }
+    } catch (error) {
+      logger.error('Failed to validate GGUF file:', error)
+      return {
+        isValid: false,
+        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }
+    }
+  }
 }

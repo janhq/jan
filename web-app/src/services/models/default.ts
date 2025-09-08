@@ -11,7 +11,13 @@ import {
   modelInfo,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
-import type { ModelsService, ModelCatalog, HuggingFaceRepo, CatalogModel } from './types'
+import type {
+  ModelsService,
+  ModelCatalog,
+  HuggingFaceRepo,
+  CatalogModel,
+  ModelValidationResult,
+} from './types'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -151,7 +157,9 @@ export class DefaultModelsService implements ModelsService {
 
   async updateModel(model: Partial<CoreModel>): Promise<void> {
     if (model.settings)
-      this.getEngine()?.updateSettings(model.settings as SettingComponentProps[])
+      this.getEngine()?.updateSettings(
+        model.settings as SettingComponentProps[]
+      )
   }
 
   async pullModel(
@@ -266,7 +274,10 @@ export class DefaultModelsService implements ModelsService {
     if (models) await Promise.all(models.map((model) => this.stopModel(model)))
   }
 
-  async startModel(provider: ProviderObject, model: string): Promise<SessionInfo | undefined> {
+  async startModel(
+    provider: ProviderObject,
+    model: string
+  ): Promise<SessionInfo | undefined> {
     const engine = this.getEngine(provider.provider)
     if (!engine) return undefined
 
@@ -312,7 +323,10 @@ export class DefaultModelsService implements ModelsService {
 
   async checkMmprojExistsAndUpdateOffloadMMprojSetting(
     modelId: string,
-    updateProvider?: (providerName: string, data: Partial<ModelProvider>) => void,
+    updateProvider?: (
+      providerName: string,
+      data: Partial<ModelProvider>
+    ) => void,
     getProviderByName?: (providerName: string) => ModelProvider | undefined
   ): Promise<{ exists: boolean; settingsUpdated: boolean }> {
     let settingsUpdated = false
@@ -374,7 +388,8 @@ export class DefaultModelsService implements ModelsService {
               (p: { provider: string }) => p.provider === 'llamacpp'
             )
             const model = llamacppProvider?.models?.find(
-              (m: { id: string; settings?: Record<string, unknown> }) => m.id === modelId
+              (m: { id: string; settings?: Record<string, unknown> }) =>
+                m.id === modelId
             )
 
             if (model?.settings) {
@@ -429,7 +444,10 @@ export class DefaultModelsService implements ModelsService {
     return false
   }
 
-  async isModelSupported(modelPath: string, ctxSize?: number): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'> {
+  async isModelSupported(
+    modelPath: string,
+    ctxSize?: number
+  ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'> {
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
         isModelSupported?: (
@@ -446,6 +464,31 @@ export class DefaultModelsService implements ModelsService {
     } catch (error) {
       console.error(`Error checking model support for ${modelPath}:`, error)
       return 'GREY' // Error state, assume not supported
+    }
+  }
+
+  async validateGgufFile(filePath: string): Promise<ModelValidationResult> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        validateGgufFile?: (path: string) => Promise<ModelValidationResult>
+      }
+
+      if (engine && typeof engine.validateGgufFile === 'function') {
+        return await engine.validateGgufFile(filePath)
+      }
+
+      // If the specific method isn't available, we can fallback to a basic check
+      console.warn('validateGgufFile method not available in llamacpp engine')
+      return {
+        isValid: true, // Assume valid for now
+        error: 'Validation method not available',
+      }
+    } catch (error) {
+      console.error(`Error validating GGUF file ${filePath}:`, error)
+      return {
+        isValid: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
     }
   }
 }

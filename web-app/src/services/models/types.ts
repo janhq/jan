@@ -69,6 +69,18 @@ export interface HuggingFaceRepo {
   readme?: string
 }
 
+export interface GgufMetadata {
+  version: number
+  tensor_count: number
+  metadata: Record<string, string>
+}
+
+export interface ModelValidationResult {
+  isValid: boolean
+  error?: string
+  metadata?: GgufMetadata
+}
+
 export interface ModelsService {
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
@@ -104,4 +116,5 @@ export interface ModelsService {
   ): Promise<{ exists: boolean; settingsUpdated: boolean }>
   checkMmprojExists(modelId: string): Promise<boolean>
   isModelSupported(modelPath: string, ctxSize?: number): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
+  validateGgufFile(filePath: string): Promise<ModelValidationResult>
 }
