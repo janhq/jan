@@ -30,12 +30,15 @@ export default function DeleteMCPServerConfirm({
           <DialogTitle>{t('mcp-servers:deleteServer.title')}</DialogTitle>
           <DialogDescription>
             {t('mcp-servers:deleteServer.description', { serverName })}
-            <span className="font-medium text-main-view-fg">{serverName}</span>?
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
+          <Button variant="link" onClick={() => onOpenChange(false)}>
+            {t('common:cancel')}
+          </Button>
           <Button
             variant="destructive"
+            autoFocus
             onClick={() => {
               onConfirm()
               onOpenChange(false)
