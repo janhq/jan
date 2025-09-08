@@ -364,8 +364,11 @@ function ProviderDetail() {
         // Install the backend using the llamacpp extension
         await installBackend(processedFilePath)
 
+        // Extract filename from the selected file path and replace spaces with dashes
+        const fileName = (selectedFile.split(/[/\\]/).pop() || selectedFile).replace(/\s+/g, '-')
+
         toast.success(t('settings:backendInstallSuccess'), {
-          description: 'Backend installed successfully',
+          description: `Llamacpp ${fileName} installed`,
         })
 
         // Refresh settings to update backend configuration

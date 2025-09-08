@@ -6,11 +6,11 @@
   "noUpdateAvailable": "Bạn đang chạy phiên bản mới nhất",
   "devVersion": "Đã phát hiện phiên bản phát triển",
   "updateError": "Không thể kiểm tra cập nhật",
-  "checkForBackendUpdates": "Kiểm tra Cập nhật LlamaCpp",
-  "checkForBackendUpdatesDesc": "Kiểm tra xem có phiên bản backend LlamaCpp mới hơn không.",
-  "checkingForBackendUpdates": "Đang kiểm tra cập nhật LlamaCpp...",
-  "noBackendUpdateAvailable": "Bạn đang chạy phiên bản LlamaCpp mới nhất",
-  "backendUpdateError": "Không thể kiểm tra cập nhật LlamaCpp",
+  "checkForBackendUpdates": "Kiểm tra Cập nhật Llamacpp",
+  "checkForBackendUpdatesDesc": "Kiểm tra xem có phiên bản backend Llamacpp mới hơn không.",
+  "checkingForBackendUpdates": "Đang kiểm tra cập nhật Llamacpp...",
+  "noBackendUpdateAvailable": "Bạn đang chạy phiên bản Llamacpp mới nhất",
+  "backendUpdateError": "Không thể kiểm tra cập nhật Llamacpp",
   "changeLocation": "Thay đổi Vị trí",
   "copied": "Đã sao chép",
   "copyPath": "Sao chép Đường dẫn",
@@ -251,12 +251,12 @@
     }
   },
   "backendUpdater": {
-    "newBackendVersion": "Phiên bản LlamaCpp mới {{version}}",
-    "backendUpdateAvailable": "Có cập nhật LlamaCpp",
+    "newBackendVersion": "Phiên bản Llamacpp mới {{version}}",
+    "backendUpdateAvailable": "Có cập nhật Llamacpp",
     "remindMeLater": "Nhắc tôi sau",
     "updating": "Đang cập nhật...",
     "updateNow": "Cập nhật ngay",
-    "updateSuccess": "Cập nhật LlamaCpp thành công",
-    "updateError": "Không thể cập nhật LlamaCpp"
+    "updateSuccess": "Cập nhật Llamacpp thành công",
+    "updateError": "Không thể cập nhật Llamacpp"
   }
 }

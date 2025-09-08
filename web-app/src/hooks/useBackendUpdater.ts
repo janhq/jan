@@ -22,6 +22,7 @@ interface LlamacppExtension {
     targetBackend: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }>
   installBackend?(filePath: string): Promise<void>
+  configureBackends?(): Promise<void>
 }
 
 export interface BackendUpdateState {
@@ -332,6 +333,9 @@ export const useBackendUpdater = () => {
       // Call the extension's installBackend method
       const extension = extensionToUse as LlamacppExtension
       await extension.installBackend?.(filePath)
+
+      // Refresh backend list to update UI
+      await extension.configureBackends?.()
     } catch (error) {
       console.error('Error installing backend:', error)
       throw error
