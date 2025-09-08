@@ -28,6 +28,13 @@ export async function getLocalInstalledBackends(): Promise<
     for (const version of versionDirs) {
       const versionPath = await joinPath([backendsDir, version])
       const versionName = await basename(versionPath)
+
+      // Check if versionPath is actually a directory before reading it
+      const versionStat = await fs.fileStat(versionPath)
+      if (!versionStat?.isDirectory) {
+        continue
+      }
+
       const backendTypes = await fs.readdirSync(versionPath)
 
       // Verify that the backend is really installed
@@ -150,8 +157,9 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
   // get latest backends from Github
-  const remoteBackendVersions =
-    await fetchRemoteSupportedBackends(supportedBackends)
+  const remoteBackendVersions = await fetchRemoteSupportedBackends(
+    supportedBackends
+  )
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()

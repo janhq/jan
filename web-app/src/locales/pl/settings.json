@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Używasz najnowszej wersji",
   "devVersion": "Wykryto wersję deweloperską",
   "updateError": "Nie udało się sprawdzić dostępności aktualizacji",
+  "checkForBackendUpdates": "Sprawdź Aktualizacje LlamaCpp",
+  "checkForBackendUpdatesDesc": "Sprawdza czy dostępna jest nowa wersja backendu LlamaCpp.",
+  "checkingForBackendUpdates": "Sprawdzanie aktualizacji LlamaCpp...",
+  "noBackendUpdateAvailable": "Używasz najnowszej wersji LlamaCpp",
+  "backendUpdateError": "Nie udało się sprawdzić aktualizacji LlamaCpp",
   "changeLocation": "Zmień Położenie",
   "copied": "Skopiowano",
   "copyPath": "Skopiuj Ścieżkę",
@@ -249,5 +254,14 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Nowa wersja LlamaCpp {{version}}",
+    "backendUpdateAvailable": "Dostępna aktualizacja LlamaCpp",
+    "remindMeLater": "Przypomnij mi później",
+    "updating": "Aktualizowanie...",
+    "updateNow": "Aktualizuj teraz",
+    "updateSuccess": "LlamaCpp został pomyślnie zaktualizowany",
+    "updateError": "Nie udało się zaktualizować LlamaCpp"
   }
 }

@@ -6,6 +6,11 @@
   "noUpdateAvailable": "您正在運行最新版本",
   "devVersion": "檢測到開發版本",
   "updateError": "檢查更新失敗",
+  "checkForBackendUpdates": "檢查 LlamaCpp 更新",
+  "checkForBackendUpdatesDesc": "檢查是否有更新的 LlamaCpp 後端版本。",
+  "checkingForBackendUpdates": "正在檢查 LlamaCpp 更新...",
+  "noBackendUpdateAvailable": "您正在運行最新的 LlamaCpp 版本",
+  "backendUpdateError": "檢查 LlamaCpp 更新失敗",
   "changeLocation": "更改位置",
   "copied": "已複製",
   "copyPath": "複製路徑",
@@ -244,5 +249,14 @@
       "cancel": "取消",
       "changeLocation": "變更位置"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "新的 LlamaCpp 版本 {{version}}",
+    "backendUpdateAvailable": "LlamaCpp 更新可用",
+    "remindMeLater": "稍後提醒我",
+    "updating": "正在更新...",
+    "updateNow": "立即更新",
+    "updateSuccess": "LlamaCpp 更新成功",
+    "updateError": "更新 LlamaCpp 失敗"
   }
 }
