@@ -18,22 +18,24 @@ export async function getLocalInstalledBackends(): Promise<
     'llamacpp',
     'backends',
   ])
-  const versionDirs = await fs.readdirSync(backendsDir)
+  if (await fs.existsSync(backendsDir)) {
+    const versionDirs = await fs.readdirSync(backendsDir)
 
-  // If the folder does not exist we are done.
-  if (!versionDirs) {
-    return local
-  }
-  for (const version of versionDirs) {
-    const versionPath = await joinPath([backendsDir, version])
-    const versionName = await basename(versionPath)
-    const backendTypes = await fs.readdirSync(versionPath)
+    // If the folder does not exist we are done.
+    if (!versionDirs) {
+      return local
+    }
+    for (const version of versionDirs) {
+      const versionPath = await joinPath([backendsDir, version])
+      const versionName = await basename(versionPath)
+      const backendTypes = await fs.readdirSync(versionPath)
 
-    // Verify that the backend is really installed
-    for (const backendType of backendTypes) {
-      const backendName = await basename(backendType)
-      if (await isBackendInstalled(backendType, versionName)) {
-        local.push({ version: versionName, backend: backendName })
+      // Verify that the backend is really installed
+      for (const backendType of backendTypes) {
+        const backendName = await basename(backendType)
+        if (await isBackendInstalled(backendType, versionName)) {
+          local.push({ version: versionName, backend: backendName })
+        }
       }
     }
   }
