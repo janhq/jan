@@ -365,7 +365,9 @@ function ProviderDetail() {
         await installBackend(processedFilePath)
 
         // Extract filename from the selected file path and replace spaces with dashes
-        const fileName = (selectedFile.split(/[/\\]/).pop() || selectedFile).replace(/\s+/g, '-')
+        const fileName = (
+          selectedFile.split(/[/\\]/).pop() || selectedFile
+        ).replace(/\s+/g, '-')
 
         toast.success(t('settings:backendInstallSuccess'), {
           description: `Llamacpp ${fileName} installed`,
