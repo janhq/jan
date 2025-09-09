@@ -12,7 +12,7 @@ jobs:
       deployments: write
       pull-requests: write
     env:
-      JAN_API_BASE: "https://api.jan.ai"
+      JAN_API_BASE: "https://api.jan.ai/jan/v1"
       CLOUDFLARE_PROJECT_NAME: "jan-server-web"
     steps:
       - uses: actions/checkout@v4
