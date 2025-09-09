@@ -69,7 +69,7 @@ jobs:
       - name: Update app version
         run: |
           echo "Version: ${{ inputs.new_version }}"
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = false' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
