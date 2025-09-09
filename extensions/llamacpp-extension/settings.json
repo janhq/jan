@@ -194,15 +194,6 @@
     }
   },
   {
-    "key": "no_kv_offload",
-    "title": "Disable KV Offload",
-    "description": "Disable KV cache offload to GPU (if GPU is used).",
-    "controllerType": "checkbox",
-    "controllerProps": {
-      "value": false
-    }
-  },
-  {
     "key": "cache_type_k",
     "title": "KV Cache K Type",
     "description": "KV cache data type for Keys (default: f16).",

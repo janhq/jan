@@ -93,7 +93,11 @@ export const useModelProvider = create<ModelProviderState>()(
                   ? legacyModels
                   : models
                 ).find(
-                  (m) => m.id.split(':').slice(0, 2).join(getServiceHub().path().sep()) === model.id
+                  (m) =>
+                    m.id
+                      .split(':')
+                      .slice(0, 2)
+                      .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {
@@ -227,7 +231,7 @@ export const useModelProvider = create<ModelProviderState>()(
           >
         }
 
-        if (version === 0 && state?.providers) {
+        if (version <= 1 && state?.providers) {
           state.providers.forEach((provider) => {
             // Update cont_batching description for llamacpp provider
             if (provider.provider === 'llamacpp' && provider.settings) {
@@ -270,6 +274,15 @@ export const useModelProvider = create<ModelProviderState>()(
                     },
                   }
                 }
+
+                if (!model.settings.no_kv_offload) {
+                  model.settings.no_kv_offload = {
+                    ...modelSettings.no_kv_offload,
+                    controller_props: {
+                      ...modelSettings.no_kv_offload.controller_props,
+                    },
+                  }
+                }
               })
             }
           })
@@ -277,7 +290,7 @@ export const useModelProvider = create<ModelProviderState>()(
 
         return state
       },
-      version: 1,
+      version: 2,
     }
   )
 )
