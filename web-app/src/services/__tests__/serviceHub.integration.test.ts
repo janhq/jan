@@ -12,6 +12,131 @@ vi.mock('@jan/extensions-web', () => ({
   WEB_EXTENSIONS: {}
 }))
 
+// Mock @janhq/core EngineManager to prevent initialization issues
+vi.mock('@janhq/core', () => ({
+  EngineManager: {
+    instance: vi.fn(() => ({
+      engines: new Map()
+    }))
+  }
+}))
+
+// Mock token.js to avoid initialization issues
+vi.mock('token.js', () => ({
+  models: {}
+}))
+
+// Mock ExtensionManager to avoid initialization issues
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: vi.fn(() => ({
+      getEngine: vi.fn()
+    }))
+  }
+}))
+
+// Mock dynamic imports for web services
+vi.mock('../theme/web', () => ({
+  WebThemeService: vi.fn().mockImplementation(() => ({
+    setTheme: vi.fn(),
+    getCurrentWindow: vi.fn()
+  }))
+}))
+
+vi.mock('../app/web', () => ({
+  WebAppService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../path/web', () => ({
+  WebPathService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../core/web', () => ({
+  WebCoreService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../dialog/web', () => ({
+  WebDialogService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../events/web', () => ({
+  WebEventsService: vi.fn().mockImplementation(() => ({
+    emit: vi.fn(),
+    listen: vi.fn()
+  }))
+}))
+
+vi.mock('../window/web', () => ({
+  WebWindowService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../deeplink/web', () => ({
+  WebDeepLinkService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../providers/web', () => ({
+  WebProvidersService: vi.fn().mockImplementation(() => ({}))
+}))
+
+// Mock dynamic imports for Tauri services
+vi.mock('../theme/tauri', () => ({
+  TauriThemeService: vi.fn().mockImplementation(() => ({
+    setTheme: vi.fn(),
+    getCurrentWindow: vi.fn()
+  }))
+}))
+
+vi.mock('../window/tauri', () => ({
+  TauriWindowService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../events/tauri', () => ({
+  TauriEventsService: vi.fn().mockImplementation(() => ({
+    emit: vi.fn(),
+    listen: vi.fn()
+  }))
+}))
+
+vi.mock('../hardware/tauri', () => ({
+  TauriHardwareService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../app/tauri', () => ({
+  TauriAppService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../mcp/tauri', () => ({
+  TauriMCPService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../providers/tauri', () => ({
+  TauriProvidersService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../dialog/tauri', () => ({
+  TauriDialogService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../opener/tauri', () => ({
+  TauriOpenerService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../updater/tauri', () => ({
+  TauriUpdaterService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../path/tauri', () => ({
+  TauriPathService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../core/tauri', () => ({
+  TauriCoreService: vi.fn().mockImplementation(() => ({}))
+}))
+
+vi.mock('../deeplink/tauri', () => ({
+  TauriDeepLinkService: vi.fn().mockImplementation(() => ({}))
+}))
+
 // Mock console to avoid noise in tests
 vi.spyOn(console, 'log').mockImplementation(() => {})
 vi.spyOn(console, 'error').mockImplementation(() => {})
