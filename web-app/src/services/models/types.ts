@@ -81,10 +81,20 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
+export interface ModelPlan {
+  gpuLayers: number
+  maxContextLength: number
+  noOffloadKVCache: boolean
+  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
+}
+
 export interface ModelsService {
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
-  fetchHuggingFaceRepo(repoId: string, hfToken?: string): Promise<HuggingFaceRepo | null>
+  fetchHuggingFaceRepo(
+    repoId: string,
+    hfToken?: string
+  ): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
   updateModel(model: Partial<CoreModel>): Promise<void>
   pullModel(
@@ -107,14 +117,24 @@ export interface ModelsService {
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<void>
   stopAllModels(): Promise<void>
-  startModel(provider: ProviderObject, model: string): Promise<SessionInfo | undefined>
+  startModel(
+    provider: ProviderObject,
+    model: string
+  ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
     modelId: string,
-    updateProvider?: (providerName: string, data: Partial<ModelProvider>) => void,
+    updateProvider?: (
+      providerName: string,
+      data: Partial<ModelProvider>
+    ) => void,
     getProviderByName?: (providerName: string) => ModelProvider | undefined
   ): Promise<{ exists: boolean; settingsUpdated: boolean }>
   checkMmprojExists(modelId: string): Promise<boolean>
-  isModelSupported(modelPath: string, ctxSize?: number): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
+  isModelSupported(
+    modelPath: string,
+    ctxSize?: number
+  ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
+  planModelLoad(modelPath: string, requestedCtx?: number): Promise<ModelPlan>
 }
