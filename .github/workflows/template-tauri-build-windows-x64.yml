@@ -175,8 +175,7 @@ jobs:
         run: |
           dotnet tool install --global --version 6.0.0 AzureSignTool
 
-      - name: Build app (internal, with signing)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      - name: Build app
         shell: bash
         run: |
           make build
@@ -196,12 +195,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Build app (fork PR)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        shell: bash
-        run: |
-          make build
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -216,18 +209,10 @@ jobs:
           cd ./src-tauri/target/release/bundle/nsis
           if [ "${{ inputs.channel }}" != "stable" ]; then
             FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
-            if [ -f "Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
-              WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
-            else
-              WIN_SIG=""
-            fi
+            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
-            if [ -f "Jan_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
-              WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
-            else
-              WIN_SIG=""
-            fi
+            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
           fi
 
           echo "::set-output name=WIN_SIG::$WIN_SIG"
@@ -237,7 +222,7 @@ jobs:
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
         shell: bash
-        if: (inputs.public_provider == 'aws-s3' || inputs.channel == 'beta') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
