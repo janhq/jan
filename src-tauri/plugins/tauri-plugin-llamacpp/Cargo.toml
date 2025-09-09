@@ -33,5 +33,8 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process"] }
 
+[dev-dependencies]
+tempfile = "3.0"
+
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }
