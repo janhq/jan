@@ -144,24 +144,38 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
           fi
-      - name: Build app
+      - name: Build app (internal)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           make build
-
-          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-          yarn tauri signer sign \
-          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-          "$APP_IMAGE"
 
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+
+      - name: Build app (fork PR)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          make build
+
+        env:
+          RELEASE_CHANNEL: '${{ inputs.channel }}'
+          AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+
+      - name: Sign AppImage
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
+          yarn tauri signer sign \
+          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+          "$APP_IMAGE"
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
       # Publish app
 
       ## Artifacts, for dev and test
@@ -188,13 +202,29 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
             APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
-            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
+            if [ -f "deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig" ]; then
+              DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
+            else
+              DEB_SIG=""
+            fi
+            if [ -f "appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig" ]; then
+              APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
+            else
+              APPIMAGE_SIG=""
+            fi
           else
             DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
             APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
-            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
+            if [ -f "deb/Jan_${{ inputs.new_version }}_amd64.deb.sig" ]; then
+              DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
+            else
+              DEB_SIG=""
+            fi
+            if [ -f "appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig" ]; then
+              APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
+            else
+              APPIMAGE_SIG=""
+            fi
           fi
 
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
@@ -204,7 +234,7 @@ jobs:
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: (inputs.public_provider == 'aws-s3' || inputs.channel == 'beta') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           cd ./src-tauri/target/release/bundle
 

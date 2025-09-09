@@ -41,7 +41,6 @@ on:
 jobs:
   set-public-provider:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     outputs:
       public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
       ref: ${{ steps.set-public-provider.outputs.ref }}
@@ -59,6 +58,9 @@ jobs:
             elif [ "${{ github.event_name }}" == "push" ]; then
               echo "::set-output name=public_provider::aws-s3"
               echo "::set-output name=ref::${{ github.ref }}"
+            elif [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "::set-output name=public_provider::none"
+              echo "::set-output name=ref::${{ github.ref }}"
             elif [ "${{ github.event_name }}" == "pull_request_review" ]; then
               echo "::set-output name=public_provider::none"
               echo "::set-output name=ref::${{ github.ref }}"
@@ -75,7 +77,6 @@ jobs:
   build-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
@@ -88,7 +89,6 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -99,7 +99,6 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}

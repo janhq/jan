@@ -154,18 +154,21 @@ jobs:
             cat ./package.json
           fi
       - name: Get key for notarize
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
         shell: bash
         env:
           NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
 
       - uses: apple-actions/import-codesign-certs@v2
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
-      - name: Build app
+      - name: Build app (internal)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           rustup target add x86_64-apple-darwin
           make build
@@ -181,6 +184,14 @@ jobs:
           APPLE_API_KEY_PATH: /tmp/notary-key.p8
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Build app (fork PR)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          rustup target add x86_64-apple-darwin
+          make build
+        env:
+          APP_PATH: '.'
 
       # Publish app
 
@@ -201,12 +212,20 @@ jobs:
             zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
             FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
             DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
-            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
+            if [ -f "Jan-${{ inputs.channel }}.app.tar.gz.sig" ]; then
+              MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
+            else
+              MAC_UNIVERSAL_SIG=""
+            fi
             TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
-            MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
+            if [ -f "Jan.app.tar.gz.sig" ]; then
+              MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
+            else
+              MAC_UNIVERSAL_SIG=""
+            fi
             DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
             TAR_NAME=Jan.app.tar.gz
           fi
@@ -219,7 +238,7 @@ jobs:
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: (inputs.public_provider == 'aws-s3' || inputs.channel == 'beta') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle
 
