@@ -10,7 +10,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 // Radix portals attach to document.body; ensure JSDOM is ready
-const setup = (initial: ModelFilterOptions = { showOnlyDownloaded: false, toolCallingOnly: false }) => {
+const setup = (initial: ModelFilterOptions = { showOnlyDownloaded: false, toolCallingOnly: false, visionOnly: false }) => {
   let filters = { ...initial }
   let rerenderFn: ReturnType<typeof render>['rerender']
   
@@ -68,15 +68,27 @@ describe('ModelFilters', () => {
     expect(lastCall.toolCallingOnly).toBe(true)
   })
 
+  it('toggles Vision filter and calls onFiltersChange', async () => {
+    const { onFiltersChange } = setup()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByText('hub:filters'))
+    await user.click(screen.getByText('hub:vision'))
+
+    expect(onFiltersChange).toHaveBeenCalled()
+    const lastCall = onFiltersChange.mock.lastCall?.[0] as ModelFilterOptions
+    expect(lastCall.visionOnly).toBe(true)
+  })
+
   it('shows active filter count badge', async () => {
-    setup({ showOnlyDownloaded: true, toolCallingOnly: true })
+    setup({ showOnlyDownloaded: true, toolCallingOnly: true, visionOnly: false })
     const badge = document.querySelector('[data-slot="dropdown-menu-trigger"] .w-5.h-5') as HTMLElement
     expect(badge).toBeInTheDocument()
     expect(badge.textContent).toBe('2')
   })
 
   it('clears filters via Clear all filters', async () => {
-    const { onFiltersChange } = setup({ showOnlyDownloaded: true, toolCallingOnly: true })
+    const { onFiltersChange } = setup({ showOnlyDownloaded: true, toolCallingOnly: true, visionOnly: false })
     const user = userEvent.setup()
 
     await user.click(screen.getByText('hub:filters'))
@@ -84,6 +96,6 @@ describe('ModelFilters', () => {
 
     expect(onFiltersChange).toHaveBeenCalled()
     const lastCall = onFiltersChange.mock.lastCall?.[0] as ModelFilterOptions
-    expect(lastCall).toEqual({ showOnlyDownloaded: false, toolCallingOnly: false })
+    expect(lastCall).toEqual({ showOnlyDownloaded: false, toolCallingOnly: false, visionOnly: false })
   })
 })
