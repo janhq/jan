@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 export interface ModelFilterOptions {
   showOnlyDownloaded: boolean
   toolCallingOnly: boolean
+  visionOnly: boolean
   // Future filters can be added here
   // embeddingsOnly: boolean
   // imageGenerationOnly: boolean
@@ -115,6 +116,26 @@ export function ModelFilters({
           />
         </DropdownMenuItem>
 
+        {/* Vision Filter */}
+        <DropdownMenuItem
+          className="flex items-center justify-between p-3 cursor-pointer"
+          onClick={(e) => {
+            e.preventDefault()
+            handleFilterChange('visionOnly', !filters.visionOnly)
+          }}
+        >
+          <div className="flex flex-col">
+            <span className="text-sm">{t('hub:vision')}</span>
+          </div>
+          <Switch
+            checked={filters.visionOnly}
+            onCheckedChange={(checked) =>
+              handleFilterChange('visionOnly', checked)
+            }
+            onClick={(e) => e.stopPropagation()}
+          />
+        </DropdownMenuItem>
+
         {/* Clear Filters */}
         {activeFiltersCount > 0 && (
           <>
@@ -125,6 +146,7 @@ export function ModelFilters({
                 onFiltersChange({
                   showOnlyDownloaded: false,
                   toolCallingOnly: false,
+                  visionOnly: false,
                 })
               }
             >

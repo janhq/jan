@@ -108,6 +108,7 @@ function HubContent() {
   const [filterOptions, setFilterOptions] = useState<ModelFilterOptions>({
     showOnlyDownloaded: false,
     toolCallingOnly: false,
+    visionOnly: false,
   })
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
@@ -177,6 +178,10 @@ function HubContent() {
     if (filterOptions.toolCallingOnly) {
       filtered = filtered?.filter((model) => model.tools === true)
     }
+    // Apply vision filter
+    if (filterOptions.visionOnly) {
+      filtered = filtered?.filter((model) => model.num_mmproj > 0)
+    }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
       filtered = [huggingFaceRepo, ...filtered]
@@ -187,6 +192,7 @@ function HubContent() {
     debouncedSearchValue,
     filterOptions.showOnlyDownloaded,
     filterOptions.toolCallingOnly,
+    filterOptions.visionOnly,
     huggingFaceRepo,
     searchOptions,
   ])
