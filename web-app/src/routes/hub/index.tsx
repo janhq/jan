@@ -336,9 +336,9 @@ function HubContent() {
 
   // Check if we're on the last step
   const renderFilter = () => {
-    if (searchValue.length === 0)
-      return (
-        <div className="flex items-center gap-2">
+    return (
+      <div className="flex items-center gap-2">
+        {searchValue.length === 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger>
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
@@ -363,20 +363,21 @@ function HubContent() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <ModelFilters
-            filters={filterOptions}
-            onFiltersChange={(newFilters) => {
-              setFilterOptions(newFilters)
-              if (newFilters.showOnlyDownloaded) {
-                setHuggingFaceRepo(null)
-              } else if (!newFilters.showOnlyDownloaded && filterOptions.showOnlyDownloaded) {
-                // Re-trigger HuggingFace search when switching back to "All models"
-                fetchHuggingFaceModel(searchValue)
-              }
-            }}
-          />
-        </div>
-      )
+        )}
+        <ModelFilters
+          filters={filterOptions}
+          onFiltersChange={(newFilters) => {
+            setFilterOptions(newFilters)
+            if (newFilters.showOnlyDownloaded) {
+              setHuggingFaceRepo(null)
+            } else if (!newFilters.showOnlyDownloaded && filterOptions.showOnlyDownloaded) {
+              // Re-trigger HuggingFace search when switching back to "All models"
+              fetchHuggingFaceModel(searchValue)
+            }
+          }}
+        />
+      </div>
+    )
   }
 
   return (
