@@ -72,29 +72,29 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
-    uses: ./.github/workflows/template-tauri-build-macos.yml
-    needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    secrets: inherit
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      channel: nightly
-      cortex_api_port: '39261'
+  # build-macos:
+  #   uses: ./.github/workflows/template-tauri-build-macos.yml
+  #   needs: [get-update-version, set-public-provider]
+  #   if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+  #   secrets: inherit
+  #   with:
+  #     ref: ${{ needs.set-public-provider.outputs.ref }}
+  #     public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  #     channel: nightly
+  #     cortex_api_port: '39261'
 
-  build-windows-x64:
-    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      channel: nightly
-      cortex_api_port: '39261'
+  # build-windows-x64:
+  #   uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+  #   secrets: inherit
+  #   needs: [get-update-version, set-public-provider]
+  #   if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+  #   with:
+  #     ref: ${{ needs.set-public-provider.outputs.ref }}
+  #     public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  #     channel: nightly
+  #     cortex_api_port: '39261'
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
@@ -113,9 +113,7 @@ jobs:
       [
         get-update-version,
         set-public-provider,
-        build-windows-x64,
         build-linux-x64,
-        build-macos,
       ]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -131,10 +129,10 @@ jobs:
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
           LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
           LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
-          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
-          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
-          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
-          DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+          WINDOWS_SIGNATURE=""
+          WINDOWS_URL=""
+          DARWIN_SIGNATURE=""
+          DARWIN_URL=""
 
           jq --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
@@ -172,8 +170,6 @@ jobs:
   noti-discord-nightly-and-update-url-readme:
     needs:
       [
-        build-macos,
-        build-windows-x64,
         build-linux-x64,
         get-update-version,
         set-public-provider,
@@ -191,8 +187,6 @@ jobs:
   noti-discord-pre-release-and-update-url-readme:
     needs:
       [
-        build-macos,
-        build-windows-x64,
         build-linux-x64,
         get-update-version,
         set-public-provider,
@@ -210,8 +204,6 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     needs:
       [
-        build-macos,
-        build-windows-x64,
         build-linux-x64,
         get-update-version,
         set-public-provider,
@@ -229,8 +221,6 @@ jobs:
   comment-pr-build-url:
     needs:
       [
-        build-macos,
-        build-windows-x64,
         build-linux-x64,
         get-update-version,
         set-public-provider,
