@@ -67,6 +67,65 @@ test: lint
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
+# E2E Testing - Separate Steps
+
+# Install all E2E dependencies (system deps + yarn deps)
+e2e-install:
+	@echo "Checking platform compatibility..."
+ifeq ($(shell uname -s 2>/dev/null || echo Windows),Darwin)
+	@echo "E2E testing is not supported on macOS"
+	@exit 1
+endif
+	@echo "Installing all E2E dependencies..."
+ifeq ($(OS),Windows_NT)
+	@echo "Detected Windows - installing Windows dependencies..."
+	powershell -ExecutionPolicy Bypass -File scripts/install-e2e-deps-windows.ps1
+else ifneq ($(shell uname -s 2>/dev/null),)
+	@echo "Detected Linux - installing Linux dependencies..."
+	chmod +x scripts/install-e2e-deps-linux.sh
+	./scripts/install-e2e-deps-linux.sh
+else
+	@echo "Unknown platform - attempting Linux installation..."
+	chmod +x scripts/install-e2e-deps-linux.sh
+	./scripts/install-e2e-deps-linux.sh
+endif
+	@echo "Installing/updating E2E yarn dependencies..."
+	cd tests/e2e && yarn install
+
+# Build Tauri app in debug mode for e2e testing
+e2e-build: install-and-build
+	@echo "Checking platform compatibility..."
+ifeq ($(shell uname -s 2>/dev/null || echo Windows),Darwin)
+	@echo "E2E testing is not supported on macOS"
+	@exit 1
+endif
+	@echo "Building Tauri app in debug mode for e2e testing..."
+	yarn build:web
+	yarn copy:assets:tauri
+	yarn build:icon
+	yarn download:bin
+	yarn download:lib
+	yarn tauri build --debug --no-bundle
+
+# Run e2e tests (assumes deps and build are done)
+e2e-test:
+	@echo "Checking platform compatibility..."
+ifeq ($(shell uname -s 2>/dev/null || echo Windows),Darwin)
+	@echo "E2E testing is not supported on macOS"
+	@exit 1
+endif
+	@echo "Running e2e tests..."
+	cd tests/e2e && yarn test
+
+# Complete e2e test setup and run (all steps)
+e2e-all: e2e-install e2e-build e2e-test
+	@echo "Checking platform compatibility..."
+ifeq ($(shell uname -s 2>/dev/null || echo Windows),Darwin)
+	@echo "E2E testing is not supported on macOS"
+	@exit 1
+endif
+	@echo "E2E testing complete!"
+
 # Builds and publishes the app
 build-and-publish: install-and-build
 	yarn build

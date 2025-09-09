@@ -1,0 +1,10 @@
+node_modules/
+driver-logs/
+*.log
+allure-results/
+allure-report/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bin/
+.cargo/

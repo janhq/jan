@@ -273,6 +273,68 @@ description = "Default target - shows available commands (matches Makefile)"
 run = "echo 'Specify a target to run. Use: mise tasks'"
 
 # ============================================================================
+# E2E TESTING TASKS - Separate Steps
+# ============================================================================
+
+[tasks.e2e-install]
+description = "Install all E2E dependencies (system deps + yarn deps)"
+run = '''
+#!/usr/bin/env bash
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "E2E testing is not supported on macOS"
+  exit 1
+fi
+echo "Installing all E2E dependencies..."
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+  powershell -ExecutionPolicy Bypass -File scripts/install-e2e-deps-windows.ps1
+else
+  ./scripts/install-e2e-deps-linux.sh
+fi
+echo "Installing/updating E2E yarn dependencies..."
+cd tests/e2e && yarn install
+'''
+
+[tasks.e2e-build]
+description = "Build Tauri app in debug mode for e2e testing"
+depends = ["install-and-build"]
+run = '''
+#!/usr/bin/env bash
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "E2E testing is not supported on macOS"
+  exit 1
+fi
+yarn build:web
+yarn copy:assets:tauri
+yarn build:icon
+yarn download:bin
+yarn download:lib
+yarn tauri build --debug --no-bundle
+'''
+
+[tasks.e2e-test]
+description = "Run e2e tests (assumes deps and build are done)"
+run = '''
+#!/usr/bin/env bash
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "E2E testing is not supported on macOS"
+  exit 1
+fi
+cd tests/e2e && yarn test
+'''
+
+[tasks.e2e-all]
+description = "Complete e2e test setup and run (all steps)"
+depends = ["e2e-install", "e2e-build", "e2e-test"]
+run = '''
+#!/usr/bin/env bash
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "E2E testing is not supported on macOS"
+  exit 1
+fi
+echo "E2E testing complete!"
+'''
+
+# ============================================================================
 # DEVELOPMENT WORKFLOW SHORTCUTS
 # ============================================================================
 
