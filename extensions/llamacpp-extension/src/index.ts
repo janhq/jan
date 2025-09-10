@@ -1049,36 +1049,38 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(`Installing backend from path: ${path}`)
 
     if ((await fs.existsSync(path)) && path.endsWith('tar.gz')) {
-      const match = re.exec(archiveName)
-      if (!match) throw new Error('Failed to parse archive name')
-      const [, version, backend] = match
-      if (!version && !backend) {
-        throw new Error(`Invalid backend archive name: ${archiveName}`)
-      }
-      const backendDir = await getBackendDir(backend, version)
-      try {
-        await invoke('decompress', { path: path, outputDir: backendDir })
-      } catch (e) {
-        logger.error(`Failed to install: ${String(e)}`)
-      }
-      const binPath =
-        platformName === 'win'
-          ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-          : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+      logger.error(`Invalid path or file ${path}`)
+      throw new Error(`Invalid path or file ${path}`)
+    }
+    const match = re.exec(archiveName)
+    if (!match) throw new Error('Failed to parse archive name')
+    const [, version, backend] = match
+    if (!version && !backend) {
+      throw new Error(`Invalid backend archive name: ${archiveName}`)
+    }
+    const backendDir = await getBackendDir(backend, version)
+    try {
+      await invoke('decompress', { path: path, outputDir: backendDir })
+    } catch (e) {
+      logger.error(`Failed to install: ${String(e)}`)
+    }
+    const binPath =
+      platformName === 'win'
+        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
+        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
 
-      if (!fs.existsSync(binPath)) {
-        await fs.rm(backendDir)
-        throw new Error('Not a supported backend archive!')
-      }
-      try {
-        await this.configureBackends()
-        logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
-      } catch (e) {
-        logger.error('Backend installed but failed to refresh UI', e)
-        throw new Error(
-          `Backend installed but failed to refresh UI: ${String(e)}`
-        )
-      }
+    if (!fs.existsSync(binPath)) {
+      await fs.rm(backendDir)
+      throw new Error('Not a supported backend archive!')
+    }
+    try {
+      await this.configureBackends()
+      logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
+    } catch (e) {
+      logger.error('Backend installed but failed to refresh UI', e)
+      throw new Error(
+        `Backend installed but failed to refresh UI: ${String(e)}`
+      )
     }
   }
 
