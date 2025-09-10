@@ -36,8 +36,11 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
-import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
+import {
+  GgufMetadata,
+  readGgufMetadata,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
@@ -322,10 +325,10 @@ export default class llamacpp_extension extends AIEngine {
           // Clear the invalid stored preference
           this.clearStoredBackendType()
           bestAvailableBackendString =
-            this.determineBestBackend(version_backends)
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -487,29 +490,61 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private determineBestBackend(
+  private async determineBestBackend(
     version_backends: { version: string; backend: string }[]
-  ): string {
+  ): Promise<string> {
     if (version_backends.length === 0) return ''
 
+    // Check GPU memory availability
+    let hasEnoughGpuMemory = false
+    try {
+      const sysInfo = await getSystemInfo()
+      for (const gpuInfo of sysInfo.gpus) {
+        if (gpuInfo.total_memory >= 6 * 1024) {
+          hasEnoughGpuMemory = true
+          break
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to get system info for GPU memory check:', error)
+      // Default to false if we can't determine GPU memory
+      hasEnoughGpuMemory = false
+    }
+
     // Priority list for backend types (more specific/performant ones first)
-    const backendPriorities: string[] = [
-      'cuda-cu12.0',
-      'cuda-cu11.7',
-      'vulkan',
-      'avx512',
-      'avx2',
-      'avx',
-      'noavx',
-      'arm64',
-      'x64',
-    ]
+    // Vulkan will be conditionally prioritized based on GPU memory
+    const backendPriorities: string[] = hasEnoughGpuMemory
+      ? [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'vulkan', // Include vulkan if we have enough GPU memory
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+        ]
+      : [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+          'vulkan', // demote to last if we don't have enough memory
+        ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
       if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
       if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) return 'vulkan'
+      if (backendString.includes('vulkan')) {
+        // Only return vulkan category if we have enough GPU memory
+        return hasEnoughGpuMemory ? 'vulkan' : undefined
+      }
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -544,6 +579,9 @@ export default class llamacpp_extension extends AIEngine {
       return `${foundBestBackend.version}/${foundBestBackend.backend}`
     } else {
       // Fallback to newest version
+      logger.info(
+        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
+      )
       return `${version_backends[0].version}/${version_backends[0].backend}`
     }
   }
@@ -1048,7 +1086,7 @@ export default class llamacpp_extension extends AIEngine {
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
-    if (!(await fs.existsSync(path)) && !(path.endsWith('tar.gz'))) {
+    if (!(await fs.existsSync(path)) && !path.endsWith('tar.gz')) {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }

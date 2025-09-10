@@ -358,9 +358,8 @@ async function _getSupportedFeatures() {
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
     }
-    // Vulkan support check - only discrete GPUs with 6GB+ VRAM
-    if (gpuInfo.vulkan_info?.api_version && gpuInfo.total_memory >= 6 * 1024) {
-      // 6GB (total_memory is in MB)
+    // Vulkan support check
+    if (gpuInfo.vulkan_info?.api_version) {
       features.vulkan = true
     }
   }
