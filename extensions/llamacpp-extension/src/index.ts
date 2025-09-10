@@ -76,6 +76,7 @@ type ModelPlan = {
   gpuLayers: number
   maxContextLength: number
   noOffloadKVCache: boolean
+  noOffloadMmproj?: boolean
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
@@ -1884,6 +1885,7 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async getTotalSystemMemory(): Promise<SystemMemory> {
     const devices = await this.getDevices()
+    let usableRAM = 0
     let totalVRAM = 0
 
     if (devices.length > 0) {
@@ -1895,12 +1897,12 @@ export default class llamacpp_extension extends AIEngine {
 
     // Get system RAM
     const sys = await getSystemUsage()
-    const totalRAM = sys.total_memory * 1024 * 1024
+    const totalRAM = sys.used_memory * 1024 * 1024
 
     const totalMemory = totalVRAM + totalRAM
 
     logger.info(
-      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Free: ${usableRAM} bytes, Total Memory: ${totalMemory} bytes`
     )
 
     return {
@@ -1913,28 +1915,19 @@ export default class llamacpp_extension extends AIEngine {
     meta: Record<string, string>
   ): Promise<number> {
     const arch = meta['general.architecture']
-    if (!arch) throw new Error('Invalid metadata: architecture not found')
-
     const nLayer = Number(meta[`${arch}.block_count`])
     const nHead = Number(meta[`${arch}.attention.head_count`])
-    if (!nLayer || !nHead) {
-      throw new Error('Invalid metadata: block_count or head_count not found')
-    }
 
-    const keyLen = Number(meta[`${arch}.attention.key_length`])
-    const valLen = Number(meta[`${arch}.attention.value_length`])
-    let headDim: number
-    if (keyLen && valLen) {
-      headDim = keyLen + valLen
-    } else {
-      const embeddingLen = Number(meta[`${arch}.embedding_length`])
-      if (!embeddingLen)
-        throw new Error('Invalid metadata: embedding_length not found')
-      headDim = (embeddingLen / nHead) * 2
-    }
+    // Get head dimensions
+    const nHeadKV = Number(meta[`${arch}.attention.head_count_kv`]) || nHead
+    const embeddingLen = Number(meta[`${arch}.embedding_length`])
+    const headDim = embeddingLen / nHead
 
-    const bytesPerElement = 2 // fp16
-    return nHead * headDim * bytesPerElement * nLayer
+    // KV cache uses head_count_kv (for GQA models) or head_count
+    // Each token needs K and V, both are fp16 (2 bytes)
+    const bytesPerToken = nHeadKV * headDim * 2 * 2 * nLayer // K+V, fp16, all layers
+
+    return bytesPerToken
   }
 
   private async getLayerSize(
@@ -1948,80 +1941,304 @@ export default class llamacpp_extension extends AIEngine {
     return { layerSize: modelSize / totalLayers, totalLayers }
   }
 
-  async planModelLoad(path: string, requestedCtx?: number): Promise<ModelPlan> {
+  async planModelLoad(
+    path: string,
+    requestedCtx?: number,
+    mmprojPath?: string
+  ): Promise<ModelPlan> {
     const modelSize = await this.getModelSize(path)
     const memoryInfo = await this.getTotalSystemMemory()
     const gguf = await readGgufMetadata(path)
+
+    // Get mmproj size if provided
+    let mmprojSize = 0
+    if (mmprojPath) {
+      mmprojSize = await this.getModelSize(mmprojPath)
+    }
 
     const { layerSize, totalLayers } = await this.getLayerSize(
       path,
       gguf.metadata
     )
+
+    // Fixed KV cache calculation
     const kvCachePerToken = await this.getKVCachePerToken(gguf.metadata)
 
-    // VRAM budget (70% heuristic)
-    const USABLE_VRAM_PERCENTAGE = 0.7
-    const usableVRAM = memoryInfo.totalVRAM * USABLE_VRAM_PERCENTAGE
+    // Debug logging
+    logger.info(
+      `Model size: ${modelSize}, Layer size: ${layerSize}, Total layers: ${totalLayers}, KV cache per token: ${kvCachePerToken}`
+    )
 
-    // System RAM budget (depends on this.memoryMode: low/medium/high)
+    // Validate critical values
+    if (!modelSize || modelSize <= 0) {
+      throw new Error(`Invalid model size: ${modelSize}`)
+    }
+    if (!kvCachePerToken || kvCachePerToken <= 0) {
+      throw new Error(`Invalid KV cache per token: ${kvCachePerToken}`)
+    }
+    if (!layerSize || layerSize <= 0) {
+      throw new Error(`Invalid layer size: ${layerSize}`)
+    }
+
+    // GPU overhead factor (20% reserved for GPU operations, alignment, etc.)
+    const GPU_OVERHEAD_FACTOR = 0.8
+
+    // VRAM budget with overhead consideration
+    const VRAM_RESERVE_GB = 0.5
+    const VRAM_RESERVE_BYTES = VRAM_RESERVE_GB * 1024 * 1024 * 1024
+    const usableVRAM = Math.max(
+      0,
+      (memoryInfo.totalVRAM - VRAM_RESERVE_BYTES) * GPU_OVERHEAD_FACTOR
+    )
+
+    // Get model's maximum context length
+    const arch = gguf.metadata['general.architecture']
+    const modelMaxContextLength =
+      Number(gguf.metadata[`${arch}.context_length`]) || 131072 // Default fallback
+
+    // Set minimum context length
+    const MIN_CONTEXT_LENGTH = 2048 // Reduced from 4096 for better compatibility
+
+    // System RAM budget
     const memoryPercentages = { high: 0.7, medium: 0.5, low: 0.4 }
+
+    logger.info(
+      `Memory info - Total (VRAM + RAM): ${memoryInfo.totalMemory}, Total VRAM: ${memoryInfo.totalVRAM}, Mode: ${this.memoryMode}`
+    )
+
+    // Validate memory info
+    if (!memoryInfo.totalMemory || isNaN(memoryInfo.totalMemory)) {
+      throw new Error(`Invalid total memory: ${memoryInfo.totalMemory}`)
+    }
+    if (!memoryInfo.totalVRAM || isNaN(memoryInfo.totalVRAM)) {
+      throw new Error(`Invalid total VRAM: ${memoryInfo.totalVRAM}`)
+    }
+    if (!this.memoryMode || !(this.memoryMode in memoryPercentages)) {
+      throw new Error(
+        `Invalid memory mode: ${this.memoryMode}. Must be 'high', 'medium', or 'low'`
+      )
+    }
+
+    // Calculate actual system RAM
+    const actualSystemRAM = Math.max(
+      0,
+      memoryInfo.totalMemory - memoryInfo.totalVRAM
+    )
     const usableSystemMemory =
-      memoryInfo.totalMemory * memoryPercentages[this.memoryMode]
+      actualSystemRAM * memoryPercentages[this.memoryMode]
 
-    // --- GPU layers ---
-    let gpuLayers = 0
-    if (modelSize <= usableVRAM) {
-      gpuLayers = totalLayers
-    } else {
-      gpuLayers = Math.floor(usableVRAM / layerSize)
-    }
+    logger.info(
+      `Actual System RAM: ${actualSystemRAM}, Usable VRAM: ${usableVRAM}, Usable System Memory: ${usableSystemMemory}`
+    )
 
-    // --- Context length & KV cache ---
-    let availableForKVCache = usableVRAM - modelSize
-    let maxContextLength = 0
-    let noOffloadKVCache = false
-    let mode: ModelPlan['mode'] = 'Unsupported'
+    // --- Priority 1: Allocate mmproj (if exists) ---
+    let noOffloadMmproj = false
+    let remainingVRAM = usableVRAM
 
-    if (availableForKVCache > 0) {
-      maxContextLength = Math.floor(availableForKVCache / kvCachePerToken)
-      noOffloadKVCache = false
-      mode = 'GPU'
-    }
-
-    // fallback: system RAM for KV cache
-    if (maxContextLength <= 0) {
-      availableForKVCache = usableSystemMemory - modelSize
-      if (availableForKVCache > 0) {
-        maxContextLength = Math.floor(availableForKVCache / kvCachePerToken)
-        noOffloadKVCache = true // KV cache forced to CPU
-        mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+    if (mmprojSize > 0) {
+      if (mmprojSize <= remainingVRAM) {
+        noOffloadMmproj = true
+        remainingVRAM -= mmprojSize
+        logger.info(`MMProj allocated to VRAM: ${mmprojSize} bytes`)
+      } else {
+        logger.info(`MMProj will use CPU RAM: ${mmprojSize} bytes`)
       }
     }
 
-    // still too big: safe reduction per layer
-    if (maxContextLength <= 0) {
-      const safeTokensPerLayer = Math.floor(
-        usableSystemMemory / ((kvCachePerToken / totalLayers) * 2)
+    // --- Priority 2: Calculate optimal layer/context balance ---
+    let gpuLayers = 0
+    let maxContextLength = MIN_CONTEXT_LENGTH
+    let noOffloadKVCache = false
+    let mode: ModelPlan['mode'] = 'Unsupported'
+
+    // Calculate how much VRAM we need for different context sizes
+    const contextSizes = [2048, 4096, 8192, 16384, 32768, 65536, 131072]
+    const targetContext = requestedCtx || modelMaxContextLength
+
+    // Find the best balance of layers and context
+    let bestConfig = {
+      layers: 0,
+      context: MIN_CONTEXT_LENGTH,
+      vramUsed: 0,
+    }
+
+    for (const ctxSize of contextSizes) {
+      if (ctxSize > targetContext) break
+
+      const kvCacheSize = ctxSize * kvCachePerToken
+      const availableForLayers = remainingVRAM - kvCacheSize
+
+      if (availableForLayers <= 0) continue
+
+      const possibleLayers = Math.min(
+        Math.floor(availableForLayers / layerSize),
+        totalLayers
       )
-      maxContextLength = Math.max(0, safeTokensPerLayer)
-      noOffloadKVCache = true
-      mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+
+      if (possibleLayers > 0) {
+        const totalVramNeeded = possibleLayers * layerSize + kvCacheSize
+
+        // Verify this fits with some margin
+        if (totalVramNeeded <= remainingVRAM * 0.95) {
+          bestConfig = {
+            layers: possibleLayers,
+            context: ctxSize,
+            vramUsed: totalVramNeeded,
+          }
+        }
+      }
     }
 
-    // enforce user-requested context
-    if (requestedCtx) {
+    // Apply the best configuration found
+    if (bestConfig.layers > 0) {
+      gpuLayers = bestConfig.layers
+      maxContextLength = bestConfig.context
+      noOffloadKVCache = false
+      mode = gpuLayers === totalLayers ? 'GPU' : 'Hybrid'
+
+      logger.info(
+        `Best GPU config: ${gpuLayers}/${totalLayers} layers, ${maxContextLength} context, ` +
+          `VRAM used: ${bestConfig.vramUsed}/${remainingVRAM} bytes`
+      )
+    } else {
+      // Fallback: Try minimal GPU layers with KV cache on CPU
+      gpuLayers = Math.min(
+        Math.floor((remainingVRAM * 0.9) / layerSize), // Use 90% for layers
+        totalLayers
+      )
+
+      if (gpuLayers > 0) {
+        // Calculate available system RAM for KV cache
+        const cpuLayers = totalLayers - gpuLayers
+        const modelCPUSize = cpuLayers * layerSize
+        const mmprojCPUSize =
+          mmprojSize > 0 && !noOffloadMmproj ? mmprojSize : 0
+        const systemRAMUsed = modelCPUSize + mmprojCPUSize
+        const availableSystemRAMForKVCache = Math.max(
+          0,
+          usableSystemMemory - systemRAMUsed
+        )
+
+        // Calculate context that fits in system RAM
+        const systemRAMContext = Math.min(
+          Math.floor(availableSystemRAMForKVCache / kvCachePerToken),
+          targetContext
+        )
+
+        if (systemRAMContext >= MIN_CONTEXT_LENGTH) {
+          maxContextLength = systemRAMContext
+          noOffloadKVCache = true
+          mode = 'Hybrid'
+
+          logger.info(
+            `Hybrid mode: ${gpuLayers}/${totalLayers} layers on GPU, ` +
+              `${maxContextLength} context on CPU RAM`
+          )
+        } else {
+          // Can't fit reasonable context even with CPU RAM
+          // Reduce GPU layers further
+          gpuLayers = Math.floor(gpuLayers / 2)
+          maxContextLength = MIN_CONTEXT_LENGTH
+          noOffloadKVCache = true
+          mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+        }
+      } else {
+        // Pure CPU mode
+        gpuLayers = 0
+        noOffloadKVCache = true
+
+        // Calculate context for pure CPU mode
+        const totalCPUMemoryNeeded = modelSize + (mmprojSize || 0)
+        const availableForKVCache = Math.max(
+          0,
+          usableSystemMemory - totalCPUMemoryNeeded
+        )
+
+        maxContextLength = Math.min(
+          Math.max(
+            MIN_CONTEXT_LENGTH,
+            Math.floor(availableForKVCache / kvCachePerToken)
+          ),
+          targetContext
+        )
+
+        mode = maxContextLength >= MIN_CONTEXT_LENGTH ? 'CPU' : 'Unsupported'
+      }
+    }
+
+    // Safety check: Verify total GPU memory usage
+    if (gpuLayers > 0 && !noOffloadKVCache) {
+      const estimatedGPUUsage =
+        gpuLayers * layerSize +
+        maxContextLength * kvCachePerToken +
+        (noOffloadMmproj ? mmprojSize : 0)
+
+      if (estimatedGPUUsage > memoryInfo.totalVRAM * 0.9) {
+        logger.warn(
+          `GPU memory usage (${estimatedGPUUsage}) exceeds safe limit. Adjusting...`
+        )
+
+        // Reduce context first
+        while (
+          maxContextLength > MIN_CONTEXT_LENGTH &&
+          estimatedGPUUsage > memoryInfo.totalVRAM * 0.9
+        ) {
+          maxContextLength = Math.floor(maxContextLength / 2)
+          const newEstimate =
+            gpuLayers * layerSize +
+            maxContextLength * kvCachePerToken +
+            (noOffloadMmproj ? mmprojSize : 0)
+          if (newEstimate <= memoryInfo.totalVRAM * 0.9) break
+        }
+
+        // If still too much, reduce layers
+        if (estimatedGPUUsage > memoryInfo.totalVRAM * 0.9) {
+          gpuLayers = Math.floor(gpuLayers * 0.7)
+          mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+          noOffloadKVCache = true // Move KV cache to CPU
+        }
+      }
+    }
+
+    // Apply user-requested context limit if specified
+    if (requestedCtx && requestedCtx > 0) {
       maxContextLength = Math.min(maxContextLength, requestedCtx)
+      logger.info(
+        `User requested context: ${requestedCtx}, final: ${maxContextLength}`
+      )
     }
 
-    if (gpuLayers <= 0 && maxContextLength <= 0) {
+    // Ensure we never exceed model's maximum context
+    maxContextLength = Math.min(maxContextLength, modelMaxContextLength)
+
+    // Final validation
+    if (gpuLayers <= 0 && maxContextLength < MIN_CONTEXT_LENGTH) {
       mode = 'Unsupported'
     }
 
+    // Ensure maxContextLength is valid
+    maxContextLength = isNaN(maxContextLength)
+      ? MIN_CONTEXT_LENGTH
+      : Math.max(MIN_CONTEXT_LENGTH, maxContextLength)
+
+    // Log final plan
+    const mmprojInfo = mmprojPath
+      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, noOffloadMmproj=${noOffloadMmproj}`
+      : ''
+
     logger.info(
-      `Plan for ${path}: gpuLayers=${gpuLayers}, maxContextLength=${maxContextLength}, noOffloadKVCache=${noOffloadKVCache}, mode=${mode}`
+      `Final plan for ${path}: gpuLayers=${gpuLayers}/${totalLayers}, ` +
+        `maxContextLength=${maxContextLength}, noOffloadKVCache=${noOffloadKVCache}, ` +
+        `mode=${mode}${mmprojInfo}`
     )
 
-    return { gpuLayers, maxContextLength, noOffloadKVCache, mode }
+    return {
+      gpuLayers,
+      maxContextLength,
+      noOffloadKVCache,
+      mode,
+      noOffloadMmproj,
+    }
   }
 
   /**
