@@ -46,6 +46,7 @@ export async function getLocalInstalledBackends(): Promise<
       }
     }
   }
+  console.debug(local)
   return local
 }
 
@@ -157,9 +158,8 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
   // get latest backends from Github
-  const remoteBackendVersions = await fetchRemoteSupportedBackends(
-    supportedBackends
-  )
+  const remoteBackendVersions =
+    await fetchRemoteSupportedBackends(supportedBackends)
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()

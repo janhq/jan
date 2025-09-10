@@ -1046,6 +1046,7 @@ export default class llamacpp_extension extends AIEngine {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
     const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
     const archiveName = await basename(path)
+    logger.info(`Installing backend from path: ${path}`)
 
     if ((await fs.existsSync(path)) && path.endsWith('tar.gz')) {
       const match = re.exec(archiveName)
@@ -1055,7 +1056,11 @@ export default class llamacpp_extension extends AIEngine {
         throw new Error(`Invalid backend archive name: ${archiveName}`)
       }
       const backendDir = await getBackendDir(backend, version)
-      await invoke('decompress', { path: path, outputDir: backendDir })
+      try {
+        await invoke('decompress', { path: path, outputDir: backendDir })
+      } catch (e) {
+        logger.error(`Failed to install: ${String(e)}`)
+      }
       const binPath =
         platformName === 'win'
           ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
@@ -2481,9 +2486,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
       }
     }
   }
