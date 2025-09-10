@@ -1086,7 +1086,7 @@ export default class llamacpp_extension extends AIEngine {
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
-    if (!(await fs.existsSync(path)) && !path.endsWith('tar.gz')) {
+    if (!(await fs.existsSync(path)) || !path.endsWith('tar.gz')) {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }
