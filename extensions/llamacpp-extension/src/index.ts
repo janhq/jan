@@ -1885,7 +1885,6 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async getTotalSystemMemory(): Promise<SystemMemory> {
     const devices = await this.getDevices()
-    let usableRAM = 0
     let totalVRAM = 0
 
     if (devices.length > 0) {
