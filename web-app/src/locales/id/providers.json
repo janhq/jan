@@ -60,7 +60,11 @@
     "tools": "Alat",
     "vision": "Visi",
     "embeddings": "Embedding",
-    "notAvailable": "Belum tersedia"
+    "notAvailable": "Belum tersedia",
+    "warning": {
+      "title": "Lanjutkan dengan Hati-hati",
+      "description": "Memodifikasi kemampuan model dapat mempengaruhi kinerja dan fungsionalitas. Pengaturan yang salah dapat menyebabkan perilaku atau kesalahan yang tidak terduga."
+    }
   },
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",

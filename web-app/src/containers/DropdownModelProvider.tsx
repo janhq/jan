@@ -119,13 +119,20 @@ const DropdownModelProvider = ({
               const model = provider.models[modelIndex]
               const capabilities = model.capabilities || []
 
-              // Add 'vision' capability if not already present
-              if (!capabilities.includes('vision')) {
+              // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
+              // Check if model has a custom capabilities config flag
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const hasUserConfiguredCapabilities = (model as any)._userConfiguredCapabilities === true
+              
+              if (!capabilities.includes('vision') && !hasUserConfiguredCapabilities) {
                 const updatedModels = [...provider.models]
                 updatedModels[modelIndex] = {
                   ...model,
                   capabilities: [...capabilities, 'vision'],
-                }
+                  // Mark this as auto-detected, not user-configured
+                  _autoDetectedVision: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any
 
                 updateProvider('llamacpp', { models: updatedModels })
               }

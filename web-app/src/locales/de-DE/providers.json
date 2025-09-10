@@ -60,7 +60,11 @@
     "tools": "Werkzeuge",
     "vision": "Vision",
     "embeddings": "Einbettungen",
-    "notAvailable": "Noch nicht verfügbar"
+    "notAvailable": "Noch nicht verfügbar",
+    "warning": {
+      "title": "Mit Vorsicht fortfahren",
+      "description": "Das Ändern von Modellfunktionen kann Leistung und Funktionalität beeinträchtigen. Falsche Einstellungen können zu unerwartetem Verhalten oder Fehlern führen."
+    }
   },
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
