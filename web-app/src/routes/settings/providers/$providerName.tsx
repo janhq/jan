@@ -93,16 +93,19 @@ function ProviderDetail() {
   const handleModelImportSuccess = async (importedModelName?: string) => {
     // Refresh the provider to update the models list
     await serviceHub.providers().getProviders().then(setProviders)
-    
+
     // If a model was imported and it might have vision capabilities, check and update
     if (importedModelName && providerName === 'llamacpp') {
       try {
-        const mmprojExists = await serviceHub.models().checkMmprojExists(importedModelName)
+        const mmprojExists = await serviceHub
+          .models()
+          .checkMmprojExists(importedModelName)
         if (mmprojExists) {
           // Get the updated provider after refresh
-          const { getProviderByName, updateProvider: updateProviderState } = useModelProvider.getState()
+          const { getProviderByName, updateProvider: updateProviderState } =
+            useModelProvider.getState()
           const llamacppProvider = getProviderByName('llamacpp')
-          
+
           if (llamacppProvider) {
             const modelIndex = llamacppProvider.models.findIndex(
               (m: Model) => m.id === importedModelName
@@ -111,16 +114,25 @@ function ProviderDetail() {
               const model = llamacppProvider.models[modelIndex]
               const capabilities = model.capabilities || []
 
-              // Add 'vision' capability if not already present
-              if (!capabilities.includes('vision')) {
+              // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
+              // Check if model has a custom capabilities config flag
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const hasUserConfiguredCapabilities = (model as any)._userConfiguredCapabilities === true
+              
+              if (!capabilities.includes('vision') && !hasUserConfiguredCapabilities) {
                 const updatedModels = [...llamacppProvider.models]
                 updatedModels[modelIndex] = {
                   ...model,
                   capabilities: [...capabilities, 'vision'],
-                }
+                  // Mark this as auto-detected, not user-configured
+                  _autoDetectedVision: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any
 
                 updateProviderState('llamacpp', { models: updatedModels })
-                console.log(`Vision capability added to model after provider refresh: ${importedModelName}`)
+                console.log(
+                  `Vision capability auto-added to model after provider refresh: ${importedModelName}`
+                )
               }
             }
           }
@@ -606,12 +618,10 @@ function ProviderDetail() {
                           }
                           actions={
                             <div className="flex items-center gap-0.5">
-                              {provider && provider.provider !== 'llamacpp' && (
-                                <DialogEditModel
-                                  provider={provider}
-                                  modelId={model.id}
-                                />
-                              )}
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
                               {model.settings && (
                                 <ModelSetting
                                   provider={provider}

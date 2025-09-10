@@ -13,6 +13,7 @@ import {
   IconPencil,
   IconEye,
   IconTool,
+  IconAlertTriangle,
   // IconWorld,
   // IconAtom,
   // IconCodeCircle2,
@@ -105,6 +106,8 @@ export const DialogEditModel = ({
         return {
           ...m,
           capabilities: updatedCapabilities,
+          // Mark that user has manually configured capabilities
+          _userConfiguredCapabilities: true,
         }
       }
       return m
@@ -144,6 +147,21 @@ export const DialogEditModel = ({
             {t('providers:editModel.description')}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Warning Banner */}
+        <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded-md p-3">
+          <div className="flex items-start space-x-3">
+            <IconAlertTriangle className="size-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-main-view-fg/80">
+              <p className="font-medium mb-1 text-base">
+                {t('providers:editModel.warning.title')}
+              </p>
+              <p className="text-main-view-fg/70">
+                {t('providers:editModel.warning.description')}
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="py-1">
           <h3 className="text-sm font-medium mb-3">
