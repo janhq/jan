@@ -42,10 +42,30 @@ jobs:
         run: |
           cargo install ctoml
 
+      - name: Download NSIS Tauri Utils Plugin
+        run: |
+          # Create the plugins directory
+          New-Item -ItemType Directory -Force -Path "src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
+          
+          # Download the NSIS Tauri Utils plugin
+          $pluginUrl = "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.1/nsis_tauri_utils.dll"
+          $pluginPath = "src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional\nsis_tauri_utils.dll"
+          
+          Invoke-WebRequest -Uri $pluginUrl -OutFile $pluginPath
+          
+          # Verify the download
+          if (Test-Path $pluginPath) {
+            Write-Host "NSIS Tauri Utils plugin downloaded successfully"
+          } else {
+            Write-Error "Failed to download NSIS Tauri Utils plugin"
+            exit 1
+          }
+
       - name: Update app version
         shell: bash
         run: |
           echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = false' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
