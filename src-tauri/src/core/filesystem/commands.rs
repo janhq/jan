@@ -184,6 +184,17 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
         )
     })?;
 
+    // Use short path on Windows to handle paths with spaces
+    #[cfg(windows)]
+    let file = {
+        if let Some(short_path) = jan_utils::path::get_short_path(&path_buf) {
+            fs::File::open(&short_path).map_err(|e| e.to_string())?
+        } else {
+            fs::File::open(&path_buf).map_err(|e| e.to_string())?
+        }
+    };
+    
+    #[cfg(not(windows))]
     let file = fs::File::open(&path_buf).map_err(|e| e.to_string())?;
     if path.ends_with(".tar.gz") {
         let tar = flate2::read::GzDecoder::new(file);

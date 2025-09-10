@@ -16,6 +16,9 @@ tokio = { version = "1", features = ["process", "fs", "macros", "rt"] }
 tokio-util = "0.7.14"
 url = "2.5"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3.0"
 
