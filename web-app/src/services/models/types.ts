@@ -85,6 +85,7 @@ export interface ModelPlan {
   gpuLayers: number
   maxContextLength: number
   noOffloadKVCache: boolean
+  offloadMmproj: boolean
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 

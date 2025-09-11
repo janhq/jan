@@ -93,6 +93,16 @@ export function ModelSetting({
           })
         }
 
+        if (
+          model.settings?.mmproj_offload &&
+          result.offloadMmproj !== undefined
+        ) {
+          settingsToUpdate.push({
+            key: 'mmproj_offload',
+            value: result.offloadMmproj,
+          })
+        }
+
         // Apply all settings in a single update to avoid race conditions
         if (settingsToUpdate.length > 0) {
           handleMultipleSettingsChange(settingsToUpdate)
