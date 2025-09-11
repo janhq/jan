@@ -328,7 +328,8 @@ export default class llamacpp_extension extends AIEngine {
             await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = await this.determineBestBackend(version_backends)
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2047,11 +2048,25 @@ export default class llamacpp_extension extends AIEngine {
     return { layerSize: modelSize / totalLayers, totalLayers }
   }
 
+  private isAbsolutePath(p: string): boolean {
+    // Normalize back‑slashes to forward‑slashes first.
+    const norm = p.replace(/\\/g, '/')
+    return (
+      norm.startsWith('/') || // POSIX absolute
+      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
+      /^\/\/[^/]+/.test(norm) // UNC path //server/share
+    )
+  }
+
   async planModelLoad(
     path: string,
     mmprojPath?: string,
     requestedCtx?: number
   ): Promise<ModelPlan> {
+    if (!this.isAbsolutePath(path))
+      path = await joinPath([await getJanDataFolderPath(), path])
+    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
+      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     const modelSize = await this.getModelSize(path)
     const memoryInfo = await this.getTotalSystemMemory()
     const gguf = await readGgufMetadata(path)
@@ -2217,8 +2232,7 @@ export default class llamacpp_extension extends AIEngine {
         // Calculate available system RAM for KV cache
         const cpuLayers = totalLayers - gpuLayers
         const modelCPUSize = cpuLayers * layerSize
-        const mmprojCPUSize =
-          mmprojSize > 0 && !offloadMmproj ? mmprojSize : 0
+        const mmprojCPUSize = mmprojSize > 0 && !offloadMmproj ? mmprojSize : 0
         const systemRAMUsed = modelCPUSize + mmprojCPUSize
         const availableSystemRAMForKVCache = Math.max(
           0,
