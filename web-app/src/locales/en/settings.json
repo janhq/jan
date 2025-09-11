@@ -6,6 +6,11 @@
   "noUpdateAvailable": "You're running the latest version",
   "devVersion": "Development version detected",
   "updateError": "Failed to check for updates",
+  "checkForBackendUpdates": "Check for Llamacpp Updates",
+  "checkForBackendUpdatesDesc": "Check if a newer version of the Llamacpp backend is available.",
+  "checkingForBackendUpdates": "Checking for Llamacpp updates...",
+  "noBackendUpdateAvailable": "You're running the latest Llamacpp version",
+  "backendUpdateError": "Failed to check for Llamacpp updates",
   "changeLocation": "Change Location",
   "copied": "Copied",
   "copyPath": "Copy Path",
@@ -249,5 +254,16 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     }
-  }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "New Llamacpp Version {{version}}",
+    "backendUpdateAvailable": "Llamacpp Update Available",
+    "remindMeLater": "Remind Me Later",
+    "updating": "Updating...",
+    "updateNow": "Update Now",
+    "updateSuccess": "Llamacpp updated successfully",
+    "updateError": "Failed to update Llamacpp"
+  },
+  "backendInstallSuccess": "Backend installed successfully",
+  "backendInstallError": "Failed to install backend"
 }

@@ -2325,6 +2325,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5188,7 +5189,6 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.12",
  "tokio",
- "windows-sys 0.60.2",
 ]
 
 [[package]]

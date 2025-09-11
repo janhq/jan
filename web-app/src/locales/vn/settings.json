@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Bạn đang chạy phiên bản mới nhất",
   "devVersion": "Đã phát hiện phiên bản phát triển",
   "updateError": "Không thể kiểm tra cập nhật",
+  "checkForBackendUpdates": "Kiểm tra Cập nhật Llamacpp",
+  "checkForBackendUpdatesDesc": "Kiểm tra xem có phiên bản backend Llamacpp mới hơn không.",
+  "checkingForBackendUpdates": "Đang kiểm tra cập nhật Llamacpp...",
+  "noBackendUpdateAvailable": "Bạn đang chạy phiên bản Llamacpp mới nhất",
+  "backendUpdateError": "Không thể kiểm tra cập nhật Llamacpp",
   "changeLocation": "Thay đổi Vị trí",
   "copied": "Đã sao chép",
   "copyPath": "Sao chép Đường dẫn",
@@ -244,5 +249,14 @@
       "cancel": "Hủy",
       "changeLocation": "Thay đổi vị trí"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Phiên bản Llamacpp mới {{version}}",
+    "backendUpdateAvailable": "Có cập nhật Llamacpp",
+    "remindMeLater": "Nhắc tôi sau",
+    "updating": "Đang cập nhật...",
+    "updateNow": "Cập nhật ngay",
+    "updateSuccess": "Cập nhật Llamacpp thành công",
+    "updateError": "Không thể cập nhật Llamacpp"
   }
 }

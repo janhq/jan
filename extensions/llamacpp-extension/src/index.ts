@@ -31,12 +31,16 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
+  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
-import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
+import {
+  GgufMetadata,
+  readGgufMetadata,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
@@ -321,10 +325,10 @@ export default class llamacpp_extension extends AIEngine {
           // Clear the invalid stored preference
           this.clearStoredBackendType()
           bestAvailableBackendString =
-            this.determineBestBackend(version_backends)
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -486,23 +490,52 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private determineBestBackend(
+  private async determineBestBackend(
     version_backends: { version: string; backend: string }[]
-  ): string {
+  ): Promise<string> {
     if (version_backends.length === 0) return ''
 
+    // Check GPU memory availability
+    let hasEnoughGpuMemory = false
+    try {
+      const sysInfo = await getSystemInfo()
+      for (const gpuInfo of sysInfo.gpus) {
+        if (gpuInfo.total_memory >= 6 * 1024) {
+          hasEnoughGpuMemory = true
+          break
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to get system info for GPU memory check:', error)
+      // Default to false if we can't determine GPU memory
+      hasEnoughGpuMemory = false
+    }
+
     // Priority list for backend types (more specific/performant ones first)
-    const backendPriorities: string[] = [
-      'cuda-cu12.0',
-      'cuda-cu11.7',
-      'vulkan',
-      'avx512',
-      'avx2',
-      'avx',
-      'noavx',
-      'arm64',
-      'x64',
-    ]
+    // Vulkan will be conditionally prioritized based on GPU memory
+    const backendPriorities: string[] = hasEnoughGpuMemory
+      ? [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'vulkan', // Include vulkan if we have enough GPU memory
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+        ]
+      : [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+          'vulkan', // demote to last if we don't have enough memory
+        ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
@@ -543,7 +576,80 @@ export default class llamacpp_extension extends AIEngine {
       return `${foundBestBackend.version}/${foundBestBackend.backend}`
     } else {
       // Fallback to newest version
+      logger.info(
+        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
+      )
       return `${version_backends[0].version}/${version_backends[0].backend}`
+    }
+  }
+
+  async updateBackend(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    try {
+      if (!targetBackendString)
+        throw new Error(
+          `Invalid backend string: ${targetBackendString} supplied to update function`
+        )
+
+      const [version, backend] = targetBackendString.split('/')
+
+      logger.info(
+        `Updating backend to ${targetBackendString} (backend type: ${backend})`
+      )
+
+      // Download new backend
+      await this.ensureBackendReady(backend, version)
+
+      // Add delay on Windows
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+
+      // Update configuration
+      this.config.version_backend = targetBackendString
+
+      // Store the backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== backend) {
+        this.setStoredBackendType(backend)
+        logger.info(`Updated stored backend type preference: ${backend}`)
+      }
+
+      // Update settings
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+
+      logger.info(`Successfully updated to backend: ${targetBackendString}`)
+
+      // Emit for updating frontend
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+        )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
+
+      // Clean up old versions of the same backend type
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      await this.removeOldBackend(version, backend)
+
+      return { wasUpdated: true, newBackend: targetBackendString }
+    } catch (error) {
+      logger.error('Backend update failed:', error)
+      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
   }
 
@@ -571,46 +677,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         'No valid backend currently selected, using best available backend'
       )
-      try {
-        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
 
-        // Download new backend
-        await this.ensureBackendReady(bestBackend, bestVersion)
-
-        // Add delay on Windows
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-
-        // Update configuration
-        this.config.version_backend = bestAvailableBackendString
-
-        // Store the backend type preference only if it changed
-        const currentStoredBackend = this.getStoredBackendType()
-        if (currentStoredBackend !== bestBackend) {
-          this.setStoredBackendType(bestBackend)
-          logger.info(`Stored new backend type preference: ${bestBackend}`)
-        }
-
-        // Update settings
-        const settings = await this.getSettings()
-        await this.updateSettings(
-          settings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = bestAvailableBackendString
-            }
-            return item
-          })
-        )
-
-        logger.info(
-          `Successfully set initial backend: ${bestAvailableBackendString}`
-        )
-        return { wasUpdated: true, newBackend: bestAvailableBackendString }
-      } catch (error) {
-        logger.error('Failed to set initial backend:', error)
-        return { wasUpdated: false, newBackend: this.config.version_backend }
-      }
+      return await this.updateBackend(bestAvailableBackendString)
     }
 
     // Parse current backend configuration
@@ -650,65 +718,54 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Perform version update for the same backend type
-    try {
+    logger.info(
+      `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+    )
+
+    return await this.updateBackend(targetBackendString)
+  }
+
+  private parseBackendVersion(v: string): number {
+    // Remove any leading non‑digit characters (e.g. the "b")
+    const numeric = v.replace(/^[^\d]*/, '')
+    const n = Number(numeric)
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  async checkBackendForUpdates(): Promise<{
+    updateNeeded: boolean
+    newVersion: string
+  }> {
+    // Parse current backend configuration
+    const [currentVersion, currentBackend] = (
+      this.config.version_backend || ''
+    ).split('/')
+
+    if (!currentVersion || !currentBackend) {
+      logger.warn(
+        `Invalid current backend format: ${this.config.version_backend}`
+      )
+      return { updateNeeded: false, newVersion: '0' }
+    }
+
+    // Find the latest version for the currently selected backend type
+    const version_backends = await listSupportedBackends()
+    const targetBackendString = this.findLatestVersionForBackend(
+      version_backends,
+      currentBackend
+    )
+    const [latestVersion] = targetBackendString.split('/')
+    if (
+      this.parseBackendVersion(latestVersion) >
+      this.parseBackendVersion(currentVersion)
+    ) {
+      logger.info(`New update available: ${latestVersion}`)
+      return { updateNeeded: true, newVersion: latestVersion }
+    } else {
       logger.info(
-        `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+        `Already at latest version: ${currentVersion} = ${latestVersion}`
       )
-
-      // Download new version of the same backend type
-      await this.ensureBackendReady(currentBackend, latestVersion)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Update stored backend type preference only if it changed
-      const currentStoredBackend = this.getStoredBackendType()
-      if (currentStoredBackend !== currentBackend) {
-        this.setStoredBackendType(currentBackend)
-        logger.info(`Updated stored backend type preference: ${currentBackend}`)
-      }
-
-      // Update settings
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      logger.info(
-        `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
-      )
-
-      // Emit for updating fe
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions of the same backend type
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-      await this.removeOldBackend(latestVersion, currentBackend)
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Auto-update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+      return { updateNeeded: false, newVersion: '0' }
     }
   }
 
@@ -1014,6 +1071,52 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     localStorage.setItem('cortex_models_migrated', 'true')
+  }
+
+  /*
+   * Manually installs a supported backend archive
+   *
+   */
+  async installBackend(path: string): Promise<void> {
+    const platformName = IS_WINDOWS ? 'win' : 'linux'
+    const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
+    const archiveName = await basename(path)
+    logger.info(`Installing backend from path: ${path}`)
+
+    if (!(await fs.existsSync(path)) || !path.endsWith('tar.gz')) {
+      logger.error(`Invalid path or file ${path}`)
+      throw new Error(`Invalid path or file ${path}`)
+    }
+    const match = re.exec(archiveName)
+    if (!match) throw new Error('Failed to parse archive name')
+    const [, version, backend] = match
+    if (!version && !backend) {
+      throw new Error(`Invalid backend archive name: ${archiveName}`)
+    }
+    const backendDir = await getBackendDir(backend, version)
+    try {
+      await invoke('decompress', { path: path, outputDir: backendDir })
+    } catch (e) {
+      logger.error(`Failed to install: ${String(e)}`)
+    }
+    const binPath =
+      platformName === 'win'
+        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
+        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+
+    if (!fs.existsSync(binPath)) {
+      await fs.rm(backendDir)
+      throw new Error('Not a supported backend archive!')
+    }
+    try {
+      await this.configureBackends()
+      logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
+    } catch (e) {
+      logger.error('Backend installed but failed to refresh UI', e)
+      throw new Error(
+        `Backend installed but failed to refresh UI: ${String(e)}`
+      )
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
@@ -1438,7 +1541,11 @@ export default class llamacpp_extension extends AIEngine {
 
     // Boolean flags
     if (!cfg.ctx_shift) args.push('--no-context-shift')
-    if (cfg.flash_attn) args.push('--flash-attn')
+    if (Number(version.replace(/^b/, '')) >= 6325) {
+      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
+    } else {
+      if (cfg.flash_attn) args.push('--flash-attn')
+    }
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
@@ -1901,7 +2008,7 @@ export default class llamacpp_extension extends AIEngine {
     const totalMemory = totalVRAM + totalRAM
 
     logger.info(
-      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Free: ${usableRAM} bytes, Total Memory: ${totalMemory} bytes`
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
     )
 
     return {
@@ -2416,9 +2523,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
       }
     }
   }

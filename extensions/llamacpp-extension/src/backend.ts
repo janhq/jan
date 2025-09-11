@@ -1,8 +1,89 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
-import { dirname } from '@tauri-apps/api/path'
+import { dirname, basename } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+
+/*
+ * Reads currently installed backends in janDataFolderPath
+ *
+ */
+export async function getLocalInstalledBackends(): Promise<
+  { version: string; backend: string }[]
+> {
+  const local: Array<{ version: string; backend: string }> = []
+  const janDataFolderPath = await getJanDataFolderPath()
+  const backendsDir = await joinPath([
+    janDataFolderPath,
+    'llamacpp',
+    'backends',
+  ])
+  if (await fs.existsSync(backendsDir)) {
+    const versionDirs = await fs.readdirSync(backendsDir)
+
+    // If the folder does not exist we are done.
+    if (!versionDirs) {
+      return local
+    }
+    for (const version of versionDirs) {
+      const versionPath = await joinPath([backendsDir, version])
+      const versionName = await basename(versionPath)
+
+      // Check if versionPath is actually a directory before reading it
+      const versionStat = await fs.fileStat(versionPath)
+      if (!versionStat?.isDirectory) {
+        continue
+      }
+
+      const backendTypes = await fs.readdirSync(versionPath)
+
+      // Verify that the backend is really installed
+      for (const backendType of backendTypes) {
+        const backendName = await basename(backendType)
+        if (await isBackendInstalled(backendType, versionName)) {
+          local.push({ version: versionName, backend: backendName })
+        }
+      }
+    }
+  }
+  console.debug(local)
+  return local
+}
+
+/*
+ * currently reads available backends in remote
+ *
+ */
+async function fetchRemoteSupportedBackends(
+  supportedBackends: string[]
+): Promise<{ version: string; backend: string }[]> {
+  // Pull the latest releases from the repo
+  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
+  releases.splice(10) // keep only the latest 10 releases
+
+  // Walk the assets and keep only those that match a supported backend
+  const remote: { version: string; backend: string }[] = []
+
+  for (const release of releases) {
+    const version = release.tag_name
+    const prefix = `llama-${version}-bin-`
+
+    for (const asset of release.assets) {
+      const name = asset.name
+
+      if (!name.startsWith(prefix)) continue
+
+      const backend = name.replace(prefix, '').replace('.tar.gz', '')
+
+      if (supportedBackends.includes(backend)) {
+        remote.push({ version, backend })
+      }
+    }
+  }
+
+  return remote
+}
 
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
@@ -76,31 +157,29 @@ export async function listSupportedBackends(): Promise<
   } else if (sysType === 'macos-aarch64' || sysType === 'macos-arm64') {
     supportedBackends.push('macos-arm64')
   }
+  // get latest backends from Github
+  const remoteBackendVersions =
+    await fetchRemoteSupportedBackends(supportedBackends)
 
-  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
-  releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
-  releases.splice(10) // keep only the latest 10 releases
-
-  let backendVersions = []
-  for (const release of releases) {
-    const version = release.tag_name
-    const prefix = `llama-${version}-bin-`
-
-    // NOTE: there is checksum.yml. we can also download it to verify the download
-    for (const asset of release.assets) {
-      const name = asset.name
-      if (!name.startsWith(prefix)) {
-        continue
-      }
-
-      const backend = name.replace(prefix, '').replace('.tar.gz', '')
-      if (supportedBackends.includes(backend)) {
-        backendVersions.push({ version, backend })
-      }
-    }
+  // Get locally installed versions
+  const localBackendVersions = await getLocalInstalledBackends()
+  // Use a Map keyed by “${version}|${backend}” for O(1) deduplication.
+  const mergedMap = new Map<string, { version: string; backend: string }>()
+  for (const entry of remoteBackendVersions) {
+    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
+  }
+  for (const entry of localBackendVersions) {
+    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
   }
 
-  return backendVersions
+  const merged = Array.from(mergedMap.values())
+  // Sort newest version first; if versions tie, sort by backend name
+  merged.sort((a, b) => {
+    const versionCmp = b.version.localeCompare(a.version)
+    return versionCmp !== 0 ? versionCmp : a.backend.localeCompare(b.backend)
+  })
+
+  return merged
 }
 
 export async function getBackendDir(
@@ -279,9 +358,8 @@ async function _getSupportedFeatures() {
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
     }
-    // Vulkan support check - only discrete GPUs with 6GB+ VRAM
-    if (gpuInfo.vulkan_info?.api_version && gpuInfo.total_memory >= 6 * 1024) {
-      // 6GB (total_memory is in MB)
+    // Vulkan support check
+    if (gpuInfo.vulkan_info?.api_version) {
       features.vulkan = true
     }
   }
@@ -299,20 +377,22 @@ async function _fetchGithubReleases(
   const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases`
   try {
     const response = await fetch(githubUrl)
-    if (!response.ok) throw new Error(`GitHub error: ${response.status} ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`GitHub error: ${response.status} ${response.statusText}`)
     const releases = await response.json()
     return { releases, source: 'github' }
   } catch (_err) {
     const cdnUrl = 'https://catalog.jan.ai/llama.cpp/releases/releases.json'
     const response = await fetch(cdnUrl)
     if (!response.ok) {
-      throw new Error(`Failed to fetch releases from both sources. CDN error: ${response.status} ${response.statusText}`)
+      throw new Error(
+        `Failed to fetch releases from both sources. CDN error: ${response.status} ${response.statusText}`
+      )
     }
     const releases = await response.json()
     return { releases, source: 'cdn' }
   }
 }
-
 
 async function _isCudaInstalled(version: string): Promise<boolean> {
   const sysInfo = await getSystemInfo()

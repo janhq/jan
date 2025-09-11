@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Du verwendest die neueste Version",
   "devVersion": "Entwicklungsversion erkannt",
   "updateError": "Fehler beim Suchen nach Updates",
+  "checkForBackendUpdates": "Llamacpp Updates prüfen",
+  "checkForBackendUpdatesDesc": "Prüfe, ob eine neuere Version des Llamacpp-Backends verfügbar ist.",
+  "checkingForBackendUpdates": "Suche nach Llamacpp Updates...",
+  "noBackendUpdateAvailable": "Du verwendest die neueste Llamacpp Version",
+  "backendUpdateError": "Fehler beim Suchen nach Llamacpp Updates",
   "changeLocation": "Ort ändern",
   "copied": "Kopiert",
   "copyPath": "Pfad kopieren",
@@ -244,5 +249,14 @@
       "cancel": "Abbrechen",
       "changeLocation": "Ort ändern"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Neue Llamacpp Version {{version}}",
+    "backendUpdateAvailable": "Llamacpp Update verfügbar",
+    "remindMeLater": "Später erinnern",
+    "updating": "Aktualisiere...",
+    "updateNow": "Jetzt aktualisieren",
+    "updateSuccess": "Llamacpp erfolgreich aktualisiert",
+    "updateError": "Fehler beim Aktualisieren von Llamacpp"
   }
 }
