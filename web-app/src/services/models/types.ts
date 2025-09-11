@@ -138,7 +138,7 @@ export interface ModelsService {
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   planModelLoad(
     modelPath: string,
-    requestedCtx?: number,
-    mmprojPath?: string
+    mmprojPath?: string,
+    requestedCtx?: number
   ): Promise<ModelPlan>
 }

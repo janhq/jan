@@ -55,11 +55,7 @@ export function ModelSetting({
       if (modelConfig && modelConfig.model_path) {
         const result = await serviceHub
           .models()
-          .planModelLoad(
-            modelConfig.model_path,
-            undefined,
-            modelConfig.mmproj_path
-          )
+          .planModelLoad(modelConfig.model_path, modelConfig.mmproj_path)
 
         // Apply the recommended settings to the model sequentially to avoid race conditions
         const settingsToUpdate: Array<{
@@ -78,6 +74,15 @@ export function ModelSetting({
           })
         }
 
+        if (
+          model.settings?.no_kv_offload &&
+          result.noOffloadKVCache !== undefined
+        ) {
+          settingsToUpdate.push({
+            key: 'no_kv_offload',
+            value: result.noOffloadKVCache,
+          })
+        }
         if (
           model.settings?.no_kv_offload &&
           result.noOffloadKVCache !== undefined
