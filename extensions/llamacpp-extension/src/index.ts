@@ -2042,7 +2042,7 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<{ layerSize: number; totalLayers: number }> {
     const modelSize = await this.getModelSize(path)
     const arch = meta['general.architecture']
-    const totalLayers = Number(meta[`${arch}.block_count`])
+    const totalLayers = Number(meta[`${arch}.block_count`]) + 2 // 1 for lm_head layer and 1 for embedding layer
     if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
     return { layerSize: modelSize / totalLayers, totalLayers }
   }
