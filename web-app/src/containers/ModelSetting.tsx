@@ -46,15 +46,20 @@ export function ModelSetting({
     }
     setIsPlanning(true)
     try {
-      // Read the model config to get the actual model path
+      // Read the model config to get the actual model path and mmproj path
       const modelConfig = await serviceHub.app().readYaml<{
         model_path: string
+        mmproj_path?: string
       }>(`llamacpp/models/${model.id}/model.yml`)
 
       if (modelConfig && modelConfig.model_path) {
         const result = await serviceHub
           .models()
-          .planModelLoad(modelConfig.model_path)
+          .planModelLoad(
+            modelConfig.model_path,
+            undefined,
+            modelConfig.mmproj_path
+          )
 
         // Apply the recommended settings to the model sequentially to avoid race conditions
         const settingsToUpdate: Array<{
