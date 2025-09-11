@@ -541,10 +541,7 @@ export default class llamacpp_extension extends AIEngine {
     const getBackendCategory = (backendString: string): string | undefined => {
       if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
       if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) {
-        // Only return vulkan category if we have enough GPU memory
-        return hasEnoughGpuMemory ? 'vulkan' : undefined
-      }
+      if (backendString.includes('vulkan')) return 'vulkan'
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -2011,7 +2008,7 @@ export default class llamacpp_extension extends AIEngine {
     const totalMemory = totalVRAM + totalRAM
 
     logger.info(
-      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Free: ${usableRAM} bytes, Total Memory: ${totalMemory} bytes`
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
     )
 
     return {
