@@ -1,0 +1,299 @@
+/**
+ * MCP Web Extension
+ * Provides Model Context Protocol functionality for web platform
+ * Uses official MCP TypeScript SDK with proper session handling
+ */
+
+import { MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
+import { JanAuthService } from '../shared/auth'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+// JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
+declare const JAN_API_BASE: string
+
+export default class MCPExtensionWeb extends MCPExtension {
+  private mcpEndpoint = '/mcp'
+  private tools: MCPTool[] = []
+  private initialized = false
+  private authService: JanAuthService
+  private mcpClient: Client | null = null
+  private tokenUpdateListener: (() => void) | null = null
+
+  constructor(
+    url: string,
+    name: string,
+    productName?: string,
+    active?: boolean,
+    description?: string,
+    version?: string
+  ) {
+    super(url, name, productName, active, description, version)
+    this.authService = JanAuthService.getInstance()
+  }
+
+  async onLoad(): Promise<void> {
+    try {
+      // Initialize authentication first
+      await this.authService.initialize()
+      // Initialize MCP client
+      await this.initializeMCPClient()
+      // Set up localStorage monitoring for token changes
+      this.setupTokenMonitoring()
+      // Then fetch tools
+      await this.initializeTools()
+    } catch (error) {
+      console.warn('Failed to initialize MCP extension:', error)
+      this.tools = []
+    }
+  }
+
+  async onUnload(): Promise<void> {
+    this.tools = []
+    this.initialized = false
+    
+    // Remove token update event listener
+    if (this.tokenUpdateListener) {
+      window.removeEventListener('jan-auth-token-updated', this.tokenUpdateListener as EventListener)
+      this.tokenUpdateListener = null
+    }
+    
+    // Properly close MCP client to avoid session errors
+    if (this.mcpClient) {
+      try {
+        await this.mcpClient.close()
+      } catch (error) {
+        console.warn('Error closing MCP client:', error)
+      }
+      this.mcpClient = null
+    }
+  }
+
+  private async initializeMCPClient(): Promise<void> {
+    try {
+      // Close existing client if any
+      if (this.mcpClient) {
+        try {
+          await this.mcpClient.close()
+        } catch (error) {
+          // Ignore close errors
+        }
+        this.mcpClient = null
+      }
+
+      // Get fresh authentication token
+      const token = await this.authService.getValidAccessToken()
+      
+      // Create StreamableHTTP transport with authentication and session management
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`${JAN_API_BASE}${this.mcpEndpoint}`),
+        {
+          requestInit: {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'mcp-protocol-version': '2025-06-18'
+            }
+          }
+        }
+      )
+      
+      // Create MCP client
+      this.mcpClient = new Client(
+        {
+          name: 'jan-web-client',
+          version: '1.0.0'
+        },
+        {
+          capabilities: {
+            tools: {},
+            resources: {},
+            prompts: {},
+            logging: {}
+          }
+        }
+      )
+      
+      // Connect to MCP server
+      await this.mcpClient.connect(transport)
+      console.log('MCP client connected successfully')
+    } catch (error) {
+      console.error('Failed to initialize MCP client:', error)
+      throw error
+    }
+  }
+
+  private setupTokenMonitoring(): void {
+    // Listen for token update events from the auth service
+    this.tokenUpdateListener = () => {
+      // Simply reinitialize the MCP client when any token update occurs
+      this.initializeMCPClient().catch(error => {
+        console.error('Failed to reinitialize MCP client after token update:', error)
+      })
+    }
+    
+    window.addEventListener('jan-auth-token-updated', this.tokenUpdateListener as EventListener)
+  }
+
+  private async initializeTools(): Promise<void> {
+    if (this.initialized || !this.mcpClient) {
+      return
+    }
+
+    try {
+      // Use MCP SDK to list tools
+      const result = await this.mcpClient.listTools()
+      console.log('MCP tools/list response:', result)
+      
+      if (result.tools && Array.isArray(result.tools)) {
+        this.tools = result.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: (tool.inputSchema || {}) as Record<string, unknown>,
+          server: 'Jan MCP Server'
+        }))
+      } else {
+        console.warn('No tools found in MCP server response')
+        this.tools = []
+      }
+
+      this.initialized = true
+      console.log(`Initialized MCP extension with ${this.tools.length} tools:`, this.tools.map(t => t.name))
+    } catch (error) {
+      console.error('Failed to fetch MCP tools:', error)
+      this.tools = []
+      this.initialized = false
+      throw error
+    }
+  }
+
+  async getTools(): Promise<MCPTool[]> {
+    if (!this.initialized) {
+      await this.initializeTools()
+    }
+    return this.tools
+  }
+
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.mcpClient) {
+      return {
+        error: 'MCP client not initialized',
+        content: [{ type: 'text', text: 'MCP client not initialized' }]
+      }
+    }
+
+    try {
+      // Use MCP SDK to call tool
+      const result = await this.mcpClient.callTool({
+        name: toolName,
+        arguments: args
+      })
+      
+      console.log(`MCP tool call result for ${toolName}:`, result)
+      
+      // Handle tool call result
+      if (result.isError) {
+        const errorText = Array.isArray(result.content) && result.content.length > 0
+          ? (result.content[0].type === 'text' ? (result.content[0] as any).text : 'Tool call failed')
+          : 'Tool call failed'
+        
+        return {
+          error: errorText,
+          content: [{ type: 'text', text: errorText }]
+        }
+      }
+
+      // Convert MCP content to Jan's format
+      const content = Array.isArray(result.content) 
+        ? result.content.map(item => {
+            if (item.type === 'text') {
+              return { type: 'text' as const, text: (item as any).text }
+            } else {
+              // For non-text types, convert to text representation
+              return { type: 'text' as const, text: JSON.stringify(item) }
+            }
+          })
+        : [{ type: 'text' as const, text: 'No content returned' }]
+
+      return {
+        error: '',
+        content
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`Failed to call MCP tool ${toolName}:`, error)
+      
+      // If it's a session error, try to reconnect
+      if (errorMessage.includes('session') || errorMessage.includes('connection')) {
+        console.log('Detected session error, attempting to reconnect...')
+        try {
+          await this.initializeMCPClient()
+          // Retry the tool call once after reconnection
+          const retryResult = await this.mcpClient!.callTool({
+            name: toolName,
+            arguments: args
+          })
+          
+          if (retryResult.isError) {
+            const errorText = Array.isArray(retryResult.content) && retryResult.content.length > 0
+              ? (retryResult.content[0].type === 'text' ? (retryResult.content[0] as any).text : 'Tool call failed after retry')
+              : 'Tool call failed after retry'
+            return {
+              error: errorText,
+              content: [{ type: 'text', text: errorText }]
+            }
+          }
+          
+          const content = Array.isArray(retryResult.content) 
+            ? retryResult.content.map(item => {
+                if (item.type === 'text') {
+                  return { type: 'text' as const, text: (item as any).text }
+                } else {
+                  return { type: 'text' as const, text: JSON.stringify(item) }
+                }
+              })
+            : [{ type: 'text' as const, text: 'No content returned' }]
+            
+          return { error: '', content }
+        } catch (retryError) {
+          console.error('Retry after reconnection failed:', retryError)
+        }
+      }
+      
+      return {
+        error: errorMessage,
+        content: [{ type: 'text', text: errorMessage }]
+      }
+    }
+  }
+
+  async isHealthy(): Promise<boolean> {
+    if (!this.mcpClient) {
+      return false
+    }
+
+    try {
+      // Try to list tools as health check (ping might not be available)
+      await this.mcpClient.listTools()
+      return true
+    } catch (error) {
+      console.warn('MCP health check failed:', error)
+      return false
+    }
+  }
+
+  async getConnectedServers(): Promise<string[]> {
+    // Return servers based on MCP client connection status
+    return this.mcpClient && this.initialized ? ['Jan MCP Server'] : []
+  }
+
+  async refreshTools(): Promise<void> {
+    this.initialized = false
+    try {
+      await this.initializeTools()
+    } catch (error) {
+      console.error('Failed to refresh tools:', error)
+      throw error
+    }
+  }
+}

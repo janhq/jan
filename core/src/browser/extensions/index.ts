@@ -15,6 +15,11 @@ export { InferenceExtension } from './inference'
 export { AssistantExtension } from './assistant'
 
 /**
+ * MCP extension for managing tools and server communication.
+ */
+export { MCPExtension } from './mcp'
+
+/**
  * Base AI Engines.
  */
 export * from './engines'

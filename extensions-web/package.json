@@ -30,5 +30,8 @@
   "peerDependencies": {
     "@janhq/core": "*",
     "zustand": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5"
   }
 }
