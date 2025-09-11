@@ -242,11 +242,18 @@ export function ModelSetting({
           {provider.provider === 'llamacpp' && (
             <div className="pb-4 border-b border-main-view-fg/10 my-4">
               <div>
-                <h3 className="font-medium mb-1">Optimize Settings</h3>
-                <p className="text-main-view-fg/70 text-xs mb-3">
-                  Analyze your system and model, then apply optimal loading
-                  settings automatically
-                </p>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-medium">Optimize Settings</h3>
+                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
+                      <span>{t('mcp-servers:experimental')}</span>
+                    </div>
+                  </div>
+                  <p className="text-main-view-fg/70 text-xs mb-3">
+                    Analyze your system and model, then apply optimal loading
+                    settings automatically
+                  </p>
+                </div>
                 <Button
                   onClick={handlePlanModelLoad}
                   disabled={isPlanning}
