@@ -495,12 +495,14 @@ export class DefaultModelsService implements ModelsService {
 
   async planModelLoad(
     modelPath: string,
+    mmprojPath?: string,
     requestedCtx?: number
   ): Promise<ModelPlan> {
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
         planModelLoad?: (
           path: string,
+          mmprojPath?: string,
           requestedCtx?: number
         ) => Promise<ModelPlan>
       }
@@ -514,7 +516,12 @@ export class DefaultModelsService implements ModelsService {
           (core) => core.joinPath
         )
         const fullModelPath = await joinPath([janDataFolderPath, modelPath])
-        return await engine.planModelLoad(fullModelPath, requestedCtx)
+        // mmprojPath is currently unused, but included for compatibility
+        return await engine.planModelLoad(
+          fullModelPath,
+          mmprojPath,
+          requestedCtx
+        )
       }
 
       // Fallback if method is not available
@@ -523,6 +530,7 @@ export class DefaultModelsService implements ModelsService {
         gpuLayers: 0,
         maxContextLength: 2048,
         noOffloadKVCache: true,
+        offloadMmproj: false,
         mode: 'Unsupported',
       }
     } catch (error) {
@@ -531,6 +539,7 @@ export class DefaultModelsService implements ModelsService {
         gpuLayers: 0,
         maxContextLength: 2048,
         noOffloadKVCache: true,
+        offloadMmproj: false,
         mode: 'Unsupported',
       }
     }

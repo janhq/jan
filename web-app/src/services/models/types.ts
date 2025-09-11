@@ -85,6 +85,7 @@ export interface ModelPlan {
   gpuLayers: number
   maxContextLength: number
   noOffloadKVCache: boolean
+  offloadMmproj: boolean
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
@@ -136,5 +137,9 @@ export interface ModelsService {
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
-  planModelLoad(modelPath: string, requestedCtx?: number): Promise<ModelPlan>
+  planModelLoad(
+    modelPath: string,
+    mmprojPath?: string,
+    requestedCtx?: number
+  ): Promise<ModelPlan>
 }

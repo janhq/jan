@@ -46,15 +46,16 @@ export function ModelSetting({
     }
     setIsPlanning(true)
     try {
-      // Read the model config to get the actual model path
+      // Read the model config to get the actual model path and mmproj path
       const modelConfig = await serviceHub.app().readYaml<{
         model_path: string
+        mmproj_path?: string
       }>(`llamacpp/models/${model.id}/model.yml`)
 
       if (modelConfig && modelConfig.model_path) {
         const result = await serviceHub
           .models()
-          .planModelLoad(modelConfig.model_path)
+          .planModelLoad(modelConfig.model_path, modelConfig.mmproj_path)
 
         // Apply the recommended settings to the model sequentially to avoid race conditions
         const settingsToUpdate: Array<{
@@ -80,6 +81,25 @@ export function ModelSetting({
           settingsToUpdate.push({
             key: 'no_kv_offload',
             value: result.noOffloadKVCache,
+          })
+        }
+        if (
+          model.settings?.no_kv_offload &&
+          result.noOffloadKVCache !== undefined
+        ) {
+          settingsToUpdate.push({
+            key: 'no_kv_offload',
+            value: result.noOffloadKVCache,
+          })
+        }
+
+        if (
+          model.settings?.mmproj_offload &&
+          result.offloadMmproj !== undefined
+        ) {
+          settingsToUpdate.push({
+            key: 'mmproj_offload',
+            value: result.offloadMmproj,
           })
         }
 
@@ -242,11 +262,18 @@ export function ModelSetting({
           {provider.provider === 'llamacpp' && (
             <div className="pb-4 border-b border-main-view-fg/10 my-4">
               <div>
-                <h3 className="font-medium mb-1">Optimize Settings</h3>
-                <p className="text-main-view-fg/70 text-xs mb-3">
-                  Analyze your system and model, then apply optimal loading
-                  settings automatically
-                </p>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-medium">Optimize Settings</h3>
+                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
+                      <span>{t('mcp-servers:experimental')}</span>
+                    </div>
+                  </div>
+                  <p className="text-main-view-fg/70 text-xs mb-3">
+                    Analyze your system and model, then apply optimal loading
+                    settings automatically
+                  </p>
+                </div>
                 <Button
                   onClick={handlePlanModelLoad}
                   disabled={isPlanning}

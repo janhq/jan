@@ -80,7 +80,7 @@ type ModelPlan = {
   gpuLayers: number
   maxContextLength: number
   noOffloadKVCache: boolean
-  noOffloadMmproj?: boolean
+  offloadMmproj?: boolean
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
@@ -328,7 +328,8 @@ export default class llamacpp_extension extends AIEngine {
             await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = await this.determineBestBackend(version_backends)
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2047,11 +2048,25 @@ export default class llamacpp_extension extends AIEngine {
     return { layerSize: modelSize / totalLayers, totalLayers }
   }
 
+  private isAbsolutePath(p: string): boolean {
+    // Normalize back‑slashes to forward‑slashes first.
+    const norm = p.replace(/\\/g, '/')
+    return (
+      norm.startsWith('/') || // POSIX absolute
+      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
+      /^\/\/[^/]+/.test(norm) // UNC path //server/share
+    )
+  }
+
   async planModelLoad(
     path: string,
-    requestedCtx?: number,
-    mmprojPath?: string
+    mmprojPath?: string,
+    requestedCtx?: number
   ): Promise<ModelPlan> {
+    if (!this.isAbsolutePath(path))
+      path = await joinPath([await getJanDataFolderPath(), path])
+    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
+      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     const modelSize = await this.getModelSize(path)
     const memoryInfo = await this.getTotalSystemMemory()
     const gguf = await readGgufMetadata(path)
@@ -2138,12 +2153,12 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     // --- Priority 1: Allocate mmproj (if exists) ---
-    let noOffloadMmproj = false
+    let offloadMmproj = false
     let remainingVRAM = usableVRAM
 
     if (mmprojSize > 0) {
       if (mmprojSize <= remainingVRAM) {
-        noOffloadMmproj = true
+        offloadMmproj = true
         remainingVRAM -= mmprojSize
         logger.info(`MMProj allocated to VRAM: ${mmprojSize} bytes`)
       } else {
@@ -2217,8 +2232,7 @@ export default class llamacpp_extension extends AIEngine {
         // Calculate available system RAM for KV cache
         const cpuLayers = totalLayers - gpuLayers
         const modelCPUSize = cpuLayers * layerSize
-        const mmprojCPUSize =
-          mmprojSize > 0 && !noOffloadMmproj ? mmprojSize : 0
+        const mmprojCPUSize = mmprojSize > 0 && !offloadMmproj ? mmprojSize : 0
         const systemRAMUsed = modelCPUSize + mmprojCPUSize
         const availableSystemRAMForKVCache = Math.max(
           0,
@@ -2277,7 +2291,7 @@ export default class llamacpp_extension extends AIEngine {
       const estimatedGPUUsage =
         gpuLayers * layerSize +
         maxContextLength * kvCachePerToken +
-        (noOffloadMmproj ? mmprojSize : 0)
+        (offloadMmproj ? mmprojSize : 0)
 
       if (estimatedGPUUsage > memoryInfo.totalVRAM * 0.9) {
         logger.warn(
@@ -2293,7 +2307,7 @@ export default class llamacpp_extension extends AIEngine {
           const newEstimate =
             gpuLayers * layerSize +
             maxContextLength * kvCachePerToken +
-            (noOffloadMmproj ? mmprojSize : 0)
+            (offloadMmproj ? mmprojSize : 0)
           if (newEstimate <= memoryInfo.totalVRAM * 0.9) break
         }
 
@@ -2329,7 +2343,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Log final plan
     const mmprojInfo = mmprojPath
-      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, noOffloadMmproj=${noOffloadMmproj}`
+      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, offloadMmproj=${offloadMmproj}`
       : ''
 
     logger.info(
@@ -2343,7 +2357,7 @@ export default class llamacpp_extension extends AIEngine {
       maxContextLength,
       noOffloadKVCache,
       mode,
-      noOffloadMmproj,
+      offloadMmproj,
     }
   }
 
