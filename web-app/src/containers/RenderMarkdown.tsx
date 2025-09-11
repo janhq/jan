@@ -3,6 +3,7 @@ import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
 import remarkMath from 'remark-math'
+import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
@@ -162,8 +163,13 @@ function RenderMarkdownComponent({
   // Memoize the remarkPlugins to prevent unnecessary re-renders
   const remarkPlugins = useMemo(() => {
     // Using a simpler configuration to avoid TypeScript errors
-    return [remarkGfm, remarkMath, remarkEmoji]
-  }, [])
+    const basePlugins = [remarkGfm, remarkMath, remarkEmoji]
+    // Add remark-breaks for user messages to handle single newlines as line breaks
+    if (isUser) {
+      basePlugins.push(remarkBreaks)
+    }
+    return basePlugins
+  }, [isUser])
 
   // Memoize the rehypePlugins to prevent unnecessary re-renders
   const rehypePlugins = useMemo(() => {
