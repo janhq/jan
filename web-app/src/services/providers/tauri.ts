@@ -143,6 +143,12 @@ export class TauriProvidersService extends DefaultProvidersService {
         'Content-Type': 'application/json',
       }
 
+      // Add Origin header for local providers to avoid CORS issues
+      // Some local providers (like Ollama) require an Origin header
+      if (provider.base_url.includes('localhost:') || provider.base_url.includes('127.0.0.1:')) {
+        headers['Origin'] = 'tauri://localhost'
+      }
+
       // Only add authentication headers if API key is provided
       if (provider.api_key) {
         headers['x-api-key'] = provider.api_key
