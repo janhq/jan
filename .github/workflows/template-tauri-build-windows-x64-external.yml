@@ -51,7 +51,7 @@ jobs:
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
-          jq 'del(.bundle.windows.signCommand)' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+          jq '.bundle.windows.signCommand = "echo External build - skipping signature: %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json

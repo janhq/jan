@@ -22,7 +22,7 @@ on:
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
 jobs:
   build-linux-x64-external:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
