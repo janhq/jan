@@ -42,11 +42,13 @@ jobs:
           sudo apt-get clean
           echo "Disk space after cleanup:"
           df -h
+
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash
         run: |
           cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+
       - name: Installing node
         uses: actions/setup-node@v1
         with:
@@ -58,10 +60,12 @@ jobs:
       - name: Install ctoml
         run: |
           cargo install ctoml
+
       - name: Install Tauri dependencies
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
+
       - name: Update app version
         run: |
           echo "Version: ${{ inputs.new_version }}"
@@ -74,8 +78,10 @@ jobs:
           fi
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
+
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
@@ -86,9 +92,23 @@ jobs:
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
           fi
+
       - name: Build app
         run: |
           make build
+
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-linux-amd64-${{ inputs.new_version }}-deb
+          path: ./src-tauri/target/release/bundle/deb/*.deb
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
+          path: ./src-tauri/target/release/bundle/appimage/*.AppImage
