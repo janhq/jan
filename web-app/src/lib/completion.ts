@@ -182,6 +182,13 @@ export const sendCompletion = async (
         'X-Title': 'Jan',
       },
     }),
+    // Add Origin header for local providers to avoid CORS issues
+    ...((provider.base_url?.includes('localhost:') || provider.base_url?.includes('127.0.0.1:')) && {
+      fetch: getServiceHub().providers().fetch(),
+      defaultHeaders: {
+        'Origin': 'tauri://localhost',
+      },
+    }),
   } as ExtendedConfigOptions)
 
   if (

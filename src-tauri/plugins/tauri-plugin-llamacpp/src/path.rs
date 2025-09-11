@@ -3,31 +3,7 @@ use std::path::PathBuf;
 use crate::error::{ErrorCode, LlamacppError, ServerResult};
 
 #[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
-
-#[cfg(windows)]
-use std::ffi::OsStr;
-
-#[cfg(windows)]
-use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
-
-/// Get Windows short path to avoid issues with spaces and special characters
-#[cfg(windows)]
-pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
-    let wide: Vec<u16> = OsStr::new(path.as_ref())
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-
-    let mut buffer = vec![0u16; 260];
-    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
-
-    if len > 0 {
-        Some(String::from_utf16_lossy(&buffer[..len as usize]))
-    } else {
-        None
-    }
-}
+use jan_utils::path::get_short_path;
 
 /// Validate that a binary path exists and is accessible
 pub fn validate_binary_path(backend_path: &str) -> ServerResult<PathBuf> {
@@ -259,18 +235,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn test_get_short_path() {
-        // Test with a real path that should exist on Windows
-        use std::env;
-        if let Ok(temp_dir) = env::var("TEMP") {
-            let result = get_short_path(&temp_dir);
-            // Should return some short path or None (both are valid)
-            // We can't assert the exact value as it depends on the system
-            println!("Short path result: {:?}", result);
-        }
-    }
 
     #[test]
     fn test_validate_model_path_multiple_m_flags() {

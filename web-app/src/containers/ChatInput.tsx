@@ -104,17 +104,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
-          if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await serviceHub
-              .models()
-              .checkMmprojExists(selectedModel.id)
-            setHasMmproj(hasLocalMmproj)
-          }
-          // For non-llamacpp providers, only check vision capability
-          else if (
-            selectedProvider !== 'llamacpp' &&
-            selectedModel?.capabilities?.includes('vision')
-          ) {
+          if (selectedModel?.capabilities?.includes('vision')) {
             setHasMmproj(true)
           } else {
             setHasMmproj(false)

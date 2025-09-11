@@ -31,6 +31,7 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
+  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
@@ -39,13 +40,14 @@ import {
   GgufMetadata,
   readGgufMetadata,
 } from '@janhq/tauri-plugin-llamacpp-api'
-import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
+import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
   llamacpp_env: string
+  memory_util: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
@@ -72,6 +74,14 @@ type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   ctx_shift: boolean
+}
+
+type ModelPlan = {
+  gpuLayers: number
+  maxContextLength: number
+  noOffloadKVCache: boolean
+  offloadMmproj?: boolean
+  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
 interface DownloadItem {
@@ -114,6 +124,12 @@ interface DeviceList {
   name: string
   mem: number
   free: number
+}
+
+interface SystemMemory {
+  totalVRAM: number
+  totalRAM: number
+  totalMemory: number
 }
 
 /**
@@ -159,6 +175,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   llamacpp_env: string = ''
+  memoryMode: string = 'high'
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -190,6 +207,7 @@ export default class llamacpp_extension extends AIEngine {
 
     this.autoUnload = this.config.auto_unload
     this.llamacpp_env = this.config.llamacpp_env
+    this.memoryMode = this.config.memory_util
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
@@ -307,10 +325,11 @@ export default class llamacpp_extension extends AIEngine {
           // Clear the invalid stored preference
           this.clearStoredBackendType()
           bestAvailableBackendString =
-            this.determineBestBackend(version_backends)
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = this.determineBestBackend(version_backends)
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -472,23 +491,52 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private determineBestBackend(
+  private async determineBestBackend(
     version_backends: { version: string; backend: string }[]
-  ): string {
+  ): Promise<string> {
     if (version_backends.length === 0) return ''
 
+    // Check GPU memory availability
+    let hasEnoughGpuMemory = false
+    try {
+      const sysInfo = await getSystemInfo()
+      for (const gpuInfo of sysInfo.gpus) {
+        if (gpuInfo.total_memory >= 6 * 1024) {
+          hasEnoughGpuMemory = true
+          break
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to get system info for GPU memory check:', error)
+      // Default to false if we can't determine GPU memory
+      hasEnoughGpuMemory = false
+    }
+
     // Priority list for backend types (more specific/performant ones first)
-    const backendPriorities: string[] = [
-      'cuda-cu12.0',
-      'cuda-cu11.7',
-      'vulkan',
-      'avx512',
-      'avx2',
-      'avx',
-      'noavx',
-      'arm64',
-      'x64',
-    ]
+    // Vulkan will be conditionally prioritized based on GPU memory
+    const backendPriorities: string[] = hasEnoughGpuMemory
+      ? [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'vulkan', // Include vulkan if we have enough GPU memory
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+        ]
+      : [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+          'vulkan', // demote to last if we don't have enough memory
+        ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
@@ -529,7 +577,80 @@ export default class llamacpp_extension extends AIEngine {
       return `${foundBestBackend.version}/${foundBestBackend.backend}`
     } else {
       // Fallback to newest version
+      logger.info(
+        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
+      )
       return `${version_backends[0].version}/${version_backends[0].backend}`
+    }
+  }
+
+  async updateBackend(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    try {
+      if (!targetBackendString)
+        throw new Error(
+          `Invalid backend string: ${targetBackendString} supplied to update function`
+        )
+
+      const [version, backend] = targetBackendString.split('/')
+
+      logger.info(
+        `Updating backend to ${targetBackendString} (backend type: ${backend})`
+      )
+
+      // Download new backend
+      await this.ensureBackendReady(backend, version)
+
+      // Add delay on Windows
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+
+      // Update configuration
+      this.config.version_backend = targetBackendString
+
+      // Store the backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== backend) {
+        this.setStoredBackendType(backend)
+        logger.info(`Updated stored backend type preference: ${backend}`)
+      }
+
+      // Update settings
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+
+      logger.info(`Successfully updated to backend: ${targetBackendString}`)
+
+      // Emit for updating frontend
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+        )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
+
+      // Clean up old versions of the same backend type
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      await this.removeOldBackend(version, backend)
+
+      return { wasUpdated: true, newBackend: targetBackendString }
+    } catch (error) {
+      logger.error('Backend update failed:', error)
+      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
   }
 
@@ -557,46 +678,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         'No valid backend currently selected, using best available backend'
       )
-      try {
-        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
 
-        // Download new backend
-        await this.ensureBackendReady(bestBackend, bestVersion)
-
-        // Add delay on Windows
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-
-        // Update configuration
-        this.config.version_backend = bestAvailableBackendString
-
-        // Store the backend type preference only if it changed
-        const currentStoredBackend = this.getStoredBackendType()
-        if (currentStoredBackend !== bestBackend) {
-          this.setStoredBackendType(bestBackend)
-          logger.info(`Stored new backend type preference: ${bestBackend}`)
-        }
-
-        // Update settings
-        const settings = await this.getSettings()
-        await this.updateSettings(
-          settings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = bestAvailableBackendString
-            }
-            return item
-          })
-        )
-
-        logger.info(
-          `Successfully set initial backend: ${bestAvailableBackendString}`
-        )
-        return { wasUpdated: true, newBackend: bestAvailableBackendString }
-      } catch (error) {
-        logger.error('Failed to set initial backend:', error)
-        return { wasUpdated: false, newBackend: this.config.version_backend }
-      }
+      return await this.updateBackend(bestAvailableBackendString)
     }
 
     // Parse current backend configuration
@@ -636,65 +719,54 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Perform version update for the same backend type
-    try {
+    logger.info(
+      `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+    )
+
+    return await this.updateBackend(targetBackendString)
+  }
+
+  private parseBackendVersion(v: string): number {
+    // Remove any leading non‑digit characters (e.g. the "b")
+    const numeric = v.replace(/^[^\d]*/, '')
+    const n = Number(numeric)
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  async checkBackendForUpdates(): Promise<{
+    updateNeeded: boolean
+    newVersion: string
+  }> {
+    // Parse current backend configuration
+    const [currentVersion, currentBackend] = (
+      this.config.version_backend || ''
+    ).split('/')
+
+    if (!currentVersion || !currentBackend) {
+      logger.warn(
+        `Invalid current backend format: ${this.config.version_backend}`
+      )
+      return { updateNeeded: false, newVersion: '0' }
+    }
+
+    // Find the latest version for the currently selected backend type
+    const version_backends = await listSupportedBackends()
+    const targetBackendString = this.findLatestVersionForBackend(
+      version_backends,
+      currentBackend
+    )
+    const [latestVersion] = targetBackendString.split('/')
+    if (
+      this.parseBackendVersion(latestVersion) >
+      this.parseBackendVersion(currentVersion)
+    ) {
+      logger.info(`New update available: ${latestVersion}`)
+      return { updateNeeded: true, newVersion: latestVersion }
+    } else {
       logger.info(
-        `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+        `Already at latest version: ${currentVersion} = ${latestVersion}`
       )
-
-      // Download new version of the same backend type
-      await this.ensureBackendReady(currentBackend, latestVersion)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Update stored backend type preference only if it changed
-      const currentStoredBackend = this.getStoredBackendType()
-      if (currentStoredBackend !== currentBackend) {
-        this.setStoredBackendType(currentBackend)
-        logger.info(`Updated stored backend type preference: ${currentBackend}`)
-      }
-
-      // Update settings
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      logger.info(
-        `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
-      )
-
-      // Emit for updating fe
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions of the same backend type
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-      await this.removeOldBackend(latestVersion, currentBackend)
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Auto-update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+      return { updateNeeded: false, newVersion: '0' }
     }
   }
 
@@ -836,6 +908,8 @@ export default class llamacpp_extension extends AIEngine {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
+    } else if (key === 'memory_util') {
+      this.memoryMode = value as string
     }
   }
 
@@ -998,6 +1072,52 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
     localStorage.setItem('cortex_models_migrated', 'true')
+  }
+
+  /*
+   * Manually installs a supported backend archive
+   *
+   */
+  async installBackend(path: string): Promise<void> {
+    const platformName = IS_WINDOWS ? 'win' : 'linux'
+    const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
+    const archiveName = await basename(path)
+    logger.info(`Installing backend from path: ${path}`)
+
+    if (!(await fs.existsSync(path)) || !path.endsWith('tar.gz')) {
+      logger.error(`Invalid path or file ${path}`)
+      throw new Error(`Invalid path or file ${path}`)
+    }
+    const match = re.exec(archiveName)
+    if (!match) throw new Error('Failed to parse archive name')
+    const [, version, backend] = match
+    if (!version && !backend) {
+      throw new Error(`Invalid backend archive name: ${archiveName}`)
+    }
+    const backendDir = await getBackendDir(backend, version)
+    try {
+      await invoke('decompress', { path: path, outputDir: backendDir })
+    } catch (e) {
+      logger.error(`Failed to install: ${String(e)}`)
+    }
+    const binPath =
+      platformName === 'win'
+        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
+        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+
+    if (!fs.existsSync(binPath)) {
+      await fs.rm(backendDir)
+      throw new Error('Not a supported backend archive!')
+    }
+    try {
+      await this.configureBackends()
+      logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
+    } catch (e) {
+      logger.error('Backend installed but failed to refresh UI', e)
+      throw new Error(
+        `Backend installed but failed to refresh UI: ${String(e)}`
+      )
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
@@ -1422,7 +1542,11 @@ export default class llamacpp_extension extends AIEngine {
 
     // Boolean flags
     if (!cfg.ctx_shift) args.push('--no-context-shift')
-    if (cfg.flash_attn) args.push('--flash-attn')
+    if (Number(version.replace(/^b/, '')) >= 6325) {
+      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
+    } else {
+      if (cfg.flash_attn) args.push('--flash-attn')
+    }
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
@@ -1864,10 +1988,381 @@ export default class llamacpp_extension extends AIEngine {
       'tokenizer.chat_template'
     ]?.includes('tools')
   }
+  /**
+   * Get total system memory including both VRAM and RAM
+   */
+  private async getTotalSystemMemory(): Promise<SystemMemory> {
+    const devices = await this.getDevices()
+    let totalVRAM = 0
+
+    if (devices.length > 0) {
+      // Sum total VRAM across all GPUs
+      totalVRAM = devices
+        .map((d) => d.mem * 1024 * 1024)
+        .reduce((a, b) => a + b, 0)
+    }
+
+    // Get system RAM
+    const sys = await getSystemUsage()
+    const totalRAM = sys.used_memory * 1024 * 1024
+
+    const totalMemory = totalVRAM + totalRAM
+
+    logger.info(
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
+    )
+
+    return {
+      totalVRAM,
+      totalRAM,
+      totalMemory,
+    }
+  }
+  private async getKVCachePerToken(
+    meta: Record<string, string>
+  ): Promise<number> {
+    const arch = meta['general.architecture']
+    const nLayer = Number(meta[`${arch}.block_count`])
+    const nHead = Number(meta[`${arch}.attention.head_count`])
+
+    // Get head dimensions
+    const nHeadKV = Number(meta[`${arch}.attention.head_count_kv`]) || nHead
+    const embeddingLen = Number(meta[`${arch}.embedding_length`])
+    const headDim = embeddingLen / nHead
+
+    // KV cache uses head_count_kv (for GQA models) or head_count
+    // Each token needs K and V, both are fp16 (2 bytes)
+    const bytesPerToken = nHeadKV * headDim * 2 * 2 * nLayer // K+V, fp16, all layers
+
+    return bytesPerToken
+  }
+
+  private async getLayerSize(
+    path: string,
+    meta: Record<string, string>
+  ): Promise<{ layerSize: number; totalLayers: number }> {
+    const modelSize = await this.getModelSize(path)
+    const arch = meta['general.architecture']
+    const totalLayers = Number(meta[`${arch}.block_count`]) + 2 // 1 for lm_head layer and 1 for embedding layer
+    if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
+    return { layerSize: modelSize / totalLayers, totalLayers }
+  }
+
+  private isAbsolutePath(p: string): boolean {
+    // Normalize back‑slashes to forward‑slashes first.
+    const norm = p.replace(/\\/g, '/')
+    return (
+      norm.startsWith('/') || // POSIX absolute
+      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
+      /^\/\/[^/]+/.test(norm) // UNC path //server/share
+    )
+  }
+
+  async planModelLoad(
+    path: string,
+    mmprojPath?: string,
+    requestedCtx?: number
+  ): Promise<ModelPlan> {
+    if (!this.isAbsolutePath(path))
+      path = await joinPath([await getJanDataFolderPath(), path])
+    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
+      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
+    const modelSize = await this.getModelSize(path)
+    const memoryInfo = await this.getTotalSystemMemory()
+    const gguf = await readGgufMetadata(path)
+
+    // Get mmproj size if provided
+    let mmprojSize = 0
+    if (mmprojPath) {
+      mmprojSize = await this.getModelSize(mmprojPath)
+    }
+
+    const { layerSize, totalLayers } = await this.getLayerSize(
+      path,
+      gguf.metadata
+    )
+
+    // Fixed KV cache calculation
+    const kvCachePerToken = await this.getKVCachePerToken(gguf.metadata)
+
+    // Debug logging
+    logger.info(
+      `Model size: ${modelSize}, Layer size: ${layerSize}, Total layers: ${totalLayers}, KV cache per token: ${kvCachePerToken}`
+    )
+
+    // Validate critical values
+    if (!modelSize || modelSize <= 0) {
+      throw new Error(`Invalid model size: ${modelSize}`)
+    }
+    if (!kvCachePerToken || kvCachePerToken <= 0) {
+      throw new Error(`Invalid KV cache per token: ${kvCachePerToken}`)
+    }
+    if (!layerSize || layerSize <= 0) {
+      throw new Error(`Invalid layer size: ${layerSize}`)
+    }
+
+    // GPU overhead factor (20% reserved for GPU operations, alignment, etc.)
+    const GPU_OVERHEAD_FACTOR = 0.8
+
+    // VRAM budget with overhead consideration
+    const VRAM_RESERVE_GB = 0.5
+    const VRAM_RESERVE_BYTES = VRAM_RESERVE_GB * 1024 * 1024 * 1024
+    const usableVRAM = Math.max(
+      0,
+      (memoryInfo.totalVRAM - VRAM_RESERVE_BYTES) * GPU_OVERHEAD_FACTOR
+    )
+
+    // Get model's maximum context length
+    const arch = gguf.metadata['general.architecture']
+    const modelMaxContextLength =
+      Number(gguf.metadata[`${arch}.context_length`]) || 131072 // Default fallback
+
+    // Set minimum context length
+    const MIN_CONTEXT_LENGTH = 2048 // Reduced from 4096 for better compatibility
+
+    // System RAM budget
+    const memoryPercentages = { high: 0.7, medium: 0.5, low: 0.4 }
+
+    logger.info(
+      `Memory info - Total (VRAM + RAM): ${memoryInfo.totalMemory}, Total VRAM: ${memoryInfo.totalVRAM}, Mode: ${this.memoryMode}`
+    )
+
+    // Validate memory info
+    if (!memoryInfo.totalMemory || isNaN(memoryInfo.totalMemory)) {
+      throw new Error(`Invalid total memory: ${memoryInfo.totalMemory}`)
+    }
+    if (!memoryInfo.totalVRAM || isNaN(memoryInfo.totalVRAM)) {
+      throw new Error(`Invalid total VRAM: ${memoryInfo.totalVRAM}`)
+    }
+    if (!this.memoryMode || !(this.memoryMode in memoryPercentages)) {
+      throw new Error(
+        `Invalid memory mode: ${this.memoryMode}. Must be 'high', 'medium', or 'low'`
+      )
+    }
+
+    // Calculate actual system RAM
+    const actualSystemRAM = Math.max(
+      0,
+      memoryInfo.totalMemory - memoryInfo.totalVRAM
+    )
+    const usableSystemMemory =
+      actualSystemRAM * memoryPercentages[this.memoryMode]
+
+    logger.info(
+      `Actual System RAM: ${actualSystemRAM}, Usable VRAM: ${usableVRAM}, Usable System Memory: ${usableSystemMemory}`
+    )
+
+    // --- Priority 1: Allocate mmproj (if exists) ---
+    let offloadMmproj = false
+    let remainingVRAM = usableVRAM
+
+    if (mmprojSize > 0) {
+      if (mmprojSize <= remainingVRAM) {
+        offloadMmproj = true
+        remainingVRAM -= mmprojSize
+        logger.info(`MMProj allocated to VRAM: ${mmprojSize} bytes`)
+      } else {
+        logger.info(`MMProj will use CPU RAM: ${mmprojSize} bytes`)
+      }
+    }
+
+    // --- Priority 2: Calculate optimal layer/context balance ---
+    let gpuLayers = 0
+    let maxContextLength = MIN_CONTEXT_LENGTH
+    let noOffloadKVCache = false
+    let mode: ModelPlan['mode'] = 'Unsupported'
+
+    // Calculate how much VRAM we need for different context sizes
+    const contextSizes = [2048, 4096, 8192, 16384, 32768, 65536, 131072]
+    const targetContext = requestedCtx || modelMaxContextLength
+
+    // Find the best balance of layers and context
+    let bestConfig = {
+      layers: 0,
+      context: MIN_CONTEXT_LENGTH,
+      vramUsed: 0,
+    }
+
+    for (const ctxSize of contextSizes) {
+      if (ctxSize > targetContext) break
+
+      const kvCacheSize = ctxSize * kvCachePerToken
+      const availableForLayers = remainingVRAM - kvCacheSize
+
+      if (availableForLayers <= 0) continue
+
+      const possibleLayers = Math.min(
+        Math.floor(availableForLayers / layerSize),
+        totalLayers
+      )
+
+      if (possibleLayers > 0) {
+        const totalVramNeeded = possibleLayers * layerSize + kvCacheSize
+
+        // Verify this fits with some margin
+        if (totalVramNeeded <= remainingVRAM * 0.95) {
+          bestConfig = {
+            layers: possibleLayers,
+            context: ctxSize,
+            vramUsed: totalVramNeeded,
+          }
+        }
+      }
+    }
+
+    // Apply the best configuration found
+    if (bestConfig.layers > 0) {
+      gpuLayers = bestConfig.layers
+      maxContextLength = bestConfig.context
+      noOffloadKVCache = false
+      mode = gpuLayers === totalLayers ? 'GPU' : 'Hybrid'
+
+      logger.info(
+        `Best GPU config: ${gpuLayers}/${totalLayers} layers, ${maxContextLength} context, ` +
+          `VRAM used: ${bestConfig.vramUsed}/${remainingVRAM} bytes`
+      )
+    } else {
+      // Fallback: Try minimal GPU layers with KV cache on CPU
+      gpuLayers = Math.min(
+        Math.floor((remainingVRAM * 0.9) / layerSize), // Use 90% for layers
+        totalLayers
+      )
+
+      if (gpuLayers > 0) {
+        // Calculate available system RAM for KV cache
+        const cpuLayers = totalLayers - gpuLayers
+        const modelCPUSize = cpuLayers * layerSize
+        const mmprojCPUSize = mmprojSize > 0 && !offloadMmproj ? mmprojSize : 0
+        const systemRAMUsed = modelCPUSize + mmprojCPUSize
+        const availableSystemRAMForKVCache = Math.max(
+          0,
+          usableSystemMemory - systemRAMUsed
+        )
+
+        // Calculate context that fits in system RAM
+        const systemRAMContext = Math.min(
+          Math.floor(availableSystemRAMForKVCache / kvCachePerToken),
+          targetContext
+        )
+
+        if (systemRAMContext >= MIN_CONTEXT_LENGTH) {
+          maxContextLength = systemRAMContext
+          noOffloadKVCache = true
+          mode = 'Hybrid'
+
+          logger.info(
+            `Hybrid mode: ${gpuLayers}/${totalLayers} layers on GPU, ` +
+              `${maxContextLength} context on CPU RAM`
+          )
+        } else {
+          // Can't fit reasonable context even with CPU RAM
+          // Reduce GPU layers further
+          gpuLayers = Math.floor(gpuLayers / 2)
+          maxContextLength = MIN_CONTEXT_LENGTH
+          noOffloadKVCache = true
+          mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+        }
+      } else {
+        // Pure CPU mode
+        gpuLayers = 0
+        noOffloadKVCache = true
+
+        // Calculate context for pure CPU mode
+        const totalCPUMemoryNeeded = modelSize + (mmprojSize || 0)
+        const availableForKVCache = Math.max(
+          0,
+          usableSystemMemory - totalCPUMemoryNeeded
+        )
+
+        maxContextLength = Math.min(
+          Math.max(
+            MIN_CONTEXT_LENGTH,
+            Math.floor(availableForKVCache / kvCachePerToken)
+          ),
+          targetContext
+        )
+
+        mode = maxContextLength >= MIN_CONTEXT_LENGTH ? 'CPU' : 'Unsupported'
+      }
+    }
+
+    // Safety check: Verify total GPU memory usage
+    if (gpuLayers > 0 && !noOffloadKVCache) {
+      const estimatedGPUUsage =
+        gpuLayers * layerSize +
+        maxContextLength * kvCachePerToken +
+        (offloadMmproj ? mmprojSize : 0)
+
+      if (estimatedGPUUsage > memoryInfo.totalVRAM * 0.9) {
+        logger.warn(
+          `GPU memory usage (${estimatedGPUUsage}) exceeds safe limit. Adjusting...`
+        )
+
+        // Reduce context first
+        while (
+          maxContextLength > MIN_CONTEXT_LENGTH &&
+          estimatedGPUUsage > memoryInfo.totalVRAM * 0.9
+        ) {
+          maxContextLength = Math.floor(maxContextLength / 2)
+          const newEstimate =
+            gpuLayers * layerSize +
+            maxContextLength * kvCachePerToken +
+            (offloadMmproj ? mmprojSize : 0)
+          if (newEstimate <= memoryInfo.totalVRAM * 0.9) break
+        }
+
+        // If still too much, reduce layers
+        if (estimatedGPUUsage > memoryInfo.totalVRAM * 0.9) {
+          gpuLayers = Math.floor(gpuLayers * 0.7)
+          mode = gpuLayers > 0 ? 'Hybrid' : 'CPU'
+          noOffloadKVCache = true // Move KV cache to CPU
+        }
+      }
+    }
+
+    // Apply user-requested context limit if specified
+    if (requestedCtx && requestedCtx > 0) {
+      maxContextLength = Math.min(maxContextLength, requestedCtx)
+      logger.info(
+        `User requested context: ${requestedCtx}, final: ${maxContextLength}`
+      )
+    }
+
+    // Ensure we never exceed model's maximum context
+    maxContextLength = Math.min(maxContextLength, modelMaxContextLength)
+
+    // Final validation
+    if (gpuLayers <= 0 && maxContextLength < MIN_CONTEXT_LENGTH) {
+      mode = 'Unsupported'
+    }
+
+    // Ensure maxContextLength is valid
+    maxContextLength = isNaN(maxContextLength)
+      ? MIN_CONTEXT_LENGTH
+      : Math.max(MIN_CONTEXT_LENGTH, maxContextLength)
+
+    // Log final plan
+    const mmprojInfo = mmprojPath
+      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, offloadMmproj=${offloadMmproj}`
+      : ''
+
+    logger.info(
+      `Final plan for ${path}: gpuLayers=${gpuLayers}/${totalLayers}, ` +
+        `maxContextLength=${maxContextLength}, noOffloadKVCache=${noOffloadKVCache}, ` +
+        `mode=${mode}${mmprojInfo}`
+    )
+
+    return {
+      gpuLayers,
+      maxContextLength,
+      noOffloadKVCache,
+      mode,
+      offloadMmproj,
+    }
+  }
 
   /**
-   *  estimate KVCache size of from a given metadata
-   *
+   * estimate KVCache size from a given metadata
    */
   private async estimateKVCache(
     meta: Record<string, string>,
@@ -1907,6 +2402,7 @@ export default class llamacpp_extension extends AIEngine {
         `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
       )
     }
+
     let ctxLen: number
     if (!ctx_size) {
       ctxLen = Number(meta[`${arch}.context_length`])
@@ -1941,13 +2437,13 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /*
-   * check the support status of a model by its path (local/remote)
+  /**
+   * Check the support status of a model by its path (local/remote)
    *
-   * * Returns:
-   * - "RED"    → weights don't fit
-   * - "YELLOW" → weights fit, KV cache doesn't
-   * - "GREEN"  → both weights + KV cache fit
+   * Returns:
+   * - "RED"    → weights don't fit in total memory
+   * - "YELLOW" → weights fit in VRAM but need system RAM, or KV cache doesn't fit
+   * - "GREEN"  → both weights + KV cache fit in VRAM
    */
   async isModelSupported(
     path: string,
@@ -1955,46 +2451,48 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
       const modelSize = await this.getModelSize(path)
+      const memoryInfo = await this.getTotalSystemMemory()
+
       logger.info(`modelSize: ${modelSize}`)
-      let gguf: GgufMetadata
-      gguf = await readGgufMetadata(path)
+
+      const gguf = await readGgufMetadata(path)
       let kvCacheSize: number
       if (ctx_size) {
         kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
       } else {
         kvCacheSize = await this.estimateKVCache(gguf.metadata)
       }
-      // total memory consumption = model weights + kvcache + a small buffer for outputs
-      // output buffer is small so not considering here
+
+      // Total memory consumption = model weights + kvcache
       const totalRequired = modelSize + kvCacheSize
       logger.info(
         `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
       )
-      let totalMemBytes: number
-      const devices = await this.getDevices()
-      if (devices.length > 0) {
-        // Sum total memory across all GPUs
-        totalMemBytes = devices
-          .map((d) => d.mem * 1024 * 1024)
-          .reduce((a, b) => a + b, 0)
-      } else {
-        // CPU fallback
-        const sys = await getSystemUsage()
-        totalMemBytes = sys.total_memory * 1024 * 1024
-      }
 
       // Use 80% of total memory as the usable limit
       const USABLE_MEMORY_PERCENTAGE = 0.8
-      const usableMemBytes = totalMemBytes * USABLE_MEMORY_PERCENTAGE
+      const usableTotalMemory =
+        memoryInfo.totalMemory * USABLE_MEMORY_PERCENTAGE
+      const usableVRAM = memoryInfo.totalVRAM * USABLE_MEMORY_PERCENTAGE
 
-      // check model size wrt 80% of system memory
-      if (modelSize > usableMemBytes) {
+      // Check if model fits in total memory at all
+      if (modelSize > usableTotalMemory) {
         return 'RED'
-      } else if (modelSize + kvCacheSize > usableMemBytes) {
-        return 'YELLOW'
-      } else {
+      }
+
+      // Check if everything fits in VRAM (ideal case)
+      if (totalRequired <= usableVRAM) {
         return 'GREEN'
       }
+
+      // Check if model fits in VRAM but total requirement exceeds VRAM
+      // OR if total requirement fits in total memory but not in VRAM
+      if (modelSize <= usableVRAM || totalRequired <= usableTotalMemory) {
+        return 'YELLOW'
+      }
+
+      // If we get here, nothing fits properly
+      return 'RED'
     } catch (e) {
       throw new Error(String(e))
     }
@@ -2006,39 +2504,40 @@ export default class llamacpp_extension extends AIEngine {
   async validateGgufFile(filePath: string): Promise<{
     isValid: boolean
     error?: string
-    metadata?: GgufMetadata
+    metadata?: any
   }> {
     try {
       logger.info(`Validating GGUF file: ${filePath}`)
       const metadata = await readGgufMetadata(filePath)
-      
+
       // Log full metadata for debugging
       logger.info('Full GGUF metadata:', JSON.stringify(metadata, null, 2))
-      
+
       // Check if architecture is 'clip' which is not supported for text generation
       const architecture = metadata.metadata?.['general.architecture']
       logger.info(`Model architecture: ${architecture}`)
-      
+
       if (architecture === 'clip') {
-        const errorMessage = 'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+        const errorMessage =
+          'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
         logger.error('CLIP architecture detected:', architecture)
         return {
           isValid: false,
           error: errorMessage,
-          metadata
+          metadata,
         }
       }
-      
+
       logger.info('Model validation passed. Architecture:', architecture)
       return {
         isValid: true,
-        metadata
+        metadata,
       }
     } catch (error) {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
       }
     }
   }

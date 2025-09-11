@@ -75,18 +75,31 @@ export class TauriProvidersService extends DefaultProvidersService {
           }) as ProviderSetting[],
           models: await Promise.all(
             models.map(
-              async (model) =>
-                ({
+              async (model) => {
+                let capabilities: string[] = []
+                
+                // Check for capabilities
+                if ('capabilities' in model) {
+                  capabilities = model.capabilities as string[]
+                } else {
+                  // Try to check tool support, but don't let failures block the model
+                  try {
+                    const toolSupported = await value.isToolSupported(model.id)
+                    if (toolSupported) {
+                      capabilities = [ModelCapabilities.TOOLS]
+                    }
+                  } catch (error) {
+                    console.warn(`Failed to check tool support for model ${model.id}:`, error)
+                    // Continue without tool capabilities if check fails
+                  }
+                }
+                
+                return {
                   id: model.id,
                   model: model.id,
                   name: model.name,
                   description: model.description,
-                  capabilities:
-                    'capabilities' in model
-                      ? (model.capabilities as string[])
-                      : (await value.isToolSupported(model.id))
-                        ? [ModelCapabilities.TOOLS]
-                        : [],
+                  capabilities,
                   provider: providerName,
                   settings: Object.values(modelSettings).reduce(
                     (acc, setting) => {
@@ -105,7 +118,8 @@ export class TauriProvidersService extends DefaultProvidersService {
                     },
                     {} as Record<string, ProviderSetting>
                   ),
-                }) as Model
+                } as Model
+              }
             )
           ),
         }
@@ -127,6 +141,12 @@ export class TauriProvidersService extends DefaultProvidersService {
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+      }
+
+      // Add Origin header for local providers to avoid CORS issues
+      // Some local providers (like Ollama) require an Origin header
+      if (provider.base_url.includes('localhost:') || provider.base_url.includes('127.0.0.1:')) {
+        headers['Origin'] = 'tauri://localhost'
       }
 
       // Only add authentication headers if API key is provided

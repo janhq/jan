@@ -17,6 +17,7 @@ import type {
   HuggingFaceRepo,
   CatalogModel,
   ModelValidationResult,
+  ModelPlan,
 } from './types'
 
 // TODO: Replace this with the actual provider later
@@ -488,6 +489,58 @@ export class DefaultModelsService implements ModelsService {
       return {
         isValid: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    }
+  }
+
+  async planModelLoad(
+    modelPath: string,
+    mmprojPath?: string,
+    requestedCtx?: number
+  ): Promise<ModelPlan> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        planModelLoad?: (
+          path: string,
+          mmprojPath?: string,
+          requestedCtx?: number
+        ) => Promise<ModelPlan>
+      }
+
+      if (engine && typeof engine.planModelLoad === 'function') {
+        // Get the full absolute path to the model file
+        const janDataFolderPath = await import('@janhq/core').then((core) =>
+          core.getJanDataFolderPath()
+        )
+        const joinPath = await import('@janhq/core').then(
+          (core) => core.joinPath
+        )
+        const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+        // mmprojPath is currently unused, but included for compatibility
+        return await engine.planModelLoad(
+          fullModelPath,
+          mmprojPath,
+          requestedCtx
+        )
+      }
+
+      // Fallback if method is not available
+      console.warn('planModelLoad method not available in llamacpp engine')
+      return {
+        gpuLayers: 0,
+        maxContextLength: 2048,
+        noOffloadKVCache: true,
+        offloadMmproj: false,
+        mode: 'Unsupported',
+      }
+    } catch (error) {
+      console.error(`Error planning model load for path ${modelPath}:`, error)
+      return {
+        gpuLayers: 0,
+        maxContextLength: 2048,
+        noOffloadKVCache: true,
+        offloadMmproj: false,
+        mode: 'Unsupported',
       }
     }
   }

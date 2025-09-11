@@ -60,7 +60,11 @@
     "tools": "Tools",
     "vision": "Vision",
     "embeddings": "Embeddings",
-    "notAvailable": "Not available yet"
+    "notAvailable": "Not available yet",
+    "warning": {
+      "title": "Proceed with Caution",
+      "description": "Modifying model capabilities may affect performance and functionality. Incorrect settings could cause unexpected behavior or errors."
+    }
   },
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
