@@ -40,9 +40,11 @@ install-web-app: config-yarn
 	yarn install
 
 dev-web-app: install-web-app
+	yarn build:core
 	yarn dev:web-app
 
 build-web-app: install-web-app
+	yarn build:core
 	yarn build:web-app
 
 serve-web-app: 
