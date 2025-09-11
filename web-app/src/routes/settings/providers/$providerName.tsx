@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -116,22 +117,25 @@ function ProviderDetail() {
 
               // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
               // Check if model has a custom capabilities config flag
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const hasUserConfiguredCapabilities = (model as any)._userConfiguredCapabilities === true
-              
-              if (!capabilities.includes('vision') && !hasUserConfiguredCapabilities) {
+
+              const hasUserConfiguredCapabilities =
+                (model as any)._userConfiguredCapabilities === true
+
+              if (
+                !capabilities.includes('vision') &&
+                !hasUserConfiguredCapabilities
+              ) {
                 const updatedModels = [...llamacppProvider.models]
                 updatedModels[modelIndex] = {
                   ...model,
                   capabilities: [...capabilities, 'vision'],
                   // Mark this as auto-detected, not user-configured
                   _autoDetectedVision: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any
 
                 updateProviderState('llamacpp', { models: updatedModels })
                 console.log(
-                  `Vision capability auto-added to model after provider refresh: ${importedModelName}`
+                  `Vision capability added to model after provider refresh: ${importedModelName}`
                 )
               }
             }
@@ -257,33 +261,36 @@ function ProviderDetail() {
     }
   }
 
-  const handleStartModel = (modelId: string) => {
+  const handleStartModel = async (modelId: string) => {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
-    if (provider)
-      // Original: startModel(provider, modelId).then(() => { setActiveModels((prevModels) => [...prevModels, modelId]) })
-      serviceHub
-        .models()
-        .startModel(provider, modelId)
-        .then(() => {
-          // Refresh active models after starting
-          serviceHub
-            .models()
-            .getActiveModels()
-            .then((models) => setActiveModels(models || []))
-        })
-        .catch((error) => {
-          console.error('Error starting model:', error)
-          if (error && typeof error === 'object' && 'message' in error) {
-            setModelLoadError(error)
-          } else {
-            setModelLoadError(`${error}`)
-          }
-        })
-        .finally(() => {
-          // Remove model from loading state
-          setLoadingModels((prev) => prev.filter((id) => id !== modelId))
-        })
+    if (provider) {
+      try {
+        // Start the model with plan result
+        await serviceHub.models().startModel(provider, modelId)
+
+        // Refresh active models after starting
+        serviceHub
+          .models()
+          .getActiveModels()
+          .then((models) => setActiveModels(models || []))
+      } catch (error) {
+        console.error('Error starting model:', error)
+        if (
+          error &&
+          typeof error === 'object' &&
+          'message' in error &&
+          typeof error.message === 'string'
+        ) {
+          setModelLoadError({ message: error.message })
+        } else {
+          setModelLoadError(typeof error === 'string' ? error : `${error}`)
+        }
+      } finally {
+        // Remove model from loading state
+        setLoadingModels((prev) => prev.filter((id) => id !== modelId))
+      }
+    }
   }
 
   const handleStopModel = (modelId: string) => {
