@@ -100,4 +100,15 @@ jobs:
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-linux-amd64-${{ inputs.new_version }}-deb
+          path: ./src-tauri/target/release/bundle/deb/*.deb
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
+          path: ./src-tauri/target/release/bundle/appimage/*.AppImage

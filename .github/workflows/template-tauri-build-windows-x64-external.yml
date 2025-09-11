@@ -116,3 +116,10 @@ jobs:
         run: |
           make build
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-windows-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/bundle/nsis/*.exe
+

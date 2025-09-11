@@ -93,4 +93,11 @@ jobs:
           make build
         env:
           APP_PATH: '.'
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
+          path: |
+            ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
