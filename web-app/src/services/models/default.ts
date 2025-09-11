@@ -530,6 +530,7 @@ export class DefaultModelsService implements ModelsService {
         gpuLayers: 0,
         maxContextLength: 2048,
         noOffloadKVCache: true,
+        offloadMmproj: false,
         mode: 'Unsupported',
       }
     } catch (error) {
@@ -538,6 +539,7 @@ export class DefaultModelsService implements ModelsService {
         gpuLayers: 0,
         maxContextLength: 2048,
         noOffloadKVCache: true,
+        offloadMmproj: false,
         mode: 'Unsupported',
       }
     }
