@@ -2,7 +2,16 @@ name: Jan Web Server deploy to production
 
 on:
   push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+-web"]
+    branches:
+      - prod-web
+    paths:
+      - '.github/workflows/jan-server-web-cicd-prod.yml'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions-web/**'
+      - 'Makefile'
+      - 'package.json'
+      - 'Dockerfile'
 
 jobs:
   build-and-deploy:

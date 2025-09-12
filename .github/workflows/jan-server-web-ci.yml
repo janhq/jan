@@ -3,7 +3,7 @@ name: Jan Web Server build image and push to Harbor Registry
 on:
   push:
     branches:
-      - dev
+      - dev-web
     paths:
       - '.github/workflows/jan-server-web-ci.yml'
       - 'core/**'
@@ -14,7 +14,7 @@ on:
       - 'Dockerfile'
   pull_request:
     branches:
-      - dev
+      - dev-web
     paths:
       - '.github/workflows/jan-server-web-ci.yml'
       - 'core/**'
@@ -53,16 +53,14 @@ jobs:
             && sudo apt update
           sudo apt-get install -y jq gettext
       
-      - name: Set image tag and service name
+      - name: Set image tag
         id: vars
         run: |
-          SERVICE_NAME=jan-server-web
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             IMAGE_TAG="web:preview-${{ github.sha }}"
           else
             IMAGE_TAG="web:dev-${{ github.sha }}"
           fi
-          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "FULL_IMAGE=registry.menlo.ai/jan-server/${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
@@ -71,45 +69,6 @@ jobs:
           docker build -t ${{ steps.vars.outputs.FULL_IMAGE }} .
 
       - name: Push docker image
+        if: github.event_name == 'push'
         run: |
           docker push ${{ steps.vars.outputs.FULL_IMAGE }}
-
-      - name: Checkout preview URL repo
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          repository: menloresearch/infra-domains
-          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-          path: preview-repo
-
-      - name: Generate preview manifest
-        if: github.event_name == 'pull_request'
-        run: |
-          cd preview-repo/kubernetes
-          bash template/generate.sh \
-            template/preview-url-template.yaml \
-            preview-url/pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml \
-            ${{ github.sha }} \
-            ${{ steps.vars.outputs.SERVICE_NAME }} \
-            ${{ steps.vars.outputs.FULL_IMAGE }} \
-            80
-
-      - name: Commit and push preview manifest
-        if: github.event_name == 'pull_request'
-        run: |
-          cd preview-repo
-          git config user.name "preview-bot"
-          git config user.email "preview-bot@users.noreply.github.com"
-          git add kubernetes/preview-url/pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml
-          git commit -m "feat(preview): add pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.yaml"
-          git push origin main
-          sleep 180
-
-      - name: Comment preview URL on PR
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: mshick/add-pr-comment@v2
-        with:
-          message: |
-            Preview URL: https://pr-${{ github.sha }}-${{ steps.vars.outputs.SERVICE_NAME }}.menlo.ai
