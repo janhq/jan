@@ -8,6 +8,7 @@ import { MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
 import { JanAuthService } from '../shared/auth'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { JanMCPOAuthProvider } from './oauth-provider'
 
 // JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
 declare const JAN_API_BASE: string
@@ -18,7 +19,7 @@ export default class MCPExtensionWeb extends MCPExtension {
   private initialized = false
   private authService: JanAuthService
   private mcpClient: Client | null = null
-  private tokenUpdateListener: (() => void) | null = null
+  private oauthProvider: JanMCPOAuthProvider
 
   constructor(
     url: string,
@@ -30,16 +31,15 @@ export default class MCPExtensionWeb extends MCPExtension {
   ) {
     super(url, name, productName, active, description, version)
     this.authService = JanAuthService.getInstance()
+    this.oauthProvider = new JanMCPOAuthProvider(this.authService)
   }
 
   async onLoad(): Promise<void> {
     try {
       // Initialize authentication first
       await this.authService.initialize()
-      // Initialize MCP client
+      // Initialize MCP client with OAuth
       await this.initializeMCPClient()
-      // Set up localStorage monitoring for token changes
-      this.setupTokenMonitoring()
       // Then fetch tools
       await this.initializeTools()
     } catch (error) {
@@ -52,13 +52,7 @@ export default class MCPExtensionWeb extends MCPExtension {
     this.tools = []
     this.initialized = false
     
-    // Remove token update event listener
-    if (this.tokenUpdateListener) {
-      window.removeEventListener('jan-auth-token-updated', this.tokenUpdateListener as EventListener)
-      this.tokenUpdateListener = null
-    }
-    
-    // Properly close MCP client to avoid session errors
+    // Close MCP client
     if (this.mcpClient) {
       try {
         await this.mcpClient.close()
@@ -81,20 +75,12 @@ export default class MCPExtensionWeb extends MCPExtension {
         this.mcpClient = null
       }
 
-      // Get fresh authentication token
-      const token = await this.authService.getValidAccessToken()
-      
-      // Create StreamableHTTP transport with authentication and session management
+      // Create transport with OAuth provider (handles token refresh automatically)
       const transport = new StreamableHTTPClientTransport(
         new URL(`${JAN_API_BASE}${this.mcpEndpoint}`),
         {
-          requestInit: {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'mcp-protocol-version': '2025-06-18'
-            }
-          }
+          authProvider: this.oauthProvider
+          // No sessionId needed - server will generate one automatically
         }
       )
       
@@ -114,25 +100,14 @@ export default class MCPExtensionWeb extends MCPExtension {
         }
       )
       
-      // Connect to MCP server
+      // Connect to MCP server (OAuth provider handles auth automatically)
       await this.mcpClient.connect(transport)
-      console.log('MCP client connected successfully')
+      
+      console.log('MCP client connected successfully, session ID:', transport.sessionId)
     } catch (error) {
       console.error('Failed to initialize MCP client:', error)
       throw error
     }
-  }
-
-  private setupTokenMonitoring(): void {
-    // Listen for token update events from the auth service
-    this.tokenUpdateListener = () => {
-      // Simply reinitialize the MCP client when any token update occurs
-      this.initializeMCPClient().catch(error => {
-        console.error('Failed to reinitialize MCP client after token update:', error)
-      })
-    }
-    
-    window.addEventListener('jan-auth-token-updated', this.tokenUpdateListener as EventListener)
   }
 
   private async initializeTools(): Promise<void> {
@@ -183,7 +158,7 @@ export default class MCPExtensionWeb extends MCPExtension {
     }
 
     try {
-      // Use MCP SDK to call tool
+      // Use MCP SDK to call tool (OAuth provider handles auth automatically)
       const result = await this.mcpClient.callTool({
         name: toolName,
         arguments: args
@@ -223,43 +198,6 @@ export default class MCPExtensionWeb extends MCPExtension {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${toolName}:`, error)
       
-      // If it's a session error, try to reconnect
-      if (errorMessage.includes('session') || errorMessage.includes('connection')) {
-        console.log('Detected session error, attempting to reconnect...')
-        try {
-          await this.initializeMCPClient()
-          // Retry the tool call once after reconnection
-          const retryResult = await this.mcpClient!.callTool({
-            name: toolName,
-            arguments: args
-          })
-          
-          if (retryResult.isError) {
-            const errorText = Array.isArray(retryResult.content) && retryResult.content.length > 0
-              ? (retryResult.content[0].type === 'text' ? (retryResult.content[0] as any).text : 'Tool call failed after retry')
-              : 'Tool call failed after retry'
-            return {
-              error: errorText,
-              content: [{ type: 'text', text: errorText }]
-            }
-          }
-          
-          const content = Array.isArray(retryResult.content) 
-            ? retryResult.content.map(item => {
-                if (item.type === 'text') {
-                  return { type: 'text' as const, text: (item as any).text }
-                } else {
-                  return { type: 'text' as const, text: JSON.stringify(item) }
-                }
-              })
-            : [{ type: 'text' as const, text: 'No content returned' }]
-            
-          return { error: '', content }
-        } catch (retryError) {
-          console.error('Retry after reconnection failed:', retryError)
-        }
-      }
-      
       return {
         error: errorMessage,
         content: [{ type: 'text', text: errorMessage }]
@@ -273,7 +211,7 @@ export default class MCPExtensionWeb extends MCPExtension {
     }
 
     try {
-      // Try to list tools as health check (ping might not be available)
+      // Try to list tools as health check (OAuth provider handles auth)
       await this.mcpClient.listTools()
       return true
     } catch (error) {

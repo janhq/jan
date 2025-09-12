@@ -56,14 +56,6 @@ export class JanAuthService {
           tokens: this.tokens,
           expiryTime: this.tokenExpiryTime
         }))
-        
-        // Dispatch custom event when tokens are updated
-        window.dispatchEvent(new CustomEvent('jan-auth-token-updated', {
-          detail: {
-            access_token: this.tokens.access_token,
-            expires_in: this.tokens.expires_in
-          }
-        }))
       } catch (error) {
         console.error('Failed to save tokens to storage:', error)
       }
