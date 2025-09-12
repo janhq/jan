@@ -42,6 +42,9 @@ import {
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
+// Error message constant - matches web-app/src/utils/error.ts
+const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
+
 type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
@@ -1541,7 +1544,7 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (!cfg.ctx_shift) args.push('--no-context-shift')
+    if (cfg.ctx_shift) args.push('--context-shift')
     if (Number(version.replace(/^b/, '')) >= 6325) {
       if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
     } else {
@@ -1739,6 +1742,13 @@ export default class llamacpp_extension extends AIEngine {
           try {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
+            
+            // Check for out-of-context error conditions
+            if (chunk.choices?.[0]?.finish_reason === 'length') {
+              // finish_reason 'length' indicates context limit was hit
+              throw new Error(OUT_OF_CONTEXT_SIZE)
+            }
+            
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
@@ -1817,7 +1827,15 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
-    return (await response.json()) as chatCompletion
+    const completionResponse = (await response.json()) as chatCompletion
+    
+    // Check for out-of-context error conditions
+    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
+      // finish_reason 'length' indicates context limit was hit
+      throw new Error(OUT_OF_CONTEXT_SIZE)
+    }
+    
+    return completionResponse
   }
 
   override async delete(modelId: string): Promise<void> {
