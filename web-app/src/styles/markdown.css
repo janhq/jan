@@ -77,6 +77,10 @@
     list-style-type: disc;
   }
 
+  ul > li {
+    list-style-type: circle;
+  }
+
   ol {
     list-style-type: decimal;
   }
