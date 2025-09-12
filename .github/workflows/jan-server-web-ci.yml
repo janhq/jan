@@ -4,25 +4,9 @@ on:
   push:
     branches:
       - dev-web
-    paths:
-      - '.github/workflows/jan-server-web-ci.yml'
-      - 'core/**'
-      - 'web-app/**'
-      - 'extensions-web/**'
-      - 'Makefile'
-      - 'package.json'
-      - 'Dockerfile'
   pull_request:
     branches:
       - dev-web
-    paths:
-      - '.github/workflows/jan-server-web-ci.yml'
-      - 'core/**'
-      - 'web-app/**'
-      - 'extensions-web/**'
-      - 'Makefile'
-      - 'package.json'
-      - 'Dockerfile'
 
 jobs:
   build-and-preview:

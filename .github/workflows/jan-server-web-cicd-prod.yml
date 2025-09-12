@@ -4,14 +4,6 @@ on:
   push:
     branches:
       - prod-web
-    paths:
-      - '.github/workflows/jan-server-web-cicd-prod.yml'
-      - 'core/**'
-      - 'web-app/**'
-      - 'extensions-web/**'
-      - 'Makefile'
-      - 'package.json'
-      - 'Dockerfile'
 
 jobs:
   build-and-deploy:
