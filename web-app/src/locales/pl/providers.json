@@ -60,7 +60,7 @@
     "tools": "Narzędzia",
     "vision": "Wizja",
     "embeddings": "Osadzenia",
-    "notAvailable": "Jeszcze nie dostępne",
+    "notAvailable": "Jeszcze niedostępne",
     "warning": {
       "title": "Zachowaj Ostrożność",
       "description": "Modyfikowanie możliwości modelu może wpłynąć na wydajność i funkcjonalność. Nieprawidłowe ustawienia mogą spowodować nieoczekiwane zachowanie lub błędy."
