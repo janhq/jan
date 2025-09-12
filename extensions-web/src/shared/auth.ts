@@ -1,7 +1,10 @@
 /**
- * Jan Provider Authentication Service
+ * Shared Authentication Service
  * Handles guest login and token refresh for Jan API
  */
+
+// JAN_API_BASE is defined in vite.config.ts
+declare const JAN_API_BASE: string
 
 export interface AuthTokens {
   access_token: string
@@ -13,7 +16,6 @@ export interface AuthResponse {
   expires_in: number
 }
 
-// JAN_API_BASE is defined in vite.config.ts
 const AUTH_STORAGE_KEY = 'jan_auth_tokens'
 const TOKEN_EXPIRY_BUFFER = 60 * 1000 // 1 minute buffer before actual expiry
 
@@ -181,6 +183,34 @@ export class JanAuthService {
     const token = await this.getValidAccessToken()
     return {
       Authorization: `Bearer ${token}`
+    }
+  }
+
+  async makeAuthenticatedRequest<T>(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    try {
+      const authHeader = await this.getAuthHeader()
+      
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+          ...options.headers,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
+      }
+
+      return response.json()
+    } catch (error) {
+      console.error('API request failed:', error)
+      throw error
     }
   }
 

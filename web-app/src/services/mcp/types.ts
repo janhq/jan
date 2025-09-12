@@ -2,20 +2,15 @@
  * MCP Service Types
  */
 
-import { MCPTool } from '@/types/completion'
+import { MCPTool, MCPToolCallResult } from '@janhq/core'
 import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
 
 export interface MCPConfig {
   mcpServers?: MCPServers
 }
 
-export interface ToolCallResult {
-  error: string
-  content: { text: string }[]
-}
-
 export interface ToolCallWithCancellationResult {
-  promise: Promise<ToolCallResult>
+  promise: Promise<MCPToolCallResult>
   cancel: () => Promise<void>
   token: string
 }
@@ -26,7 +21,7 @@ export interface MCPService {
   getMCPConfig(): Promise<MCPConfig>
   getTools(): Promise<MCPTool[]>
   getConnectedServers(): Promise<string[]>
-  callTool(args: { toolName: string; arguments: object }): Promise<ToolCallResult>
+  callTool(args: { toolName: string; arguments: object }): Promise<MCPToolCallResult>
   callToolWithCancellation(args: {
     toolName: string
     arguments: object
