@@ -1541,7 +1541,7 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (!cfg.ctx_shift) args.push('--no-context-shift')
+    if (cfg.ctx_shift) args.push('--context-shift')
     if (Number(version.replace(/^b/, '')) >= 6325) {
       if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
     } else {
