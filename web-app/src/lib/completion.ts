@@ -191,19 +191,24 @@ export const sendCompletion = async (
     }),
   } as ExtendedConfigOptions)
 
+  // Only try to extend models for known providers that exist in the models object
   if (
     thread.model.id &&
+    models[providerName] && // Provider must exist in models
     !Object.values(models[providerName]).flat().includes(thread.model.id) &&
     !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
     provider.provider !== 'llamacpp'
   ) {
     try {
+      // Check if models.anthropic exists and has models array before accessing
+      const baseModel = models?.anthropic?.models?.[0] || 'gpt-5'
+      
       tokenJS.extendModelList(
         providerName as any,
         thread.model.id,
         // This is to inherit the model capabilities from another built-in model
         // Can be anything that support all model capabilities
-        models.anthropic.models[0]
+        baseModel
       )
     } catch (error) {
       console.error(
@@ -396,9 +401,12 @@ export const postMessageProcessing = async (
       let toolParameters = {}
       if (toolCall.function.arguments.length) {
         try {
+          console.log('Raw tool arguments:', toolCall.function.arguments)
           toolParameters = JSON.parse(toolCall.function.arguments)
+          console.log('Parsed tool parameters:', toolParameters)
         } catch (error) {
           console.error('Failed to parse tool arguments:', error)
+          console.error('Raw arguments that failed:', toolCall.function.arguments)
         }
       }
       const approved =
@@ -414,9 +422,7 @@ export const postMessageProcessing = async (
 
       const { promise, cancel } = getServiceHub().mcp().callToolWithCancellation({
         toolName: toolCall.function.name,
-        arguments: toolCall.function.arguments.length
-          ? JSON.parse(toolCall.function.arguments)
-          : {},
+        arguments: toolCall.function.arguments.length ? toolParameters : {},
       })
 
       useAppState.getState().setCancelToolCall(cancel)
