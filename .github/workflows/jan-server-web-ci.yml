@@ -3,7 +3,7 @@ name: Jan Web Server build image and push to Harbor Registry
 on:
   push:
     branches:
-      - dev-web'
+      - dev-web
   pull_request:
     branches:
       - dev-web
