@@ -2486,4 +2486,71 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
   }
+
+  async getTokensCount(opts: chatCompletionRequest): Promise<number> {
+    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+    // check if the process is alive
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
+      }
+    } else {
+      throw new Error('Model have crashed! Please reload!')
+    }
+
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const headers = {
+      'Conten-Type': 'application/json',
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
+    }
+
+    const messages = JSON.stringify({ messages: opts.messages })
+
+    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+      method: 'POST',
+      headers: headers,
+      body: messages,
+    })
+
+    if (!parseResponse.ok) {
+      const errorData = await parseResponse.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${parseResponse.status}: ${JSON.stringify(
+          errorData
+        )}`
+      )
+    }
+
+    const parsedPrompt = await parseResponse.json()
+
+    const response = await fetch(`${baseUrl}/tokenize`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        content: parsedPrompt.prompt,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
+      )
+    }
+
+    const dataTokens = await response.json()
+    const tokens = dataTokens.tokens || []
+    return tokens.length
+  }
 }
