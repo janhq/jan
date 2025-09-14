@@ -191,24 +191,20 @@ export const sendCompletion = async (
     }),
   } as ExtendedConfigOptions)
 
-  // Only try to extend models for known providers that exist in the models object
   if (
     thread.model.id &&
-    models[providerName] && // Provider must exist in models
+    models[providerName]?.models !== true && // Skip if provider accepts any model (models: true)
     !Object.values(models[providerName]).flat().includes(thread.model.id) &&
     !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
     provider.provider !== 'llamacpp'
   ) {
     try {
-      // Check if models.anthropic exists and has models array before accessing
-      const baseModel = models?.anthropic?.models?.[0] || 'gpt-5'
-      
       tokenJS.extendModelList(
         providerName as any,
         thread.model.id,
         // This is to inherit the model capabilities from another built-in model
         // Can be anything that support all model capabilities
-        baseModel
+        models.anthropic.models[0]
       )
     } catch (error) {
       console.error(

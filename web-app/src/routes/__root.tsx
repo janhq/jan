@@ -114,7 +114,7 @@ const AppLayout = () => {
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
-        <BackendUpdater />
+        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && <BackendUpdater />}
 
         {/* Use ResizablePanelGroup only on larger screens */}
         {!isSmallScreen && isLeftPanelOpen ? (
