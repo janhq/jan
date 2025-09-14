@@ -5,34 +5,20 @@ title: 'goal: '
 type: Goal
 ---
 
-## Goal
+## 🎯 Goal  
+<!-- Short description of our goal -->
 
-> Why are we doing this? 1 liner value proposition
+## 📖 Context  
+<!-- Give a description of our current context -->
 
-_e.g. Make onboarding to Jan 3x easier_
+## ✅ Scope  
+<!-- High lever description of what we are going to deliver -->
 
-## Success Criteria
+## ❌ Out of Scope  
+<!-- What we are not targeting / delivering / discussing in this goal -->
 
-> When do we consider this done? Limit to 3.
+## 🛠 Deliverables  
+<!-- What we are the tangible deliverables for this goal -->
 
-1. _e.g. Redesign onboarding flow to remove redundant steps._
-2. _e.g. Add a “getting started” guide_
-3. _e.g. Make local model setup more “normie” friendly_
-
-## Non Goals
-
-> What is out of scope?
-
-- _e.g. Take advanced users through customizing settings_
-
-## User research (if any)
-
-> Links to user messages and interviews
-
-## Design inspo
-
-> Links
-
-## Open questions
-
-> What are we not sure about?
+## ❓Open questions
+<!-- What are we not sure about and need to discuss more -->
