@@ -3,7 +3,7 @@
  * Handles API requests to Jan backend for models and chat completions
  */
 
-import { JanAuthService } from '../shared/auth'
+import { getSharedAuthService, JanAuthService } from '../shared'
 import { JanModel, janProviderStore } from './store'
 
 // JAN_API_BASE is defined in vite.config.ts
@@ -77,7 +77,7 @@ export class JanApiClient {
   private authService: JanAuthService
 
   private constructor() {
-    this.authService = JanAuthService.getInstance()
+    this.authService = getSharedAuthService()
   }
 
   static getInstance(): JanApiClient {
@@ -216,12 +216,9 @@ export class JanApiClient {
 
   async initialize(): Promise<void> {
     try {
-      await this.authService.initialize()
       janProviderStore.setAuthenticated(true)
-      
       // Fetch initial models
       await this.getModels()
-      
       console.log('Jan API client initialized successfully')
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to initialize API client'

@@ -5,7 +5,7 @@
  */
 
 import { MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
-import { JanAuthService } from '../shared/auth'
+import { getSharedAuthService, JanAuthService } from '../shared'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './oauth-provider'
@@ -30,14 +30,12 @@ export default class MCPExtensionWeb extends MCPExtension {
     version?: string
   ) {
     super(url, name, productName, active, description, version)
-    this.authService = JanAuthService.getInstance()
+    this.authService = getSharedAuthService()
     this.oauthProvider = new JanMCPOAuthProvider(this.authService)
   }
 
   async onLoad(): Promise<void> {
     try {
-      // Initialize authentication first
-      await this.authService.initialize()
       // Initialize MCP client with OAuth
       await this.initializeMCPClient()
       // Then fetch tools
