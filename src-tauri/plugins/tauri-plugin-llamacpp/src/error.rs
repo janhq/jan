@@ -48,6 +48,7 @@ impl LlamacppError {
         let lower_stderr = stderr.to_lowercase();
         // TODO: add others
         let is_out_of_memory = lower_stderr.contains("out of memory")
+            || lower_stderr.contains("failed to allocate")
             || lower_stderr.contains("insufficient memory")
             || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
             || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
