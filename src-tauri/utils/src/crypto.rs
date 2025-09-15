@@ -84,3 +84,108 @@ pub async fn compute_file_sha256_with_cancellation(
     log::debug!("Hash computation completed for {} bytes", total_read);
     Ok(hash_hex)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn test_generate_app_token() {
+        let token1 = generate_app_token();
+        let token2 = generate_app_token();
+        
+        // Should be 32 characters long
+        assert_eq!(token1.len(), 32);
+        assert_eq!(token2.len(), 32);
+        
+        // Should be different each time
+        assert_ne!(token1, token2);
+        
+        // Should only contain alphanumeric characters
+        assert!(token1.chars().all(|c| c.is_alphanumeric()));
+        assert!(token2.chars().all(|c| c.is_alphanumeric()));
+    }
+
+    #[test]
+    fn test_generate_api_key() {
+        let model_id = "test-model".to_string();
+        let api_secret = "test-secret".to_string();
+        
+        let key1 = generate_api_key(model_id.clone(), api_secret.clone()).unwrap();
+        let key2 = generate_api_key(model_id.clone(), api_secret.clone()).unwrap();
+        
+        // Should generate same key for same inputs
+        assert_eq!(key1, key2);
+        
+        // Should be base64 encoded (and thus contain base64 characters)
+        assert!(key1.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '='));
+        
+        // Different model_id should produce different key
+        let different_key = generate_api_key("different-model".to_string(), api_secret).unwrap();
+        assert_ne!(key1, different_key);
+    }
+
+    #[test]
+    fn test_generate_api_key_empty_inputs() {
+        let result = generate_api_key("".to_string(), "secret".to_string());
+        assert!(result.is_ok()); // Should still work with empty model_id
+        
+        let result = generate_api_key("model".to_string(), "".to_string());
+        assert!(result.is_ok()); // Should still work with empty secret
+    }
+
+    #[tokio::test]
+    async fn test_compute_file_sha256_with_cancellation() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        
+        // Create a temporary file with known content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Hello, World!";
+        temp_file.write_all(test_content).unwrap();
+        temp_file.flush().unwrap();
+        
+        let token = CancellationToken::new();
+        
+        // Compute hash of the file
+        let hash = compute_file_sha256_with_cancellation(temp_file.path(), &token).await.unwrap();
+        
+        // Verify it's a valid hex string
+        assert_eq!(hash.len(), 64); // SHA256 is 256 bits = 64 hex chars
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+        
+        // Verify it matches expected SHA256 of "Hello, World!"
+        let expected = "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f";
+        assert_eq!(hash, expected);
+    }
+
+    #[tokio::test] 
+    async fn test_compute_file_sha256_cancellation() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        
+        // Create a temporary file
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"test content").unwrap();
+        temp_file.flush().unwrap();
+        
+        let token = CancellationToken::new();
+        token.cancel(); // Cancel immediately
+        
+        // Should return cancellation error
+        let result = compute_file_sha256_with_cancellation(temp_file.path(), &token).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cancelled"));
+    }
+
+    #[tokio::test]
+    async fn test_compute_file_sha256_nonexistent_file() {
+        let token = CancellationToken::new();
+        let nonexistent_path = Path::new("/nonexistent/file.txt");
+        
+        let result = compute_file_sha256_with_cancellation(nonexistent_path, &token).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to open file for hashing"));
+    }
+}

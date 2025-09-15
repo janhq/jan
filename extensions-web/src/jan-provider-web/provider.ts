@@ -62,6 +62,7 @@ export default class JanProviderWeb extends AIEngine {
         path: undefined, // Remote model, no local path
         owned_by: model.owned_by,
         object: model.object,
+        capabilities: ['tools'], // Jan models support both tools via MCP
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)
@@ -150,6 +151,8 @@ export default class JanProviderWeb extends AIEngine {
         presence_penalty: opts.presence_penalty ?? undefined,
         stream: opts.stream ?? false,
         stop: opts.stop ?? undefined,
+        tools: opts.tools ?? undefined,
+        tool_choice: opts.tool_choice ?? undefined,
       }
 
       if (opts.stream) {
@@ -176,6 +179,7 @@ export default class JanProviderWeb extends AIEngine {
               content: choice.message.content,
               reasoning: choice.message.reasoning,
               reasoning_content: choice.message.reasoning_content,
+              tool_calls: choice.message.tool_calls,
             },
             finish_reason: (choice.finish_reason || 'stop') as 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call',
           })),
@@ -233,6 +237,7 @@ export default class JanProviderWeb extends AIEngine {
                 content: choice.delta.content,
                 reasoning: choice.delta.reasoning,
                 reasoning_content: choice.delta.reasoning_content,
+                tool_calls: choice.delta.tool_calls,
               },
               finish_reason: choice.finish_reason,
             })),
@@ -300,8 +305,9 @@ export default class JanProviderWeb extends AIEngine {
     return Array.from(this.activeSessions.values()).map(session => session.model_id)
   }
 
-  async isToolSupported(): Promise<boolean> {
-    // Tools are not yet supported
-    return false
+  async isToolSupported(modelId: string): Promise<boolean> {
+    // Jan models support tool calls via MCP
+    console.log(`Checking tool support for Jan model ${modelId}: supported`);
+    return true;
   }
 }

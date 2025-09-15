@@ -3,7 +3,7 @@
  * Handles API requests to Jan backend for models and chat completions
  */
 
-import { JanAuthService } from './auth'
+import { getSharedAuthService, JanAuthService } from '../shared'
 import { JanModel, janProviderStore } from './store'
 
 // JAN_API_BASE is defined in vite.config.ts
@@ -18,6 +18,7 @@ export interface JanChatMessage {
   content: string
   reasoning?: string
   reasoning_content?: string
+  tool_calls?: any[]
 }
 
 export interface JanChatCompletionRequest {
@@ -30,6 +31,8 @@ export interface JanChatCompletionRequest {
   presence_penalty?: number
   stream?: boolean
   stop?: string | string[]
+  tools?: any[]
+  tool_choice?: any
 }
 
 export interface JanChatCompletionChoice {
@@ -63,6 +66,7 @@ export interface JanChatCompletionChunk {
       content?: string
       reasoning?: string
       reasoning_content?: string
+      tool_calls?: any[]
     }
     finish_reason: string | null
   }>
@@ -73,7 +77,7 @@ export class JanApiClient {
   private authService: JanAuthService
 
   private constructor() {
-    this.authService = JanAuthService.getInstance()
+    this.authService = getSharedAuthService()
   }
 
   static getInstance(): JanApiClient {
@@ -83,40 +87,12 @@ export class JanApiClient {
     return JanApiClient.instance
   }
 
-  private async makeAuthenticatedRequest<T>(
-    url: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    try {
-      const authHeader = await this.authService.getAuthHeader()
-      
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeader,
-          ...options.headers,
-        },
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
-      }
-
-      return response.json()
-    } catch (error) {
-      console.error('API request failed:', error)
-      throw error
-    }
-  }
-
   async getModels(): Promise<JanModel[]> {
     try {
       janProviderStore.setLoadingModels(true)
       janProviderStore.clearError()
 
-      const response = await this.makeAuthenticatedRequest<JanModelsResponse>(
+      const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
         `${JAN_API_BASE}/models`
       )
 
@@ -138,7 +114,7 @@ export class JanApiClient {
     try {
       janProviderStore.clearError()
 
-      return await this.makeAuthenticatedRequest<JanChatCompletionResponse>(
+      return await this.authService.makeAuthenticatedRequest<JanChatCompletionResponse>(
         `${JAN_API_BASE}/chat/completions`,
         {
           method: 'POST',
@@ -240,12 +216,9 @@ export class JanApiClient {
 
   async initialize(): Promise<void> {
     try {
-      await this.authService.initialize()
       janProviderStore.setAuthenticated(true)
-      
       // Fetch initial models
       await this.getModels()
-      
       console.log('Jan API client initialized successfully')
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to initialize API client'

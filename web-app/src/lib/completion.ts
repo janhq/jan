@@ -182,10 +182,18 @@ export const sendCompletion = async (
         'X-Title': 'Jan',
       },
     }),
+    // Add Origin header for local providers to avoid CORS issues
+    ...((provider.base_url?.includes('localhost:') || provider.base_url?.includes('127.0.0.1:')) && {
+      fetch: getServiceHub().providers().fetch(),
+      defaultHeaders: {
+        'Origin': 'tauri://localhost',
+      },
+    }),
   } as ExtendedConfigOptions)
 
   if (
     thread.model.id &&
+    models[providerName]?.models !== true && // Skip if provider accepts any model (models: true)
     !Object.values(models[providerName]).flat().includes(thread.model.id) &&
     !tokenJS.extendedModelExist(providerName as any, thread.model.id) &&
     provider.provider !== 'llamacpp'
@@ -389,9 +397,12 @@ export const postMessageProcessing = async (
       let toolParameters = {}
       if (toolCall.function.arguments.length) {
         try {
+          console.log('Raw tool arguments:', toolCall.function.arguments)
           toolParameters = JSON.parse(toolCall.function.arguments)
+          console.log('Parsed tool parameters:', toolParameters)
         } catch (error) {
           console.error('Failed to parse tool arguments:', error)
+          console.error('Raw arguments that failed:', toolCall.function.arguments)
         }
       }
       const approved =
@@ -407,9 +418,7 @@ export const postMessageProcessing = async (
 
       const { promise, cancel } = getServiceHub().mcp().callToolWithCancellation({
         toolName: toolCall.function.name,
-        arguments: toolCall.function.arguments.length
-          ? JSON.parse(toolCall.function.arguments)
-          : {},
+        arguments: toolCall.function.arguments.length ? toolParameters : {},
       })
 
       useAppState.getState().setCancelToolCall(cancel)

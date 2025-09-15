@@ -157,6 +157,7 @@ class PlatformServiceHub implements ServiceHub {
           windowModule,
           deepLinkModule,
           providersModule,
+          mcpModule,
         ] = await Promise.all([
           import('./theme/web'),
           import('./app/web'),
@@ -167,6 +168,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./window/web'),
           import('./deeplink/web'),
           import('./providers/web'),
+          import('./mcp/web'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -178,6 +180,7 @@ class PlatformServiceHub implements ServiceHub {
         this.windowService = new windowModule.WebWindowService()
         this.deepLinkService = new deepLinkModule.WebDeepLinkService()
         this.providersService = new providersModule.WebProvidersService()
+        this.mcpService = new mcpModule.WebMCPService()
       }
 
       this.initialized = true

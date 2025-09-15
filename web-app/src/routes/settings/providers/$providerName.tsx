@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -15,6 +16,7 @@ import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -25,7 +27,12 @@ import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
-import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
+import {
+  IconFolderPlus,
+  IconLoader,
+  IconRefresh,
+  IconUpload,
+} from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useState } from 'react'
 import { predefinedProviders } from '@/consts/providers'
@@ -33,6 +40,7 @@ import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -73,7 +81,10 @@ function ProviderDetail() {
   const [activeModels, setActiveModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
-  const [importingModel, setImportingModel] = useState(false)
+  const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
+  const [isInstallingBackend, setIsInstallingBackend] = useState(false)
+  const { checkForUpdate: checkForBackendUpdate, installBackend } =
+    useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -90,67 +101,75 @@ function ProviderDetail() {
           !setting.controller_props.value)
     )
 
-  const handleImportModel = async () => {
-    if (!provider) {
-      return
-    }
+  const handleModelImportSuccess = async (importedModelName?: string) => {
+    // Refresh the provider to update the models list
+    await serviceHub.providers().getProviders().then(setProviders)
 
-    setImportingModel(true)
-    const selectedFile = await serviceHub.dialog().open({
-      multiple: false,
-      directory: false,
-    })
-    // If the dialog returns a file path, extract just the file name
-    const fileName =
-      typeof selectedFile === 'string'
-        ? selectedFile.split(/[\\/]/).pop()?.replace(/\s/g, '-')
-        : undefined
-
-    if (selectedFile && fileName) {
-      // Check if model already exists
-      const modelExists = provider.models.some(
-        (model) => model.name === fileName
-      )
-
-      if (modelExists) {
-        toast.error('Model already exists', {
-          description: `${fileName} already imported`,
-        })
-        setImportingModel(false)
-        return
-      }
-
+    // If a model was imported and it might have vision capabilities, check and update
+    if (importedModelName && providerName === 'llamacpp') {
       try {
-        await serviceHub.models().pullModel(fileName, typeof selectedFile === 'string' ? selectedFile : selectedFile?.[0])
-        // Refresh the provider to update the models list
-        await serviceHub.providers().getProviders().then(setProviders)
-        toast.success(t('providers:import'), {
-          id: `import-model-${provider.provider}`,
-          description: t('providers:importModelSuccess', {
-            provider: fileName,
-          }),
-        })
+        const mmprojExists = await serviceHub
+          .models()
+          .checkMmprojExists(importedModelName)
+        if (mmprojExists) {
+          // Get the updated provider after refresh
+          const { getProviderByName, updateProvider: updateProviderState } =
+            useModelProvider.getState()
+          const llamacppProvider = getProviderByName('llamacpp')
+
+          if (llamacppProvider) {
+            const modelIndex = llamacppProvider.models.findIndex(
+              (m: Model) => m.id === importedModelName
+            )
+            if (modelIndex !== -1) {
+              const model = llamacppProvider.models[modelIndex]
+              const capabilities = model.capabilities || []
+
+              // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
+              // Check if model has a custom capabilities config flag
+
+              const hasUserConfiguredCapabilities =
+                (model as any)._userConfiguredCapabilities === true
+
+              if (
+                !capabilities.includes('vision') &&
+                !hasUserConfiguredCapabilities
+              ) {
+                const updatedModels = [...llamacppProvider.models]
+                updatedModels[modelIndex] = {
+                  ...model,
+                  capabilities: [...capabilities, 'vision'],
+                  // Mark this as auto-detected, not user-configured
+                  _autoDetectedVision: true,
+                } as any
+
+                updateProviderState('llamacpp', { models: updatedModels })
+                console.log(
+                  `Vision capability added to model after provider refresh: ${importedModelName}`
+                )
+              }
+            }
+          }
+        }
       } catch (error) {
-        console.error(t('providers:importModelError'), error)
-        toast.error(t('providers:importModelError'), {
-          description:
-            error instanceof Error ? error.message : 'Unknown error occurred',
-        })
-      } finally {
-        setImportingModel(false)
+        console.error('Error checking mmproj existence after import:', error)
       }
-    } else {
-      setImportingModel(false)
     }
   }
 
   useEffect(() => {
     // Initial data fetch
-    serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
+    serviceHub
+      .models()
+      .getActiveModels()
+      .then((models) => setActiveModels(models || []))
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
-      serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
+      serviceHub
+        .models()
+        .getActiveModels()
+        .then((models) => setActiveModels(models || []))
     }, 5000)
 
     return () => clearInterval(intervalId)
@@ -199,7 +218,9 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      const modelIds = await serviceHub.providers().fetchModelsFromProvider(provider)
+      const modelIds = await serviceHub
+        .providers()
+        .fetchModelsFromProvider(provider)
 
       // Create new models from the fetched IDs
       const newModels: Model[] = modelIds.map((id) => ({
@@ -250,41 +271,121 @@ function ProviderDetail() {
     }
   }
 
-  const handleStartModel = (modelId: string) => {
+  const handleStartModel = async (modelId: string) => {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
-    if (provider)
-      // Original: startModel(provider, modelId).then(() => { setActiveModels((prevModels) => [...prevModels, modelId]) })
-      serviceHub.models().startModel(provider, modelId)
-        .then(() => {
-          // Refresh active models after starting
-          serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
-        })
-        .catch((error) => {
-          console.error('Error starting model:', error)
-          if (error && typeof error === 'object' && 'message' in error) {
-            setModelLoadError(error)
-          } else {
-            setModelLoadError(`${error}`)
-          }
-        })
-        .finally(() => {
-          // Remove model from loading state
-          setLoadingModels((prev) => prev.filter((id) => id !== modelId))
-        })
+    if (provider) {
+      try {
+        // Start the model with plan result
+        await serviceHub.models().startModel(provider, modelId)
+
+        // Refresh active models after starting
+        serviceHub
+          .models()
+          .getActiveModels()
+          .then((models) => setActiveModels(models || []))
+      } catch (error) {
+        console.error('Error starting model:', error)
+        if (
+          error &&
+          typeof error === 'object' &&
+          'message' in error &&
+          typeof error.message === 'string'
+        ) {
+          setModelLoadError({ message: error.message })
+        } else {
+          setModelLoadError(typeof error === 'string' ? error : `${error}`)
+        }
+      } finally {
+        // Remove model from loading state
+        setLoadingModels((prev) => prev.filter((id) => id !== modelId))
+      }
+    }
   }
 
   const handleStopModel = (modelId: string) => {
     // Original: stopModel(modelId).then(() => { setActiveModels((prevModels) => prevModels.filter((model) => model !== modelId)) })
-    serviceHub.models().stopModel(modelId)
+    serviceHub
+      .models()
+      .stopModel(modelId)
       .then(() => {
         // Refresh active models after stopping
-        serviceHub.models().getActiveModels().then((models) => setActiveModels(models || []))
+        serviceHub
+          .models()
+          .getActiveModels()
+          .then((models) => setActiveModels(models || []))
       })
       .catch((error) => {
         console.error('Error stopping model:', error)
       })
   }
+
+  const handleCheckForBackendUpdate = useCallback(async () => {
+    if (provider?.provider !== 'llamacpp') return
+
+    setIsCheckingBackendUpdate(true)
+    try {
+      const update = await checkForBackendUpdate(true)
+      if (!update) {
+        toast.info(t('settings:noBackendUpdateAvailable'))
+      }
+      // If update is available, the BackendUpdater dialog will automatically show
+    } catch (error) {
+      console.error('Failed to check for backend updates:', error)
+      toast.error(t('settings:backendUpdateError'))
+    } finally {
+      setIsCheckingBackendUpdate(false)
+    }
+  }, [provider, checkForBackendUpdate, t])
+
+  const handleInstallBackendFromFile = useCallback(async () => {
+    if (provider?.provider !== 'llamacpp') return
+
+    setIsInstallingBackend(true)
+    try {
+      // Open file dialog with filter for .tar.gz files
+      const selectedFile = await serviceHub.dialog().open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: 'Backend Archives',
+            extensions: ['tar.gz'],
+          },
+        ],
+      })
+
+      if (selectedFile && typeof selectedFile === 'string') {
+        // Process the file path: replace spaces with dashes and convert to lowercase
+        const processedFilePath = selectedFile
+          .replace(/\s+/g, '-')
+          .toLowerCase()
+
+        // Install the backend using the llamacpp extension
+        await installBackend(processedFilePath)
+
+        // Extract filename from the selected file path and replace spaces with dashes
+        const fileName = (
+          selectedFile.split(/[/\\]/).pop() || selectedFile
+        ).replace(/\s+/g, '-')
+
+        toast.success(t('settings:backendInstallSuccess'), {
+          description: `Llamacpp ${fileName} installed`,
+        })
+
+        // Refresh settings to update backend configuration
+        await refreshSettings()
+      }
+    } catch (error) {
+      console.error('Failed to install backend from file:', error)
+      toast.error(t('settings:backendInstallError'), {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      })
+    } finally {
+      setIsInstallingBackend(false)
+    }
+  }, [provider, serviceHub, refreshSettings, t, installBackend])
 
   // Check if model provider settings are enabled for this platform
   if (!PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS]) {
@@ -434,10 +535,12 @@ function ProviderDetail() {
                                   }
                                 }
 
-                                serviceHub.providers().updateSettings(
-                                  providerName,
-                                  updateObj.settings ?? []
-                                )
+                                serviceHub
+                                  .providers()
+                                  .updateSettings(
+                                    providerName,
+                                    updateObj.settings ?? []
+                                  )
                                 updateProvider(providerName, {
                                   ...provider,
                                   ...updateObj,
@@ -499,6 +602,60 @@ function ProviderDetail() {
                                   <span> is the recommended backend.</span>
                                 </div>
                               )}
+                            {setting.key === 'version_backend' &&
+                              provider?.provider === 'llamacpp' && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0"
+                                    onClick={handleCheckForBackendUpdate}
+                                    disabled={isCheckingBackendUpdate}
+                                  >
+                                    <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                                      <IconRefresh
+                                        size={12}
+                                        className={cn(
+                                          'text-main-view-fg/50',
+                                          isCheckingBackendUpdate &&
+                                            'animate-spin'
+                                        )}
+                                      />
+                                      <span>
+                                        {isCheckingBackendUpdate
+                                          ? t(
+                                              'settings:checkingForBackendUpdates'
+                                            )
+                                          : t(
+                                              'settings:checkForBackendUpdates'
+                                            )}
+                                      </span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0"
+                                    onClick={handleInstallBackendFromFile}
+                                    disabled={isInstallingBackend}
+                                  >
+                                    <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                                      <IconUpload
+                                        size={12}
+                                        className={cn(
+                                          'text-main-view-fg/50',
+                                          isInstallingBackend && 'animate-pulse'
+                                        )}
+                                      />
+                                      <span>
+                                        {isInstallingBackend
+                                          ? 'Installing Backend...'
+                                          : 'Install Backend from File'}
+                                      </span>
+                                    </div>
+                                  </Button>
+                                </div>
+                              )}
                           </>
                         }
                         actions={actionComponent}
@@ -553,32 +710,28 @@ function ProviderDetail() {
                           </>
                         )}
                         {provider && provider.provider === 'llamacpp' && (
-                          <Button
-                            variant="link"
-                            size="sm"
-                            className="hover:no-underline"
-                            disabled={importingModel}
-                            onClick={handleImportModel}
-                          >
-                            <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
-                              {importingModel ? (
-                                <IconLoader
-                                  size={18}
-                                  className="text-main-view-fg/50 animate-spin"
-                                />
-                              ) : (
-                                <IconFolderPlus
-                                  size={18}
-                                  className="text-main-view-fg/50"
-                                />
-                              )}
-                              <span className="text-main-view-fg/70">
-                                {importingModel
-                                  ? 'Importing...'
-                                  : t('providers:import')}
-                              </span>
-                            </div>
-                          </Button>
+                          <ImportVisionModelDialog
+                            provider={provider}
+                            onSuccess={handleModelImportSuccess}
+                            trigger={
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="hover:no-underline !outline-none focus:outline-none active:outline-none"
+                                asChild
+                              >
+                                <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
+                                  <IconFolderPlus
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                  <span className="text-main-view-fg/70">
+                                    {t('providers:import')}
+                                  </span>
+                                </div>
+                              </Button>
+                            }
+                          />
                         )}
                       </div>
                     </div>
@@ -603,12 +756,10 @@ function ProviderDetail() {
                           }
                           actions={
                             <div className="flex items-center gap-0.5">
-                              {provider && provider.provider !== 'llamacpp' && (
-                                <DialogEditModel
-                                  provider={provider}
-                                  modelId={model.id}
-                                />
-                              )}
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
                               {model.settings && (
                                 <ModelSetting
                                   provider={provider}

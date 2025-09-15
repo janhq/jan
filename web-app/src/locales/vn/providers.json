@@ -60,7 +60,11 @@
     "tools": "Công cụ",
     "vision": "Thị giác",
     "embeddings": "Nhúng",
-    "notAvailable": "Chưa có"
+    "notAvailable": "Chưa có",
+    "warning": {
+      "title": "Hãy Thận Trọng",
+      "description": "Việc sửa đổi khả năng của mô hình có thể ảnh hưởng đến hiệu suất và chức năng. Cài đặt không chính xác có thể gây ra hành vi hoặc lỗi không mong muốn."
+    }
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",

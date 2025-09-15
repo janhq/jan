@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Anda menjalankan versi terbaru",
   "devVersion": "Versi pengembangan terdeteksi",
   "updateError": "Gagal memeriksa pembaruan",
+  "checkForBackendUpdates": "Periksa Pembaruan Llamacpp",
+  "checkForBackendUpdatesDesc": "Periksa apakah versi backend Llamacpp yang lebih baru tersedia.",
+  "checkingForBackendUpdates": "Memeriksa pembaruan Llamacpp...",
+  "noBackendUpdateAvailable": "Anda menjalankan versi Llamacpp terbaru",
+  "backendUpdateError": "Gagal memeriksa pembaruan Llamacpp",
   "changeLocation": "Ubah Lokasi",
   "copied": "Tersalin",
   "copyPath": "Salin Jalur",
@@ -244,5 +249,14 @@
       "cancel": "Batal",
       "changeLocation": "Ubah Lokasi"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Versi Llamacpp Baru {{version}}",
+    "backendUpdateAvailable": "Pembaruan Llamacpp Tersedia",
+    "remindMeLater": "Ingatkan Saya Nanti",
+    "updating": "Memperbarui...",
+    "updateNow": "Perbarui Sekarang",
+    "updateSuccess": "Llamacpp berhasil diperbarui",
+    "updateError": "Gagal memperbarui Llamacpp"
   }
 }

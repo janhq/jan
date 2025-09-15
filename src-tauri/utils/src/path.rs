@@ -2,6 +2,15 @@
 use std::path::Prefix;
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+
 /// Normalizes file paths by handling path components, prefixes, and resolving relative paths
 /// Based on: https://github.com/rust-lang/cargo/blob/rust-1.67.0/crates/cargo-util/src/paths.rs#L82-L107
 pub fn normalize_path(path: &Path) -> PathBuf {
@@ -72,5 +81,41 @@ pub fn remove_prefix(path: &str, prefix: &str) -> String {
         }
     } else {
         path.to_string()
+    }
+}
+
+/// Get Windows short path to avoid issues with spaces and special characters
+#[cfg(windows)]
+pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
+    let wide: Vec<u16> = OsStr::new(path.as_ref())
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    let mut buffer = vec![0u16; 260];
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
+
+    if len > 0 {
+        Some(String::from_utf16_lossy(&buffer[..len as usize]))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn test_get_short_path() {
+        // Test with a real path that should exist on Windows
+        use std::env;
+        if let Ok(temp_dir) = env::var("TEMP") {
+            let result = get_short_path(&temp_dir);
+            // Should return some short path or None (both are valid)
+            // We can't assert the exact value as it depends on the system
+            println!("Short path result: {:?}", result);
+        }
     }
 }

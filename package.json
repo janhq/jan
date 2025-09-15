@@ -1,6 +1,7 @@
 {
   "name": "jan-app",
   "private": true,
+  "type": "module",
   "workspaces": {
     "packages": [
       "core",
@@ -41,19 +42,15 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.7.0",
     "@vitest/coverage-v8": "^3.1.3",
-    "concurrently": "^9.1.0",
     "cpx": "^1.5.0",
     "cross-env": "^7.0.3",
-    "happy-dom": "^15.11.6",
     "husky": "^9.1.5",
     "jsdom": "^26.1.0",
-    "nyc": "^17.1.0",
     "rimraf": "^3.0.2",
     "run-script-os": "^1.1.6",
     "tar": "^4.4.19",
     "unzipper": "^0.12.3",
-    "vitest": "^3.1.3",
-    "wait-on": "^7.0.1"
+    "vitest": "^3.1.3"
   },
   "version": "0.0.0",
   "installConfig": {
@@ -62,9 +59,5 @@
   "resolutions": {
     "yallist": "4.0.0"
   },
-  "packageManager": "yarn@4.5.3",
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.13.12",
-    "download-cli": "^1.1.1"
-  }
+  "packageManager": "yarn@4.5.3"
 }

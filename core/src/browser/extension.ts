@@ -7,6 +7,7 @@ export enum ExtensionTypeEnum {
   Inference = 'inference',
   Model = 'model',
   SystemMonitoring = 'systemMonitoring',
+  MCP = 'mcp',
   HuggingFace = 'huggingFace',
   Engine = 'engine',
   Hardware = 'hardware',

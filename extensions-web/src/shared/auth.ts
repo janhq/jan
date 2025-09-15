@@ -1,7 +1,10 @@
 /**
- * Jan Provider Authentication Service
+ * Shared Authentication Service
  * Handles guest login and token refresh for Jan API
  */
+
+// JAN_API_BASE is defined in vite.config.ts
+declare const JAN_API_BASE: string
 
 export interface AuthTokens {
   access_token: string
@@ -13,24 +16,15 @@ export interface AuthResponse {
   expires_in: number
 }
 
-// JAN_API_BASE is defined in vite.config.ts
 const AUTH_STORAGE_KEY = 'jan_auth_tokens'
 const TOKEN_EXPIRY_BUFFER = 60 * 1000 // 1 minute buffer before actual expiry
 
 export class JanAuthService {
-  private static instance: JanAuthService
   private tokens: AuthTokens | null = null
   private tokenExpiryTime: number = 0
 
-  private constructor() {
+  constructor() {
     this.loadTokensFromStorage()
-  }
-
-  static getInstance(): JanAuthService {
-    if (!JanAuthService.instance) {
-      JanAuthService.instance = new JanAuthService()
-    }
-    return JanAuthService.instance
   }
 
   private loadTokensFromStorage(): void {
@@ -167,16 +161,6 @@ export class JanAuthService {
     return this.tokens.access_token
   }
 
-  async initialize(): Promise<void> {
-    try {
-      await this.getValidAccessToken()
-      console.log('Jan auth service initialized successfully')
-    } catch (error) {
-      console.error('Failed to initialize Jan auth service:', error)
-      throw error
-    }
-  }
-
   async getAuthHeader(): Promise<{ Authorization: string }> {
     const token = await this.getValidAccessToken()
     return {
@@ -184,7 +168,52 @@ export class JanAuthService {
     }
   }
 
+  async makeAuthenticatedRequest<T>(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    try {
+      const authHeader = await this.getAuthHeader()
+      
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+          ...options.headers,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
+      }
+
+      return response.json()
+    } catch (error) {
+      console.error('API request failed:', error)
+      throw error
+    }
+  }
+
   logout(): void {
     this.clearTokens()
   }
+}
+
+declare global {
+  interface Window {
+    janAuthService?: JanAuthService
+  }
+}
+
+/**
+ * Gets or creates the shared JanAuthService instance on the window object
+ * This ensures all extensions use the same auth service instance
+ */
+export function getSharedAuthService(): JanAuthService {
+  if (!window.janAuthService) {
+    window.janAuthService = new JanAuthService()
+  }
+  return window.janAuthService
 }

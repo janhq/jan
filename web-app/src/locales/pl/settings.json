@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Używasz najnowszej wersji",
   "devVersion": "Wykryto wersję deweloperską",
   "updateError": "Nie udało się sprawdzić dostępności aktualizacji",
+  "checkForBackendUpdates": "Sprawdź Aktualizacje Llamacpp",
+  "checkForBackendUpdatesDesc": "Sprawdza czy dostępna jest nowa wersja backendu Llamacpp.",
+  "checkingForBackendUpdates": "Sprawdzanie aktualizacji Llamacpp...",
+  "noBackendUpdateAvailable": "Używasz najnowszej wersji Llamacpp",
+  "backendUpdateError": "Nie udało się sprawdzić aktualizacji Llamacpp",
   "changeLocation": "Zmień Położenie",
   "copied": "Skopiowano",
   "copyPath": "Skopiuj Ścieżkę",
@@ -234,7 +239,7 @@
     "reportAnIssueDesc": "Znalazłeś/-aś błąd? Pomóż nam, zgłaszając go na GitHubie.",
     "reportIssue": "Zgłoś Problem",
     "credits": "Podziękowania",
-    "creditsDesc1": "Aplikacja Jan jest rozwijana z ❤️ przez Zespół Menlo.",
+    "creditsDesc1": "Aplikacja 👋 Jan jest rozwijana z ❤️ przez zespół Menlo Research.",
     "creditsDesc2": "Szczególne podziękowania dla naszych otwartoźródłowych zależności - zwłaszcza llama.cpp i Tauri - oraz dla naszej wspaniałej społeczności SI."
   },
   "extensions": {
@@ -249,5 +254,14 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Nowa wersja Llamacpp {{version}}",
+    "backendUpdateAvailable": "Dostępna aktualizacja Llamacpp",
+    "remindMeLater": "Przypomnij mi później",
+    "updating": "Aktualizowanie...",
+    "updateNow": "Aktualizuj teraz",
+    "updateSuccess": "Llamacpp został pomyślnie zaktualizowany",
+    "updateError": "Nie udało się zaktualizować Llamacpp"
   }
 }

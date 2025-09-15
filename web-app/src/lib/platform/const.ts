@@ -21,7 +21,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.LOCAL_INFERENCE]: isPlatformTauri(),
 
   // MCP (Model Context Protocol) servers
-  [PlatformFeature.MCP_SERVERS]: isPlatformTauri(),
+  [PlatformFeature.MCP_SERVERS]: true,
 
   // Local API server
   [PlatformFeature.LOCAL_API_SERVER]: isPlatformTauri(),

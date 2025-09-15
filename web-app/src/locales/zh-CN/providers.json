@@ -60,7 +60,11 @@
     "tools": "工具",
     "vision": "视觉",
     "embeddings": "嵌入",
-    "notAvailable": "尚不可用"
+    "notAvailable": "尚不可用",
+    "warning": {
+      "title": "谨慎操作",
+      "description": "修改模型功能可能会影响性能和功能。错误的设置可能导致意外行为或错误。"
+    }
   },
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",

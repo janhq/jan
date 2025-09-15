@@ -82,12 +82,12 @@ run = [
 
 [tasks.dev-web-app]
 description = "Start web application development server (matches Makefile)"
-depends = ["install"]
+depends = ["build-core"]
 run = "yarn dev:web-app"
 
 [tasks.build-web-app]
 description = "Build web application (matches Makefile)"
-depends = ["install"]
+depends = ["build-core"]
 run = "yarn build:web-app"
 
 [tasks.serve-web-app]
@@ -138,10 +138,55 @@ description = "Run linting (matches Makefile)"
 depends = ["build-extensions"]
 run = "yarn lint"
 
-[tasks.test]
-description = "Run test suite (matches Makefile)"
-depends = ["lint"]
+# ============================================================================
+# RUST TEST COMPONENTS
+# ============================================================================
+
+[tasks.test-rust-main]
+description = "Test main src-tauri package"
+run = "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1"
+
+[tasks.test-rust-hardware]
+description = "Test hardware plugin"
+run = "cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml"
+
+[tasks.test-rust-llamacpp]
+description = "Test llamacpp plugin"
+run = "cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml"
+
+[tasks.test-rust-utils]
+description = "Test utils package"
+run = "cargo test --manifest-path src-tauri/utils/Cargo.toml"
+
+[tasks.test-rust]
+description = "Run all Rust tests"
+depends = ["test-rust-main", "test-rust-hardware", "test-rust-llamacpp", "test-rust-utils"]
+
+# ============================================================================
+# JS TEST COMPONENTS
+# ============================================================================
+
+[tasks.test-js-setup]
+description = "Setup for JS tests"
+run = [
+  "yarn download:bin",
+  "yarn download:lib", 
+  "yarn copy:assets:tauri",
+  "yarn build:icon"
+]
+
+[tasks.test-js]
+description = "Run JS tests"
+depends = ["test-js-setup"]
 run = "yarn test"
+
+# ============================================================================
+# COMBINED TEST TASKS
+# ============================================================================
+
+[tasks.test]
+description = "Run complete test suite (matches Makefile)"
+depends = ["lint", "test-js", "test-rust"]
 
 # ============================================================================
 # PARALLEL-FRIENDLY QUALITY ASSURANCE TASKS
@@ -155,8 +200,7 @@ hide = true
 
 [tasks.test-only]
 description = "Run tests only (parallel-friendly)"
-depends = ["build-extensions"]
-run = "yarn test"
+depends = ["build-extensions", "test-js", "test-rust"]
 hide = true
 
 [tasks.qa-parallel]

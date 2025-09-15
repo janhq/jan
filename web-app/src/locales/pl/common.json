@@ -161,7 +161,7 @@
     "tools": "Narzędzia",
     "vision": "Wizja",
     "embeddings": "Osadzenia",
-    "notAvailable": "Jeszcze nie dostępne"
+    "notAvailable": "Jeszcze niedostępne"
   },
   "outOfContextError": {
     "truncateInput": "Przytnij Wejście",

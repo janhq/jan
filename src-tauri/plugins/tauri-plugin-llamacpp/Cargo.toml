@@ -25,13 +25,12 @@ thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 
-# Windows-specific dependencies
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
-
 # Unix-specific dependencies
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process"] }
+
+[dev-dependencies]
+tempfile = "3.0"
 
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }
