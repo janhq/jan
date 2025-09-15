@@ -28,7 +28,7 @@ const DropdownAssistant = () => {
   )
 
   const selectedAssistant =
-    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+    assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
   return (
     <>
