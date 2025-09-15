@@ -96,7 +96,12 @@ export default function ToolApproval() {
             >
               {t('tools:toolApproval.allowOnce')}
             </Button>
-            <Button variant="default" onClick={handleAllow} autoFocus>
+            <Button
+              variant="default"
+              onClick={handleAllow}
+              autoFocus
+              className="capitalize"
+            >
               {t('tools:toolApproval.alwaysAllow')}
             </Button>
           </div>
