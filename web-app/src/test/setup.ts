@@ -11,17 +11,18 @@ expect.extend(matchers)
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
     hardwareMonitoring: true,
-    extensionManagement: true,
     localInference: true,
-    mcpServers: true,
     localApiServer: true,
     modelHub: true,
     systemIntegrations: true,
     httpsProxy: true,
     defaultProviders: true,
     analytics: true,
-    webAutoModelSelection: true,
+    webAutoModelSelection: false,
     modelProviderSettings: true,
+    mcpAutoApproveTools: false,
+    mcpServersSettings: true,
+    extensionsSettings: true,
   }
 }))
 

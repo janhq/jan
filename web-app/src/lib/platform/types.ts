@@ -16,14 +16,8 @@ export enum PlatformFeature {
   // Hardware monitoring and GPU usage
   HARDWARE_MONITORING = 'hardwareMonitoring',
 
-  // Extension installation/management
-  EXTENSION_MANAGEMENT = 'extensionManagement',
-
   // Local model inference (llama.cpp)
   LOCAL_INFERENCE = 'localInference',
-
-  // MCP (Model Context Protocol) servers
-  MCP_SERVERS = 'mcpServers',
 
   // Local API server
   LOCAL_API_SERVER = 'localApiServer',
@@ -48,4 +42,13 @@ export enum PlatformFeature {
   
   // Model provider settings page management
   MODEL_PROVIDER_SETTINGS = 'modelProviderSettings',
+
+  // Auto-enable MCP tool permissions without approval
+  MCP_AUTO_APPROVE_TOOLS = 'mcpAutoApproveTools',
+
+  // MCP servers settings page management
+  MCP_SERVERS_SETTINGS = 'mcpServersSettings',
+
+  // Extensions settings page management
+  EXTENSIONS_SETTINGS = 'extensionsSettings',
 }
