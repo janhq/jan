@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { UIEventHandler } from 'react'
