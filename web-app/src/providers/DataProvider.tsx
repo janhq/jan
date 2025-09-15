@@ -13,6 +13,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
+import { SystemEvent } from '@/types/events'
 
 export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
@@ -56,6 +57,18 @@ export function DataProvider() {
       })
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
     serviceHub.deeplink().onOpenUrl(handleDeepLink)
+
+    // Listen for deep link events
+    let unsubscribe = () => {}
+    serviceHub.events().listen(SystemEvent.DEEP_LINK, (event) => {
+      const deep_link  = event.payload as string
+      handleDeepLink([deep_link])
+    }).then((unsub) => {
+      unsubscribe = unsub
+    })
+    return () => {
+      unsubscribe()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
 

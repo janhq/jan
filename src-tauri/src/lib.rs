@@ -9,6 +9,7 @@ use core::{
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
@@ -20,6 +21,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
+          let arg = argv.iter().find(|arg| arg.starts_with("jan://"));
+            if let Some(deep_link) = arg {
+                println!("deep link: {deep_link}");
+                // handle the deep link, e.g., emit an event to the webview
+                _app.app_handle().emit("deep-link", deep_link).unwrap();
+                if let Some(window) = _app.app_handle().get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            }
         }));
     }
 
@@ -131,7 +141,6 @@ pub fn run() {
 
             #[cfg(any(windows, target_os = "linux"))]
             {
-                use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
             }
             setup_mcp(app);
