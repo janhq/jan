@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ServerHostSwitcher } from '@/containers/ServerHostSwitcher'
 import { PortInput } from '@/containers/PortInput'
+import { ProxyTimeoutInput } from '@/containers/ProxyTimeoutInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -50,6 +51,7 @@ function LocalAPIServerContent() {
     apiPrefix,
     apiKey,
     trustedHosts,
+    proxyTimeout,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
@@ -157,6 +159,7 @@ function LocalAPIServerContent() {
             trustedHosts,
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
+            proxyTimeout: proxyTimeout,
           })
         })
         .then(() => {
@@ -310,6 +313,11 @@ function LocalAPIServerContent() {
                 actions={
                   <TrustedHostsInput isServerRunning={isServerRunning} />
                 }
+              />
+              <CardItem
+                title={t('settings:localApiServer.proxyTimeout')}
+                description={t('settings:localApiServer.proxyTimeoutDesc')}
+                actions={<ProxyTimeoutInput isServerRunning={isServerRunning} />}
               />
             </Card>
 

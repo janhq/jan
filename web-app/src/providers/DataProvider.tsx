@@ -36,6 +36,7 @@ export function DataProvider() {
     trustedHosts,
     corsEnabled,
     verboseLogs,
+    proxyTimeout,
   } = useLocalApiServer()
   const { setServerStatus } = useAppState()
 
@@ -169,6 +170,7 @@ export function DataProvider() {
             trustedHosts,
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
+            proxyTimeout: proxyTimeout,
           })
         })
         .then(() => {
