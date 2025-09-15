@@ -2504,12 +2504,12 @@ export default class llamacpp_extension extends AIEngine {
         throw new Error('Model appears to have crashed! Please reload!')
       }
     } else {
-      throw new Error('Model have crashed! Please reload!')
+      throw new Error('Model has crashed! Please reload!')
     }
 
     const baseUrl = `http://localhost:${sessionInfo.port}`
     const headers = {
-      'Conten-Type': 'application/json',
+      'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
