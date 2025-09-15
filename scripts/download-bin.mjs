@@ -231,11 +231,6 @@ async function main() {
   console.log('Downloads completed.')
 }
 
-// Ensure the downloads directory exists
-if (!fs.existsSync('downloads')) {
-  fs.mkdirSync('downloads')
-}
-
 main().catch((err) => {
   console.error('Error:', err)
   process.exit(1)
