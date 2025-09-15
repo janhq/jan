@@ -84,6 +84,7 @@ build-and-publish: install-and-build install-rust-targets
 
 # Build
 build: install-and-build install-rust-targets
+	yarn download:bin
 	yarn download:lib
 	yarn build
 
