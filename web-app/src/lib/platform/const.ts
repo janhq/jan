@@ -14,14 +14,8 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Hardware monitoring and GPU usage
   [PlatformFeature.HARDWARE_MONITORING]: isPlatformTauri(),
 
-  // Extension installation/management
-  [PlatformFeature.EXTENSION_MANAGEMENT]: true,
-
   // Local model inference (llama.cpp)
   [PlatformFeature.LOCAL_INFERENCE]: isPlatformTauri(),
-
-  // MCP (Model Context Protocol) servers
-  [PlatformFeature.MCP_SERVERS]: true,
 
   // Local API server
   [PlatformFeature.LOCAL_API_SERVER]: isPlatformTauri(),
@@ -46,4 +40,13 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Model provider settings page management - disabled for web only
   [PlatformFeature.MODEL_PROVIDER_SETTINGS]: isPlatformTauri(),
+
+  // Auto-enable MCP tool permissions - enabled for web platform
+  [PlatformFeature.MCP_AUTO_APPROVE_TOOLS]: !isPlatformTauri(),
+
+  // MCP servers settings page - disabled for web
+  [PlatformFeature.MCP_SERVERS_SETTINGS]: isPlatformTauri(),
+
+  // Extensions settings page - disabled for web
+  [PlatformFeature.EXTENSIONS_SETTINGS]: isPlatformTauri(),
 }

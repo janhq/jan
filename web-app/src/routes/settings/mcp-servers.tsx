@@ -23,8 +23,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
-import { isPlatformTauri } from '@/lib/platform/utils'
-import { MCPTool } from '@janhq/core'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -92,118 +90,12 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 
 function MCPServers() {
   return (
-    <PlatformGuard feature={PlatformFeature.MCP_SERVERS}>
-      {isPlatformTauri() ? <MCPServersDesktop /> : <MCPServersWeb />}
+    <PlatformGuard feature={PlatformFeature.MCP_SERVERS_SETTINGS}>
+      <MCPServersDesktop />
     </PlatformGuard>
   )
 }
 
-// Web version of MCP servers - simpler UI without server management
-function MCPServersWeb() {
-  const { t } = useTranslation()
-  const serviceHub = useServiceHub()
-  const { allowAllMCPPermissions, setAllowAllMCPPermissions } = useToolApproval()
-  
-  const [webMcpTools, setWebMcpTools] = useState<MCPTool[]>([])
-  const [webMcpServers, setWebMcpServers] = useState<string[]>([])
-  const [webMcpLoading, setWebMcpLoading] = useState(true)
-
-  useEffect(() => {
-    async function loadWebMcpData() {
-      setWebMcpLoading(true)
-      try {
-        const [tools, servers] = await Promise.all([
-          serviceHub.mcp().getTools(),
-          serviceHub.mcp().getConnectedServers(),
-        ])
-        setWebMcpTools(tools)
-        setWebMcpServers(servers)
-      } catch (error) {
-        console.error('Failed to load web MCP data:', error)
-        setWebMcpTools([])
-        setWebMcpServers([])
-      } finally {
-        setWebMcpLoading(false)
-      }
-    }
-    loadWebMcpData()
-  }, [serviceHub])
-
-  return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <Card
-              header={
-                <div className="flex flex-col mb-4">
-                  <h1 className="text-main-view-fg font-medium text-base">
-                    {t('mcp-servers:title')}
-                  </h1>
-                  <p className="text-sm text-main-view-fg/70 mt-1">
-                    MCP tools are automatically available in your chat sessions
-                  </p>
-                </div>
-              }
-            >
-              <CardItem
-                title={t('mcp-servers:allowPermissions')}
-                description={t('mcp-servers:allowPermissionsDesc')}
-                actions={
-                  <div className="flex-shrink-0 ml-4">
-                    <Switch
-                      checked={allowAllMCPPermissions}
-                      onCheckedChange={setAllowAllMCPPermissions}
-                    />
-                  </div>
-                }
-              />
-            </Card>
-
-            <Card>
-              <CardItem
-                title="MCP Service Status"
-                description={
-                  webMcpLoading 
-                    ? "Loading MCP service status..." 
-                    : webMcpServers.length > 0 
-                      ? `Connected to ${webMcpServers.join(', ')}. ${webMcpTools.length} tools available.`
-                      : "MCP service not connected"
-                }
-                descriptionOutside={
-                  webMcpTools.length > 0 && !webMcpLoading && (
-                    <div className="mt-2">
-                      <h4 className="text-sm font-medium text-main-view-fg/80 mb-2">Available Tools:</h4>
-                      <div className="grid grid-cols-1 gap-2">
-                        {webMcpTools.map((tool) => (
-                          <div key={tool.name} className="flex items-start gap-2 p-2 bg-main-view-fg/5 rounded">
-                            <div className="flex-1">
-                              <div className="font-medium text-sm">{tool.name}</div>
-                              <div className="text-xs text-main-view-fg/70">{tool.description}</div>
-                              {tool.server && (
-                                <div className="text-xs text-main-view-fg/50 mt-1">Server: {tool.server}</div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                }
-              />
-            </Card>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Desktop version of MCP servers - full server management capabilities
 function MCPServersDesktop() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -351,10 +243,12 @@ function MCPServersDesktop() {
       setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
       const config = getServerConfig(serverKey)
       if (active && config) {
-        serviceHub.mcp().activateMCPServer(serverKey, {
-          ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-          active,
-        })
+        serviceHub
+          .mcp()
+          .activateMCPServer(serverKey, {
+            ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
+            active,
+          })
           .then(() => {
             // Save single server
             editServer(serverKey, {
@@ -388,10 +282,13 @@ function MCPServersDesktop() {
           active,
         })
         syncServers()
-        serviceHub.mcp().deactivateMCPServer(serverKey).finally(() => {
-          serviceHub.mcp().getConnectedServers().then(setConnectedServers)
-          setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
-        })
+        serviceHub
+          .mcp()
+          .deactivateMCPServer(serverKey)
+          .finally(() => {
+            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
+          })
       }
     }
   }

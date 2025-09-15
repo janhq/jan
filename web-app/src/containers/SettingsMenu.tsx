@@ -104,7 +104,7 @@ const SettingsMenu = () => {
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS],
+      isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS_SETTINGS],
     },
     {
       title: 'common:local_api_server',
@@ -122,7 +122,7 @@ const SettingsMenu = () => {
       title: 'common:extensions',
       route: route.settings.extensions,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.EXTENSION_MANAGEMENT],
+      isEnabled: PlatformFeatures[PlatformFeature.EXTENSIONS_SETTINGS],
     },
   ]
 
