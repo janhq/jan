@@ -34,7 +34,7 @@
   "editAllJson": "編輯所有伺服器的 JSON",
   "findMore": "在以下位置尋找更多 MCP 伺服器",
   "allowPermissions": "允許所有 MCP 工具權限",
-  "allowPermissionsDesc": "啟用後，所有 MCP 工具呼叫將自動核准，而不會顯示權限對話方塊。",
+  "allowPermissionsDesc": "啟用後，所有 MCP 工具呼叫將自動核准，而不會顯示權限對話方塊。此設定全域適用於所有對話，包括新聊天。",
   "noServers": "找不到 MCP 伺服器",
   "args": "參數",
   "env": "環境",

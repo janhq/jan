@@ -34,7 +34,7 @@
   "editAllJson": "Edytuj JSON Wszystkich Serwerów",
   "findMore": "Znajdź więcej serwerów MCP na",
   "allowPermissions": "Pozwalaj na Wszystkie Użycia Narzędzi MCP",
-  "allowPermissionsDesc": "Po włączeniu będzie automatycznie zezwalać na wszystkie użycia narzędzi MCP bez wyświetlania próśb o zgodę.",
+  "allowPermissionsDesc": "Po włączeniu będzie automatycznie zezwalać na wszystkie użycia narzędzi MCP bez wyświetlania próśb o zgodę. To ustawienie obowiązuje globalnie dla wszystkich rozmów, w tym nowych czatów.",
   "noServers": "Nie znaleziono serwerów MCP",
   "args": "Argumenty",
   "env": "Zmienne Środowiskowe",
