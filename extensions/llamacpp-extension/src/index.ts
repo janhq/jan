@@ -37,7 +37,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
-  GgufMetadata,
   readGgufMetadata,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
@@ -178,7 +177,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   llamacpp_env: string = ''
-  memoryMode: string = 'high'
+  memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -210,7 +209,7 @@ export default class llamacpp_extension extends AIEngine {
 
     this.autoUnload = this.config.auto_unload
     this.llamacpp_env = this.config.llamacpp_env
-    this.memoryMode = this.config.memory_util
+    this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
