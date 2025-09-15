@@ -631,6 +631,7 @@ pub async fn start_server(
     prefix: String,
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
+    proxy_timeout: u64,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -648,7 +649,7 @@ pub async fn start_server(
     };
 
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
+        .timeout(std::time::Duration::from_secs(proxy_timeout))
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;

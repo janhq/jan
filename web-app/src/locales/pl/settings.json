@@ -183,7 +183,9 @@
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Pozwalaj na żądania cross-origin do serwera API.",
     "verboseLogs": "Szczegółowe Wpisy Dzienników Serwera",
-    "verboseLogsDesc": "Włącz szczegółowe wpisy dzienników serwera na potrzeby rozwiązywania problemów."
+    "verboseLogsDesc": "Włącz szczegółowe wpisy dzienników serwera na potrzeby rozwiązywania problemów.",
+    "proxyTimeout": "Przekroczenie limitu czasu żądania",
+    "proxyTimeoutDesc": "Czas oczekiwania na odpowiedź od lokalnego modelu w sekundach."
   },
   "privacy": {
     "analytics": "Dane Analityczne",

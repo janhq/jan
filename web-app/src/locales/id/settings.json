@@ -180,7 +180,9 @@
     "cors": "Berbagi Sumber Daya Lintas Asal (CORS)",
     "corsDesc": "Izinkan permintaan lintas asal ke server API.",
     "verboseLogs": "Log Server Verbose",
-    "verboseLogsDesc": "Aktifkan log server terperinci untuk debugging."
+    "verboseLogsDesc": "Aktifkan log server terperinci untuk debugging.",
+    "proxyTimeout": "Permintaan melebihi batas waktu",
+    "proxyTimeoutDesc": "Waktu tunggu untuk respons dari model lokal dalam detik."
   },
   "privacy": {
     "analytics": "Analitik",

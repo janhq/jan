@@ -46,7 +46,7 @@ const mainMenus = [
     title: 'common:assistants',
     icon: IconClipboardSmileFilled,
     route: route.assistant,
-    isEnabled: true,
+    isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
   },
   {
     title: 'common:hub',
