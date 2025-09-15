@@ -51,4 +51,7 @@ export enum PlatformFeature {
 
   // Extensions settings page management
   EXTENSIONS_SETTINGS = 'extensionsSettings',
+
+  // Assistant functionality (creation, editing, management)
+  ASSISTANTS = 'assistants',
 }

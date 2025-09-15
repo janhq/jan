@@ -73,7 +73,7 @@ export const useChat = () => {
   }, [provider, selectedProvider])
 
   const selectedAssistant =
-    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+    assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
@@ -237,7 +237,7 @@ export const useChat = () => {
 
         const builder = new CompletionMessagesBuilder(
           messages,
-          renderInstructions(currentAssistant?.instructions)
+          currentAssistant ? renderInstructions(currentAssistant.instructions) : undefined
         )
         if (troubleshooting) builder.addUserMessage(message, attachments)
 
@@ -284,10 +284,10 @@ export const useChat = () => {
             builder.getMessages(),
             abortController,
             availableTools,
-            currentAssistant.parameters?.stream === false ? false : true,
+            currentAssistant?.parameters?.stream === false ? false : true,
             {
               ...modelSettings,
-              ...currentAssistant.parameters,
+              ...(currentAssistant?.parameters || {}),
             } as unknown as Record<string, object>
           )
 

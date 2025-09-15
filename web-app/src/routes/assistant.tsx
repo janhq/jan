@@ -10,6 +10,8 @@ import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
 import { DeleteAssistantDialog } from '@/containers/dialogs'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.assistant as any)({
@@ -17,6 +19,14 @@ export const Route = createFileRoute(route.assistant as any)({
 })
 
 function Assistant() {
+  return (
+    <PlatformGuard feature={PlatformFeature.ASSISTANTS}>
+      <AssistantContent />
+    </PlatformGuard>
+  )
+}
+
+function AssistantContent() {
   const { t } = useTranslation()
   const { assistants, addAssistant, updateAssistant, deleteAssistant } =
     useAssistant()

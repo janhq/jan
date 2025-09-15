@@ -18,6 +18,8 @@ type SearchParams = {
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -54,7 +56,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <DropdownAssistant />
+        {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>
       <div className="h-full px-4 md:px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-full md:w-4/6 mx-auto">
