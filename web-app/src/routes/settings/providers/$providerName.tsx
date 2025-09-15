@@ -357,12 +357,9 @@ function ProviderDetail() {
 
       if (selectedFile && typeof selectedFile === 'string') {
         // Process the file path: replace spaces with dashes and convert to lowercase
-        const processedFilePath = selectedFile
-          .replace(/\s+/g, '-')
-          .toLowerCase()
 
         // Install the backend using the llamacpp extension
-        await installBackend(processedFilePath)
+        await installBackend(selectedFile)
 
         // Extract filename from the selected file path and replace spaces with dashes
         const fileName = (
