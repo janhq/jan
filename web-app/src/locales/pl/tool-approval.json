@@ -4,7 +4,7 @@
   "securityNotice": "<strong>Ostrzeżenie Bezpieczeństwa:</strong> Złośliwe narzędzia lub treści rozmowy mają potencjał nakłonić agenta do szkodliwych działań. Dokładnie przejrzyj każdą prośbę o użycie narzędzia przed wyrażeniem zgody.",
   "deny": "Odmów",
   "allowOnce": "Pozwól Raz",
-  "alwaysAllow": "Zawsze Pozwalaj",
+  "alwaysAllow": "Pozwól w wątku",
   "permissions": "Pozwolenia",
   "approve": "Zaakceptuj",
   "reject": "Odrzuć",

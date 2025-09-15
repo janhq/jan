@@ -5,7 +5,8 @@
     "securityNotice": "Złośliwe narzędzia lub treści rozmowy mają potencjał nakłonić agenta do szkodliwych działań. Dokładnie przejrzyj każdą prośbę o użycie narzędzia przed wyrażeniem zgody.",
     "deny": "Odmów",
     "allowOnce": "Pozwól Raz",
-    "alwaysAllow": "Zawsze Pozwalaj",
-    "parameters": "Parametry Narzędzia"
+    "alwaysAllow": "Pozwól w wątku",
+    "parameters": "Parametry Narzędzia",
+    "permissionScope": "Udzielone pozwolenia dotyczą tylko tej rozmowy."
   }
 }

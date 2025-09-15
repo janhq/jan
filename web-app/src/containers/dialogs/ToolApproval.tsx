@@ -52,7 +52,10 @@ export default function ToolApproval() {
               <DialogTitle>{t('tools:toolApproval.title')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
                 {t('tools:toolApproval.description')}{' '}
-                <span className="font-semibold">{toolName}</span>
+                <span className="font-semibold">{toolName}</span>.&nbsp;
+                <span className="text-sm">
+                  {t('tools:toolApproval.permissionScope')}
+                </span>
               </DialogDescription>
             </div>
           </div>
@@ -85,7 +88,7 @@ export default function ToolApproval() {
           >
             {t('tools:toolApproval.deny')}
           </Button>
-          <div className="flex flex-col sm:flex-row sm:gap-2 sm:items-center">
+          <div className="flex flex-col sm:flex-row gap-2 items-center">
             <Button
               variant="link"
               onClick={handleAllowOnce}
