@@ -35,15 +35,25 @@ const BackendUpdater = () => {
   })
 
   useEffect(() => {
+    console.log('BackendUpdater state update:', {
+      remindMeLater: updateState.remindMeLater,
+      isUpdateAvailable: updateState.isUpdateAvailable,
+      autoUpdateEnabled: updateState.autoUpdateEnabled,
+      updateInfo: updateState.updateInfo,
+    })
     setBackendUpdateState({
       remindMeLater: updateState.remindMeLater,
       isUpdateAvailable: updateState.isUpdateAvailable,
     })
   }, [updateState])
 
-  // Don't show if user clicked remind me later or auto update is enabled
-  if (backendUpdateState.remindMeLater || updateState.autoUpdateEnabled)
+  // Don't show if user clicked remind me later
+  if (backendUpdateState.remindMeLater) {
+    console.log('BackendUpdater: Not showing notification due to:', {
+      remindMeLater: backendUpdateState.remindMeLater,
+    })
     return null
+  }
 
   return (
     <>
