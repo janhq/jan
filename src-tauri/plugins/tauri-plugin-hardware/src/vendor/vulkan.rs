@@ -45,7 +45,14 @@ pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
     }
 }
 
-fn parse_c_string(buf: &[i8]) -> String {
+fn parse_c_string_i8(buf: &[i8]) -> String {
+    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const u8) }
+        .to_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn parse_c_string_u8(buf: &[u8]) -> String {
     unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }
         .to_str()
         .unwrap_or_default()
@@ -96,7 +103,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
         }
 
         let device_info = GpuInfo {
-            name: parse_c_string(&props.device_name),
+            name: parse_c_string_u8(&props.device_name),
             total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
                 .memory_heaps
                 .iter()
@@ -105,7 +112,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
                 .sum(),
             vendor: Vendor::from_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
-            driver_version: parse_c_string(&driver_props.driver_info),
+            driver_version: parse_c_string_u8(&driver_props.driver_info),
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 index: i as u64,
