@@ -55,14 +55,12 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col flex-justify-center">
+    <div className="flex h-full flex-col justify-center py-5">
       <HeaderPage>
         <DropdownAssistant />
       </HeaderPage>
       <div className={cn(
-        "h-full overflow-y-auto flex flex-col gap-2 justify-center",
-        // Mobile-first responsive padding
-        isMobile ? "px-3 py-4" : "px-4 md:px-8"
+        "h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px4 md:px-8 py-4 md:py-0",
       )}>
         <div className={cn(
           "mx-auto",
