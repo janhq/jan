@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export type ToolApprovalModalProps = {
   toolName: string
@@ -32,7 +34,7 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
-      allowAllMCPPermissions: false,
+      allowAllMCPPermissions: PlatformFeatures[PlatformFeature.MCP_AUTO_APPROVE_TOOLS],
       isModalOpen: false,
       modalProps: null,
 
@@ -55,6 +57,12 @@ export const useToolApproval = create<ToolApprovalState>()(
 
       showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => {
         return new Promise<boolean>((resolve) => {
+          // Auto-approve MCP tools when feature is enabled
+          if (PlatformFeatures[PlatformFeature.MCP_AUTO_APPROVE_TOOLS]) {
+            resolve(true)
+            return
+          }
+
           // Check if tool is already approved for this thread
           const state = get()
           if (state.isToolApproved(threadId, toolName)) {

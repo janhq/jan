@@ -50,7 +50,7 @@ export const useAppState = create<AppState>()((set) => ({
     const currentAssistant = useAssistant.getState().currentAssistant
 
     const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
     set(() => ({
       streamingContent: content

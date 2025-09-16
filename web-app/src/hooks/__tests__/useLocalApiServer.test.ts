@@ -32,6 +32,7 @@ describe('useLocalApiServer', () => {
     store.setVerboseLogs(true)
     store.setTrustedHosts([])
     store.setApiKey('')
+    store.setProxyTimeout(600)
   })
 
   it('should initialize with default values', () => {
@@ -45,6 +46,7 @@ describe('useLocalApiServer', () => {
     expect(result.current.verboseLogs).toBe(true)
     expect(result.current.trustedHosts).toEqual([])
     expect(result.current.apiKey).toBe('')
+    expect(result.current.proxyTimeout).toBe(600)
   })
 
   describe('enableOnStartup', () => {
@@ -317,6 +319,32 @@ describe('useLocalApiServer', () => {
     })
   })
 
+  describe('proxyTimeout', () => {
+    it('should set proxy timeout', () => {
+      const { result } = renderHook(() => useLocalApiServer())
+
+      act(() => {
+        result.current.setProxyTimeout(1800)
+      })
+
+      expect(result.current.proxyTimeout).toBe(1800)
+    })
+
+    it('should handle different proxy timeouts', () => {
+      const { result } = renderHook(() => useLocalApiServer())
+
+      const testTimeouts = [100, 300, 600, 3600]
+
+      testTimeouts.forEach((timeout) => {
+        act(() => {
+          result.current.setProxyTimeout(timeout)
+        })
+
+        expect(result.current.proxyTimeout).toBe(timeout)
+      })
+    })
+  })
+
   describe('state persistence', () => {
     it('should maintain state across multiple hook instances', () => {
       const { result: result1 } = renderHook(() => useLocalApiServer())
@@ -331,6 +359,7 @@ describe('useLocalApiServer', () => {
         result1.current.setVerboseLogs(false)
         result1.current.setApiKey('test-key')
         result1.current.addTrustedHost('example.com')
+        result1.current.setProxyTimeout(1800)
       })
 
       expect(result2.current.enableOnStartup).toBe(false)
@@ -341,6 +370,7 @@ describe('useLocalApiServer', () => {
       expect(result2.current.verboseLogs).toBe(false)
       expect(result2.current.apiKey).toBe('test-key')
       expect(result2.current.trustedHosts).toEqual(['example.com'])
+      expect(result2.current.proxyTimeout).toBe(1800)
     })
   })
 
@@ -356,6 +386,7 @@ describe('useLocalApiServer', () => {
         result.current.addTrustedHost('localhost')
         result.current.addTrustedHost('127.0.0.1')
         result.current.setApiKey('sk-test-key')
+        result.current.setProxyTimeout(800)
       })
 
       expect(result.current.serverHost).toBe('0.0.0.0')
@@ -364,6 +395,7 @@ describe('useLocalApiServer', () => {
       expect(result.current.corsEnabled).toBe(false)
       expect(result.current.trustedHosts).toEqual(['localhost', '127.0.0.1'])
       expect(result.current.apiKey).toBe('sk-test-key')
+      expect(result.current.proxyTimeout).toBe(800)
     })
 
     it('should preserve independent state changes', () => {
@@ -376,6 +408,17 @@ describe('useLocalApiServer', () => {
       expect(result.current.serverPort).toBe(9000)
       expect(result.current.serverHost).toBe('127.0.0.1') // Should remain default
       expect(result.current.apiPrefix).toBe('/v1') // Should remain default
+      expect(result.current.proxyTimeout).toBe(600) // Should remain default
+
+      act(() => {
+        result.current.setProxyTimeout(400)
+      })
+
+      expect(result.current.proxyTimeout).toBe(400)
+      expect(result.current.serverPort).toBe(9000) // Should remain default
+      expect(result.current.serverHost).toBe('127.0.0.1') // Should remain default
+      expect(result.current.apiPrefix).toBe('/v1') // Should remain default
+
 
       act(() => {
         result.current.addTrustedHost('example.com')

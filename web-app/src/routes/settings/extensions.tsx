@@ -18,7 +18,7 @@ export const Route = createFileRoute(route.settings.extensions as any)({
 
 function Extensions() {
   return (
-    <PlatformGuard feature={PlatformFeature.EXTENSION_MANAGEMENT}>
+    <PlatformGuard feature={PlatformFeature.EXTENSIONS_SETTINGS}>
       <ExtensionsContent />
     </PlatformGuard>
   )
