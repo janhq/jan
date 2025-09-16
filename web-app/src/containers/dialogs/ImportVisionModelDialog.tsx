@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   IconLoader2,
@@ -44,7 +44,7 @@ export const ImportVisionModelDialog = ({
   >(null)
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
 
-  const validateGgufFile = async (
+  const validateGgufFile = useCallback(async (
     filePath: string,
     fileType: 'model' | 'mmproj'
   ): Promise<void> => {
@@ -158,15 +158,15 @@ export const ImportVisionModelDialog = ({
         setIsValidatingMmproj(false)
       }
     }
-  }
+  }, [modelName, serviceHub])
 
-  const validateModelFile = async (filePath: string): Promise<void> => {
+  const validateModelFile = useCallback(async (filePath: string): Promise<void> => {
     await validateGgufFile(filePath, 'model')
-  }
+  }, [validateGgufFile])
 
-  const validateMmprojFile = async (filePath: string): Promise<void> => {
+  const validateMmprojFile = useCallback(async (filePath: string): Promise<void> => {
     await validateGgufFile(filePath, 'mmproj')
-  }
+  }, [validateGgufFile])
 
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
     const selectedFile = await serviceHub.dialog().open({
@@ -271,6 +271,13 @@ export const ImportVisionModelDialog = ({
     setMmprojValidationError(null)
     setIsValidatingMmproj(false)
   }
+
+  // Re-validate MMProj file when model name changes
+  useEffect(() => {
+    if (mmProjFile && modelName && isVisionModel) {
+      validateMmprojFile(mmProjFile)
+    }
+  }, [modelName, mmProjFile, isVisionModel, validateMmprojFile])
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!importing) {
