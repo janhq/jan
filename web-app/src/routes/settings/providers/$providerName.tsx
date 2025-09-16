@@ -83,6 +83,7 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
+  const [importingModel, setImportingModel] = useState<string | null>(null)
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
@@ -102,58 +103,66 @@ function ProviderDetail() {
     )
 
   const handleModelImportSuccess = async (importedModelName?: string) => {
-    // Refresh the provider to update the models list
-    await serviceHub.providers().getProviders().then(setProviders)
+    if (importedModelName) {
+      setImportingModel(importedModelName)
+    }
 
-    // If a model was imported and it might have vision capabilities, check and update
-    if (importedModelName && providerName === 'llamacpp') {
-      try {
-        const mmprojExists = await serviceHub
-          .models()
-          .checkMmprojExists(importedModelName)
-        if (mmprojExists) {
-          // Get the updated provider after refresh
-          const { getProviderByName, updateProvider: updateProviderState } =
-            useModelProvider.getState()
-          const llamacppProvider = getProviderByName('llamacpp')
+    try {
+      // Refresh the provider to update the models list
+      await serviceHub.providers().getProviders().then(setProviders)
 
-          if (llamacppProvider) {
-            const modelIndex = llamacppProvider.models.findIndex(
-              (m: Model) => m.id === importedModelName
-            )
-            if (modelIndex !== -1) {
-              const model = llamacppProvider.models[modelIndex]
-              const capabilities = model.capabilities || []
+      // If a model was imported and it might have vision capabilities, check and update
+      if (importedModelName && providerName === 'llamacpp') {
+        try {
+          const mmprojExists = await serviceHub
+            .models()
+            .checkMmprojExists(importedModelName)
+          if (mmprojExists) {
+            // Get the updated provider after refresh
+            const { getProviderByName, updateProvider: updateProviderState } =
+              useModelProvider.getState()
+            const llamacppProvider = getProviderByName('llamacpp')
 
-              // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
-              // Check if model has a custom capabilities config flag
+            if (llamacppProvider) {
+              const modelIndex = llamacppProvider.models.findIndex(
+                (m: Model) => m.id === importedModelName
+              )
+              if (modelIndex !== -1) {
+                const model = llamacppProvider.models[modelIndex]
+                const capabilities = model.capabilities || []
 
-              const hasUserConfiguredCapabilities =
-                (model as any)._userConfiguredCapabilities === true
+                // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
+                // Check if model has a custom capabilities config flag
 
-              if (
-                !capabilities.includes('vision') &&
-                !hasUserConfiguredCapabilities
-              ) {
-                const updatedModels = [...llamacppProvider.models]
-                updatedModels[modelIndex] = {
-                  ...model,
-                  capabilities: [...capabilities, 'vision'],
-                  // Mark this as auto-detected, not user-configured
-                  _autoDetectedVision: true,
-                } as any
+                const hasUserConfiguredCapabilities =
+                  (model as any)._userConfiguredCapabilities === true
 
-                updateProviderState('llamacpp', { models: updatedModels })
-                console.log(
-                  `Vision capability added to model after provider refresh: ${importedModelName}`
-                )
+                if (
+                  !capabilities.includes('vision') &&
+                  !hasUserConfiguredCapabilities
+                ) {
+                  const updatedModels = [...llamacppProvider.models]
+                  updatedModels[modelIndex] = {
+                    ...model,
+                    capabilities: [...capabilities, 'vision'],
+                    // Mark this as auto-detected, not user-configured
+                    _autoDetectedVision: true,
+                  } as any
+
+                  updateProviderState('llamacpp', { models: updatedModels })
+                  console.log(
+                    `Vision capability added to model after provider refresh: ${importedModelName}`
+                  )
+                }
               }
             }
           }
+        } catch (error) {
+          console.error('Error checking mmproj existence after import:', error)
         }
-      } catch (error) {
-        console.error('Error checking mmproj existence after import:', error)
       }
+    } finally {
+      // The importing state will be cleared by the useEffect when model appears in list
     }
   }
 
@@ -174,6 +183,29 @@ function ProviderDetail() {
 
     return () => clearInterval(intervalId)
   }, [serviceHub, setActiveModels])
+
+  // Clear importing state when model appears in the provider's model list
+  useEffect(() => {
+    if (importingModel && provider?.models) {
+      const modelExists = provider.models.some(
+        (model) => model.id === importingModel
+      )
+      if (modelExists) {
+        setImportingModel(null)
+      }
+    }
+  }, [importingModel, provider?.models])
+
+  // Fallback: Clear importing state after 10 seconds to prevent infinite loading
+  useEffect(() => {
+    if (importingModel) {
+      const timeoutId = setTimeout(() => {
+        setImportingModel(null)
+      }, 10000) // 10 seconds fallback
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [importingModel])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -830,6 +862,28 @@ function ProviderDetail() {
                         <Link to={route.hub.index}>{t('common:hub')}</Link>
                       </p>
                     </div>
+                  )}
+                  {/* Show importing skeleton first if there's one */}
+                  {importingModel && (
+                    <CardItem
+                      key="importing-skeleton"
+                      title={
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 animate-pulse">
+                            <div className="bg-accent/20 flex gap-2 text-accent px-2 py-1 rounded-full text-xs">
+                              <IconLoader
+                                size={16}
+                                className="animate-spin text-accent"
+                              />
+                              Importing...
+                            </div>
+                            <h1 className="font-medium line-clamp-1">
+                              {importingModel}
+                            </h1>
+                          </div>
+                        </div>
+                      }
+                    />
                   )}
                 </Card>
               </div>
