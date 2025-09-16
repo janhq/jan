@@ -54,7 +54,7 @@ function normalizeLatex(input: string): string {
       // --- Inline math: space \( ... \)
       s = s.replace(
         /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
-        (_, pre, inner, post) => `${pre}$${inner.trim()}$${post}`
+        (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
       return s
