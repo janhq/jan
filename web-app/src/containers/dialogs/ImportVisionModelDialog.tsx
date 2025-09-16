@@ -57,8 +57,6 @@ export const ImportVisionModelDialog = ({
     }
 
     try {
-      console.log(`Reading GGUF metadata for ${fileType}:`, filePath)
-
       // Handle validation differently for model files vs mmproj files
       if (fileType === 'model') {
         // For model files, use the standard validateGgufFile method
@@ -66,16 +64,16 @@ export const ImportVisionModelDialog = ({
           const result = await serviceHub.models().validateGgufFile(filePath)
 
           if (result.metadata) {
-            // Log full metadata for debugging
-            console.log(
-              `Full GGUF metadata for ${fileType}:`,
-              JSON.stringify(result.metadata, null, 2)
-            )
-
             // Check architecture from metadata
             const architecture =
               result.metadata.metadata?.['general.architecture']
-            console.log(`${fileType} architecture:`, architecture)
+
+            // Extract baseName and use it as model name if available
+            const baseName = result.metadata.metadata?.['general.basename']
+
+            if (baseName) {
+              setModelName(baseName)
+            }
 
             // Model files should NOT be clip
             if (architecture === 'clip') {
@@ -84,11 +82,6 @@ export const ImportVisionModelDialog = ({
               setValidationError(errorMessage)
               console.error(
                 'CLIP architecture detected in model file:',
-                architecture
-              )
-            } else {
-              console.log(
-                'Model validation passed. Architecture:',
                 architecture
               )
             }
@@ -109,16 +102,15 @@ export const ImportVisionModelDialog = ({
             path: filePath,
           })
 
-          console.log(
-            `Full GGUF metadata for ${fileType}:`,
-            JSON.stringify(metadata, null, 2)
-          )
 
           // Check if architecture matches expected type
           const architecture = (
             metadata as { metadata?: Record<string, string> }
           ).metadata?.['general.architecture']
-          console.log(`${fileType} architecture:`, architecture)
+
+          // Get general.baseName from metadata
+          const baseName = (metadata as { metadata?: Record<string, string> })
+            .metadata?.['general.basename']
 
           // MMProj files MUST be clip
           if (architecture !== 'clip') {
@@ -128,11 +120,19 @@ export const ImportVisionModelDialog = ({
               'Non-CLIP architecture detected in mmproj file:',
               architecture
             )
-          } else {
-            console.log(
-              'MMProj validation passed. Architecture:',
-              architecture
-            )
+          } else if (
+            baseName &&
+            modelName &&
+            !modelName.toLowerCase().includes(baseName.toLowerCase()) &&
+            !baseName.toLowerCase().includes(modelName.toLowerCase())
+          ) {
+            // Validate that baseName and model name are compatible (one should contain the other)
+            const errorMessage = `MMProj file baseName "${baseName}" does not match model name "${modelName}". The MMProj file should be compatible with the selected model.`
+            setMmprojValidationError(errorMessage)
+            console.error('BaseName mismatch in mmproj file:', {
+              baseName,
+              modelName,
+            })
           }
         } catch (directError) {
           console.error('Failed to validate mmproj file directly:', directError)
@@ -179,14 +179,14 @@ export const ImportVisionModelDialog = ({
 
       if (type === 'model') {
         setModelFile(selectedFile)
-        // Auto-generate model name from GGUF file
+        // Set temporary model name from filename (will be overridden by baseName from metadata if available)
         const sanitizedName = fileName
           .replace(/\s/g, '-')
           .replace(/\.(gguf|GGUF)$/, '')
           .replace(/[^a-zA-Z0-9/_.-]/g, '') // Remove any characters not allowed in model IDs
         setModelName(sanitizedName)
 
-        // Validate the selected model file
+        // Validate the selected model file (this will update model name with baseName from metadata)
         await validateModelFile(selectedFile)
       } else {
         setMmProjFile(selectedFile)
