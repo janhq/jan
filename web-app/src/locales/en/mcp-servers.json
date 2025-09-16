@@ -26,6 +26,12 @@
     "errorParse": "Failed to parse initial data",
     "errorPaste": "Invalid JSON format in pasted content",
     "errorFormat": "Invalid JSON format",
+    "errorServerName": "Server name is required and cannot be empty",
+    "errorMissingServerNameKey": "JSON must be structured as {\"serverName\": {config}} - missing server name key",
+    "errorServerConfig": "Invalid server configuration for '{{serverName}}'",
+    "errorMissingCommand": "Missing required 'command' field for server '{{serverName}}'",
+    "errorMissingUrl": "Missing required 'url' field for server '{{serverName}}'",
+    "errorInvalidType": "Invalid transport type for server '{{serverName}}'. Must be 'stdio', 'http', or 'sse'",
     "save": "Save"
   },
   "checkParams": "Please check the parameters according to the tutorial.",

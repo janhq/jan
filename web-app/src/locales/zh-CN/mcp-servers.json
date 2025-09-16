@@ -26,6 +26,12 @@
     "errorParse": "解析初始数据失败",
     "errorPaste": "粘贴内容中的 JSON 格式无效",
     "errorFormat": "JSON 格式无效",
+    "errorServerName": "服务器名称为必填项，不能为空",
+    "errorMissingServerNameKey": "JSON 必须按 {\"serverName\": {config}} 格式结构化 - 缺少服务器名称键",
+    "errorServerConfig": "服务器 '{{serverName}}' 的配置无效",
+    "errorMissingCommand": "服务器 '{{serverName}}' 缺少必需的 'command' 字段",
+    "errorMissingUrl": "服务器 '{{serverName}}' 缺少必需的 'url' 字段",
+    "errorInvalidType": "服务器 '{{serverName}}' 的传输类型无效。必须为 'stdio'、'http' 或 'sse'",
     "save": "保存"
   },
   "checkParams": "请根据教程检查参数。",

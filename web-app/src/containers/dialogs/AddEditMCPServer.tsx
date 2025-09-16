@@ -285,9 +285,20 @@ export default function AddEditMCPServer({
           setError(t('mcp-servers:editJson.errorFormat'))
           return
         }
-        // For each server in the JSON, call onSave
+        // Check if this looks like a server config object instead of the expected format
+        if (parsedData.command || parsedData.url) {
+          setError(t('mcp-servers:editJson.errorMissingServerNameKey'))
+          return
+        }
+
+        // For each server in the JSON, validate serverName and call onSave
         Object.entries(parsedData).forEach(([serverName, config]) => {
-          onSave(serverName.trim(), config as MCPServerConfig)
+          const trimmedServerName = serverName.trim()
+          if (!trimmedServerName) {
+            setError(t('mcp-servers:editJson.errorServerName'))
+            return
+          }
+          onSave(trimmedServerName, config as MCPServerConfig)
         })
         onOpenChange(false)
         resetForm()
