@@ -32,6 +32,7 @@
     "zustand": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.5"
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "hash-wasm": "^4.12.0"
   }
 }

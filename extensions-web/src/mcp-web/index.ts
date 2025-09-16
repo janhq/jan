@@ -9,17 +9,21 @@ import { getSharedAuthService, JanAuthService } from '../shared'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './oauth-provider'
+import { MCPRetryManager } from './retry-manager'
+import { createErrorResponse, createSimpleErrorResponse, getExhaustedErrorResponse } from './error'
+import { MCP_RETRY_CONFIG, MCP_ENDPOINTS } from './const'
 
 // JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
 declare const JAN_API_BASE: string
 
 export default class MCPExtensionWeb extends MCPExtension {
-  private mcpEndpoint = '/mcp'
+  private mcpEndpoint = MCP_ENDPOINTS.mcp
   private tools: MCPTool[] = []
   private initialized = false
   private authService: JanAuthService
   private mcpClient: Client | null = null
   private oauthProvider: JanMCPOAuthProvider
+  private retryManager: MCPRetryManager
 
   constructor(
     url: string,
@@ -32,6 +36,7 @@ export default class MCPExtensionWeb extends MCPExtension {
     super(url, name, productName, active, description, version)
     this.authService = getSharedAuthService()
     this.oauthProvider = new JanMCPOAuthProvider(this.authService)
+    this.retryManager = new MCPRetryManager(MCP_RETRY_CONFIG)
   }
 
   async onLoad(): Promise<void> {
@@ -49,7 +54,10 @@ export default class MCPExtensionWeb extends MCPExtension {
   async onUnload(): Promise<void> {
     this.tools = []
     this.initialized = false
-    
+
+    // Clear retry manager
+    this.retryManager.clear()
+
     // Close MCP client
     if (this.mcpClient) {
       try {
@@ -149,10 +157,18 @@ export default class MCPExtensionWeb extends MCPExtension {
 
   async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult> {
     if (!this.mcpClient) {
-      return {
-        error: 'MCP client not initialized',
-        content: [{ type: 'text', text: 'MCP client not initialized' }]
-      }
+      return createSimpleErrorResponse(
+        'MCP client not initialized',
+        'MCP client not initialized'
+      )
+    }
+
+    const callKey = await this.retryManager.generateCallKey(toolName, args)
+
+    // Check if we should attempt this call based on failure history (includes jitter delay if configured)
+    const shouldRetry = await this.retryManager.shouldRetry(callKey)
+    if (!shouldRetry) {
+      return getExhaustedErrorResponse(toolName, callKey, this.retryManager)
     }
 
     try {
@@ -161,23 +177,24 @@ export default class MCPExtensionWeb extends MCPExtension {
         name: toolName,
         arguments: args
       })
-      
       console.log(`MCP tool call result for ${toolName}:`, result)
-      
       // Handle tool call result
       if (result.isError) {
         const errorText = Array.isArray(result.content) && result.content.length > 0
           ? (result.content[0].type === 'text' ? (result.content[0] as any).text : 'Tool call failed')
           : 'Tool call failed'
-        
-        return {
-          error: errorText,
-          content: [{ type: 'text', text: errorText }]
-        }
+
+        // Record failure for retry tracking
+        this.retryManager.recordFailure(callKey)
+
+        return createErrorResponse(errorText, callKey, this.retryManager)
       }
 
+      // Successful call - clear any failure record
+      this.retryManager.recordSuccess(callKey)
+
       // Convert MCP content to Jan's format
-      const content = Array.isArray(result.content) 
+      const content = Array.isArray(result.content)
         ? result.content.map(item => {
             if (item.type === 'text') {
               return { type: 'text' as const, text: (item as any).text }
@@ -195,11 +212,11 @@ export default class MCPExtensionWeb extends MCPExtension {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${toolName}:`, error)
-      
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: errorMessage }]
-      }
+
+      // Record failure for retry tracking
+      this.retryManager.recordFailure(callKey)
+
+      return createErrorResponse(errorMessage, callKey, this.retryManager)
     }
   }
 
