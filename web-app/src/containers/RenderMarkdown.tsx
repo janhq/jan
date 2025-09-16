@@ -25,6 +25,43 @@ interface MarkdownProps {
   isWrapping?: boolean
 }
 
+/**
+ * Preprocessor: normalize LaTeX fragments into $ / $$.
+ * - converts \[...\] on their own lines -> $$...$$
+ * - converts \( ... \) with surrounding spaces -> $...$
+ * - skips code blocks, inline code, and HTML tags
+ */
+function normalizeLatex(input: string): string {
+  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[^>]+>)/g)
+
+  return segments
+    .map((segment) => {
+      if (!segment) return ''
+
+      // Skip code blocks, inline code, html tags
+      if (/^```[\s\S]*```$/.test(segment)) return segment
+      if (/^`[^`]*`$/.test(segment)) return segment
+      if (/^<[^>]+>$/.test(segment)) return segment
+
+      let s = segment
+
+      // --- Display math: \[...\] surrounded by newlines
+      s = s.replace(
+        /(^|\n)\\\[\s*\n([\s\S]*?)\n\s*\\\](?=\n|$)/g,
+        (_, pre, inner) => `${pre}$$\n${inner.trim()}\n$$`
+      )
+
+      // --- Inline math: space \( ... \)
+      s = s.replace(
+        /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
+        (_, pre, inner, post) => `${pre}$${inner.trim()}$${post}`
+      )
+
+      return s
+    })
+    .join('')
+}
+
 function RenderMarkdownComponent({
   content,
   enableRawHtml,
@@ -199,7 +236,7 @@ function RenderMarkdownComponent({
         rehypePlugins={rehypePlugins}
         components={mergedComponents}
       >
-        {content}
+        {normalizeLatex(content)}
       </ReactMarkdown>
     </div>
   )
