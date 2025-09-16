@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import {
   Popover,
@@ -121,17 +122,20 @@ const DropdownModelProvider = ({
 
               // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
               // Check if model has a custom capabilities config flag
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const hasUserConfiguredCapabilities = (model as any)._userConfiguredCapabilities === true
-              
-              if (!capabilities.includes('vision') && !hasUserConfiguredCapabilities) {
+
+              const hasUserConfiguredCapabilities =
+                (model as any)._userConfiguredCapabilities === true
+
+              if (
+                !capabilities.includes('vision') &&
+                !hasUserConfiguredCapabilities
+              ) {
                 const updatedModels = [...provider.models]
                 updatedModels[modelIndex] = {
                   ...model,
                   capabilities: [...capabilities, 'vision'],
                   // Mark this as auto-detected, not user-configured
                   _autoDetectedVision: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any
 
                 updateProvider('llamacpp', { models: updatedModels })
@@ -417,13 +421,23 @@ const DropdownModelProvider = ({
             getProviderByName
           )
           .catch((error) => {
-            console.debug('Error checking mmproj for model:', searchableModel.model.id, error)
+            console.debug(
+              'Error checking mmproj for model:',
+              searchableModel.model.id,
+              error
+            )
           })
 
         // Also check vision capability (async, don't block UI)
-        checkAndUpdateModelVisionCapability(searchableModel.model.id).catch((error) => {
-          console.debug('Error checking vision capability for model:', searchableModel.model.id, error)
-        })
+        checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
+          (error) => {
+            console.debug(
+              'Error checking vision capability for model:',
+              searchableModel.model.id,
+              error
+            )
+          }
+        )
       }
     },
     [
