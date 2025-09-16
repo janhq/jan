@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - dev
+      - release/**
     paths:
       - '.github/workflows/jan-tauri-build-nightly-external.yaml'
       - '.github/workflows/template-tauri-build-*-external.yml'
