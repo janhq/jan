@@ -61,3 +61,4 @@ src-tauri/resources/
 ## test
 test-data
 llm-docs
+.claude
