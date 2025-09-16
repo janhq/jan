@@ -28,6 +28,7 @@
     "errorFormat": "Định dạng JSON không hợp lệ",
     "errorServerName": "Tên máy chủ là bắt buộc và không được để trống",
     "errorMissingServerNameKey": "JSON phải có cấu trúc {\"serverName\": {config}} - thiếu khóa tên máy chủ",
+    "errorInvalidType": "Loại '{{type}}' cho máy chủ '{{serverName}}' không hợp lệ. Loại phải là 'stdio', 'http' hoặc 'sse'",
     "save": "Lưu"
   },
   "checkParams": "Vui lòng kiểm tra các tham số theo hướng dẫn.",

@@ -291,15 +291,28 @@ export default function AddEditMCPServer({
           return
         }
 
-        // For each server in the JSON, validate serverName and call onSave
-        Object.entries(parsedData).forEach(([serverName, config]) => {
+        // For each server in the JSON, validate serverName and config
+        for (const [serverName, config] of Object.entries(parsedData)) {
           const trimmedServerName = serverName.trim()
           if (!trimmedServerName) {
             setError(t('mcp-servers:editJson.errorServerName'))
             return
           }
-          onSave(trimmedServerName, config as MCPServerConfig)
-        })
+
+          // Validate the config object
+          const serverConfig = config as MCPServerConfig
+
+          // Validate type field if present
+          if (serverConfig.type && !['stdio', 'http', 'sse'].includes(serverConfig.type)) {
+            setError(t('mcp-servers:editJson.errorInvalidType', {
+              serverName: trimmedServerName,
+              type: serverConfig.type
+            }))
+            return
+          }
+
+          onSave(trimmedServerName, serverConfig as MCPServerConfig)
+        }
         onOpenChange(false)
         resetForm()
         setError(null)

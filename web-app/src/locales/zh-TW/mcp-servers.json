@@ -28,6 +28,7 @@
     "errorFormat": "JSON 格式無效",
     "errorServerName": "伺服器名稱為必填項目，不能為空",
     "errorMissingServerNameKey": "JSON 必須依照 {\"serverName\": {config}} 結構 - 缺少伺服器名稱鍵值",
+    "errorInvalidType": "伺服器 '{{serverName}}' 的類型 '{{type}}' 無效。類型必須是 'stdio'、'http' 或 'sse'",
     "save": "儲存"
   },
   "checkParams": "請根據教學檢查參數。",
