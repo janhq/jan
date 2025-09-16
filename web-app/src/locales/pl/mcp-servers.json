@@ -26,6 +26,8 @@
     "errorParse": "Błąd parsowania wstępnych danych",
     "errorPaste": "Wprowadzono JSON o niepoprawnym formacie",
     "errorFormat": "Niepoprawny format JSON",
+    "errorServerName": "Nazwa serwera jest wymagana i nie może być pusta",
+    "errorMissingServerNameKey": "JSON musi być w formacie {\"serverName\": {config}} - brakuje klucza nazwy serwera",
     "save": "Zapisz"
   },
   "checkParams": "Proszę sprawdzić parametry we wprowadzeniu.",

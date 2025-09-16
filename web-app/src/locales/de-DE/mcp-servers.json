@@ -26,6 +26,8 @@
     "errorParse": "Fehler beim Parsen der initialen Daten",
     "errorPaste": "Ungültiges JSON Format in dem eingefügten Inhalt",
     "errorFormat": "Ungültiges JSON Format",
+    "errorServerName": "Servername ist erforderlich und darf nicht leer sein",
+    "errorMissingServerNameKey": "JSON muss als {\"serverName\": {config}} strukturiert sein - fehlender Servername-Schlüssel",
     "save": "Speichern"
   },
   "checkParams": "Bitte überprüfe die Parameter gemäß dem Tutorial.",

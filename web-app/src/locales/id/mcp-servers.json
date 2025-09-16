@@ -26,6 +26,8 @@
     "errorParse": "Gagal mengurai data awal",
     "errorPaste": "Format JSON tidak valid pada konten yang ditempel",
     "errorFormat": "Format JSON tidak valid",
+    "errorServerName": "Nama server wajib diisi dan tidak boleh kosong",
+    "errorMissingServerNameKey": "JSON harus berstruktur sebagai {\"serverName\": {config}} - kunci nama server hilang",
     "save": "Simpan"
   },
   "checkParams": "Silakan periksa parameter sesuai dengan tutorial.",

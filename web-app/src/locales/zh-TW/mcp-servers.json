@@ -26,6 +26,8 @@
     "errorParse": "解析初始資料失敗",
     "errorPaste": "貼上內容的 JSON 格式無效",
     "errorFormat": "JSON 格式無效",
+    "errorServerName": "伺服器名稱為必填項目，不能為空",
+    "errorMissingServerNameKey": "JSON 必須依照 {\"serverName\": {config}} 結構 - 缺少伺服器名稱鍵值",
     "save": "儲存"
   },
   "checkParams": "請根據教學檢查參數。",
