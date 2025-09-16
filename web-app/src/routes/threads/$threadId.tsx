@@ -22,7 +22,7 @@ import { useAppearance } from '@/hooks/useAppearance'
 import { ContentType, ThreadMessage } from '@janhq/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useChat } from '@/hooks/useChat'
-import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 
 // as route.threadsDetail
@@ -47,6 +47,7 @@ function ThreadDetail() {
   const { appMainViewBgColor, chatWidth } = useAppearance()
   const { sendMessage } = useChat()
   const isSmallScreen = useSmallScreen()
+  const isMobile = useMobileScreen()
   useTools()
 
   const { messages } = useMessages(
@@ -308,14 +309,19 @@ function ThreadDetail() {
           ref={scrollContainerRef}
           onScroll={handleScroll}
           className={cn(
-            'flex flex-col h-full w-full overflow-auto px-4 pt-4 pb-3'
+            'flex flex-col h-full w-full overflow-auto pt-4 pb-3',
+            // Mobile-first responsive padding
+            isMobile ? 'px-3' : 'px-4'
           )}
         >
           <div
             className={cn(
-              'w-4/6 mx-auto flex max-w-full flex-col grow',
-              chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-              isSmallScreen && 'w-full'
+              'mx-auto flex max-w-full flex-col grow',
+              // Mobile-first width constraints
+              // Mobile and small screens always use full width, otherwise compact chat uses constrained width
+              isMobile || isSmallScreen || chatWidth !== 'compact'
+                ? 'w-full'
+                : 'w-full md:w-4/6'
             )}
           >
             {messages &&
@@ -355,9 +361,13 @@ function ThreadDetail() {
         </div>
         <div
           className={cn(
-            'mx-auto pt-2 pb-3 shrink-0 relative px-2',
-            chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-            isSmallScreen && 'w-full'
+            'mx-auto pt-2 pb-3 shrink-0 relative',
+            // Responsive padding and width
+            isMobile ? 'px-3' : 'px-2',
+            // Width: mobile/small screens or non-compact always full, compact desktop uses constrained
+            isMobile || isSmallScreen || chatWidth !== 'compact'
+              ? 'w-full'
+              : 'w-full md:w-4/6'
           )}
         >
           <div
