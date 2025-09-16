@@ -30,7 +30,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_hardware::init())
@@ -122,8 +121,8 @@ pub fn run() {
                     ])
                     .build(),
             )?;
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             // Install extensions
             if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
                 log::error!("Failed to install extensions: {}", e);
@@ -148,9 +147,10 @@ pub fn run() {
             let app_handle = app.clone();
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    // Hide window immediately
+                    // Hide window immediately (not available on mobile platforms)
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.hide();
+                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                        { let _ = window.hide(); }
                         let _ = window.emit("kill-mcp-servers", ());
                     }
 

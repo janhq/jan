@@ -1,7 +1,7 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import { IconLayoutSidebar } from '@tabler/icons-react'
-import { ReactNode } from '@tanstack/react-router'
+import { ReactNode } from 'react'
 
 type HeaderPageProps = {
   children?: ReactNode

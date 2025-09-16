@@ -12,12 +12,15 @@ use crate::core::state::AppState;
 
 #[tauri::command]
 pub fn factory_reset(app_handle: tauri::AppHandle, state: State<'_, AppState>) {
-    // close window
-    let windows = app_handle.webview_windows();
-    for (label, window) in windows.iter() {
-        window.close().unwrap_or_else(|_| {
-            log::warn!("Failed to close window: {:?}", label);
-        });
+    // close window (not available on mobile platforms)
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let windows = app_handle.webview_windows();
+        for (label, window) in windows.iter() {
+            window.close().unwrap_or_else(|_| {
+                log::warn!("Failed to close window: {:?}", label);
+            });
+        }
     }
     let data_folder = get_jan_data_folder_path(app_handle.clone());
     log::info!("Factory reset, removing data folder: {:?}", data_folder);

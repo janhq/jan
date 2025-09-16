@@ -26,6 +26,7 @@ src-tauri/resources/bin
 # Helper tools
 .opencode
 OpenCode.md
+Claude.md
 archive/
 .cache/
 
