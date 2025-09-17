@@ -15,7 +15,7 @@ Before testing, set-up the following in the old version to make sure that we can
 - [ ] Create a new chat with the custom assistant 
 - [ ] Change the `App Data` to some other folder
 - [ ] Create a Custom Provider 
-- [ ] Disabled some model providers
+- [ ] Disable some model providers
 - [NEW] Change llama.cpp setting of 2 models 
 #### Validate that the update does not corrupt existing user data or settings (before and after update show the same information):
 - [ ] Threads
@@ -110,7 +110,7 @@ In Remote Model Providers:
 	- [ ] Hugging Face
 - [ ] Models should appear as available on the selectable dropdown in chat input once some value is input in the API key field. (it could be the wrong API key)
 - [ ] Once a valid API key is used, user can select a model from that provider and chat without any error. 
-- [ ] Delete a model and ensure that it doesn't show up in the `Modesl` list view or in the selectable dropdown in chat input.
+- [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
 - [ ] Adding of new model manually works and user can chat with the newly added model without error (you can add back the model you just delete for testing)
 - [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Jan
@@ -161,7 +161,7 @@ Ensure that the following section information show up for hardware
 - [ ] When the user click `Allow Once` on the pop up, a confirmation dialog will appear again when the tool is called next time.
 - [ ] When the user click `Always Allow` on the pop up, the tool will retain permission and won't ask for confirmation again. (this applied at an individual tool level, not at the MCP server level)
 - [ ] If `Allow All MCP Tool Permissions` is enabled, in every new thread,  there should not be any confirmation dialog pop up when a tool is called.
-- [ ] When the pop-up appear, make sure that the `Tool Parameters` is also shown with detail in the pop-up.a
+- [ ] When the pop-up appear, make sure that the `Tool Parameters` is also shown with detail in the pop-up
 - [ ] [0.6.9] Go to Enter JSON configuration when created a new MCp => paste the JSON config inside => click `Save` => server works
 - [ ] [0.6.9] If individual JSON config format is failed, the MCP server should not be activated
 - [ ] [0.6.9] Make sure that MCP server can be used with streamable-http transport => connect to Smithery and test MCP server
@@ -214,7 +214,7 @@ Ensure that the following section information show up for hardware
 - [ ] User can send message with different type of text content (e.g text, emoji, ...)
 - [ ] When request model to generate a markdown table, the table is correctly formatted as returned from the model.
 - [ ] When model generate code, ensure that the code snippets is properly formatted according to the `Appearance -> Code Block` setting.
-- [ ] Users can edit their old message and and user can regenerate the answer based on the new message
+- [ ] Users can edit their old message and user can regenerate the answer based on the new message
 - [ ] User can click `Copy` to copy the model response
 - [ ] User can click `Delete` to delete either the user message or the model response.
 - [ ] The token speed appear when a response from model is being generated and the final value is show under the response. 
