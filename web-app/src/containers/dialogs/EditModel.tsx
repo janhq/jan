@@ -16,6 +16,9 @@ import {
   IconEye,
   IconTool,
   IconAlertTriangle,
+  // IconWorld,
+  // IconAtom,
+  IconCodeCircle2,
   IconLoader2,
   IconSparkles,
 } from '@tabler/icons-react'
@@ -288,6 +291,50 @@ export const DialogEditModel = ({
                 disabled={isLoading || !(capabilities.tools && capabilities.vision)}
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">
+                  {t('providers:editModel.embeddings')}
+                </span>
+              </div>
+              <Switch
+                id="embedding-capability"
+                checked={capabilities.embeddings}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('embeddings', checked)
+                }
+              />
+            </div>
+
+            {/* <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconWorld className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">Web Search</span>
+              </div>
+              <Switch
+                id="web_search-capability"
+                checked={capabilities.web_search}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('web_search', checked)
+                }
+              />
+            </div> */}
+
+            {/* <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconAtom className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">{t('reasoning')}</span>
+              </div>
+              <Switch
+                id="reasoning-capability"
+                checked={capabilities.reasoning}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('reasoning', checked)
+                }
+              />
+            </div> */}
           </div>
         </div>
 

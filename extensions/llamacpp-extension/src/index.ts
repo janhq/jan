@@ -1668,7 +1668,7 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
       args.push('--embedding')
-      args.push('--pooling', 'mean')
+      //args.push('--pooling mean')
     } else {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
@@ -1683,7 +1683,6 @@ export default class llamacpp_extension extends AIEngine {
       }
       if (cfg.defrag_thold && cfg.defrag_thold != 0.1)
         args.push('--defrag-thold', String(cfg.defrag_thold))
-
       if (cfg.rope_scaling && cfg.rope_scaling != 'none')
         args.push('--rope-scaling', cfg.rope_scaling)
       if (cfg.rope_scale && cfg.rope_scale != 1)
@@ -2190,6 +2189,37 @@ export default class llamacpp_extension extends AIEngine {
       'tokenizer.chat_template'
     ]?.includes('tools')
   }
+
+  /**
+   * Check if a embeddings is supported by the model
+   * Currently read from GGUF metadata
+   * @param modelId
+   * @returns
+   */
+  async isEmbeddingsSupported(modelId: string): Promise<boolean> {
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelConfigPath = await joinPath([
+      this.providerPath,
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: modelConfigPath,
+    })
+    // model option is required
+    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    const modelPath = await joinPath([
+      janDataFolderPath,
+      modelConfig.model_path,
+    ])
+
+    const metadata = await readGgufMetadata(modelPath);
+    const hasPoolingTypeKey = Object.keys(metadata?.metadata).some(key => key.includes("pooling_type"));
+
+    return hasPoolingTypeKey;
+  }
+
   /**
    * Get total system memory including both VRAM and RAM
    */

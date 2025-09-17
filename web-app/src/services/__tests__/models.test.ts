@@ -47,6 +47,7 @@ describe('DefaultModelsService', () => {
     isModelSupported: vi.fn(),
     isToolSupported: vi.fn(),
     checkMmprojExists: vi.fn(),
+    isEmbeddingsSupported: vi.fn(),
   }
 
   const mockEngineManager = {

@@ -564,8 +564,10 @@ async fn proxy_request(
                 .unwrap());
         }
     };
+    // Redirect to OpenAI compatible endpoint /v1 on llama.cpp server
+    //https://github.com/ggml-org/llama.cpp/tree/master/tools/server
 
-    let upstream_url = format!("http://127.0.0.1:{port}{destination_path}");
+    let upstream_url = format!("http://127.0.0.1:{}/v1{}", port, destination_path);
 
     let mut outbound_req = client.request(method.clone(), &upstream_url);
 

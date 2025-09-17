@@ -255,7 +255,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Loads a model into memory
    */
-  abstract load(modelId: string, settings?: any): Promise<SessionInfo>
+  abstract load(modelId: string, settings?: any, isEmbedding?: boolean): Promise<SessionInfo>
 
   /**
    * Unloads a model from memory
@@ -299,4 +299,10 @@ export abstract class AIEngine extends BaseExtension {
    * @param modelId
    */
   abstract isToolSupported(modelId: string): Promise<boolean>
+
+  /**
+   * Check if a embedding is supported by the model
+   * @param modelId
+   */
+  abstract isEmbeddingsSupported(modelId: string): Promise<boolean>
 }

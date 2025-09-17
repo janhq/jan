@@ -328,7 +328,15 @@ export class DefaultModelsService implements ModelsService {
         )
       : undefined
 
-    return engine.load(model, settings).catch((error) => {
+      const selectedModel = provider.models.find((m: any) => m.id === model)
+      var isEmbeddings = false;
+      if (selectedModel) {
+        const modelCapabilities = selectedModel.capabilities || []
+        isEmbeddings = modelCapabilities.includes('embeddings')
+      }
+
+
+    return engine.load(model, settings, isEmbeddings).catch((error) => {
       console.error(
         `Failed to start model ${model} for provider ${provider.provider}:`,
         error
@@ -342,6 +350,13 @@ export class DefaultModelsService implements ModelsService {
     if (!engine) return false
 
     return engine.isToolSupported(modelId)
+  }
+
+  async isEmbeddingsSupported(modelId: string): Promise<boolean> {
+    const engine = this.getEngine()
+    if (!engine) return false
+
+    return engine.isEmbeddingsSupported(modelId)
   }
 
   async checkMmprojExistsAndUpdateOffloadMMprojSetting(

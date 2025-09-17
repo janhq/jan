@@ -391,4 +391,11 @@ export default class JanProviderWeb extends AIEngine {
     console.log(`Checking tool support for Jan model ${modelId}: supported`)
     return true
   }
+
+  async isEmbeddingsSupported(modelId: string): Promise<boolean> {
+    // Jan models need to check from wed for embeddings support
+    console.log(`Checking embeddings support for Jan model ${modelId}: not supported`);
+    return false;
+  }
+
 }

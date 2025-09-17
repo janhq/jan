@@ -78,7 +78,7 @@ export class TauriProvidersService extends DefaultProvidersService {
                 try {
                   const toolSupported = await value.isToolSupported(model.id)
                   if (toolSupported) {
-                    capabilities = [ModelCapabilities.TOOLS]
+                    capabilities.push(ModelCapabilities.TOOLS);
                   }
                 } catch (error) {
                   console.warn(
@@ -87,6 +87,18 @@ export class TauriProvidersService extends DefaultProvidersService {
                   )
                   // Continue without tool capabilities if check fails
                 }
+
+                // Try to check embeddings support, but don't let failures block the model
+                try {
+                  const embeddingsSupported = await value.isEmbeddingsSupported(model.id);
+                  if (embeddingsSupported) {
+                    capabilities.push(ModelCapabilities.EMBEDDINGS);
+                  }
+                } catch (error) {
+                  console.warn(`Failed to check embeddings support for model ${model.id}:`, error);
+                  // Continue without embeddings capabilities if check fails
+                }
+
               }
 
               return {
