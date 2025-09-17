@@ -24,6 +24,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useChat } from '@/hooks/useChat'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -301,10 +303,10 @@ function ThreadDetail() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownAssistant />
+          {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
         </div>
       </HeaderPage>
-      <div className="flex flex-col h-[calc(100%-40px)] ">
+      <div className="flex flex-col h-[calc(100%-40px)]">
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}

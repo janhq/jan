@@ -20,6 +20,8 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMobileScreen } from '@/hooks/useMediaQuery'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -57,7 +59,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col justify-center py-5">
       <HeaderPage>
-        <DropdownAssistant />
+        {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>
       <div className={cn(
         "h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0",

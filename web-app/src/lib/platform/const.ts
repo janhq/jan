@@ -49,4 +49,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Extensions settings page - disabled for web
   [PlatformFeature.EXTENSIONS_SETTINGS]: isPlatformTauri(),
+
+  // Assistant functionality - disabled for web
+  [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
 }

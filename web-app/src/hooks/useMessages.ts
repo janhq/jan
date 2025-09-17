@@ -29,7 +29,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
     const currentAssistant = useAssistant.getState().currentAssistant
 
     const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
     const newMessage = {
       ...message,

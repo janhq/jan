@@ -23,6 +23,7 @@ vi.mock('@/lib/platform/const', () => ({
     mcpAutoApproveTools: false,
     mcpServersSettings: true,
     extensionsSettings: true,
+    assistants: true,
   }
 }))
 
