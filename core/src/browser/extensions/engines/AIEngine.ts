@@ -54,7 +54,7 @@ export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec
 export interface chatCompletionRequest {
   model: string // Model ID, though for local it might be implicit via sessionInfo
   messages: chatCompletionRequestMessage[]
-  return_progress: boolean
+  return_progress?: boolean
   tools?: Tool[]
   tool_choice?: ToolChoice
   // Core sampling parameters
