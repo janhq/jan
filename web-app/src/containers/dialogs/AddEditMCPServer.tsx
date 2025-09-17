@@ -303,11 +303,16 @@ export default function AddEditMCPServer({
           const serverConfig = config as MCPServerConfig
 
           // Validate type field if present
-          if (serverConfig.type && !['stdio', 'http', 'sse'].includes(serverConfig.type)) {
-            setError(t('mcp-servers:editJson.errorInvalidType', {
-              serverName: trimmedServerName,
-              type: serverConfig.type
-            }))
+          if (
+            serverConfig.type &&
+            !['stdio', 'http', 'sse'].includes(serverConfig.type)
+          ) {
+            setError(
+              t('mcp-servers:editJson.errorInvalidType', {
+                serverName: trimmedServerName,
+                type: serverConfig.type,
+              })
+            )
             return
           }
 
@@ -366,7 +371,12 @@ export default function AddEditMCPServer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        showCloseButton={false}
+        onInteractOutside={(e) => {
+          e.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>
