@@ -8,6 +8,7 @@ import { IconLogin, IconBrandGoogleFilled } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from 'sonner'
+import type { ProviderType } from '@jan/extensions-web'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +23,7 @@ export const AuthLoginButton = () => {
 
   const enabledProviders = getEnabledProviders()
 
-  const handleProviderLogin = async (providerId: string) => {
+  const handleProviderLogin = async (providerId: ProviderType) => {
     try {
       setIsLoading(true)
       await loginWithProvider(providerId)
@@ -64,7 +65,7 @@ export const AuthLoginButton = () => {
           return (
             <DropdownMenuItem
               key={provider.id}
-              onClick={() => handleProviderLogin(provider.id)}
+              onClick={() => handleProviderLogin(provider.id as ProviderType)}
               disabled={isLoading}
               className="gap-2"
             >
