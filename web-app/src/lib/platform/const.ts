@@ -52,4 +52,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Assistant functionality - disabled for web
   [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
+
+  // Authentication (Google OAuth) - enabled for web only
+  [PlatformFeature.AUTHENTICATION]: !isPlatformTauri(),
 }

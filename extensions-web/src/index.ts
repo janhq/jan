@@ -9,6 +9,15 @@ export { default as ConversationalExtensionWeb } from './conversational-web'
 export { default as JanProviderWeb } from './jan-provider-web'
 export { default as MCPExtensionWeb } from './mcp-web'
 
+// Re-export auth functionality
+export {
+  JanAuthService,
+  getSharedAuthService,
+  AUTH_STORAGE_KEYS,
+  AUTH_EVENTS,
+  AUTH_BROADCAST_CHANNEL,
+} from './shared/auth'
+
 // Re-export types
 export type {
   WebExtensionRegistry,
@@ -17,8 +26,16 @@ export type {
   WebExtensionLoader,
   ConversationalWebModule,
   JanProviderWebModule,
-  MCPWebModule
+  MCPWebModule,
 } from './types'
+
+// Re-export auth types
+export type {
+  User,
+  AuthTokens,
+  AuthProvider,
+  AuthProviderRegistry,
+} from './shared/auth'
 
 // Extension registry for dynamic loading
 export const WEB_EXTENSIONS: WebExtensionRegistry = {

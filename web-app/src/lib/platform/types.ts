@@ -54,4 +54,7 @@ export enum PlatformFeature {
 
   // Assistant functionality (creation, editing, management)
   ASSISTANTS = 'assistants',
+
+  // Authentication (Google OAuth, user profiles)
+  AUTHENTICATION = 'authentication',
 }
