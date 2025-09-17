@@ -44,129 +44,142 @@ export const ImportVisionModelDialog = ({
   >(null)
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
 
-  const validateGgufFile = useCallback(async (
-    filePath: string,
-    fileType: 'model' | 'mmproj'
-  ): Promise<void> => {
-    if (fileType === 'model') {
-      setIsValidating(true)
-      setValidationError(null)
-    } else {
-      setIsValidatingMmproj(true)
-      setMmprojValidationError(null)
-    }
-
-    try {
-      // Handle validation differently for model files vs mmproj files
+  const validateGgufFile = useCallback(
+    async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
       if (fileType === 'model') {
-        // For model files, use the standard validateGgufFile method
-        if (typeof serviceHub.models().validateGgufFile === 'function') {
-          const result = await serviceHub.models().validateGgufFile(filePath)
+        setIsValidating(true)
+        setValidationError(null)
+      } else {
+        setIsValidatingMmproj(true)
+        setMmprojValidationError(null)
+      }
 
-          if (result.metadata) {
-            // Check architecture from metadata
-            const architecture =
-              result.metadata.metadata?.['general.architecture']
+      try {
+        // Handle validation differently for model files vs mmproj files
+        if (fileType === 'model') {
+          // For model files, use the standard validateGgufFile method
+          if (typeof serviceHub.models().validateGgufFile === 'function') {
+            const result = await serviceHub.models().validateGgufFile(filePath)
 
-            // Extract baseName and use it as model name if available
-            const baseName = result.metadata.metadata?.['general.basename']
+            if (result.metadata) {
+              // Check architecture from metadata
+              const architecture =
+                result.metadata.metadata?.['general.architecture']
 
-            if (baseName) {
-              setModelName(baseName)
+              // Extract baseName and use it as model name if available
+              const baseName = result.metadata.metadata?.['general.basename']
+
+              if (baseName) {
+                setModelName(baseName)
+              }
+
+              // Model files should NOT be clip
+              if (architecture === 'clip') {
+                const errorMessage =
+                  'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+                setValidationError(errorMessage)
+                console.error(
+                  'CLIP architecture detected in model file:',
+                  architecture
+                )
+              }
             }
 
-            // Model files should NOT be clip
-            if (architecture === 'clip') {
-              const errorMessage =
-                'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
-              setValidationError(errorMessage)
+            if (!result.isValid) {
+              setValidationError(result.error || 'Model validation failed')
+              console.error('Model validation failed:', result.error)
+            }
+          }
+        } else {
+          // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
+          try {
+            // Import the readGgufMetadata function directly from Tauri
+            const { invoke } = await import('@tauri-apps/api/core')
+
+            const metadata = await invoke(
+              'plugin:llamacpp|read_gguf_metadata',
+              {
+                path: filePath,
+              }
+            )
+
+            // Check if architecture matches expected type
+            const architecture = (
+              metadata as { metadata?: Record<string, string> }
+            ).metadata?.['general.architecture']
+
+            // Get general.baseName from metadata
+            const baseName = (metadata as { metadata?: Record<string, string> })
+              .metadata?.['general.basename']
+
+            // MMProj files MUST be clip
+            if (architecture !== 'clip') {
+              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+              setMmprojValidationError(errorMessage)
               console.error(
-                'CLIP architecture detected in model file:',
+                'Non-CLIP architecture detected in mmproj file:',
                 architecture
               )
+            } else if (
+              baseName &&
+              modelName &&
+              !modelName.toLowerCase().includes(baseName.toLowerCase()) &&
+              !baseName.toLowerCase().includes(modelName.toLowerCase())
+            ) {
+              // Validate that baseName and model name are compatible (one should contain the other)
+              const errorMessage = `MMProj file baseName "${baseName}" does not match model name "${modelName}". The MMProj file should be compatible with the selected model.`
+              setMmprojValidationError(errorMessage)
+              console.error('BaseName mismatch in mmproj file:', {
+                baseName,
+                modelName,
+              })
             }
-          }
-
-          if (!result.isValid) {
-            setValidationError(result.error || 'Model validation failed')
-            console.error('Model validation failed:', result.error)
+          } catch (directError) {
+            console.error(
+              'Failed to validate mmproj file directly:',
+              directError
+            )
+            const errorMessage = `Failed to read MMProj metadata: ${
+              directError instanceof Error
+                ? directError.message
+                : 'Unknown error'
+            }`
+            setMmprojValidationError(errorMessage)
           }
         }
-      } else {
-        // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
-        try {
-          // Import the readGgufMetadata function directly from Tauri
-          const { invoke } = await import('@tauri-apps/api/core')
+      } catch (error) {
+        console.error(`Failed to validate ${fileType} file:`, error)
+        const errorMessage = `Failed to read ${fileType} metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
 
-          const metadata = await invoke('plugin:llamacpp|read_gguf_metadata', {
-            path: filePath,
-          })
-
-
-          // Check if architecture matches expected type
-          const architecture = (
-            metadata as { metadata?: Record<string, string> }
-          ).metadata?.['general.architecture']
-
-          // Get general.baseName from metadata
-          const baseName = (metadata as { metadata?: Record<string, string> })
-            .metadata?.['general.basename']
-
-          // MMProj files MUST be clip
-          if (architecture !== 'clip') {
-            const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
-            setMmprojValidationError(errorMessage)
-            console.error(
-              'Non-CLIP architecture detected in mmproj file:',
-              architecture
-            )
-          } else if (
-            baseName &&
-            modelName &&
-            !modelName.toLowerCase().includes(baseName.toLowerCase()) &&
-            !baseName.toLowerCase().includes(modelName.toLowerCase())
-          ) {
-            // Validate that baseName and model name are compatible (one should contain the other)
-            const errorMessage = `MMProj file baseName "${baseName}" does not match model name "${modelName}". The MMProj file should be compatible with the selected model.`
-            setMmprojValidationError(errorMessage)
-            console.error('BaseName mismatch in mmproj file:', {
-              baseName,
-              modelName,
-            })
-          }
-        } catch (directError) {
-          console.error('Failed to validate mmproj file directly:', directError)
-          const errorMessage = `Failed to read MMProj metadata: ${
-            directError instanceof Error ? directError.message : 'Unknown error'
-          }`
+        if (fileType === 'model') {
+          setValidationError(errorMessage)
+        } else {
           setMmprojValidationError(errorMessage)
         }
+      } finally {
+        if (fileType === 'model') {
+          setIsValidating(false)
+        } else {
+          setIsValidatingMmproj(false)
+        }
       }
-    } catch (error) {
-      console.error(`Failed to validate ${fileType} file:`, error)
-      const errorMessage = `Failed to read ${fileType} metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+    },
+    [modelName, serviceHub]
+  )
 
-      if (fileType === 'model') {
-        setValidationError(errorMessage)
-      } else {
-        setMmprojValidationError(errorMessage)
-      }
-    } finally {
-      if (fileType === 'model') {
-        setIsValidating(false)
-      } else {
-        setIsValidatingMmproj(false)
-      }
-    }
-  }, [modelName, serviceHub])
+  const validateModelFile = useCallback(
+    async (filePath: string): Promise<void> => {
+      await validateGgufFile(filePath, 'model')
+    },
+    [validateGgufFile]
+  )
 
-  const validateModelFile = useCallback(async (filePath: string): Promise<void> => {
-    await validateGgufFile(filePath, 'model')
-  }, [validateGgufFile])
-
-  const validateMmprojFile = useCallback(async (filePath: string): Promise<void> => {
-    await validateGgufFile(filePath, 'mmproj')
-  }, [validateGgufFile])
+  const validateMmprojFile = useCallback(
+    async (filePath: string): Promise<void> => {
+      await validateGgufFile(filePath, 'mmproj')
+    },
+    [validateGgufFile]
+  )
 
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
     const selectedFile = await serviceHub.dialog().open({
@@ -291,7 +304,11 @@ export const ImportVisionModelDialog = ({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent
+        onInteractOutside={(e) => {
+          e.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Import Model
