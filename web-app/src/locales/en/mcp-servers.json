@@ -26,6 +26,9 @@
     "errorParse": "Failed to parse initial data",
     "errorPaste": "Invalid JSON format in pasted content",
     "errorFormat": "Invalid JSON format",
+    "errorServerName": "Server name is required and cannot be empty",
+    "errorMissingServerNameKey": "JSON must be structured as {\"serverName\": {config}} - missing server name key",
+    "errorInvalidType": "Invalid type '{{type}}' for server '{{serverName}}'. Type must be 'stdio', 'http', or 'sse'",
     "save": "Save"
   },
   "checkParams": "Please check the parameters according to the tutorial.",
