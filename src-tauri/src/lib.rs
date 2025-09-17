@@ -112,7 +112,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                if env!("ENABLE_SYSTEM_TRAY_ICON") == "true" {
+                if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                     #[cfg(target_os = "macos")]
                     window
                         .app_handle()
@@ -146,7 +146,7 @@ pub fn run() {
                 log::error!("Failed to install extensions: {}", e);
             }
 
-            if env!("ENABLE_SYSTEM_TRAY_ICON") == "true" {
+            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
                 let _ = setup_tray(app);
             }
