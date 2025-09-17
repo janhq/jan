@@ -35,6 +35,7 @@ export type {
   AuthTokens,
   AuthProvider,
   AuthProviderRegistry,
+  ProviderType,
 } from './shared/auth'
 
 // Extension registry for dynamic loading

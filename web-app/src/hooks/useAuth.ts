@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import { type User, JanAuthService } from '@jan/extensions-web'
+import {
+  type User,
+  type ProviderType,
+  JanAuthService,
+} from '@jan/extensions-web'
 import { PlatformFeature } from '@/lib/platform/types'
 import { PlatformFeatures } from '@/lib/platform/const'
 
@@ -19,13 +23,13 @@ interface AuthState {
 
   // Multi-provider auth actions
   getEnabledProviders: () => Array<{ id: string; name: string; icon: string }>
-  loginWithProvider: (providerId: string) => Promise<void>
+  loginWithProvider: (providerId: ProviderType) => Promise<void>
   handleProviderCallback: (
-    providerId: string,
+    providerId: ProviderType,
     code: string,
     state?: string
   ) => Promise<void>
-  isAuthenticatedWithProvider: (providerId: string) => boolean
+  isAuthenticatedWithProvider: (providerId: ProviderType) => boolean
 
   // Auth actions
   logout: () => Promise<void>
@@ -68,7 +72,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     return authService.getAllProviders()
   },
 
-  loginWithProvider: async (providerId: string) => {
+  loginWithProvider: async (providerId: ProviderType) => {
     const { authService, isAuthenticationEnabled } = get()
     if (!isAuthenticationEnabled || !authService) {
       throw new Error('Authentication not available on this platform')
@@ -78,7 +82,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   handleProviderCallback: async (
-    providerId: string,
+    providerId: ProviderType,
     code: string,
     state?: string
   ) => {
@@ -92,7 +96,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     await loadAuthState()
   },
 
-  isAuthenticatedWithProvider: (providerId: string) => {
+  isAuthenticatedWithProvider: (providerId: ProviderType) => {
     const { authService } = get()
     if (!authService) {
       return false
