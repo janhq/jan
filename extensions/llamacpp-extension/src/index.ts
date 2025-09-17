@@ -36,9 +36,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import {
-  readGgufMetadata,
-} from '@janhq/tauri-plugin-llamacpp-api'
+import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -2162,7 +2160,7 @@ export default class llamacpp_extension extends AIEngine {
     ).size
 
     const ramForModel = modelSize + (offloadMmproj ? 0 : mmprojSize)
-    if (ramForModel + vramForMinContext > (usableSystemMemory + usableVRAM)) {
+    if (ramForModel + vramForMinContext > usableSystemMemory + usableVRAM) {
       logger.error(
         `Model unsupported. Not enough resources for model and min context.`
       )
@@ -2425,9 +2423,9 @@ export default class llamacpp_extension extends AIEngine {
         memoryInfo.totalVRAM * USABLE_MEMORY_PERCENTAGE
       const usableVRAM = memoryInfo.totalVRAM * USABLE_MEMORY_PERCENTAGE
 
-      // Check if model fits in total memory at all
-      if (modelSize > usableTotalMemory) {
-        return 'RED'
+      // Check if model fits in total memory at all (this is the hard limit)
+      if (totalRequired > usableTotalMemory) {
+        return 'RED' // Truly impossible to run
       }
 
       // Check if everything fits in VRAM (ideal case)
@@ -2435,14 +2433,11 @@ export default class llamacpp_extension extends AIEngine {
         return 'GREEN'
       }
 
-      // Check if model fits in VRAM but total requirement exceeds VRAM
-      // OR if total requirement fits in total memory but not in VRAM
-      if (modelSize <= usableVRAM || totalRequired <= usableTotalMemory) {
-        return 'YELLOW'
-      }
-
-      // If we get here, nothing fits properly
-      return 'RED'
+      // If we get here, it means:
+      // - Total requirement fits in combined memory
+      // - But doesn't fit entirely in VRAM
+      // This is the CPU-GPU hybrid scenario
+      return 'YELLOW'
     } catch (e) {
       throw new Error(String(e))
     }
