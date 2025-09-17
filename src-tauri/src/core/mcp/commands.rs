@@ -296,7 +296,6 @@ pub async fn cancel_tool_call(
 pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
     let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
-    log::info!("read mcp configs, path: {:?}", path);
 
     // Create default empty config if file doesn't exist
     if !path.exists() {

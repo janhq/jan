@@ -5,7 +5,11 @@ use std::{
     path::PathBuf,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Manager};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
+    App, Emitter, Manager,
+};
 use tauri_plugin_store::StoreExt;
 // use tokio::sync::Mutex;
 // use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
@@ -82,7 +86,6 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         let path = entry.path();
 
         if path.extension().map_or(false, |ext| ext == "tgz") {
-            log::info!("Installing extension from {:?}", path);
             let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
             let gz_decoder = GzDecoder::new(tar_gz);
             let mut archive = Archive::new(gz_decoder);
@@ -206,4 +209,47 @@ pub fn setup_mcp(app: &App) {
             .emit("mcp-update", "MCP servers updated")
             .unwrap();
     });
+}
+
+pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
+    let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
+    let separator_i = PredefinedMenuItem::separator(app.handle())?;
+    let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
+    TrayIconBuilder::with_id("tray")
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } => {
+                // let's show and focus the main window when the tray is clicked
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {
+                log::debug!("unhandled event {event:?}");
+            }
+        })
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => {
+                let window = app.get_webview_window("main").unwrap();
+                window.show().unwrap();
+                window.set_focus().unwrap();
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            other => {
+                println!("menu item {} not handled", other);
+            }
+        })
+        .build(app)
 }
