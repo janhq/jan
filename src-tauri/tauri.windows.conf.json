@@ -1,4 +1,10 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["default"]
+    }
+  },
+
   "bundle": {
     "targets": ["nsis"],
     "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll", "resources/lib/vc_redist.x64.exe", "resources/LICENSE"],

@@ -45,7 +45,6 @@ pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn parse_c_string_u8(buf: &[u8]) -> String {
     unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) }
         .to_str()

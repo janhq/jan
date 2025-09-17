@@ -1,7 +1,7 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "enables the default permissions for mobile platforms",
   "windows": ["main"],
   "remote": {
     "urls": ["http://*"]
@@ -21,6 +21,7 @@
     "dialog:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
+    "store:default",
     {
       "identifier": "http:default",
       "allow": [
@@ -52,8 +53,6 @@
           "url": "http://0.0.0.0:*"
         }
       ]
-    },
-    "store:default",
-    "llamacpp:default"
+    }
   ]
 }

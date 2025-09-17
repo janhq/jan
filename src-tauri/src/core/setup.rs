@@ -6,7 +6,7 @@ use std::{
 };
 use tar::Archive;
 use tauri::{
-    App, Emitter, Manager,
+    App, Emitter, Manager, Runtime,
 };
 
 #[cfg(desktop)]
@@ -25,7 +25,7 @@ use super::{
     mcp::helpers::run_mcp_commands, state::AppState,
 };
 
-pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
+pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
     let mut store_path = get_jan_data_folder_path(app.clone());
     store_path.push("store.json");
     let store = app.store(store_path).expect("Store not initialized");
@@ -201,10 +201,10 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-pub fn setup_mcp(app: &App) {
+pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
-    let app_handle: tauri::AppHandle = app.handle().clone();
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);

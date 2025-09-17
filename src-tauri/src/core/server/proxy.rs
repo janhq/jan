@@ -767,7 +767,7 @@ pub async fn start_server(
     });
 
     *handle_guard = Some(server_task);
-    let actual_port = actual_addr.port();
+    let actual_port = addr.port();
     log::info!("Jan API server started successfully on port {}", actual_port);
     Ok(actual_port)
 }

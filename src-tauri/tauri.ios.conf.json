@@ -3,11 +3,13 @@
     "devUrl": null,
     "frontendDist": "../web-app/dist"
   },
+  "identifier": "jan.ai.app.ios",
   "app": {
     "security": {
-      "capabilities": ["default"]
+      "capabilities": ["mobile"]
     }
   },
+  "plugins": {},
   "bundle": {
     "active": true,
     "iOS": {

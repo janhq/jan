@@ -6,7 +6,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-use tauri::Emitter;
+use tauri::{Emitter, Runtime};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -25,7 +25,7 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
 async fn validate_downloaded_file(
     item: &DownloadItem,
     save_path: &Path,
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<impl Runtime>,
     cancel_token: &CancellationToken,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
@@ -298,7 +298,7 @@ pub async fn _get_file_size(
 
 /// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl Runtime>,
     items: &[DownloadItem],
     headers: &HashMap<String, String>,
     task_id: &str,
@@ -423,7 +423,7 @@ pub async fn _download_files_internal(
 
 /// Downloads a single file without blocking other downloads
 async fn download_single_file(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl Runtime>,
     item: &DownloadItem,
     header_map: &HeaderMap,
     save_path: &std::path::Path,

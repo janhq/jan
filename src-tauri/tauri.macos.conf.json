@@ -1,7 +1,11 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["default", "system-monitor-window"]
+    }
+  },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"]
+    "resources": ["resources/LICENSE"]
   }
 }
