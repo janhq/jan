@@ -161,6 +161,8 @@
     "title": "本地 API 服务器",
     "description": "在本地运行与 OpenAI 兼容的服务器。",
     "startServer": "启动服务器",
+    "loadingModel": "加载模型",
+    "startingServer": "正在启动服务器",
     "stopServer": "停止服务器",
     "serverLogs": "服务器日志",
     "serverLogsDesc": "查看本地 API 服务器的详细日志。",
@@ -262,3 +264,4 @@
     "updateError": "更新 Llamacpp 失败"
   }
 }
+
