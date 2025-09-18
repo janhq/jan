@@ -31,6 +31,7 @@ export function DataProvider() {
     enableOnStartup,
     serverHost,
     serverPort,
+    setServerPort,
     apiPrefix,
     apiKey,
     trustedHosts,
@@ -173,7 +174,11 @@ export function DataProvider() {
             proxyTimeout: proxyTimeout,
           })
         })
-        .then(() => {
+        .then((actualPort: number) => {
+          // Store the actual port that was assigned (important for mobile with port 0)
+          if (actualPort && actualPort !== serverPort) {
+            setServerPort(actualPort)
+          }
           setServerStatus('running')
         })
         .catch((error: unknown) => {
