@@ -1,4 +1,8 @@
 {
+  "build": {
+    "devUrl": null,
+    "frontendDist": "../web-app/dist"
+  },
   "app": {
     "security": {
       "capabilities": ["default"]
