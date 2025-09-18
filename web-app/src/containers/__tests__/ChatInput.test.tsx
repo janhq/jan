@@ -25,11 +25,17 @@ vi.mock('@/hooks/useThreads', () => ({
   })),
 }))
 
+// Mock the useAppState with a mutable state
+let mockAppState = {
+  streamingContent: null,
+  abortControllers: {},
+  loadingModel: false,
+  tools: [],
+  updateTools: vi.fn(),
+}
+
 vi.mock('@/hooks/useAppState', () => ({
-  useAppState: vi.fn(() => ({
-    streamingContent: '',
-    abortController: null,
-  })),
+  useAppState: (selector?: any) => selector ? selector(mockAppState) : mockAppState,
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
@@ -67,18 +73,41 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
+// Mock the global core API
+Object.defineProperty(globalThis, 'core', {
+  value: {
+    api: {
+      existsSync: vi.fn(() => true),
+      getJanDataFolderPath: vi.fn(() => '/mock/path'),
+    },
+  },
+  writable: true,
+})
+
+// Mock the useTools hook
+vi.mock('@/hooks/useTools', () => ({
+  useTools: vi.fn(),
+}))
+
 // Mock the ServiceHub
 const mockGetConnectedServers = vi.fn(() => Promise.resolve([]))
+const mockGetTools = vi.fn(() => Promise.resolve([]))
 const mockStopAllModels = vi.fn()
 const mockCheckMmprojExists = vi.fn(() => Promise.resolve(true))
+
+const mockListen = vi.fn(() => Promise.resolve(() => {}))
 
 const mockServiceHub = {
   mcp: () => ({
     getConnectedServers: mockGetConnectedServers,
+    getTools: mockGetTools,
   }),
   models: () => ({
     stopAllModels: mockStopAllModels,
     checkMmprojExists: mockCheckMmprojExists,
+  }),
+  events: () => ({
+    listen: mockListen,
   }),
 }
 
@@ -129,12 +158,11 @@ describe('ChatInput', () => {
       setCurrentThreadId: vi.fn(),
     })
     
-    vi.mocked(useAppState).mockReturnValue({
-      streamingContent: null,
-      abortControllers: {},
-      loadingModel: false,
-      tools: [],
-    })
+    // Reset mock app state
+    mockAppState.streamingContent = null
+    mockAppState.abortControllers = {}
+    mockAppState.loadingModel = false
+    mockAppState.tools = []
     
     vi.mocked(useGeneralSetting).mockReturnValue({
       spellCheckChatInput: true,
@@ -286,12 +314,7 @@ describe('ChatInput', () => {
 
   it('shows stop button when streaming', () => {
     // Mock streaming state
-    vi.mocked(useAppState).mockReturnValue({
-      streamingContent: { thread_id: 'test-thread' },
-      abortControllers: {},
-      loadingModel: false,
-      tools: [],
-    })
+    mockAppState.streamingContent = { thread_id: 'test-thread' }
     
     act(() => {
       renderWithRouter()
@@ -360,12 +383,7 @@ describe('ChatInput', () => {
 
   it('disables input when streaming', () => {
     // Mock streaming state
-    vi.mocked(useAppState).mockReturnValue({
-      streamingContent: { thread_id: 'test-thread' },
-      abortControllers: {},
-      loadingModel: false,
-      tools: [],
-    })
+    mockAppState.streamingContent = { thread_id: 'test-thread' }
     
     act(() => {
       renderWithRouter()

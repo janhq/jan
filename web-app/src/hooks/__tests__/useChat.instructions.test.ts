@@ -17,72 +17,99 @@ vi.mock('@/lib/messages', () => ({
 
 // Mock dependencies similar to existing tests, but customize assistant
 vi.mock('../../hooks/usePrompt', () => ({
-  usePrompt: vi.fn(() => ({ prompt: 'test prompt', setPrompt: vi.fn() })),
+  usePrompt: (selector: any) => {
+    const state = { prompt: 'test prompt', setPrompt: vi.fn() }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useAppState', () => ({
   useAppState: Object.assign(
-    vi.fn(() => ({
-      tools: [],
-      updateTokenSpeed: vi.fn(),
-      resetTokenSpeed: vi.fn(),
-      updateTools: vi.fn(),
-      updateStreamingContent: vi.fn(),
-      updateLoadingModel: vi.fn(),
-      setAbortController: vi.fn(),
-    })),
+    (selector?: any) => {
+      const state = {
+        tools: [],
+        updateTokenSpeed: vi.fn(),
+        resetTokenSpeed: vi.fn(),
+        updateTools: vi.fn(),
+        updateStreamingContent: vi.fn(),
+        updateLoadingModel: vi.fn(),
+        setAbortController: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
     { getState: vi.fn(() => ({ tokenSpeed: { tokensPerSecond: 10 } })) }
   ),
 }))
 
 vi.mock('../../hooks/useAssistant', () => ({
-  useAssistant: vi.fn(() => ({
-    assistants: [
-      {
+  useAssistant: (selector: any) => {
+    const state = {
+      assistants: [
+        {
+          id: 'test-assistant',
+          instructions: 'Today is {{current_date}}',
+          parameters: { stream: true },
+        },
+      ],
+      currentAssistant: {
         id: 'test-assistant',
         instructions: 'Today is {{current_date}}',
         parameters: { stream: true },
       },
-    ],
-    currentAssistant: {
-      id: 'test-assistant',
-      instructions: 'Today is {{current_date}}',
-      parameters: { stream: true },
-    },
-  })),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(() => ({
-    getProviderByName: vi.fn(() => ({ provider: 'openai', models: [] })),
-    selectedModel: { id: 'test-model', capabilities: ['tools'] },
-    selectedProvider: 'openai',
-    updateProvider: vi.fn(),
-  })),
+  useModelProvider: (selector: any) => {
+    const state = {
+      getProviderByName: vi.fn(() => ({ provider: 'openai', models: [] })),
+      selectedModel: { id: 'test-model', capabilities: ['tools'] },
+      selectedProvider: 'openai',
+      updateProvider: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useThreads', () => ({
-  useThreads: vi.fn(() => ({
-    getCurrentThread: vi.fn(() => ({ id: 'test-thread', model: { id: 'test-model', provider: 'openai' } })),
-    createThread: vi.fn(() => Promise.resolve({ id: 'test-thread', model: { id: 'test-model', provider: 'openai' } })),
-    updateThreadTimestamp: vi.fn(),
-  })),
+  useThreads: (selector: any) => {
+    const state = {
+      getCurrentThread: vi.fn(() => ({ id: 'test-thread', model: { id: 'test-model', provider: 'openai' } })),
+      createThread: vi.fn(() => Promise.resolve({ id: 'test-thread', model: { id: 'test-model', provider: 'openai' } })),
+      updateThreadTimestamp: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useMessages', () => ({
-  useMessages: vi.fn(() => ({ getMessages: vi.fn(() => []), addMessage: vi.fn() })),
+  useMessages: (selector: any) => {
+    const state = { getMessages: vi.fn(() => []), addMessage: vi.fn() }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useToolApproval', () => ({
-  useToolApproval: vi.fn(() => ({ approvedTools: [], showApprovalModal: vi.fn(), allowAllMCPPermissions: false })),
+  useToolApproval: (selector: any) => {
+    const state = { approvedTools: [], showApprovalModal: vi.fn(), allowAllMCPPermissions: false }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useModelContextApproval', () => ({
-  useContextSizeApproval: vi.fn(() => ({ showApprovalModal: vi.fn() })),
+  useContextSizeApproval: (selector: any) => {
+    const state = { showApprovalModal: vi.fn() }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../../hooks/useModelLoad', () => ({
-  useModelLoad: vi.fn(() => ({ setModelLoadError: vi.fn() })),
+  useModelLoad: (selector: any) => {
+    const state = { setModelLoadError: vi.fn() }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
