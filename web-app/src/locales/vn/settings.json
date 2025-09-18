@@ -180,7 +180,9 @@
     "cors": "Chia sẻ tài nguyên giữa các nguồn gốc (CORS)",
     "corsDesc": "Cho phép các yêu cầu cross-origin đến máy chủ API.",
     "verboseLogs": "Nhật ký máy chủ chi tiết",
-    "verboseLogsDesc": "Bật nhật ký máy chủ chi tiết để gỡ lỗi."
+    "verboseLogsDesc": "Bật nhật ký máy chủ chi tiết để gỡ lỗi.",
+    "proxyTimeout": "Hết thời gian chờ yêu cầu",
+    "proxyTimeoutDesc": "Thời gian chờ phản hồi từ mô hình cục bộ (tính bằng giây)."
   },
   "privacy": {
     "analytics": "Phân tích",

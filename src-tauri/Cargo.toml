@@ -20,6 +20,7 @@ default = [
     "tauri/x11",
     "tauri/protocol-asset",
     "tauri/macos-private-api",
+    "tauri/tray-icon",
     "tauri/test",
     "tauri/custom-protocol"
 ]
@@ -28,6 +29,7 @@ test-tauri = [
     "tauri/x11",
     "tauri/protocol-asset",
     "tauri/macos-private-api",
+    "tauri/tray-icon",
     "tauri/test",
 ]
 
