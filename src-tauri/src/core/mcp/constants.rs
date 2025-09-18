@@ -8,6 +8,12 @@ pub const MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each time
 
 pub const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {
+    "exa": {
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
+      "active": false
+    },
     "browsermcp": {
       "command": "npx",
       "args": ["@browsermcp/mcp"],
