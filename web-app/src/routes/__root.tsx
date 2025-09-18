@@ -32,6 +32,7 @@ import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { AuthProvider } from '@/providers/AuthProvider'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 
@@ -206,9 +207,11 @@ function RootLayout() {
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>
-            <DataProvider />
-            <GlobalEventHandler />
-            {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+            <AuthProvider>
+              <DataProvider />
+              <GlobalEventHandler />
+              {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+            </AuthProvider>
           </ExtensionProvider>
           {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
           {/* <TanStackRouterDevtools position="bottom-right" /> */}

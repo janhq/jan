@@ -21,6 +21,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import { AuthLoginButton } from '@/containers/auth/AuthLoginButton'
+import { UserProfileMenu } from '@/containers/auth/UserProfileMenu'
+import { useAuth } from '@/hooks/useAuth'
 
 import { useThreads } from '@/hooks/useThreads'
 
@@ -31,8 +36,6 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs'
 
 const mainMenus = [
@@ -60,12 +63,19 @@ const mainMenus = [
     route: route.settings.general,
     isEnabled: true,
   },
+  {
+    title: 'common:authentication',
+    icon: null,
+    route: null,
+    isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
+  },
 ]
 
 const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
   const [searchTerm, setSearchTerm] = useState('')
+  const { isAuthenticated } = useAuth()
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -413,8 +423,25 @@ const LeftPanel = () => {
           <div className="space-y-1 shrink-0 py-1 mt-2">
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
-                  return null
+                return null
               }
+
+              // Handle authentication menu specially
+              if (menu.title === 'common:authentication') {
+                return (
+                  <div key={menu.title}>
+                    {isAuthenticated ? (
+                      <UserProfileMenu />
+                    ) : (
+                      <AuthLoginButton />
+                    )}
+                  </div>
+                )
+              }
+
+              // Regular menu items must have route and icon
+              if (!menu.route || !menu.icon) return null
+
               const isActive =
                 currentPath.includes(route.settings.index) &&
                 menu.route.includes(route.settings.index)
