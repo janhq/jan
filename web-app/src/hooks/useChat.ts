@@ -103,13 +103,13 @@ export const useChat = () => {
     }
     return currentThread
   }, [
-    // createThread,
-    // prompt,
-    // retrieveThread,
-    // router,
-    // selectedModel?.id,
-    // selectedProvider,
-    // selectedAssistant,
+    createThread,
+    prompt,
+    retrieveThread,
+    router,
+    selectedModel?.id,
+    selectedProvider,
+    selectedAssistant,
   ])
 
   const restartModel = useCallback(
