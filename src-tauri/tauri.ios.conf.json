@@ -1,6 +1,12 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["default"]
+    }
+  },
   "bundle": {
     "iOS": {
+      "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     }
   }
 }

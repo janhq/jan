@@ -91,3 +91,16 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2.0.0", features = ["deep-link"] }
+
+# Release profile optimizations for minimal binary size
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = "fat"         # Aggressive Link Time Optimization
+strip = "symbols"   # Strip debug symbols for smaller binary
+codegen-units = 1   # Reduce parallel codegen for better optimization
+panic = "abort"     # Don't unwind on panic, saves space
+overflow-checks = false  # Disable overflow checks for size
+debug = false       # No debug info
+debug-assertions = false  # No debug assertions
+incremental = false # Disable incremental compilation for release
+rpath = false       # Don't include rpath

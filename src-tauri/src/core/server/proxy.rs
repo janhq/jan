@@ -632,7 +632,7 @@ pub async fn start_server(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
         return Err("Server is already running".into());
@@ -667,7 +667,8 @@ pub async fn start_server(
     });
 
     let server = Server::bind(&addr).serve(make_svc);
-    log::info!("Jan API server started on http://{}", addr);
+    let actual_addr = server.local_addr();
+    log::info!("Jan API server started on http://{}", actual_addr);
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
@@ -678,7 +679,9 @@ pub async fn start_server(
     });
 
     *handle_guard = Some(server_task);
-    Ok(true)
+    let actual_port = actual_addr.port();
+    log::info!("Jan API server started successfully on port {}", actual_port);
+    Ok(actual_port)
 }
 
 pub async fn stop_server(

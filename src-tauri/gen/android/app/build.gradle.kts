@@ -38,11 +38,23 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            isShrinkResources = true  // Remove unused resources
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            // Additional size optimizations
+            packaging {
+                resources.excludes.addAll(listOf(
+                    "META-INF/LICENSE*",
+                    "META-INF/NOTICE*",
+                    "META-INF/*.RSA",
+                    "META-INF/*.SF",
+                    "META-INF/*.DSA"
+                ))
+            }
         }
     }
     kotlinOptions {

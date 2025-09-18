@@ -14,7 +14,10 @@ use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
     let mut builder = tauri::Builder::default();
+    #[cfg(mobile)]
+    let builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
