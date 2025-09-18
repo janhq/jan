@@ -26,6 +26,9 @@
     "errorParse": "Gagal mengurai data awal",
     "errorPaste": "Format JSON tidak valid pada konten yang ditempel",
     "errorFormat": "Format JSON tidak valid",
+    "errorServerName": "Nama server wajib diisi dan tidak boleh kosong",
+    "errorMissingServerNameKey": "JSON harus berstruktur sebagai {\"serverName\": {config}} - kunci nama server hilang",
+    "errorInvalidType": "Tipe '{{type}}' untuk server '{{serverName}}' tidak valid. Tipe harus 'stdio', 'http', atau 'sse'",
     "save": "Simpan"
   },
   "checkParams": "Silakan periksa parameter sesuai dengan tutorial.",
@@ -34,7 +37,7 @@
   "editAllJson": "Edit Semua JSON Server",
   "findMore": "Temukan lebih banyak server MCP di",
   "allowPermissions": "Izinkan Semua Izin Alat MCP",
-  "allowPermissionsDesc": "Jika diaktifkan, semua panggilan alat MCP akan disetujui secara otomatis tanpa menampilkan dialog izin.",
+  "allowPermissionsDesc": "Jika diaktifkan, semua panggilan alat MCP akan disetujui secara otomatis tanpa menampilkan dialog izin. Pengaturan ini berlaku secara global untuk semua percakapan, termasuk chat baru.",
   "noServers": "Tidak ada server MCP yang ditemukan",
   "args": "Argumen",
   "env": "Lingkungan",

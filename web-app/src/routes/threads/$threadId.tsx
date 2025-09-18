@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { UIEventHandler } from 'react'
@@ -89,12 +90,15 @@ function ThreadDetail() {
   }, [threadId, currentThreadId, assistants])
 
   useEffect(() => {
-    serviceHub.messages().fetchMessages(threadId).then((fetchedMessages) => {
-      if (fetchedMessages) {
-        // Update the messages in the store
-        setMessages(threadId, fetchedMessages)
-      }
-    })
+    serviceHub
+      .messages()
+      .fetchMessages(threadId)
+      .then((fetchedMessages) => {
+        if (fetchedMessages) {
+          // Update the messages in the store
+          setMessages(threadId, fetchedMessages)
+        }
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, serviceHub])
 
@@ -139,17 +143,21 @@ function ThreadDetail() {
   useEffect(() => {
     // Track streaming state changes
     const isCurrentlyStreaming = !!streamingContent
-    const justFinishedStreaming = wasStreamingRef.current && !isCurrentlyStreaming
+    const justFinishedStreaming =
+      wasStreamingRef.current && !isCurrentlyStreaming
     wasStreamingRef.current = isCurrentlyStreaming
 
     // If streaming just finished and user had an intended position, restore it
     if (justFinishedStreaming && userIntendedPositionRef.current !== null) {
       // Small delay to ensure DOM has updated
       setTimeout(() => {
-        if (scrollContainerRef.current && userIntendedPositionRef.current !== null) {
+        if (
+          scrollContainerRef.current &&
+          userIntendedPositionRef.current !== null
+        ) {
           scrollContainerRef.current.scrollTo({
             top: userIntendedPositionRef.current,
-            behavior: 'smooth'
+            behavior: 'smooth',
           })
           userIntendedPositionRef.current = null
           setIsUserScrolling(false)
@@ -198,7 +206,7 @@ function ThreadDetail() {
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
-      
+
       // If user scrolls during streaming and moves away from bottom, record their intended position
       if (streamingContent && !isBottom) {
         userIntendedPositionRef.current = scrollTop
@@ -220,7 +228,7 @@ function ThreadDetail() {
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
-      
+
       // If user scrolls during streaming and moves away from bottom, record their intended position
       if (streamingContent && !isBottom) {
         userIntendedPositionRef.current = scrollTop
@@ -231,11 +239,15 @@ function ThreadDetail() {
     lastScrollTopRef.current = scrollTop
   }
 
-  const updateMessage = (item: ThreadMessage, message: string) => {
+  const updateMessage = (
+    item: ThreadMessage,
+    message: string,
+    imageUrls?: string[]
+  ) => {
     const newMessages: ThreadMessage[] = messages.map((m) => {
       if (m.id === item.id) {
         const msg: ThreadMessage = cloneDeep(m)
-        msg.content = [
+        const newContent = [
           {
             type: ContentType.Text,
             text: {
@@ -244,6 +256,20 @@ function ThreadDetail() {
             },
           },
         ]
+
+        // Add image content if imageUrls are provided
+        if (imageUrls && imageUrls.length > 0) {
+          imageUrls.forEach((url) => {
+            newContent.push({
+              type: 'image_url' as ContentType,
+              image_url: {
+                url: url,
+              },
+            } as any)
+          })
+        }
+
+        msg.content = newContent
         return msg
       }
       return m
