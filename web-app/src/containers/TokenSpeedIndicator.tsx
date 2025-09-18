@@ -2,7 +2,6 @@ import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
-import { memo } from 'react'
 
 interface TokenSpeedIndicatorProps {
   metadata?: Record<string, unknown>
@@ -13,7 +12,10 @@ export const TokenSpeedIndicator = memo(({
   metadata,
   streaming,
 }: TokenSpeedIndicatorProps) => {
-  const tokenSpeed = useAppState((state) => state.tokenSpeed)
+  // Only re-render when the rounded token speed changes to prevent constant updates
+  const roundedTokenSpeed = useAppState((state) =>
+    state.tokenSpeed ? Math.round(state.tokenSpeed.tokenSpeed) : 0
+  )
   const persistedTokenSpeed =
     (metadata?.tokenSpeed as { tokenSpeed: number })?.tokenSpeed || 0
 
@@ -31,11 +33,7 @@ export const TokenSpeedIndicator = memo(({
     <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
       <Gauge size={16} />
       <span>
-        {Math.round(
-          streaming
-            ? toNumber(tokenSpeed?.tokenSpeed)
-            : toNumber(persistedTokenSpeed)
-        )}
+        {streaming ? roundedTokenSpeed : Math.round(toNumber(persistedTokenSpeed))}
         &nbsp;tokens/sec
       </span>
     </div>
