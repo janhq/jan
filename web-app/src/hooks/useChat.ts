@@ -33,8 +33,6 @@ import {
 } from '@/utils/reasoning'
 
 export const useChat = () => {
-  const prompt = usePrompt((state) => state.prompt)
-  const setPrompt = usePrompt((state) => state.setPrompt)
   const tools = useAppState((state) => state.tools)
   const updateTokenSpeed = useAppState((state) => state.updateTokenSpeed)
   const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
@@ -88,12 +86,14 @@ export const useChat = () => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
+      // Get prompt directly from store when needed
+      const currentPrompt = usePrompt.getState().prompt
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        prompt,
+        currentPrompt,
         selectedAssistant
       )
       router.navigate({
@@ -104,7 +104,6 @@ export const useChat = () => {
     return currentThread
   }, [
     createThread,
-    prompt,
     retrieveThread,
     router,
     selectedModel?.id,
@@ -241,7 +240,7 @@ export const useChat = () => {
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
-      setPrompt('')
+      usePrompt.getState().setPrompt('')
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
@@ -554,7 +553,6 @@ export const useChat = () => {
       updateStreamingContent,
       addMessage,
       updateThreadTimestamp,
-      setPrompt,
       selectedModel,
       currentAssistant,
       tools,

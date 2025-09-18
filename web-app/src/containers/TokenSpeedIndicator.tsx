@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
@@ -7,11 +8,11 @@ interface TokenSpeedIndicatorProps {
   streaming?: boolean
 }
 
-export const TokenSpeedIndicator = ({
+export const TokenSpeedIndicator = memo(({
   metadata,
   streaming,
 }: TokenSpeedIndicatorProps) => {
-  const { tokenSpeed } = useAppState()
+  const tokenSpeed = useAppState((state) => state.tokenSpeed)
   const persistedTokenSpeed =
     (metadata?.tokenSpeed as { tokenSpeed: number })?.tokenSpeed || 0
 
@@ -38,6 +39,6 @@ export const TokenSpeedIndicator = ({
       </span>
     </div>
   )
-}
+})
 
 export default TokenSpeedIndicator

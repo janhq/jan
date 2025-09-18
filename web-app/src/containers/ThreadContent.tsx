@@ -87,7 +87,10 @@ export const ThreadContent = memo(
       []
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
-    const { streamingContent } = useAppState()
+    // Only check if streaming is happening for this thread, not the content itself
+    const isStreamingThisThread = useAppState(
+      (state) => state.streamingContent?.thread_id === item.thread_id
+    )
 
     const text = useMemo(
       () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
@@ -360,10 +363,7 @@ export const ThreadContent = memo(
                   <div
                     className={cn(
                       'flex items-center gap-2',
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id &&
-                        'hidden'
+                      item.isLastMessage && isStreamingThisThread && 'hidden'
                     )}
                   >
                     <EditMessageDialog
@@ -394,11 +394,7 @@ export const ThreadContent = memo(
                   </div>
 
                   <TokenSpeedIndicator
-                    streaming={Boolean(
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id
-                    )}
+                    streaming={Boolean(item.isLastMessage && isStreamingThisThread)}
                     metadata={item.metadata}
                   />
                 </div>

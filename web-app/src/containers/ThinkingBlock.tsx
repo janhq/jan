@@ -28,12 +28,12 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 
 const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, setThinkingState } = useThinkingStore()
-  const { streamingContent } = useAppState()
+  const isStreaming = useAppState((state) => !!state.streamingContent)
   const { t } = useTranslation()
   // Check for thinking formats
   const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
   const hasAnalysisChannel = text.includes('<|channel|>analysis<|message|>') && !text.includes('<|start|>assistant<|channel|>final<|message|>')
-  const loading = (hasThinkTag || hasAnalysisChannel) && streamingContent
+  const loading = (hasThinkTag || hasAnalysisChannel) && isStreaming
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
   const handleClick = () => {
     const newExpandedState = !isExpanded

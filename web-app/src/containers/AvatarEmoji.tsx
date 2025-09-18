@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 
 /**
  * Checks if an avatar is a custom image (starts with '/images/')
@@ -16,7 +16,7 @@ interface AvatarEmojiProps {
   textClassName?: string
 }
 
-export const AvatarEmoji: React.FC<AvatarEmojiProps> = ({
+export const AvatarEmoji: React.FC<AvatarEmojiProps> = memo(({
   avatar,
   imageClassName = 'w-5 h-5 object-contain',
   textClassName = 'text-base',
@@ -27,4 +27,4 @@ export const AvatarEmoji: React.FC<AvatarEmojiProps> = ({
   }
 
   return <span className={textClassName}>{avatar}</span>
-}
+})
