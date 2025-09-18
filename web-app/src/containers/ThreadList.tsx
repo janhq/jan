@@ -46,14 +46,16 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
   } = useSortable({ id: thread.id, disabled: true })
 
   const isSmallScreen = useSmallScreen()
-  const { setLeftPanel } = useLeftPanel()
+  const setLeftPanel = useLeftPanel(state => state.setLeftPanel)
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
-  const { toggleFavorite, deleteThread, renameThread } = useThreads()
+  const toggleFavorite = useThreads((state) => state.toggleFavorite)
+  const deleteThread = useThreads((state) => state.deleteThread)
+  const renameThread = useThreads((state) => state.renameThread)
   const { t } = useTranslation()
   const [openDropdown, setOpenDropdown] = useState(false)
   const navigate = useNavigate()

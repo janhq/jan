@@ -47,23 +47,23 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
-  const {
-    streamingContent,
-    abortControllers,
-    loadingModel,
-    tools,
-    cancelToolCall,
-  } = useAppState()
-  const { prompt, setPrompt } = usePrompt()
-  const { currentThreadId } = useThreads()
+  const streamingContent = useAppState((state) => state.streamingContent)
+  const abortControllers = useAppState((state) => state.abortControllers)
+  const loadingModel = useAppState((state) => state.loadingModel)
+  const tools = useAppState((state) => state.tools)
+  const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const prompt = usePrompt((state) => state.prompt)
+  const setPrompt = usePrompt((state) => state.setPrompt)
+  const currentThreadId = useThreads((state) => state.currentThreadId)
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
   useTools()
 
   const maxRows = 10
 
-  const { selectedModel, selectedProvider } = useModelProvider()
-  const { sendMessage } = useChat()
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const sendMessage = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)

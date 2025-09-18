@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
+import { memo } from 'react'
 
 interface TokenSpeedIndicatorProps {
   metadata?: Record<string, unknown>
@@ -41,4 +42,4 @@ export const TokenSpeedIndicator = memo(({
   )
 })
 
-export default TokenSpeedIndicator
+export default memo(TokenSpeedIndicator)

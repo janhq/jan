@@ -16,7 +16,8 @@ import { useAppState } from '@/hooks/useAppState'
 
 export default function ErrorDialog() {
   const { t } = useTranslation()
-  const { errorMessage, setErrorMessage } = useAppState()
+  const errorMessage = useAppState((state) => state.errorMessage)
+  const setErrorMessage = useAppState((state) => state.setErrorMessage)
   const [isCopying, setIsCopying] = useState(false)
   const [isDetailExpanded, setIsDetailExpanded] = useState(true)
 

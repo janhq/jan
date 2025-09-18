@@ -68,6 +68,7 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
+      streamingThread?: string
 
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
@@ -75,7 +76,7 @@ export const ThreadContent = memo(
     }
   ) => {
     const { t } = useTranslation()
-    const { selectedModel } = useModelProvider()
+    const selectedModel = useModelProvider((state) => state.selectedModel)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -132,8 +133,9 @@ export const ThreadContent = memo(
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
-    const { getMessages, deleteMessage } = useMessages()
-    const { sendMessage } = useChat()
+    const getMessages = useMessages((state) => state.getMessages)
+    const deleteMessage = useMessages((state) => state.deleteMessage)
+    const sendMessage = useChat()
 
     const regenerate = useCallback(() => {
       // Only regenerate assistant message is allowed
