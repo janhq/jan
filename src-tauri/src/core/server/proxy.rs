@@ -219,7 +219,6 @@ async fn proxy_request(
         "/",
         "/openapi.json",
         "/favicon.ico",
-        "/docs",
         "/docs/swagger-ui.css",
         "/docs/swagger-ui-bundle.js",
         "/docs/swagger-ui-standalone-preset.js",
@@ -467,7 +466,7 @@ async fn proxy_request(
         }
 
         // DOCS route
-        (hyper::Method::GET, "/docs") => {
+        (hyper::Method::GET, "/") => {
             let html = r#"
 <!DOCTYPE html>
 <html lang="en">
