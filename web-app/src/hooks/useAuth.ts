@@ -22,7 +22,7 @@ interface AuthState {
   setIsLoading: (isLoading: boolean) => void
 
   // Multi-provider auth actions
-  getEnabledProviders: () => Array<{ id: string; name: string; icon: string }>
+  getAllProviders: () => Array<{ id: string; name: string; icon: string }>
   loginWithProvider: (providerId: ProviderType) => Promise<void>
   handleProviderCallback: (
     providerId: ProviderType,
@@ -64,7 +64,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
   setIsLoading: (isLoading: boolean) => set({ isLoading }),
 
   // Multi-provider auth actions
-  getEnabledProviders: () => {
+  getAllProviders: () => {
     const { authService } = get()
     if (!authService) {
       return []

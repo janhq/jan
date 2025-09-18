@@ -18,10 +18,10 @@ import {
 
 export const AuthLoginButton = () => {
   const { t } = useTranslation()
-  const { getEnabledProviders, loginWithProvider } = useAuth()
+  const { getAllProviders, loginWithProvider } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
 
-  const enabledProviders = getEnabledProviders()
+  const enabledProviders = getAllProviders()
 
   const handleProviderLogin = async (providerId: ProviderType) => {
     try {
