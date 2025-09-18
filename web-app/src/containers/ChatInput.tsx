@@ -4,7 +4,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -90,12 +90,6 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
-
-  // Calculate additional tokens from uploaded files (vision tokens)
-  const visionTokens = useMemo(() => {
-    // Estimate ~765 tokens per image for vision models
-    return uploadedFiles.length * 765
-  }, [uploadedFiles.length])
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -786,9 +780,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 hasActiveModels &&
                 tokenCounterCompact &&
                 !initialMessage &&
-                (threadMessages?.length > 0 ||
-                  visionTokens > 0 ||
-                  prompt.trim().length > 0) && (
+                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                   <div className="flex-1 flex justify-center">
                     <TokenCounter
                       messages={threadMessages || []}
@@ -853,9 +845,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         hasActiveModels &&
         !tokenCounterCompact &&
         !initialMessage &&
-        (threadMessages?.length > 0 ||
-          visionTokens > 0 ||
-          prompt.trim().length > 0) && (
+        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter messages={threadMessages || []} compact={false} />
           </div>
