@@ -55,7 +55,7 @@ pub async fn load_llama_model<R: Runtime>(
 
     let port = parse_port_from_args(&args);
     let model_path_pb = validate_model_path(&mut args)?;
-    let _mmproj_path_pb = validate_mmproj_path(&mut args)?;
+    let mmproj_path_pb = validate_mmproj_path(&mut args)?;
 
     let api_key: String;
 
@@ -211,6 +211,7 @@ pub async fn load_llama_model<R: Runtime>(
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
         api_key: api_key,
+        mmproj_path: mmproj_path_pb.and_then(|p| p.into_os_string().into_string().ok()),
     };
 
     // Insert session info to process_map

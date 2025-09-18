@@ -173,6 +173,7 @@ export interface SessionInfo {
   model_id: string //name of the model
   model_path: string // path of the loaded model
   api_key: string
+  mmprojPath?: string
 }
 
 export interface UnloadResult {

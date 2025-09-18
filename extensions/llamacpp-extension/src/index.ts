@@ -21,6 +21,7 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  chatCompletionRequestMessage,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -2492,7 +2493,8 @@ export default class llamacpp_extension extends AIEngine {
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    // check if the process is alive
+
+    // Check if the process is alive
     const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
@@ -2513,6 +2515,31 @@ export default class llamacpp_extension extends AIEngine {
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
+    // Count image tokens first
+    let imageTokens = 0
+    const hasImages = opts.messages.some(
+      (msg) =>
+        Array.isArray(msg.content) &&
+        msg.content.some((content) => content.type === 'input_image')
+    )
+
+    if (hasImages) {
+      logger.info('Conversation has images')
+      try {
+        // Read mmproj metadata to get vision parameters
+        const metadata = await readGgufMetadata(sessionInfo.mmprojPath)
+        imageTokens = await this.calculateImageTokens(
+          opts.messages,
+          metadata.metadata
+        )
+      } catch (error) {
+        logger.warn('Failed to calculate image tokens:', error)
+        // Fallback to a rough estimate if metadata reading fails
+        imageTokens = this.estimateImageTokensFallback(opts.messages)
+      }
+    }
+
+    // Calculate text tokens
     const messages = JSON.stringify({ messages: opts.messages })
 
     let parseResponse = await fetch(`${baseUrl}/apply-template`, {
@@ -2531,6 +2558,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const parsedPrompt = await parseResponse.json()
+    console.debug(parsedPrompt)
 
     const response = await fetch(`${baseUrl}/tokenize`, {
       method: 'POST',
@@ -2550,7 +2578,61 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const dataTokens = await response.json()
-    const tokens = dataTokens.tokens || []
-    return tokens.length
+    const textTokens = dataTokens.tokens?.length || 0
+
+    return textTokens + imageTokens
+  }
+
+  private async calculateImageTokens(
+    messages: chatCompletionRequestMessage[],
+    metadata: Record<string, string>
+  ): Promise<number> {
+    // Extract vision parameters from metadata
+    const patchSize = Number(metadata['clip.vision.patch_size']) || 14
+    const imageSize = Number(metadata['clip.vision.image_size']) || 896
+
+    // Calculate patches per image
+    const patchesPerSide = Math.floor(imageSize / patchSize)
+    const totalPatches = patchesPerSide * patchesPerSide
+
+    // Each patch typically corresponds to one vision token
+    // Plus some overhead for special tokens (CLS token, etc.)
+    const tokensPerImage = totalPatches * 4 // 4D
+
+    // Count images in messages
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'input_image'
+        ).length
+      }
+    }
+
+    logger.info(
+      `Calculated ${tokensPerImage} tokens per image, ${imageCount} images total`
+    )
+    return imageCount * tokensPerImage
+  }
+
+  private estimateImageTokensFallback(
+    messages: chatCompletionRequestMessage[]
+  ): number {
+    // Fallback estimation if metadata reading fails
+    const estimatedTokensPerImage = 256 // Gemma's siglip
+
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'input_image'
+        ).length
+      }
+    }
+
+    logger.warn(
+      `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
+    )
+    return imageCount * estimatedTokensPerImage
   }
 }
