@@ -33,6 +33,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTools } from '@/hooks/useTools'
 
 type ChatInputProps = {
   className?: string
@@ -57,6 +58,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
+  useTools()
 
   const maxRows = 10
 
