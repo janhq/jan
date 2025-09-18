@@ -9,7 +9,7 @@ use core::{
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri_plugin_deep_link::DeepLinkExt;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
