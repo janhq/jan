@@ -192,17 +192,16 @@ const LogsLayout = () => {
 }
 
 function RootLayout() {
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  })
-  const isLocalAPIServerLogsRoute = useMemo(
-    () =>
+  const getInitialLayoutType = () => {
+    const pathname = window.location.pathname
+    return (
       pathname === route.localApiServerlogs ||
       pathname === route.systemMonitor ||
-      pathname === route.appLogs,
-    [pathname]
-  )
+      pathname === route.appLogs
+    )
+  }
 
+  const IS_LOGS_ROUTE = getInitialLayoutType()
   return (
     <Fragment>
       <ServiceHubProvider>
@@ -214,7 +213,7 @@ function RootLayout() {
             <AuthProvider>
               <DataProvider />
               <GlobalEventHandler />
-              {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+              {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
             </AuthProvider>
           </ExtensionProvider>
           {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
