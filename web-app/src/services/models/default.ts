@@ -9,6 +9,8 @@ import {
   SessionInfo,
   SettingComponentProps,
   modelInfo,
+  ThreadMessage,
+  ContentType,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -542,6 +544,62 @@ export class DefaultModelsService implements ModelsService {
         offloadMmproj: false,
         mode: 'Unsupported',
       }
+    }
+  }
+
+  async getTokensCount(
+    modelId: string,
+    messages: ThreadMessage[]
+  ): Promise<number> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getTokensCount?: (opts: {
+          model: string
+          messages: Array<{
+            role: string
+            content: string
+          }>
+        }) => Promise<number>
+      }
+
+      if (engine && typeof engine.getTokensCount === 'function') {
+        // Transform Jan's ThreadMessage format to OpenAI chat completion format
+        const transformedMessages = messages
+          .map((message) => {
+            // Handle different content types
+            let textContent = ''
+
+            if (message.content && message.content.length > 0) {
+              // Extract text from content array
+              const textContents = message.content
+                .filter(
+                  (content) =>
+                    content.type === ContentType.Text && content.text?.value
+                )
+                .map((content) => content.text?.value || '')
+
+              textContent = textContents.join(' ')
+            }
+
+            return {
+              role: message.role,
+              content: textContent,
+            }
+          })
+          .filter((msg) => msg.content.trim() !== '') // Filter out empty messages
+
+        return await engine.getTokensCount({
+          model: modelId,
+          messages: transformedMessages,
+        })
+      }
+
+      // Fallback if method is not available
+      console.warn('getTokensCount method not available in llamacpp engine')
+      return 0
+    } catch (error) {
+      console.error(`Error getting tokens count for model ${modelId}:`, error)
+      return 0
     }
   }
 }

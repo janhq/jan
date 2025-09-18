@@ -100,6 +100,8 @@
     "resetAppearanceSuccessDesc": "All appearance settings have been restored to default.",
     "chatWidth": "Chat Width",
     "chatWidthDesc": "Customize the width of the chat view.",
+    "tokenCounterCompact": "Compact Token Counter",
+    "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
     "codeBlockDesc": "Choose a syntax highlighting style.",
     "showLineNumbers": "Show Line Numbers",
