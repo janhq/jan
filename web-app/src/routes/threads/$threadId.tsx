@@ -30,7 +30,6 @@ function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const currentThreadId = useThreads((state) => state.currentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
@@ -49,16 +48,13 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (currentThreadId !== threadId) {
       setCurrentThreadId(threadId)
       const assistant = assistants.find(
         (assistant) => assistant.id === thread?.assistants?.[0]?.id
       )
       if (assistant) setCurrentAssistant(assistant)
-    }
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, currentThreadId, assistants])
+  }, [threadId,  assistants])
 
   useEffect(() => {
     serviceHub
