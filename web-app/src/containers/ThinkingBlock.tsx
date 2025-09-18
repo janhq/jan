@@ -27,12 +27,15 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 }))
 
 const ThinkingBlock = ({ id, text }: Props) => {
-  const { thinkingState, setThinkingState } = useThinkingStore()
-  const { streamingContent } = useAppState()
+  const thinkingState = useThinkingStore((state) => state.thinkingState)
+  const setThinkingState = useThinkingStore((state) => state.setThinkingState)
+  const streamingContent = useAppState((state) => state.streamingContent)
   const { t } = useTranslation()
   // Check for thinking formats
   const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
-  const hasAnalysisChannel = text.includes('<|channel|>analysis<|message|>') && !text.includes('<|start|>assistant<|channel|>final<|message|>')
+  const hasAnalysisChannel =
+    text.includes('<|channel|>analysis<|message|>') &&
+    !text.includes('<|start|>assistant<|channel|>final<|message|>')
   const loading = (hasThinkTag || hasAnalysisChannel) && streamingContent
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
   const handleClick = () => {
@@ -48,7 +51,7 @@ const ThinkingBlock = ({ id, text }: Props) => {
       .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
       .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
       .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
-      .replace(/<\|message\|>/g, '') // remove any remaining message markers  
+      .replace(/<\|message\|>/g, '') // remove any remaining message markers
       .replace(/<\|start\|>/g, '') // remove any remaining start markers
       .trim()
   }

@@ -68,6 +68,7 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
+      streamingThread?: string
 
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
@@ -75,7 +76,7 @@ export const ThreadContent = memo(
     }
   ) => {
     const { t } = useTranslation()
-    const { selectedModel } = useModelProvider()
+    const selectedModel = useModelProvider((state) => state.selectedModel)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -87,7 +88,6 @@ export const ThreadContent = memo(
       []
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
-    const { streamingContent } = useAppState()
 
     const text = useMemo(
       () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
@@ -129,8 +129,9 @@ export const ThreadContent = memo(
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
-    const { getMessages, deleteMessage } = useMessages()
-    const { sendMessage } = useChat()
+    const getMessages = useMessages((state) => state.getMessages)
+    const deleteMessage = useMessages((state) => state.deleteMessage)
+    const sendMessage = useChat()
 
     const regenerate = useCallback(() => {
       // Only regenerate assistant message is allowed
@@ -361,8 +362,8 @@ export const ThreadContent = memo(
                     className={cn(
                       'flex items-center gap-2',
                       item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id &&
+                        item.streamingThread &&
+                        item.streamingThread === item.thread_id &&
                         'hidden'
                     )}
                   >
@@ -395,9 +396,10 @@ export const ThreadContent = memo(
 
                   <TokenSpeedIndicator
                     streaming={Boolean(
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id
+                      item.isLastMessage 
+                      &&
+                        item.streamingThread &&
+                        item.streamingThread === item.thread_id
                     )}
                     metadata={item.metadata}
                   />

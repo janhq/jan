@@ -33,7 +33,6 @@ import {
 } from '@/utils/reasoning'
 
 export const useChat = () => {
-  const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const tools = useAppState((state) => state.tools)
   const updateTokenSpeed = useAppState((state) => state.updateTokenSpeed)
@@ -84,7 +83,7 @@ export const useChat = () => {
   const selectedAssistant =
     assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
-  const getCurrentThread = useCallback(async () => {
+  const getCurrentThread = useCallback(async (prompt: string) => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
@@ -226,7 +225,7 @@ export const useChat = () => {
         dataUrl: string
       }>
     ) => {
-      const activeThread = await getCurrentThread()
+      const activeThread = await getCurrentThread(message)
 
       resetTokenSpeed()
       let activeProvider = currentProviderId
@@ -572,5 +571,5 @@ export const useChat = () => {
     ]
   )
 
-  return useMemo(() => ({ sendMessage }), [sendMessage])
+  return useMemo(() => (sendMessage), [sendMessage])
 }

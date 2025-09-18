@@ -21,7 +21,7 @@ function extractReasoningSegment(text: string) {
 // Use memo with no dependencies to allow re-renders when props change
 // Avoid duplicate reasoning segments after tool calls
 export const StreamingContent = memo(({ threadId }: Props) => {
-  const { streamingContent } = useAppState()
+  const streamingContent = useAppState((state) => state.streamingContent)
   const { getMessages } = useMessages()
   const messages = getMessages(threadId)
 
@@ -68,6 +68,7 @@ export const StreamingContent = memo(({ threadId }: Props) => {
       }}
       {...streamingContent}
       isLastMessage={true}
+      streamingThread={streamingContent.thread_id}
       showAssistant={
         messages.length > 0
           ? messages[messages.length - 1].role !== 'assistant'

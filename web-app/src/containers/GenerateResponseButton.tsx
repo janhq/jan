@@ -12,7 +12,7 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
       messages: state.messages[threadId],
     }))
   )
-  const { sendMessage } = useChat()
+  const sendMessage = useChat()
   const generateAIResponse = () => {
     const latestUserMessage = messages[messages.length - 1]
     if (
