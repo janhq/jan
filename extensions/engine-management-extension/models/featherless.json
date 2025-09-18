@@ -1,0 +1,47 @@
+[
+  {
+    "model": "moonshotai/Kimi-K2-Instruct",
+    "object": "model",
+    "name": "Kimi-K2-Instruct",
+    "version": "1.0",
+    "description": "Moonshot AI's 1T parameter chat model with advanced reasoning and tool integration capabilities.",
+    "inference_params": {
+      "temperature": 0.6,
+      "top_p": 1.0,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "featherless"
+  },
+  {
+    "model": "meta-llama/Meta-Llama-3-8B",
+    "object": "model",
+    "name": "Meta-Llama-3-8B",
+    "version": "1.0",
+    "description": "Meta's 8B parameter Llama 3 model for high-quality text generation and conversation.",
+    "inference_params": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "featherless"
+  },
+  {
+    "model": "Qwen/QwQ-32B",
+    "object": "model",
+    "name": "QwQ-32B",
+    "version": "1.0",
+    "description": "Qwen's 32B parameter reasoning-focused model with enhanced question-answering capabilities.",
+    "inference_params": {
+      "temperature": 0.8,
+      "top_p": 0.9,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "featherless"
+  }
+]
