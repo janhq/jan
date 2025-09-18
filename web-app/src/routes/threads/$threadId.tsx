@@ -38,8 +38,6 @@ function ThreadDetail() {
   const chatWidth = useAppearance((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
 
-  // useTools()
-
   const { messages } = useMessages(
     useShallow((state) => ({
       messages: state.messages[threadId],
@@ -49,8 +47,6 @@ function ThreadDetail() {
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  console.log('rerender')
 
   useEffect(() => {
     if (currentThreadId !== threadId) {
