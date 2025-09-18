@@ -80,10 +80,6 @@ test: lint
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Builds and publishes the app
-build-and-publish: install-and-build install-rust-targets
-	yarn build
-
 # Build
 build: install-and-build install-rust-targets
 	yarn build
