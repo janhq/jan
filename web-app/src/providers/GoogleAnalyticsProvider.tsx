@@ -1,13 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from '@tanstack/react-router'
 
-declare global {
-  interface Window {
-    gtag?: (...args: any[]) => void
-    dataLayer?: any[]
-  }
-  const GA_MEASUREMENT_ID: string
-}
 
 export function GoogleAnalyticsProvider() {
   const location = useLocation()
@@ -35,8 +28,8 @@ export function GoogleAnalyticsProvider() {
 
     // Initialize gtag
     window.dataLayer = window.dataLayer || []
-    window.gtag = function () {
-      window.dataLayer?.push(arguments)
+    window.gtag = function (...args: unknown[]) {
+      window.dataLayer?.push(args)
     }
     window.gtag('js', new Date())
     window.gtag('config', GA_MEASUREMENT_ID, {
@@ -67,14 +60,3 @@ export function GoogleAnalyticsProvider() {
   return null
 }
 
-// Helper function to track custom events
-export function trackEvent(
-  eventName: string,
-  parameters?: Record<string, any>
-) {
-  if (!window.gtag) {
-    return
-  }
-
-  window.gtag('event', eventName, parameters)
-}
