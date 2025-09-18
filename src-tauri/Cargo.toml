@@ -22,8 +22,11 @@ default = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
-    "tauri/custom-protocol"
+    "tauri/custom-protocol",
+    "hardware",
 ]
+hardware = ["dep:tauri-plugin-hardware"]
+mobile = []
 test-tauri = [
     "tauri/wry",
     "tauri/x11",
@@ -61,7 +64,7 @@ serde_yaml = "0.9.34"
 tar = "0.4"
 tauri-plugin-deep-link = { version = "2.3.4" }
 tauri-plugin-dialog = "2.2.1"
-tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware" }
+tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
 tauri-plugin-log = "2.0.0-rc"

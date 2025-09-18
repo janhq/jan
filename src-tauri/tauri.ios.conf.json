@@ -1,4 +1,8 @@
 {
+  "build": {
+    "devUrl": null,
+    "frontendDist": "../web-app/dist"
+  },
   "app": {
     "security": {
       "capabilities": ["default"]
@@ -7,6 +11,8 @@
   "bundle": {
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
-    }
+    },
+    "resources": ["resources/LICENSE", "resources/pre-install"],
+    "externalBin": []
   }
 }
