@@ -101,46 +101,6 @@ export const useThreadScrolling = (
       }, 100)
       return
     }
-
-    // Clear intended position when streaming starts fresh
-    if (isCurrentlyStreaming && !wasStreamingRef.current) {
-      userIntendedPositionRef.current = null
-    }
-
-    // Only auto-scroll when the user is not actively scrolling
-    // AND either at the bottom OR there's streaming content
-    if (!isUserScrolling && (streamingContent || isAtBottom) && messagesCount) {
-      // Use non-smooth scrolling for auto-scroll to prevent jank
-      scrollToBottom(false)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingContent, isUserScrolling, messagesCount])
-
-  useEffect(() => {
-    // Track streaming state changes
-    const isCurrentlyStreaming = !!streamingContent
-    const justFinishedStreaming =
-      wasStreamingRef.current && !isCurrentlyStreaming
-    wasStreamingRef.current = isCurrentlyStreaming
-
-    // If streaming just finished and user had an intended position, restore it
-    if (justFinishedStreaming && userIntendedPositionRef.current !== null) {
-      // Small delay to ensure DOM has updated
-      setTimeout(() => {
-        if (
-          scrollContainerRef.current &&
-          userIntendedPositionRef.current !== null
-        ) {
-          scrollContainerRef.current.scrollTo({
-            top: userIntendedPositionRef.current,
-            behavior: 'smooth',
-          })
-          userIntendedPositionRef.current = null
-          setIsUserScrolling(false)
-        }
-      }, 100)
-      return
-    }
     // Clear intended position when streaming starts fresh
     if (isCurrentlyStreaming && !wasStreamingRef.current) {
       userIntendedPositionRef.current = null
