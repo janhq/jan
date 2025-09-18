@@ -58,6 +58,7 @@ export default defineConfig({
     VERSION: JSON.stringify(process.env.npm_package_version || '1.0.0'),
     POSTHOG_KEY: JSON.stringify(process.env.POSTHOG_KEY || ''),
     POSTHOG_HOST: JSON.stringify(process.env.POSTHOG_HOST || ''),
+    GA_MEASUREMENT_ID: JSON.stringify(process.env.GA_MEASUREMENT_ID),
     MODEL_CATALOG_URL: JSON.stringify(process.env.MODEL_CATALOG_URL || ''),
   },
   server: {

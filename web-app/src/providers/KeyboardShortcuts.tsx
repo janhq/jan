@@ -2,34 +2,37 @@ import { useKeyboardShortcut } from '@/hooks/useHotkeys'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
 
 export function KeyboardShortcutsProvider() {
   const { open, setLeftPanel } = useLeftPanel()
   const router = useRouter()
 
-  // Toggle Sidebar (⌘/Ctrl B)
+  // Get shortcut specs from centralized configuration
+  const sidebarShortcut = PlatformShortcuts[ShortcutAction.TOGGLE_SIDEBAR]
+  const newChatShortcut = PlatformShortcuts[ShortcutAction.NEW_CHAT]
+  const settingsShortcut = PlatformShortcuts[ShortcutAction.GO_TO_SETTINGS]
+
+  // Toggle Sidebar
   useKeyboardShortcut({
-    key: 'b',
-    usePlatformMetaKey: true,
+    ...sidebarShortcut,
     callback: () => {
       setLeftPanel(!open)
     },
   })
 
-  // New Chat (⌘/Ctrl N)
+  // New Chat
   useKeyboardShortcut({
-    key: 'n',
-    usePlatformMetaKey: true,
+    ...newChatShortcut,
     excludeRoutes: [route.home],
     callback: () => {
       router.navigate({ to: route.home })
     },
   })
 
-  // Go to Settings (⌘/Ctrl ,)
+  // Go to Settings
   useKeyboardShortcut({
-    key: ',',
-    usePlatformMetaKey: true,
+    ...settingsShortcut,
     callback: () => {
       router.navigate({ to: route.settings.general })
     },

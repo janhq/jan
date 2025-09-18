@@ -15,6 +15,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { GoogleAnalyticsProvider } from '@/providers/GoogleAnalyticsProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -110,6 +111,7 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
+      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && <GoogleAnalyticsProvider />}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
