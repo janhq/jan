@@ -27,7 +27,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
@@ -192,12 +192,16 @@ const LogsLayout = () => {
 }
 
 function RootLayout() {
-  const router = useRouterState()
-
-  const isLocalAPIServerLogsRoute =
-    router.location.pathname === route.localApiServerlogs ||
-    router.location.pathname === route.systemMonitor ||
-    router.location.pathname === route.appLogs
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const isLocalAPIServerLogsRoute = useMemo(
+    () =>
+      pathname === route.localApiServerlogs ||
+      pathname === route.systemMonitor ||
+      pathname === route.appLogs,
+    [pathname]
+  )
 
   return (
     <Fragment>
