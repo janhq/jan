@@ -161,6 +161,8 @@
     "title": "Local API Server",
     "description": "Run an OpenAI-compatible server locally.",
     "startServer": "Start Server",
+    "loadingModel": "Loading Model",
+    "startingServer": "Starting Server",
     "stopServer": "Stop Server",
     "serverLogs": "Server Logs",
     "serverLogsDesc": "View detailed logs of the local API server.",

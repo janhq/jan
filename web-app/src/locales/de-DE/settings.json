@@ -160,7 +160,9 @@
   "localApiServer": {
     "title": "Lokaler API Server",
     "description": "Führe lokal einen OpenAI-kompatiblen Server aus.",
-    "startServer": "Start Server",
+    "startServer": "Server starten",
+    "loadingModel": "Modell laden",
+    "startingServer": "Server wird gestartet",
     "stopServer": "Stop Server",
     "serverLogs": "Server Logs",
     "serverLogsDesc": "Zeige detaillierte Logs des lokalen API-Servers an.",

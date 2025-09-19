@@ -161,6 +161,8 @@
     "title": "Lokalny Serwer API",
     "description": "Używaj lokalnego serwera kompatybilnego z API OpenAI.",
     "startServer": "Uruchom Serwer",
+    "loadingModel": "Ładowanie modelu",
+    "startingServer": "Uruchamianie serwera",
     "stopServer": "Zatrzymaj Serwer",
     "serverLogs": "Dzienniki Serwera",
     "serverLogsDesc": "Wyświetl szczegółowe dzienniki lokalnego serwera API.",
