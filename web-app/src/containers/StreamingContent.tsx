@@ -2,7 +2,6 @@ import { useAppState } from '@/hooks/useAppState'
 import { ThreadContent } from './ThreadContent'
 import { memo, useMemo } from 'react'
 import { useMessages } from '@/hooks/useMessages'
-import { PromptProgress } from '@/components/PromptProgress'
 
 type Props = {
   threadId: string
@@ -58,26 +57,23 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   // Pass a new object to ThreadContent to avoid reference issues
   // The streaming content is always the last message
   return (
-    <>
-      <PromptProgress />
-      <ThreadContent
-        streamTools={{
-          tool_calls: {
-            function: {
-              name: streamingTools?.[0]?.function?.name as string,
-              arguments: streamingTools?.[0]?.function?.arguments as string,
-            },
+    <ThreadContent
+      streamTools={{
+        tool_calls: {
+          function: {
+            name: streamingTools?.[0]?.function?.name as string,
+            arguments: streamingTools?.[0]?.function?.arguments as string,
           },
-        }}
-        {...streamingContent}
-        isLastMessage={true}
-        streamingThread={streamingContent.thread_id}
-        showAssistant={
-          messages.length > 0
-            ? messages[messages.length - 1].role !== 'assistant'
-            : true
-        }
-      />
-    </>
+        },
+      }}
+      {...streamingContent}
+      isLastMessage={true}
+      streamingThread={streamingContent.thread_id}
+      showAssistant={
+        messages.length > 0
+          ? messages[messages.length - 1].role !== 'assistant'
+          : true
+      }
+    />
   )
 })

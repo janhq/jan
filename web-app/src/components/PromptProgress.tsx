@@ -1,16 +1,27 @@
 import { useAppState } from '@/hooks/useAppState'
+import { useEffect, useState } from 'react'
 
 export function PromptProgress() {
   const promptProgress = useAppState((state) => state.promptProgress)
-
-  if (!promptProgress) return null
+  const [hideTimeout, setHideTimeout] = useState(false)
 
   const percentage =
-    promptProgress.total > 0
+    promptProgress && promptProgress.total > 0
       ? Math.round((promptProgress.processed / promptProgress.total) * 100)
       : 0
 
-  if (percentage >= 100) return null
+  useEffect(() => {
+    if (percentage >= 100) {
+      const timer = setTimeout(() => {
+        setHideTimeout(true)
+      }, 500)
+      return () => clearTimeout(timer)
+    } else {
+      setHideTimeout(false)
+    }
+  }, [percentage])
+
+  if (!promptProgress || hideTimeout) return null
 
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
