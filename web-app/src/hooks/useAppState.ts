@@ -4,6 +4,13 @@ import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
+type PromptProgress = {
+  cache: number
+  processed: number
+  time_ms: number
+  total: number
+}
+
 type AppErrorMessage = {
   message?: string
   title?: string
@@ -20,6 +27,7 @@ type AppState = {
   currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
+  promptProgress?: PromptProgress
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -34,6 +42,7 @@ type AppState = {
   setOutOfContextDialog: (show: boolean) => void
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
+  updatePromptProgress: (progress: PromptProgress | undefined) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -44,6 +53,7 @@ export const useAppState = create<AppState>()((set) => ({
   abortControllers: {},
   tokenSpeed: undefined,
   currentToolCall: undefined,
+  promptProgress: undefined,
   cancelToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
@@ -131,6 +141,11 @@ export const useAppState = create<AppState>()((set) => ({
   setErrorMessage: (error) => {
     set(() => ({
       errorMessage: error,
+    }))
+  },
+  updatePromptProgress: (progress) => {
+    set(() => ({
+      promptProgress: progress,
     }))
   },
 }))

@@ -25,6 +25,7 @@ vi.mock('../useAppState', () => ({
         resetTokenSpeed: vi.fn(),
         updateTools: vi.fn(),
         updateStreamingContent: vi.fn(),
+        updatePromptProgress: vi.fn(),
         updateLoadingModel: vi.fn(),
         setAbortController: vi.fn(),
       }

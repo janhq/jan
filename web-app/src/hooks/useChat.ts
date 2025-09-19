@@ -49,6 +49,9 @@ export const useChat = () => {
       state.setAbortController,
     ])
   )
+  const updatePromptProgress = useAppState(
+    (state) => state.updatePromptProgress
+  )
 
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const serviceHub = useServiceHub()
@@ -229,6 +232,7 @@ export const useChat = () => {
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
+      updatePromptProgress(undefined)
       // Do not add new message on retry
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
@@ -397,6 +401,13 @@ export const useChat = () => {
                     break
                   }
 
+                  console.log(part)
+
+                  // Handle prompt progress if available
+                  if ('prompt_progress' in part && part.prompt_progress) {
+                    updatePromptProgress(part.prompt_progress)
+                  }
+
                   // Error message
                   if (!part.choices) {
                     throw new Error(
@@ -513,6 +524,7 @@ export const useChat = () => {
           )
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)
+          updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length
@@ -534,6 +546,7 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
+        updatePromptProgress(undefined)
       }
     },
     [
@@ -543,6 +556,7 @@ export const useChat = () => {
       getMessages,
       setAbortController,
       updateStreamingContent,
+      updatePromptProgress,
       addMessage,
       updateThreadTimestamp,
       updateLoadingModel,
