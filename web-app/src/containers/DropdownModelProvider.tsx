@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import {
   Popover,
@@ -121,17 +122,20 @@ const DropdownModelProvider = ({
 
               // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
               // Check if model has a custom capabilities config flag
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const hasUserConfiguredCapabilities = (model as any)._userConfiguredCapabilities === true
-              
-              if (!capabilities.includes('vision') && !hasUserConfiguredCapabilities) {
+
+              const hasUserConfiguredCapabilities =
+                (model as any)._userConfiguredCapabilities === true
+
+              if (
+                !capabilities.includes('vision') &&
+                !hasUserConfiguredCapabilities
+              ) {
                 const updatedModels = [...provider.models]
                 updatedModels[modelIndex] = {
                   ...model,
                   capabilities: [...capabilities, 'vision'],
                   // Mark this as auto-detected, not user-configured
                   _autoDetectedVision: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any
 
                 updateProvider('llamacpp', { models: updatedModels })
@@ -385,6 +389,11 @@ const DropdownModelProvider = ({
 
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
+      // Immediately update display to prevent double-click issues
+      setDisplayModel(searchableModel.model.id)
+      setSearchValue('')
+      setOpen(false)
+
       selectModelProvider(
         searchableModel.provider.provider,
         searchableModel.model.id
@@ -394,19 +403,6 @@ const DropdownModelProvider = ({
         provider: searchableModel.provider.provider,
       })
 
-      // Check mmproj existence for llamacpp models
-      if (searchableModel.provider.provider === 'llamacpp') {
-        await serviceHub
-          .models()
-          .checkMmprojExistsAndUpdateOffloadMMprojSetting(
-            searchableModel.model.id,
-            updateProvider,
-            getProviderByName
-          )
-        // Also check vision capability
-        await checkAndUpdateModelVisionCapability(searchableModel.model.id)
-      }
-
       // Store the selected model as last used
       if (useLastUsedModel) {
         setLastUsedModel(
@@ -414,8 +410,35 @@ const DropdownModelProvider = ({
           searchableModel.model.id
         )
       }
-      setSearchValue('')
-      setOpen(false)
+
+      // Check mmproj existence for llamacpp models (async, don't block UI)
+      if (searchableModel.provider.provider === 'llamacpp') {
+        serviceHub
+          .models()
+          .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            searchableModel.model.id,
+            updateProvider,
+            getProviderByName
+          )
+          .catch((error) => {
+            console.debug(
+              'Error checking mmproj for model:',
+              searchableModel.model.id,
+              error
+            )
+          })
+
+        // Also check vision capability (async, don't block UI)
+        checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
+          (error) => {
+            console.debug(
+              'Error checking vision capability for model:',
+              searchableModel.model.id,
+              error
+            )
+          }
+        )
+      }
     },
     [
       selectModelProvider,

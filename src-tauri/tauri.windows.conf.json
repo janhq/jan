@@ -4,7 +4,11 @@
     "resources": ["resources/pre-install/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
-      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
+      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1",
+      "webviewInstallMode": {
+        "silent": true,
+        "type": "downloadBootstrapper"
+      }
     }
   }
 }

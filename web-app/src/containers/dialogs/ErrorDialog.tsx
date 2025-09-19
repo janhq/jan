@@ -62,9 +62,17 @@ export default function ErrorDialog() {
 
         <div className="bg-main-view-fg/2 p-2 border border-main-view-fg/5 rounded-lg space-y-2">
           <div>
-            <button
+            <div
               onClick={() => setIsDetailExpanded(!isDetailExpanded)}
               className="flex items-center gap-1 text-sm text-main-view-fg/60 hover:text-main-view-fg/80 transition-colors cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setIsDetailExpanded(!isDetailExpanded)
+                }
+              }}
             >
               {isDetailExpanded ? (
                 <ChevronDown className="size-3" />
@@ -72,7 +80,7 @@ export default function ErrorDialog() {
                 <ChevronRight className="size-3" />
               )}
               Details
-            </button>
+            </div>
 
             {isDetailExpanded && (
               <div

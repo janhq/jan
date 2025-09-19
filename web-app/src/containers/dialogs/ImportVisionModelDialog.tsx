@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   IconLoader2,
@@ -44,129 +44,142 @@ export const ImportVisionModelDialog = ({
   >(null)
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
 
-  const validateGgufFile = async (
-    filePath: string,
-    fileType: 'model' | 'mmproj'
-  ): Promise<void> => {
-    if (fileType === 'model') {
-      setIsValidating(true)
-      setValidationError(null)
-    } else {
-      setIsValidatingMmproj(true)
-      setMmprojValidationError(null)
-    }
-
-    try {
-      console.log(`Reading GGUF metadata for ${fileType}:`, filePath)
-
-      // Handle validation differently for model files vs mmproj files
+  const validateGgufFile = useCallback(
+    async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
       if (fileType === 'model') {
-        // For model files, use the standard validateGgufFile method
-        if (typeof serviceHub.models().validateGgufFile === 'function') {
-          const result = await serviceHub.models().validateGgufFile(filePath)
+        setIsValidating(true)
+        setValidationError(null)
+      } else {
+        setIsValidatingMmproj(true)
+        setMmprojValidationError(null)
+      }
 
-          if (result.metadata) {
-            // Log full metadata for debugging
-            console.log(
-              `Full GGUF metadata for ${fileType}:`,
-              JSON.stringify(result.metadata, null, 2)
-            )
+      try {
+        // Handle validation differently for model files vs mmproj files
+        if (fileType === 'model') {
+          // For model files, use the standard validateGgufFile method
+          if (typeof serviceHub.models().validateGgufFile === 'function') {
+            const result = await serviceHub.models().validateGgufFile(filePath)
 
-            // Check architecture from metadata
-            const architecture =
-              result.metadata.metadata?.['general.architecture']
-            console.log(`${fileType} architecture:`, architecture)
+            if (result.metadata) {
+              // Check architecture from metadata
+              const architecture =
+                result.metadata.metadata?.['general.architecture']
 
-            // Model files should NOT be clip
-            if (architecture === 'clip') {
-              const errorMessage =
-                'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
-              setValidationError(errorMessage)
-              console.error(
-                'CLIP architecture detected in model file:',
-                architecture
-              )
-            } else {
-              console.log(
-                'Model validation passed. Architecture:',
-                architecture
-              )
+              // Extract baseName and use it as model name if available
+              const baseName = result.metadata.metadata?.['general.basename']
+
+              if (baseName) {
+                setModelName(baseName)
+              }
+
+              // Model files should NOT be clip
+              if (architecture === 'clip') {
+                const errorMessage =
+                  'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+                setValidationError(errorMessage)
+                console.error(
+                  'CLIP architecture detected in model file:',
+                  architecture
+                )
+              }
+            }
+
+            if (!result.isValid) {
+              setValidationError(result.error || 'Model validation failed')
+              console.error('Model validation failed:', result.error)
             }
           }
+        } else {
+          // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
+          try {
+            // Import the readGgufMetadata function directly from Tauri
+            const { invoke } = await import('@tauri-apps/api/core')
 
-          if (!result.isValid) {
-            setValidationError(result.error || 'Model validation failed')
-            console.error('Model validation failed:', result.error)
+            const metadata = await invoke(
+              'plugin:llamacpp|read_gguf_metadata',
+              {
+                path: filePath,
+              }
+            )
+
+            // Check if architecture matches expected type
+            const architecture = (
+              metadata as { metadata?: Record<string, string> }
+            ).metadata?.['general.architecture']
+
+            // Get general.baseName from metadata
+            const baseName = (metadata as { metadata?: Record<string, string> })
+              .metadata?.['general.basename']
+
+            // MMProj files MUST be clip
+            if (architecture !== 'clip') {
+              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+              setMmprojValidationError(errorMessage)
+              console.error(
+                'Non-CLIP architecture detected in mmproj file:',
+                architecture
+              )
+            } else if (
+              baseName &&
+              modelName &&
+              !modelName.toLowerCase().includes(baseName.toLowerCase()) &&
+              !baseName.toLowerCase().includes(modelName.toLowerCase())
+            ) {
+              // Validate that baseName and model name are compatible (one should contain the other)
+              const errorMessage = `MMProj file baseName "${baseName}" does not match model name "${modelName}". The MMProj file should be compatible with the selected model.`
+              setMmprojValidationError(errorMessage)
+              console.error('BaseName mismatch in mmproj file:', {
+                baseName,
+                modelName,
+              })
+            }
+          } catch (directError) {
+            console.error(
+              'Failed to validate mmproj file directly:',
+              directError
+            )
+            const errorMessage = `Failed to read MMProj metadata: ${
+              directError instanceof Error
+                ? directError.message
+                : 'Unknown error'
+            }`
+            setMmprojValidationError(errorMessage)
           }
         }
-      } else {
-        // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
-        try {
-          // Import the readGgufMetadata function directly from Tauri
-          const { invoke } = await import('@tauri-apps/api/core')
+      } catch (error) {
+        console.error(`Failed to validate ${fileType} file:`, error)
+        const errorMessage = `Failed to read ${fileType} metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
 
-          const metadata = await invoke('plugin:llamacpp|read_gguf_metadata', {
-            path: filePath,
-          })
-
-          console.log(
-            `Full GGUF metadata for ${fileType}:`,
-            JSON.stringify(metadata, null, 2)
-          )
-
-          // Check if architecture matches expected type
-          const architecture = (
-            metadata as { metadata?: Record<string, string> }
-          ).metadata?.['general.architecture']
-          console.log(`${fileType} architecture:`, architecture)
-
-          // MMProj files MUST be clip
-          if (architecture !== 'clip') {
-            const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
-            setMmprojValidationError(errorMessage)
-            console.error(
-              'Non-CLIP architecture detected in mmproj file:',
-              architecture
-            )
-          } else {
-            console.log(
-              'MMProj validation passed. Architecture:',
-              architecture
-            )
-          }
-        } catch (directError) {
-          console.error('Failed to validate mmproj file directly:', directError)
-          const errorMessage = `Failed to read MMProj metadata: ${
-            directError instanceof Error ? directError.message : 'Unknown error'
-          }`
+        if (fileType === 'model') {
+          setValidationError(errorMessage)
+        } else {
           setMmprojValidationError(errorMessage)
         }
+      } finally {
+        if (fileType === 'model') {
+          setIsValidating(false)
+        } else {
+          setIsValidatingMmproj(false)
+        }
       }
-    } catch (error) {
-      console.error(`Failed to validate ${fileType} file:`, error)
-      const errorMessage = `Failed to read ${fileType} metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+    },
+    [modelName, serviceHub]
+  )
 
-      if (fileType === 'model') {
-        setValidationError(errorMessage)
-      } else {
-        setMmprojValidationError(errorMessage)
-      }
-    } finally {
-      if (fileType === 'model') {
-        setIsValidating(false)
-      } else {
-        setIsValidatingMmproj(false)
-      }
-    }
-  }
+  const validateModelFile = useCallback(
+    async (filePath: string): Promise<void> => {
+      await validateGgufFile(filePath, 'model')
+    },
+    [validateGgufFile]
+  )
 
-  const validateModelFile = async (filePath: string): Promise<void> => {
-    await validateGgufFile(filePath, 'model')
-  }
-
-  const validateMmprojFile = async (filePath: string): Promise<void> => {
-    await validateGgufFile(filePath, 'mmproj')
-  }
+  const validateMmprojFile = useCallback(
+    async (filePath: string): Promise<void> => {
+      await validateGgufFile(filePath, 'mmproj')
+    },
+    [validateGgufFile]
+  )
 
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
     const selectedFile = await serviceHub.dialog().open({
@@ -179,14 +192,14 @@ export const ImportVisionModelDialog = ({
 
       if (type === 'model') {
         setModelFile(selectedFile)
-        // Auto-generate model name from GGUF file
+        // Set temporary model name from filename (will be overridden by baseName from metadata if available)
         const sanitizedName = fileName
           .replace(/\s/g, '-')
           .replace(/\.(gguf|GGUF)$/, '')
           .replace(/[^a-zA-Z0-9/_.-]/g, '') // Remove any characters not allowed in model IDs
         setModelName(sanitizedName)
 
-        // Validate the selected model file
+        // Validate the selected model file (this will update model name with baseName from metadata)
         await validateModelFile(selectedFile)
       } else {
         setMmProjFile(selectedFile)
@@ -272,6 +285,13 @@ export const ImportVisionModelDialog = ({
     setIsValidatingMmproj(false)
   }
 
+  // Re-validate MMProj file when model name changes
+  useEffect(() => {
+    if (mmProjFile && modelName && isVisionModel) {
+      validateMmprojFile(mmProjFile)
+    }
+  }, [modelName, mmProjFile, isVisionModel, validateMmprojFile])
+
   const handleOpenChange = (newOpen: boolean) => {
     if (!importing) {
       setOpen(newOpen)
@@ -284,7 +304,11 @@ export const ImportVisionModelDialog = ({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent
+        onInteractOutside={(e) => {
+          e.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Import Model

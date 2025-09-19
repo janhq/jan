@@ -285,10 +285,39 @@ export default function AddEditMCPServer({
           setError(t('mcp-servers:editJson.errorFormat'))
           return
         }
-        // For each server in the JSON, call onSave
-        Object.entries(parsedData).forEach(([serverName, config]) => {
-          onSave(serverName.trim(), config as MCPServerConfig)
-        })
+        // Check if this looks like a server config object instead of the expected format
+        if (parsedData.command || parsedData.url) {
+          setError(t('mcp-servers:editJson.errorMissingServerNameKey'))
+          return
+        }
+
+        // For each server in the JSON, validate serverName and config
+        for (const [serverName, config] of Object.entries(parsedData)) {
+          const trimmedServerName = serverName.trim()
+          if (!trimmedServerName) {
+            setError(t('mcp-servers:editJson.errorServerName'))
+            return
+          }
+
+          // Validate the config object
+          const serverConfig = config as MCPServerConfig
+
+          // Validate type field if present
+          if (
+            serverConfig.type &&
+            !['stdio', 'http', 'sse'].includes(serverConfig.type)
+          ) {
+            setError(
+              t('mcp-servers:editJson.errorInvalidType', {
+                serverName: trimmedServerName,
+                type: serverConfig.type,
+              })
+            )
+            return
+          }
+
+          onSave(trimmedServerName, serverConfig as MCPServerConfig)
+        }
         onOpenChange(false)
         resetForm()
         setError(null)
@@ -342,7 +371,12 @@ export default function AddEditMCPServer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        showCloseButton={false}
+        onInteractOutside={(e) => {
+          e.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>

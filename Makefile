@@ -30,6 +30,17 @@ endif
 	yarn build:core
 	yarn build:extensions && yarn build:extensions-web
 
+# Install required Rust targets for macOS universal builds
+install-rust-targets:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Detected macOS, installing universal build targets..."
+	rustup target add x86_64-apple-darwin
+	rustup target add aarch64-apple-darwin
+	@echo "Rust targets installed successfully!"
+else
+	@echo "Not macOS; skipping Rust target installation."
+endif
+
 dev: install-and-build
 	yarn download:bin
 	yarn download:lib
@@ -70,11 +81,12 @@ test: lint
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
 # Builds and publishes the app
-build-and-publish: install-and-build
+build-and-publish: install-and-build install-rust-targets
 	yarn build
 
 # Build
-build: install-and-build
+build: install-and-build install-rust-targets
+	yarn download:bin
 	yarn download:lib
 	yarn build
 

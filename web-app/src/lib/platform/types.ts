@@ -57,4 +57,10 @@ export enum PlatformFeature {
 
   // Authentication (Google OAuth, user profiles)
   AUTHENTICATION = 'authentication',
+
+  // Google Analytics tracking (web-only)
+  GOOGLE_ANALYTICS = 'googleAnalytics',
+
+  // Alternate keyboard shortcut bindings (web-only, to avoid browser conflicts)
+  ALTERNATE_SHORTCUT_BINDINGS = 'alternateShortcutBindings',
 }

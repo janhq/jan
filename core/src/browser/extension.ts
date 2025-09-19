@@ -126,16 +126,17 @@ export abstract class BaseExtension implements ExtensionType {
         settings.forEach((setting) => {
           // Keep setting value
           if (setting.controllerProps && Array.isArray(oldSettings))
-            setting.controllerProps.value = oldSettings.find(
-              (e: any) => e.key === setting.key
-            )?.controllerProps?.value
+            setting.controllerProps.value =
+              oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.value ??
+              setting.controllerProps.value
           if ('options' in setting.controllerProps)
             setting.controllerProps.options = setting.controllerProps.options?.length
               ? setting.controllerProps.options
               : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
           if ('recommended' in setting.controllerProps) {
-            const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.recommended
-            if (oldRecommended !== undefined && oldRecommended !== "") {
+            const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)
+              ?.controllerProps?.recommended
+            if (oldRecommended !== undefined && oldRecommended !== '') {
               setting.controllerProps.recommended = oldRecommended
             }
           }
