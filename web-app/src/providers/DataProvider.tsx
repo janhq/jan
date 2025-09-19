@@ -39,13 +39,18 @@ export function DataProvider() {
     verboseLogs,
     proxyTimeout,
   } = useLocalApiServer()
-  const { setServerStatus } = useAppState()
+  const setServerStatus = useAppState((state) => state.setServerStatus)
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
     serviceHub.providers().getProviders().then(setProviders)
-    serviceHub.mcp().getMCPConfig().then((data) => setServers(data.mcpServers ?? {}))
-    serviceHub.assistants().getAssistants()
+    serviceHub
+      .mcp()
+      .getMCPConfig()
+      .then((data) => setServers(data.mcpServers ?? {}))
+    serviceHub
+      .assistants()
+      .getAssistants()
       .then((data) => {
         // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
@@ -74,14 +79,18 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    serviceHub.threads().fetchThreads().then((threads) => {
-      setThreads(threads)
-      threads.forEach((thread) =>
-        serviceHub.messages().fetchMessages(thread.id).then((messages) =>
-          setMessages(thread.id, messages)
+    serviceHub
+      .threads()
+      .fetchThreads()
+      .then((threads) => {
+        setThreads(threads)
+        threads.forEach((thread) =>
+          serviceHub
+            .messages()
+            .fetchMessages(thread.id)
+            .then((messages) => setMessages(thread.id, messages))
         )
-      )
-    })
+      })
   }, [serviceHub, setThreads, setMessages])
 
   // Check for app updates
@@ -170,7 +179,9 @@ export function DataProvider() {
       setServerStatus('pending')
 
       // Start the model first
-      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
+      serviceHub
+        .models()
+        .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 

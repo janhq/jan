@@ -72,7 +72,8 @@ const mainMenus = [
 ]
 
 const LeftPanel = () => {
-  const { open, setLeftPanel } = useLeftPanel()
+  const open = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
@@ -119,9 +120,9 @@ const LeftPanel = () => {
         prevScreenSizeRef.current !== null &&
         prevScreenSizeRef.current !== currentIsSmallScreen
       ) {
-        if (currentIsSmallScreen) {
+        if (currentIsSmallScreen && open) {
           setLeftPanel(false)
-        } else {
+        } else if(!open) {
           setLeftPanel(true)
         }
         prevScreenSizeRef.current = currentIsSmallScreen
@@ -146,8 +147,10 @@ const LeftPanel = () => {
     select: (state) => state.location.pathname,
   })
 
-  const { deleteAllThreads, unstarAllThreads, getFilteredThreads, threads } =
-    useThreads()
+  const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
+  const unstarAllThreads = useThreads((state) => state.unstarAllThreads)
+  const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
+  const threads = useThreads((state) => state.threads)
 
   const filteredThreads = useMemo(() => {
     return getFilteredThreads(searchTerm)
