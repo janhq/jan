@@ -48,13 +48,13 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-      setCurrentThreadId(threadId)
-      const assistant = assistants.find(
-        (assistant) => assistant.id === thread?.assistants?.[0]?.id
-      )
-      if (assistant) setCurrentAssistant(assistant)
+    setCurrentThreadId(threadId)
+    const assistant = assistants.find(
+      (assistant) => assistant.id === thread?.assistants?.[0]?.id
+    )
+    if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId,  assistants])
+  }, [threadId, assistants])
 
   useEffect(() => {
     serviceHub
@@ -77,11 +77,11 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const updateMessage = (item: ThreadMessage, message: string) => {
+  const updateMessage = (item: ThreadMessage, message: string, imageUrls?: string[]) => {
     const newMessages: ThreadMessage[] = messages.map((m) => {
       if (m.id === item.id) {
         const msg: ThreadMessage = cloneDeep(m)
-        msg.content = [
+        const newContent = [
           {
             type: ContentType.Text,
             text: {
@@ -90,6 +90,18 @@ function ThreadDetail() {
             },
           },
         ]
+        // Add image content if imageUrls are provided
+        if (imageUrls && imageUrls.length > 0) {
+          imageUrls.forEach((url) => {
+            newContent.push({
+              type: 'image_url' as ContentType,
+              image_url: {
+                url: url,
+              },
+            } as any)
+          })
+        }
+        msg.content = newContent
         return msg
       }
       return m
