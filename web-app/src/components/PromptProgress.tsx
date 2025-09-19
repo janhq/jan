@@ -10,7 +10,7 @@ export function PromptProgress() {
       ? Math.round((promptProgress.processed / promptProgress.total) * 100)
       : 0
 
-  if (percentage === 100) return null
+  if (percentage >= 100) return null
 
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
