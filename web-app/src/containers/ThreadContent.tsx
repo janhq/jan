@@ -26,7 +26,6 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { PromptProgress } from '@/components/PromptProgress'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -330,8 +329,6 @@ export const ThreadContent = memo(
                 </div>
               </div>
             )}
-
-            <PromptProgress />
 
             {reasoningSegment && (
               <ThinkingBlock

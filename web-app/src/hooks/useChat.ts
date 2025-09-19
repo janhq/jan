@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -403,7 +404,12 @@ export const useChat = () => {
 
                   // Handle prompt progress if available
                   if ('prompt_progress' in part && part.prompt_progress) {
-                    updatePromptProgress(part.prompt_progress)
+                    // Force immediate state update to ensure we see intermediate values
+                    flushSync(() => {
+                      updatePromptProgress(part.prompt_progress)
+                    })
+                    // Add a small delay to make progress visible
+                    await new Promise((resolve) => setTimeout(resolve, 100))
                   }
 
                   // Error message
