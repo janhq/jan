@@ -557,7 +557,16 @@ export class DefaultModelsService implements ModelsService {
           model: string
           messages: Array<{
             role: string
-            content: string
+            content:
+              | string
+              | Array<{
+                  type: string
+                  text?: string
+                  image_url?: {
+                    detail?: string
+                    url?: string
+                  }
+                }>
           }>
         }) => Promise<number>
       }
@@ -567,26 +576,70 @@ export class DefaultModelsService implements ModelsService {
         const transformedMessages = messages
           .map((message) => {
             // Handle different content types
-            let textContent = ''
+            let content:
+              | string
+              | Array<{
+                  type: string
+                  text?: string
+                  image_url?: {
+                    detail?: string
+                    url?: string
+                  }
+                }> = ''
 
             if (message.content && message.content.length > 0) {
-              // Extract text from content array
-              const textContents = message.content
-                .filter(
-                  (content) =>
-                    content.type === ContentType.Text && content.text?.value
-                )
-                .map((content) => content.text?.value || '')
+              // Check if there are any image_url content types
+              const hasImages = message.content.some(
+                (content) => content.type === ContentType.Image
+              )
 
-              textContent = textContents.join(' ')
+              if (hasImages) {
+                // For multimodal messages, preserve the array structure
+                content = message.content.map((contentItem) => {
+                  if (contentItem.type === ContentType.Text) {
+                    return {
+                      type: 'text',
+                      text: contentItem.text?.value || '',
+                    }
+                  } else if (contentItem.type === ContentType.Image) {
+                    return {
+                      type: 'image_url',
+                      image_url: {
+                        detail: contentItem.image_url?.detail,
+                        url: contentItem.image_url?.url || '',
+                      },
+                    }
+                  }
+                  // Fallback for unknown content types
+                  return {
+                    type: contentItem.type,
+                    text: contentItem.text?.value,
+                    image_url: contentItem.image_url,
+                  }
+                })
+              } else {
+                // For text-only messages, keep the string format
+                const textContents = message.content
+                  .filter(
+                    (content) =>
+                      content.type === ContentType.Text && content.text?.value
+                  )
+                  .map((content) => content.text?.value || '')
+
+                content = textContents.join(' ')
+              }
             }
 
             return {
               role: message.role,
-              content: textContent,
+              content,
             }
           })
-          .filter((msg) => msg.content.trim() !== '') // Filter out empty messages
+          .filter((msg) =>
+            typeof msg.content === 'string'
+              ? msg.content.trim() !== ''
+              : Array.isArray(msg.content) && msg.content.length > 0
+          ) // Filter out empty messages
 
         return await engine.getTokensCount({
           model: modelId,

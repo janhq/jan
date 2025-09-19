@@ -13,7 +13,16 @@ export interface TokenCountData {
   error?: string
 }
 
-export const useTokensCount = (messages: ThreadMessage[] = []) => {
+export const useTokensCount = (
+  messages: ThreadMessage[] = [],
+  uploadedFiles?: Array<{
+    name: string
+    type: string
+    size: number
+    base64: string
+    dataUrl: string
+  }>
+) => {
   const [tokenData, setTokenData] = useState<TokenCountData>({
     tokenCount: 0,
     loading: false,
@@ -29,17 +38,39 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
   // Create messages with current prompt for live calculation
   const messagesWithPrompt = useMemo(() => {
     const result = [...messages]
-    if (prompt.trim()) {
-      result.push({
-        id: 'temp-prompt',
-        thread_id: '',
-        role: 'user',
-        content: [{ type: ContentType.Text, text: { value: prompt } }],
-        created_at: Date.now(),
-      } as ThreadMessage)
+    if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {
+      const content = []
+
+      // Add text content if prompt exists
+      if (prompt.trim()) {
+        content.push({ type: ContentType.Text, text: { value: prompt } })
+      }
+
+      // Add image content for uploaded files
+      if (uploadedFiles && uploadedFiles.length > 0) {
+        uploadedFiles.forEach((file) => {
+          content.push({
+            type: ContentType.Image,
+            image_url: {
+              url: file.dataUrl,
+              detail: 'high', // Default to high detail for token calculation
+            },
+          })
+        })
+      }
+
+      if (content.length > 0) {
+        result.push({
+          id: 'temp-prompt',
+          thread_id: '',
+          role: 'user',
+          content,
+          created_at: Date.now(),
+        } as ThreadMessage)
+      }
     }
     return result
-  }, [messages, prompt])
+  }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt
   const debouncedCalculateTokens = useCallback(async () => {
@@ -129,7 +160,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     ) {
       debounceTimeoutRef.current = setTimeout(() => {
         debouncedCalculateTokens()
-      }, 500) // 500ms debounce
+      }, 150) // 150ms debounce for more responsive updates
     } else {
       // Reset immediately if no content
       setTokenData({
@@ -162,15 +193,8 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     await debouncedCalculateTokens()
   }, [debouncedCalculateTokens])
 
-  const calculateTokensForImages = useCallback((images: File[]): number => {
-    // Estimation for vision tokens - this is a rough calculation
-    // Based on common vision models that use ~765 tokens per image
-    return images.length * 765
-  }, [])
-
   return {
     ...tokenData,
     calculateTokens,
-    calculateTokensForImages,
   }
 }

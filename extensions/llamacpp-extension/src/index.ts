@@ -325,12 +325,14 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          bestAvailableBackendString = await this.determineBestBackend(
+            version_backends
+          )
         }
       } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(
+          version_backends
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2290,7 +2292,9 @@ export default class llamacpp_extension extends AIEngine {
       : Math.floor(maxContextLength)
 
     const mmprojInfo = mmprojPath
-      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, offloadMmproj=${offloadMmproj}`
+      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(
+          2
+        )}MB, offloadMmproj=${offloadMmproj}`
       : ''
 
     logger.info(
@@ -2483,7 +2487,9 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to read model metadata: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
       }
     }
   }
@@ -2520,7 +2526,7 @@ export default class llamacpp_extension extends AIEngine {
     const hasImages = opts.messages.some(
       (msg) =>
         Array.isArray(msg.content) &&
-        msg.content.some((content) => content.type === 'input_image')
+        msg.content.some((content) => content.type === 'image_url')
     )
 
     if (hasImages) {
@@ -2551,9 +2557,9 @@ export default class llamacpp_extension extends AIEngine {
     if (!parseResponse.ok) {
       const errorData = await parseResponse.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${parseResponse.status}: ${JSON.stringify(
-          errorData
-        )}`
+        `API request failed with status ${
+          parseResponse.status
+        }: ${JSON.stringify(errorData)}`
       )
     }
 
@@ -2604,7 +2610,7 @@ export default class llamacpp_extension extends AIEngine {
     for (const message of messages) {
       if (Array.isArray(message.content)) {
         imageCount += message.content.filter(
-          (content) => content.type === 'input_image'
+          (content) => content.type === 'image_url'
         ).length
       }
     }
@@ -2625,7 +2631,7 @@ export default class llamacpp_extension extends AIEngine {
     for (const message of messages) {
       if (Array.isArray(message.content)) {
         imageCount += message.content.filter(
-          (content) => content.type === 'input_image'
+          (content) => content.type === 'image_url'
         ).length
       }
     }

@@ -14,6 +14,13 @@ interface TokenCounterProps {
   className?: string
   compact?: boolean
   additionalTokens?: number // For vision tokens or other additions
+  uploadedFiles?: Array<{
+    name: string
+    type: string
+    size: number
+    base64: string
+    dataUrl: string
+  }>
 }
 
 export const TokenCounter = ({
@@ -21,8 +28,13 @@ export const TokenCounter = ({
   className,
   compact = false,
   additionalTokens = 0,
+  uploadedFiles = [],
 }: TokenCounterProps) => {
-  const { calculateTokens, ...tokenData } = useTokensCount(messages)
+  const { calculateTokens, ...tokenData } = useTokensCount(
+    messages,
+    uploadedFiles
+  )
+
   const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -195,9 +207,9 @@ export const TokenCounter = ({
               {/* Token breakdown */}
               <div className="space-y-2 mb-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-main-view-fg/60">Input</span>
+                  <span className="text-main-view-fg/60">Text</span>
                   <span className="text-main-view-fg font-mono">
-                    {formatNumber(Math.max(0, totalTokens - additionalTokens))}
+                    {formatNumber(Math.max(0, tokenData.tokenCount))}
                   </span>
                 </div>
               </div>

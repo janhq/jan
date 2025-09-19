@@ -59,7 +59,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const { t } = useTranslation()
-  const { spellCheckChatInput, tokenCounterCompact } = useGeneralSetting()
+  const spellCheckChatInput = useGeneralSetting(
+    (state) => state.spellCheckChatInput
+  )
+  const tokenCounterCompact = useGeneralSetting(
+    (state) => state.tokenCounterCompact
+  )
   useTools()
 
   // Get current thread messages for token counting
@@ -785,6 +790,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
+                      uploadedFiles={uploadedFiles}
                     />
                   </div>
                 )}
@@ -847,7 +853,11 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
           <div className="flex-1 w-full flex justify-start px-2">
-            <TokenCounter messages={threadMessages || []} compact={false} />
+            <TokenCounter
+              messages={threadMessages || []}
+              compact={false}
+              uploadedFiles={uploadedFiles}
+            />
           </div>
         )}
     </div>

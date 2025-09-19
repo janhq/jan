@@ -13,7 +13,7 @@ export interface chatCompletionRequestMessage {
 }
 
 export interface Content {
-  type: 'text' | 'input_image' | 'input_audio'
+  type: 'text' | 'image_url' | 'input_audio'
   text?: string
   image_url?: string
   input_audio?: InputAudio
