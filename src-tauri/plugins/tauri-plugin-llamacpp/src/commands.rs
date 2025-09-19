@@ -12,7 +12,7 @@ use tokio::time::Instant;
 
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use crate::path::{validate_binary_path, validate_model_path, validate_mmproj_path};
+use crate::path::{validate_binary_path, validate_mmproj_path, validate_model_path};
 use crate::process::{
     find_session_by_model_id, get_all_active_sessions, get_all_loaded_model_ids,
     get_random_available_port, is_process_running_by_pid,
@@ -56,6 +56,16 @@ pub async fn load_llama_model<R: Runtime>(
     let port = parse_port_from_args(&args);
     let model_path_pb = validate_model_path(&mut args)?;
     let mmproj_path_pb = validate_mmproj_path(&mut args)?;
+
+    let mmproj_path_string = if let Some(ref _mmproj_pb) = mmproj_path_pb {
+        // Find the actual mmproj path from args after validation/conversion
+        let mmproj_index = args.iter().position(|arg| arg == "--mmproj").unwrap();
+        Some(args[mmproj_index + 1].clone())
+    } else {
+        None
+    };
+
+    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap());
 
     let api_key: String;
 
@@ -211,7 +221,7 @@ pub async fn load_llama_model<R: Runtime>(
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
         api_key: api_key,
-        mmproj_path: mmproj_path_pb.and_then(|p| p.into_os_string().into_string().ok()),
+        mmproj_path: mmproj_path_string,
     };
 
     // Insert session info to process_map
@@ -266,7 +276,7 @@ pub async fn unload_llama_model<R: Runtime>(
 pub async fn get_devices(
     backend_path: &str,
     library_path: Option<&str>,
-    envs: HashMap<String, String>
+    envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
     get_devices_from_backend(backend_path, library_path, envs).await
 }

@@ -325,14 +325,12 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString = await this.determineBestBackend(
-            version_backends
-          )
+          bestAvailableBackendString =
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = await this.determineBestBackend(
-          version_backends
-        )
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2496,6 +2494,7 @@ export default class llamacpp_extension extends AIEngine {
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
     const sessionInfo = await this.findSessionByModel(opts.model)
+    logger.info(JSON.stringify(sessionInfo))
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
@@ -2533,7 +2532,9 @@ export default class llamacpp_extension extends AIEngine {
       logger.info('Conversation has images')
       try {
         // Read mmproj metadata to get vision parameters
-        const metadata = await readGgufMetadata(sessionInfo.mmprojPath)
+        logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
+
+        const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
         imageTokens = await this.calculateImageTokens(
           opts.messages,
           metadata.metadata
@@ -2564,7 +2565,6 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const parsedPrompt = await parseResponse.json()
-    console.debug(parsedPrompt)
 
     const response = await fetch(`${baseUrl}/tokenize`, {
       method: 'POST',
@@ -2599,11 +2599,8 @@ export default class llamacpp_extension extends AIEngine {
 
     // Calculate patches per image
     const patchesPerSide = Math.floor(imageSize / patchSize)
-    const totalPatches = patchesPerSide * patchesPerSide
+    const totalPatches = patchesPerSide / 4 * patchesPerSide / 4
 
-    // Each patch typically corresponds to one vision token
-    // Plus some overhead for special tokens (CLS token, etc.)
-    const tokensPerImage = totalPatches * 4 // 4D
 
     // Count images in messages
     let imageCount = 0
@@ -2616,9 +2613,9 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     logger.info(
-      `Calculated ${tokensPerImage} tokens per image, ${imageCount} images total`
+      `Calculated ${totalPatches} tokens per image, ${imageCount} images total`
     )
-    return imageCount * tokensPerImage
+    return imageCount * totalPatches
   }
 
   private estimateImageTokensFallback(
@@ -2639,6 +2636,6 @@ export default class llamacpp_extension extends AIEngine {
     logger.warn(
       `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
     )
-    return imageCount * estimatedTokensPerImage
+    return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> token
   }
 }
