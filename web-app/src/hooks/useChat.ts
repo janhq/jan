@@ -54,7 +54,9 @@ export const useChat = () => {
   const showIncreaseContextSizeModal = useContextSizeApproval(
     (state) => state.showApprovalModal
   )
-  const getDisabledToolsForThread = useToolAvailable((state) => state.getDisabledToolsForThread)
+  const getDisabledToolsForThread = useToolAvailable(
+    (state) => state.getDisabledToolsForThread
+  )
 
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const selectedModel = useModelProvider((state) => state.selectedModel)
@@ -82,7 +84,7 @@ export const useChat = () => {
   const selectedAssistant =
     assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
-  const getCurrentThread = useCallback(async (prompt: string) => {
+  const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
@@ -570,5 +572,5 @@ export const useChat = () => {
     ]
   )
 
-  return useMemo(() => (sendMessage), [sendMessage])
+  return useMemo(() => sendMessage, [sendMessage])
 }

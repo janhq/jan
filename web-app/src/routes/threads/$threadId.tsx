@@ -77,7 +77,11 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const updateMessage = (item: ThreadMessage, message: string, imageUrls?: string[]) => {
+  const updateMessage = (
+    item: ThreadMessage,
+    message: string,
+    imageUrls?: string[]
+  ) => {
     const newMessages: ThreadMessage[] = messages.map((m) => {
       if (m.id === item.id) {
         const msg: ThreadMessage = cloneDeep(m)
@@ -98,6 +102,7 @@ function ThreadDetail() {
               image_url: {
                 url: url,
               },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any)
           })
         }
