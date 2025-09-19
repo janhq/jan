@@ -227,7 +227,7 @@ export const useChat = () => {
         dataUrl: string
       }>
     ) => {
-      const activeThread = await getCurrentThread(message)
+      const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
       let activeProvider = currentProviderId
