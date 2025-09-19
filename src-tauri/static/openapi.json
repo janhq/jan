@@ -42,7 +42,7 @@
         }
       }
     },
-    "/chat/completion": {
+    "/chat/completions": {
       "post": {
         "summary": "Create chat completion",
         "description": "Generates a completion for the supplied prompt. Streaming mode is supported. All extra options described in the documentation are optional and follow the OpenAI‑compatible naming.",
