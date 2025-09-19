@@ -12,11 +12,22 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+/**
+ * Props for the AddProviderDialog component
+ */
 interface AddProviderDialogProps {
+  /** Callback function called when a new provider is created with the provider name */
   onCreateProvider: (name: string) => void
+  /** React children to render as the dialog trigger */
   children: React.ReactNode
 }
 
+/**
+ * Dialog component for adding a new provider with name input and validation
+ * @param onCreateProvider - Callback function to handle provider creation
+ * @param children - Trigger element for opening the dialog
+ * @returns JSX element containing the provider creation dialog
+ */
 export function AddProviderDialog({
   onCreateProvider,
   children,
@@ -26,6 +37,9 @@ export function AddProviderDialog({
   const [isOpen, setIsOpen] = useState(false)
   const createButtonRef = useRef<HTMLButtonElement>(null)
 
+  /**
+   * Handles the creation of a new provider by validating the name and calling the callback
+   */
   const handleCreate = () => {
     if (name.trim()) {
       onCreateProvider(name.trim())
@@ -34,11 +48,18 @@ export function AddProviderDialog({
     }
   }
 
+  /**
+   * Handles dialog cancellation by clearing the input and closing the dialog
+   */
   const handleCancel = () => {
     setName('')
     setIsOpen(false)
   }
 
+  /**
+   * Handles keyboard events in the input field, triggering creation on Enter key
+   * @param e - Keyboard event from the input field
+   */
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && name.trim()) {
       e.preventDefault()
@@ -48,6 +69,10 @@ export function AddProviderDialog({
     e.stopPropagation()
   }
 
+  /**
+   * Handles dialog open state changes and clears input when closing
+   * @param open - Boolean indicating if the dialog should be open
+   */
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
     if (!open) {
@@ -60,7 +85,10 @@ export function AddProviderDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         className="sm:max-w-[425px] max-w-[90vw]"
-        onOpenAutoFocus={(e) => {
+        onOpenAutoFocus={(
+          /** @param e - Focus event triggered when dialog opens */
+          e
+        ) => {
           e.preventDefault()
           createButtonRef.current?.focus()
         }}
@@ -69,7 +97,10 @@ export function AddProviderDialog({
           <DialogTitle>{t('provider:addOpenAIProvider')}</DialogTitle>
           <Input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(
+              /** @param e - Change event from the input field */
+              e
+            ) => setName(e.target.value)}
             className="mt-2"
             placeholder={t('provider:enterNameForProvider')}
             onKeyDown={handleKeyDown}
