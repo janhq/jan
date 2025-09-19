@@ -3,7 +3,6 @@ import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useTools } from '@/hooks/useTools'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
@@ -34,7 +33,6 @@ function Index() {
   const search = useSearch({ from: route.home as any })
   const selectedModel = search.model
   const { setCurrentThreadId } = useThreads()
-  useTools()
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
