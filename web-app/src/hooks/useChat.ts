@@ -401,8 +401,6 @@ export const useChat = () => {
                     break
                   }
 
-                  console.log(part)
-
                   // Handle prompt progress if available
                   if ('prompt_progress' in part && part.prompt_progress) {
                     updatePromptProgress(part.prompt_progress)
