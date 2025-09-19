@@ -17,10 +17,13 @@ vi.mock('@/lib/messages', () => ({
 
 // Mock dependencies similar to existing tests, but customize assistant
 vi.mock('../../hooks/usePrompt', () => ({
-  usePrompt: (selector: any) => {
-    const state = { prompt: 'test prompt', setPrompt: vi.fn() }
-    return selector ? selector(state) : state
-  },
+  usePrompt: Object.assign(
+    (selector: any) => {
+      const state = { prompt: 'test prompt', setPrompt: vi.fn() }
+      return selector ? selector(state) : state
+    },
+    { getState: () => ({ prompt: 'test prompt', setPrompt: vi.fn() }) }
+  ),
 }))
 
 vi.mock('../../hooks/useAppState', () => ({
@@ -150,7 +153,7 @@ describe('useChat instruction rendering', () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
-      await result.current.sendMessage('Hello')
+      await result.current('Hello')
     })
 
     expect(hoisted.builderMock).toHaveBeenCalled()

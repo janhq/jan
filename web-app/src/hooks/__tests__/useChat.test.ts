@@ -4,13 +4,16 @@ import { useChat } from '../useChat'
 
 // Mock dependencies
 vi.mock('../usePrompt', () => ({
-  usePrompt: (selector: any) => {
-    const state = {
-      prompt: 'test prompt',
-      setPrompt: vi.fn(),
-    }
-    return selector ? selector(state) : state
-  },
+  usePrompt: Object.assign(
+    (selector: any) => {
+      const state = {
+        prompt: 'test prompt',
+        setPrompt: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
+    { getState: () => ({ prompt: 'test prompt', setPrompt: vi.fn() }) }
+  ),
 }))
 
 vi.mock('../useAppState', () => ({
@@ -191,18 +194,18 @@ describe('useChat', () => {
 
   it('returns sendMessage function', () => {
     const { result } = renderHook(() => useChat())
-    
-    expect(result.current.sendMessage).toBeDefined()
-    expect(typeof result.current.sendMessage).toBe('function')
+
+    expect(result.current).toBeDefined()
+    expect(typeof result.current).toBe('function')
   })
 
   it('sends message successfully', async () => {
     const { result } = renderHook(() => useChat())
-    
+
     await act(async () => {
-      await result.current.sendMessage('Hello world')
+      await result.current('Hello world')
     })
-    
-    expect(result.current.sendMessage).toBeDefined()
+
+    expect(result.current).toBeDefined()
   })
 })
