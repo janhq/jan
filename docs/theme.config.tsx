@@ -1,25 +1,25 @@
-import React, { Fragment } from 'react'
-import { useConfig, DocsThemeConfig } from 'nextra-theme-docs'
-import LogoMark from '@/components/LogoMark'
-import FooterMenu from '@/components/FooterMenu'
-import JSONLD from '@/components/JSONLD'
-import { useRouter } from 'next/router'
-import Link from 'next/link'
-import { LibraryBig, Blocks, BrainCircuit, Computer } from 'lucide-react'
-import { AiOutlineGithub } from 'react-icons/ai'
-import { BiLogoDiscordAlt } from 'react-icons/bi'
-import { RiTwitterXFill } from 'react-icons/ri'
+import React, { Fragment } from "react";
+import { useConfig, DocsThemeConfig } from "nextra-theme-docs";
+import LogoMark from "@/components/LogoMark";
+import FooterMenu from "@/components/FooterMenu";
+import JSONLD from "@/components/JSONLD";
+import { useRouter } from "next/router";
+import Link from "next/link";
+import { LibraryBig, Blocks, BrainCircuit, Computer } from "lucide-react";
+import { AiOutlineGithub } from "react-icons/ai";
+import { BiLogoDiscordAlt } from "react-icons/bi";
+import { RiTwitterXFill } from "react-icons/ri";
 
-const defaultUrl = 'https://jan.ai'
-const defaultImage = 'https://jan.ai/assets/images/general/og-image.png'
+const defaultUrl = "https://jan.ai";
+const defaultImage = "https://jan.ai/assets/images/general/og-image.png";
 
 const structuredData = {
-  '@context': 'https://schema.org',
-  '@type': 'Organization',
-  'name': 'Jan',
-  'url': `${defaultUrl}`,
-  'logo': `${defaultImage}`,
-}
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Jan",
+  url: `${defaultUrl}`,
+  logo: `${defaultImage}`,
+};
 
 const config: DocsThemeConfig = {
   logo: (
@@ -30,25 +30,25 @@ const config: DocsThemeConfig = {
       </div>
     </span>
   ),
-  docsRepositoryBase: 'https://github.com/menloresearch/jan/tree/dev/docs',
+  docsRepositoryBase: "https://github.com/menloresearch/jan/tree/dev/docs",
   feedback: {
-    content: 'Question? Give us feedback →',
-    labels: 'feedback',
+    content: "Question? Give us feedback →",
+    labels: "feedback",
   },
   editLink: {
-    text: 'Edit this page on GitHub →',
+    text: "Edit this page on GitHub →",
   },
   useNextSeoProps() {
     return {
-      titleTemplate: '%s - Jan',
+      titleTemplate: "%s - Jan",
       twitter: {
-        cardType: 'summary_large_image',
-        site: '@jandotai',
+        cardType: "summary_large_image",
+        site: "@jandotai",
       },
       openGraph: {
-        type: 'website',
+        type: "website",
       },
-    }
+    };
   },
   navbar: {
     extraContent: (
@@ -68,22 +68,20 @@ const config: DocsThemeConfig = {
   sidebar: {
     titleComponent: ({ type, title }) => {
       // eslint-disable-next-line react-hooks/rules-of-hooks
-      const { asPath } = useRouter()
-      if (type === 'separator' && title === 'Switcher') {
+      const { asPath } = useRouter();
+      if (type === "separator" && title === "Switcher") {
         return (
           <div className="-mx-2 hidden md:block">
             {[
-              { title: 'Jan Desktop', path: '/docs', Icon: LibraryBig },
               {
-                title: 'Jan Mobile',
-                path: '/platforms',
-                Icon: BrainCircuit,
-              },
-              // { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
-              {
-                title: 'Jan Server',
-                path: '/platforms',
+                title: "Jan Server",
+                path: "/server",
                 Icon: Computer,
+              },
+              {
+                title: "Jan Desktop & Mobile",
+                path: "/docs",
+                Icon: LibraryBig,
               },
             ].map((item) =>
               asPath.startsWith(item.path) ? (
@@ -103,12 +101,12 @@ const config: DocsThemeConfig = {
                   <item.Icon className="w-7 h-7 p-1 border rounded border-gray-200 dark:border-gray-700" />
                   {item.title}
                 </Link>
-              )
+              ),
             )}
           </div>
-        )
+        );
       }
-      return title
+      return title;
     },
     defaultMenuCollapseLevel: 1,
     toggleButton: true,
@@ -117,9 +115,9 @@ const config: DocsThemeConfig = {
     backToTop: true,
   },
   head: function useHead() {
-    const { title, frontMatter } = useConfig()
-    const titleTemplate = (frontMatter?.title || title) + ' - ' + 'Jan'
-    const { asPath } = useRouter()
+    const { title, frontMatter } = useConfig();
+    const titleTemplate = (frontMatter?.title || title) + " - " + "Jan";
+    const { asPath } = useRouter();
 
     return (
       <Fragment>
@@ -143,20 +141,20 @@ const config: DocsThemeConfig = {
         />
         <link
           rel="canonical"
-          href={frontMatter?.ogImage ? 'https://jan.ai' + asPath : defaultUrl}
+          href={frontMatter?.ogImage ? "https://jan.ai" + asPath : defaultUrl}
         />
         <meta
           property="og:url"
           content={
-            frontMatter?.ogImage ? 'https://jan.ai' + asPath : defaultUrl
+            frontMatter?.ogImage ? "https://jan.ai" + asPath : defaultUrl
           }
         />
         <meta
           property="og:image"
           content={
             frontMatter?.ogImage
-              ? 'https://jan.ai/' + frontMatter?.ogImage
-              : 'https://jan.ai/assets/images/general/og-image.png'
+              ? "https://jan.ai/" + frontMatter?.ogImage
+              : "https://jan.ai/assets/images/general/og-image.png"
           }
         />
         <meta property="og:image:alt" content="Jan-OGImage" />
@@ -164,31 +162,31 @@ const config: DocsThemeConfig = {
           name="keywords"
           content={
             frontMatter?.keywords?.map((keyword: string) => keyword) || [
-              'Jan',
-              'Customizable Intelligence, LLM',
-              'local AI',
-              'privacy focus',
-              'free and open source',
-              'private and offline',
-              'conversational AI',
-              'no-subscription fee',
-              'large language models',
-              'build in public',
-              'remote team',
-              'how we work',
+              "Jan",
+              "Customizable Intelligence, LLM",
+              "local AI",
+              "privacy focus",
+              "free and open source",
+              "private and offline",
+              "conversational AI",
+              "no-subscription fee",
+              "large language models",
+              "build in public",
+              "remote team",
+              "how we work",
             ]
           }
         />
         <JSONLD data={structuredData} />
       </Fragment>
-    )
+    );
   },
   footer: {
     text: <FooterMenu />,
   },
   nextThemes: {
-    defaultTheme: 'light',
+    defaultTheme: "light",
   },
-}
+};
 
-export default config
+export default config;

@@ -1,0 +1,39 @@
+---
+title: Jan Server
+description: Self-hosted AI infrastructure running the Jan platform on Kubernetes.
+keywords:
+  [
+    Jan Server,
+    self-hosted AI,
+    Kubernetes deployment,
+    Docker containers,
+    AI inference,
+    local LLM server,
+    VLLM,
+    Go API gateway,
+    Jan-v1 model
+  ]
+---
+
+## Self-Hosted Jan Platform
+
+Jan Server deploys the Jan AI platform on your own infrastructure using Kubernetes. It provides a complete AI inference stack with API gateway, model serving, and data persistence.
+
+Jan Server is in early development. APIs and deployment methods may change.
+
+## Architecture Overview
+
+Jan Server consists of two main components:
+
+- **API Gateway**: Go application handling authentication, web requests, and external integrations
+- **Inference Model**: VLLM server running the Jan-v1-4B model for AI inference
+- **PostgreSQL**: Database for user data, conversations, and system state
+
+## Key Features
+
+- **Kubernetes Native**: Deploys via Helm charts with minikube support
+- **Jan-v1 Model**: 4B parameter model optimized for reasoning and tool use
+- **OpenAI Compatible API**: Standard endpoints for integration
+- **Authentication**: JWT tokens and OAuth2 Google integration
+- **External Integrations**: Serper API for web search capabilities
+- **Development Ready**: Local development environment with hot reload
