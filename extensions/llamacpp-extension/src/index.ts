@@ -1928,6 +1928,41 @@ export default class llamacpp_extension extends AIEngine {
         libraryPath,
         envs,
       })
+      // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
+      // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
+      try {
+        const sysInfo = await getSystemInfo()
+        if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
+          const usage = await getSystemUsage()
+          const amdIndices: number[] = []
+          for (let i = 0; i < sysInfo.gpus.length; i++) {
+            const gpu = sysInfo.gpus[i] as any
+            if (typeof gpu?.vendor === 'string' && gpu.vendor.toUpperCase().includes('AMD')) {
+              amdIndices.push(i)
+            }
+          }
+
+          if (amdIndices.length > 0 && Array.isArray(usage?.gpus)) {
+            let amdIdxCursor = 0
+            const adjusted = dList.map((dev) => {
+              if (dev.id?.startsWith('Vulkan') && amdIdxCursor < amdIndices.length) {
+                const idx = amdIndices[amdIdxCursor++]
+                const u = usage.gpus[idx]
+                if (u && typeof u.total_memory === 'number' && typeof u.used_memory === 'number') {
+                  const total = Math.max(0, Math.floor(u.total_memory))
+                  const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
+                  return { ...dev, mem: total, free }
+                }
+              }
+              return dev
+            })
+            return adjusted
+          }
+        }
+      } catch (e) {
+        logger.warn('Device memory override (AMD/Linux) failed:', e)
+      }
+
       return dList
     } catch (error) {
       logger.error('Failed to query devices:\n', error)
