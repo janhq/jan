@@ -1081,11 +1081,11 @@ export default class llamacpp_extension extends AIEngine {
    */
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
-    const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
+    const re = /^llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
-    if (!(await fs.existsSync(path)) || !path.endsWith('tar.gz')) {
+    if (!(await fs.existsSync(path)) || (!path.endsWith('tar.gz') && !path.endsWith('zip'))) {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }
