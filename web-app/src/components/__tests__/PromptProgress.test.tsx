@@ -63,8 +63,9 @@ describe('PromptProgress', () => {
 
     mockUseAppState.mockReturnValue(mockProgress)
 
-    render(<PromptProgress />)
+    const { container } = render(<PromptProgress />)
 
-    expect(screen.getByText('Reading: 0%')).toBeInTheDocument()
+    // Component should not render when total is 0
+    expect(container.firstChild).toBeNull()
   })
 })
