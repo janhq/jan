@@ -206,6 +206,8 @@
     "showInFinder": "Pokaż w Finderze",
     "showInFileExplorer": "Pokaż w Explorerze",
     "openContainingFolder": "Otwórz Katalog Nadrzędny",
+    "couldNotRelocateToRoot": "Nie można przenieść folderu danych do katalogu głównego. Proszę wybrać inną lokalizację.",
+    "couldNotResetRootDirectory": "Nie można zresetować folderu danych, gdy jest ustawiony na katalog główny. Proszę ręcznie usunąć folder danych.",
     "failedToRelocateDataFolder": "Błąd zmiany katalogu danych",
     "failedToRelocateDataFolderDesc": "Nie udało się przenieść katalogu danych. Proszę spróbować później.",
     "devVersion": "Wykryto wersję deweloperską",

@@ -203,6 +203,8 @@
     "showInFinder": "Tampilkan di Finder",
     "showInFileExplorer": "Tampilkan di File Explorer",
     "openContainingFolder": "Buka Folder Induk",
+    "couldNotRelocateToRoot": "Tidak dapat memindahkan folder data ke direktori root. Silakan pilih lokasi lain.",
+    "couldNotResetRootDirectory": "Tidak dapat mengatur ulang folder data saat diatur ke direktori root. Silakan hapus folder data secara manual.",
     "failedToRelocateDataFolder": "Gagal memindahkan folder data",
     "failedToRelocateDataFolderDesc": "Gagal memindahkan folder data. Silakan coba lagi.",
     "devVersion": "Versi pengembangan terdeteksi",

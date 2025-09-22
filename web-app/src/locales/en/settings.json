@@ -207,6 +207,8 @@
     "showInFileExplorer": "Show in File Explorer",
     "openContainingFolder": "Open Containing Folder",
     "failedToRelocateDataFolder": "Failed to relocate data folder",
+    "couldNotRelocateToRoot": "Cannot relocate data folder to root directory. Please choose another location.",
+    "couldNotResetRootDirectory": "Cannot reset data folder when it's set to a root directory. Please delete the data folder manually.",
     "failedToRelocateDataFolderDesc": "Failed to relocate data folder. Please try again.",
     "devVersion": "Development version detected",
     "noUpdateAvailable": "You're running the latest version",
