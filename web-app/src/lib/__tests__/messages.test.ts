@@ -43,10 +43,14 @@ describe('CompletionMessagesBuilder', () => {
       const builder = new CompletionMessagesBuilder(messages, systemInstruction)
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
         role: 'system',
         content: systemInstruction,
+      })
+      expect(result[1]).toEqual({
+        role: 'user',
+        content: '.',
       })
     })
 
@@ -78,8 +82,9 @@ describe('CompletionMessagesBuilder', () => {
       const builder = new CompletionMessagesBuilder(messages)
       const result = builder.getMessages()
 
-      expect(result).toHaveLength(1)
-      expect(result[0].content).toBe('Hello there!')
+      expect(result).toHaveLength(2)
+      expect(result[0].content).toBe('.')
+      expect(result[1].content).toBe('Hello there!')
     })
 
     it('should preserve user message content without normalization', () => {
@@ -171,8 +176,12 @@ describe('CompletionMessagesBuilder', () => {
       builder.addAssistantMessage('<think>Processing...</think>Hello!')
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1]).toEqual({
         role: 'assistant',
         content: 'Hello!',
         refusal: undefined,
@@ -189,8 +198,12 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1]).toEqual({
         role: 'assistant',
         content: 'I cannot help with that',
         refusal: 'Content policy violation',
@@ -218,8 +231,12 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1]).toEqual({
         role: 'assistant',
         content: 'Let me check the weather',
         refusal: undefined,
@@ -247,8 +264,12 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1]).toEqual({
         role: 'assistant',
         content: 'Here are the results',
         refusal: 'Cannot search sensitive content',
@@ -264,8 +285,12 @@ describe('CompletionMessagesBuilder', () => {
       builder.addToolMessage('Weather data: 72°F', 'call_123')
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1]).toEqual({
         role: 'tool',
         content: 'Weather data: 72°F',
         tool_call_id: 'call_123',
@@ -280,10 +305,11 @@ describe('CompletionMessagesBuilder', () => {
 
       const result = builder.getMessages()
       // getMessages() inserts a filler message between consecutive tool messages
-      expect(result).toHaveLength(3)
-      expect(result[0].tool_call_id).toBe('call_1')
-      expect(result[1].role).toBe('assistant') // filler message
-      expect(result[2].tool_call_id).toBe('call_2')
+      expect(result).toHaveLength(4)
+      expect(result[0].role).toBe('user') // initial filler message
+      expect(result[1].tool_call_id).toBe('call_1')
+      expect(result[2].role).toBe('assistant') // filler message
+      expect(result[3].tool_call_id).toBe('call_2')
     })
 
     it('should handle empty tool content', () => {
@@ -292,9 +318,13 @@ describe('CompletionMessagesBuilder', () => {
       builder.addToolMessage('', 'call_123')
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(1)
-      expect(result[0].content).toBe('')
-      expect(result[0].tool_call_id).toBe('call_123')
+      expect(result).toHaveLength(2)
+      expect(result[0]).toEqual({
+        role: 'user',
+        content: '.',
+      })
+      expect(result[1].content).toBe('')
+      expect(result[1].tool_call_id).toBe('call_123')
     })
   })
 
@@ -345,7 +375,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('The answer is 42.')
+      expect(result[1].content).toBe('The answer is 42.')
     })
 
     it('should handle nested thinking tags', () => {
@@ -356,7 +386,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('More thinking</think>Final answer')
+      expect(result[1].content).toBe('More thinking</think>Final answer')
     })
 
     it('should handle multiple thinking blocks', () => {
@@ -367,7 +397,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('Answer<think>Second</think>More content')
+      expect(result[1].content).toBe('Answer<think>Second</think>More content')
     })
 
     it('should handle content without thinking tags', () => {
@@ -376,7 +406,7 @@ describe('CompletionMessagesBuilder', () => {
       builder.addAssistantMessage('Just a normal response')
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('Just a normal response')
+      expect(result[1].content).toBe('Just a normal response')
     })
 
     it('should handle empty content after removing thinking', () => {
@@ -385,7 +415,7 @@ describe('CompletionMessagesBuilder', () => {
       builder.addAssistantMessage('<think>Only thinking content</think>')
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('')
+      expect(result[1].content).toBe('')
     })
 
     it('should handle unclosed thinking tags', () => {
@@ -396,7 +426,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe(
+      expect(result[1].content).toBe(
         '<think>Unclosed thinking tag... Regular content'
       )
     })
@@ -409,7 +439,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('Clean answer')
+      expect(result[1].content).toBe('Clean answer')
     })
 
     it('should remove analysis channel reasoning content', () => {
@@ -420,7 +450,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('The final answer is 42.')
+      expect(result[1].content).toBe('The final answer is 42.')
     })
 
     it('should handle analysis channel without final message', () => {
@@ -431,7 +461,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('<|channel|>analysis<|message|>Only analysis content here...')
+      expect(result[1].content).toBe('<|channel|>analysis<|message|>Only analysis content here...')
     })
 
     it('should handle analysis channel with multiline content', () => {
@@ -442,7 +472,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('Based on my analysis, here is the result.')
+      expect(result[1].content).toBe('Based on my analysis, here is the result.')
     })
 
     it('should handle both think and analysis channel tags', () => {
@@ -453,7 +483,7 @@ describe('CompletionMessagesBuilder', () => {
       )
 
       const result = builder.getMessages()
-      expect(result[0].content).toBe('Final response')
+      expect(result[1].content).toBe('Final response')
     })
   })
 
@@ -518,10 +548,14 @@ describe('CompletionMessagesBuilder', () => {
 
       const result = builder.getMessages()
 
-      expect(result).toHaveLength(1)
+      expect(result).toHaveLength(2)
       expect(result[0]).toEqual({
         role: 'system',
         content: 'System instruction',
+      })
+      expect(result[1]).toEqual({
+        role: 'user',
+        content: '.',
       })
     })
   })
