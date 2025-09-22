@@ -443,7 +443,7 @@ function ProviderDetail() {
   return (
     <>
       <Joyride
-        run={isSetup}
+        run={IS_IOS || IS_ANDROID ? false : isSetup}
         floaterProps={{
           hideArrow: true,
         }}
@@ -465,7 +465,7 @@ function ProviderDetail() {
           skip: t('providers:joyride.skip'),
         }}
       />
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
         <HeaderPage>
           <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
