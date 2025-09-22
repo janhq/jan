@@ -21,7 +21,10 @@ declare global {
   declare const POSTHOG_HOST: string
   declare const MODEL_CATALOG_URL: string
   declare const AUTO_UPDATER_DISABLED: boolean
+  declare const GA_MEASUREMENT_ID: string
   interface Window {
     core: AppCore | undefined
+    gtag?: (...args: unknown[]) => void
+    dataLayer?: unknown[]
   }
 }

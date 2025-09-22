@@ -4,7 +4,7 @@
   "securityNotice": "<strong>安全性通知：</strong>惡意的工具或對話內容可能會誘騙助理嘗試有害的操作。在核准之前，請仔細檢閱每個工具呼叫。",
   "deny": "拒絕",
   "allowOnce": "允許一次",
-  "alwaysAllow": "一律允許",
+  "alwaysAllow": "在討論串中允許",
   "permissions": "權限",
   "approve": "核准",
   "reject": "拒絕",

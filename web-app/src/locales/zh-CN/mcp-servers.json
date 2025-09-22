@@ -26,6 +26,9 @@
     "errorParse": "解析初始数据失败",
     "errorPaste": "粘贴内容中的 JSON 格式无效",
     "errorFormat": "JSON 格式无效",
+    "errorServerName": "服务器名称为必填项，不能为空",
+    "errorMissingServerNameKey": "JSON 必须按 {\"serverName\": {config}} 格式结构化 - 缺少服务器名称键",
+    "errorInvalidType": "服务器 '{{serverName}}' 的类型 '{{type}}' 无效。类型必须是 'stdio'、'http' 或 'sse'",
     "save": "保存"
   },
   "checkParams": "请根据教程检查参数。",
@@ -34,7 +37,7 @@
   "editAllJson": "编辑所有服务器的 JSON",
   "findMore": "在以下位置查找更多 MCP 服务器",
   "allowPermissions": "允许所有 MCP 工具权限",
-  "allowPermissionsDesc": "启用后，所有 MCP 工具调用都将自动批准，而不会显示权限对话框。",
+  "allowPermissionsDesc": "启用后，所有 MCP 工具调用都将自动批准，而不会显示权限对话框。此设置全局适用于所有对话，包括新聊天。",
   "noServers": "未找到 MCP 服务器",
   "args": "参数",
   "env": "环境",

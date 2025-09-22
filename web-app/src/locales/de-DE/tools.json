@@ -5,7 +5,8 @@
     "securityNotice": "Dieses Werkzeug möchte eine Aktion ausführen. Bitte überprüfen und genehmigen oder Ablehnen.",
     "deny": "Ablehnen",
     "allowOnce": "Einmal erlauben",
-    "alwaysAllow": "Immer erlauben",
-    "parameters": "Werkzeug-Parameter"
+    "alwaysAllow": "Im Thread erlauben",
+    "parameters": "Werkzeug-Parameter",
+    "permissionScope": "Erteilte Berechtigungen gelten nur für dieses Gespräch."
   }
 }

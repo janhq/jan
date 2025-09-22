@@ -161,6 +161,8 @@
     "title": "本機 API 伺服器",
     "description": "在本機執行與 OpenAI 相容的伺服器。",
     "startServer": "啟動伺服器",
+    "loadingModel": "載入模型",
+    "startingServer": "正在啟動伺服器",
     "stopServer": "停止伺服器",
     "serverLogs": "伺服器日誌",
     "serverLogsDesc": "檢視本機 API 伺服器的詳細日誌。",

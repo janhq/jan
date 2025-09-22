@@ -161,6 +161,8 @@
     "title": "Server API Lokal",
     "description": "Jalankan server yang kompatibel dengan OpenAI secara lokal.",
     "startServer": "Mulai Server",
+    "loadingModel": "Memuat Model",
+    "startingServer": "Memulai Server",
     "stopServer": "Hentikan Server",
     "serverLogs": "Log Server",
     "serverLogsDesc": "Lihat log terperinci dari server API lokal.",

@@ -161,6 +161,8 @@
     "title": "Máy chủ API cục bộ",
     "description": "Chạy máy chủ tương thích với OpenAI cục bộ.",
     "startServer": "Khởi động máy chủ",
+    "loadingModel": "Đang tải mô hình",
+    "startingServer": "Đang khởi động máy chủ",
     "stopServer": "Dừng máy chủ",
     "serverLogs": "Nhật ký máy chủ",
     "serverLogsDesc": "Xem nhật ký chi tiết của máy chủ API cục bộ.",

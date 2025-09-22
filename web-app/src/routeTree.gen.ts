@@ -28,6 +28,7 @@ import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-serve
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
+import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
@@ -125,6 +126,11 @@ const SettingsProvidersProviderNameRoute =
     path: '/settings/providers/$providerName',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthGoogleCallbackRoute = AuthGoogleCallbackRouteImport.update({
+  id: '/auth/google/callback',
+  path: '/auth/google/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
+    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
+    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
+    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
+  AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -413,6 +426,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersProviderNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/google/callback': {
+      id: '/auth/google/callback'
+      path: '/auth/google/callback'
+      fullPath: '/auth/google/callback'
+      preLoaderRoute: typeof AuthGoogleCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -434,6 +454,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
+  AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }

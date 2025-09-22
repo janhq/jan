@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import LeftPanel from '@/containers/LeftPanel'
@@ -15,6 +15,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { GoogleAnalyticsProvider } from '@/providers/GoogleAnalyticsProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -32,6 +33,7 @@ import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { AuthProvider } from '@/providers/AuthProvider'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 
@@ -109,6 +111,7 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
+      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && <GoogleAnalyticsProvider />}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
@@ -191,13 +194,16 @@ const LogsLayout = () => {
 }
 
 function RootLayout() {
-  const router = useRouterState()
+  const getInitialLayoutType = () => {
+    const pathname = window.location.pathname
+    return (
+      pathname === route.localApiServerlogs ||
+      pathname === route.systemMonitor ||
+      pathname === route.appLogs
+    )
+  }
 
-  const isLocalAPIServerLogsRoute =
-    router.location.pathname === route.localApiServerlogs ||
-    router.location.pathname === route.systemMonitor ||
-    router.location.pathname === route.appLogs
-
+  const IS_LOGS_ROUTE = getInitialLayoutType()
   return (
     <Fragment>
       <ServiceHubProvider>
@@ -206,9 +212,11 @@ function RootLayout() {
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>
-            <DataProvider />
-            <GlobalEventHandler />
-            {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
+            <AuthProvider>
+              <DataProvider />
+              <GlobalEventHandler />
+              {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+            </AuthProvider>
           </ExtensionProvider>
           {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
           {/* <TanStackRouterDevtools position="bottom-right" /> */}

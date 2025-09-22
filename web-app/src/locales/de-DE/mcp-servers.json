@@ -26,6 +26,9 @@
     "errorParse": "Fehler beim Parsen der initialen Daten",
     "errorPaste": "Ungültiges JSON Format in dem eingefügten Inhalt",
     "errorFormat": "Ungültiges JSON Format",
+    "errorServerName": "Servername ist erforderlich und darf nicht leer sein",
+    "errorMissingServerNameKey": "JSON muss als {\"serverName\": {config}} strukturiert sein - fehlender Servername-Schlüssel",
+    "errorInvalidType": "Ungültiger Typ '{{type}}' für Server '{{serverName}}'. Typ muss 'stdio', 'http' oder 'sse' sein",
     "save": "Speichern"
   },
   "checkParams": "Bitte überprüfe die Parameter gemäß dem Tutorial.",
@@ -34,7 +37,7 @@
   "editAllJson": "JSON aller Server bearbeiten",
   "findMore": "Finde mehr MCP Server bei",
   "allowPermissions": "Erlaube allen MCP Werkzeugen den Zugriff",
-  "allowPermissionsDesc": "Wenn aktiviert, werden alle MCP-Werkzeug-Aufrufe automatisch genehmigt, ohne dass Berechtigungsdialoge angezeigt werden.",
+  "allowPermissionsDesc": "Wenn aktiviert, werden alle MCP-Werkzeug-Aufrufe automatisch genehmigt, ohne dass Berechtigungsdialoge angezeigt werden. Diese Einstellung gilt global für alle Gespräche, einschließlich neuer Chats.",
   "noServers": "Keine MCP Server gefunden",
   "args": "Argumente",
   "env": "Umgebung",

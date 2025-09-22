@@ -33,35 +33,44 @@ import {
 } from '@/utils/reasoning'
 
 export const useChat = () => {
-  const { prompt, setPrompt } = usePrompt()
-  const {
-    tools,
-    updateTokenSpeed,
-    resetTokenSpeed,
-    updateStreamingContent,
-    updateLoadingModel,
-    setAbortController,
-  } = useAppState()
-  const { assistants, currentAssistant } = useAssistant()
-  const { updateProvider } = useModelProvider()
+  const tools = useAppState((state) => state.tools)
+  const updateTokenSpeed = useAppState((state) => state.updateTokenSpeed)
+  const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
+  const updateStreamingContent = useAppState(
+    (state) => state.updateStreamingContent
+  )
+  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
+  const setAbortController = useAppState((state) => state.setAbortController)
+  const assistants = useAssistant((state) => state.assistants)
+  const currentAssistant = useAssistant((state) => state.currentAssistant)
+  const updateProvider = useModelProvider((state) => state.updateProvider)
   const serviceHub = useServiceHub()
 
-  const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
-    useToolApproval()
-  const { showApprovalModal: showIncreaseContextSizeModal } =
-    useContextSizeApproval()
-  const { getDisabledToolsForThread } = useToolAvailable()
+  const approvedTools = useToolApproval((state) => state.approvedTools)
+  const showApprovalModal = useToolApproval((state) => state.showApprovalModal)
+  const allowAllMCPPermissions = useToolApproval(
+    (state) => state.allowAllMCPPermissions
+  )
+  const showIncreaseContextSizeModal = useContextSizeApproval(
+    (state) => state.showApprovalModal
+  )
+  const getDisabledToolsForThread = useToolAvailable(
+    (state) => state.getDisabledToolsForThread
+  )
 
-  const { getProviderByName, selectedModel, selectedProvider } =
-    useModelProvider()
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
 
-  const {
-    getCurrentThread: retrieveThread,
-    createThread,
-    updateThreadTimestamp,
-  } = useThreads()
-  const { getMessages, addMessage } = useMessages()
-  const { setModelLoadError } = useModelLoad()
+  const createThread = useThreads((state) => state.createThread)
+  const retrieveThread = useThreads((state) => state.getCurrentThread)
+  const updateThreadTimestamp = useThreads(
+    (state) => state.updateThreadTimestamp
+  )
+
+  const getMessages = useMessages((state) => state.getMessages)
+  const addMessage = useMessages((state) => state.addMessage)
+  const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -79,12 +88,14 @@ export const useChat = () => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
+      // Get prompt directly from store when needed
+      const currentPrompt = usePrompt.getState().prompt
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        prompt,
+        currentPrompt,
         selectedAssistant
       )
       router.navigate({
@@ -95,7 +106,6 @@ export const useChat = () => {
     return currentThread
   }, [
     createThread,
-    prompt,
     retrieveThread,
     router,
     selectedModel?.id,
@@ -108,7 +118,10 @@ export const useChat = () => {
       await serviceHub.models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await serviceHub.models().startModel(provider, modelId).catch(console.error)
+      await serviceHub
+        .models()
+        .startModel(provider, modelId)
+        .catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
@@ -188,7 +201,9 @@ export const useChat = () => {
         settings: newSettings,
       }
 
-      await serviceHub.providers().updateSettings(providerName, updateObj.settings ?? [])
+      await serviceHub
+        .providers()
+        .updateSettings(providerName, updateObj.settings ?? [])
       updateProvider(providerName, {
         ...provider,
         ...updateObj,
@@ -227,7 +242,7 @@ export const useChat = () => {
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
-      setPrompt('')
+      usePrompt.getState().setPrompt('')
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
@@ -237,7 +252,9 @@ export const useChat = () => {
 
         const builder = new CompletionMessagesBuilder(
           messages,
-          currentAssistant ? renderInstructions(currentAssistant.instructions) : undefined
+          currentAssistant
+            ? renderInstructions(currentAssistant.instructions)
+            : undefined
         )
         if (troubleshooting) builder.addUserMessage(message, attachments)
 
@@ -476,7 +493,9 @@ export const useChat = () => {
             activeThread.model?.id &&
             provider?.provider === 'llamacpp'
           ) {
-            await serviceHub.models().stopModel(activeThread.model.id, 'llamacpp')
+            await serviceHub
+              .models()
+              .stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -536,7 +555,6 @@ export const useChat = () => {
       updateStreamingContent,
       addMessage,
       updateThreadTimestamp,
-      setPrompt,
       selectedModel,
       currentAssistant,
       tools,
@@ -554,5 +572,5 @@ export const useChat = () => {
     ]
   )
 
-  return { sendMessage }
+  return useMemo(() => sendMessage, [sendMessage])
 }

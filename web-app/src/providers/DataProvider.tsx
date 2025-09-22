@@ -13,6 +13,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
+import { SystemEvent } from '@/types/events'
 
 export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
@@ -39,13 +40,18 @@ export function DataProvider() {
     verboseLogs,
     proxyTimeout,
   } = useLocalApiServer()
-  const { setServerStatus } = useAppState()
+  const setServerStatus = useAppState((state) => state.setServerStatus)
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
     serviceHub.providers().getProviders().then(setProviders)
-    serviceHub.mcp().getMCPConfig().then((data) => setServers(data.mcpServers ?? {}))
-    serviceHub.assistants().getAssistants()
+    serviceHub
+      .mcp()
+      .getMCPConfig()
+      .then((data) => setServers(data.mcpServers ?? {}))
+    serviceHub
+      .assistants()
+      .getAssistants()
       .then((data) => {
         // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
@@ -58,18 +64,34 @@ export function DataProvider() {
       })
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
     serviceHub.deeplink().onOpenUrl(handleDeepLink)
+
+    // Listen for deep link events
+    let unsubscribe = () => {}
+    serviceHub.events().listen(SystemEvent.DEEP_LINK, (event) => {
+      const deep_link  = event.payload as string
+      handleDeepLink([deep_link])
+    }).then((unsub) => {
+      unsubscribe = unsub
+    })
+    return () => {
+      unsubscribe()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
 
   useEffect(() => {
-    serviceHub.threads().fetchThreads().then((threads) => {
-      setThreads(threads)
-      threads.forEach((thread) =>
-        serviceHub.messages().fetchMessages(thread.id).then((messages) =>
-          setMessages(thread.id, messages)
+    serviceHub
+      .threads()
+      .fetchThreads()
+      .then((threads) => {
+        setThreads(threads)
+        threads.forEach((thread) =>
+          serviceHub
+            .messages()
+            .fetchMessages(thread.id)
+            .then((messages) => setMessages(thread.id, messages))
         )
-      )
-    })
+      })
   }, [serviceHub, setThreads, setMessages])
 
   // Check for app updates
@@ -158,7 +180,9 @@ export function DataProvider() {
       setServerStatus('pending')
 
       // Start the model first
-      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
+      serviceHub
+        .models()
+        .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
 

@@ -65,11 +65,14 @@ function LocalAPIServerContent() {
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      serviceHub.app().getServerStatus().then((running) => {
-        if (running) {
-          setServerStatus('running')
-        }
-      })
+      serviceHub
+        .app()
+        .getServerStatus()
+        .then((running) => {
+          if (running) {
+            setServerStatus('running')
+          }
+        })
     }
     checkServerStatus()
   }, [serviceHub, setServerStatus])
@@ -126,6 +129,8 @@ function LocalAPIServerContent() {
     return null
   }
 
+  const [isModelLoading, setIsModelLoading] = useState(false)
+
   const toggleAPIServer = async () => {
     // Validate API key before starting server
     if (serverStatus === 'stopped') {
@@ -145,12 +150,20 @@ function LocalAPIServerContent() {
       }
 
       setServerStatus('pending')
+      setIsModelLoading(true) // Start loading state
 
       // Start the model first
-      serviceHub.models().startModel(modelToStart.provider, modelToStart.model)
+      serviceHub
+        .models()
+        .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
+          setIsModelLoading(false) // Model loaded, stop loading state
 
+          // Add a small delay for the backend to update state
+          return new Promise((resolve) => setTimeout(resolve, 500))
+        })
+        .then(() => {
           // Then start the server
           return window.core?.api?.startServer({
             host: serverHost,
@@ -173,6 +186,7 @@ function LocalAPIServerContent() {
         .catch((error: unknown) => {
           console.error('Error starting server:', error)
           setServerStatus('stopped')
+          setIsModelLoading(false) // Reset loading state on error
         })
     } else {
       setServerStatus('pending')
@@ -186,6 +200,18 @@ function LocalAPIServerContent() {
           setServerStatus('stopped')
         })
     }
+  }
+
+  const getButtonText = () => {
+    if (isModelLoading) {
+      return t('settings:localApiServer.loadingModel') // TODO: Update this translation
+    }
+    if (serverStatus === 'pending' && !isModelLoading) {
+      return t('settings:localApiServer.startingServer') // TODO: Update this translation
+    }
+    return isServerRunning
+      ? t('settings:localApiServer.stopServer')
+      : t('settings:localApiServer.startServer')
   }
 
   const handleOpenLogs = async () => {
@@ -224,10 +250,9 @@ function LocalAPIServerContent() {
                       onClick={toggleAPIServer}
                       variant={isServerRunning ? 'destructive' : 'default'}
                       size="sm"
+                      disabled={serverStatus === 'pending'} // Disable during any loading state
                     >
-                      {isServerRunning
-                        ? t('settings:localApiServer.stopServer')
-                        : t('settings:localApiServer.startServer')}
+                      {getButtonText()}
                     </Button>
                   </div>
                 </div>
@@ -322,7 +347,9 @@ function LocalAPIServerContent() {
               <CardItem
                 title={t('settings:localApiServer.proxyTimeout')}
                 description={t('settings:localApiServer.proxyTimeoutDesc')}
-                actions={<ProxyTimeoutInput isServerRunning={isServerRunning} />}
+                actions={
+                  <ProxyTimeoutInput isServerRunning={isServerRunning} />
+                }
               />
             </Card>
 

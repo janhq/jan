@@ -52,4 +52,13 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Assistant functionality - disabled for web
   [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
+
+  // Authentication (Google OAuth) - enabled for web only
+  [PlatformFeature.AUTHENTICATION]: !isPlatformTauri(),
+
+  // Google Analytics - enabled for web only
+  [PlatformFeature.GOOGLE_ANALYTICS]: !isPlatformTauri(),
+
+  // Alternate shortcut bindings - enabled for web only (to avoid browser conflicts)
+  [PlatformFeature.ALTERNATE_SHORTCUT_BINDINGS]: !isPlatformTauri(),
 }

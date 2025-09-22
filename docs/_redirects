@@ -683,3 +683,17 @@ docs/guides/fine-tuning/what-models-can-be-fine-tuned/ /docs 302
 /docs/server-installation/aws /docs/desktop 302
 /docs/server-installation/gcp /docs/desktop 302
 /docs/server-installation/azure /docs/desktop 302
+/about /docs 302
+/api-server /docs/api-server 302
+/cdn-cgi/l/email-protection 302
+/docs/built-in/tensorrt-llm 302
+/docs/desktop/beta /docs 302
+/docs/docs/data-folder /docs/data-folder 302
+/docs/docs/desktop/linux /docs/desktop/linux 302
+/docs/docs/troubleshooting /docs/troubleshooting 302
+/docs/local-engines/llama-cpp 302
+/docs/models/model-parameters 302
+/mcp /docs/mcp 302
+/quickstart /docs/quickstart 302
+/server-examples/continue-dev /docs/server-examples/continue-dev 302
+
