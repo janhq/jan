@@ -1,7 +1,7 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "resources": ["resources/pre-install/**/*"],
+    "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "nsis": {
