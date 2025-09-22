@@ -1934,29 +1934,57 @@ export default class llamacpp_extension extends AIEngine {
         const sysInfo = await getSystemInfo()
         if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
           const usage = await getSystemUsage()
-          const amdIndices: number[] = []
-          for (let i = 0; i < sysInfo.gpus.length; i++) {
-            const gpu = sysInfo.gpus[i] as any
-            if (typeof gpu?.vendor === 'string' && gpu.vendor.toUpperCase().includes('AMD')) {
-              amdIndices.push(i)
-            }
-          }
-
-          if (amdIndices.length > 0 && Array.isArray(usage?.gpus)) {
-            let amdIdxCursor = 0
-            const adjusted = dList.map((dev) => {
-              if (dev.id?.startsWith('Vulkan') && amdIdxCursor < amdIndices.length) {
-                const idx = amdIndices[amdIdxCursor++]
-                const u = usage.gpus[idx]
-                if (u && typeof u.total_memory === 'number' && typeof u.used_memory === 'number') {
-                  const total = Math.max(0, Math.floor(u.total_memory))
-                  const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
-                  return { ...dev, mem: total, free }
-                }
+          if (usage && Array.isArray(usage.gpus)) {
+            const uuidToUsage: Record<string, { total_memory: number; used_memory: number }> = {}
+            for (const u of usage.gpus as any[]) {
+              if (u && typeof u.uuid === 'string') {
+                uuidToUsage[u.uuid] = u
               }
-              return dev
-            })
-            return adjusted
+            }
+
+            const indexToAmdUuid = new Map<number, string>()
+            for (const gpu of sysInfo.gpus as any[]) {
+              const vendorStr =
+                typeof gpu?.vendor === 'string'
+                  ? gpu.vendor
+                  : typeof gpu?.vendor === 'object' && gpu.vendor !== null
+                    ? String(gpu.vendor)
+                    : ''
+              if (
+                vendorStr.toUpperCase().includes('AMD') &&
+                gpu?.vulkan_info &&
+                typeof gpu.vulkan_info.index === 'number' &&
+                typeof gpu.uuid === 'string'
+              ) {
+                indexToAmdUuid.set(gpu.vulkan_info.index, gpu.uuid)
+              }
+            }
+
+            if (indexToAmdUuid.size > 0) {
+              const adjusted = dList.map((dev) => {
+                if (dev.id?.startsWith('Vulkan')) {
+                  const match = /^Vulkan(\d+)/.exec(dev.id)
+                  if (match) {
+                    const vIdx = Number(match[1])
+                    const uuid = indexToAmdUuid.get(vIdx)
+                    if (uuid) {
+                      const u = uuidToUsage[uuid]
+                      if (
+                        u &&
+                        typeof u.total_memory === 'number' &&
+                        typeof u.used_memory === 'number'
+                      ) {
+                        const total = Math.max(0, Math.floor(u.total_memory))
+                        const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
+                        return { ...dev, mem: total, free }
+                      }
+                    }
+                  }
+                }
+                return dev
+              })
+              return adjusted
+            }
           }
         }
       } catch (e) {
