@@ -13,7 +13,7 @@ jobs:
       deployments: write
       pull-requests: write
     env:
-      JAN_API_BASE: "https://api.jan.ai/jan/v1"
+      JAN_API_BASE: "https://api.jan.ai/v1"
       GA_MEASUREMENT_ID: "G-YK53MX8M8M"
       CLOUDFLARE_PROJECT_NAME: "jan-server-web"
     steps:
@@ -42,6 +42,9 @@ jobs:
 
       - name: Install dependencies
         run: make config-yarn && yarn install && yarn build:core && make build-web-app
+        env:
+          JAN_API_BASE: ${{ env.JAN_API_BASE }}
+          GA_MEASUREMENT_ID: ${{ env.GA_MEASUREMENT_ID }}
 
       - name: Publish to Cloudflare Pages Production
         uses: cloudflare/pages-action@v1
