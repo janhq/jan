@@ -1,7 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Platform, PlatformFeature } from './types'
 
 declare const IS_WEB_APP: boolean
+declare const IS_IOS: boolean
+declare const IS_ANDROID: boolean
 
 export const isPlatformTauri = (): boolean => {
   if (typeof IS_WEB_APP === 'undefined') {
@@ -14,15 +15,11 @@ export const isPlatformTauri = (): boolean => {
 }
 
 export const isPlatformIOS = (): boolean => {
-  if (typeof navigator === 'undefined') return false
-  return (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
-  )
+  return IS_IOS
 }
 
 export const isPlatformAndroid = (): boolean => {
-  if (typeof navigator === 'undefined') return false
-  return /Android/.test(navigator.userAgent)
+  return IS_ANDROID
 }
 
 export const isIOS = (): boolean => isPlatformIOS()
