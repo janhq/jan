@@ -52,11 +52,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Sheet Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const content = document.querySelector('[data-slot="sheet-content"]')
     expect(content).toBeInTheDocument()
     expect(content).toHaveClass('inset-y-0', 'right-0')
@@ -67,11 +68,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent side="left">
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Sheet Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const content = document.querySelector('[data-slot="sheet-content"]')
     expect(content).toHaveClass('inset-y-0', 'left-0')
   })
@@ -81,11 +83,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent side="top">
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Sheet Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const content = document.querySelector('[data-slot="sheet-content"]')
     expect(content).toHaveClass('inset-x-0', 'top-0')
   })
@@ -95,11 +98,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent side="bottom">
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Sheet Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const content = document.querySelector('[data-slot="sheet-content"]')
     expect(content).toHaveClass('inset-x-0', 'bottom-0')
   })
@@ -109,13 +113,14 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <SheetHeader>
             <div>Header Content</div>
           </SheetHeader>
         </SheetContent>
       </Sheet>
     )
-    
+
     const header = document.querySelector('[data-slot="sheet-header"]')
     expect(header).toBeInTheDocument()
     expect(header).toHaveClass('flex', 'flex-col', 'gap-1.5', 'p-4')
@@ -126,13 +131,14 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <SheetFooter>
             <div>Footer Content</div>
           </SheetFooter>
         </SheetContent>
       </Sheet>
     )
-    
+
     const footer = document.querySelector('[data-slot="sheet-footer"]')
     expect(footer).toBeInTheDocument()
     expect(footer).toHaveClass('mt-auto', 'flex', 'flex-col', 'gap-2', 'p-4')
@@ -143,10 +149,11 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Sheet Title</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
         </SheetContent>
       </Sheet>
     )
-    
+
     const title = document.querySelector('[data-slot="sheet-title"]')
     expect(title).toBeInTheDocument()
     expect(title).toHaveTextContent('Sheet Title')
@@ -174,11 +181,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const closeButton = document.querySelector('.absolute.top-4.right-4')
     expect(closeButton).toBeInTheDocument()
     expect(closeButton).toHaveClass('rounded-xs', 'opacity-70', 'transition-opacity')
@@ -189,11 +197,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const overlay = document.querySelector('[data-slot="sheet-overlay"]')
     expect(overlay).toBeInTheDocument()
     expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'bg-main-view/50', 'backdrop-blur-xs')
@@ -204,11 +213,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent>
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <SheetClose>Close</SheetClose>
         </SheetContent>
       </Sheet>
     )
-    
+
     const close = document.querySelector('[data-slot="sheet-close"]')
     expect(close).toBeInTheDocument()
     expect(close).toHaveTextContent('Close')
@@ -219,11 +229,12 @@ describe('Sheet Components', () => {
       <Sheet defaultOpen>
         <SheetContent className="custom-sheet">
           <SheetTitle>Test Sheet</SheetTitle>
+          <SheetDescription>Test description</SheetDescription>
           <div>Content</div>
         </SheetContent>
       </Sheet>
     )
-    
+
     const content = document.querySelector('[data-slot="sheet-content"]')
     expect(content).toHaveClass('custom-sheet')
   })

@@ -57,21 +57,37 @@ vi.mock('../useAssistant', () => ({
 }))
 
 vi.mock('../useModelProvider', () => ({
-  useModelProvider: (selector: any) => {
-    const state = {
-      getProviderByName: vi.fn(() => ({
-        provider: 'openai',
-        models: [],
-      })),
-      selectedModel: {
-        id: 'test-model',
-        capabilities: ['tools'],
-      },
-      selectedProvider: 'openai',
-      updateProvider: vi.fn(),
+  useModelProvider: Object.assign(
+    (selector: any) => {
+      const state = {
+        getProviderByName: vi.fn(() => ({
+          provider: 'openai',
+          models: [],
+        })),
+        selectedModel: {
+          id: 'test-model',
+          capabilities: ['tools'],
+        },
+        selectedProvider: 'openai',
+        updateProvider: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
+    {
+      getState: () => ({
+        getProviderByName: vi.fn(() => ({
+          provider: 'openai',
+          models: [],
+        })),
+        selectedModel: {
+          id: 'test-model',
+          capabilities: ['tools'],
+        },
+        selectedProvider: 'openai',
+        updateProvider: vi.fn(),
+      })
     }
-    return selector ? selector(state) : state
-  },
+  ),
 }))
 
 vi.mock('../useThreads', () => ({

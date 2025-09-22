@@ -19,7 +19,6 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { useAssistant } from './useAssistant'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -31,22 +30,29 @@ import {
   ReasoningProcessor,
   extractReasoningFromMessage,
 } from '@/utils/reasoning'
+import { useAssistant } from './useAssistant'
+import { useShallow } from 'zustand/shallow'
 
 export const useChat = () => {
-  const tools = useAppState((state) => state.tools)
-  const updateTokenSpeed = useAppState((state) => state.updateTokenSpeed)
-  const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
-  const updateStreamingContent = useAppState(
-    (state) => state.updateStreamingContent
+  const [
+    updateTokenSpeed,
+    resetTokenSpeed,
+    updateStreamingContent,
+    updateLoadingModel,
+    setAbortController,
+  ] = useAppState(
+    useShallow((state) => [
+      state.updateTokenSpeed,
+      state.resetTokenSpeed,
+      state.updateStreamingContent,
+      state.updateLoadingModel,
+      state.setAbortController,
+    ])
   )
-  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
-  const setAbortController = useAppState((state) => state.setAbortController)
-  const assistants = useAssistant((state) => state.assistants)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
+
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const serviceHub = useServiceHub()
 
-  const approvedTools = useToolApproval((state) => state.approvedTools)
   const showApprovalModal = useToolApproval((state) => state.showApprovalModal)
   const allowAllMCPPermissions = useToolApproval(
     (state) => state.allowAllMCPPermissions
@@ -59,13 +65,13 @@ export const useChat = () => {
   )
 
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
-  const selectedModel = useModelProvider((state) => state.selectedModel)
-  const selectedProvider = useModelProvider((state) => state.selectedProvider)
 
-  const createThread = useThreads((state) => state.createThread)
-  const retrieveThread = useThreads((state) => state.getCurrentThread)
-  const updateThreadTimestamp = useThreads(
-    (state) => state.updateThreadTimestamp
+  const [createThread, retrieveThread, updateThreadTimestamp] = useThreads(
+    useShallow((state) => [
+      state.createThread,
+      state.getCurrentThread,
+      state.updateThreadTimestamp,
+    ])
   )
 
   const getMessages = useMessages((state) => state.getMessages)
@@ -73,30 +79,23 @@ export const useChat = () => {
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
-  const provider = useMemo(() => {
-    return getProviderByName(selectedProvider)
-  }, [selectedProvider, getProviderByName])
-
-  const currentProviderId = useMemo(() => {
-    return provider?.provider || selectedProvider
-  }, [provider, selectedProvider])
-
-  const selectedAssistant =
-    assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
       // Get prompt directly from store when needed
       const currentPrompt = usePrompt.getState().prompt
+      const currentAssistant = useAssistant.getState().currentAssistant
+      const assistants = useAssistant.getState().assistants
+      const selectedModel = useModelProvider.getState().selectedModel
+      const selectedProvider = useModelProvider.getState().selectedProvider
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
         currentPrompt,
-        selectedAssistant
+        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
       )
       router.navigate({
         to: route.threadsDetail,
@@ -104,14 +103,7 @@ export const useChat = () => {
       })
     }
     return currentThread
-  }, [
-    createThread,
-    retrieveThread,
-    router,
-    selectedModel?.id,
-    selectedProvider,
-    selectedAssistant,
-  ])
+  }, [createThread, retrieveThread, router])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
@@ -228,11 +220,10 @@ export const useChat = () => {
       }>
     ) => {
       const activeThread = await getCurrentThread()
+      const selectedProvider = useModelProvider.getState().selectedProvider
+      let activeProvider = getProviderByName(selectedProvider)
 
       resetTokenSpeed()
-      let activeProvider = currentProviderId
-        ? getProviderByName(currentProviderId)
-        : provider
       if (!activeThread || !activeProvider) return
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
@@ -243,13 +234,14 @@ export const useChat = () => {
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
+      const selectedModel = useModelProvider.getState().selectedModel
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
           await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
-
+        const currentAssistant = useAssistant.getState().currentAssistant
         const builder = new CompletionMessagesBuilder(
           messages,
           currentAssistant
@@ -262,7 +254,7 @@ export const useChat = () => {
 
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? tools.filter((tool) => {
+          ? useAppState.getState().tools.filter((tool) => {
               const disabledTools = getDisabledToolsForThread(activeThread.id)
               return !disabledTools.includes(tool.name)
             })
@@ -491,7 +483,7 @@ export const useChat = () => {
             accumulatedText.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
-            provider?.provider === 'llamacpp'
+            activeProvider?.provider === 'llamacpp'
           ) {
             await serviceHub
               .models()
@@ -515,7 +507,7 @@ export const useChat = () => {
             builder,
             finalContent,
             abortController,
-            approvedTools,
+            useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
             allowAllMCPPermissions
           )
@@ -547,20 +539,14 @@ export const useChat = () => {
     [
       getCurrentThread,
       resetTokenSpeed,
-      currentProviderId,
       getProviderByName,
-      provider,
       getMessages,
       setAbortController,
       updateStreamingContent,
       addMessage,
       updateThreadTimestamp,
-      selectedModel,
-      currentAssistant,
-      tools,
       updateLoadingModel,
       getDisabledToolsForThread,
-      approvedTools,
       allowAllMCPPermissions,
       showApprovalModal,
       updateTokenSpeed,
