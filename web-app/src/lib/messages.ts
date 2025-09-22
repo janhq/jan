@@ -159,7 +159,21 @@ export class CompletionMessagesBuilder {
    * @returns The array of chat completion messages.
    */
   getMessages(): ChatCompletionMessageParam[] {
-    return this.messages
+    const result: ChatCompletionMessageParam[] = []
+    let prevRole: string | undefined
+
+    // Avoiding duplication and flipping roles dynamically
+    for (const msg of this.messages) {
+      if (msg.role === prevRole) {
+        const oppositeRole = prevRole === 'assistant' ? 'user' : 'assistant'
+        result.push({ role: oppositeRole, content: '.' })
+        prevRole = oppositeRole
+      }
+      result.push(msg)
+      prevRole = msg.role
+    }
+
+    return result
   }
 
   /**
