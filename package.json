@@ -29,7 +29,6 @@
     "build:android": "yarn build && yarn copy:assets:mobile && yarn tauri android build --no-default-features --features mobile",
     "build:ios": "yarn build && yarn copy:assets:mobile && yarn tauri ios build --no-default-features --features mobile",
     "build:ios:device": "yarn build && yarn copy:assets:mobile && yarn tauri ios build --no-default-features --features mobile --export-method debugging",
-    "dev:ios:device": "yarn copy:assets:mobile && yarn tauri ios dev",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
