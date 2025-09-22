@@ -4,18 +4,25 @@
 		"display": "hidden"
 	},
 	"get-started-separator": {
-		"title": "Get started",
+		"title": "Get Started",
 		"type": "separator"
 	},
 	"overview": "Overview",
 	"installation": "Installation",
 	"configuration": "Configuration",
-	"core-concepts-separator": {
-		"title": "Core concepts",
+	"api-reference-separator": {
+		"title": "API Reference",
 		"type": "separator"
 	},
-	"api-reference": "API Reference",
-	"resource-separator": {
+	"api-reference": "Introduction",
+	"api-reference-authentication": "Authentication",
+	"api-reference-chat": "Completions API",
+	"api-reference-jan-responses": "Responses API",
+	"api-reference-chat-conversations": "Chat Conversations",
+	"api-reference-conversations": "Conversations API",
+	"api-reference-administration": "Administration API",	
+	"api-reference-jan-server": "Server API",
+	"resources-separator": {
 		"title": "Resources",
 		"type": "separator"
 	},

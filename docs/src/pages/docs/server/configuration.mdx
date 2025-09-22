@@ -1,51 +1,59 @@
 ---
 title: Configuration
-description: Configure Jan Server environment variables, authentication, and external integrations.
+description: Configure Jan Server environment variables, authentication, external integrations, and deployment settings.
 ---
 
-## Environment Variables
+## Configuration
 
-Jan Server configuration is managed through environment variables defined in the Helm values file at `charts/umbrella-chart/values.yaml`.
+### Environment Variables
 
-### API Gateway Configuration
+The system is configured through environment variables defined in the Helm values file. Key configuration areas include:
 
-#### Core Settings
+#### Jan API Gateway Configuration
+- **Database Connection**: PostgreSQL connection strings for read/write replicas
+- **Authentication**: JWT secrets and Google OAuth2 credentials
+- **API Keys**: Encryption secrets for API key management
+- **External Services**: Serper API key for web search functionality
+- **Model Integration**: Jan Inference Model service URL
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JAN_INFERENCE_MODEL_URL` | `http://jan-server-jan-inference-model:8101` | Internal URL for inference service |
+#### Security Configuration
+- **JWT_SECRET**: HMAC-SHA-256 secret for JWT token signing
+- **APIKEY_SECRET**: HMAC-SHA-256 secret for API key encryption
+- **Database Credentials**: PostgreSQL username, password, and database name
 
-#### Authentication
+#### External Service Integration
+- **SERPER_API_KEY**: API key for web search functionality
+- **Google OAuth2**: Client ID, secret, and redirect URL for authentication
+- **Model Service**: URL for Jan Inference Model service communication
 
-| Variable | Purpose | Format |
-|----------|---------|--------|
-| `JWT_SECRET` | JWT token signing | Base64 encoded HMAC-SHA256 key |
-| `APIKEY_SECRET` | API key signing | Base64 encoded HMAC-SHA256 key |
+### Complete Environment Variables Reference
 
-The default JWT and API key secrets are for development only. Generate new secrets for production deployments.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_POSTGRESQL_WRITE_DSN` | Primary database connection | `postgres://jan_user:jan_password@localhost:5432/jan_api_gateway?sslmode=disable` |
+| `DB_POSTGRESQL_READ1_DSN` | Read replica database connection | Same as write DSN |
+| `JWT_SECRET` | JWT token signing secret | `your-super-secret-jwt-key-change-in-production` |
+| `APIKEY_SECRET` | API key encryption secret | `your-api-key-secret-change-in-production` |
+| `JAN_INFERENCE_MODEL_URL` | Jan inference service URL | `http://localhost:8000` |
+| `SERPER_API_KEY` | Serper API key for web search | `your-serper-api-key` |
+| `OAUTH2_GOOGLE_CLIENT_ID` | Google OAuth2 client ID | `your-google-client-id` |
+| `OAUTH2_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret | `your-google-client-secret` |
+| `OAUTH2_GOOGLE_REDIRECT_URL` | Google OAuth2 redirect URL | `http://localhost:8080/auth/google/callback` |
+| `ALLOWED_CORS_HOSTS` | Value of allowed CORS hosts, separated by commas, supporting prefix wildcards with '*'. | `http://localhost:8080,*jan.ai` |
+| `SMTP_HOST` | SMTP server host for email notifications | `smtp.gmail.com` |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_USERNAME` | SMTP username | `your-smtp-username` |
+| `SMTP_PASSWORD` | SMTP password | `your-smtp-password` |
+| `SMTP_SENDER_EMAIL` | Default sender email address | `noreply@yourdomain.com` |
+| `INVITE_REDIRECT_URL` | Redirect URL for invitation acceptance | `http://localhost:8080/invite/accept` |
 
-#### OAuth2 Integration
+### Helm Configuration
 
-| Variable | Description |
-|----------|-------------|
-| `OAUTH2_GOOGLE_CLIENT_ID` | Google OAuth2 application client ID |
-| `OAUTH2_GOOGLE_CLIENT_SECRET` | Google OAuth2 application secret |
-| `OAUTH2_GOOGLE_REDIRECT_URL` | Callback URL for OAuth2 flow |
+The system uses Helm charts for deployment configuration:
 
-#### External APIs
-
-| Variable | Provider | Purpose |
-|----------|----------|---------|
-| `SERPER_API_KEY` | Serper | Web search integration |
-
-#### Database Connection
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_POSTGRESQL_WRITE_DSN` | `host=jan-server-postgresql user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable` | Write database connection |
-| `DB_POSTGRESQL_READ1_DSN` | `host=jan-server-postgresql user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable` | Read database connection |
-
-## Helm Configuration
+- **Umbrella Chart**: Main deployment chart that orchestrates all services
+- **Service Charts**: Individual charts for each service (API Gateway, Inference Model)
+- **Values Files**: Configuration files for different environments
 
 ### Updating Values
 
@@ -60,6 +68,16 @@ jan-api-gateway:
       value: your_google_client_id
     - name: OAUTH2_GOOGLE_CLIENT_SECRET
       value: your_google_client_secret
+    - name: JWT_SECRET
+      value: your-jwt-secret-key
+    - name: APIKEY_SECRET
+      value: your-api-key-secret
+    - name: SMTP_HOST
+      value: smtp.gmail.com
+    - name: SMTP_USERNAME
+      value: your-smtp-username
+    - name: SMTP_PASSWORD
+      value: your-smtp-password
 ```
 
 ### Applying Changes
@@ -67,7 +85,17 @@ jan-api-gateway:
 After modifying values, redeploy the application:
 
 ```bash
+# Update Helm dependencies
+helm dependency update ./charts/umbrella-chart
+
+# Deploy to production
+helm install jan-server ./charts/umbrella-chart
+
+# Upgrade deployment
 helm upgrade jan-server ./charts/umbrella-chart
+
+# Uninstall
+helm uninstall jan-server
 ```
 
 ## Authentication Setup
@@ -246,7 +274,22 @@ postgresql:
     storageClass: fast-ssd
 ```
 
-## Logging Configuration
+## Monitoring & Observability
+
+### Health Monitoring
+- **Health Check Endpoints**: Available on all services
+- **Model Health Monitoring**: Automated health checks for inference models
+- **Database Health**: Connection monitoring and replica status
+
+### Performance Profiling
+- **pprof Endpoints**: Available on port 6060 for performance analysis
+- **Grafana Pyroscope**: Continuous profiling integration
+- **Request Tracing**: Unique request IDs for end-to-end tracing
+
+### Logging
+- **Structured Logging**: JSON-formatted logs across all services
+- **Request/Response Logging**: Complete request lifecycle tracking
+- **Error Tracking**: Unique error codes for debugging
 
 Configure logging levels via environment variables:
 
@@ -261,3 +304,46 @@ jan-api-gateway:
 
 Available log levels: `debug`, `info`, `warn`, `error`
 Available formats: `text`, `json`
+
+## Security
+
+### Authentication & Authorization
+- **JWT Tokens**: Secure token-based authentication
+- **Google OAuth2**: Social authentication integration
+- **API Key Management**: Scoped API keys for different access levels
+- **Multi-tenant Security**: Organization and project-level access control
+
+### Data Protection
+- **Encrypted API Keys**: HMAC-SHA-256 encryption for sensitive data
+- **Secure Database Connections**: SSL-enabled database connections
+- **Environment Variable Security**: Secure handling of sensitive configuration
+
+## Deployment
+
+### Local Development
+```bash
+# Start local cluster
+minikube start
+eval $(minikube docker-env)
+
+# Deploy services
+./scripts/run.sh
+
+# Access services
+kubectl port-forward svc/jan-server-jan-api-gateway 8080:8080
+```
+
+### Production Deployment
+```bash
+# Update Helm dependencies
+helm dependency update ./charts/umbrella-chart
+
+# Deploy to production
+helm install jan-server ./charts/umbrella-chart
+
+# Upgrade deployment
+helm upgrade jan-server ./charts/umbrella-chart
+
+# Uninstall
+helm uninstall jan-server
+```

@@ -1,0 +1,629 @@
+---
+title: Organizations API
+description: Multi-tenant organization management endpoints for admin API keys, invites, and projects.
+---
+
+## Overview
+
+The Organizations API provides comprehensive endpoints for managing multi-tenant organizations, including admin API key management, organization invites, project creation, and project-level API key management. This API is essential for enterprise deployments and multi-user environments.
+
+## Endpoints
+
+### Admin API Keys
+
+#### List Admin API Keys
+
+**Endpoint**: `GET /v1/organization/admin_api_keys`
+
+Retrieves a paginated list of admin API keys for the organization.
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of keys to return (1-100, default: 20)
+- `offset` (integer, optional): Number of keys to skip (default: 0)
+
+**Response:**
+```json
+{
+  "api_keys": [
+    {
+      "id": "ak_123",
+      "name": "Production Admin Key",
+      "created_at": "2024-01-01T12:00:00Z",
+      "last_used": "2024-01-01T15:30:00Z",
+      "permissions": ["admin", "read", "write"],
+      "is_active": true
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     "http://localhost:8080/v1/organization/admin_api_keys?limit=10"
+```
+
+#### Create Admin API Key
+
+**Endpoint**: `POST /v1/organization/admin_api_keys`
+
+Creates a new admin API key for the organization.
+
+**Request Body:**
+```json
+{
+  "name": "Development Admin Key",
+  "permissions": ["admin", "read", "write"],
+  "expires_at": "2024-12-31T23:59:59Z"
+}
+```
+
+**Parameters:**
+- `name` (string, required): Human-readable name for the API key
+- `permissions` (array, required): List of permissions for the key
+- `expires_at` (string, optional): Expiration date (ISO 8601 format)
+
+**Response:**
+```json
+{
+  "id": "ak_456",
+  "name": "Development Admin Key",
+  "key": "jan_ak_1234567890abcdef",
+  "created_at": "2024-01-01T12:00:00Z",
+  "expires_at": "2024-12-31T23:59:59Z",
+  "permissions": ["admin", "read", "write"],
+  "is_active": true
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/admin_api_keys \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Development Admin Key",
+    "permissions": ["admin", "read", "write"]
+  }'
+```
+
+#### Get Admin API Key
+
+**Endpoint**: `GET /v1/organization/admin_api_keys/{id}`
+
+Retrieves details of a specific admin API key.
+
+**Path Parameters:**
+- `id` (string, required): The API key ID
+
+**Response:**
+```json
+{
+  "id": "ak_123",
+  "name": "Production Admin Key",
+  "created_at": "2024-01-01T12:00:00Z",
+  "last_used": "2024-01-01T15:30:00Z",
+  "expires_at": "2024-12-31T23:59:59Z",
+  "permissions": ["admin", "read", "write"],
+  "is_active": true
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     http://localhost:8080/v1/organization/admin_api_keys/ak_123
+```
+
+#### Delete Admin API Key
+
+**Endpoint**: `DELETE /v1/organization/admin_api_keys/{id}`
+
+Permanently deletes an admin API key.
+
+**Path Parameters:**
+- `id` (string, required): The API key ID
+
+**Response:**
+```
+204 No Content
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/v1/organization/admin_api_keys/ak_123 \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+### Organization Invites
+
+#### List Organization Invites
+
+**Endpoint**: `GET /v1/organization/invites`
+
+Retrieves a paginated list of organization invites.
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of invites to return (1-100, default: 20)
+- `offset` (integer, optional): Number of invites to skip (default: 0)
+- `status` (string, optional): Filter by status - "pending", "accepted", "expired"
+
+**Response:**
+```json
+{
+  "invites": [
+    {
+      "id": "inv_123",
+      "email": "user@example.com",
+      "role": "member",
+      "status": "pending",
+      "created_at": "2024-01-01T12:00:00Z",
+      "expires_at": "2024-01-08T12:00:00Z",
+      "invited_by": "admin@example.com"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     "http://localhost:8080/v1/organization/invites?status=pending"
+```
+
+#### Create Invite
+
+**Endpoint**: `POST /v1/organization/invites`
+
+Creates a new organization invite.
+
+**Request Body:**
+```json
+{
+  "email": "newuser@example.com",
+  "role": "member",
+  "expires_in_days": 7,
+  "message": "Welcome to our organization!"
+}
+```
+
+**Parameters:**
+- `email` (string, required): Email address of the invitee
+- `role` (string, required): Role for the invitee - "admin", "member", "viewer"
+- `expires_in_days` (integer, optional): Days until invite expires (default: 7)
+- `message` (string, optional): Personal message for the invitee
+
+**Response:**
+```json
+{
+  "id": "inv_456",
+  "email": "newuser@example.com",
+  "role": "member",
+  "status": "pending",
+  "created_at": "2024-01-01T12:00:00Z",
+  "expires_at": "2024-01-08T12:00:00Z",
+  "invited_by": "admin@example.com",
+  "invite_url": "https://app.jan.ai/invite/inv_456"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/invites \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "newuser@example.com",
+    "role": "member",
+    "expires_in_days": 7,
+    "message": "Welcome to our organization!"
+  }'
+```
+
+#### Retrieve Invite
+
+**Endpoint**: `GET /v1/organization/invites/{invite_id}`
+
+Retrieves details of a specific invite.
+
+**Path Parameters:**
+- `invite_id` (string, required): The invite ID
+
+**Response:**
+```json
+{
+  "id": "inv_123",
+  "email": "user@example.com",
+  "role": "member",
+  "status": "pending",
+  "created_at": "2024-01-01T12:00:00Z",
+  "expires_at": "2024-01-08T12:00:00Z",
+  "invited_by": "admin@example.com",
+  "organization": {
+    "name": "Acme Corp",
+    "domain": "acme.com"
+  }
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/v1/organization/invites/inv_123
+```
+
+#### Delete Invite
+
+**Endpoint**: `DELETE /v1/organization/invites/{invite_id}`
+
+Cancels and deletes an organization invite.
+
+**Path Parameters:**
+- `invite_id` (string, required): The invite ID
+
+**Response:**
+```
+204 No Content
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/v1/organization/invites/inv_123 \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+### Projects
+
+#### List Projects
+
+**Endpoint**: `GET /v1/organization/projects`
+
+Retrieves a paginated list of organization projects.
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of projects to return (1-100, default: 20)
+- `offset` (integer, optional): Number of projects to skip (default: 0)
+- `status` (string, optional): Filter by status - "active", "archived"
+
+**Response:**
+```json
+{
+  "projects": [
+    {
+      "id": "proj_123",
+      "public_id": "proj_abc123",
+      "name": "AI Research Project",
+      "description": "Machine learning research initiative",
+      "status": "active",
+      "created_at": "2024-01-01T12:00:00Z",
+      "updated_at": "2024-01-01T15:30:00Z",
+      "created_by": "admin@example.com"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     "http://localhost:8080/v1/organization/projects?status=active"
+```
+
+#### Create Project
+
+**Endpoint**: `POST /v1/organization/projects`
+
+Creates a new project within the organization.
+
+**Request Body:**
+```json
+{
+  "name": "New AI Project",
+  "description": "Description of the new project",
+  "settings": {
+    "default_model": "jan-v1-4b",
+    "max_conversations": 1000
+  }
+}
+```
+
+**Parameters:**
+- `name` (string, required): Project name
+- `description` (string, optional): Project description
+- `settings` (object, optional): Project-specific settings
+
+**Response:**
+```json
+{
+  "id": "proj_789",
+  "public_id": "proj_def456",
+  "name": "New AI Project",
+  "description": "Description of the new project",
+  "status": "active",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T12:00:00Z",
+  "created_by": "admin@example.com",
+  "settings": {
+    "default_model": "jan-v1-4b",
+    "max_conversations": 1000
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/projects \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "New AI Project",
+    "description": "Description of the new project",
+    "settings": {
+      "default_model": "jan-v1-4b"
+    }
+  }'
+```
+
+#### Get Project
+
+**Endpoint**: `GET /v1/organization/projects/{project_id}`
+
+Retrieves details of a specific project.
+
+**Path Parameters:**
+- `project_id` (string, required): The project ID
+
+**Response:**
+```json
+{
+  "id": "proj_123",
+  "public_id": "proj_abc123",
+  "name": "AI Research Project",
+  "description": "Machine learning research initiative",
+  "status": "active",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T15:30:00Z",
+  "created_by": "admin@example.com",
+  "settings": {
+    "default_model": "jan-v1-4b",
+    "max_conversations": 1000
+  }
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     http://localhost:8080/v1/organization/projects/proj_123
+```
+
+#### Update Project
+
+**Endpoint**: `POST /v1/organization/projects/{project_id}`
+
+Updates an existing project.
+
+**Path Parameters:**
+- `project_id` (string, required): The project ID
+
+**Request Body:**
+```json
+{
+  "name": "Updated Project Name",
+  "description": "Updated description",
+  "settings": {
+    "default_model": "jan-v1-7b",
+    "max_conversations": 2000
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "proj_123",
+  "public_id": "proj_abc123",
+  "name": "Updated Project Name",
+  "description": "Updated description",
+  "status": "active",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T16:00:00Z",
+  "created_by": "admin@example.com",
+  "settings": {
+    "default_model": "jan-v1-7b",
+    "max_conversations": 2000
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/projects/proj_123 \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Project Name",
+    "description": "Updated description"
+  }'
+```
+
+#### Archive Project
+
+**Endpoint**: `POST /v1/organization/projects/{project_id}/archive`
+
+Archives a project, making it read-only.
+
+**Path Parameters:**
+- `project_id` (string, required): The project ID
+
+**Response:**
+```json
+{
+  "id": "proj_123",
+  "public_id": "proj_abc123",
+  "name": "AI Research Project",
+  "description": "Machine learning research initiative",
+  "status": "archived",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T17:00:00Z",
+  "created_by": "admin@example.com"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/projects/proj_123/archive \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+### Project API Keys
+
+#### List Project API Keys
+
+**Endpoint**: `GET /v1/organization/projects/{project_public_id}/api_keys`
+
+Retrieves API keys for a specific project.
+
+**Path Parameters:**
+- `project_public_id` (string, required): The project public ID
+
+**Response:**
+```json
+{
+  "api_keys": [
+    {
+      "id": "pk_123",
+      "name": "Production API Key",
+      "created_at": "2024-01-01T12:00:00Z",
+      "last_used": "2024-01-01T15:30:00Z",
+      "is_active": true
+    }
+  ],
+  "total": 1
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <admin_token>" \
+     http://localhost:8080/v1/organization/projects/proj_abc123/api_keys
+```
+
+#### Create Project API Key
+
+**Endpoint**: `POST /v1/organization/projects/{project_public_id}/api_keys`
+
+Creates a new API key for a specific project.
+
+**Path Parameters:**
+- `project_public_id` (string, required): The project public ID
+
+**Request Body:**
+```json
+{
+  "name": "Development API Key",
+  "expires_at": "2024-12-31T23:59:59Z"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "pk_456",
+  "name": "Development API Key",
+  "key": "jan_pk_1234567890abcdef",
+  "created_at": "2024-01-01T12:00:00Z",
+  "expires_at": "2024-12-31T23:59:59Z",
+  "is_active": true
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/organization/projects/proj_abc123/api_keys \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Development API Key",
+    "expires_at": "2024-12-31T23:59:59Z"
+  }'
+```
+
+## Permissions and Roles
+
+### Organization Roles
+
+- **Admin**: Full access to all organization resources
+- **Member**: Access to assigned projects and resources
+- **Viewer**: Read-only access to assigned projects
+
+### API Key Permissions
+
+- **admin**: Full administrative access
+- **read**: Read-only access to resources
+- **write**: Read and write access to resources
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource not found |
+| `409` | Conflict - Resource already exists |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Insufficient permissions",
+    "type": "forbidden_error",
+    "code": "insufficient_permissions"
+  }
+}
+```
+
+## Best Practices
+
+### Security
+
+1. **Rotate API Keys**: Regularly rotate API keys for security
+2. **Least Privilege**: Grant minimum required permissions
+3. **Monitor Usage**: Track API key usage and access patterns
+4. **Secure Storage**: Store API keys securely and never expose them
+
+### Organization Management
+
+1. **Clear Roles**: Define clear role hierarchies and permissions
+2. **Regular Audits**: Periodically review user access and permissions
+3. **Project Organization**: Organize projects logically by team or function
+4. **Documentation**: Maintain clear documentation of organization structure
+
+## Rate Limiting
+
+Organization endpoints have the following rate limits:
+- **Admin operations**: 100 requests per minute
+- **Project operations**: 200 requests per minute
+- **API key operations**: 50 requests per minute
+- **Invite operations**: 20 requests per minute
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1609459200
+```
