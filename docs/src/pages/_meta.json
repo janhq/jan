@@ -11,11 +11,6 @@
 		"type": "page",
 		"title": "Docs"
 	},
-	"server": {
-		"type": "page",
-		"title": "Docs",
-		"display": "hidden"
-	},
 	"platforms": {
 		"type": "page",
 		"title": "Platforms",
@@ -28,7 +23,8 @@
 	},
 	"api-reference": {
 		"type": "page",
-		"title": "API reference"
+		"title": "API reference",
+		"display": "hidden"
 	},
 	"changelog": {
 		"type": "page",

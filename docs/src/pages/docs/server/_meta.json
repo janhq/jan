@@ -1,13 +1,13 @@
 {
-	"-- Switcher": {
-		"type": "separator",
-		"title": "Switcher"
+	"index": {
+		"type": "page",
+		"display": "hidden"
 	},
 	"get-started-separator": {
 		"title": "Get started",
 		"type": "separator"
 	},
-	"index": "Overview",
+	"overview": "Overview",
 	"installation": "Installation",
 	"configuration": "Configuration",
 	"core-concepts-separator": {
