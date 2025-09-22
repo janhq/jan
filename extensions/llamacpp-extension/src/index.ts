@@ -2494,7 +2494,6 @@ export default class llamacpp_extension extends AIEngine {
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
     const sessionInfo = await this.findSessionByModel(opts.model)
-    logger.info(JSON.stringify(sessionInfo))
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
@@ -2535,6 +2534,7 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
 
         const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
+        logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
         imageTokens = await this.calculateImageTokens(
           opts.messages,
           metadata.metadata
@@ -2594,13 +2594,9 @@ export default class llamacpp_extension extends AIEngine {
     metadata: Record<string, string>
   ): Promise<number> {
     // Extract vision parameters from metadata
-    const patchSize = Number(metadata['clip.vision.patch_size']) || 14
-    const imageSize = Number(metadata['clip.vision.image_size']) || 896
+    const projectionDim = Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
 
     // Calculate patches per image
-    const patchesPerSide = Math.floor(imageSize / patchSize)
-    const totalPatches = patchesPerSide / 4 * patchesPerSide / 4
-
 
     // Count images in messages
     let imageCount = 0
@@ -2613,9 +2609,9 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     logger.info(
-      `Calculated ${totalPatches} tokens per image, ${imageCount} images total`
+      `Calculated ${projectionDim} tokens per image, ${imageCount} images total`
     )
-    return imageCount * totalPatches
+    return projectionDim - imageCount // remove the lingering <__image__> placeholder token
   }
 
   private estimateImageTokensFallback(
@@ -2636,6 +2632,6 @@ export default class llamacpp_extension extends AIEngine {
     logger.warn(
       `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
     )
-    return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> token
+    return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> placeholder token
   }
 }
