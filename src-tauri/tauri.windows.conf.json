@@ -4,12 +4,13 @@
     "resources": ["resources/pre-install/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh",
+        "installerIcon": "icons/icon.ico"
+      },
       "webviewInstallMode": {
         "silent": true,
         "type": "downloadBootstrapper"
-      },
-      "nsis": {
-        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }
