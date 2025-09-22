@@ -60,9 +60,11 @@ describe('CompletionMessagesBuilder', () => {
       const builder = new CompletionMessagesBuilder(messages)
       const result = builder.getMessages()
 
-      expect(result).toHaveLength(2)
+      // getMessages() inserts a filler message between consecutive user messages
+      expect(result).toHaveLength(3)
       expect(result[0].content).toBe('Hello')
-      expect(result[1].content).toBe('How are you?')
+      expect(result[1].role).toBe('assistant') // filler message
+      expect(result[2].content).toBe('How are you?')
     })
 
     it('should normalize assistant message content', () => {
@@ -277,9 +279,11 @@ describe('CompletionMessagesBuilder', () => {
       builder.addToolMessage('Second tool result', 'call_2')
 
       const result = builder.getMessages()
-      expect(result).toHaveLength(2)
+      // getMessages() inserts a filler message between consecutive tool messages
+      expect(result).toHaveLength(3)
       expect(result[0].tool_call_id).toBe('call_1')
-      expect(result[1].tool_call_id).toBe('call_2')
+      expect(result[1].role).toBe('assistant') // filler message
+      expect(result[2].tool_call_id).toBe('call_2')
     })
 
     it('should handle empty tool content', () => {
@@ -325,10 +329,10 @@ describe('CompletionMessagesBuilder', () => {
       builder.addAssistantMessage('Response')
       const result2 = builder.getMessages()
 
-      // Both should reference the same array and have 2 messages now
-      expect(result1).toBe(result2) // Same reference
-      expect(result1).toHaveLength(2)
-      expect(result2).toHaveLength(2)
+      // getMessages() creates a new array each time, so references will be different
+      expect(result1).not.toBe(result2) // Different references because getMessages creates new array
+      expect(result1).toHaveLength(1) // First call had only 1 message
+      expect(result2).toHaveLength(2) // Second call has 2 messages
     })
   })
 
@@ -495,16 +499,18 @@ describe('CompletionMessagesBuilder', () => {
 
       const result = builder.getMessages()
 
-      expect(result).toHaveLength(6)
+      // getMessages() adds filler messages between consecutive assistant messages
+      expect(result).toHaveLength(7)
       expect(result[0].role).toBe('system')
       expect(result[1].role).toBe('user')
       expect(result[2].role).toBe('assistant')
       expect(result[2].content).toBe('Let me check the weather for you.')
-      expect(result[3].role).toBe('assistant')
-      expect(result[3].tool_calls).toEqual(toolCalls)
-      expect(result[4].role).toBe('tool')
-      expect(result[5].role).toBe('assistant')
-      expect(result[5].content).toBe('The weather is 72°F and sunny!')
+      expect(result[3].role).toBe('user') // filler message inserted between consecutive assistant messages
+      expect(result[4].role).toBe('assistant')
+      expect(result[4].tool_calls).toEqual(toolCalls)
+      expect(result[5].role).toBe('tool')
+      expect(result[6].role).toBe('assistant')
+      expect(result[6].content).toBe('The weather is 72°F and sunny!')
     })
 
     it('should handle empty thread messages with system instruction', () => {
