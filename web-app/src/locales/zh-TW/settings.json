@@ -203,7 +203,7 @@
     "showInFinder": "在 Finder 中顯示",
     "showInFileExplorer": "在檔案總管中顯示",
     "openContainingFolder": "打開包含資料夾",
-    "couldNotRelocateToRoot": "無法將資料檔案夾重新定位到根目錄。請選擇其他位置。",
+    "couldNotRelocateToRoot": "無法將資料夾重新定位到根目錄。請選擇其他位置。",
     "couldNotResetRootDirectory": "當資料檔案夾設定為根目錄時，無法重置。請手動刪除資料檔案夾。",
     "failedToRelocateDataFolder": "無法重新定位資料夾",
     "failedToRelocateDataFolderDesc": "無法重新定位資料夾。請重試。",
