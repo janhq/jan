@@ -2596,8 +2596,6 @@ export default class llamacpp_extension extends AIEngine {
     // Extract vision parameters from metadata
     const projectionDim = Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
 
-    // Calculate patches per image
-
     // Count images in messages
     let imageCount = 0
     for (const message of messages) {
@@ -2611,7 +2609,7 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(
       `Calculated ${projectionDim} tokens per image, ${imageCount} images total`
     )
-    return projectionDim - imageCount // remove the lingering <__image__> placeholder token
+    return projectionDim * imageCount - imageCount // remove the lingering <__image__> placeholder token
   }
 
   private estimateImageTokensFallback(
