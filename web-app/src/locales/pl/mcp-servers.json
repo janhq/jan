@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "Usuń Serwer MCP",
     "description": "Na pewno chcesz usunąć serwer MCP {{serverName}}? Tej operacji nie można cofnąć.",
-    "delete": "Usuń"
+    "delete": "Usuń",
+    "success": "Serwer MCP {{serverName}} został pomyślnie usunięty"
   },
   "editJson": {
     "title": "Edytuj JSON Serwera MCP: {{serverName}}",

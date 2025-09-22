@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "Hapus Server MCP",
     "description": "Apakah Anda yakin ingin menghapus server MCP {{serverName}}? Tindakan ini tidak dapat dibatalkan.",
-    "delete": "Hapus"
+    "delete": "Hapus",
+    "success": "Server MCP {{serverName}} berhasil dihapus"
   },
   "editJson": {
     "title": "Edit JSON untuk Server MCP: {{serverName}}",
