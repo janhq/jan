@@ -35,6 +35,7 @@ vi.mock('../../hooks/useAppState', () => ({
         resetTokenSpeed: vi.fn(),
         updateTools: vi.fn(),
         updateStreamingContent: vi.fn(),
+        updatePromptProgress: vi.fn(),
         updateLoadingModel: vi.fn(),
         setAbortController: vi.fn(),
       }
@@ -106,7 +107,11 @@ vi.mock('../../hooks/useMessages', () => ({
 
 vi.mock('../../hooks/useToolApproval', () => ({
   useToolApproval: (selector: any) => {
-    const state = { approvedTools: [], showApprovalModal: vi.fn(), allowAllMCPPermissions: false }
+    const state = {
+      approvedTools: [],
+      showApprovalModal: vi.fn(),
+      allowAllMCPPermissions: false,
+    }
     return selector ? selector(state) : state
   },
 }))
@@ -132,14 +137,24 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/lib/completion', () => ({
   emptyThreadContent: { thread_id: 'test-thread', content: '' },
   extractToolCall: vi.fn(),
-  newUserThreadContent: vi.fn(() => ({ thread_id: 'test-thread', content: 'user message' })),
-  newAssistantThreadContent: vi.fn(() => ({ thread_id: 'test-thread', content: 'assistant message' })),
-  sendCompletion: vi.fn(() => Promise.resolve({ choices: [{ message: { content: '' } }] })),
+  newUserThreadContent: vi.fn(() => ({
+    thread_id: 'test-thread',
+    content: 'user message',
+  })),
+  newAssistantThreadContent: vi.fn(() => ({
+    thread_id: 'test-thread',
+    content: 'assistant message',
+  })),
+  sendCompletion: vi.fn(() =>
+    Promise.resolve({ choices: [{ message: { content: '' } }] })
+  ),
   postMessageProcessing: vi.fn(),
   isCompletionResponse: vi.fn(() => true),
 }))
 
-vi.mock('@/services/mcp', () => ({ getTools: vi.fn(() => Promise.resolve([])) }))
+vi.mock('@/services/mcp', () => ({
+  getTools: vi.fn(() => Promise.resolve([])),
+}))
 
 vi.mock('@/services/models', () => ({
   startModel: vi.fn(() => Promise.resolve()),
@@ -147,9 +162,13 @@ vi.mock('@/services/models', () => ({
   stopAllModels: vi.fn(() => Promise.resolve()),
 }))
 
-vi.mock('@/services/providers', () => ({ updateSettings: vi.fn(() => Promise.resolve()) }))
+vi.mock('@/services/providers', () => ({
+  updateSettings: vi.fn(() => Promise.resolve()),
+}))
 
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(vi.fn())) }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({

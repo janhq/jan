@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -48,6 +49,9 @@ export const useChat = () => {
       state.updateLoadingModel,
       state.setAbortController,
     ])
+  )
+  const updatePromptProgress = useAppState(
+    (state) => state.updatePromptProgress
   )
 
   const updateProvider = useModelProvider((state) => state.updateProvider)
@@ -229,6 +233,7 @@ export const useChat = () => {
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
+      updatePromptProgress(undefined)
       // Do not add new message on retry
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
@@ -397,6 +402,16 @@ export const useChat = () => {
                     break
                   }
 
+                  // Handle prompt progress if available
+                  if ('prompt_progress' in part && part.prompt_progress) {
+                    // Force immediate state update to ensure we see intermediate values
+                    flushSync(() => {
+                      updatePromptProgress(part.prompt_progress)
+                    })
+                    // Add a small delay to make progress visible
+                    await new Promise((resolve) => setTimeout(resolve, 100))
+                  }
+
                   // Error message
                   if (!part.choices) {
                     throw new Error(
@@ -513,6 +528,7 @@ export const useChat = () => {
           )
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)
+          updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length
@@ -534,6 +550,7 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
+        updatePromptProgress(undefined)
       }
     },
     [
@@ -543,6 +560,7 @@ export const useChat = () => {
       getMessages,
       setAbortController,
       updateStreamingContent,
+      updatePromptProgress,
       addMessage,
       updateThreadTimestamp,
       updateLoadingModel,

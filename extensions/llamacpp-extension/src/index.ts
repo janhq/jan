@@ -1802,6 +1802,13 @@ export default class llamacpp_extension extends AIEngine {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
+    // always enable prompt progress return if stream is true
+    // Requires llamacpp version > b6399
+    // Example json returned from server
+    // {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1758113912,"id":"chatcmpl-UwZwgxQKyJMo7WzMzXlsi90YTUK2BJro","model":"qwen","system_fingerprint":"b1-e4912fc","object":"chat.completion.chunk","prompt_progress":{"total":36,"cache":0,"processed":36,"time_ms":5706760300}}
+    // (chunk.prompt_progress?.processed / chunk.prompt_progress?.total) * 100
+    // chunk.prompt_progress?.cache is for past tokens already in kv cache
+    opts.return_progress = true
 
     const body = JSON.stringify(opts)
     if (opts.stream) {
