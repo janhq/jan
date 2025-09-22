@@ -59,13 +59,16 @@ pub async fn load_llama_model<R: Runtime>(
 
     let mmproj_path_string = if let Some(ref _mmproj_pb) = mmproj_path_pb {
         // Find the actual mmproj path from args after validation/conversion
-        let mmproj_index = args.iter().position(|arg| arg == "--mmproj").unwrap();
-        Some(args[mmproj_index + 1].clone())
+        if let Some(mmproj_index) = args.iter().position(|arg| arg == "--mmproj") {
+            Some(args[mmproj_index + 1].clone())
+        } else {
+            None
+        }
     } else {
         None
     };
 
-    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap());
+    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap_or(&"None".to_string()));
 
     let api_key: String;
 
