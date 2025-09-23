@@ -2,28 +2,28 @@ import { invoke } from '@tauri-apps/api/core'
 
 // Types
 export interface SessionInfo {
-  pid: number;
-  port: number;
-  model_id: string;
-  model_path: string;
-  api_key: string;
+  pid: number
+  port: number
+  model_id: string
+  model_path: string
+  api_key: string
 }
 
 export interface DeviceInfo {
-  id: string;
-  name: string;
-  memory: number;
+  id: string
+  name: string
+  memory: number
 }
 
 export interface GgufMetadata {
-  version: number;
-  tensor_count: number;
-  metadata: Record<string, string>;
+  version: number
+  tensor_count: number
+  metadata: Record<string, string>
 }
 
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
-  return await invoke('plugin:llamacpp|cleanup_llama_processes');
+  return await invoke('plugin:llamacpp|cleanup_llama_processes')
 }
 
 // LlamaCpp server commands
@@ -35,12 +35,12 @@ export async function loadLlamaModel(
   return await invoke('plugin:llamacpp|load_llama_model', {
     backendPath,
     libraryPath,
-    args
-  });
+    args,
+  })
 }
 
 export async function unloadLlamaModel(pid: number): Promise<void> {
-  return await invoke('plugin:llamacpp|unload_llama_model', { pid });
+  return await invoke('plugin:llamacpp|unload_llama_model', { pid })
 }
 
 export async function getDevices(
@@ -49,8 +49,8 @@ export async function getDevices(
 ): Promise<DeviceInfo[]> {
   return await invoke('plugin:llamacpp|get_devices', {
     backendPath,
-    libraryPath
-  });
+    libraryPath,
+  })
 }
 
 export async function generateApiKey(
@@ -59,35 +59,49 @@ export async function generateApiKey(
 ): Promise<string> {
   return await invoke('plugin:llamacpp|generate_api_key', {
     modelId,
-    apiSecret
-  });
+    apiSecret,
+  })
 }
 
 export async function isProcessRunning(pid: number): Promise<boolean> {
-  return await invoke('plugin:llamacpp|is_process_running', { pid });
+  return await invoke('plugin:llamacpp|is_process_running', { pid })
 }
 
 export async function getRandomPort(): Promise<number> {
-  return await invoke('plugin:llamacpp|get_random_port');
+  return await invoke('plugin:llamacpp|get_random_port')
 }
 
-export async function findSessionByModel(modelId: string): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp|find_session_by_model', { modelId });
+export async function findSessionByModel(
+  modelId: string
+): Promise<SessionInfo | null> {
+  return await invoke('plugin:llamacpp|find_session_by_model', { modelId })
 }
 
 export async function getLoadedModels(): Promise<string[]> {
-  return await invoke('plugin:llamacpp|get_loaded_models');
+  return await invoke('plugin:llamacpp|get_loaded_models')
 }
 
 export async function getAllSessions(): Promise<SessionInfo[]> {
-  return await invoke('plugin:llamacpp|get_all_sessions');
+  return await invoke('plugin:llamacpp|get_all_sessions')
 }
 
-export async function getSessionByModel(modelId: string): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp|get_session_by_model', { modelId });
+export async function getSessionByModel(
+  modelId: string
+): Promise<SessionInfo | null> {
+  return await invoke('plugin:llamacpp|get_session_by_model', { modelId })
 }
 
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
-  return await invoke('plugin:llamacpp|read_gguf_metadata', { path });
+  return await invoke('plugin:llamacpp|read_gguf_metadata', { path })
+}
+
+export async function estimateKVCacheSize(
+  meta: Record<string, string>,
+  ctxSize?: number
+): Promise<{ size: number; per_token_size: number }> {
+  return await invoke('plugin:llamacpp|estimate_kv_cache_size', {
+    meta,
+    ctxSize
+  })
 }

@@ -37,7 +37,10 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
-import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  readGgufMetadata,
+  estimateKVCacheSize,
+} from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -2114,8 +2117,8 @@ export default class llamacpp_extension extends AIEngine {
       gguf.metadata
     )
 
-    const kvCachePerToken = (await this.estimateKVCache(gguf.metadata))
-      .perTokenSize
+    const kvCachePerToken = (await estimateKVCacheSize(gguf.metadata))
+      .per_token_size
 
     logger.info(
       `Model size: ${modelSize}, Layer size: ${layerSize}, Total layers: ${totalLayers}, KV cache per token: ${kvCachePerToken}`
@@ -2191,7 +2194,7 @@ export default class llamacpp_extension extends AIEngine {
       remainingVRAM -= mmprojSize
     }
     const vramForMinContext = (
-      await this.estimateKVCache(gguf.metadata, MIN_CONTEXT_LENGTH)
+      await estimateKVCacheSize(gguf.metadata, MIN_CONTEXT_LENGTH)
     ).size
 
     const ramForModel = modelSize + (offloadMmproj ? 0 : mmprojSize)
@@ -2214,7 +2217,7 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     let targetContextSize = (
-      await this.estimateKVCache(gguf.metadata, targetContext)
+      await estimateKVCacheSize(gguf.metadata, targetContext)
     ).size
 
     // Use `kvCachePerToken` for all VRAM calculations
@@ -2343,73 +2346,6 @@ export default class llamacpp_extension extends AIEngine {
       offloadMmproj,
     }
   }
-  /**
-   * estimate KVCache size from a given metadata
-   */
-  private async estimateKVCache(
-    meta: Record<string, string>,
-    ctx_size?: number
-  ): Promise<{ size: number; perTokenSize: number }> {
-    const arch = meta['general.architecture']
-    if (!arch) throw new Error('Invalid metadata: architecture not found')
-
-    const nLayer = Number(meta[`${arch}.block_count`])
-    if (!nLayer) throw new Error('Invalid metadata: block_count not found')
-
-    const nHead = Number(meta[`${arch}.attention.head_count`])
-    if (!nHead) throw new Error('Invalid metadata: head_count not found')
-
-    // Try to get key/value lengths first (more accurate)
-    const keyLen = Number(meta[`${arch}.attention.key_length`])
-    const valLen = Number(meta[`${arch}.attention.value_length`])
-
-    let headDim: number
-
-    if (keyLen && valLen) {
-      // Use explicit key/value lengths if available
-      logger.info(
-        `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
-      )
-      headDim = keyLen + valLen
-    } else {
-      // Fall back to embedding_length estimation
-      const embeddingLen = Number(meta[`${arch}.embedding_length`])
-      if (!embeddingLen)
-        throw new Error('Invalid metadata: embedding_length not found')
-
-      // Standard transformer: head_dim = embedding_dim / num_heads
-      // For KV cache: we need both K and V, so 2 * head_dim per head
-      headDim = (embeddingLen / nHead) * 2
-      logger.info(
-        `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
-      )
-    }
-
-    const maxCtx = Number(meta[`${arch}.context_length`])
-    if (!maxCtx) throw new Error('Invalid metadata: context_length not found')
-
-    // b) If the user supplied a value, clamp it to the model's max
-    let ctxLen = ctx_size ? Math.min(ctx_size, maxCtx) : maxCtx
-
-    logger.info(`Final context length used for KV size: ${ctxLen}`)
-    logger.info(`nLayer: ${nLayer}, nHead: ${nHead}, headDim (K+V): ${headDim}`)
-
-    logger.info(`ctxLen: ${ctxLen}`)
-    logger.info(`nLayer: ${nLayer}`)
-    logger.info(`nHead: ${nHead}`)
-    logger.info(`headDim: ${headDim}`)
-
-    // Consider f16 by default
-    // Can be extended by checking cache-type-v and cache-type-k
-    // but we are checking overall compatibility with the default settings
-    // fp16 = 8 bits * 2 = 16
-    const bytesPerElement = 2
-
-    // Total KV cache size per token = nHead * headDim * bytesPerElement * nLayer
-    const kvPerToken = nHead * headDim * bytesPerElement * nLayer
-
-    return { size: ctxLen * kvPerToken, perTokenSize: kvPerToken }
-  }
 
   private async getModelSize(path: string): Promise<number> {
     if (path.startsWith('https://')) {
@@ -2431,7 +2367,7 @@ export default class llamacpp_extension extends AIEngine {
    */
   async isModelSupported(
     path: string,
-    ctx_size?: number
+    ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
       const modelSize = await this.getModelSize(path)
@@ -2441,16 +2377,17 @@ export default class llamacpp_extension extends AIEngine {
 
       const gguf = await readGgufMetadata(path)
       let kvCacheSize: number
-      if (ctx_size) {
-        kvCacheSize = (await this.estimateKVCache(gguf.metadata, ctx_size)).size
+      if (ctxSize) {
+        logger.info(`Using ctx_size: ${ctxSize}`)
+        kvCacheSize = (await estimateKVCacheSize(gguf.metadata, Number(ctxSize))).size
       } else {
-        kvCacheSize = (await this.estimateKVCache(gguf.metadata)).size
+        kvCacheSize = (await estimateKVCacheSize(gguf.metadata)).size
       }
 
       // Total memory consumption = model weights + kvcache
       const totalRequired = modelSize + kvCacheSize
       logger.info(
-        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
+        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}; Got kvCacheSize: ${kvCacheSize} from BE`
       )
 
       // Use 80% of total memory as the usable limit

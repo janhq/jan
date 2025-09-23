@@ -16,6 +16,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-all-sessions`
 - `allow-get-session-by-model`
 - `allow-read-gguf-metadata`
+- `allow-estimate-kv-cache-size`
 
 ## Permission Table
 
@@ -48,6 +49,32 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <td>
 
 Denies the cleanup_llama_processes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-estimate-kv-cache-size`
+
+</td>
+<td>
+
+Enables the estimate_kv_cache_size command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-estimate-kv-cache-size`
+
+</td>
+<td>
+
+Denies the estimate_kv_cache_size command without any pre-configured scope.
 
 </td>
 </tr>
