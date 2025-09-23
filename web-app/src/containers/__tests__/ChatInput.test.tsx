@@ -188,39 +188,39 @@ describe('ChatInput', () => {
     mockAppState.tools = []
   })
 
-  it('renders chat input textarea', () => {
-    act(() => {
+  it('renders chat input textarea', async () => {
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     const textarea = screen.getByRole('textbox')
     expect(textarea).toBeInTheDocument()
     expect(textarea).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
   })
 
-  it('renders send button', () => {
-    act(() => {
+  it('renders send button', async () => {
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
     expect(sendButton).toBeInTheDocument()
   })
 
-  it('disables send button when prompt is empty', () => {
-    act(() => {
+  it('disables send button when prompt is empty', async () => {
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
     expect(sendButton).toBeDisabled()
   })
 
-  it('enables send button when prompt has content', () => {
+  it('enables send button when prompt has content', async () => {
     // Set prompt content
     mockPromptState.prompt = 'Hello world'
 
-    act(() => {
+    await act(async () => {
       renderWithRouter()
     })
 
@@ -230,10 +230,14 @@ describe('ChatInput', () => {
 
   it('calls setPrompt when typing in textarea', async () => {
     const user = userEvent.setup()
-    renderWithRouter()
+    await act(async () => {
+      renderWithRouter()
+    })
 
     const textarea = screen.getByRole('textbox')
-    await user.type(textarea, 'Hello')
+    await act(async () => {
+      await user.type(textarea, 'Hello')
+    })
 
     // setPrompt is called for each character typed
     expect(mockPromptState.setPrompt).toHaveBeenCalledTimes(5)
@@ -246,10 +250,14 @@ describe('ChatInput', () => {
     // Set prompt content
     mockPromptState.prompt = 'Hello world'
 
-    renderWithRouter()
+    await act(async () => {
+      renderWithRouter()
+    })
 
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
-    await user.click(sendButton)
+    await act(async () => {
+      await user.click(sendButton)
+    })
 
     // Note: Since useChat now returns the sendMessage function directly, we need to mock it differently
     // For now, we'll just check that the button was clicked successfully
@@ -262,10 +270,14 @@ describe('ChatInput', () => {
     // Set prompt content
     mockPromptState.prompt = 'Hello world'
 
-    renderWithRouter()
+    await act(async () => {
+      renderWithRouter()
+    })
 
     const textarea = screen.getByRole('textbox')
-    await user.type(textarea, '{Enter}')
+    await act(async () => {
+      await user.type(textarea, '{Enter}')
+    })
 
     // Just verify the textarea exists and Enter was processed
     expect(textarea).toBeInTheDocument()
@@ -277,34 +289,38 @@ describe('ChatInput', () => {
     // Set prompt content
     mockPromptState.prompt = 'Hello world'
 
-    renderWithRouter()
+    await act(async () => {
+      renderWithRouter()
+    })
 
     const textarea = screen.getByRole('textbox')
-    await user.type(textarea, '{Shift>}{Enter}{/Shift}')
+    await act(async () => {
+      await user.type(textarea, '{Shift>}{Enter}{/Shift}')
+    })
 
     // Just verify the textarea exists
     expect(textarea).toBeInTheDocument()
   })
 
-  it('shows stop button when streaming', () => {
+  it('shows stop button when streaming', async () => {
     // Mock streaming state
     mockAppState.streamingContent = { thread_id: 'test-thread' }
-    
-    act(() => {
+
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     // Stop button should be rendered (as SVG with tabler-icon-player-stop-filled class)
     const stopButton = document.querySelector('.tabler-icon-player-stop-filled')
     expect(stopButton).toBeInTheDocument()
   })
 
 
-  it('shows model selection dropdown', () => {
-    act(() => {
+  it('shows model selection dropdown', async () => {
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     // Model selection dropdown should be rendered (look for popover trigger)
     const modelDropdown = document.querySelector('[data-slot="popover-trigger"]')
     expect(modelDropdown).toBeInTheDocument()
@@ -316,10 +332,14 @@ describe('ChatInput', () => {
     // Mock no selected model and prompt with content
     mockPromptState.prompt = 'Hello world'
 
-    renderWithRouter()
+    await act(async () => {
+      renderWithRouter()
+    })
 
     const sendButton = document.querySelector('[data-test-id="send-message-button"]')
-    await user.click(sendButton)
+    await act(async () => {
+      await user.click(sendButton)
+    })
 
     // The component should still render without crashing when no model is selected
     expect(sendButton).toBeInTheDocument()
@@ -327,8 +347,10 @@ describe('ChatInput', () => {
 
   it('handles file upload', async () => {
     const user = userEvent.setup()
-    renderWithRouter()
-    
+    await act(async () => {
+      renderWithRouter()
+    })
+
     // Wait for async effects to complete (mmproj check)
     await waitFor(() => {
       // File upload is rendered as hidden input element
@@ -337,14 +359,14 @@ describe('ChatInput', () => {
     })
   })
 
-  it('disables input when streaming', () => {
+  it('disables input when streaming', async () => {
     // Mock streaming state
     mockAppState.streamingContent = { thread_id: 'test-thread' }
-    
-    act(() => {
+
+    await act(async () => {
       renderWithRouter()
     })
-    
+
     const textarea = screen.getByTestId('chat-input')
     expect(textarea).toBeDisabled()
   })
@@ -352,9 +374,11 @@ describe('ChatInput', () => {
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
-    
-    renderWithRouter()
-    
+
+    await act(async () => {
+      renderWithRouter()
+    })
+
     await waitFor(() => {
       // Tools dropdown should be rendered (as SVG icon with tabler-icon-tool class)
       const toolsIcon = document.querySelector('.tabler-icon-tool')
@@ -362,8 +386,10 @@ describe('ChatInput', () => {
     })
   })
 
-  it('uses selectedProvider for provider checks', () => {
+  it('uses selectedProvider for provider checks', async () => {
     // This test ensures the component renders without errors when using selectedProvider
-    expect(() => renderWithRouter()).not.toThrow()
+    await act(async () => {
+      expect(() => renderWithRouter()).not.toThrow()
+    })
   })
 })

@@ -190,6 +190,7 @@ function MCPServersDesktop() {
       }
 
       deleteServer(serverToDelete)
+      toast.success(t('mcp-servers:deleteServer.success', { serverName: serverToDelete }))
       setServerToDelete(null)
       syncServersAndRestart()
     }

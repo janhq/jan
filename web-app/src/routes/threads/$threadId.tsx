@@ -20,6 +20,7 @@ import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
+import { PromptProgress } from '@/components/PromptProgress'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -180,6 +181,7 @@ function ThreadDetail() {
                   </div>
                 )
               })}
+            <PromptProgress />
             <StreamingContent
               threadId={threadId}
               data-test-id="thread-content-text"

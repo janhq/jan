@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "Xóa máy chủ MCP",
     "description": "Bạn có chắc chắn muốn xóa máy chủ MCP {{serverName}} không? Hành động này không thể hoàn tác.",
-    "delete": "Xóa"
+    "delete": "Xóa",
+    "success": "Máy chủ MCP {{serverName}} đã được xóa thành công"
   },
   "editJson": {
     "title": "Chỉnh sửa JSON cho máy chủ MCP: {{serverName}}",
