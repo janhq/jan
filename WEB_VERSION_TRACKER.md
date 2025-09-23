@@ -2,7 +2,17 @@
 
 Internal tracker for web component changes and features.
 
-## v0.0.10 (Current)
+## v0.0.11 (Current)
+**Release Date**: 2025-09-23
+**Commit SHA**: 494db746f7dd1f51241cec80bbf550901a0115e5
+
+**Main Features**:
+- Google login support
+- Remote conversation and message persistent
+- UI improvements
+- Multiple tab synchronization on browser
+
+## v0.0.10
 
 **Release Date**: 2025-09-11
 **Commit SHA**: b5b6e1dc197378d06ccbf127f60e44779f1e44e5
