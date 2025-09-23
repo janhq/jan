@@ -1,0 +1,293 @@
+---
+title: Chat Conversations
+description: Conversation-aware chat endpoints for context-aware AI interactions.
+---
+
+## Overview
+
+The Chat Conversations API provides conversation-aware chat completion endpoints that maintain context across multiple interactions. These endpoints are designed for applications that need to preserve conversation history and provide context-aware responses.
+
+## Endpoints
+
+### Create Conversation-Aware Chat Completion
+
+**Endpoint**: `POST /v1/conv/chat/completions`
+
+Creates a chat completion that is aware of the conversation context and history.
+
+**Request Body:**
+```json
+{
+  "model": "string",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What did we discuss earlier about machine learning?"
+    }
+  ],
+  "conversation_id": "conv_123",
+  "max_tokens": 200,
+  "temperature": 0.7,
+  "stream": false
+}
+```
+
+**Parameters:**
+- `model` (string, required): Model identifier (e.g., "jan-v1-4b")
+- `messages` (array, required): Array of message objects with role and content
+- `conversation_id` (string, optional): ID of the conversation for context
+- `max_tokens` (integer, optional): Maximum number of tokens to generate
+- `temperature` (float, optional): Sampling temperature (0.0 to 2.0)
+- `stream` (boolean, optional): Whether to stream the response
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "jan-v1-4b",
+  "conversation_id": "conv_123",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Earlier we discussed the basics of supervised learning, including how algorithms learn from labeled training data to make predictions on new, unseen data."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 28,
+    "total_tokens": 43
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/conv/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "What did we discuss earlier about machine learning?"}
+    ],
+    "conversation_id": "conv_123",
+    "max_tokens": 200,
+    "temperature": 0.7
+  }'
+```
+
+### MCP Streamable Endpoint for Conversations
+
+**Endpoint**: `POST /v1/conv/mcp`
+
+Model Context Protocol streamable endpoint specifically designed for conversation-aware chat with external tool integration.
+
+**Request Body:**
+```json
+{
+  "model": "string",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you help me analyze the data we collected yesterday?"
+    }
+  ],
+  "conversation_id": "conv_123",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "analyze_data",
+        "description": "Analyze collected data from previous conversation",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "data_type": {
+              "type": "string",
+              "description": "Type of data to analyze"
+            }
+          },
+          "required": ["data_type"]
+        }
+      }
+    }
+  ],
+  "stream": true
+}
+```
+
+**Response (Streaming):**
+```
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","conversation_id":"conv_123","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","conversation_id":"conv_123","choices":[{"index":0,"delta":{"content":"I'll"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","conversation_id":"conv_123","choices":[{"index":0,"delta":{"content":" analyze"},"finish_reason":null}]}
+
+data: [DONE]
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/conv/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Can you help me analyze the data we collected yesterday?"}
+    ],
+    "conversation_id": "conv_123",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "analyze_data",
+          "description": "Analyze collected data from previous conversation"
+        }
+      }
+    ],
+    "stream": true
+  }' \
+  --no-buffer
+```
+
+### List Available Models for Conversations
+
+**Endpoint**: `GET /v1/conv/models`
+
+Retrieves a list of available models specifically optimized for conversation-aware chat completions.
+
+**Response:**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "jan-v1-4b-conv",
+      "object": "model",
+      "created": 1677652288,
+      "owned_by": "jan",
+      "capabilities": ["conversation_aware", "context_retention"]
+    },
+    {
+      "id": "jan-v1-7b-conv",
+      "object": "model",
+      "created": 1677652288,
+      "owned_by": "jan",
+      "capabilities": ["conversation_aware", "context_retention", "long_context"]
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/v1/conv/models
+```
+
+## Conversation Context
+
+### Context Retention
+
+Conversation-aware endpoints automatically maintain context by:
+- Storing conversation history in the database
+- Retrieving relevant context for each request
+- Providing context-aware responses based on previous interactions
+
+### Conversation ID
+
+The `conversation_id` parameter links requests to a specific conversation:
+- If provided, the system retrieves conversation history
+- If omitted, a new conversation context is created
+- Context is maintained across multiple API calls
+
+### Context Window
+
+The system maintains a sliding window of conversation history:
+- Recent messages are prioritized
+- Older context is summarized when needed
+- Maximum context length varies by model
+
+## Advanced Features
+
+### Context Summarization
+
+For long conversations, the system automatically:
+- Summarizes older message history
+- Preserves key information and decisions
+- Maintains conversation flow continuity
+
+### Multi-Turn Interactions
+
+Support for complex multi-turn conversations:
+- Reference previous topics and decisions
+- Maintain user preferences and settings
+- Provide consistent personality and tone
+
+### Context-Aware Tool Usage
+
+Tools can access conversation context:
+- Reference previous data and results
+- Build upon previous analysis
+- Maintain state across interactions
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or conversation ID |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `404` | Not Found - Conversation not found |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Conversation not found",
+    "type": "not_found_error",
+    "code": "conversation_not_found"
+  }
+}
+```
+
+## Best Practices
+
+### Conversation Management
+
+1. **Use Consistent Conversation IDs**: Maintain the same ID across related requests
+2. **Provide Context**: Include relevant context in your messages
+3. **Handle Long Conversations**: Be aware of context window limitations
+4. **Clean Up**: Delete old conversations when no longer needed
+
+### Performance Optimization
+
+1. **Batch Requests**: Group related requests when possible
+2. **Stream Responses**: Use streaming for better user experience
+3. **Cache Context**: Store conversation context client-side when appropriate
+4. **Monitor Usage**: Track token usage and conversation length
+
+## Rate Limiting
+
+Conversation-aware endpoints have the following rate limits:
+- **Authenticated users**: 30 requests per minute
+- **API keys**: 500 requests per hour
+- **Guest users**: 5 requests per minute
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 29
+X-RateLimit-Reset: 1609459200
+```

@@ -1,0 +1,525 @@
+---
+title: Responses API
+description: Advanced response operations for managing AI response lifecycle and metadata.
+---
+
+## Overview
+
+The Jan-Responses API provides advanced endpoints for managing AI response lifecycle, including response creation, retrieval, cancellation, and comprehensive input item management. This API is designed for applications that require detailed control over response processing and metadata tracking.
+
+## Endpoints
+
+### Create Response
+
+**Endpoint**: `POST /v1/responses`
+
+Creates a new AI response with comprehensive configuration options and input item management.
+
+**Request Body:**
+```json
+{
+  "model": "jan-v1-4b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Analyze the following data and provide insights"
+    }
+  ],
+  "parameters": {
+    "max_tokens": 1000,
+    "temperature": 0.7,
+    "stream": false,
+    "top_p": 0.9,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0
+  },
+  "metadata": {
+    "session_id": "sess_456",
+    "user_context": "data_analyst",
+    "priority": "high",
+    "tags": ["analysis", "data", "insights"]
+  },
+  "input_items": [
+    {
+      "role": "user",
+      "content": "Analyze the following data and provide insights",
+      "metadata": {
+        "source": "user_input",
+        "language": "en"
+      }
+    }
+  ]
+}
+```
+
+**Parameters:**
+- `model` (string, required): Model identifier for the response
+- `messages` (array, required): Array of input messages
+- `parameters` (object, optional): Advanced model parameters
+- `metadata` (object, optional): Comprehensive response metadata
+- `input_items` (array, optional): Detailed input item specifications
+
+**Response:**
+```json
+{
+  "id": "resp_abc123",
+  "model": "jan-v1-4b",
+  "status": "processing",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T12:00:00Z",
+  "metadata": {
+    "session_id": "sess_456",
+    "user_context": "data_analyst",
+    "priority": "high",
+    "tags": ["analysis", "data", "insights"]
+  },
+  "input_items": [
+    {
+      "id": "item_001",
+      "response_id": "resp_abc123",
+      "role": "user",
+      "content": "Analyze the following data and provide insights",
+      "created_at": "2024-01-01T12:00:00Z",
+      "metadata": {
+        "source": "user_input",
+        "language": "en"
+      }
+    }
+  ],
+  "processing_info": {
+    "estimated_completion_time": "2024-01-01T12:02:00Z",
+    "queue_position": 1,
+    "priority_score": 85
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/responses \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Analyze the following data and provide insights"}
+    ],
+    "parameters": {
+      "max_tokens": 1000,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "session_id": "sess_456",
+      "priority": "high",
+      "tags": ["analysis", "data"]
+    }
+  }'
+```
+
+### Get Response
+
+**Endpoint**: `GET /v1/responses/{response_id}`
+
+Retrieves comprehensive details of a specific response including status, content, metadata, and processing information.
+
+**Path Parameters:**
+- `response_id` (string, required): The response ID
+
+**Query Parameters:**
+- `include_metadata` (boolean, optional): Include detailed metadata (default: true)
+- `include_input_items` (boolean, optional): Include input items (default: true)
+- `include_usage` (boolean, optional): Include usage statistics (default: true)
+
+**Response:**
+```json
+{
+  "id": "resp_abc123",
+  "model": "jan-v1-4b",
+  "status": "completed",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T12:03:45Z",
+  "completed_at": "2024-01-01T12:03:45Z",
+  "metadata": {
+    "session_id": "sess_456",
+    "user_context": "data_analyst",
+    "priority": "high",
+    "tags": ["analysis", "data", "insights"],
+    "processing_time_ms": 225000,
+    "model_version": "v1.2.3"
+  },
+  "content": {
+    "text": "Based on the provided data, I can identify several key insights...",
+    "format": "text",
+    "confidence_score": 0.92,
+    "sentiment": "neutral"
+  },
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 450,
+    "total_tokens": 475,
+    "cost": 0.001425,
+    "efficiency_score": 0.89
+  },
+  "input_items": [
+    {
+      "id": "item_001",
+      "response_id": "resp_abc123",
+      "role": "user",
+      "content": "Analyze the following data and provide insights",
+      "created_at": "2024-01-01T12:00:00Z",
+      "metadata": {
+        "source": "user_input",
+        "language": "en",
+        "tokens": 12
+      }
+    }
+  ],
+  "quality_metrics": {
+    "coherence_score": 0.94,
+    "relevance_score": 0.91,
+    "completeness_score": 0.88,
+    "accuracy_score": 0.93
+  }
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     "http://localhost:8080/v1/responses/resp_abc123?include_metadata=true&include_usage=true"
+```
+
+### Delete Response
+
+**Endpoint**: `DELETE /v1/responses/{response_id}`
+
+Permanently deletes a response and all its associated data, including input items and metadata.
+
+**Path Parameters:**
+- `response_id` (string, required): The response ID
+
+**Query Parameters:**
+- `force` (boolean, optional): Force deletion even if response is processing (default: false)
+
+**Response:**
+```
+204 No Content
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/v1/responses/resp_abc123 \
+  -H "Authorization: Bearer <token>"
+```
+
+### Cancel Response
+
+**Endpoint**: `POST /v1/responses/{response_id}/cancel`
+
+Cancels a response that is currently being processed with detailed cancellation information.
+
+**Path Parameters:**
+- `response_id` (string, required): The response ID
+
+**Request Body:**
+```json
+{
+  "reason": "user_requested",
+  "message": "User cancelled the request"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "resp_abc123",
+  "status": "cancelled",
+  "updated_at": "2024-01-01T12:01:30Z",
+  "cancelled_at": "2024-01-01T12:01:30Z",
+  "cancellation_info": {
+    "reason": "user_requested",
+    "message": "User cancelled the request",
+    "processing_time_ms": 90000
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/responses/resp_abc123/cancel \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "user_requested",
+    "message": "User cancelled the request"
+  }'
+```
+
+### List Input Items
+
+**Endpoint**: `GET /v1/responses/{response_id}/input_items`
+
+Retrieves all input items associated with a specific response with detailed metadata and analysis.
+
+**Path Parameters:**
+- `response_id` (string, required): The response ID
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of items to return (1-100, default: 20)
+- `offset` (integer, optional): Number of items to skip (default: 0)
+- `include_metadata` (boolean, optional): Include item metadata (default: true)
+- `include_analysis` (boolean, optional): Include item analysis (default: false)
+
+**Response:**
+```json
+{
+  "input_items": [
+    {
+      "id": "item_001",
+      "response_id": "resp_abc123",
+      "role": "user",
+      "content": "Analyze the following data and provide insights",
+      "created_at": "2024-01-01T12:00:00Z",
+      "metadata": {
+        "source": "user_input",
+        "language": "en",
+        "tokens": 12,
+        "complexity": "medium"
+      },
+      "analysis": {
+        "sentiment": "neutral",
+        "intent": "analysis_request",
+        "entities": ["data", "insights"],
+        "confidence": 0.95
+      }
+    },
+    {
+      "id": "item_002",
+      "response_id": "resp_abc123",
+      "role": "system",
+      "content": "You are a data analysis expert. Provide detailed insights based on the data provided.",
+      "created_at": "2024-01-01T12:00:00Z",
+      "metadata": {
+        "source": "system_prompt",
+        "language": "en",
+        "tokens": 20,
+        "type": "instruction"
+      }
+    }
+  ],
+  "total": 2,
+  "limit": 20,
+  "offset": 0,
+  "summary": {
+    "total_tokens": 32,
+    "average_complexity": "medium",
+    "primary_intent": "analysis_request"
+  }
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     "http://localhost:8080/v1/responses/resp_abc123/input_items?include_analysis=true&limit=50"
+```
+
+## Advanced Features
+
+### Response Lifecycle Management
+
+#### Status Tracking
+
+- **`queued`**: Response is queued for processing
+- **`processing`**: Response is being generated
+- **`completed`**: Response has been successfully generated
+- **`failed`**: Response generation failed
+- **`cancelled`**: Response was cancelled before completion
+- **`timeout`**: Response generation timed out
+- **`retrying`**: Response is being retried after failure
+
+#### Progress Tracking
+
+```json
+{
+  "progress": {
+    "current_step": "generating_content",
+    "completion_percentage": 75,
+    "estimated_remaining_time_ms": 30000,
+    "steps_completed": [
+      "input_validation",
+      "model_loading",
+      "context_preparation"
+    ]
+  }
+}
+```
+
+### Quality Metrics
+
+#### Response Quality Assessment
+
+```json
+{
+  "quality_metrics": {
+    "coherence_score": 0.94,
+    "relevance_score": 0.91,
+    "completeness_score": 0.88,
+    "accuracy_score": 0.93,
+    "overall_quality": 0.92,
+    "quality_grade": "A"
+  }
+}
+```
+
+#### Content Analysis
+
+```json
+{
+  "content_analysis": {
+    "sentiment": "positive",
+    "confidence_score": 0.92,
+    "readability_score": 0.87,
+    "technical_complexity": "medium",
+    "key_topics": ["data analysis", "insights", "patterns"],
+    "language": "en"
+  }
+}
+```
+
+### Metadata Management
+
+#### Standard Metadata Fields
+
+- **`session_id`**: Links response to a user session
+- **`user_context`**: Additional context about the user
+- **`request_source`**: Source of the request (web, api, mobile)
+- **`priority`**: Response priority level (low, medium, high, urgent)
+- **`tags`**: Array of tags for categorization
+- **`processing_time_ms`**: Time taken to process the response
+- **`model_version`**: Version of the model used
+
+#### Custom Metadata
+
+```json
+{
+  "metadata": {
+    "session_id": "sess_456",
+    "user_context": "data_analyst",
+    "priority": "high",
+    "tags": ["analysis", "data", "insights"],
+    "custom_field": "custom_value",
+    "business_context": "quarterly_report",
+    "department": "analytics"
+  }
+}
+```
+
+### Input Item Analysis
+
+#### Item Metadata
+
+```json
+{
+  "metadata": {
+    "source": "user_input|system_prompt|context",
+    "language": "en",
+    "tokens": 12,
+    "complexity": "low|medium|high",
+    "type": "question|instruction|data",
+    "confidence": 0.95
+  }
+}
+```
+
+#### Item Analysis
+
+```json
+{
+  "analysis": {
+    "sentiment": "positive|negative|neutral",
+    "intent": "analysis_request|question|instruction",
+    "entities": ["entity1", "entity2"],
+    "confidence": 0.95,
+    "complexity_score": 0.7
+  }
+}
+```
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `404` | Not Found - Response not found |
+| `409` | Conflict - Response cannot be cancelled (already completed) |
+| `422` | Unprocessable Entity - Invalid input data |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+| `503` | Service Unavailable - Model service unavailable |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Response not found",
+    "type": "not_found_error",
+    "code": "response_not_found",
+    "response_id": "resp_abc123",
+    "details": {
+      "suggestion": "Check if the response ID is correct",
+      "documentation": "https://docs.jan.ai/api-reference"
+    }
+  }
+}
+```
+
+## Best Practices
+
+### Response Management
+
+1. **Monitor Status**: Implement real-time status monitoring for long-running requests
+2. **Handle Cancellation**: Provide clear cancellation options for users
+3. **Store Metadata**: Use comprehensive metadata for tracking and analytics
+4. **Quality Assurance**: Monitor quality metrics and implement feedback loops
+
+### Performance Optimization
+
+1. **Batch Operations**: Group related requests when possible
+2. **Async Processing**: Use async patterns for long-running responses
+3. **Caching**: Cache completed responses and metadata
+4. **Monitoring**: Track response times, success rates, and quality metrics
+
+### Error Handling
+
+1. **Retry Logic**: Implement intelligent retry logic for transient failures
+2. **Timeout Handling**: Set appropriate timeouts based on response complexity
+3. **Graceful Degradation**: Handle service unavailability gracefully
+4. **User Feedback**: Provide clear, actionable error messages
+
+### Data Management
+
+1. **Cleanup**: Implement automated cleanup of old responses
+2. **Backup**: Regular backup of important response data
+3. **Privacy**: Ensure proper handling of sensitive data in responses
+4. **Compliance**: Maintain compliance with data protection regulations
+
+## Rate Limiting
+
+Jan-Responses endpoints have the following rate limits:
+- **Create operations**: 15 requests per minute
+- **Get operations**: 100 requests per minute
+- **Cancel operations**: 10 requests per minute
+- **Delete operations**: 5 requests per minute
+- **List operations**: 200 requests per minute
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 15
+X-RateLimit-Remaining: 14
+X-RateLimit-Reset: 1609459200
+```

@@ -1,0 +1,109 @@
+---
+title: Overview
+description: A comprehensive self-hosted AI server platform that provides OpenAI-compatible APIs, multi-tenant organization management, and AI model inference capabilities.
+keywords:
+  [
+    Jan Server,
+    self-hosted AI,
+    Kubernetes deployment,
+    Docker containers,
+    AI inference,
+    OpenAI compatible API,
+    multi-tenant architecture,
+    organization management,
+    JWT authentication,
+    Google OAuth2,
+    API key management,
+    Model Context Protocol,
+    MCP,
+    web search integration,
+    PostgreSQL,
+    monitoring,
+    profiling
+  ]
+---
+
+## Overview
+
+Jan Server is a comprehensive self-hosted AI server platform that provides OpenAI-compatible APIs, multi-tenant organization management, and AI model inference capabilities. Jan Server enables organizations to deploy their own private AI infrastructure with full control over data, models, and access.
+
+Jan Server is a Kubernetes-native platform consisting of multiple microservices that work together to provide a complete AI infrastructure solution. It offers:
+
+- **OpenAI-Compatible API**: Full compatibility with OpenAI's chat completion API
+- **Multi-Tenant Architecture**: Organization and project-based access control
+- **AI Model Inference**: Scalable model serving with health monitoring
+- **Database Management**: PostgreSQL with read/write replicas
+- **Authentication & Authorization**: JWT + Google OAuth2 integration
+- **API Key Management**: Secure API key generation and management
+- **Model Context Protocol (MCP)**: Support for external tools and resources
+- **Web Search Integration**: Serper API integration for web search capabilities
+- **Monitoring & Profiling**: Built-in performance monitoring and health checks
+
+## System Architecture
+![System Architecture Diagram](https://raw.githubusercontent.com/menloresearch/jan-server/main/docs/Architect.png)
+## Services
+
+### Jan API Gateway
+The core API service that provides OpenAI-compatible endpoints and manages all client interactions.
+
+**Key Features:**
+- OpenAI-compatible chat completion API with streaming support
+- Multi-tenant organization and project management
+- JWT-based authentication with Google OAuth2 integration
+- API key management at organization and project levels
+- Model Context Protocol (MCP) support for external tools
+- Web search integration via Serper API
+- Comprehensive monitoring and profiling capabilities
+- Database transaction management with automatic rollback
+
+**Technology Stack:**
+- Go 1.24.6 with Gin web framework
+- PostgreSQL with GORM and read/write replicas
+- JWT authentication and Google OAuth2
+- Swagger/OpenAPI documentation
+- Built-in pprof profiling with Grafana Pyroscope integration
+
+### Jan Inference Model
+The AI model serving service that handles model inference requests.
+
+**Key Features:**
+- Scalable model serving infrastructure
+- Health monitoring and automatic failover
+- Load balancing across multiple model instances
+- Integration with various AI model backends
+
+**Technology Stack:**
+- Python-based model serving
+- Docker containerization
+- Kubernetes-native deployment
+
+### PostgreSQL Database
+The persistent data storage layer with enterprise-grade features.
+
+**Key Features:**
+- Read/write replica support for high availability
+- Automatic schema migrations with Atlas
+- Connection pooling and optimization
+- Transaction management with rollback support
+
+## Key Features
+
+### Core Features
+- **OpenAI-Compatible API**: Full compatibility with OpenAI's chat completion API with streaming support and reasoning content handling
+- **Multi-Tenant Architecture**: Organization and project-based access control with hierarchical permissions and member management
+- **Conversation Management**: Persistent conversation storage and retrieval with item-level management, including message, function call, and reasoning content types
+- **Authentication & Authorization**: JWT-based auth with Google OAuth2 integration and role-based access control
+- **API Key Management**: Secure API key generation and management at organization and project levels with multiple key types (admin, project, organization, service, ephemeral)
+- **Model Registry**: Dynamic model endpoint management with automatic health checking and service discovery
+- **Streaming Support**: Real-time streaming responses with Server-Sent Events (SSE) and chunked transfer encoding
+- **MCP Integration**: Model Context Protocol support for external tools and resources with JSON-RPC 2.0
+- **Web Search**: Serper API integration for web search capabilities via MCP with webpage fetching
+- **Database Management**: PostgreSQL with read/write replicas and automatic migrations using Atlas
+- **Transaction Management**: Automatic database transaction handling with rollback support
+- **Health Monitoring**: Automated health checks with cron-based model endpoint monitoring
+- **Performance Profiling**: Built-in pprof endpoints for performance monitoring and Grafana Pyroscope integration
+- **Request Logging**: Comprehensive request/response logging with unique request IDs and structured logging
+- **CORS Support**: Cross-origin resource sharing middleware with configurable allowed hosts
+- **Swagger Documentation**: Auto-generated API documentation with interactive UI
+- **Email Integration**: SMTP support for invitation and notification systems
+- **Response Management**: Comprehensive response tracking with status management and usage statistics
