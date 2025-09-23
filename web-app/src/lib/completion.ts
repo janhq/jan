@@ -169,11 +169,12 @@ export const sendCompletion = async (
     providerName = 'openai-compatible'
 
   const tokenJS = new TokenJS({
-    apiKey: provider.api_key ?? (await getServiceHub().core().getAppToken()) ?? '',
+    apiKey:
+      provider.api_key ?? (await getServiceHub().core().getAppToken()) ?? '',
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
     // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
-    ...(providerName === 'openai-compatible' && { fetch: getServiceHub().providers().fetch() }),
+    fetch: IS_DEV ? fetch : getServiceHub().providers().fetch(),
     // OpenRouter identification headers for Jan
     // ref: https://openrouter.ai/docs/api-reference/overview#headers
     ...(provider.provider === 'openrouter' && {
@@ -183,10 +184,11 @@ export const sendCompletion = async (
       },
     }),
     // Add Origin header for local providers to avoid CORS issues
-    ...((provider.base_url?.includes('localhost:') || provider.base_url?.includes('127.0.0.1:')) && {
+    ...((provider.base_url?.includes('localhost:') ||
+      provider.base_url?.includes('127.0.0.1:')) && {
       fetch: getServiceHub().providers().fetch(),
       defaultHeaders: {
-        'Origin': 'tauri://localhost',
+        Origin: 'tauri://localhost',
       },
     }),
   } as ExtendedConfigOptions)
@@ -402,7 +404,10 @@ export const postMessageProcessing = async (
           console.log('Parsed tool parameters:', toolParameters)
         } catch (error) {
           console.error('Failed to parse tool arguments:', error)
-          console.error('Raw arguments that failed:', toolCall.function.arguments)
+          console.error(
+            'Raw arguments that failed:',
+            toolCall.function.arguments
+          )
         }
       }
       const approved =
@@ -416,10 +421,12 @@ export const postMessageProcessing = async (
             )
           : true)
 
-      const { promise, cancel } = getServiceHub().mcp().callToolWithCancellation({
-        toolName: toolCall.function.name,
-        arguments: toolCall.function.arguments.length ? toolParameters : {},
-      })
+      const { promise, cancel } = getServiceHub()
+        .mcp()
+        .callToolWithCancellation({
+          toolName: toolCall.function.name,
+          arguments: toolCall.function.arguments.length ? toolParameters : {},
+        })
 
       useAppState.getState().setCancelToolCall(cancel)
 
