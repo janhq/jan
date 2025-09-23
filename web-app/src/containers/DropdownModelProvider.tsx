@@ -461,11 +461,11 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="flex items-center gap-1.5 w-full">
+      <div className="flex items-center gap-1.5 mr-2">
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 w-full"
+            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20"
           >
             {provider && (
               <div className="shrink-0">
