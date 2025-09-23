@@ -54,6 +54,7 @@ export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec
 export interface chatCompletionRequest {
   model: string // Model ID, though for local it might be implicit via sessionInfo
   messages: chatCompletionRequestMessage[]
+  thread_id?: string // Thread/conversation ID for context tracking
   return_progress?: boolean
   tools?: Tool[]
   tool_choice?: ToolChoice

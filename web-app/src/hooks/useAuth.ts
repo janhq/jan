@@ -33,8 +33,8 @@ interface AuthState {
 
   // Auth actions
   logout: () => Promise<void>
-  getCurrentUser: () => Promise<User | null>
-  loadAuthState: () => Promise<void>
+  getCurrentUser: (forceRefresh?: boolean) => Promise<User | null>
+  loadAuthState: (forceRefresh?: boolean) => Promise<void>
   subscribeToAuthEvents: (callback: (event: MessageEvent) => void) => () => void
 
   // Platform feature check
@@ -106,28 +106,34 @@ const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   logout: async () => {
-    const { authService, isAuthenticationEnabled } = get()
+    const { authService, isAuthenticationEnabled, loadAuthState } = get()
     if (!isAuthenticationEnabled || !authService) {
       throw new Error('Authentication not available on this platform')
     }
 
-    await authService.logout()
+    try {
+      await authService.logout()
 
-    // Update state after logout
-    set({
-      user: null,
-      isAuthenticated: false,
-    })
+      // Force reload auth state after logout to ensure consistency
+      await loadAuthState()
+    } catch (error) {
+      console.error('Logout failed:', error)
+      // Still update local state even if logout call failed
+      set({
+        user: null,
+        isAuthenticated: false,
+      })
+    }
   },
 
-  getCurrentUser: async (): Promise<User | null> => {
+  getCurrentUser: async (forceRefresh: boolean = false): Promise<User | null> => {
     const { authService, isAuthenticationEnabled } = get()
     if (!isAuthenticationEnabled || !authService) {
       return null
     }
 
     try {
-      const profile = await authService.getCurrentUser()
+      const profile = await authService.getCurrentUser(forceRefresh)
       set({
         user: profile,
         isAuthenticated: profile !== null,
@@ -139,7 +145,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
-  loadAuthState: async () => {
+  loadAuthState: async (forceRefresh: boolean = false) => {
     const { authService, isAuthenticationEnabled } = get()
     if (!isAuthenticationEnabled || !authService) {
       set({ isLoading: false })
@@ -154,7 +160,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
 
       // Load user profile if authenticated
       if (isAuth) {
-        const profile = await authService.getCurrentUser()
+        const profile = await authService.getCurrentUser(forceRefresh)
         set({
           user: profile,
           isAuthenticated: profile !== null,

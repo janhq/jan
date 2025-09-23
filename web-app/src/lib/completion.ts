@@ -223,6 +223,7 @@ export const sendCompletion = async (
         {
           messages: messages as chatCompletionRequestMessage[],
           model: thread.model?.id,
+          thread_id: thread.id,
           tools: normalizeTools(tools),
           tool_choice: tools.length ? 'auto' : undefined,
           stream: true,

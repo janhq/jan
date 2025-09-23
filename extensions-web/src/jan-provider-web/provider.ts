@@ -144,6 +144,7 @@ export default class JanProviderWeb extends AIEngine {
       const janRequest = {
         model: modelId,
         messages: janMessages,
+        conversation_id: opts.thread_id,
         temperature: opts.temperature ?? undefined,
         max_tokens: opts.n_predict ?? undefined,
         top_p: opts.top_p ?? undefined,
