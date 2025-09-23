@@ -28,7 +28,7 @@
   },
   "handbook": {
     "type": "page",
-    "title": "API reference",
+    "title": "Handbook",
     "display": "hidden"
   },
   "changelog": {
