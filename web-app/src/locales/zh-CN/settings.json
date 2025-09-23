@@ -100,6 +100,8 @@
     "resetAppearanceSuccessDesc": "所有外观设置已恢复为默认值。",
     "chatWidth": "聊天宽度",
     "chatWidthDesc": "自定义聊天视图的宽度。",
+    "tokenCounterCompact": "紧凑令牌计数器",
+    "tokenCounterCompactDesc": "在聊天输入框内显示令牌计数器。禁用时，令牌计数器显示在输入框下方。",
     "codeBlockTitle": "代码块",
     "codeBlockDesc": "选择语法高亮样式。",
     "showLineNumbers": "显示行号",
@@ -264,4 +266,3 @@
     "updateError": "更新 Llamacpp 失败"
   }
 }
-

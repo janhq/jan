@@ -13,7 +13,7 @@ export interface chatCompletionRequestMessage {
 }
 
 export interface Content {
-  type: 'text' | 'input_image' | 'input_audio'
+  type: 'text' | 'image_url' | 'input_audio'
   text?: string
   image_url?: string
   input_audio?: InputAudio
@@ -182,6 +182,7 @@ export interface SessionInfo {
   model_id: string //name of the model
   model_path: string // path of the loaded model
   api_key: string
+  mmproj_path?: string
 }
 
 export interface UnloadResult {
