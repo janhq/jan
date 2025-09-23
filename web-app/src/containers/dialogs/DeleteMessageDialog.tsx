@@ -41,9 +41,19 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
   const trigger = (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+        <div 
+          className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setIsOpen(true)
+            }
+          }}
+        >
           <IconTrash size={16} />
-        </button>
+        </div>
       </TooltipTrigger>
       <TooltipContent>
         <p>{t('delete')}</p>

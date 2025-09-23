@@ -124,11 +124,6 @@ run = [
   "yarn build"
 ]
 
-[tasks.build-and-publish]
-description = "Build and publish the application (matches Makefile)"
-depends = ["install-and-build"]
-run = "yarn build"
-
 # ============================================================================
 # QUALITY ASSURANCE TASKS
 # ============================================================================

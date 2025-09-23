@@ -5,7 +5,7 @@ import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
 
 export const useTools = () => {
-  const { updateTools } = useAppState()
+  const updateTools = useAppState((state) => state.updateTools)
 
   useEffect(() => {
     function setTools() {

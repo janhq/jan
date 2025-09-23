@@ -34,7 +34,7 @@ export default function DropdownToolsAvailable({
   initialMessage = false,
   onOpenChange,
 }: DropdownToolsAvailableProps) {
-  const { tools } = useAppState()
+  const tools = useAppState((state) => state.tools)
   const [isOpen, setIsOpen] = useState(false)
   const { t } = useTranslation()
 

@@ -24,6 +24,7 @@ vi.mock('@/lib/platform/const', () => ({
     mcpServersSettings: true,
     extensionsSettings: true,
     assistants: true,
+    authentication: false,
   }
 }))
 

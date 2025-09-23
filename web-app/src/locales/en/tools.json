@@ -5,7 +5,8 @@
     "securityNotice": "Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
     "deny": "Deny",
     "allowOnce": "Allow Once",
-    "alwaysAllow": "Always Allow",
-    "parameters": "Tool Parameters"
+    "alwaysAllow": "Allow in thread",
+    "parameters": "Tool Parameters",
+    "permissionScope": "Permissions granted apply only to this conversation."
   }
 }
