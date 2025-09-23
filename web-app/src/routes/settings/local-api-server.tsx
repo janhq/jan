@@ -22,6 +22,7 @@ import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -133,6 +134,11 @@ function LocalAPIServerContent() {
   const toggleAPIServer = async () => {
     // Validate API key before starting server
     if (serverStatus === 'stopped') {
+      console.log('Starting server with port:', serverPort)
+      toast.info('Starting server...', {
+        description: `Attempting to start server on port ${serverPort}`
+      })
+
       if (!apiKey || apiKey.toString().trim().length === 0) {
         setShowApiKeyError(true)
         return
@@ -179,9 +185,39 @@ function LocalAPIServerContent() {
           setServerStatus('running')
         })
         .catch((error: unknown) => {
-          console.error('Error starting server:', error)
+          console.error('Error starting server or model:', error)
           setServerStatus('stopped')
           setIsModelLoading(false) // Reset loading state on error
+          toast.dismiss()
+
+          // Extract error message from various error formats
+          const errorMsg = error && typeof error === 'object' && 'message' in error
+            ? String(error.message)
+            : String(error)
+
+          // Port-related errors (highest priority)
+          if (errorMsg.includes('Address already in use')) {
+            toast.error('Port has been occupied', {
+              description: `Port ${serverPort} is already in use. Please try a different port.`
+            })
+          }
+          // Model-related errors
+          else if (errorMsg.includes('Invalid or inaccessible model path')) {
+            toast.error('Invalid or inaccessible model path', {
+              description: errorMsg
+            })
+          }
+          else if (errorMsg.includes('model')) {
+            toast.error('Failed to start model', {
+              description: errorMsg
+            })
+          }
+          // Generic server errors
+          else {
+            toast.error('Failed to start server', {
+              description: errorMsg
+            })
+          }
         })
     } else {
       setServerStatus('pending')
