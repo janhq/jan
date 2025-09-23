@@ -78,48 +78,52 @@ const normalizeLatex = (input: string): string => {
 }
 
 // Memoized code component to prevent unnecessary re-renders
-const CodeComponent = memo(({ 
-  className, 
-  children, 
-  isUser, 
-  codeBlockStyle, 
-  showLineNumbers, 
-  isWrapping,
-  onCopy,
-  copiedId,
-  ...props 
-}: any) => {
-  const { t } = useTranslation()
-  const match = /language-(\w+)/.exec(className || '')
-  const language = match ? match[1] : ''
-  const isInline = !match || !language
+const CodeComponent = memo(
+  ({
+    className,
+    children,
+    isUser,
+    codeBlockStyle,
+    showLineNumbers,
+    isWrapping,
+    onCopy,
+    copiedId,
+    ...props
+  }: any) => {
+    const { t } = useTranslation()
+    const match = /language-(\w+)/.exec(className || '')
+    const language = match ? match[1] : ''
+    const isInline = !match || !language
 
-  const code = String(children).replace(/\n$/, '')
+    const code = String(children).replace(/\n$/, '')
 
-  // Generate a stable ID based on content hash instead of position
-  const codeId = useMemo(() => {
-    let hash = 0
-    for (let i = 0; i < code.length; i++) {
-      const char = code.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // Convert to 32-bit integer
+    // Generate a stable ID based on content hash instead of position
+    const codeId = useMemo(() => {
+      let hash = 0
+      for (let i = 0; i < code.length; i++) {
+        const char = code.charCodeAt(i)
+        hash = (hash << 5) - hash + char
+        hash = hash & hash // Convert to 32-bit integer
+      }
+      return `code-${Math.abs(hash)}-${language}`
+    }, [code, language])
+
+    const handleCopyClick = useCallback(
+      (e: React.MouseEvent) => {
+        e.stopPropagation()
+        onCopy(code, codeId)
+      },
+      [code, codeId, onCopy]
+    )
+
+    if (isInline || isUser) {
+      return <code className={cn(className)}>{children}</code>
     }
-    return `code-${Math.abs(hash)}-${language}`
-  }, [code, language])
 
-  const handleCopyClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    onCopy(code, codeId)
-  }, [code, codeId, onCopy])
-
-  if (isInline || isUser) {
-    return <code className={cn(className)}>{children}</code>
-  }
-
-  return (
-    <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
-      <style>
-        {`
+    return (
+      <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
+        <style>
+          {`
         .react-syntax-highlighter-line-number {
           user-select: none;
           -webkit-user-select: none;
@@ -127,67 +131,68 @@ const CodeComponent = memo(({
           -ms-user-select: none;
         }
       `}
-      </style>
-      <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
-        <span className="font-medium text-xs font-sans">
-          {getReadableLanguageName(language)}
-        </span>
-        <button
-          onClick={handleCopyClick}
-          className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+        </style>
+        <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
+          <span className="font-medium text-xs font-sans">
+            {getReadableLanguageName(language)}
+          </span>
+          <button
+            onClick={handleCopyClick}
+            className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+          >
+            {copiedId === codeId ? (
+              <>
+                <IconCopyCheck size={16} className="text-primary" />
+                <span>{t('copied')}</span>
+              </>
+            ) : (
+              <>
+                <IconCopy size={16} />
+                <span>{t('copy')}</span>
+              </>
+            )}
+          </button>
+        </div>
+        <SyntaxHighlighter
+          style={
+            prismStyles[
+              codeBlockStyle
+                .split('-')
+                .map((part: string, index: number) =>
+                  index === 0
+                    ? part
+                    : part.charAt(0).toUpperCase() + part.slice(1)
+                )
+                .join('') as keyof typeof prismStyles
+            ] || prismStyles.oneLight
+          }
+          language={language}
+          showLineNumbers={showLineNumbers}
+          wrapLines={true}
+          lineProps={
+            isWrapping
+              ? {
+                  style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
+                }
+              : {}
+          }
+          customStyle={{
+            margin: 0,
+            padding: '8px',
+            borderRadius: '0 0 4px 4px',
+            overflow: 'auto',
+            border: 'none',
+          }}
+          PreTag="div"
+          CodeTag={'code'}
+          {...props}
         >
-          {copiedId === codeId ? (
-            <>
-              <IconCopyCheck size={16} className="text-primary" />
-              <span>{t('copied')}</span>
-            </>
-          ) : (
-            <>
-              <IconCopy size={16} />
-              <span>{t('copy')}</span>
-            </>
-          )}
-        </button>
+          {code}
+        </SyntaxHighlighter>
       </div>
-      <SyntaxHighlighter
-        style={
-          prismStyles[
-            codeBlockStyle
-              .split('-')
-              .map((part: string, index: number) =>
-                index === 0
-                  ? part
-                  : part.charAt(0).toUpperCase() + part.slice(1)
-              )
-              .join('') as keyof typeof prismStyles
-          ] || prismStyles.oneLight
-        }
-        language={language}
-        showLineNumbers={showLineNumbers}
-        wrapLines={true}
-        lineProps={
-          isWrapping
-            ? {
-                style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
-              }
-            : {}
-        }
-        customStyle={{
-          margin: 0,
-          padding: '8px',
-          borderRadius: '0 0 4px 4px',
-          overflow: 'auto',
-          border: 'none',
-        }}
-        PreTag="div"
-        CodeTag={'code'}
-        {...props}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  )
-})
+    )
+  }
+)
 
 CodeComponent.displayName = 'CodeComponent'
 
@@ -279,18 +284,7 @@ function RenderMarkdownComponent({
     </div>
   )
 }
-
-// Custom comparison function for better memoization
-const arePropsEqual = (prevProps: MarkdownProps, nextProps: MarkdownProps) => {
-  // Only re-render if content or key props actually changed
-  return (
-    prevProps.content === nextProps.content &&
-    prevProps.className === nextProps.className &&
-    prevProps.enableRawHtml === nextProps.enableRawHtml &&
-    prevProps.isUser === nextProps.isUser &&
-    prevProps.isWrapping === nextProps.isWrapping &&
-    prevProps.components === nextProps.components
-  )
-}
-
-export const RenderMarkdown = memo(RenderMarkdownComponent, arePropsEqual)
+export const RenderMarkdown = memo(
+  RenderMarkdownComponent,
+  (prevProps, nextProps) => prevProps.content === nextProps.content
+)
