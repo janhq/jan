@@ -240,7 +240,7 @@ export function DropdownButton({
               >
                 <div className="flex items-center gap-3">
                   {option.icon}
-                  <span className="font-medium text-base -tracking[-0.16px]">
+                  <span className="font-medium text-base tracking-[-0.16px]">
                     {option.name}
                   </span>
                 </div>
