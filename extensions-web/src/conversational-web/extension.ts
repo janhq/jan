@@ -45,10 +45,14 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
       const response = await this.remoteApi.createConversation(
         ObjectParser.threadToConversation(thread)
       )
-      thread.id = response.id
-      thread.assistants = thread.assistants.map(getDefaultAssistant)
-      console.log('!!!Created thread:', thread)
-      return thread
+      // Create a new thread object with the server's ID
+      const createdThread = {
+        ...thread,
+        id: response.id,
+        assistants: thread.assistants.map(getDefaultAssistant)
+      }
+      console.log('!!!Created thread:', createdThread)
+      return createdThread
     } catch (error) {
       console.error('Failed to create thread:', error)
       throw error
