@@ -19,10 +19,10 @@ import { DropdownButton } from '@/components/ui/dropdown-button'
 
 import { useData } from 'nextra/data'
 import { useDiscordWidget } from '@/hooks/useDiscordWidget'
-import { formatCompactNumber } from '@/utils/format'
+import { formatCompactNumber, totalDownload } from '@/utils/format'
 
 const Home = () => {
-  const { lastVersion, lastRelease, stars } = useData()
+  const { lastVersion, lastRelease, stars, release } = useData()
   const { data: discordWidget } = useDiscordWidget()
 
   useEffect(() => {
@@ -124,7 +124,7 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  The best of open-source AI in an easy-to-use product.
+                  Jan is the open-source ChatGPT replacement.
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-center gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
@@ -244,15 +244,15 @@ const Home = () => {
           <div className="container mx-auto relative z-10">
             <div className="md:mt-10">
               <div className="lg:w-3/5 mx-auto">
-                <div className="relative text-center md:text-left lg:max-w-[512px]">
+                <div className="relative text-center md:text-left">
                   <h1
                     className="text-4xl lg:text-[50px] font-semibold -tracking-[1.3px] animate-on-scroll leading-tight"
                     data-delay="200"
                   >
-                    Open Superintelligence
+                    Towards Open Superintelligence
                   </h1>
                   <p
-                    className="-tracking-[0.6px] mt-4 text-xl text-neutral-700 animate-on-scroll"
+                    className="-tracking-[0.6px] mt-4 text-xl text-neutral-700 animate-on-scroll lg:max-w-[512px]"
                     data-delay="400"
                   >
                     Jan takes the best of open source AI and packages it into an
@@ -280,6 +280,28 @@ const Home = () => {
                         <span className="font-bold text-lg">Github</span>
                         <span className="text-sm mt-1">
                           {formatCompactNumber(stars)} stars
+                        </span>
+                      </span>
+                    </Button>
+                  </a>
+                  <a
+                    href="https://discord.com/invite/FTk2MvZwJH"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button
+                      variant="playful"
+                      className="bg-[#5765F2] py-2 border-2 hover:bg-[#5765F2] text-white h-18 pl-2 justify-start w-full md:w-60 transition-colors duration-200"
+                      size="xxl"
+                    >
+                      <span className="bg-white text-black flex items-center justify-center w-14 h-14 rounded-lg mr-2">
+                        <FaDiscord className="size-8 text-[#5765F2]" />
+                      </span>
+                      <span className="flex items-start flex-col">
+                        <span className="font-bold text-lg">Discord</span>
+                        <span className="text-sm mt-1">
+                          {formatCompactNumber(discordWidget.presence_count)}{' '}
+                          Online
                         </span>
                       </span>
                     </Button>
@@ -570,7 +592,7 @@ const Home = () => {
                     classNameButton="!shadow-none border-2"
                   />
                   <span className="text-xs font-medium text-center mt-2">
-                    +{formatCompactNumber(stars)} downloads, Free & Open source
+                    +{totalDownload(release)} downloads, Free & Open source
                   </span>
                 </div>
               </div>

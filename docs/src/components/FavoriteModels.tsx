@@ -91,12 +91,12 @@ export default function FavoriteModels() {
               <p className="text-gray-700 mb-4 max-w-sm text-base -tracking-[0.4px]">
                 Choose from open models or plug in your favorite online models.
               </p>
-              <Button
+              {/* <Button
                 variant="playful-white"
                 className="!rounded-[12px] border-2 shadow-[0px_2px_0px_0px_rgba(0,0,0,1)] text-base h-[40px]"
               >
                 Explore models
-              </Button>
+              </Button> */}
             </div>
             <div className="flex-1 w-full">
               <div className="grid grid-cols-3">
@@ -143,12 +143,12 @@ export default function FavoriteModels() {
                 Connect your email, files, notes and calendar. Jan works where
                 you work.
               </p>
-              <Button
+              {/* <Button
                 variant="playful-white"
                 className="!rounded-[12px] border-2 shadow-[0px_2px_0px_0px_rgba(0,0,0,1)] text-base h-[40px]"
               >
                 Explore tools
-              </Button>
+              </Button> */}
             </div>
             <div className="flex-1 w-full">
               <div className="grid grid-cols-3">
@@ -196,12 +196,12 @@ export default function FavoriteModels() {
                 Your context carries over, so you don’t repeat yourself. Jan
                 remembers your context and preferences.
               </p>
-              <Button
+              {/* <Button
                 variant="playful-white"
                 className="!rounded-[12px] border-2 shadow-[0px_2px_0px_0px_rgba(0,0,0,1)] text-base h-[40px]"
               >
                 Learn more
-              </Button>
+              </Button> */}
             </div>
             <div className="flex-1 w-full flex justify-center mt-10 px-8 md:px-0">
               <div className="relative max-w-xs scale-[70%] md:scale-100 origin-center">

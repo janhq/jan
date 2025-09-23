@@ -106,8 +106,15 @@ const config: DocsThemeConfig = {
   },
   head: function useHead() {
     const { title, frontMatter } = useConfig()
-    const titleTemplate = (frontMatter?.title || title) + ' - ' + 'Jan'
     const { asPath } = useRouter()
+    const titleTemplate =
+      (asPath.includes('/desktop')
+        ? 'Jan Desktop'
+        : asPath.includes('/server')
+          ? 'Jan Server'
+          : 'Jan') +
+      ' - ' +
+      (frontMatter?.title || title)
 
     return (
       <Fragment>
@@ -144,7 +151,9 @@ const config: DocsThemeConfig = {
           content={
             frontMatter?.ogImage
               ? 'https://jan.ai/' + frontMatter?.ogImage
-              : 'https://jan.ai/assets/images/general/og-image.png'
+              : asPath.includes('/docs')
+                ? 'https://jan.ai/assets/images/general/og-image-docs.png'
+                : 'https://jan.ai/assets/images/general/og-image.png'
           }
         />
         <meta property="og:image:alt" content="Jan-OGImage" />

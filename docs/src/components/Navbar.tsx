@@ -13,7 +13,6 @@ const MENU_ITEMS = [
   { name: 'Changelog', href: '/changelog' },
   { name: 'Blog', href: '/blog' },
   { name: 'Handbook', href: '/handbook' },
-  { name: 'API Reference', href: '/api-reference' },
 ]
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
