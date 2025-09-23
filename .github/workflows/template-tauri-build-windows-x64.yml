@@ -131,7 +131,6 @@ jobs:
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
-          else
           fi
 
       - name: Install AzureSignTool
