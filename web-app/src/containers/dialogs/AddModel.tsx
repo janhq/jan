@@ -51,15 +51,15 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
         (
           providerModels[
             provider.provider as unknown as keyof typeof providerModels
-          ].supportsToolCalls as unknown as string[]
-        ).includes(modelId)
+          ]?.supportsToolCalls as unknown as string[]
+        )?.includes(modelId)
           ? ModelCapabilities.TOOLS
           : undefined,
         (
           providerModels[
             provider.provider as unknown as keyof typeof providerModels
-          ].supportsImages as unknown as string[]
-        ).includes(modelId)
+          ]?.supportsImages as unknown as string[]
+        )?.includes(modelId)
           ? ModelCapabilities.VISION
           : undefined,
       ].filter(Boolean) as string[],

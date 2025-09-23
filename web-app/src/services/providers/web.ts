@@ -93,8 +93,8 @@ export class WebProvidersService implements ProvidersService {
               (
                 providerModels[
                   provider.provider as unknown as keyof typeof providerModels
-                ].supportsToolCalls as unknown as string[]
-              ).includes(model)
+                ]?.supportsToolCalls as unknown as string[]
+              )?.includes(model)
                 ? ModelCapabilities.TOOLS
                 : undefined,
             ].filter(Boolean) as string[]
@@ -163,7 +163,9 @@ export class WebProvidersService implements ProvidersService {
       // Handle different response formats that providers might use
       if (data.data && Array.isArray(data.data)) {
         // OpenAI format: { data: [{ id: "model-id" }, ...] }
-        return data.data.map((model: { id: string }) => model.id).filter(Boolean)
+        return data.data
+          .map((model: { id: string }) => model.id)
+          .filter(Boolean)
       } else if (Array.isArray(data)) {
         // Direct array format: ["model-id1", "model-id2", ...]
         return data
@@ -189,11 +191,15 @@ export class WebProvidersService implements ProvidersService {
         'Authentication failed',
         'Access forbidden',
         'Models endpoint not found',
-        'Failed to fetch models from'
+        'Failed to fetch models from',
       ]
 
-      if (error instanceof Error &&
-          structuredErrorPrefixes.some(prefix => (error as Error).message.startsWith(prefix))) {
+      if (
+        error instanceof Error &&
+        structuredErrorPrefixes.some((prefix) =>
+          (error as Error).message.startsWith(prefix)
+        )
+      ) {
         throw new Error(error.message)
       }
 
@@ -211,7 +217,10 @@ export class WebProvidersService implements ProvidersService {
     }
   }
 
-  async updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void> {
+  async updateSettings(
+    providerName: string,
+    settings: ProviderSetting[]
+  ): Promise<void> {
     await ExtensionManager.getInstance()
       .getEngine(providerName)
       ?.updateSettings(
