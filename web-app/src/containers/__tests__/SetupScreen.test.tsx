@@ -14,10 +14,10 @@ vi.mock('@/hooks/useModelProvider', () => ({
 }))
 
 vi.mock('@/hooks/useAppState', () => ({
-  useAppState: vi.fn(() => ({
+  useAppState: (selector: any) => selector({
     engineReady: true,
     setEngineReady: vi.fn(),
-  })),
+  }),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({

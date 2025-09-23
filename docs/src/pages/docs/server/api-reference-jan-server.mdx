@@ -1,0 +1,141 @@
+---
+title: Server API
+description: System administration and monitoring endpoints for Jan Server infrastructure.
+---
+
+## Overview
+
+The Jan Server API provides system administration and monitoring endpoints for managing the Jan Server infrastructure, including version information and basic health checks. These endpoints are essential for system administrators and monitoring tools.
+
+## Endpoints
+
+### Get API Build Version
+
+**Endpoint**: `GET /v1/version`
+
+Retrieves the current build version and environment reload timestamp of the Jan Server API.
+
+**Response:**
+```json
+{
+  "version": "dev",
+  "env_reloaded_at": "2024-01-01T12:00:00Z"
+}
+```
+
+**Response Fields:**
+- `version` (string): Current version of the API server (defaults to "dev")
+- `env_reloaded_at` (string): ISO timestamp when environment variables were last reloaded
+
+**Example:**
+```bash
+curl http://localhost:8080/v1/version
+```
+
+## System Information
+
+### Version Information
+
+The version endpoint provides basic system information:
+
+- **Version**: Current version of the API server (typically "dev" in development)
+- **Environment Reload**: Timestamp when environment variables were last loaded/reloaded
+
+### Environment Variables
+
+The system loads configuration from environment variables including:
+- Database connection strings
+- JWT secrets and OAuth2 credentials
+- API keys for external services
+- CORS and SMTP settings
+
+## Health Monitoring
+
+### Health Check Endpoint
+
+**Endpoint**: `GET /healthcheck`
+
+Basic health check for load balancers and monitoring systems.
+
+**Response:**
+```json
+"ok"
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/healthcheck
+```
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource not found |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+| `503` | Service Unavailable - Service temporarily unavailable |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Insufficient permissions",
+    "type": "forbidden_error",
+    "code": "admin_required",
+    "details": {
+      "required_role": "admin",
+      "current_role": "user"
+    }
+  }
+}
+```
+
+## Best Practices
+
+### System Monitoring
+
+1. **Health Checks**: Implement regular health checks for all components
+2. **Version Tracking**: Keep track of component versions and updates
+3. **Dependency Monitoring**: Monitor external service dependencies
+4. **Logging**: Maintain detailed logs for troubleshooting
+
+### Performance Monitoring
+
+1. **Response Times**: Monitor API response times and set thresholds
+2. **Resource Usage**: Track CPU, memory, and GPU utilization
+3. **Error Rates**: Monitor error rates and implement alerting
+4. **Capacity Planning**: Use metrics for capacity planning and scaling
+
+### Security
+
+1. **Access Control**: Restrict admin endpoints to authorized users
+2. **Audit Logging**: Log all administrative actions
+3. **Configuration Security**: Secure configuration endpoints
+4. **Monitoring Access**: Monitor access to sensitive endpoints
+
+### Maintenance
+
+1. **Version Tracking**: Keep track of component versions and updates
+2. **Dependency Monitoring**: Monitor external service dependencies
+3. **Backup Verification**: Regularly verify system backups
+4. **Update Procedures**: Follow proper update and deployment procedures
+
+## Rate Limiting
+
+Jan Server system endpoints have the following rate limits:
+- **Version endpoint**: Standard rate limits apply
+- **Health check endpoint**: Standard rate limits apply
+
+Rate limit headers are included in responses when applicable:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1609459200
+```

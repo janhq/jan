@@ -1,0 +1,458 @@
+---
+title: API Reference
+description: Complete API documentation for Jan Server endpoints organized by functionality.
+---
+
+## Overview
+
+Jan Server provides a comprehensive API gateway for AI model interactions with enterprise-grade features. It offers OpenAI-compatible endpoints, multi-tenant organization management, conversation handling, and comprehensive response tracking. The system serves as a centralized gateway for AI model interactions with features including user management, organization hierarchies, project-based access control, and real-time streaming responses.
+
+### Key API Features
+
+- **OpenAI-Compatible API**: Full compatibility with OpenAI's chat completion API with streaming support and reasoning content handling
+- **Multi-Tenant Architecture**: Organization and project-based access control with hierarchical permissions and member management
+- **Conversation Management**: Persistent conversation storage and retrieval with item-level management, including message, function call, and reasoning content types
+- **Authentication & Authorization**: JWT-based auth with Google OAuth2 integration and role-based access control
+- **API Key Management**: Secure API key generation and management at organization and project levels with multiple key types (admin, project, organization, service, ephemeral)
+- **Model Registry**: Dynamic model endpoint management with automatic health checking and service discovery
+- **Streaming Support**: Real-time streaming responses with Server-Sent Events (SSE) and chunked transfer encoding
+- **MCP Integration**: Model Context Protocol support for external tools and resources with JSON-RPC 2.0
+- **Web Search**: Serper API integration for web search capabilities via MCP with webpage fetching
+- **Response Management**: Comprehensive response tracking with status management and usage statistics
+
+## Base URL
+
+All API endpoints are available at the API gateway base URL:
+
+```
+http://localhost:8080/v1
+```
+
+The API gateway automatically forwards port 8080 when using the standard deployment scripts.
+
+## API Sections
+
+The Jan Server API is organized into the following functional areas:
+
+### [Authentication](/server/api-reference-authentication)
+User authentication and authorization endpoints (`/v1/auth`):
+- Google OAuth2 callback handler (`POST /google/callback`)
+- Google OAuth2 login URL (`GET /google/login`)
+- User profile management (`GET /me`)
+- JWT token refresh (`GET /refresh-token`)
+- Guest login functionality (`POST /guest-login`)
+- User logout (`GET /logout`)
+
+### [Completions API](/server/api-reference-chat)
+Core chat completion endpoints (`/v1/chat`, `/v1/mcp`, `/v1/models`):
+- OpenAI-compatible chat completions (`POST /chat/completions`)
+- Model Context Protocol (MCP) support (`POST /mcp`)
+- Model listing and information (`GET /models`)
+- Streaming responses with Server-Sent Events (SSE)
+- Supported MCP methods: initialize, notifications/initialized, ping, tools/list, tools/call, prompts/list, prompts/call, resources/list, resources/templates/list, resources/read, resources/subscribe
+
+### [Chat Conversations](/server/api-reference-chat-conversations)
+Conversation-aware chat endpoints (`/v1/conv`):
+- Conversation-based chat completions (`POST /chat/completions`)
+- MCP streamable endpoint for conversations (`POST /mcp`)
+- Model information for conversation contexts (`GET /models`)
+- Streaming support with conversation persistence
+
+### [Conversations API](/server/api-reference-conversations)
+Conversation management and persistence (`/v1/conversations`):
+- Create, read, update, delete conversations
+- Conversation item management (`POST /{conversation_id}/items`, `GET /{conversation_id}/items`)
+- Individual item operations (`GET /{conversation_id}/items/{item_id}`, `DELETE /{conversation_id}/items/{item_id}`)
+- Pagination support for large conversation histories
+
+### [Administration API](/server/api-reference-administration)
+Multi-tenant organization management (`/v1/organization`):
+- Organization management (`GET /`, `POST /`, `GET /{org_id}`, `PATCH /{org_id}`, `DELETE /{org_id}`)
+- Organization API keys (`GET /{org_id}/api_keys`, `POST /{org_id}/api_keys`, `DELETE /{org_id}/api_keys/{key_id}`)
+- Admin API key management (`GET /admin_api_keys`, `POST /admin_api_keys`, `GET /admin_api_keys/{key_id}`, `DELETE /admin_api_keys/{key_id}`)
+- Project management (`GET /{org_id}/projects`, `POST /{org_id}/projects`, `GET /{org_id}/projects/{project_id}`, `PATCH /{org_id}/projects/{project_id}`, `DELETE /{org_id}/projects/{project_id}`)
+- Project API keys (`GET /{org_id}/projects/{project_id}/api_keys`, `POST /{org_id}/projects/{project_id}/api_keys`, `DELETE /{org_id}/projects/{project_id}/api_keys/{key_id}`)
+- Project archiving (`POST /{org_id}/projects/{project_id}/archive`)
+- Organization invites (`GET /{org_id}/invites`, `POST /{org_id}/invites`, `GET /{org_id}/invites/{invite_id}`, `DELETE /{org_id}/invites/{invite_id}`)
+- Hierarchical access control and permissions
+
+### [Responses API](/server/api-reference-jan-responses)
+Advanced response operations (`/v1/responses`):
+- Response lifecycle management (`POST /`, `GET /{response_id}`, `DELETE /{response_id}`)
+- Response cancellation (`POST /{response_id}/cancel`)
+- Input item tracking (`GET /{response_id}/input_items`)
+- Comprehensive status management and usage statistics
+
+### [Server API](/server/api-reference-jan-server)
+System administration and monitoring:
+- API version information (`GET /v1/version`)
+- System health and status (`GET /healthcheck`)
+- Development callback test (`GET /google/testcallback`)
+
+## Authentication
+
+Jan Server supports multiple authentication methods with role-based access control:
+
+### JWT Token Authentication
+
+JWT tokens provide stateless authentication with Google OAuth2 integration:
+
+```bash
+curl -H "Authorization: Bearer <jwt_token>" \
+     http://localhost:8080/v1/protected-endpoint
+```
+
+### API Key Authentication
+
+Multiple types of API keys with scoped permissions:
+- **Admin API Keys**: Organization-level administrative access
+- **Project API Keys**: Project-scoped access within organizations
+- **Organization API Keys**: Organization-wide access
+- **Service API Keys**: Service-to-service communication
+- **Ephemeral API Keys**: Temporary access tokens
+
+```bash
+curl -H "Authorization: Bearer <api_key>" \
+     http://localhost:8080/v1/protected-endpoint
+```
+
+### Google OAuth2 Integration
+
+Social authentication with Google OAuth2:
+1. Redirect to `/v1/auth/google/login` for OAuth URL
+2. Handle callback at `/v1/auth/google/callback`
+3. Exchange authorization code for JWT token
+4. Use JWT token for subsequent API calls
+
+## API Usage Examples
+
+### Chat Completion (OpenAI Compatible)
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ],
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }'
+```
+
+### Conversation-based Chat Completion
+
+```bash
+curl -X POST http://localhost:8080/v1/conv/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "jan-v1-4b",
+    "input": "Hello, how are you?",
+    "conversation_id": "conv_abc123",
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }'
+```
+
+### Web Search via MCP
+
+```bash
+curl -X POST http://localhost:8080/v1/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "serper_search",
+      "arguments": {
+        "q": "latest AI developments",
+        "num": 5
+      }
+    }
+  }'
+```
+
+### Create Organization
+
+```bash
+curl -X POST http://localhost:8080/v1/organization \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "name": "My Organization",
+    "description": "A sample organization"
+  }'
+```
+
+### Create API Key
+
+```bash
+curl -X POST http://localhost:8080/v1/organization/{org_id}/api_keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "name": "My API Key",
+    "description": "API key for external integrations"
+  }'
+```
+
+### Create Project
+
+```bash
+curl -X POST http://localhost:8080/v1/organization/{org_id}/projects \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "name": "My Project",
+    "description": "A sample project"
+  }'
+```
+
+### Create Conversation
+
+```bash
+curl -X POST http://localhost:8080/v1/conversations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "title": "My Conversation",
+    "description": "A sample conversation"
+  }'
+```
+
+### Add Item to Conversation
+
+```bash
+curl -X POST http://localhost:8080/v1/conversations/{conversation_id}/items \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "type": "message",
+    "content": "Hello, how are you?",
+    "role": "user"
+  }'
+```
+
+### Create Response
+
+```bash
+curl -X POST http://localhost:8080/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }'
+```
+
+### Cancel Response
+
+```bash
+curl -X POST http://localhost:8080/v1/responses/{response_id}/cancel \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## Interactive Documentation
+
+Jan Server provides interactive Swagger documentation at:
+
+```
+http://localhost:8080/api/swagger/index.html
+```
+
+This interface allows you to:
+- Browse all available endpoints
+- Test API calls directly from the browser
+- View request/response schemas
+- Generate code samples
+
+The Swagger documentation is auto-generated from Go code annotations and provides the most up-to-date API reference.
+
+## API Structure Overview
+
+The API is organized into the following main groups:
+
+1. **Authentication API** - User authentication and authorization
+2. **Chat Completions API** - Chat completions, models, and MCP functionality
+3. **Conversation-aware Chat API** - Conversation-based chat completions
+4. **Conversations API** - Conversation management and items
+5. **Responses API** - Response tracking and management
+6. **Administration API** - Organization and project management
+7. **Server API** - System information and health checks
+
+### Supported MCP Methods
+
+The Model Context Protocol (MCP) integration supports the following methods:
+
+- `initialize` - MCP initialization
+- `notifications/initialized` - Initialization notification
+- `ping` - Connection ping
+- `tools/list` - List available tools (Serper search, webpage fetch)
+- `tools/call` - Execute tool calls
+- `prompts/list` - List available prompts
+- `prompts/call` - Execute prompts
+- `resources/list` - List available resources
+- `resources/templates/list` - List resource templates
+- `resources/read` - Read resource content
+- `resources/subscribe` - Subscribe to resource updates
+
+### API Key Types
+
+Jan Server supports multiple types of API keys with different scopes:
+
+- **Admin API Keys**: Organization-level administrative access
+- **Project API Keys**: Project-scoped access within organizations
+- **Organization API Keys**: Organization-wide access
+- **Service API Keys**: Service-to-service communication
+- **Ephemeral API Keys**: Temporary access tokens
+
+## Error Responses
+
+Jan Server returns standard HTTP status codes and JSON error responses:
+
+```json
+{
+  "error": {
+    "message": "Invalid request format",
+    "type": "invalid_request_error",
+    "code": "invalid_json"
+  }
+}
+```
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource not found |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+| `503` | Service Unavailable - Service temporarily unavailable |
+
+## Rate Limiting
+
+API endpoints implement rate limiting to prevent abuse:
+
+- **Authenticated requests**: 1000 requests per hour per user
+- **Unauthenticated requests**: 100 requests per hour per IP
+- **Model inference**: 60 requests per minute per user
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 999
+X-RateLimit-Reset: 1609459200
+```
+
+## SDK and Client Libraries
+
+### JavaScript/Node.js
+
+Use the OpenAI JavaScript SDK with Jan Server:
+
+```javascript
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: 'http://localhost:8080/v1',
+  apiKey: 'your-jwt-token'
+});
+
+const completion = await openai.chat.completions.create({
+  model: 'jan-v1-4b',
+  messages: [
+    { role: 'user', content: 'Hello!' }
+  ]
+});
+```
+
+### Python
+
+Use the OpenAI Python SDK:
+
+```python
+import openai
+
+openai.api_base = "http://localhost:8080/v1"
+openai.api_key = "your-jwt-token"
+
+response = openai.ChatCompletion.create(
+  model="jan-v1-4b",
+  messages=[
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+```
+
+### Go
+
+Use the OpenAI Go SDK:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/sashabaranov/go-openai"
+)
+
+func main() {
+    client := openai.NewClientWithConfig(openai.DefaultConfig("your-jwt-token"))
+    client.BaseURL = "http://localhost:8080/v1"
+    
+    resp, err := client.CreateChatCompletion(
+        context.Background(),
+        openai.ChatCompletionRequest{
+            Model: "jan-v1-4b",
+            Messages: []openai.ChatCompletionMessage{
+                {
+                    Role:    openai.ChatMessageRoleUser,
+                    Content: "Hello!",
+                },
+            },
+        },
+    )
+    
+    if err != nil {
+        fmt.Printf("ChatCompletion error: %v\n", err)
+        return
+    }
+    
+    fmt.Println(resp.Choices[0].Message.Content)
+}
+```
+
+### cURL with Streaming
+
+For streaming responses:
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Tell me a story"}
+    ],
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }'
+```

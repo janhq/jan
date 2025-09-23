@@ -1,0 +1,14 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_872_913)">
+<path d="M24.0023 56C28.4174 56 32.0007 52.416 32.0007 48V40H24.0023C19.5872 40 16.0039 43.584 16.0039 48C16.0039 52.416 19.5872 56 24.0023 56Z" fill="#0ACF83" style="fill:#0ACF83;fill:color(display-p3 0.0392 0.8118 0.5137);fill-opacity:1;"/>
+<path d="M16.0039 32C16.0039 27.584 19.5872 24 24.0023 24H32.0007V40H24.0023C19.5872 40 16.0039 36.416 16.0039 32Z" fill="#A259FF" style="fill:#A259FF;fill:color(display-p3 0.6353 0.3490 1.0000);fill-opacity:1;"/>
+<path d="M16.002 16C16.002 11.584 19.5852 8 24.0004 8H31.9988V24H24.0004C19.5852 24 16.002 20.416 16.002 16Z" fill="#F24E1E" style="fill:#F24E1E;fill:color(display-p3 0.9490 0.3059 0.1176);fill-opacity:1;"/>
+<path d="M32 8H39.9984C44.4135 8 47.9968 11.584 47.9968 16C47.9968 20.416 44.4135 24 39.9984 24H32V8Z" fill="#FF7262" style="fill:#FF7262;fill:color(display-p3 1.0000 0.4471 0.3843);fill-opacity:1;"/>
+<path d="M47.9968 32C47.9968 36.416 44.4135 40 39.9984 40C35.5833 40 32 36.416 32 32C32 27.584 35.5833 24 39.9984 24C44.4135 24 47.9968 27.584 47.9968 32Z" fill="#1ABCFE" style="fill:#1ABCFE;fill:color(display-p3 0.1020 0.7373 0.9961);fill-opacity:1;"/>
+</g>
+<defs>
+<clipPath id="clip0_872_913">
+<rect width="32" height="48" fill="white" style="fill:white;fill-opacity:1;" transform="translate(16 8)"/>
+</clipPath>
+</defs>
+</svg>

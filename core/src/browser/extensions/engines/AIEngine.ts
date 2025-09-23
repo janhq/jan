@@ -13,7 +13,7 @@ export interface chatCompletionRequestMessage {
 }
 
 export interface Content {
-  type: 'text' | 'input_image' | 'input_audio'
+  type: 'text' | 'image_url' | 'input_audio'
   text?: string
   image_url?: string
   input_audio?: InputAudio
@@ -54,6 +54,8 @@ export type ToolChoice = 'none' | 'auto' | 'required' | ToolCallSpec
 export interface chatCompletionRequest {
   model: string // Model ID, though for local it might be implicit via sessionInfo
   messages: chatCompletionRequestMessage[]
+  thread_id?: string // Thread/conversation ID for context tracking
+  return_progress?: boolean
   tools?: Tool[]
   tool_choice?: ToolChoice
   // Core sampling parameters
@@ -119,6 +121,13 @@ export interface chatCompletionChunkChoice {
   finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | null
 }
 
+export interface chatCompletionPromptProgress {
+  cache: number
+  processed: number
+  time_ms: number
+  total: number
+}
+
 export interface chatCompletionChunk {
   id: string
   object: 'chat.completion.chunk'
@@ -126,6 +135,7 @@ export interface chatCompletionChunk {
   model: string
   choices: chatCompletionChunkChoice[]
   system_fingerprint?: string
+  prompt_progress?: chatCompletionPromptProgress
 }
 
 export interface chatCompletionChoice {
@@ -173,6 +183,7 @@ export interface SessionInfo {
   model_id: string //name of the model
   model_path: string // path of the loaded model
   api_key: string
+  mmproj_path?: string
 }
 
 export interface UnloadResult {

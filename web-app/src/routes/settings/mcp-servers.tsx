@@ -132,7 +132,7 @@ function MCPServersDesktop() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
-  const { setErrorMessage } = useAppState()
+  const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -190,6 +190,7 @@ function MCPServersDesktop() {
       }
 
       deleteServer(serverToDelete)
+      toast.success(t('mcp-servers:deleteServer.success', { serverName: serverToDelete }))
       setServerToDelete(null)
       syncServersAndRestart()
     }

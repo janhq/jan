@@ -3515,6 +3515,7 @@ __metadata:
     "@jan/extensions-web": "link:../extensions-web"
     "@janhq/core": "link:../core"
     "@radix-ui/react-accordion": "npm:^1.2.10"
+    "@radix-ui/react-avatar": "npm:^1.1.10"
     "@radix-ui/react-dialog": "npm:^1.1.14"
     "@radix-ui/react-dropdown-menu": "npm:^2.1.15"
     "@radix-ui/react-hover-card": "npm:^1.1.14"
@@ -3531,8 +3532,8 @@ __metadata:
     "@tanstack/react-router-devtools": "npm:^1.121.34"
     "@tanstack/react-virtual": "npm:^3.13.12"
     "@tanstack/router-plugin": "npm:^1.116.1"
-    "@tauri-apps/api": "npm:^2.5.0"
-    "@tauri-apps/plugin-deep-link": "npm:~2"
+    "@tauri-apps/api": "npm:^2.8.0"
+    "@tauri-apps/plugin-deep-link": "npm:2.4.3"
     "@tauri-apps/plugin-dialog": "npm:^2.2.1"
     "@tauri-apps/plugin-http": "npm:^2.2.1"
     "@tauri-apps/plugin-opener": "npm:^2.2.7"
@@ -3599,7 +3600,7 @@ __metadata:
     sonner: "npm:^2.0.3"
     tailwind-merge: "npm:^3.3.1"
     tailwindcss: "npm:^4.1.4"
-    token.js: "npm:token.js-fork@0.7.23"
+    token.js: "npm:token.js-fork@0.7.27"
     tw-animate-css: "npm:^1.2.7"
     typescript: "npm:~5.8.3"
     typescript-eslint: "npm:^8.26.1"
@@ -4180,6 +4181,29 @@ __metadata:
     "@types/react-dom":
       optional: true
   checksum: 10c0/c3b46766238b3ee2a394d8806a5141432361bf1425110c9f0dcf480bda4ebd304453a53f294b5399c6ee3ccfcae6fd544921fd01ddc379cf5942acdd7168664b
+  languageName: node
+  linkType: hard
+
+"@radix-ui/react-avatar@npm:^1.1.10":
+  version: 1.1.10
+  resolution: "@radix-ui/react-avatar@npm:1.1.10"
+  dependencies:
+    "@radix-ui/react-context": "npm:1.1.2"
+    "@radix-ui/react-primitive": "npm:2.1.3"
+    "@radix-ui/react-use-callback-ref": "npm:1.1.1"
+    "@radix-ui/react-use-is-hydrated": "npm:0.1.0"
+    "@radix-ui/react-use-layout-effect": "npm:1.1.1"
+  peerDependencies:
+    "@types/react": "*"
+    "@types/react-dom": "*"
+    react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+  peerDependenciesMeta:
+    "@types/react":
+      optional: true
+    "@types/react-dom":
+      optional: true
+  checksum: 10c0/9fb0cf9a9d0fdbeaa2efda476402fc09db2e6ff9cd9aa3ea1d315d9c9579840722a4833725cb196c455e0bd775dfe04221a4f6855685ce89d2133c42e2b07e5f
   languageName: node
   linkType: hard
 
@@ -5023,6 +5047,21 @@ __metadata:
     "@types/react":
       optional: true
   checksum: 10c0/bff53be99e940fef1d3c4df7d560e1d9133182e5a98336255d3063327d1d3dd4ec54a95dc5afe15cca4fb6c184f0a956c70de2815578c318cf995a7f9beabaa1
+  languageName: node
+  linkType: hard
+
+"@radix-ui/react-use-is-hydrated@npm:0.1.0":
+  version: 0.1.0
+  resolution: "@radix-ui/react-use-is-hydrated@npm:0.1.0"
+  dependencies:
+    use-sync-external-store: "npm:^1.5.0"
+  peerDependencies:
+    "@types/react": "*"
+    react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+  peerDependenciesMeta:
+    "@types/react":
+      optional: true
+  checksum: 10c0/635079bafe32829fc7405895154568ea94a22689b170489fd6d77668e4885e72ff71ed6d0ea3d602852841ef0f1927aa400fee2178d5dfbeb8bc9297da7d6498
   languageName: node
   linkType: hard
 
@@ -7335,7 +7374,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/api@npm:^2.0.0, @tauri-apps/api@npm:^2.5.0":
+"@tauri-apps/api@npm:^2.0.0":
   version: 2.5.0
   resolution: "@tauri-apps/api@npm:2.5.0"
   checksum: 10c0/8eeb28049d48f5f89a5419cdf313bb159305204b193a5f27ebddbe0704ff43037c8b2e78518de831d7393e00178f0c0ac66cef1a57b99c632de71eca29f562c0
@@ -7346,6 +7385,13 @@ __metadata:
   version: 2.6.0
   resolution: "@tauri-apps/api@npm:2.6.0"
   checksum: 10c0/211353d951c7e3e5298f074ec762b5853ff0cdee261478c27db1e450fcf3d6f2c03a616483abbf9dfc79f13c6dfcfa7db0b790c1384c113951c0d694809f05ef
+  languageName: node
+  linkType: hard
+
+"@tauri-apps/api@npm:^2.8.0":
+  version: 2.8.0
+  resolution: "@tauri-apps/api@npm:2.8.0"
+  checksum: 10c0/fb111e4d7572372997b440ebe6879543fa8c4765151878e3fddfbfe809b18da29eed142ce83061d14a9ca6d896b3266dc8a4927c642d71cdc0b4277dc7e3aabf
   languageName: node
   linkType: hard
 
@@ -7470,12 +7516,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-deep-link@npm:~2":
-  version: 2.3.0
-  resolution: "@tauri-apps/plugin-deep-link@npm:2.3.0"
+"@tauri-apps/plugin-deep-link@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@tauri-apps/plugin-deep-link@npm:2.4.3"
   dependencies:
-    "@tauri-apps/api": "npm:^2.0.0"
-  checksum: 10c0/76a8f0d4d89b243f4d1d663f0677c86df1bb5a508e4bca4700ca71e347e3b38cbf2217fd51c71b4051cde3481a3a2575dd957aec84bf5d95551edab3aa8c0e72
+    "@tauri-apps/api": "npm:^2.8.0"
+  checksum: 10c0/948959e217241345edd3d866aa12ccfe97c72d96ab2844c1df156ead89a96b6a32106944a77f114e6027547c79556cd95f14c2d303a70b307222cce350c67988
   languageName: node
   linkType: hard
 
@@ -19578,9 +19624,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"token.js@npm:token.js-fork@0.7.23":
-  version: 0.7.23
-  resolution: "token.js-fork@npm:0.7.23"
+"token.js@npm:token.js-fork@0.7.27":
+  version: 0.7.27
+  resolution: "token.js-fork@npm:0.7.27"
   dependencies:
     "@anthropic-ai/sdk": "npm:0.24.3"
     "@aws-sdk/client-bedrock-runtime": "npm:3.609.0"
@@ -19591,7 +19637,7 @@ __metadata:
     mime-types: "npm:^2.1.35"
     nanoid: "npm:^5.0.7"
     openai: "npm:4.91.1"
-  checksum: 10c0/73653dbdd2217f16de7eb294a2ef90ac985367f2ca421a2952a52c24de57e0f98db3ef668d8f36c361d6546513f85a480d48bfa916f2c5d65ce1b9033d526027
+  checksum: 10c0/ec4e8e441b6747db29eed0d21e364eaf8d4636e3d8376bdd63d836499970de15357e8c0b2ef1e470027e7a2c8bc4924138a86f6d207469b6f0b6fb0f24f6d035
   languageName: node
   linkType: hard
 
@@ -20365,6 +20411,15 @@ __metadata:
   peerDependencies:
     react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
   checksum: 10c0/ec011a5055962c0f6b509d6e78c0b143f8cd069890ae370528753053c55e3b360d3648e76cfaa854faa7a59eb08d6c5fb1015e60ffde9046d32f5b2a295acea5
+  languageName: node
+  linkType: hard
+
+"use-sync-external-store@npm:^1.5.0":
+  version: 1.5.0
+  resolution: "use-sync-external-store@npm:1.5.0"
+  peerDependencies:
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/1b8663515c0be34fa653feb724fdcce3984037c78dd4a18f68b2c8be55cc1a1084c578d5b75f158d41b5ddffc2bf5600766d1af3c19c8e329bb20af2ec6f52f4
   languageName: node
   linkType: hard
 

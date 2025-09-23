@@ -159,9 +159,49 @@ export class CompletionMessagesBuilder {
    * @returns The array of chat completion messages.
    */
   getMessages(): ChatCompletionMessageParam[] {
-    return this.messages
-  }
+    const result: ChatCompletionMessageParam[] = []
+    let prevRole: string | undefined
 
+    for (let i = 0; i < this.messages.length; i++) {
+      const msg = this.messages[i]
+
+      // Handle first message
+      if (i === 0) {
+        if (msg.role === 'user') {
+          result.push(msg)
+          prevRole = msg.role
+          continue
+        } else if (msg.role === 'system') {
+          result.push(msg)
+          prevRole = msg.role
+          // Check next message
+          const nextMsg = this.messages[i + 1]
+          if (!nextMsg || nextMsg.role !== 'user') {
+            result.push({ role: 'user', content: '.' })
+            prevRole = 'user'
+          }
+          continue
+        } else {
+          // First message is not user or system — insert user message
+          result.push({ role: 'user', content: '.' })
+          result.push(msg)
+          prevRole = msg.role
+          continue
+        }
+      }
+
+      // Avoid consecutive same roles
+      if (msg.role === prevRole) {
+        const oppositeRole = prevRole === 'assistant' ? 'user' : 'assistant'
+        result.push({ role: oppositeRole, content: '.' })
+        prevRole = oppositeRole
+      }
+      result.push(msg)
+      prevRole = msg.role
+    }
+
+    return result
+  }
   /**
    * Normalize the content of a message by removing reasoning content.
    * This is useful to ensure that reasoning content does not get sent to the model.

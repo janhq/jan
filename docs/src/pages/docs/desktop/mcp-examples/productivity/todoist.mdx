@@ -1,0 +1,259 @@
+---
+title: Todoist MCP
+description: Manage your tasks and todo lists through natural language with Todoist integration.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Todoist,
+    task management,
+    productivity,
+    todo list,
+    tool calling,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Todoist MCP
+
+[Todoist MCP Server](https://github.com/abhiz123/todoist-mcp-server) enables AI models to manage your Todoist tasks through natural conversation. Instead of switching between apps, you can create, update, and complete tasks by simply chatting with your AI assistant.
+
+## Available Tools
+
+- `todoist_create_task`: Add new tasks to your todo list
+- `todoist_get_tasks`: Retrieve and view your current tasks
+- `todoist_update_task`: Modify existing tasks
+- `todoist_complete_task`: Mark tasks as done
+- `todoist_delete_task`: Remove tasks from your list
+
+## Prerequisites
+
+- Jan with experimental features enabled
+- Todoist account (free or premium)
+- Model with strong tool calling support
+- Node.js installed
+
+<Callout type="info">
+Todoist offers a generous free tier perfect for personal task management. Premium features add labels, reminders, and more projects.
+</Callout>
+
+## Setup
+
+### Create Todoist Account
+
+1. Sign up at [todoist.com](https://todoist.com) or log in if you have an account
+2. Complete the onboarding process
+
+![Todoist welcome screen](../../_assets/todoist1.png)
+
+Once logged in, you'll see your main dashboard:
+
+![Todoist main dashboard](../../_assets/todoist2.png)
+
+### Get Your API Token
+
+1. Click **Settings** (gear icon)
+2. Navigate to **Integrations**
+3. Click on the **Developer** tab
+4. Copy your API token (it's already generated for you)
+
+![Todoist API token in settings](../../_assets/todoist3.png)
+
+### Enable MCP in Jan
+
+<Callout type="warning">
+If you don't see the MCP Servers option, enable **Experimental Features** in **Settings > General** first.
+</Callout>
+
+1. Go to **Settings > MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+### Configure Todoist MCP
+
+Click the `+` button to add a new MCP server:
+
+**Configuration:**
+- **Server Name**: `todoist`
+- **Command**: `npx`
+- **Arguments**: `-y @abhiz123/todoist-mcp-server`
+- **Environment Variables**: 
+  - Key: `TODOIST_API_TOKEN`, Value: `your_api_token_here`
+
+![Todoist MCP configuration in Jan](../../_assets/todoist4.png)
+
+## Usage
+
+### Select a Model with Tool Calling
+
+Open a new chat and select a model that excels at tool calling. Make sure tools are enabled for your chosen model.
+
+![Model selection with tools enabled](../../_assets/gpt5-add.png)
+
+### Verify Tools Available
+
+You should see the Todoist tools in the tools panel:
+
+![Todoist tools available in chat](../../_assets/todoist5.png)
+
+### Start Managing Tasks
+
+Now you can manage your todo list through natural conversation:
+
+![Todoist MCP in action](https://catalog.jan.ai/docs/mcptodoist_extreme.gif)
+
+## Example Prompts
+
+### Blog Writing Workflow
+```
+I need to write a blog post about AI and productivity tools today. Please add some tasks to my todo list to make sure I have a good set of steps to accomplish this task.
+```
+
+The AI will create structured tasks like:
+- Research AI productivity tools
+- Create blog outline
+- Write introduction
+- Draft main sections
+- Add examples and screenshots
+- Edit and proofread
+- Publish and promote
+
+### Weekly Meal Planning
+```
+Help me plan meals for the week. Create a grocery shopping list and cooking schedule for Monday through Friday, focusing on healthy, quick dinners.
+```
+
+### Home Improvement Project
+```
+I'm renovating my home office this weekend. Break down the project into manageable tasks including shopping, prep work, and the actual renovation steps.
+```
+
+### Study Schedule
+```
+I have a statistics exam in 2 weeks. Create a study plan with daily tasks covering all chapters, practice problems, and review sessions.
+```
+
+### Fitness Goals
+```
+Set up a 30-day fitness challenge for me. Include daily workout tasks, rest days, and weekly progress check-ins.
+```
+
+### Event Planning
+```
+I'm organizing a surprise birthday party for next month. Create a comprehensive task list covering invitations, decorations, food, entertainment, and day-of coordination.
+```
+
+## Advanced Usage
+
+### Task Management Commands
+
+**View all tasks:**
+```
+Show me all my pending tasks for today
+```
+
+**Update priorities:**
+```
+Make "Write blog introduction" high priority and move it to the top of my list
+```
+
+**Bulk completion:**
+```
+Mark all my morning routine tasks as complete
+```
+
+**Clean up:**
+```
+Delete all completed tasks from last week
+```
+
+### Project Organization
+
+Todoist supports projects, though the MCP may have limitations. Try:
+```
+Create a new project called "Q1 Goals" and add 5 key objectives as tasks
+```
+
+### Recurring Tasks
+
+Set up repeating tasks:
+```
+Add a daily task to review my calendar at 9 AM
+Add a weekly task for meal prep on Sundays
+Add a monthly task to pay bills on the 1st
+```
+
+## Creative Use Cases
+
+### 🎮 Game Development Sprint
+```
+I'm participating in a 48-hour game jam. Create an hour-by-hour task schedule covering ideation, prototyping, art creation, programming, testing, and submission.
+```
+
+### 📚 Book Writing Challenge
+```
+I'm doing NaNoWriMo (writing a novel in a month). Break down a 50,000-word goal into daily writing tasks with word count targets and plot milestones.
+```
+
+### 🌱 Garden Planning
+```
+It's spring planting season. Create a gardening schedule for the next 3 months including soil prep, planting dates for different vegetables, watering reminders, and harvest times.
+```
+
+### 🎂 Baking Business Launch
+```
+I'm starting a home bakery. Create tasks for getting permits, setting up social media, creating a menu, pricing strategy, and first week's baking schedule.
+```
+
+### 🏠 Moving Checklist
+```
+I'm moving to a new apartment next month. Generate a comprehensive moving checklist including utilities setup, packing by room, change of address notifications, and moving day logistics.
+```
+
+## Tips for Best Results
+
+- **Be specific**: "Add task: Call dentist tomorrow at 2 PM" works better than "remind me about dentist"
+- **Use natural language**: The AI understands context, so chat naturally
+- **Batch operations**: Ask to create multiple related tasks at once
+- **Review regularly**: Ask the AI to show your tasks and help prioritize
+- **Iterate**: If the tasks aren't quite right, ask the AI to modify them
+
+## Troubleshooting
+
+**Tasks not appearing in Todoist:**
+- Verify API token is correct
+- Check Todoist website/app and refresh
+- Ensure MCP server shows as active
+
+**Tool calling errors:**
+- Confirm model supports tool calling
+- Enable tools in model settings
+- Try a different model (Claude 3.5+ or GPT-4o recommended)
+
+**Connection issues:**
+- Check internet connectivity
+- Verify Node.js installation
+- Restart Jan after configuration
+
+**Rate limiting:**
+- Todoist API has rate limits
+- Space out bulk operations
+- Wait a moment between large task batches
+
+<Callout type="tip">
+Todoist syncs across all devices. Tasks created through Jan instantly appear on your phone, tablet, and web app!
+</Callout>
+
+## Privacy Note
+
+Your tasks are synced with Todoist's servers. While the MCP runs locally, task data is stored in Todoist's cloud for sync functionality. Review Todoist's privacy policy if you're handling sensitive information.
+
+## Next Steps
+
+Combine Todoist MCP with other tools for powerful workflows:
+- Use Serper MCP to research topics, then create action items in Todoist
+- Generate code with E2B, then add testing tasks to your todo list
+- Analyze data with Jupyter, then create follow-up tasks for insights
+
+Task management through natural language makes staying organized effortless. Let your AI assistant handle the overhead while you focus on getting things done!

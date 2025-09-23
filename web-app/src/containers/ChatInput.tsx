@@ -33,6 +33,10 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTools } from '@/hooks/useTools'
+import { TokenCounter } from '@/components/TokenCounter'
+import { useMessages } from '@/hooks/useMessages'
+import { useShallow } from 'zustand/react/shallow'
 
 type ChatInputProps = {
   className?: string
@@ -46,22 +50,35 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
-  const {
-    streamingContent,
-    abortControllers,
-    loadingModel,
-    tools,
-    cancelToolCall,
-  } = useAppState()
-  const { prompt, setPrompt } = usePrompt()
-  const { currentThreadId } = useThreads()
+  const streamingContent = useAppState((state) => state.streamingContent)
+  const abortControllers = useAppState((state) => state.abortControllers)
+  const loadingModel = useAppState((state) => state.loadingModel)
+  const tools = useAppState((state) => state.tools)
+  const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const prompt = usePrompt((state) => state.prompt)
+  const setPrompt = usePrompt((state) => state.setPrompt)
+  const currentThreadId = useThreads((state) => state.currentThreadId)
   const { t } = useTranslation()
-  const { spellCheckChatInput } = useGeneralSetting()
+  const spellCheckChatInput = useGeneralSetting(
+    (state) => state.spellCheckChatInput
+  )
+  const tokenCounterCompact = useGeneralSetting(
+    (state) => state.tokenCounterCompact
+  )
+  useTools()
+
+  // Get current thread messages for token counting
+  const threadMessages = useMessages(
+    useShallow((state) =>
+      currentThreadId ? state.messages[currentThreadId] : []
+    )
+  )
 
   const maxRows = 10
 
-  const { selectedModel, selectedProvider } = useModelProvider()
-  const { sendMessage } = useChat()
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const sendMessage = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -77,6 +94,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [hasActiveModels, setHasActiveModels] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -94,6 +112,28 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
     // Poll for connected servers every 3 seconds
     const intervalId = setInterval(checkConnectedServers, 3000)
+
+    return () => clearInterval(intervalId)
+  }, [serviceHub])
+
+  // Check for active models
+  useEffect(() => {
+    const checkActiveModels = async () => {
+      try {
+        const activeModels = await serviceHub
+          .models()
+          .getActiveModels('llamacpp')
+        setHasActiveModels(activeModels.length > 0)
+      } catch (error) {
+        console.error('Failed to get active models:', error)
+        setHasActiveModels(false)
+      }
+    }
+
+    checkActiveModels()
+
+    // Poll for active models every 3 seconds
+    const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
   }, [serviceHub])
@@ -581,10 +621,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
         <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
           <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1">
+            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center',
+                  'px-1 flex items-center w-full',
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -740,35 +780,51 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               </div>
             </div>
 
-            {streamingContent ? (
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={() =>
-                  stopStreaming(currentThreadId ?? streamingContent.thread_id)
-                }
-              >
-                <IconPlayerStopFilled />
-              </Button>
-            ) : (
-              <Button
-                variant={
-                  !prompt.trim() && uploadedFiles.length === 0
-                    ? null
-                    : 'default'
-                }
-                size="icon"
-                disabled={!prompt.trim() && uploadedFiles.length === 0}
-                data-test-id="send-message-button"
-                onClick={() => handleSendMesage(prompt)}
-              >
-                {streamingContent ? (
-                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                ) : (
-                  <ArrowRight className="text-primary-fg" />
+            <div className="flex items-center gap-2">
+              {selectedProvider === 'llamacpp' &&
+                hasActiveModels &&
+                tokenCounterCompact &&
+                !initialMessage &&
+                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+                  <div className="flex-1 flex justify-center">
+                    <TokenCounter
+                      messages={threadMessages || []}
+                      compact={true}
+                      uploadedFiles={uploadedFiles}
+                    />
+                  </div>
                 )}
-              </Button>
-            )}
+
+              {streamingContent ? (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() =>
+                    stopStreaming(currentThreadId ?? streamingContent.thread_id)
+                  }
+                >
+                  <IconPlayerStopFilled />
+                </Button>
+              ) : (
+                <Button
+                  variant={
+                    !prompt.trim() && uploadedFiles.length === 0
+                      ? null
+                      : 'default'
+                  }
+                  size="icon"
+                  disabled={!prompt.trim() && uploadedFiles.length === 0}
+                  data-test-id="send-message-button"
+                  onClick={() => handleSendMesage(prompt)}
+                >
+                  {streamingContent ? (
+                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <ArrowRight className="text-primary-fg" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -790,6 +846,20 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       )}
+
+      {selectedProvider === 'llamacpp' &&
+        hasActiveModels &&
+        !tokenCounterCompact &&
+        !initialMessage &&
+        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+          <div className="flex-1 w-full flex justify-start px-2">
+            <TokenCounter
+              messages={threadMessages || []}
+              compact={false}
+              uploadedFiles={uploadedFiles}
+            />
+          </div>
+        )}
     </div>
   )
 }

@@ -16,6 +16,17 @@ const config: Config = {
     },
     fontFamily: {
       sans: [
+        'StudioFeixenSans',
+        '-apple-system',
+        'BlinkMacSystemFont',
+        'Segoe UI',
+        'Roboto',
+        'Oxygen-Sans',
+        'Ubuntu,Cantarell',
+        'Helvetica',
+        'sans-serif',
+      ],
+      inter: [
         'Inter',
         '-apple-system',
         'BlinkMacSystemFont',
