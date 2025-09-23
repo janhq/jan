@@ -95,8 +95,6 @@ jobs:
           # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          # jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
-          # mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
@@ -104,46 +102,18 @@ jobs:
           echo "---------Cargo.toml---------"
           cat ./src-tauri/Cargo.toml
 
-          generate_build_version() {
-              ### Examble
-              ### input 0.5.6 output will be 0.5.6 and 0.5.6.0
-              ### input 0.5.6-rc2-beta output will be 0.5.6 and 0.5.6.2
-              ### input 0.5.6-1213 output will be 0.5.6 and and 0.5.6.1213
-              local new_version="$1"
-              local base_version
-              local t_value
-
-              # Check if it has a "-"
-              if [[ "$new_version" == *-* ]]; then
-                  base_version="${new_version%%-*}" # part before -
-                  suffix="${new_version#*-}"         # part after -
-
-                  # Check if it is rcX-beta
-                  if [[ "$suffix" =~ ^rc([0-9]+)-beta$ ]]; then
-                      t_value="${BASH_REMATCH[1]}"
-                  else
-                      t_value="$suffix"
-                  fi
-              else
-                  base_version="$new_version"
-                  t_value="0"
-              fi
-
-              # Export two values
-              new_base_version="$base_version"
-              new_build_version="${base_version}.${t_value}"
-          }
-          generate_build_version ${{ inputs.new_version }}
-          sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template          
-
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
           cat ./src-tauri/Cargo.toml
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
+            # Update updater endpoint
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+            
+            # Update product name
+            jq --arg name "Jan-${{ inputs.channel }}" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
 
             chmod +x .github/scripts/rename-tauri-app.sh
@@ -161,15 +131,8 @@ jobs:
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
-            
-            sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
           else
-            sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
-          echo "---------nsis.template---------"
-          cat ./src-tauri/tauri.bundle.windows.nsis.template
 
       - name: Install AzureSignTool
         run: |
