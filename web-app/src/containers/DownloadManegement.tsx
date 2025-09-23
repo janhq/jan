@@ -400,20 +400,23 @@ export function DownloadManagement() {
                           className="text-main-view-fg/70 cursor-pointer"
                           title="Cancel download"
                           onClick={() => {
-                            serviceHub.models().abortDownload(download.name).then(() => {
-                              toast.info(
-                                t('common:toast.downloadCancelled.title'),
-                                {
-                                  id: 'cancel-download',
-                                  description: t(
-                                    'common:toast.downloadCancelled.description'
-                                  ),
+                            serviceHub
+                              .models()
+                              .abortDownload(download.name)
+                              .then(() => {
+                                toast.info(
+                                  t('common:toast.downloadCancelled.title'),
+                                  {
+                                    id: 'cancel-download',
+                                    description: t(
+                                      'common:toast.downloadCancelled.description'
+                                    ),
+                                  }
+                                )
+                                if (downloadProcesses.length === 0) {
+                                  setIsPopoverOpen(false)
                                 }
-                              )
-                              if (downloadProcesses.length === 0) {
-                                setIsPopoverOpen(false)
-                              }
-                            })
+                              })
                           }}
                         />
                       </div>
