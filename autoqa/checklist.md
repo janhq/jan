@@ -105,7 +105,7 @@ In Remote Model Providers:
 	- [ ] CometAPI
 - [ ] Models should appear as available on the selectable dropdown in chat input once some value is input in the API key field. (it could be the wrong API key)
 - [ ] Once a valid API key is used, user can select a model from that provider and chat without any error. 
-- [ ] Delete a model and ensure that it doesn't show up in the `Modesl` list view or in the selectable dropdown in chat input.
+- [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
 - [ ] Adding of new model manually works and user can chat with the newly added model without error (you can add back the model you just delete for testing)
 - [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Jan
