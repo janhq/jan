@@ -1,62 +1,67 @@
 {
-	"index": {
-		"type": "page",
-		"title": "Homepage",
-		"display": "hidden",
-		"theme": {
-			"layout": "raw"
-		}
-	},
-	"docs": {
-		"type": "page",
-		"title": "Docs"
-	},
-	"platforms": {
-		"type": "page",
-		"title": "Platforms",
-		"display": "hidden"
-	},
-	"integrations": {
-		"type": "page",
-		"title": "Integrations",
-		"display": "hidden"
-	},
-	"api-reference": {
-		"type": "page",
-		"title": "API reference",
-		"display": "hidden"
-	},
-	"changelog": {
-		"type": "page",
-		"title": "Changelog",
-		"theme": {
-			"layout": "raw"
-		}
-	},
-	"blog": {
-		"type": "page",
-		"title": "Blog",
-		"theme": {
-			"layout": "raw"
-		}
-	},
-	"post": {
-		"type": "page",
-		"title": "Post Categories",
-		"display": "hidden"
-	},
-	"download": {
-		"type": "page",
-		"theme": {
-			"layout": "raw"
-		}
-	},
-	"privacy": {
-		"title": "Privacy",
-		"display": "hidden"
-	},
-	"support": {
-		"title": "Support",
-		"display": "hidden"
-	}
+  "index": {
+    "type": "page",
+    "title": "Homepage",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "docs": {
+    "type": "page",
+    "title": "Docs"
+  },
+  "platforms": {
+    "type": "page",
+    "title": "Platforms",
+    "display": "hidden"
+  },
+  "integrations": {
+    "type": "page",
+    "title": "Integrations",
+    "display": "hidden"
+  },
+  "api-reference": {
+    "type": "page",
+    "title": "API reference",
+    "display": "hidden"
+  },
+  "handbook": {
+    "type": "page",
+    "title": "API reference",
+    "display": "hidden"
+  },
+  "changelog": {
+    "type": "page",
+    "title": "Changelog",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "blog": {
+    "type": "page",
+    "title": "Blog",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "post": {
+    "type": "page",
+    "title": "Post Categories",
+    "display": "hidden"
+  },
+  "download": {
+    "type": "page",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "privacy": {
+    "title": "Privacy",
+    "display": "hidden"
+  },
+  "support": {
+    "title": "Support",
+    "display": "hidden"
+  }
 }
