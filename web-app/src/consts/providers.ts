@@ -63,8 +63,7 @@ export const predefinedProviders = [
     active: true,
     api_key: '',
     base_url: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
-    explore_models_url:
-      'https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models',
+    explore_models_url: 'https://oai.azure.com/deployments',
     provider: 'azure',
     settings: [
       {
