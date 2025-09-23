@@ -61,4 +61,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Alternate shortcut bindings - enabled for web only (to avoid browser conflicts)
   [PlatformFeature.ALTERNATE_SHORTCUT_BINDINGS]: !isPlatformTauri(),
+
+  // First message persisted thread - enabled for web only
+  [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri(),
 }
