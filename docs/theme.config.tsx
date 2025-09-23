@@ -64,7 +64,7 @@ const config: DocsThemeConfig = {
             {(() => {
               const items = [
                 {
-                  title: 'Jan Desktop & Mobile',
+                  title: 'Jan Desktop',
                   path: '/docs/desktop',
                   Icon: LibraryBig,
                 },
