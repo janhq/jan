@@ -433,6 +433,7 @@ const LeftPanel = () => {
               if (menu.title === 'common:authentication') {
                 return (
                   <div key={menu.title}>
+                    <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
                     {isAuthenticated ? (
                       <UserProfileMenu />
                     ) : (

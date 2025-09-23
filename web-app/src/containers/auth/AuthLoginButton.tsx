@@ -3,7 +3,7 @@
  * Shows available authentication providers in a dropdown menu
  */
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { IconLogin, IconBrandGoogleFilled } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAuth } from '@/hooks/useAuth'
@@ -15,13 +15,44 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 export const AuthLoginButton = () => {
   const { t } = useTranslation()
   const { getAllProviders, loginWithProvider } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
+  const [panelWidth, setPanelWidth] = useState<number>(192)
+  const dropdownRef = useRef<HTMLButtonElement>(null)
+  const isSmallScreen = useSmallScreen()
 
   const enabledProviders = getAllProviders()
+
+  useEffect(() => {
+    const updateWidth = () => {
+      // Find the left panel element
+      const leftPanel = document.querySelector('aside[ref]') ||
+                        document.querySelector('aside') ||
+                        dropdownRef.current?.closest('aside')
+      if (leftPanel) {
+        setPanelWidth(leftPanel.getBoundingClientRect().width)
+      }
+    }
+
+    updateWidth()
+    window.addEventListener('resize', updateWidth)
+
+    // Also observe for panel resize
+    const observer = new ResizeObserver(updateWidth)
+    const leftPanel = document.querySelector('aside')
+    if (leftPanel) {
+      observer.observe(leftPanel)
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateWidth)
+      observer.disconnect()
+    }
+  }, [])
 
   const handleProviderLogin = async (providerId: ProviderType) => {
     try {
@@ -52,6 +83,7 @@ export const AuthLoginButton = () => {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={dropdownRef}
           disabled={isLoading}
           className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full"
         >
@@ -59,7 +91,12 @@ export const AuthLoginButton = () => {
           <span className="font-medium text-left-panel-fg/90">{t('common:login')}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" className="w-48">
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        style={{ width: `${panelWidth}px` }}
+        alignOffset={isSmallScreen ? -4 : 0}
+      >
         {enabledProviders.map((provider) => {
           const IconComponent = getProviderIcon(provider.icon)
           return (

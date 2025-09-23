@@ -3,7 +3,7 @@
  * Dropdown menu with user profile and logout options
  */
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,11 +18,42 @@ import { IconUser, IconLogout, IconChevronDown } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from 'sonner'
+import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 export const UserProfileMenu = () => {
   const { t } = useTranslation()
   const { user, isLoading, logout } = useAuth()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [panelWidth, setPanelWidth] = useState<number>(192)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const isSmallScreen = useSmallScreen()
+
+  useEffect(() => {
+    const updateWidth = () => {
+      // Find the left panel element
+      const leftPanel = document.querySelector('aside[ref]') ||
+                        document.querySelector('aside') ||
+                        dropdownRef.current?.closest('aside')
+      if (leftPanel) {
+        setPanelWidth(leftPanel.getBoundingClientRect().width)
+      }
+    }
+
+    updateWidth()
+    window.addEventListener('resize', updateWidth)
+
+    // Also observe for panel resize
+    const observer = new ResizeObserver(updateWidth)
+    const leftPanel = document.querySelector('aside')
+    if (leftPanel) {
+      observer.observe(leftPanel)
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateWidth)
+      observer.disconnect()
+    }
+  }, [])
 
   const handleLogout = async () => {
     if (isLoggingOut) return
@@ -54,26 +85,24 @@ export const UserProfileMenu = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="link"
-          size="sm"
-          className="w-full justify-between gap-2 px-2"
-        >
-          <div className="flex items-center gap-2">
-            <Avatar className="h-6 w-6">
-              {user.picture && (
-                <AvatarImage src={user.picture} alt={user.name} />
-              )}
-              <AvatarFallback className="text-xs">
-                {getInitials(user.name)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="truncate text-sm">{user.name}</span>
-          </div>
-          <IconChevronDown size={14} className="text-muted-foreground" />
-        </Button>
+        <div ref={dropdownRef} className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded">
+          <Avatar className="h-[18px] w-[18px]">
+            {user.picture && (
+              <AvatarImage src={user.picture} alt={user.name} />
+            )}
+            <AvatarFallback className="text-[10px]">
+              {getInitials(user.name)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="font-medium text-left-panel-fg/90">{user.name}</span>
+        </div>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" className="w-56">
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        style={{ width: `${panelWidth}px` }}
+        alignOffset={isSmallScreen ? -4 : 0}
+      >
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{user.name}</p>
