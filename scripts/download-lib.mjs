@@ -90,7 +90,7 @@ async function main() {
 
     // copy to tauri resources
     try {
-      copySync(vcSavePath, resourcesDir)
+      copySync(vcSavePath, libDir)
     } catch (err) {
       // Expect EEXIST error
     }
