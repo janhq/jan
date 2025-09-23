@@ -10,7 +10,7 @@ import {
   ThreadAssistantInfo,
 } from '@janhq/core'
 import { RemoteApi } from './api'
-import { getDefaultAssistant, ObjectParser } from './utils'
+import { getDefaultAssistant, ObjectParser, combineConversationItemsToMessages } from './utils'
 
 export default class ConversationalExtensionWeb extends ConversationalExtension {
   private remoteApi: RemoteApi | undefined
@@ -95,8 +95,24 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
   }
 
   async listMessages(threadId: string): Promise<ThreadMessage[]> {
-    console.log('!!!Listing messages for thread:', threadId)
-    return []
+    try {
+      if (!this.remoteApi) {
+        throw new Error('RemoteApi not initialized')
+      }
+      console.log('!!!Listing messages for thread:', threadId)
+
+      // Fetch all conversation items from the API
+      const items = await this.remoteApi.getAllConversationItems(threadId)
+
+      // Convert and combine conversation items to thread messages
+      const messages = combineConversationItemsToMessages(items, threadId)
+
+      console.log('!!!Fetched messages:', messages)
+      return messages
+    } catch (error) {
+      console.error('Failed to list messages:', error)
+      return []
+    }
   }
 
   async modifyMessage(message: ThreadMessage): Promise<ThreadMessage> {

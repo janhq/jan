@@ -37,3 +37,57 @@ export interface ConversationResponse {
 
 export type ListConversationsParams = PaginationParams
 export type ListConversationsResponse = PaginatedResponse<ConversationResponse>
+
+// Conversation Items types
+export interface ConversationItemAnnotation {
+  end_index?: number
+  file_id?: string
+  index?: number
+  start_index?: number
+  text?: string
+  type?: string
+  url?: string
+}
+
+export interface ConversationItemContent {
+  file?: {
+    file_id?: string
+    mime_type?: string
+    name?: string
+    size?: number
+  }
+  finish_reason?: string
+  image?: {
+    detail?: string
+    file_id?: string
+    url?: string
+  }
+  input_text?: string
+  output_text?: {
+    annotations?: ConversationItemAnnotation[]
+    text?: string
+  }
+  reasoning_content?: string
+  text?: {
+    value?: string
+  }
+  type?: string
+}
+
+export interface ConversationItem {
+  content?: ConversationItemContent[]
+  created_at: number
+  id: string
+  object: string
+  role: string
+  status?: string
+  type?: string
+}
+
+export interface ListConversationItemsParams extends PaginationParams {
+  conversation_id: string
+}
+
+export interface ListConversationItemsResponse extends PaginatedResponse<ConversationItem> {
+  total?: number
+}

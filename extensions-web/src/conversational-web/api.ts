@@ -10,7 +10,10 @@ import {
   ListConversationsParams,
   ListConversationsResponse,
   PaginationParams,
-  PaginatedResponse
+  PaginatedResponse,
+  ConversationItem,
+  ListConversationItemsParams,
+  ListConversationItemsResponse
 } from './types'
 
 declare const JAN_API_BASE: string
@@ -118,6 +121,40 @@ export class RemoteApi {
       {
         method: 'DELETE',
       }
+    )
+  }
+
+  async listConversationItems(
+    conversationId: string,
+    params?: Omit<ListConversationItemsParams, 'conversation_id'>
+  ): Promise<ListConversationItemsResponse> {
+    const queryParams = new URLSearchParams()
+
+    if (params?.limit !== undefined) {
+      queryParams.append('limit', params.limit.toString())
+    }
+    if (params?.after) {
+      queryParams.append('after', params.after)
+    }
+    if (params?.order) {
+      queryParams.append('order', params.order)
+    }
+
+    const queryString = queryParams.toString()
+    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATION_ITEMS(conversationId)}${queryString ? `?${queryString}` : ''}`
+
+    return this.authService.makeAuthenticatedRequest<ListConversationItemsResponse>(
+      url,
+      {
+        method: 'GET',
+      }
+    )
+  }
+
+  async getAllConversationItems(conversationId: string): Promise<ConversationItem[]> {
+    return this.fetchAllPaginated<ConversationItem>(
+      (params) => this.listConversationItems(conversationId, params),
+      { limit: 100, order: 'asc' }
     )
   }
 }
