@@ -28,6 +28,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/gemini.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
+    case 'azure':
+      return '/images/model-provider/azure.svg'
     default:
       return undefined
   }
@@ -161,5 +163,5 @@ export function formatDuration(startTime: number, endTime?: number): string {
 }
 
 export function sanitizeModelId(modelId: string): string {
-  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, "_")
+  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
 }

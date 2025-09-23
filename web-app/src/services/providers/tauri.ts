@@ -35,15 +35,15 @@ export class TauriProvidersService extends DefaultProvidersService {
                 (
                   providerModels[
                     provider.provider as unknown as keyof typeof providerModels
-                  ].supportsToolCalls as unknown as string[]
-                ).includes(model)
+                  ]?.supportsToolCalls as unknown as string[]
+                )?.includes(model)
                   ? ModelCapabilities.TOOLS
                   : undefined,
                 (
                   providerModels[
                     provider.provider as unknown as keyof typeof providerModels
-                  ].supportsImages as unknown as string[]
-                ).includes(model)
+                  ]?.supportsImages as unknown as string[]
+                )?.includes(model)
                   ? ModelCapabilities.VISION
                   : undefined,
               ].filter(Boolean) as string[]

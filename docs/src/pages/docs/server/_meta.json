@@ -1,0 +1,31 @@
+{
+	"index": {
+		"type": "page",
+		"display": "hidden"
+	},
+	"get-started-separator": {
+		"title": "Get Started",
+		"type": "separator"
+	},
+	"overview": "Overview",
+	"installation": "Installation",
+	"configuration": "Configuration",
+	"api-reference-separator": {
+		"title": "API Reference",
+		"type": "separator"
+	},
+	"api-reference": "Introduction",
+	"api-reference-authentication": "Authentication",
+	"api-reference-chat": "Completions API",
+	"api-reference-jan-responses": "Responses API",
+	"api-reference-chat-conversations": "Chat Conversations",
+	"api-reference-conversations": "Conversations API",
+	"api-reference-administration": "Administration API",	
+	"api-reference-jan-server": "Server API",
+	"resources-separator": {
+		"title": "Resources",
+		"type": "separator"
+	},
+	"architecture": "Architecture",
+	"development": "Development"
+}

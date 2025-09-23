@@ -21,6 +21,16 @@
     "title": "Integrations",
     "display": "hidden"
   },
+  "api-reference": {
+    "type": "page",
+    "title": "API reference",
+    "display": "hidden"
+  },
+  "handbook": {
+    "type": "page",
+    "title": "Handbook",
+    "display": "hidden"
+  },
   "changelog": {
     "type": "page",
     "title": "Changelog",
@@ -40,7 +50,6 @@
     "title": "Post Categories",
     "display": "hidden"
   },
-
   "download": {
     "type": "page",
     "theme": {
