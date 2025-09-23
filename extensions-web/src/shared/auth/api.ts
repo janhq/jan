@@ -13,7 +13,7 @@ declare const JAN_API_BASE: string
  */
 export async function logoutUser(): Promise<void> {
   const response = await fetch(`${JAN_API_BASE}${AUTH_ENDPOINTS.LOGOUT}`, {
-    method: 'POST',
+    method: 'GET',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
