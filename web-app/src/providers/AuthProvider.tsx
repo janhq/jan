@@ -3,7 +3,7 @@
  * Initializes the auth service and sets up event listeners
  */
 
-import { useEffect, useState, ReactNode } from 'react'
+import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { PlatformFeature } from '@/lib/platform/types'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { initializeAuthStore, getAuthStore } from '@/hooks/useAuth'
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     PlatformFeatures[PlatformFeature.AUTHENTICATION]
 
   // Fetch user data when user logs in
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
       const { setThreads } = useThreads.getState()
       const { setMessages } = useMessages.getState()
@@ -47,10 +47,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error('Failed to fetch user data:', error)
     }
-  }
+  }, [serviceHub])
 
   // Reset all app data when user logs out
-  const resetAppData = () => {
+  const resetAppData = useCallback(() => {
     // Clear all threads (including favorites)
     const { clearAllThreads, setCurrentThreadId } = useThreads.getState()
     clearAllThreads()
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Navigate back to home to ensure clean state
     navigate({ to: '/', replace: true })
-  }
+  }, [navigate])
 
   useEffect(() => {
     if (!isAuthenticationEnabled) {
@@ -139,7 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       cleanupAuthListener()
     }
-  }, [isAuthenticationEnabled, isReady])
+  }, [isAuthenticationEnabled, isReady, fetchUserData, resetAppData])
 
   return <>{isReady && children}</>
 }

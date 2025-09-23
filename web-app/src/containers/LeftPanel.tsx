@@ -141,7 +141,7 @@ const LeftPanel = () => {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [setLeftPanel])
+  }, [setLeftPanel, open])
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,

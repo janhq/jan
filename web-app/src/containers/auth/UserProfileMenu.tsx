@@ -13,8 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import { IconUser, IconLogout, IconChevronDown } from '@tabler/icons-react'
+import { IconUser, IconLogout } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from 'sonner'
