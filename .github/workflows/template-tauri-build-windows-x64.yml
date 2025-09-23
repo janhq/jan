@@ -97,10 +97,17 @@ jobs:
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
-
+          
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------Cargo.toml---------"
           cat ./src-tauri/Cargo.toml
+
+          # Add sign commands to tauri.windows.conf.json
+          jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          
+          echo "---------tauri.windows.conf.json---------"
+          cat ./src-tauri/tauri.windows.conf.json
 
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
