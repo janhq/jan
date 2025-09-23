@@ -205,6 +205,8 @@
     "showInFinder": "Hiển thị trong Finder",
     "showInFileExplorer": "Hiển thị trong File Explorer",
     "openContainingFolder": "Mở Thư mục Chứa",
+    "couldNotRelocateToRoot": "Không thể di chuyển thư mục dữ liệu đến thư mục gốc. Vui lòng chọn vị trí khác.",
+    "couldNotResetRootDirectory": "Không thể đặt lại thư mục dữ liệu khi nó được đặt thành thư mục gốc. Vui lòng xóa thư mục dữ liệu thủ công.",
     "failedToRelocateDataFolder": "Không thể di chuyển thư mục dữ liệu",
     "failedToRelocateDataFolderDesc": "Không thể di chuyển thư mục dữ liệu. Vui lòng thử lại.",
     "devVersion": "Đã phát hiện phiên bản phát triển",

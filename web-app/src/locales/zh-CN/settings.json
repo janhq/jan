@@ -205,6 +205,8 @@
     "showInFinder": "在 Finder 中显示",
     "showInFileExplorer": "在文件资源管理器中显示",
     "openContainingFolder": "打开包含文件夹",
+    "couldNotRelocateToRoot": "无法将数据文件夹重新定位到根目录。请选择其他位置。",
+    "couldNotResetRootDirectory": "当数据文件夹设置为根目录时，无法重置。请手动删除数据文件夹。",
     "failedToRelocateDataFolder": "无法重新定位数据文件夹",
     "failedToRelocateDataFolderDesc": "无法重新定位数据文件夹。请重试。",
     "devVersion": "检测到开发版本",
