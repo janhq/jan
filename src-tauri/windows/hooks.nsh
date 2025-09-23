@@ -8,37 +8,31 @@
 
   ${If} $0 == ""
     ; VC++ Redistributable not found, need to install
-    DetailPrint "Visual C++ Redistributable not found, downloading and installing..."
-    
-    ; Download VC++ Redistributable
-    Delete "$TEMP\vc_redist.x64.exe"
-    DetailPrint "Downloading Visual C++ Redistributable..."
-    NSISdl::download "https://aka.ms/vs/17/release/vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
-    Pop $1
-    
-    ${If} $1 == "success"
-      DetailPrint "Visual C++ Redistributable download successful"
-      
-      ; Install VC++ Redistributable silently
+    DetailPrint "Visual C++ Redistributable not found, installing from bundled file..."
+
+    ; Install from bundled EXE if not installed
+    ${If} ${FileExists} "$INSTDIR\resources\lib\vc_redist.x64.exe"
       DetailPrint "Installing Visual C++ Redistributable..."
-      ExecWait '"$TEMP\vc_redist.x64.exe" /quiet /norestart' $2
-      
-      ${If} $2 == 0
+      ; Copy to TEMP folder and then execute installer
+      CopyFiles "$INSTDIR\resources\lib\vc_redist.x64.exe" "$TEMP\vc_redist.x64.exe"
+      ExecWait '"$TEMP\vc_redist.x64.exe" /quiet /norestart' $1
+
+      ; Check whether installation process exited successfully (code 0) or not
+      ${If} $1 == 0
         DetailPrint "Visual C++ Redistributable installed successfully"
-      ${ElseIf} $2 == 1638
+      ${ElseIf} $1 == 1638
         DetailPrint "Visual C++ Redistributable already installed (newer version)"
-      ${ElseIf} $2 == 3010
+      ${ElseIf} $1 == 3010
         DetailPrint "Visual C++ Redistributable installed successfully (restart required)"
       ${Else}
-        DetailPrint "Visual C++ installation failed with exit code: $2"
-        MessageBox MB_ICONEXCLAMATION "Visual C++ installation failed. Some features may not work."
+        DetailPrint "Visual C++ installation failed with exit code: $1"
       ${EndIf}
-      
-      ; Clean up downloaded file
+
+      ; Clean up setup files from TEMP and your installed app
       Delete "$TEMP\vc_redist.x64.exe"
+      Delete "$INSTDIR\resources\lib\vc_redist.x64.exe"
     ${Else}
-      DetailPrint "Failed to download Visual C++ Redistributable: $1"
-      MessageBox MB_ICONEXCLAMATION "Failed to download Visual C++ Redistributable. Some features may not work."
+      DetailPrint "Visual C++ Redistributable not found at expected location: $INSTDIR\resources\lib\vc_redist.x64.exe"
     ${EndIf}
   ${Else}
     DetailPrint "Visual C++ Redistributable already installed (version: $0)"
@@ -57,7 +51,7 @@
     
     ; Optional cleanup - remove from resources folder
     Delete "$INSTDIR\resources\lib\vulkan-1.dll"
-    ; Only remove the lib directory if it's empty
+    ; Only remove the lib directory if it's empty after removing both files
     RMDir "$INSTDIR\resources\lib"
   ${Else}
     DetailPrint "vulkan-1.dll not found at expected location: $INSTDIR\resources\lib\vulkan-1.dll"
