@@ -19,8 +19,13 @@ export const AUTH_ENDPOINTS = {
 // Token expiry buffer
 export const TOKEN_EXPIRY_BUFFER = 60 * 1000 // 1 minute buffer before expiry
 
-// Broadcast channel for cross-tab communication
+// Broadcast channel name for cross-tab communication (BroadcastChannel API)
+// Used to sync auth state between different browser tabs
 export const AUTH_BROADCAST_CHANNEL = 'jan_auth_channel'
+
+// Custom event name for same-tab communication (window.dispatchEvent)
+// Used to notify components within the same tab about auth state changes
+export const AUTH_EVENT_NAME = 'jan-auth-event'
 
 // Auth events
 export const AUTH_EVENTS = {
