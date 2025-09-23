@@ -49,6 +49,7 @@ export default defineConfig({
     IS_WEB_APP: JSON.stringify(true),
     // Disable auto-updater on web (not applicable)
     AUTO_UPDATER_DISABLED: JSON.stringify(true),
+    IS_DEV: JSON.stringify(false),
     IS_MACOS: JSON.stringify(false),
     IS_WINDOWS: JSON.stringify(false),
     IS_LINUX: JSON.stringify(false),
@@ -58,6 +59,7 @@ export default defineConfig({
     VERSION: JSON.stringify(process.env.npm_package_version || '1.0.0'),
     POSTHOG_KEY: JSON.stringify(process.env.POSTHOG_KEY || ''),
     POSTHOG_HOST: JSON.stringify(process.env.POSTHOG_HOST || ''),
+    GA_MEASUREMENT_ID: JSON.stringify(process.env.GA_MEASUREMENT_ID),
     MODEL_CATALOG_URL: JSON.stringify(process.env.MODEL_CATALOG_URL || ''),
   },
   server: {

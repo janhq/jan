@@ -10,9 +10,7 @@ const mockUnsubscribe = vi.fn()
 
 // Mock useAppState
 vi.mock('../useAppState', () => ({
-  useAppState: () => ({
-    updateTools: mockUpdateTools,
-  }),
+  useAppState: (selector: any) => selector({ updateTools: mockUpdateTools }),
 }))
 
 // Mock the ServiceHub

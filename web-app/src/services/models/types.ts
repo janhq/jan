@@ -2,7 +2,7 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo } from '@janhq/core'
+import { SessionInfo, modelInfo, ThreadMessage } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -142,4 +142,5 @@ export interface ModelsService {
     mmprojPath?: string,
     requestedCtx?: number
   ): Promise<ModelPlan>
+  getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

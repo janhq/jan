@@ -63,7 +63,7 @@ export default function AddEditAssistant({
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const emojiPickerTriggerRef = useRef<HTMLDivElement>(null)
   const [nameError, setNameError] = useState<string | null>(null)
-  const [toolSteps, setToolSteps] = useState(20)
+  const [toolStepsInput, setToolStepsInput] = useState('20')
 
   // Handle click outside emoji picker or trigger
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function AddEditAssistant({
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
       setShowEmojiPicker(false)
-      setToolSteps(initialData.tool_steps ?? 20)
+      setToolStepsInput(String(initialData.tool_steps ?? 20))
 
       // Convert parameters object to arrays of keys and values
       const keys = Object.keys(initialData.parameters || {})
@@ -128,7 +128,7 @@ export default function AddEditAssistant({
     setParamsTypes(['string'])
     setNameError(null)
     setShowEmojiPicker(false)
-    setToolSteps(20)
+    setToolStepsInput('20')
   }
 
   const handleParameterChange = (
@@ -145,7 +145,8 @@ export default function AddEditAssistant({
 
       // Convert value based on parameter type
       if (paramsTypes[index] === 'number' && typeof value === 'string') {
-        newValues[index] = value === '' ? '' : Number(value)
+        // Preserve raw string while typing (e.g., "0."), convert on save
+        newValues[index] = value
       } else if (
         paramsTypes[index] === 'boolean' &&
         typeof value === 'boolean'
@@ -212,11 +213,17 @@ export default function AddEditAssistant({
     // Convert parameters arrays to object
     const parameters: Record<string, unknown> = {}
     paramsKeys.forEach((key, index) => {
-      if (key) {
-        parameters[key] = paramsValues[index]
+      if (!key) return
+      const value = paramsValues[index]
+      if (paramsTypes[index] === 'number') {
+        const parsed = Number(value as string)
+        parameters[key] = isNaN(parsed) ? 0 : parsed
+      } else {
+        parameters[key] = value
       }
     })
 
+    const parsedToolSteps = Number(toolStepsInput)
     const assistant: Assistant = {
       avatar,
       id: initialData?.id || Math.random().toString(36).substring(7),
@@ -225,7 +232,7 @@ export default function AddEditAssistant({
       description,
       instructions,
       parameters: parameters || {},
-      tool_steps: toolSteps,
+      tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
     }
     onSave(assistant)
     onOpenChange(false)
@@ -236,7 +243,11 @@ export default function AddEditAssistant({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        onInteractOutside={(e) => {
+          e.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {editingKey
@@ -346,13 +357,12 @@ export default function AddEditAssistant({
                 <p className="text-sm">{t('assistants:maxToolSteps')}</p>
               </div>
               <Input
-                value={toolSteps}
+                value={toolStepsInput}
                 type="number"
                 min={0}
+                step="any"
                 onChange={(e) => {
-                  const newSteps = e.target.value
-                  const stepNumber = Number(newSteps)
-                  setToolSteps(isNaN(stepNumber) ? 20 : stepNumber)
+                  setToolStepsInput(e.target.value)
                 }}
                 placeholder="20"
                 className="w-18 text-right"
@@ -548,6 +558,7 @@ export default function AddEditAssistant({
                         handleParameterChange(index, e.target.value, 'value')
                       }
                       type={paramsTypes[index] === 'number' ? 'number' : 'text'}
+                      step={paramsTypes[index] === 'number' ? 'any' : undefined}
                       placeholder={t('assistants:value')}
                       className="sm:flex-1 h-[36px] w-full"
                     />

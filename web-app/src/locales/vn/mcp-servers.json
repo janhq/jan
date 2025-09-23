@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "Xóa máy chủ MCP",
     "description": "Bạn có chắc chắn muốn xóa máy chủ MCP {{serverName}} không? Hành động này không thể hoàn tác.",
-    "delete": "Xóa"
+    "delete": "Xóa",
+    "success": "Máy chủ MCP {{serverName}} đã được xóa thành công"
   },
   "editJson": {
     "title": "Chỉnh sửa JSON cho máy chủ MCP: {{serverName}}",
@@ -26,6 +27,9 @@
     "errorParse": "Không thể phân tích cú pháp dữ liệu ban đầu",
     "errorPaste": "Định dạng JSON không hợp lệ trong nội dung đã dán",
     "errorFormat": "Định dạng JSON không hợp lệ",
+    "errorServerName": "Tên máy chủ là bắt buộc và không được để trống",
+    "errorMissingServerNameKey": "JSON phải có cấu trúc {\"serverName\": {config}} - thiếu khóa tên máy chủ",
+    "errorInvalidType": "Loại '{{type}}' cho máy chủ '{{serverName}}' không hợp lệ. Loại phải là 'stdio', 'http' hoặc 'sse'",
     "save": "Lưu"
   },
   "checkParams": "Vui lòng kiểm tra các tham số theo hướng dẫn.",

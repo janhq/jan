@@ -14,6 +14,7 @@ type ThreadState = {
   deleteThread: (threadId: string) => void
   renameThread: (threadId: string, newTitle: string) => void
   deleteAllThreads: () => void
+  clearAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
   createThread: (
@@ -46,7 +47,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
                 id:
                   thread.model.provider === 'llama.cpp' ||
                   thread.model.provider === 'llamacpp'
-                    ? thread.model?.id.split(':').slice(0, 2).join(getServiceHub().path().sep())
+                    ? thread.model?.id
+                        .split(':')
+                        .slice(0, 2)
+                        .join(getServiceHub().path().sep())
                     : thread.model?.id,
               }
             : undefined,
@@ -94,10 +98,12 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   },
   toggleFavorite: (threadId) => {
     set((state) => {
-      getServiceHub().threads().updateThread({
-        ...state.threads[threadId],
-        isFavorite: !state.threads[threadId].isFavorite,
-      })
+      getServiceHub()
+        .threads()
+        .updateThread({
+          ...state.threads[threadId],
+          isFavorite: !state.threads[threadId].isFavorite,
+        })
       return {
         threads: {
           ...state.threads,
@@ -155,6 +161,24 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }
     })
   },
+  clearAllThreads: () => {
+    set((state) => {
+      const allThreadIds = Object.keys(state.threads)
+
+      // Delete all threads from server
+      allThreadIds.forEach((threadId) => {
+        getServiceHub().threads().deleteThread(threadId)
+      })
+
+      return {
+        threads: {},
+        currentThreadId: undefined,
+        searchIndex: new Fzf<Thread[]>([], {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
   unstarAllThreads: () => {
     set((state) => {
       const updatedThreads = Object.keys(state.threads).reduce(
@@ -168,7 +192,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         {} as Record<string, Thread>
       )
       Object.values(updatedThreads).forEach((thread) => {
-        getServiceHub().threads().updateThread({ ...thread, isFavorite: false })
+        getServiceHub()
+          .threads()
+          .updateThread({ ...thread, isFavorite: false })
       })
       return { threads: updatedThreads }
     })
@@ -180,7 +206,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     return get().threads[threadId]
   },
   setCurrentThreadId: (threadId) => {
-    set({ currentThreadId: threadId })
+    if (threadId !== get().currentThreadId) set({ currentThreadId: threadId })
   },
   createThread: async (model, title, assistant) => {
     const newThread: Thread = {
@@ -190,33 +216,38 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
     }
-    return await getServiceHub().threads().createThread(newThread).then((createdThread) => {
-      set((state) => {
-        // Get all existing threads as an array
-        const existingThreads = Object.values(state.threads)
+    return await getServiceHub()
+      .threads()
+      .createThread(newThread)
+      .then((createdThread) => {
+        set((state) => {
+          // Get all existing threads as an array
+          const existingThreads = Object.values(state.threads)
 
-        // Create new array with the new thread at the beginning
-        const reorderedThreads = [createdThread, ...existingThreads]
+          // Create new array with the new thread at the beginning
+          const reorderedThreads = [createdThread, ...existingThreads]
 
-        // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
-        get().setThreads(reorderedThreads)
+          // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
+          get().setThreads(reorderedThreads)
 
-        return {
-          currentThreadId: createdThread.id,
-        }
+          return {
+            currentThreadId: createdThread.id,
+          }
+        })
+        return createdThread
       })
-      return createdThread
-    })
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {
       if (!state.currentThreadId) return { ...state }
       const currentThread = state.getCurrentThread()
       if (currentThread)
-        getServiceHub().threads().updateThread({
-          ...currentThread,
-          assistants: [{ ...assistant, model: currentThread.model }],
-        })
+        getServiceHub()
+          .threads()
+          .updateThread({
+            ...currentThread,
+            assistants: [{ ...assistant, model: currentThread.model }],
+          })
       return {
         threads: {
           ...state.threads,
@@ -233,7 +264,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       if (!state.currentThreadId) return { ...state }
       const currentThread = state.getCurrentThread()
-      if (currentThread) getServiceHub().threads().updateThread({ ...currentThread, model })
+      if (currentThread)
+        getServiceHub()
+          .threads()
+          .updateThread({ ...currentThread, model })
       return {
         threads: {
           ...state.threads,

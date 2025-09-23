@@ -89,7 +89,6 @@ jobs:
 
       - name: Build app
         run: |
-          rustup target add x86_64-apple-darwin
           make build
         env:
           APP_PATH: '.'

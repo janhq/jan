@@ -6,9 +6,11 @@ import { ExtensionManager } from '@/lib/extension'
 type LeftPanelStoreState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
+  tokenCounterCompact: boolean
   huggingfaceToken?: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
+  setTokenCounterCompact: (value: boolean) => void
   setCurrentLanguage: (value: Language) => void
 }
 
@@ -17,8 +19,10 @@ export const useGeneralSetting = create<LeftPanelStoreState>()(
     (set) => ({
       currentLanguage: 'en',
       spellCheckChatInput: true,
+      tokenCounterCompact: true,
       huggingfaceToken: undefined,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
+      setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })

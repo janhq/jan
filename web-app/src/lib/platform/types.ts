@@ -57,4 +57,13 @@ export enum PlatformFeature {
 
   // Authentication (Google OAuth, user profiles)
   AUTHENTICATION = 'authentication',
+
+  // Google Analytics tracking (web-only)
+  GOOGLE_ANALYTICS = 'googleAnalytics',
+
+  // Alternate keyboard shortcut bindings (web-only, to avoid browser conflicts)
+  ALTERNATE_SHORTCUT_BINDINGS = 'alternateShortcutBindings',
+
+  // First message persisted thread - web-only feature for storing first user message locally during thread creation
+  FIRST_MESSAGE_PERSISTED_THREAD = 'firstMessagePersistedThread',
 }

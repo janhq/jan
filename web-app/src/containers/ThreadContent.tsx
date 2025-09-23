@@ -68,14 +68,19 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
+      streamingThread?: string
 
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      updateMessage?: (item: ThreadMessage, message: string) => void
+      updateMessage?: (
+        item: ThreadMessage,
+        message: string,
+        imageUrls?: string[]
+      ) => void
     }
   ) => {
     const { t } = useTranslation()
-    const { selectedModel } = useModelProvider()
+    const selectedModel = useModelProvider((state) => state.selectedModel)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -87,7 +92,10 @@ export const ThreadContent = memo(
       []
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
-    const { streamingContent } = useAppState()
+    // Only check if streaming is happening for this thread, not the content itself
+    const isStreamingThisThread = useAppState(
+      (state) => state.streamingContent?.thread_id === item.thread_id
+    )
 
     const text = useMemo(
       () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
@@ -129,8 +137,9 @@ export const ThreadContent = memo(
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
-    const { getMessages, deleteMessage } = useMessages()
-    const { sendMessage } = useChat()
+    const getMessages = useMessages((state) => state.getMessages)
+    const deleteMessage = useMessages((state) => state.deleteMessage)
+    const sendMessage = useChat()
 
     const regenerate = useCallback(() => {
       // Only regenerate assistant message is allowed
@@ -276,9 +285,15 @@ export const ThreadContent = memo(
                   item.content?.find((c) => c.type === 'text')?.text?.value ||
                   ''
                 }
-                onSave={(message) => {
+                imageUrls={
+                  item.content
+                    ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
+                    .map((c) => c.image_url!.url)
+                    .filter((url): url is string => url !== undefined) || []
+                }
+                onSave={(message, imageUrls) => {
                   if (item.updateMessage) {
-                    item.updateMessage(item, message)
+                    item.updateMessage(item, message, imageUrls)
                   }
                 }}
               />
@@ -360,10 +375,7 @@ export const ThreadContent = memo(
                   <div
                     className={cn(
                       'flex items-center gap-2',
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id &&
-                        'hidden'
+                      item.isLastMessage && isStreamingThisThread && 'hidden'
                     )}
                   >
                     <EditMessageDialog
@@ -395,9 +407,7 @@ export const ThreadContent = memo(
 
                   <TokenSpeedIndicator
                     streaming={Boolean(
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id
+                      item.isLastMessage && isStreamingThisThread
                     )}
                     metadata={item.metadata}
                   />
