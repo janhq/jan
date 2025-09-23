@@ -1,0 +1,20 @@
+{
+	"get-started-separator": {
+		"title": "Get started",
+		"type": "separator"
+	},
+	"index": "Overview",
+	"installation": "Installation",
+	"configuration": "Configuration",
+	"core-concepts-separator": {
+		"title": "Core concepts",
+		"type": "separator"
+	},
+	"api-reference": "API Reference",
+	"resource-separator": {
+		"title": "Resources",
+		"type": "separator"
+	},
+	"architecture": "Architecture",
+	"development": "Development"
+}

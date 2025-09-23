@@ -9,6 +9,8 @@ import {
   SessionInfo,
   SettingComponentProps,
   modelInfo,
+  ThreadMessage,
+  ContentType,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -542,6 +544,115 @@ export class DefaultModelsService implements ModelsService {
         offloadMmproj: false,
         mode: 'Unsupported',
       }
+    }
+  }
+
+  async getTokensCount(
+    modelId: string,
+    messages: ThreadMessage[]
+  ): Promise<number> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getTokensCount?: (opts: {
+          model: string
+          messages: Array<{
+            role: string
+            content:
+              | string
+              | Array<{
+                  type: string
+                  text?: string
+                  image_url?: {
+                    detail?: string
+                    url?: string
+                  }
+                }>
+          }>
+        }) => Promise<number>
+      }
+
+      if (engine && typeof engine.getTokensCount === 'function') {
+        // Transform Jan's ThreadMessage format to OpenAI chat completion format
+        const transformedMessages = messages
+          .map((message) => {
+            // Handle different content types
+            let content:
+              | string
+              | Array<{
+                  type: string
+                  text?: string
+                  image_url?: {
+                    detail?: string
+                    url?: string
+                  }
+                }> = ''
+
+            if (message.content && message.content.length > 0) {
+              // Check if there are any image_url content types
+              const hasImages = message.content.some(
+                (content) => content.type === ContentType.Image
+              )
+
+              if (hasImages) {
+                // For multimodal messages, preserve the array structure
+                content = message.content.map((contentItem) => {
+                  if (contentItem.type === ContentType.Text) {
+                    return {
+                      type: 'text',
+                      text: contentItem.text?.value || '',
+                    }
+                  } else if (contentItem.type === ContentType.Image) {
+                    return {
+                      type: 'image_url',
+                      image_url: {
+                        detail: contentItem.image_url?.detail,
+                        url: contentItem.image_url?.url || '',
+                      },
+                    }
+                  }
+                  // Fallback for unknown content types
+                  return {
+                    type: contentItem.type,
+                    text: contentItem.text?.value,
+                    image_url: contentItem.image_url,
+                  }
+                })
+              } else {
+                // For text-only messages, keep the string format
+                const textContents = message.content
+                  .filter(
+                    (content) =>
+                      content.type === ContentType.Text && content.text?.value
+                  )
+                  .map((content) => content.text?.value || '')
+
+                content = textContents.join(' ')
+              }
+            }
+
+            return {
+              role: message.role,
+              content,
+            }
+          })
+          .filter((msg) =>
+            typeof msg.content === 'string'
+              ? msg.content.trim() !== ''
+              : Array.isArray(msg.content) && msg.content.length > 0
+          ) // Filter out empty messages
+
+        return await engine.getTokensCount({
+          model: modelId,
+          messages: transformedMessages,
+        })
+      }
+
+      // Fallback if method is not available
+      console.warn('getTokensCount method not available in llamacpp engine')
+      return 0
+    } catch (error) {
+      console.error(`Error getting tokens count for model ${modelId}:`, error)
+      return 0
     }
   }
 }

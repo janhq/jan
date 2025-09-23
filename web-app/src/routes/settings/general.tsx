@@ -30,6 +30,7 @@ import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { isRootDir } from '@/utils/path'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -73,6 +74,11 @@ function General() {
   }, [serviceHub])
 
   const resetApp = async () => {
+    // Prevent resetting if data folder is root directory
+    if (isRootDir(janDataFolder ?? '/')) {
+      toast.error(t('settings:general.couldNotResetRootDirectory'))
+      return
+    }
     pausePolling()
     // TODO: Loading indicator
     await serviceHub.app().factoryReset()
@@ -117,6 +123,9 @@ function General() {
         serviceHub.events().emit(SystemEvent.KILL_SIDECAR)
         setTimeout(async () => {
           try {
+            // Prevent relocating to root directory (e.g., C:\ or D:\ on Windows, / on Unix)
+            if (isRootDir(selectedNewPath))
+              throw new Error(t('settings:general.couldNotRelocateToRoot'))
             await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful

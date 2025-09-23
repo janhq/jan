@@ -1,0 +1,445 @@
+---
+title: Development
+description: Development setup, workflow, and contribution guidelines for Jan Server.
+---
+
+## Development Setup
+
+### Prerequisites
+
+- **Go**: 1.24.6 or later
+- **Docker**: For containerization
+- **minikube**: Local Kubernetes development
+- **Helm**: Package management
+- **Make**: Build automation
+
+### Initial Setup
+
+
+1. **Clone Repository**
+   ```bash
+   git clone https://github.com/menloresearch/jan-server
+   cd jan-server
+   ```
+
+2. **Install Development Tools**
+   ```bash
+   cd apps/jan-api-gateway/application
+   make install
+   ```
+
+3. **Generate Code**
+   ```bash
+   make setup
+   ```
+
+4. **Start Development Environment**
+   ```bash
+   # From project root
+   ./scripts/run.sh
+   ```
+
+## API Gateway Development
+
+### Project Structure
+
+```
+apps/jan-api-gateway/application/
+├── cmd/server/              # Entry point and dependency injection
+│   ├── server.go           # Main server setup
+│   ├── wire.go             # DI configuration
+│   └── wire_gen.go         # Generated DI code
+├── app/                     # Core application logic
+│   ├── domain/             # Business entities
+│   ├── repository/         # Data access layer
+│   ├── service/            # Business logic
+│   └── handler/            # HTTP handlers
+├── config/                  # Configuration management
+└── docs/                   # Generated API documentation
+```
+
+### Build Commands
+
+```bash
+# Install development dependencies
+make install
+
+# Generate API documentation
+make doc
+
+# Generate dependency injection code  
+make wire
+
+# Complete setup (doc + wire)
+make setup
+
+# Build application
+go build -o jan-api-gateway ./cmd/server
+```
+
+### Code Generation
+
+Jan Server uses code generation for several components:
+
+**Swagger Documentation:**
+```bash
+# Generates docs/swagger.json and docs/swagger.yaml
+swag init --parseDependency -g cmd/server/server.go -o docs
+```
+
+**Dependency Injection:**
+```bash
+# Generates wire_gen.go from wire.go providers
+wire ./cmd/server
+```
+
+**Database Models:**
+```bash
+# Generate GORM models (when schema changes)
+go run cmd/codegen/gorm/gorm.go
+```
+
+### Local Development
+
+#### Running API Gateway Locally
+
+```bash
+cd apps/jan-api-gateway/application
+
+# Set environment variables
+export JAN_INFERENCE_MODEL_URL=http://localhost:8101
+export JWT_SECRET=your-jwt-secret
+export DB_POSTGRESQL_WRITE_DSN="host=localhost user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable"
+
+# Run the server
+go run ./cmd/server
+```
+
+#### Database Setup
+
+For local development, you can run PostgreSQL directly:
+
+```bash
+# Using Docker
+docker run -d \
+  --name jan-postgres \
+  -e POSTGRES_DB=jan \
+  -e POSTGRES_USER=jan-user \
+  -e POSTGRES_PASSWORD=jan-password \
+  -p 5432:5432 \
+  postgres:14
+```
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific test package
+go test ./app/service/...
+```
+
+### Test Structure
+
+```
+app/
+├── service/
+│   ├── auth_service.go
+│   ├── auth_service_test.go
+│   ├── conversation_service.go
+│   └── conversation_service_test.go
+└── handler/
+    ├── auth_handler.go
+    ├── auth_handler_test.go
+    ├── chat_handler.go
+    └── chat_handler_test.go
+```
+
+### Writing Tests
+
+Example service test:
+
+```go
+func TestAuthService_ValidateToken(t *testing.T) {
+    // Setup
+    service := NewAuthService(mockRepo, mockConfig)
+    
+    // Test cases
+    tests := []struct {
+        name        string
+        token       string
+        expectValid bool
+        expectError bool
+    }{
+        {"valid token", "valid.jwt.token", true, false},
+        {"invalid token", "invalid.token", false, true},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            valid, err := service.ValidateToken(tt.token)
+            assert.Equal(t, tt.expectValid, valid)
+            assert.Equal(t, tt.expectError, err != nil)
+        })
+    }
+}
+```
+
+## Docker Development
+
+### Building Images
+
+```bash
+# Build API gateway
+docker build -t jan-api-gateway:dev ./apps/jan-api-gateway
+
+# Build inference model
+docker build -t jan-inference-model:dev ./apps/jan-inference-model
+```
+
+### Development Compose
+
+For local development without Kubernetes:
+
+```yaml
+# docker-compose.dev.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: jan
+      POSTGRES_USER: jan-user
+      POSTGRES_PASSWORD: jan-password
+    ports:
+      - "5432:5432"
+      
+  api-gateway:
+    build: ./apps/jan-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - JAN_INFERENCE_MODEL_URL=http://inference-model:8101
+      - DB_POSTGRESQL_WRITE_DSN=host=postgres user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable
+    depends_on:
+      - postgres
+      
+  inference-model:
+    build: ./apps/jan-inference-model
+    ports:
+      - "8101:8101"
+```
+
+## Debugging
+
+### Go Debugging
+
+For VS Code debugging, add to `.vscode/launch.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Jan API Gateway",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/apps/jan-api-gateway/application/cmd/server",
+      "env": {
+        "JAN_INFERENCE_MODEL_URL": "http://localhost:8101",
+        "JWT_SECRET": "development-secret"
+      }
+    }
+  ]
+}
+```
+
+### Application Logs
+
+```bash
+# View API gateway logs
+kubectl logs deployment/jan-server-jan-api-gateway -f
+
+# View inference model logs
+kubectl logs deployment/jan-server-jan-inference-model -f
+
+# View PostgreSQL logs
+kubectl logs statefulset/jan-server-postgresql -f
+```
+
+### Log Levels
+
+Set log level via environment variable:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## Code Style and Standards
+
+### Go Standards
+
+- Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)
+- Use `gofmt` for formatting
+- Run `go vet` for static analysis
+- Use meaningful variable and function names
+
+### API Standards
+
+- RESTful endpoint design
+- OpenAPI/Swagger annotations for all endpoints
+- Consistent error response format
+- Proper HTTP status codes
+
+### Git Workflow
+
+```bash
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Make changes and commit
+git add .
+git commit -m "feat: add new authentication endpoint"
+
+# Push and create PR
+git push origin feature/your-feature-name
+```
+
+### Commit Message Format
+
+Follow conventional commits:
+
+```
+feat: add new feature
+fix: resolve bug in authentication  
+docs: update API documentation
+test: add unit tests for service layer
+refactor: improve error handling
+```
+
+## Performance Testing
+
+### Load Testing
+
+Use [k6](https://k6.io) for API load testing:
+
+```javascript
+// load-test.js
+import http from 'k6/http';
+
+export default function () {
+  const response = http.post('http://localhost:8080/api/v1/chat/completions', {
+    model: 'jan-v1-4b',
+    messages: [
+      { role: 'user', content: 'Hello!' }
+    ]
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer your-token'
+    }
+  });
+  
+  check(response, {
+    'status is 200': (r) => r.status === 200,
+    'response time < 5000ms': (r) => r.timings.duration < 5000,
+  });
+}
+```
+
+Run load test:
+```bash
+k6 run --vus 10 --duration 30s load-test.js
+```
+
+### Memory Profiling
+
+Enable Go profiling endpoints:
+
+```go
+import _ "net/http/pprof"
+
+// In main.go
+go func() {
+    log.Println(http.ListenAndServe("localhost:6060", nil))
+}()
+```
+
+Profile memory usage:
+```bash
+go tool pprof http://localhost:6060/debug/pprof/heap
+```
+
+## Contributing
+
+### Pull Request Process
+
+1. **Fork the repository**
+2. **Create feature branch** from `main`
+3. **Make changes** following code standards
+4. **Add tests** for new functionality
+5. **Update documentation** if needed
+6. **Submit pull request** with clear description
+
+### Code Review Checklist
+
+- [ ] Code follows Go standards
+- [ ] Tests added for new features
+- [ ] Documentation updated
+- [ ] API endpoints have Swagger annotations
+- [ ] No breaking changes without version bump
+- [ ] Security considerations addressed
+
+### Issues and Bug Reports
+
+When reporting bugs, include:
+
+- **Environment**: OS, Go version, minikube version
+- **Steps to reproduce**: Clear, minimal reproduction steps  
+- **Expected behavior**: What should happen
+- **Actual behavior**: What actually happens
+- **Logs**: Relevant error messages or logs
+
+For security issues, please report privately to the maintainers instead of creating public issues.
+
+## Release Process
+
+### Version Management
+
+Jan Server uses semantic versioning (semver):
+
+- **Major**: Breaking changes
+- **Minor**: New features, backward compatible
+- **Patch**: Bug fixes, backward compatible
+
+### Building Releases
+
+```bash
+# Tag release
+git tag -a v1.2.3 -m "Release v1.2.3"
+
+# Build release images
+docker build -t jan-api-gateway:v1.2.3 ./apps/jan-api-gateway
+docker build -t jan-inference-model:v1.2.3 ./apps/jan-inference-model
+
+# Push tags
+git push origin v1.2.3
+```
+
+### Deployment
+
+Production deployments follow the same Helm chart structure:
+
+```bash
+# Deploy specific version
+helm install jan-server ./charts/umbrella-chart \
+  --set jan-api-gateway.image.tag=v1.2.3 \
+  --set jan-inference-model.image.tag=v1.2.3
+```

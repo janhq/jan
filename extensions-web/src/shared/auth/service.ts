@@ -158,7 +158,7 @@ export class JanAuthService {
   /**
    * Get current authenticated user
    */
-  async getCurrentUser(): Promise<User | null> {
+  async getCurrentUser(forceRefresh: boolean = false): Promise<User | null> {
     await this.ensureInitialized()
 
     const authType = this.getAuthState()
@@ -166,7 +166,8 @@ export class JanAuthService {
       return null
     }
 
-    if (this.currentUser) {
+    // Force refresh if requested or if cache is cleared
+    if (!forceRefresh && this.currentUser) {
       return this.currentUser
     }
 
@@ -200,6 +201,9 @@ export class JanAuthService {
 
       this.clearAuthState()
 
+      // Ensure guest access after logout
+      await this.ensureGuestAccess()
+
       this.authBroadcast.broadcastLogout()
 
       if (window.location.pathname !== '/') {
@@ -208,6 +212,8 @@ export class JanAuthService {
     } catch (error) {
       console.error('Logout failed:', error)
       this.clearAuthState()
+      // Try to ensure guest access even on error
+      this.ensureGuestAccess().catch(console.error)
     }
   }
 
@@ -359,8 +365,12 @@ export class JanAuthService {
     this.authBroadcast.onAuthEvent((event) => {
       switch (event.data.type) {
         case AUTH_EVENTS.LOGIN:
-          // Another tab logged in, refresh our state
-          this.initialize().catch(console.error)
+          // Another tab logged in, clear cached data to force refresh
+          // Clear current user cache so next getCurrentUser() call fetches fresh data
+          this.currentUser = null
+          // Clear token cache so next getValidAccessToken() call refreshes
+          this.accessToken = null
+          this.tokenExpiryTime = 0
           break
 
         case AUTH_EVENTS.LOGOUT:

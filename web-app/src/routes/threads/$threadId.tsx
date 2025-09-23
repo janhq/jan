@@ -63,6 +63,16 @@ function ThreadDetail() {
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
         if (fetchedMessages) {
+          // For web platform: preserve local messages if server fetch is empty but we have local messages
+          if (PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
+              fetchedMessages.length === 0 &&
+              messages &&
+              messages.length > 0) {
+            console.log('!!!Preserving local messages as server fetch is empty:', messages.length)
+            // Don't override local messages with empty server response
+            return
+          }
+
           // Update the messages in the store
           setMessages(threadId, fetchedMessages)
         }

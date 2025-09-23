@@ -1,4 +1,4 @@
-import {  useEffect, useMemo, useRef, useState } from 'react'
+import {  useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppState } from './useAppState'
 import { useMessages } from './useMessages'
 import { useShallow } from 'zustand/react/shallow'
@@ -25,16 +25,16 @@ export const useThreadScrolling = (
 
   const showScrollToBottomBtn = !isAtBottom && hasScrollbar
 
-  const scrollToBottom = (smooth = false) => {
+  const scrollToBottom = useCallback((smooth = false) => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({
         top: scrollContainerRef.current.scrollHeight,
         ...(smooth ? { behavior: 'smooth' } : {}),
       })
     }
-  }
+  }, [])
 
-  const handleScroll = (e: Event) => {
+  const handleScroll = useCallback((e: Event) => {
     const target = e.target as HTMLDivElement
     const { scrollTop, scrollHeight, clientHeight } = target
     // Use a small tolerance to better detect when we're at the bottom
@@ -53,17 +53,18 @@ export const useThreadScrolling = (
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
     lastScrollTopRef.current = scrollTop
-  }
+  }, [streamingContent])
 
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.addEventListener('scroll', handleScroll)
+    const scrollContainer = scrollContainerRef.current
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll)
       return () =>
-        scrollContainerRef.current?.removeEventListener('scroll', handleScroll)
+        scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [scrollContainerRef])
+  }, [handleScroll])
 
-  const checkScrollState = () => {
+  const checkScrollState = useCallback(() => {
     const scrollContainer = scrollContainerRef.current
     if (!scrollContainer) return
 
@@ -73,7 +74,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }
+  }, [])
 
   // Single useEffect for all auto-scrolling logic
   useEffect(() => {
@@ -120,7 +121,7 @@ export const useThreadScrolling = (
       const interval = setInterval(checkScrollState, 100)
       return () => clearInterval(interval)
     }
-  }, [streamingContent])
+  }, [streamingContent, checkScrollState])
 
   // Auto-scroll to bottom when component mounts or thread content changes
   useEffect(() => {
@@ -138,7 +139,7 @@ export const useThreadScrolling = (
       checkScrollState()
       return
     }
-  }, [])
+  }, [checkScrollState, scrollToBottom])
 
   const handleDOMScroll = (e: Event) => {
     const target = e.target as HTMLDivElement
@@ -182,7 +183,7 @@ export const useThreadScrolling = (
     userIntendedPositionRef.current = null
     wasStreamingRef.current = false
     checkScrollState()
-  }, [threadId])
+  }, [threadId, checkScrollState, scrollToBottom])
 
   return useMemo(
     () => ({ showScrollToBottomBtn, scrollToBottom, setIsUserScrolling }),

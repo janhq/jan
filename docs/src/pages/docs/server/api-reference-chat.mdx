@@ -1,0 +1,320 @@
+---
+title: Completions API
+description: Core chat completion endpoints for AI interactions with OpenAI compatibility.
+---
+
+## Overview
+
+The Chat API provides OpenAI-compatible endpoints for conversational AI interactions, including chat completions, model information, and Model Context Protocol (MCP) support.
+
+## Endpoints
+
+### Create Chat Completion
+
+**Endpoint**: `POST /v1/chat/completions`
+
+Creates a chat completion using the specified model and conversation history.
+
+**Request Body:**
+```json
+{
+  "model": "string",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, how are you?"
+    }
+  ],
+  "max_tokens": 100,
+  "temperature": 0.7,
+  "stream": false
+}
+```
+
+**Parameters:**
+- `model` (string, required): Model identifier (e.g., "jan-v1-4b")
+- `messages` (array, required): Array of message objects with role and content
+- `max_tokens` (integer, optional): Maximum number of tokens to generate
+- `temperature` (float, optional): Sampling temperature (0.0 to 2.0)
+- `stream` (boolean, optional): Whether to stream the response
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "jan-v1-4b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 9,
+    "completion_tokens": 12,
+    "total_tokens": 21
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7
+  }'
+```
+
+### Streaming Chat Completion
+
+**Endpoint**: `POST /v1/chat/completions`
+
+Same endpoint as above, but with `stream: true` for real-time responses.
+
+**Request Body:**
+```json
+{
+  "model": "jan-v1-4b",
+  "messages": [
+    {"role": "user", "content": "Tell me a story"}
+  ],
+  "stream": true
+}
+```
+
+**Response (Streaming):**
+```
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","choices":[{"index":0,"delta":{"content":"Once"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"jan-v1-4b","choices":[{"index":0,"delta":{"content":" upon"},"finish_reason":null}]}
+
+data: [DONE]
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "stream": true
+  }' \
+  --no-buffer
+```
+
+### MCP Streamable Endpoint
+
+**Endpoint**: `POST /v1/mcp`
+
+Model Context Protocol streamable endpoint for external tool integration.
+
+**Request Body:**
+```json
+{
+  "model": "string",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What's the weather like today?"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather information",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city and state"
+            }
+          },
+          "required": ["location"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "jan-v1-4b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I'll check the weather for you.",
+        "tool_calls": [
+          {
+            "id": "call_123",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\": \"New York, NY\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "What'\''s the weather like today?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather information"
+        }
+      }
+    ]
+  }'
+```
+
+### List Available Models
+
+**Endpoint**: `GET /v1/models`
+
+Retrieves a list of available models for chat completions.
+
+**Response:**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "jan-v1-4b",
+      "object": "model",
+      "created": 1677652288,
+      "owned_by": "jan"
+    },
+    {
+      "id": "jan-v1-7b",
+      "object": "model",
+      "created": 1677652288,
+      "owned_by": "jan"
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/v1/models
+```
+
+## Message Roles
+
+### Supported Roles
+
+- `user`: Messages from the user/end-user
+- `assistant`: Messages from the AI assistant
+- `system`: System-level instructions (optional)
+
+### Message Format
+
+```json
+{
+  "role": "user|assistant|system",
+  "content": "The message content"
+}
+```
+
+## Parameters
+
+### Temperature
+
+Controls the randomness of the response:
+- `0.0`: Deterministic, always picks the most likely token
+- `0.7`: Balanced creativity and coherence (recommended)
+- `1.0`: More creative responses
+- `2.0`: Maximum creativity
+
+### Max Tokens
+
+Maximum number of tokens to generate in the response:
+- Minimum: 1
+- Maximum: 4096 (varies by model)
+- Recommended: 100-500 for most use cases
+
+### Stream
+
+When `true`, returns a stream of Server-Sent Events (SSE) instead of a single response:
+- Useful for real-time applications
+- Reduces perceived latency
+- Requires handling of streaming responses
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Invalid request format",
+    "type": "invalid_request_error",
+    "code": "invalid_json"
+  }
+}
+```
+
+## Rate Limiting
+
+Chat completion endpoints have the following rate limits:
+- **Authenticated users**: 60 requests per minute
+- **API keys**: 1000 requests per hour
+- **Guest users**: 10 requests per minute
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 59
+X-RateLimit-Reset: 1609459200
+```

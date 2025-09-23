@@ -9,6 +9,7 @@ type MessageState = {
   setMessages: (threadId: string, messages: ThreadMessage[]) => void
   addMessage: (message: ThreadMessage) => void
   deleteMessage: (threadId: string, messageId: string) => void
+  clearAllMessages: () => void
 }
 
 export const useMessages = create<MessageState>()((set, get) => ({
@@ -62,5 +63,8 @@ export const useMessages = create<MessageState>()((set, get) => ({
           ) || [],
       },
     }))
+  },
+  clearAllMessages: () => {
+    set({ messages: {} })
   },
 }))
