@@ -30,6 +30,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
+    case 'cometapi':
+      return '/images/model-provider/cometapi.svg'
     default:
       return undefined
   }
@@ -49,6 +51,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Gemini'
     case 'huggingface':
       return 'Hugging Face'
+    case 'cometapi':
+      return 'CometAPI'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

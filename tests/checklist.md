@@ -108,6 +108,7 @@ In Remote Model Providers:
 	- [ ] Groq
 	- [ ] Gemini
 	- [ ] Hugging Face
+	- [ ] CometAPI
 - [ ] Models should appear as available on the selectable dropdown in chat input once some value is input in the API key field. (it could be the wrong API key)
 - [ ] Once a valid API key is used, user can select a model from that provider and chat without any error. 
 - [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.

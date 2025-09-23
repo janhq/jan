@@ -22,5 +22,8 @@
   },
   "huggingface": {
     "title": "Hugging Face"
+  },
+  "cometapi": {
+    "title": "CometAPI"
   }
 }
