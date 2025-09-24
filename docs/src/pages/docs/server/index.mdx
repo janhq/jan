@@ -1,0 +1,12 @@
+import { useRouter } from 'next/router'
+import { useEffect } from 'react'
+
+export default function ServerIndex() {
+  const router = useRouter()
+  
+  useEffect(() => {
+    router.replace('/docs/server/overview')
+  }, [router])
+  
+  return null
+}

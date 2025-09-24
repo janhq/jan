@@ -62,6 +62,40 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+    explore_models_url: 'https://oai.azure.com/deployments',
+    provider: 'azure',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The Azure OpenAI API uses API keys for authentication. Visit your [Azure OpenAI Studio](https://oai.azure.com/) to retrieve the API key from your resource.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Your Azure OpenAI resource endpoint. See the [Azure OpenAI documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/latest) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+          value: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.anthropic.com',
     provider: 'anthropic',
     explore_models_url:

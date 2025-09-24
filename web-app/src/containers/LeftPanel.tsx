@@ -35,7 +35,7 @@ import { toast } from 'sonner'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
+
 import { DeleteAllThreadsDialog } from '@/containers/dialogs'
 
 const mainMenus = [
@@ -141,7 +141,8 @@ const LeftPanel = () => {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [open, setLeftPanel])
+  }, [setLeftPanel, open])
+
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
@@ -178,8 +179,6 @@ const LeftPanel = () => {
       document.body.style.overflow = ''
     }
   }, [isSmallScreen, open])
-
-  const { downloads, localDownloadingModels } = useDownloadStore()
 
   return (
     <>
@@ -262,16 +261,8 @@ const LeftPanel = () => {
           )}
         </div>
 
-        <div className="flex flex-col justify-between overflow-hidden mt-0 !h-[calc(100%-42px)]">
-          <div
-            className={cn(
-              'flex flex-col',
-              Object.keys(downloads).length > 0 ||
-                localDownloadingModels.size > 0
-                ? 'h-[calc(100%-200px)]'
-                : 'h-[calc(100%-140px)]'
-            )}
-          >
+        <div className="flex flex-col justify-between overflow-hidden mt-0 !h-[calc(100%-42px)] ">
+          <div className={cn('flex flex-col !h-[calc(100%-200px)]')}>
             {IS_MACOS && (
               <div
                 ref={searchContainerMacRef}
@@ -436,6 +427,7 @@ const LeftPanel = () => {
               if (menu.title === 'common:authentication') {
                 return (
                   <div key={menu.title}>
+                    <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
                     {isAuthenticated ? (
                       <UserProfileMenu />
                     ) : (
@@ -471,8 +463,9 @@ const LeftPanel = () => {
                 </Link>
               )
             })}
-            <DownloadManagement />
           </div>
+
+          <DownloadManagement />
         </div>
       </aside>
     </>

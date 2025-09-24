@@ -3626,7 +3626,7 @@ __metadata:
     sonner: "npm:^2.0.3"
     tailwind-merge: "npm:^3.3.1"
     tailwindcss: "npm:^4.1.4"
-    token.js: "npm:token.js-fork@0.7.23"
+    token.js: "npm:token.js-fork@0.7.27"
     tw-animate-css: "npm:^1.2.7"
     typescript: "npm:~5.8.3"
     typescript-eslint: "npm:^8.26.1"
@@ -19272,9 +19272,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"token.js@npm:token.js-fork@0.7.23":
-  version: 0.7.23
-  resolution: "token.js-fork@npm:0.7.23"
+"token.js@npm:token.js-fork@0.7.27":
+  version: 0.7.27
+  resolution: "token.js-fork@npm:0.7.27"
   dependencies:
     "@anthropic-ai/sdk": "npm:0.24.3"
     "@aws-sdk/client-bedrock-runtime": "npm:3.609.0"
@@ -19285,7 +19285,7 @@ __metadata:
     mime-types: "npm:^2.1.35"
     nanoid: "npm:^5.0.7"
     openai: "npm:4.91.1"
-  checksum: 10c0/73653dbdd2217f16de7eb294a2ef90ac985367f2ca421a2952a52c24de57e0f98db3ef668d8f36c361d6546513f85a480d48bfa916f2c5d65ce1b9033d526027
+  checksum: 10c0/ec4e8e441b6747db29eed0d21e364eaf8d4636e3d8376bdd63d836499970de15357e8c0b2ef1e470027e7a2c8bc4924138a86f6d207469b6f0b6fb0f24f6d035
   languageName: node
   linkType: hard
 

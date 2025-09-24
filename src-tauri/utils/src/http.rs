@@ -6,6 +6,10 @@ pub fn is_cors_header(header_name: &str) -> bool {
 
 /// Validates if host is in trusted hosts list
 pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
+    if trusted_hosts.iter().any(|hosts| hosts.contains(&"*".to_string())) {
+        return true;
+    }
+
     if host.is_empty() {
         return false;
     }

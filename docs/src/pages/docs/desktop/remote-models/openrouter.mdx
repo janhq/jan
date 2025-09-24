@@ -1,0 +1,98 @@
+---
+title: OpenRouter
+description: A step-by-step guide on integrating Jan with OpenRouter.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    OpenRouter integration,
+    OpenRouter,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# OpenRouter
+
+## Integrate OpenRouter with Jan
+
+[OpenRouter](https://openrouter.ai/) is a tool that gathers AI model APIs and provides access to all
+via a unified API. Developers can use the API to interact with LLMs, generative image models, and
+even models that generate 3D objects, all with a competitive pricing.
+
+Jan supports the OpenRouter API, allowing you to use models from various providers (Anthropic, Google,
+Meta and more) and helping you avoid having to get an API from all of your favorite ones.
+
+OpenRouter even offers a few free models! 🙌
+
+## Integrate OpenRouter with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [OpenRouter](https://openrouter.ai/keys) and sign in
+2. Create & copy a new API key or copy your existing one
+
+<Callout type='info'>
+Ensure your API key has sufficient credits. OpenRouter credits work across all available models.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **OpenRouter**
+3. Insert your **API Key**
+
+<br/>
+![OpenRouter](../_assets/openrouter.png)
+<br/>
+
+### Step 3: Start Using OpenRouter Models
+
+1. Pick any existing **Chat** or create a new one
+2. Select any model from **model selector** under OpenRouter
+3. Start chatting
+</Steps>
+
+## Available Models Through OpenRouter
+
+Jan automatically use your default OpenRouter's available models. For custom configurations:
+
+**Model Field Settings:**
+- Leave empty to use your account's default model
+- Specify a model using the format: `organization/model-name`
+- Available options can be found in [OpenRouter's Model Reference](https://openrouter.ai/models)
+
+**Examples of Model IDs:**
+- Claude 4 Opus: `anthropic/claude-opus-4`
+- Google Gemini 2.5 Pro: `google/gemini-2.5-pro-preview`
+- DeepSeek R1 Latest: `deepseek/deepseek-r1-0528`
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Check if you have sufficient credits in your OpenRouter account
+- Ensure you have access to the model you're trying to use
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify OpenRouter's [system status](https://status.openrouter.ai)
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm the model is currently available on OpenRouter
+- Check if you're using the correct model ID format
+- Verify the model provider is currently operational
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [OpenRouter documentation](https://openrouter.ai/docs).

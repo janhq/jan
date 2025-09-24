@@ -74,4 +74,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Shortcut
   [PlatformFeature.SHORTCUT]: !isPlatformIOS() && !isPlatformAndroid(),
+  
+  // First message persisted thread - enabled for web only
+  [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri(),
 }

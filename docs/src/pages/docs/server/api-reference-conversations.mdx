@@ -1,0 +1,475 @@
+---
+title: Conversations API
+description: Conversation management and persistence endpoints for storing and retrieving chat history.
+---
+
+## Overview
+
+The Conversations API provides comprehensive endpoints for managing conversation data, including creating, reading, updating, and deleting conversations and their associated items (messages). This API is essential for applications that need to persist chat history and manage conversation state.
+
+## Endpoints
+
+### List Conversations
+
+**Endpoint**: `GET /v1/conversations`
+
+Retrieves a paginated list of conversations for the authenticated user.
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of conversations to return (1-100, default: 20)
+- `offset` (integer, optional): Number of conversations to skip (default: 0)
+- `order` (string, optional): Sort order - "asc" or "desc" (default: "desc")
+
+**Response:**
+```json
+{
+  "conversations": [
+    {
+      "id": "conv_123",
+      "title": "Machine Learning Discussion",
+      "model": "jan-v1-4b",
+      "created_at": "2024-01-01T12:00:00Z",
+      "updated_at": "2024-01-01T13:30:00Z",
+      "item_count": 15,
+      "user_id": "user_456"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     "http://localhost:8080/v1/conversations?limit=10&offset=0"
+```
+
+### Create Conversation
+
+**Endpoint**: `POST /v1/conversations`
+
+Creates a new conversation with optional initial data.
+
+**Request Body:**
+```json
+{
+  "title": "New Conversation",
+  "model": "jan-v1-4b",
+  "metadata": {
+    "category": "technical",
+    "priority": "high"
+  }
+}
+```
+
+**Parameters:**
+- `title` (string, optional): Conversation title
+- `model` (string, optional): Default model for the conversation
+- `metadata` (object, optional): Additional metadata
+
+**Response:**
+```json
+{
+  "id": "conv_789",
+  "title": "New Conversation",
+  "model": "jan-v1-4b",
+  "created_at": "2024-01-01T14:00:00Z",
+  "updated_at": "2024-01-01T14:00:00Z",
+  "item_count": 0,
+  "user_id": "user_456",
+  "metadata": {
+    "category": "technical",
+    "priority": "high"
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/conversations \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "New Conversation",
+    "model": "jan-v1-4b",
+    "metadata": {
+      "category": "technical"
+    }
+  }'
+```
+
+### Get Conversation
+
+**Endpoint**: `GET /v1/conversations/{conversation_id}`
+
+Retrieves a specific conversation by ID.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+
+**Response:**
+```json
+{
+  "id": "conv_123",
+  "title": "Machine Learning Discussion",
+  "model": "jan-v1-4b",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T13:30:00Z",
+  "item_count": 15,
+  "user_id": "user_456",
+  "metadata": {
+    "category": "technical",
+    "priority": "high"
+  }
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/v1/conversations/conv_123
+```
+
+### Update Conversation
+
+**Endpoint**: `PATCH /v1/conversations/{conversation_id}`
+
+Updates an existing conversation's metadata.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+
+**Request Body:**
+```json
+{
+  "title": "Updated Conversation Title",
+  "metadata": {
+    "category": "research",
+    "priority": "medium",
+    "tags": ["ai", "ml"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "conv_123",
+  "title": "Updated Conversation Title",
+  "model": "jan-v1-4b",
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T15:00:00Z",
+  "item_count": 15,
+  "user_id": "user_456",
+  "metadata": {
+    "category": "research",
+    "priority": "medium",
+    "tags": ["ai", "ml"]
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X PATCH http://localhost:8080/v1/conversations/conv_123 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Updated Conversation Title",
+    "metadata": {
+      "category": "research",
+      "tags": ["ai", "ml"]
+    }
+  }'
+```
+
+### Delete Conversation
+
+**Endpoint**: `DELETE /v1/conversations/{conversation_id}`
+
+Permanently deletes a conversation and all its associated items.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+
+**Response:**
+```
+204 No Content
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/v1/conversations/conv_123 \
+  -H "Authorization: Bearer <token>"
+```
+
+## Conversation Items (Messages)
+
+### List Items in Conversation
+
+**Endpoint**: `GET /v1/conversations/{conversation_id}/items`
+
+Retrieves all items (messages) in a specific conversation.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+
+**Query Parameters:**
+- `limit` (integer, optional): Number of items to return (1-100, default: 20)
+- `offset` (integer, optional): Number of items to skip (default: 0)
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": "item_001",
+      "conversation_id": "conv_123",
+      "role": "user",
+      "content": "Hello, can you help me with machine learning?",
+      "created_at": "2024-01-01T12:00:00Z",
+      "metadata": {
+        "tokens": 12
+      }
+    },
+    {
+      "id": "item_002",
+      "conversation_id": "conv_123",
+      "role": "assistant",
+      "content": "Of course! I'd be happy to help you with machine learning. What specific aspect would you like to learn about?",
+      "created_at": "2024-01-01T12:01:00Z",
+      "metadata": {
+        "tokens": 25,
+        "model": "jan-v1-4b"
+      }
+    }
+  ],
+  "total": 2,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     "http://localhost:8080/v1/conversations/conv_123/items?limit=50"
+```
+
+### Create Items in Conversation
+
+**Endpoint**: `POST /v1/conversations/{conversation_id}/items`
+
+Adds new items (messages) to a conversation.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+
+**Request Body:**
+```json
+{
+  "items": [
+    {
+      "role": "user",
+      "content": "What is supervised learning?",
+      "metadata": {
+        "tokens": 6
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Supervised learning is a type of machine learning where algorithms learn from labeled training data to make predictions on new, unseen data.",
+      "metadata": {
+        "tokens": 28,
+        "model": "jan-v1-4b"
+      }
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": "item_003",
+      "conversation_id": "conv_123",
+      "role": "user",
+      "content": "What is supervised learning?",
+      "created_at": "2024-01-01T12:02:00Z",
+      "metadata": {
+        "tokens": 6
+      }
+    },
+    {
+      "id": "item_004",
+      "conversation_id": "conv_123",
+      "role": "assistant",
+      "content": "Supervised learning is a type of machine learning where algorithms learn from labeled training data to make predictions on new, unseen data.",
+      "created_at": "2024-01-01T12:02:30Z",
+      "metadata": {
+        "tokens": 28,
+        "model": "jan-v1-4b"
+      }
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/conversations/conv_123/items \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "role": "user",
+        "content": "What is supervised learning?"
+      },
+      {
+        "role": "assistant",
+        "content": "Supervised learning is a type of machine learning..."
+      }
+    ]
+  }'
+```
+
+### Get Item from Conversation
+
+**Endpoint**: `GET /v1/conversations/{conversation_id}/items/{item_id}`
+
+Retrieves a specific item from a conversation.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+- `item_id` (string, required): The item ID
+
+**Response:**
+```json
+{
+  "id": "item_001",
+  "conversation_id": "conv_123",
+  "role": "user",
+  "content": "Hello, can you help me with machine learning?",
+  "created_at": "2024-01-01T12:00:00Z",
+  "metadata": {
+    "tokens": 12
+  }
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/v1/conversations/conv_123/items/item_001
+```
+
+### Delete Item from Conversation
+
+**Endpoint**: `DELETE /v1/conversations/{conversation_id}/items/{item_id}`
+
+Removes a specific item from a conversation.
+
+**Path Parameters:**
+- `conversation_id` (string, required): The conversation ID
+- `item_id` (string, required): The item ID
+
+**Response:**
+```
+204 No Content
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/v1/conversations/conv_123/items/item_001 \
+  -H "Authorization: Bearer <token>"
+```
+
+## Data Models
+
+### Conversation Object
+
+```json
+{
+  "id": "string",
+  "title": "string",
+  "model": "string",
+  "created_at": "datetime",
+  "updated_at": "datetime",
+  "item_count": "integer",
+  "user_id": "string",
+  "metadata": "object"
+}
+```
+
+### Item Object
+
+```json
+{
+  "id": "string",
+  "conversation_id": "string",
+  "role": "user|assistant|system",
+  "content": "string",
+  "created_at": "datetime",
+  "metadata": "object"
+}
+```
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Conversation or item not found |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Conversation not found",
+    "type": "not_found_error",
+    "code": "conversation_not_found"
+  }
+}
+```
+
+## Best Practices
+
+### Conversation Management
+
+1. **Use Descriptive Titles**: Create meaningful conversation titles for easy identification
+2. **Organize with Metadata**: Use metadata to categorize and tag conversations
+3. **Regular Cleanup**: Delete old conversations to manage storage
+4. **Batch Operations**: Use bulk operations when adding multiple items
+
+### Performance Optimization
+
+1. **Pagination**: Use limit and offset for large conversation lists
+2. **Selective Loading**: Load only necessary conversation data
+3. **Caching**: Cache frequently accessed conversations
+4. **Indexing**: Use metadata for efficient conversation filtering
+
+## Rate Limiting
+
+Conversation endpoints have the following rate limits:
+- **List/Get operations**: 100 requests per minute
+- **Create/Update operations**: 50 requests per minute
+- **Delete operations**: 20 requests per minute
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1609459200
+```

@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "MCP Server löschen",
     "description": "Bist Du sicher, dass Du den MCP Server {{serverName}} löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
-    "delete": ""
+    "delete": "Löschen",
+    "success": "MCP Server {{serverName}} erfolgreich gelöscht"
   },
   "editJson": {
     "title": "JSON für den MCP Server bearbeiten: {{serverName}}",

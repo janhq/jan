@@ -74,7 +74,10 @@ async function fetchRemoteSupportedBackends(
 
       if (!name.startsWith(prefix)) continue
 
-      const backend = name.replace(prefix, '').replace('.tar.gz', '')
+      const backend = name
+        .replace(prefix, '')
+        .replace('.tar.gz', '')
+        .replace('.zip', '')
 
       if (supportedBackends.includes(backend)) {
         remote.push({ version, backend })

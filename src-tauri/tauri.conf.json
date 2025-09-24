@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cross-env IS_TAURI=true yarn workspace @janhq/web-app dev",
+    "beforeDevCommand": "cross-env IS_TAURI=true IS_DEV=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {

@@ -375,14 +375,14 @@ function ProviderDetail() {
 
     setIsInstallingBackend(true)
     try {
-      // Open file dialog with filter for .tar.gz files
+      // Open file dialog with filter for .tar.gz and .zip files
       const selectedFile = await serviceHub.dialog().open({
         multiple: false,
         directory: false,
         filters: [
           {
             name: 'Backend Archives',
-            extensions: ['tar.gz'],
+            extensions: ['tar.gz', 'zip'],
           },
         ],
       })

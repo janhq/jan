@@ -1,0 +1,378 @@
+---
+title: API Reference
+description: Complete API documentation for Jan Server endpoints and OpenAI compatibility.
+---
+
+## Base URL
+
+All API endpoints are available at the API gateway base URL:
+
+```
+http://localhost:8080/api/v1
+```
+
+The API gateway automatically forwards port 8080 when using the standard deployment scripts.
+
+## Authentication
+
+Jan Server supports multiple authentication methods:
+
+### JWT Token Authentication
+
+Include JWT token in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <jwt_token>" \
+     http://localhost:8080/api/v1/protected-endpoint
+```
+
+### API Key Authentication
+
+Include API key in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <api_key>" \
+     http://localhost:8080/api/v1/protected-endpoint
+```
+
+## OpenAI-Compatible Endpoints
+
+Jan Server implements OpenAI-compatible endpoints for seamless integration with existing tools.
+
+### Chat Completions
+
+**Endpoint**: `POST /api/v1/chat/completions`
+
+Standard OpenAI chat completions API for conversational AI.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7
+  }'
+```
+
+**Parameters:**
+- `model` (string): Model identifier (`jan-v1-4b`)
+- `messages` (array): Conversation history
+- `max_tokens` (integer): Maximum response tokens
+- `temperature` (float): Response randomness (0.0 to 2.0)
+- `stream` (boolean): Enable streaming responses
+
+### Model Information
+
+**Endpoint**: `GET /api/v1/models`
+
+List available models:
+
+```bash
+curl http://localhost:8080/api/v1/models
+```
+
+**Response:**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "jan-v1-4b",
+      "object": "model",
+      "created": 1234567890,
+      "owned_by": "jan"
+    }
+  ]
+}
+```
+
+### Completions (Text Generation)
+
+**Endpoint**: `POST /api/v1/completions`
+
+Text completion endpoint:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "model": "jan-v1-4b",
+    "prompt": "The meaning of life is",
+    "max_tokens": 50
+  }'
+```
+
+## Authentication Endpoints
+
+### OAuth2 Google Login
+
+**Endpoint**: `GET /auth/google`
+
+Redirects to Google OAuth2 authorization:
+
+```bash
+curl http://localhost:8080/auth/google
+```
+
+### OAuth2 Callback
+
+**Endpoint**: `GET /auth/google/callback`
+
+Handles OAuth2 callback and issues JWT token:
+
+```
+http://localhost:8080/auth/google/callback?code=<auth_code>&state=<state>
+```
+
+### Token Refresh
+
+**Endpoint**: `POST /api/v1/auth/refresh`
+
+Refresh expired JWT tokens:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Authorization: Bearer <expired_token>"
+```
+
+## User Management
+
+### User Profile
+
+**Endpoint**: `GET /api/v1/user/profile`
+
+Get current user profile:
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/api/v1/user/profile
+```
+
+### API Keys
+
+**Endpoint**: `POST /api/v1/user/api-keys`
+
+Generate new API key:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/user/api-keys \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Development Key",
+    "permissions": ["read", "write"]
+  }'
+```
+
+## Conversation Management
+
+### Create Conversation
+
+**Endpoint**: `POST /api/v1/conversations`
+
+Create new conversation:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/conversations \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "My Conversation",
+    "model": "jan-v1-4b"
+  }'
+```
+
+### List Conversations
+
+**Endpoint**: `GET /api/v1/conversations`
+
+Get user's conversations:
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/api/v1/conversations
+```
+
+### Get Conversation
+
+**Endpoint**: `GET /api/v1/conversations/{id}`
+
+Get specific conversation with message history:
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/api/v1/conversations/123
+```
+
+## Health and Status
+
+### Health Check
+
+**Endpoint**: `GET /health`
+
+Basic health check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-01-01T12:00:00Z"
+}
+```
+
+### System Status
+
+**Endpoint**: `GET /api/v1/status`
+
+Detailed system status:
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8080/api/v1/status
+```
+
+**Response:**
+```json
+{
+  "api_gateway": "healthy",
+  "inference_model": "healthy", 
+  "database": "healthy",
+  "external_apis": {
+    "serper": "healthy"
+  }
+}
+```
+
+## Error Responses
+
+Jan Server returns standard HTTP status codes and JSON error responses:
+
+```json
+{
+  "error": {
+    "message": "Invalid request format",
+    "type": "invalid_request_error",
+    "code": "invalid_json"
+  }
+}
+```
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource not found |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+| `503` | Service Unavailable - Service temporarily unavailable |
+
+## Interactive Documentation
+
+Jan Server provides interactive Swagger documentation at:
+
+```
+http://localhost:8080/api/swagger/index.html#/
+```
+
+This interface allows you to:
+- Browse all available endpoints
+- Test API calls directly from the browser
+- View request/response schemas
+- Generate code samples
+
+The Swagger documentation is auto-generated from Go code annotations and provides the most up-to-date API reference.
+
+## Rate Limiting
+
+API endpoints implement rate limiting to prevent abuse:
+
+- **Authenticated requests**: 1000 requests per hour per user
+- **Unauthenticated requests**: 100 requests per hour per IP
+- **Model inference**: 60 requests per minute per user
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 999
+X-RateLimit-Reset: 1609459200
+```
+
+## SDK and Client Libraries
+
+### JavaScript/Node.js
+
+Use the OpenAI JavaScript SDK with Jan Server:
+
+```javascript
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: 'http://localhost:8080/api/v1',
+  apiKey: 'your-jwt-token'
+});
+
+const completion = await openai.chat.completions.create({
+  model: 'jan-v1-4b',
+  messages: [
+    { role: 'user', content: 'Hello!' }
+  ]
+});
+```
+
+### Python
+
+Use the OpenAI Python SDK:
+
+```python
+import openai
+
+openai.api_base = "http://localhost:8080/api/v1"
+openai.api_key = "your-jwt-token"
+
+response = openai.ChatCompletion.create(
+  model="jan-v1-4b",
+  messages=[
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+```
+
+### cURL Examples
+
+Complete cURL examples for common operations:
+
+```bash
+# Get models
+curl http://localhost:8080/api/v1/models
+
+# Chat completion
+curl -X POST http://localhost:8080/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jan-v1-4b", 
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+
+# Streaming chat completion
+curl -X POST http://localhost:8080/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jan-v1-4b",
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "stream": true
+  }' \
+  --no-buffer
+```

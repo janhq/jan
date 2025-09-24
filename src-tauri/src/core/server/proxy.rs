@@ -749,9 +749,14 @@ pub async fn start_server(
         }
     });
 
-    let server = Server::bind(&addr).serve(make_svc);
-    let actual_addr = server.local_addr();
-    log::info!("Jan API server started on http://{}", actual_addr);
+    let server = match Server::try_bind(&addr) {
+        Ok(builder) => builder.serve(make_svc),
+        Err(e) => {
+            log::error!("Failed to bind to {}: {}", addr, e);
+            return Err(Box::new(e));
+        }
+    };
+    log::info!("Jan API server started on http://{}", addr);
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
