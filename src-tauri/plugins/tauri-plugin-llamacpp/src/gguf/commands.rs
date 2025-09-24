@@ -92,13 +92,11 @@ pub async fn is_model_supported<R: Runtime>(
     const USABLE_MEMORY_PERCENTAGE: f64 = 0.9;
 
     // Calculate total VRAM from all GPUs
-    let total_vram_mb: u64 = system_info
+    let total_vram: u64 = system_info
         .gpus
         .iter()
-        .map(|gpu| gpu.total_memory) // Adjust field name as needed
+        .map(|gpu| gpu.total_memory * 1024 * 1024) // Adjust field name as needed
         .sum();
-
-    let total_vram = total_vram_mb * 1024 * 1024;
 
     let total_system_memory = system_info.total_memory * 1024 * 1024;
 
@@ -106,11 +104,11 @@ pub async fn is_model_supported<R: Runtime>(
         + total_vram as f64 * USABLE_MEMORY_PERCENTAGE) as u64;
     let usable_vram = (total_vram as f64 * USABLE_MEMORY_PERCENTAGE) as u64;
 
-    log::info!("System RAM: {} bytes", system_info.total_memory);
-    log::info!("Total VRAM: {} bytes", total_vram,);
-    log::info!("Usable total memory: {} bytes", usable_total_memory);
-    log::info!("Usable VRAM: {} bytes", usable_vram);
-    log::info!("Required: {} bytes", total_required);
+    log::info!("System RAM: {} bytes", &total_system_memory);
+    log::info!("Total VRAM: {} bytes", &total_vram);
+    log::info!("Usable total memory: {} bytes", &usable_total_memory);
+    log::info!("Usable VRAM: {} bytes", &usable_vram);
+    log::info!("Required: {} bytes", &total_required);
 
     // Check if model fits in total memory at all (this is the hard limit)
     if total_required > usable_total_memory {
