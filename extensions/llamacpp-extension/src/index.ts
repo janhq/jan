@@ -922,6 +922,30 @@ export default class llamacpp_extension extends AIEngine {
     return hash
   }
 
+  override async get(modelId: string): Promise<modelInfo | undefined> {
+    const modelPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const path = await joinPath([modelPath, 'model.yml'])
+
+    if (!(await fs.existsSync(path))) return undefined
+
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path,
+    })
+
+    return {
+      id: modelId,
+      name: modelConfig.name ?? modelId,
+      quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
+      providerId: this.provider,
+      port: 0, // port is not known until the model is loaded
+      sizeBytes: modelConfig.size_bytes ?? 0,
+    } as modelInfo
+  }
+
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
@@ -1085,7 +1109,10 @@ export default class llamacpp_extension extends AIEngine {
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
-    if (!(await fs.existsSync(path)) || (!path.endsWith('tar.gz') && !path.endsWith('zip'))) {
+    if (
+      !(await fs.existsSync(path)) ||
+      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
+    ) {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }
@@ -2601,7 +2628,8 @@ export default class llamacpp_extension extends AIEngine {
     metadata: Record<string, string>
   ): Promise<number> {
     // Extract vision parameters from metadata
-    const projectionDim = Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
+    const projectionDim =
+      Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
 
     // Count images in messages
     let imageCount = 0

@@ -241,6 +241,12 @@ export abstract class AIEngine extends BaseExtension {
   }
 
   /**
+   * Gets model info
+   * @param modelId
+   */
+  abstract get(modelId: string): Promise<modelInfo | undefined>
+
+  /**
    * Lists available models
    */
   abstract list(): Promise<modelInfo[]>

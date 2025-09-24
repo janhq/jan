@@ -89,6 +89,7 @@ const CodeComponent = memo(
     onCopy,
     copiedId,
     ...props
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }: any) => {
     const { t } = useTranslation()
     const match = /language-(\w+)/.exec(className || '')
