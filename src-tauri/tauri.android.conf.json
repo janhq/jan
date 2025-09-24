@@ -7,5 +7,9 @@
     "security": {
       "capabilities": ["default"]
     }
+  },
+  "bundle": {
+    "resources": ["resources/LICENSE", "resources/pre-install"],
+    "externalBin": []
   }
 }

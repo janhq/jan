@@ -12,6 +12,8 @@
     "active": true,
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
-    }
+    },
+    "resources": ["resources/LICENSE", "resources/pre-install"],
+    "externalBin": []
   }
 }
