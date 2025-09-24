@@ -6,9 +6,9 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { extractModelName } from '@/lib/models'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 type ModelProps = {
@@ -32,7 +32,6 @@ export function DownloadButtonPlaceholder({
   const { t } = useTranslation()
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const llamaProvider = getProviderByName('llamacpp')
-  const [modelId, setModelId] = useState<string | ''>('')
 
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -44,20 +43,7 @@ export function DownloadButtonPlaceholder({
       )
     ) ?? model.quants[0]
 
-  useEffect(() => {
-    const baseModelId = quant?.model_id || model.model_name
-    serviceHub
-      .models()
-      .getModel(baseModelId)
-      .then((config) => {
-        if (config) {
-          // Model exists - add repo prefix
-          setModelId(`${model.developer}/${baseModelId}`)
-        } else {
-          setModelId(baseModelId)
-        }
-      })
-  }, [serviceHub, quant, setModelId, model])
+  const modelId = quant?.model_id || model.model_name
 
   const downloadProcesses = useMemo(
     () =>
@@ -99,7 +85,9 @@ export function DownloadButtonPlaceholder({
   const downloadProgress =
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
   const isDownloaded = llamaProvider?.models.some(
-    (m: { id: string }) => m.id === modelId
+    (m: { id: string }) =>
+      m.id === modelId ||
+      m.id === `${model.developer}/${sanitizeModelId(modelId)}`
   )
   const isRecommended = isRecommendedModel(model.model_name)
 
