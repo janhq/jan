@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io;
@@ -51,4 +51,43 @@ pub struct GgufMetadata {
     pub version: u32,
     pub tensor_count: u64,
     pub metadata: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KVCacheEstimate {
+    pub size: u64,
+    pub per_token_size: u64,
+}
+#[derive(Debug, thiserror::Error)]
+pub enum KVCacheError {
+    #[error("Invalid metadata: architecture not found")]
+    ArchitectureNotFound,
+    #[error("Invalid metadata: block_count not found or invalid")]
+    BlockCountInvalid,
+    #[error("Invalid metadata: head_count not found or invalid")]
+    HeadCountInvalid,
+    #[error("Invalid metadata: embedding_length not found or invalid")]
+    EmbeddingLengthInvalid,
+    #[error("Invalid metadata: context_length not found or invalid")]
+    ContextLengthInvalid,
+}
+
+impl serde::Serialize for KVCacheError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub enum ModelSupportStatus {
+    #[serde(rename = "RED")]
+    Red,
+    #[serde(rename = "YELLOW")]
+    Yellow,
+    #[serde(rename = "GREEN")]
+    Green,
 }

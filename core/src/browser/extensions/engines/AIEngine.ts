@@ -290,11 +290,6 @@ export abstract class AIEngine extends BaseExtension {
   abstract getLoadedModels(): Promise<string[]>
 
   /**
-   * Optional method to get the underlying chat client
-   */
-  getChatClient?(sessionId: string): any
-
-  /**
    * Check if a tool is supported by the model
    * @param modelId
    */

@@ -18,5 +18,8 @@ permissions = [
 
     # GGUF commands
     "allow-read-gguf-metadata",
-    "allow-estimate-kv-cache-size"
+    "allow-estimate-kv-cache-size",
+    "allow-get-model-size",
+    "allow-is-model-supported",
+    "allow-plan-model-load"
 ]

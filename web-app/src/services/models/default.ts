@@ -533,19 +533,21 @@ export class DefaultModelsService implements ModelsService {
       // Fallback if method is not available
       console.warn('planModelLoad method not available in llamacpp engine')
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     } catch (error) {
       console.error(`Error planning model load for path ${modelPath}:`, error)
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     }

@@ -102,6 +102,41 @@ export async function estimateKVCacheSize(
 ): Promise<{ size: number; per_token_size: number }> {
   return await invoke('plugin:llamacpp|estimate_kv_cache_size', {
     meta,
-    ctxSize
+    ctxSize,
+  })
+}
+
+export async function getModelSize(path: string): Promise<number> {
+  return await invoke('plugin:llamacpp|get_model_size', { path })
+}
+
+export async function isModelSupported(
+  path: string,
+  ctxSize?: number
+): Promise<'RED' | 'YELLOW' | 'GREEN'> {
+  return await invoke('plugin:llamacpp|is_model_supported', {
+    path,
+    ctxSize,
+  })
+}
+
+export async function planModelLoadInternal(
+  path: string,
+  memoryMode: string,
+  mmprojPath?: string,
+  requestedContext?: number
+): Promise<{
+  gpuLayers: number
+  maxContextLength: number
+  noOffloadKVCache: boolean
+  offloadMmproj?: boolean
+  batchSize: number
+  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
+}> {
+  return await invoke('plugin:llamacpp|plan_model_load', {
+    path,
+    memoryMode,
+    mmprojPath,
+    requestedContext,
   })
 }

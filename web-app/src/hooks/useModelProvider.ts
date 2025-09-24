@@ -283,6 +283,14 @@ export const useModelProvider = create<ModelProviderState>()(
                     },
                   }
                 }
+                if (!model.settings.batch_size) {
+                  model.settings.batch_size = {
+                    ...modelSettings.batch_size,
+                    controller_props: {
+                      ...modelSettings.batch_size.controller_props,
+                    },
+                  }
+                }
               })
             }
           })

@@ -34,6 +34,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // GGUF commands
             gguf::commands::read_gguf_metadata,
             gguf::commands::estimate_kv_cache_size,
+            gguf::commands::get_model_size,
+            gguf::commands::is_model_supported,
+            gguf::model_planner::plan_model_load
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state
