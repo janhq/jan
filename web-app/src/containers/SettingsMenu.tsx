@@ -152,14 +152,14 @@ const SettingsMenu = () => {
       </button>
       <div
         className={cn(
-          'h-full w-44 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5 bg-main-view',
+          'h-full w-55 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5 bg-main-view',
           'sm:flex',
           isMenuOpen
             ? 'flex fixed sm:hidden top-[calc(10px+env(safe-area-inset-top))] z-10 m-1 h-[calc(100%-8px)] border-r-0 border-l bg-main-view right-0 py-8 rounded-tr-lg rounded-br-lg'
             : 'hidden'
         )}
       >
-        <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
+        <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium overflow-y-auto scrollbar-thin scrollbar-thumb-main-view-fg/20 scrollbar-track-transparent">
           {menuSettings.map((menu) => {
             if (!menu.isEnabled) {
               return null
