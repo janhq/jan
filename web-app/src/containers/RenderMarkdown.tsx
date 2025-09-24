@@ -24,6 +24,18 @@ interface MarkdownProps {
   isWrapping?: boolean
 }
 
+interface CodeComponentProps {
+  className?: string
+  children?: React.ReactNode
+  isUser?: boolean
+  codeBlockStyle: string
+  showLineNumbers: boolean
+  isWrapping?: boolean
+  onCopy: (code: string, id: string) => void
+  copiedId: string | null
+  [key: string]: unknown
+}
+
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
 
@@ -88,8 +100,7 @@ const CodeComponent = memo(
     onCopy,
     copiedId,
     ...props
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  }: any) => {
+  }: CodeComponentProps) => {
     const { t } = useTranslation()
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
