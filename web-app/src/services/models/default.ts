@@ -30,6 +30,10 @@ export class DefaultModelsService implements ModelsService {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
 
+  async getModel(modelId: string): Promise<modelInfo | undefined> {
+    return this.getEngine()?.get(modelId)
+  }
+
   async fetchModels(): Promise<modelInfo[]> {
     return this.getEngine()?.list() ?? []
   }
