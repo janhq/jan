@@ -1,7 +1,13 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll", "resources/lib/vc_redist.x64.exe", "resources/LICENSE"],
+    "resources": [
+      "resources/pre-install/**/*", 
+      "resources/lib/vulkan-1.dll", 
+      "resources/lib/vc_redist.x64.exe",
+      "resources/lib/VulkanRT-X64-1.4.321.0-Installer.exe",
+      "resources/LICENSE"
+    ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "nsis": {

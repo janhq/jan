@@ -96,6 +96,23 @@ async function main() {
     }
   }
 
+  // Download Vulkan Runtime Installer
+    const vulkanRtFilename = 'VulkanRT-X64-1.4.321.0-Installer.exe'
+    const vulkanRtUrl = 'https://sdk.lunarg.com/sdk/download/1.4.321.0/windows/VulkanRT-X64-1.4.321.0-Installer.exe'
+
+    console.log(`Downloading Vulkan Runtime Installer...`)
+    const vulkanRtSavePath = path.join(tempDir, vulkanRtFilename)
+    if (!fs.existsSync(vulkanRtSavePath)) {
+      await download(vulkanRtUrl, vulkanRtSavePath)
+    }
+
+    // copy to tauri resources
+    try {
+      copySync(vulkanRtSavePath, libDir)
+    } catch (err) {
+      // Expect EEXIST error
+    }
+
   console.log('Downloads completed.')
 }
 

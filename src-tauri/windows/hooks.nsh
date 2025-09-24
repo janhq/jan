@@ -38,6 +38,36 @@
     DetailPrint "Visual C++ Redistributable already installed (version: $0)"
   ${EndIf}
 
+  ; ---- Install Vulkan Runtime if not present ----
+  ; Check if Vulkan Runtime is installed (registry key exists)
+  ReadRegStr $2 HKLM "SOFTWARE\Khronos\Vulkan\InstalledVersions" ""
+  ${If} $2 == ""
+    ReadRegStr $2 HKLM "SOFTWARE\WOW6432Node\Khronos\Vulkan\InstalledVersions" ""
+  ${EndIf}
+
+  ${If} $2 == ""
+    DetailPrint "Vulkan Runtime not found, installing from bundled file..."
+
+    ${If} ${FileExists} "$INSTDIR\resources\lib\VulkanRT-X64-1.4.321.0-Installer.exe"
+      DetailPrint "Installing Vulkan Runtime..."
+      CopyFiles "$INSTDIR\resources\lib\VulkanRT-X64-1.4.321.0-Installer.exe" "$TEMP\VulkanRT-X64-1.4.321.0-Installer.exe"
+      ExecWait '"$TEMP\VulkanRT-X64-1.4.321.0-Installer.exe" /quiet /norestart' $3
+
+      ${If} $3 == 0
+        DetailPrint "Vulkan Runtime installed successfully"
+      ${Else}
+        DetailPrint "Vulkan Runtime installation failed with exit code: $3"
+      ${EndIf}
+
+      Delete "$TEMP\VulkanRT-X64-1.4.321.0-Installer.exe"
+      Delete "$INSTDIR\resources\lib\VulkanRT-X64-1.4.321.0-Installer.exe"
+    ${Else}
+      DetailPrint "Vulkan Runtime installer not found at expected location: $INSTDIR\resources\lib\VulkanRT-X64-1.4.321.0-Installer.exe"
+    ${EndIf}
+  ${Else}
+    DetailPrint "Vulkan Runtime already installed"
+  ${EndIf}
+
   ; ---- Copy LICENSE to install root ----
   ${If} ${FileExists} "$INSTDIR\resources\LICENSE"
     CopyFiles /SILENT "$INSTDIR\resources\LICENSE" "$INSTDIR\LICENSE"
