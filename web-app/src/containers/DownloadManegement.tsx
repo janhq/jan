@@ -400,6 +400,7 @@ export function DownloadManagement() {
                           className="text-main-view-fg/70 cursor-pointer"
                           title="Cancel download"
                           onClick={() => {
+                            // TODO: Consolidate cancellation logic
                             if (download.id.startsWith('llamacpp')) {
                               const downloadManager =
                                 window.core.extensionManager.getByName(
