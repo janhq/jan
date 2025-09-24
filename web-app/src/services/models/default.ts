@@ -131,7 +131,7 @@ export class DefaultModelsService implements ModelsService {
       const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
       return {
-        model_id: sanitizeModelId(modelId),
+        model_id: `${repo.modelId}/${sanitizeModelId(modelId)}`,
         path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
         file_size: formatFileSize(file.size),
       }
