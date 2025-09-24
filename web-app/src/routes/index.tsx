@@ -57,35 +57,45 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col justify-center py-5">
+    <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>
-      <div className={cn(
-        "h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0",
-      )}>
-        <div className={cn(
-          "mx-auto",
-          // Full width on mobile, constrained on desktop
-          isMobile ? "w-full max-w-full" : "w-full md:w-4/6"
-        )}>
-          <div className={cn(
-            "text-center",
-            // Adjust spacing for mobile
-            isMobile ? "mb-6" : "mb-8"
-          )}>
-            <h1 className={cn(
-              "font-editorialnew text-main-view-fg",
-              // Responsive title size
-              isMobile ? "text-2xl sm:text-3xl" : "text-4xl"
-            )}>
+      <div
+        className={cn(
+          'h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
+        )}
+      >
+        <div
+          className={cn(
+            'mx-auto',
+            // Full width on mobile, constrained on desktop
+            isMobile ? 'w-full max-w-full' : 'w-full md:w-4/6'
+          )}
+        >
+          <div
+            className={cn(
+              'text-center',
+              // Adjust spacing for mobile
+              isMobile ? 'mb-6' : 'mb-8'
+            )}
+          >
+            <h1
+              className={cn(
+                'font-editorialnew text-main-view-fg',
+                // Responsive title size
+                isMobile ? 'text-2xl sm:text-3xl' : 'text-4xl'
+              )}
+            >
               {t('chat:welcome')}
             </h1>
-            <p className={cn(
-              "text-main-view-fg/70 mt-2",
-              // Responsive description size
-              isMobile ? "text-base" : "text-lg"
-            )}>
+            <p
+              className={cn(
+                'text-main-view-fg/70 mt-2',
+                // Responsive description size
+                isMobile ? 'text-base' : 'text-lg'
+              )}
+            >
               {t('chat:description')}
             </p>
           </div>

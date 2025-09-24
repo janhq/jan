@@ -9,6 +9,7 @@
     }
   },
   "bundle": {
+    "active": true,
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     },

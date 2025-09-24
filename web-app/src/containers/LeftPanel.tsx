@@ -122,7 +122,7 @@ const LeftPanel = () => {
       ) {
         if (currentIsSmallScreen && open) {
           setLeftPanel(false)
-        } else if(!open) {
+        } else if (!open) {
           setLeftPanel(true)
         }
         prevScreenSizeRef.current = currentIsSmallScreen
@@ -141,7 +141,7 @@ const LeftPanel = () => {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [setLeftPanel])
+  }, [open, setLeftPanel])
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
@@ -184,7 +184,7 @@ const LeftPanel = () => {
   return (
     <>
       {/* Backdrop overlay for small screens */}
-      {isSmallScreen && open && (
+      {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
@@ -207,7 +207,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&
@@ -266,7 +266,8 @@ const LeftPanel = () => {
           <div
             className={cn(
               'flex flex-col',
-              Object.keys(downloads).length > 0 || localDownloadingModels.size > 0
+              Object.keys(downloads).length > 0 ||
+                localDownloadingModels.size > 0
                 ? 'h-[calc(100%-200px)]'
                 : 'h-[calc(100%-140px)]'
             )}
@@ -379,7 +380,9 @@ const LeftPanel = () => {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent side="bottom" align="end">
-                          <DeleteAllThreadsDialog onDeleteAll={deleteAllThreads} />
+                          <DeleteAllThreadsDialog
+                            onDeleteAll={deleteAllThreads}
+                          />
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
