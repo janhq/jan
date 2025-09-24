@@ -275,6 +275,10 @@ export abstract class AIEngine extends BaseExtension {
   abstract delete(modelId: string): Promise<void>
 
   /**
+   * Updates a model
+   */
+  abstract update(modelId: string, model: Partial<modelInfo>): Promise<void>
+  /**
    * Imports a model
    */
   abstract import(modelId: string, opts: ImportOptions): Promise<void>

@@ -21,6 +21,7 @@ import {
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 // No need to define our own interface, we'll use the existing Model type
 type DialogEditModelProps = {
@@ -36,6 +37,7 @@ export const DialogEditModel = ({
   const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
+  const serviceHub = useServiceHub()
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     completion: false,
     vision: false,
@@ -91,8 +93,10 @@ export const DialogEditModel = ({
 
   // Handle model name change
   const handleModelNameChange = (newName: string) => {
+    if (!selectedModel?.id) return
     console.log('Model name changed:', newName)
     setModelName(newName)
+    serviceHub.models().updateModel(selectedModel.id, { id: newName })
   }
 
   // Use effect to update the provider when capabilities are explicitly changed by user

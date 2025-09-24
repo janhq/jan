@@ -162,11 +162,16 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async updateModel(model: Partial<CoreModel>): Promise<void> {
+  async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
     if (model.settings)
       this.getEngine()?.updateSettings(
         model.settings as SettingComponentProps[]
       )
+    if (modelId !== model.id) {
+      await this.getEngine()
+        ?.update(modelId, model)
+        .then(() => console.log('Model updated successfully'))
+    }
   }
 
   async pullModel(

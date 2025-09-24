@@ -1148,6 +1148,21 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  async update(modelId: string, model: Partial<modelInfo>): Promise<void> {
+    const modelFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const newFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      model.id,
+    ])
+    await fs.copyFile(modelFolderPath, newFolderPath)
+    await fs.rm(modelFolderPath, { recursive: true })
+  }
+
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
     const isValidModelId = (id: string) => {
       // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
