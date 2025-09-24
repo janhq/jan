@@ -30,9 +30,9 @@ This guide shows you how to add, customize, and delete models within Jan.
 Local models are managed through [Llama.cpp](https://github.com/ggerganov/llama.cpp), and these models are in a
 format called GGUF. When you run them locally, they will use your computer's memory (RAM) and processing power, so
 please make sure that you download models that match the hardware specifications for your operating system:
-- [Mac](/docs/desktop/mac#compatibility)
-- [Windows](/docs/desktop/windows#compatibility)
-- [Linux](/docs/desktop/linux#compatibility).
+- [Mac](/docs/desktop/desktop/install/mac#compatibility)
+- [Windows](/docs/desktop/desktop/install/windows#compatibility)
+- [Linux](/docs/desktop/desktop/install/linux#compatibility).
 
 ### Adding Models
 
@@ -156,7 +156,7 @@ For advanced users who want to add a specific model that is not available within
 Key fields to configure:
 1. The **Settings** array is where you can set the path or location of your model in your computer, the context
 length allowed, and the chat template expected by your model.
-2. The [**Parameters**](/docs/model-parameters) are the adjustable settings that affect how your model operates or
+2. The [**Parameters**](/docs/desktop/desktop/model-parameters) are the adjustable settings that affect how your model operates or
 processes the data. The fields in the parameters array are typically general and can be used across different
 models. Here is an example of model parameters:
 
@@ -186,7 +186,7 @@ models. Here is an example of model parameters:
 
 <Callout type="info">
 When using cloud models, be aware of any associated costs and rate limits from the providers. See detailed guide for
-each cloud model provider [here](/docs/remote-models/anthropic).
+each cloud model provider [here](/docs/desktop/desktop/remote-models/anthropic).
 </Callout>
 
 Jan supports connecting to various AI cloud providers that are OpenAI API-compatible, including: OpenAI (GPT-4o, o3,...),
