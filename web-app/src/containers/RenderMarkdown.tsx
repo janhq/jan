@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -7,7 +6,14 @@ import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState, useMemo, useCallback } from 'react'
+import {
+  memo,
+  useState,
+  useMemo,
+  useCallback,
+  DetailedHTMLProps,
+  HTMLAttributes,
+} from 'react'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -23,6 +29,12 @@ interface MarkdownProps {
   enableRawHtml?: boolean
   isUser?: boolean
   isWrapping?: boolean
+}
+interface CodeBlockProps {
+  codeBlockStyle?: string
+  showLineNumbers?: boolean
+  copiedId?: string
+  onCopy: (code: string, codeId: string) => void
 }
 
 // Cache for normalized LaTeX content
@@ -89,7 +101,9 @@ const CodeComponent = memo(
     onCopy,
     copiedId,
     ...props
-  }: any) => {
+  }: DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> &
+    MarkdownProps &
+    CodeBlockProps) => {
     const { t } = useTranslation()
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
