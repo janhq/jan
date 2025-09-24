@@ -72,6 +72,9 @@ lint: install-and-build
 test: lint
 	yarn download:bin
 	yarn download:lib
+ifeq ($(OS),Windows_NT)
+	yarn download:windows-installer
+endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon

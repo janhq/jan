@@ -1,5 +1,5 @@
-console.log('Script is running')
-// scripts/download-lib.mjs
+console.log('Downloading Windows installer dependencies...')
+// scripts/download-win-installer-deps.mjs
 import https from 'https'
 import fs, { mkdirSync } from 'fs'
 import os from 'os'
@@ -39,21 +39,12 @@ function download(url, dest) {
 }
 
 async function main() {
-  console.log('Starting main function')
+  console.log('Starting Windows installer dependencies download')
   const platform = os.platform() // 'darwin', 'linux', 'win32'
   const arch = os.arch() // 'x64', 'arm64', etc.
 
   if (arch != 'x64') return
 
-  let filename
-  if (platform == 'linux')
-    filename = 'libvulkan.so'
-  else if (platform == 'win32')
-    filename = 'vulkan-1.dll'
-  else
-    return
-
-  const url = `https://catalog.jan.ai/${filename}`
 
   const libDir = 'src-tauri/resources/lib'
   const tempDir = 'scripts/dist'
@@ -64,20 +55,26 @@ async function main() {
     // Expect EEXIST error if the directory already exists
   }
 
-  console.log(`Downloading libvulkan...`)
-  const savePath = path.join(tempDir, filename)
-  if (!fs.existsSync(savePath)) {
-    await download(url, savePath)
+  // Download VC++ Redistributable 17
+  if (platform == 'win32') {
+    const vcFilename = 'vc_redist.x64.exe'
+    const vcUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+    
+    console.log(`Downloading VC++ Redistributable...`)
+    const vcSavePath = path.join(tempDir, vcFilename)
+    if (!fs.existsSync(vcSavePath)) {
+      await download(vcUrl, vcSavePath)
+    }
+
+    // copy to tauri resources
+    try {
+      copySync(vcSavePath, libDir)
+    } catch (err) {
+      // Expect EEXIST error
+    }
   }
 
-  // copy to tauri resources
-  try {
-    copySync(savePath, libDir)
-  } catch (err) {
-    // Expect EEXIST error
-  }
-
-  console.log('Downloads completed.')
+  console.log('Windows installer dependencies downloads completed.')
 }
 
 main().catch((err) => {
