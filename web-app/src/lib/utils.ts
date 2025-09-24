@@ -35,7 +35,7 @@ export function getModelDisplayName(model: Model): string {
 export function getProviderLogo(provider: string) {
   switch (provider) {
     case 'jan':
-      return '/images/model-provider/jan.png'
+      return '/images/model-provider/jan.svg'
     case 'llamacpp':
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
@@ -56,6 +56,32 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
+    case 'qwen':
+      return '/images/model-provider/qwen.svg'
+    case 'deepseek':
+      return '/images/model-provider/deepseek.svg'
+    case 'together':
+      return '/images/model-provider/together.svg'
+    case 'inflection':
+      return '/images/model-provider/inflection.svg'
+    case 'zhipu':
+      return '/images/model-provider/zhipu.svg'
+    case 'baidu':
+      return '/images/model-provider/baidu.svg'
+    case 'xai':
+      return '/images/model-provider/xai.svg'
+    case 'stability':
+      return '/images/model-provider/stability.svg'
+    case 'ai21':
+      return '/images/model-provider/ai21.svg'
+    case 'aleph-alpha':
+      return '/images/model-provider/aleph-alpha.svg'
+    case 'mosaicml':
+      return '/images/model-provider/mosaicml.svg'
+    case 'lighton':
+      return '/images/model-provider/lighton.svg'
+    case 'reka':
+      return '/images/model-provider/reka.svg'
     default:
       return undefined
   }
@@ -75,6 +101,32 @@ export const getProviderTitle = (provider: string) => {
       return 'Gemini'
     case 'huggingface':
       return 'Hugging Face'
+    case 'qwen':
+      return 'Alibaba Qwen'
+    case 'deepseek':
+      return 'DeepSeek'
+    case 'together':
+      return 'Together AI'
+    case 'inflection':
+      return 'Inflection AI'
+    case 'zhipu':
+      return 'Zhipu AI'
+    case 'baidu':
+      return 'Baidu'
+    case 'xai':
+      return 'xAI'
+    case 'stability':
+      return 'Stability AI'
+    case 'ai21':
+      return 'AI21 Labs'
+    case 'aleph-alpha':
+      return 'Aleph Alpha'
+    case 'mosaicml':
+      return 'MosaicML'
+    case 'lighton':
+      return 'LightOn'
+    case 'reka':
+      return 'Reka AI'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

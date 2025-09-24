@@ -375,4 +375,446 @@ export const predefinedProviders = [
       },
     ],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    explore_models_url: 'https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction',
+    provider: 'qwen',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Alibaba Qwen API uses API keys for authentication. Visit your [API Keys](https://dashscope.console.aliyun.com/apiKey) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Qwen documentation](https://help.aliyun.com/zh/dashscope/developer-reference/openai-compatible-api) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+          value: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.deepseek.com/v1',
+    explore_models_url: 'https://platform.deepseek.com/api-docs',
+    provider: 'deepseek',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [DeepSeek documentation](https://platform.deepseek.com/api-docs) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.deepseek.com/v1',
+          value: 'https://api.deepseek.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.together.xyz/v1',
+    explore_models_url: 'https://docs.together.ai/docs/inference-models',
+    provider: 'together',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Together AI API uses API keys for authentication. Visit your [API Keys](https://api.together.ai/settings/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Together AI documentation](https://docs.together.ai/docs/inference-models) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.together.xyz/v1',
+          value: 'https://api.together.xyz/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.inflection.ai/v1',
+    explore_models_url: 'https://inflection.ai/',
+    provider: 'inflection',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Inflection AI API uses API keys for authentication. Visit your [API Keys](https://inflection.ai/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Inflection AI documentation](https://inflection.ai/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.inflection.ai/v1',
+          value: 'https://api.inflection.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://open.bigmodel.cn/api/paas/v4/openai',
+    explore_models_url: 'https://open.bigmodel.cn/',
+    provider: 'zhipu',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Zhipu AI API uses API keys for authentication. Visit your [API Keys](https://open.bigmodel.cn/usercenter/apikeys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Zhipu AI documentation](https://open.bigmodel.cn/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://open.bigmodel.cn/api/paas/v4/openai',
+          value: 'https://open.bigmodel.cn/api/paas/v4/openai',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+    explore_models_url: 'https://cloud.baidu.com/product/wenxinworkshop',
+    provider: 'baidu',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Baidu API uses API keys for authentication. Visit your [API Keys](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Baidu documentation](https://cloud.baidu.com/doc/WENXINWORKSHOP/s/Ilkkrb0i5) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+          value: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.x.ai/v1',
+    explore_models_url: 'https://x.ai/',
+    provider: 'xai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The xAI API uses API keys for authentication. Visit your [API Keys](https://x.ai/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [xAI documentation](https://x.ai/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.x.ai/v1',
+          value: 'https://api.x.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.stability.ai/v1',
+    explore_models_url: 'https://platform.stability.ai/',
+    provider: 'stability',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Stability AI API uses API keys for authentication. Visit your [API Keys](https://platform.stability.ai/account/keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Stability AI documentation](https://platform.stability.ai/docs) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.stability.ai/v1',
+          value: 'https://api.stability.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.ai21.com/studio/v1',
+    explore_models_url: 'https://docs.ai21.com/reference/j2-complete-api-ref',
+    provider: 'ai21',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The AI21 Labs API uses API keys for authentication. Visit your [API Keys](https://studio.ai21.com/account/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [AI21 Labs documentation](https://docs.ai21.com/reference/j2-complete-api-ref) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.ai21.com/studio/v1',
+          value: 'https://api.ai21.com/studio/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.aleph-alpha.com/v1',
+    explore_models_url: 'https://docs.aleph-alpha.com/',
+    provider: 'aleph-alpha',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Aleph Alpha API uses API keys for authentication. Visit your [API Keys](https://app.aleph-alpha.com/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Aleph Alpha documentation](https://docs.aleph-alpha.com/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.aleph-alpha.com/v1',
+          value: 'https://api.aleph-alpha.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.mosaicml.com/v1',
+    explore_models_url: 'https://docs.mosaicml.com/en/latest/inference.html',
+    provider: 'mosaicml',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The MosaicML API uses API keys for authentication. Visit your [API Keys](https://cloud.mosaicml.com/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [MosaicML documentation](https://docs.mosaicml.com/en/latest/inference.html) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.mosaicml.com/v1',
+          value: 'https://api.mosaicml.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.lighton.ai/v1',
+    explore_models_url: 'https://lighton.ai/',
+    provider: 'lighton',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The LightOn API uses API keys for authentication. Visit your [API Keys](https://lighton.ai/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [LightOn documentation](https://lighton.ai/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.lighton.ai/v1',
+          value: 'https://api.lighton.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.reka.ai/v1',
+    explore_models_url: 'https://reka.ai/',
+    provider: 'reka',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Reka AI API uses API keys for authentication. Visit your [API Keys](https://reka.ai/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Reka AI documentation](https://reka.ai/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.reka.ai/v1',
+          value: 'https://api.reka.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]

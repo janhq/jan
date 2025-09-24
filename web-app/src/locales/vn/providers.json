@@ -70,5 +70,18 @@
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
-  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "qwen": "Alibaba Qwen",
+  "deepseek": "DeepSeek",
+  "together": "Together AI",
+  "inflection": "Inflection AI",
+  "zhipu": "Zhipu AI",
+  "baidu": "Baidu",
+  "xai": "xAI",
+  "stability": "Stability AI",
+  "ai21": "AI21 Labs",
+  "aleph-alpha": "Aleph Alpha",
+  "mosaicml": "MosaicML",
+  "lighton": "LightOn",
+  "reka": "Reka AI"
 }

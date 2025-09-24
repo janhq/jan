@@ -70,5 +70,18 @@
   },
   "addProvider": "新增提供者",
   "addOpenAIProvider": "新增 OpenAI 提供者",
-  "enterNameForProvider": "輸入提供者名稱"
+  "enterNameForProvider": "輸入提供者名稱",
+  "qwen": "阿里巴巴通義千問",
+  "deepseek": "DeepSeek",
+  "together": "Together AI",
+  "inflection": "Inflection AI",
+  "zhipu": "智譜AI",
+  "baidu": "百度",
+  "xai": "xAI",
+  "stability": "Stability AI",
+  "ai21": "AI21 Labs",
+  "aleph-alpha": "Aleph Alpha",
+  "mosaicml": "MosaicML",
+  "lighton": "LightOn",
+  "reka": "Reka AI"
 }

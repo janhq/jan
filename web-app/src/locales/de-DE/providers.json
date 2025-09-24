@@ -70,5 +70,18 @@
   },
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Namen für den Anbieter eingeben"
+  "enterNameForProvider": "Namen für den Anbieter eingeben",
+  "qwen": "Alibaba Qwen",
+  "deepseek": "DeepSeek",
+  "together": "Together AI",
+  "inflection": "Inflection AI",
+  "zhipu": "Zhipu AI",
+  "baidu": "Baidu",
+  "xai": "xAI",
+  "stability": "Stability AI",
+  "ai21": "AI21 Labs",
+  "aleph-alpha": "Aleph Alpha",
+  "mosaicml": "MosaicML",
+  "lighton": "LightOn",
+  "reka": "Reka AI"
 }
