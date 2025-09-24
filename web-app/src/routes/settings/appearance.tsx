@@ -19,6 +19,7 @@ import { LineNumbersSwitcher } from '@/containers/LineNumbersSwitcher'
 import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
+import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -115,6 +116,11 @@ function Appareances() {
                 description={t('settings:appearance.chatWidthDesc')}
               />
               <ChatWidthSwitcher />
+              <CardItem
+                title={t('settings:appearance.tokenCounterCompact')}
+                description={t('settings:appearance.tokenCounterCompactDesc')}
+                actions={<TokenCounterCompactSwitcher />}
+              />
             </Card>
 
             {/* Codeblock */}

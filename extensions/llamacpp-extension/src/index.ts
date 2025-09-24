@@ -21,6 +21,7 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  chatCompletionRequestMessage,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -921,6 +922,30 @@ export default class llamacpp_extension extends AIEngine {
     return hash
   }
 
+  override async get(modelId: string): Promise<modelInfo | undefined> {
+    const modelPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const path = await joinPath([modelPath, 'model.yml'])
+
+    if (!(await fs.existsSync(path))) return undefined
+
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path,
+    })
+
+    return {
+      id: modelId,
+      name: modelConfig.name ?? modelId,
+      quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
+      providerId: this.provider,
+      port: 0, // port is not known until the model is loaded
+      sizeBytes: modelConfig.size_bytes ?? 0,
+    } as modelInfo
+  }
+
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
@@ -1080,11 +1105,14 @@ export default class llamacpp_extension extends AIEngine {
    */
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
-    const re = /^llama-(b\d+)-bin-(.+?)\.tar\.gz$/
+    const re = /^llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
-    if (!(await fs.existsSync(path)) || !path.endsWith('tar.gz')) {
+    if (
+      !(await fs.existsSync(path)) ||
+      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
+    ) {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }
@@ -1802,6 +1830,13 @@ export default class llamacpp_extension extends AIEngine {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
+    // always enable prompt progress return if stream is true
+    // Requires llamacpp version > b6399
+    // Example json returned from server
+    // {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1758113912,"id":"chatcmpl-UwZwgxQKyJMo7WzMzXlsi90YTUK2BJro","model":"qwen","system_fingerprint":"b1-e4912fc","object":"chat.completion.chunk","prompt_progress":{"total":36,"cache":0,"processed":36,"time_ms":5706760300}}
+    // (chunk.prompt_progress?.processed / chunk.prompt_progress?.total) * 100
+    // chunk.prompt_progress?.cache is for past tokens already in kv cache
+    opts.return_progress = true
 
     const body = JSON.stringify(opts)
     if (opts.stream) {
@@ -2289,7 +2324,9 @@ export default class llamacpp_extension extends AIEngine {
       : Math.floor(maxContextLength)
 
     const mmprojInfo = mmprojPath
-      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(2)}MB, offloadMmproj=${offloadMmproj}`
+      ? `, mmprojSize=${(mmprojSize / (1024 * 1024)).toFixed(
+          2
+        )}MB, offloadMmproj=${offloadMmproj}`
       : ''
 
     logger.info(
@@ -2482,8 +2519,152 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to read model metadata: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
       }
     }
+  }
+
+  async getTokensCount(opts: chatCompletionRequest): Promise<number> {
+    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+
+    // Check if the process is alive
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
+      }
+    } else {
+      throw new Error('Model has crashed! Please reload!')
+    }
+
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
+    }
+
+    // Count image tokens first
+    let imageTokens = 0
+    const hasImages = opts.messages.some(
+      (msg) =>
+        Array.isArray(msg.content) &&
+        msg.content.some((content) => content.type === 'image_url')
+    )
+
+    if (hasImages) {
+      logger.info('Conversation has images')
+      try {
+        // Read mmproj metadata to get vision parameters
+        logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
+
+        const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
+        logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
+        imageTokens = await this.calculateImageTokens(
+          opts.messages,
+          metadata.metadata
+        )
+      } catch (error) {
+        logger.warn('Failed to calculate image tokens:', error)
+        // Fallback to a rough estimate if metadata reading fails
+        imageTokens = this.estimateImageTokensFallback(opts.messages)
+      }
+    }
+
+    // Calculate text tokens
+    const messages = JSON.stringify({ messages: opts.messages })
+
+    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+      method: 'POST',
+      headers: headers,
+      body: messages,
+    })
+
+    if (!parseResponse.ok) {
+      const errorData = await parseResponse.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${
+          parseResponse.status
+        }: ${JSON.stringify(errorData)}`
+      )
+    }
+
+    const parsedPrompt = await parseResponse.json()
+
+    const response = await fetch(`${baseUrl}/tokenize`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        content: parsedPrompt.prompt,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
+      )
+    }
+
+    const dataTokens = await response.json()
+    const textTokens = dataTokens.tokens?.length || 0
+
+    return textTokens + imageTokens
+  }
+
+  private async calculateImageTokens(
+    messages: chatCompletionRequestMessage[],
+    metadata: Record<string, string>
+  ): Promise<number> {
+    // Extract vision parameters from metadata
+    const projectionDim =
+      Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
+
+    // Count images in messages
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'image_url'
+        ).length
+      }
+    }
+
+    logger.info(
+      `Calculated ${projectionDim} tokens per image, ${imageCount} images total`
+    )
+    return projectionDim * imageCount - imageCount // remove the lingering <__image__> placeholder token
+  }
+
+  private estimateImageTokensFallback(
+    messages: chatCompletionRequestMessage[]
+  ): number {
+    // Fallback estimation if metadata reading fails
+    const estimatedTokensPerImage = 256 // Gemma's siglip
+
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'image_url'
+        ).length
+      }
+    }
+
+    logger.warn(
+      `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
+    )
+    return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> placeholder token
   }
 }

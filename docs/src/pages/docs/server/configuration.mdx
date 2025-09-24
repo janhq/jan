@@ -1,0 +1,349 @@
+---
+title: Configuration
+description: Configure Jan Server environment variables, authentication, external integrations, and deployment settings.
+---
+
+## Configuration
+
+### Environment Variables
+
+The system is configured through environment variables defined in the Helm values file. Key configuration areas include:
+
+#### Jan API Gateway Configuration
+- **Database Connection**: PostgreSQL connection strings for read/write replicas
+- **Authentication**: JWT secrets and Google OAuth2 credentials
+- **API Keys**: Encryption secrets for API key management
+- **External Services**: Serper API key for web search functionality
+- **Model Integration**: Jan Inference Model service URL
+
+#### Security Configuration
+- **JWT_SECRET**: HMAC-SHA-256 secret for JWT token signing
+- **APIKEY_SECRET**: HMAC-SHA-256 secret for API key encryption
+- **Database Credentials**: PostgreSQL username, password, and database name
+
+#### External Service Integration
+- **SERPER_API_KEY**: API key for web search functionality
+- **Google OAuth2**: Client ID, secret, and redirect URL for authentication
+- **Model Service**: URL for Jan Inference Model service communication
+
+### Complete Environment Variables Reference
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_POSTGRESQL_WRITE_DSN` | Primary database connection | `postgres://jan_user:jan_password@localhost:5432/jan_api_gateway?sslmode=disable` |
+| `DB_POSTGRESQL_READ1_DSN` | Read replica database connection | Same as write DSN |
+| `JWT_SECRET` | JWT token signing secret | `your-super-secret-jwt-key-change-in-production` |
+| `APIKEY_SECRET` | API key encryption secret | `your-api-key-secret-change-in-production` |
+| `JAN_INFERENCE_MODEL_URL` | Jan inference service URL | `http://localhost:8000` |
+| `SERPER_API_KEY` | Serper API key for web search | `your-serper-api-key` |
+| `OAUTH2_GOOGLE_CLIENT_ID` | Google OAuth2 client ID | `your-google-client-id` |
+| `OAUTH2_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret | `your-google-client-secret` |
+| `OAUTH2_GOOGLE_REDIRECT_URL` | Google OAuth2 redirect URL | `http://localhost:8080/auth/google/callback` |
+| `ALLOWED_CORS_HOSTS` | Value of allowed CORS hosts, separated by commas, supporting prefix wildcards with '*'. | `http://localhost:8080,*jan.ai` |
+| `SMTP_HOST` | SMTP server host for email notifications | `smtp.gmail.com` |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_USERNAME` | SMTP username | `your-smtp-username` |
+| `SMTP_PASSWORD` | SMTP password | `your-smtp-password` |
+| `SMTP_SENDER_EMAIL` | Default sender email address | `noreply@yourdomain.com` |
+| `INVITE_REDIRECT_URL` | Redirect URL for invitation acceptance | `http://localhost:8080/invite/accept` |
+
+### Helm Configuration
+
+The system uses Helm charts for deployment configuration:
+
+- **Umbrella Chart**: Main deployment chart that orchestrates all services
+- **Service Charts**: Individual charts for each service (API Gateway, Inference Model)
+- **Values Files**: Configuration files for different environments
+
+### Updating Values
+
+Edit the configuration in `charts/umbrella-chart/values.yaml`:
+
+```yaml
+jan-api-gateway:
+  env:
+    - name: SERPER_API_KEY
+      value: your_serper_api_key
+    - name: OAUTH2_GOOGLE_CLIENT_ID  
+      value: your_google_client_id
+    - name: OAUTH2_GOOGLE_CLIENT_SECRET
+      value: your_google_client_secret
+    - name: JWT_SECRET
+      value: your-jwt-secret-key
+    - name: APIKEY_SECRET
+      value: your-api-key-secret
+    - name: SMTP_HOST
+      value: smtp.gmail.com
+    - name: SMTP_USERNAME
+      value: your-smtp-username
+    - name: SMTP_PASSWORD
+      value: your-smtp-password
+```
+
+### Applying Changes
+
+After modifying values, redeploy the application:
+
+```bash
+# Update Helm dependencies
+helm dependency update ./charts/umbrella-chart
+
+# Deploy to production
+helm install jan-server ./charts/umbrella-chart
+
+# Upgrade deployment
+helm upgrade jan-server ./charts/umbrella-chart
+
+# Uninstall
+helm uninstall jan-server
+```
+
+## Authentication Setup
+
+### JWT Tokens
+
+Generate a secure JWT signing key:
+
+```bash
+# Generate 256-bit key for HMAC-SHA256
+openssl rand -base64 32
+```
+
+Update the `JWT_SECRET` value in your Helm configuration.
+
+### API Keys  
+
+Generate a secure API key signing secret:
+
+```bash
+# Generate 256-bit key for HMAC-SHA256
+openssl rand -base64 32
+```
+
+Update the `APIKEY_SECRET` value in your Helm configuration.
+
+### Google OAuth2
+
+1. **Create Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com)
+   - Create a new project or select existing
+
+2. **Enable OAuth2**
+   - Navigate to "APIs & Services" > "Credentials"
+   - Create OAuth2 client ID credentials
+   - Set application type to "Web application"
+
+3. **Configure Redirect URI**
+   ```
+   http://localhost:8080/auth/google/callback
+   ```
+   
+4. **Update Configuration**
+   - Set `OAUTH2_GOOGLE_CLIENT_ID` to your client ID
+   - Set `OAUTH2_GOOGLE_CLIENT_SECRET` to your client secret  
+   - Set `OAUTH2_GOOGLE_REDIRECT_URL` to your callback URL
+
+## External Integrations
+
+### Serper API
+
+Jan Server integrates with Serper for web search capabilities.
+
+1. **Get API Key**
+   - Register at [serper.dev](https://serper.dev)
+   - Generate API key from dashboard
+
+2. **Configure**
+   - Set `SERPER_API_KEY` in Helm values
+   - Redeploy the application
+
+### Adding New Integrations
+
+To add new external API integrations:
+
+1. **Update Helm Values**
+   ```yaml
+   jan-api-gateway:
+     env:
+       - name: YOUR_API_KEY
+         value: your_api_key_value
+   ```
+
+2. **Update Go Configuration**
+   
+   Add to `config/environment_variables/env.go`:
+   ```go
+   YourAPIKey string `env:"YOUR_API_KEY"`
+   ```
+
+3. **Redeploy**
+   ```bash
+   helm upgrade jan-server ./charts/umbrella-chart
+   ```
+
+## Database Configuration
+
+### Connection Settings
+
+The default PostgreSQL configuration uses:
+- **Host**: `jan-server-postgresql` (Kubernetes service name)
+- **Database**: `jan`
+- **User**: `jan-user`
+- **Password**: `jan-password`
+- **Port**: `5432`
+- **SSL**: Disabled (development only)
+
+### Production Database
+
+For production deployments:
+
+1. **External Database**
+   - Use managed PostgreSQL service (AWS RDS, Google Cloud SQL)
+   - Update DSN variables with external connection details
+
+2. **SSL/TLS**
+   - Enable `sslmode=require` in connection strings
+   - Configure certificate validation
+
+3. **Connection Pooling**
+   - Consider using connection pooler (PgBouncer, pgpool-II)
+   - Configure appropriate pool sizes
+
+## Model Configuration
+
+The inference model service is configured via Docker CMD parameters:
+
+```dockerfile
+CMD ["--model", "/models/Jan-v1-4B", \
+     "--served-model-name", "jan-v1-4b", \
+     "--host", "0.0.0.0", \
+     "--port", "8101", \
+     "--max-num-batched-tokens", "1024", \
+     "--enable-auto-tool-choice", \
+     "--tool-call-parser", "hermes", \
+     "--reasoning-parser", "qwen3"]
+```
+
+### Model Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `--model` | `/models/Jan-v1-4B` | Path to model files |
+| `--served-model-name` | `jan-v1-4b` | API model identifier |
+| `--max-num-batched-tokens` | `1024` | Maximum tokens per batch |
+| `--tool-call-parser` | `hermes` | Tool calling format |
+| `--reasoning-parser` | `qwen3` | Reasoning output format |
+
+Model configuration changes require rebuilding the inference Docker image. This will be configurable via environment variables in future releases.
+
+## Resource Configuration
+
+### Kubernetes Resources
+
+Current deployments use default resource limits. For production:
+
+```yaml
+jan-api-gateway:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+jan-inference-model:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+```
+
+### Storage
+
+PostgreSQL uses default Kubernetes storage. For production:
+
+```yaml
+postgresql:
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: fast-ssd
+```
+
+## Monitoring & Observability
+
+### Health Monitoring
+- **Health Check Endpoints**: Available on all services
+- **Model Health Monitoring**: Automated health checks for inference models
+- **Database Health**: Connection monitoring and replica status
+
+### Performance Profiling
+- **pprof Endpoints**: Available on port 6060 for performance analysis
+- **Grafana Pyroscope**: Continuous profiling integration
+- **Request Tracing**: Unique request IDs for end-to-end tracing
+
+### Logging
+- **Structured Logging**: JSON-formatted logs across all services
+- **Request/Response Logging**: Complete request lifecycle tracking
+- **Error Tracking**: Unique error codes for debugging
+
+Configure logging levels via environment variables:
+
+```yaml
+jan-api-gateway:
+  env:
+    - name: LOG_LEVEL
+      value: info
+    - name: LOG_FORMAT
+      value: json
+```
+
+Available log levels: `debug`, `info`, `warn`, `error`
+Available formats: `text`, `json`
+
+## Security
+
+### Authentication & Authorization
+- **JWT Tokens**: Secure token-based authentication
+- **Google OAuth2**: Social authentication integration
+- **API Key Management**: Scoped API keys for different access levels
+- **Multi-tenant Security**: Organization and project-level access control
+
+### Data Protection
+- **Encrypted API Keys**: HMAC-SHA-256 encryption for sensitive data
+- **Secure Database Connections**: SSL-enabled database connections
+- **Environment Variable Security**: Secure handling of sensitive configuration
+
+## Deployment
+
+### Local Development
+```bash
+# Start local cluster
+minikube start
+eval $(minikube docker-env)
+
+# Deploy services
+./scripts/run.sh
+
+# Access services
+kubectl port-forward svc/jan-server-jan-api-gateway 8080:8080
+```
+
+### Production Deployment
+```bash
+# Update Helm dependencies
+helm dependency update ./charts/umbrella-chart
+
+# Deploy to production
+helm install jan-server ./charts/umbrella-chart
+
+# Upgrade deployment
+helm upgrade jan-server ./charts/umbrella-chart
+
+# Uninstall
+helm uninstall jan-server
+```

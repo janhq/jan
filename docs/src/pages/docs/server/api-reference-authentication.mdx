@@ -1,0 +1,208 @@
+---
+title: Authentication
+description: User authentication and authorization endpoints for Jan Server.
+---
+
+## Overview
+
+The Authentication API provides endpoints for user authentication, authorization, and session management. Jan Server supports multiple authentication methods including Google OAuth2, JWT tokens, and guest access.
+
+## Endpoints
+
+### Google OAuth2 Callback
+
+**Endpoint**: `POST /v1/auth/google/callback`
+
+Handles the callback from the Google OAuth2 provider to exchange the authorization code for a token, verify the user, and issue access and refresh tokens.
+
+**Request Body:**
+```json
+{
+  "code": "string",
+  "state": "string"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "string",
+  "refresh_token": "string",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/auth/google/callback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "4/0AX4XfWh...",
+    "state": "random_state_string"
+  }'
+```
+
+### Google OAuth2 Login
+
+**Endpoint**: `GET /v1/auth/google/login`
+
+Initiates Google OAuth2 authentication flow by redirecting to Google's authorization server.
+
+**Response:**
+```json
+{
+  "url": "https://accounts.google.com/oauth/authorize?..."
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/v1/auth/google/login
+```
+
+### Guest Login
+
+**Endpoint**: `POST /v1/auth/guest-login`
+
+Creates a guest session with limited access for users who don't want to authenticate with Google.
+
+**Response:**
+```json
+{
+  "access_token": "string",
+  "refresh_token": "string",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/auth/guest-login \
+  -H "Content-Type: application/json"
+```
+
+### Logout
+
+**Endpoint**: `GET /v1/auth/logout`
+
+Invalidates the current user session and refresh token.
+
+**Headers:**
+- `Authorization: Bearer <refresh_token>`
+
+**Response:**
+```
+200 OK
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <refresh_token>" \
+     http://localhost:8080/v1/auth/logout
+```
+
+### Get User Profile
+
+**Endpoint**: `GET /v1/auth/me`
+
+Retrieves the current user's profile information.
+
+**Headers:**
+- `Authorization: Bearer <access_token>`
+
+**Response:**
+```json
+{
+  "id": "string",
+  "email": "string",
+  "name": "string",
+  "picture": "string",
+  "is_guest": false,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <access_token>" \
+     http://localhost:8080/v1/auth/me
+```
+
+### Refresh Access Token
+
+**Endpoint**: `GET /v1/auth/refresh-token`
+
+Refreshes an expired access token using a valid refresh token.
+
+**Headers:**
+- `Authorization: Bearer <refresh_token>`
+
+**Response:**
+```json
+{
+  "access_token": "string",
+  "refresh_token": "string",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer <refresh_token>" \
+     http://localhost:8080/v1/auth/refresh-token
+```
+
+## Authentication Methods
+
+### JWT Token Authentication
+
+Include JWT token in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <jwt_token>" \
+     http://localhost:8080/v1/protected-endpoint
+```
+
+### API Key Authentication
+
+Include API key in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <api_key>" \
+     http://localhost:8080/v1/protected-endpoint
+```
+
+## Error Responses
+
+### Common Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| `400` | Bad Request - Invalid request format or parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `500` | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "message": "Invalid request format",
+    "type": "invalid_request_error",
+    "code": "invalid_json"
+  }
+}
+```
+
+## Security Considerations
+
+- **Token Expiration**: Access tokens expire after 1 hour by default
+- **Refresh Tokens**: Refresh tokens are used to obtain new access tokens
+- **Guest Access**: Guest sessions have limited permissions and shorter expiration times
+- **HTTPS**: Always use HTTPS in production environments
+- **Token Storage**: Store tokens securely and never expose them in client-side code

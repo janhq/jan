@@ -17,7 +17,8 @@
   "deleteServer": {
     "title": "删除 MCP 服务器",
     "description": "您确定要删除 MCP 服务器 {{serverName}} 吗？此操作无法撤销。",
-    "delete": "删除"
+    "delete": "删除",
+    "success": "MCP 服务器 {{serverName}} 删除成功"
   },
   "editJson": {
     "title": "编辑 MCP 服务器的 JSON：{{serverName}}",

@@ -24,6 +24,7 @@ export interface JanChatMessage {
 export interface JanChatCompletionRequest {
   model: string
   messages: JanChatMessage[]
+  conversation_id?: string
   temperature?: number
   max_tokens?: number
   top_p?: number
@@ -93,7 +94,7 @@ export class JanApiClient {
       janProviderStore.clearError()
 
       const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
-        `${JAN_API_BASE}/models`
+        `${JAN_API_BASE}/conv/models`
       )
 
       const models = response.data || []
@@ -115,12 +116,16 @@ export class JanApiClient {
       janProviderStore.clearError()
 
       return await this.authService.makeAuthenticatedRequest<JanChatCompletionResponse>(
-        `${JAN_API_BASE}/chat/completions`,
+        `${JAN_API_BASE}/conv/chat/completions`,
         {
           method: 'POST',
           body: JSON.stringify({
             ...request,
             stream: false,
+            store: true,
+            store_reasoning: true,
+            conversation: request.conversation_id,
+            conversation_id: undefined,
           }),
         }
       )
@@ -142,7 +147,7 @@ export class JanApiClient {
       
       const authHeader = await this.authService.getAuthHeader()
       
-      const response = await fetch(`${JAN_API_BASE}/chat/completions`, {
+      const response = await fetch(`${JAN_API_BASE}/conv/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -151,6 +156,10 @@ export class JanApiClient {
         body: JSON.stringify({
           ...request,
           stream: true,
+          store: true,
+          store_reasoning: true,
+          conversation: request.conversation_id,
+          conversation_id: undefined,
         }),
       })
 

@@ -72,7 +72,11 @@ export const ThreadContent = memo(
 
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      updateMessage?: (item: ThreadMessage, message: string, imageUrls?: string[]) => void
+      updateMessage?: (
+        item: ThreadMessage,
+        message: string,
+        imageUrls?: string[]
+      ) => void
     }
   ) => {
     const { t } = useTranslation()
@@ -281,7 +285,12 @@ export const ThreadContent = memo(
                   item.content?.find((c) => c.type === 'text')?.text?.value ||
                   ''
                 }
-                imageUrls={item.content?.filter((c) => c.type === 'image_url' && c.image_url?.url).map((c) => c.image_url!.url).filter((url): url is string => url !== undefined) || []}
+                imageUrls={
+                  item.content
+                    ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
+                    .map((c) => c.image_url!.url)
+                    .filter((url): url is string => url !== undefined) || []
+                }
                 onSave={(message, imageUrls) => {
                   if (item.updateMessage) {
                     item.updateMessage(item, message, imageUrls)
@@ -397,7 +406,9 @@ export const ThreadContent = memo(
                   </div>
 
                   <TokenSpeedIndicator
-                    streaming={Boolean(item.isLastMessage && isStreamingThisThread)}
+                    streaming={Boolean(
+                      item.isLastMessage && isStreamingThisThread
+                    )}
                     metadata={item.metadata}
                   />
                 </div>

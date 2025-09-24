@@ -20,6 +20,7 @@ import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
+import { PromptProgress } from '@/components/PromptProgress'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -62,6 +63,16 @@ function ThreadDetail() {
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
         if (fetchedMessages) {
+          // For web platform: preserve local messages if server fetch is empty but we have local messages
+          if (PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
+              fetchedMessages.length === 0 &&
+              messages &&
+              messages.length > 0) {
+            console.log('!!!Preserving local messages as server fetch is empty:', messages.length)
+            // Don't override local messages with empty server response
+            return
+          }
+
           // Update the messages in the store
           setMessages(threadId, fetchedMessages)
         }
@@ -170,6 +181,7 @@ function ThreadDetail() {
                   </div>
                 )
               })}
+            <PromptProgress />
             <StreamingContent
               threadId={threadId}
               data-test-id="thread-content-text"

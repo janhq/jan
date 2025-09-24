@@ -1,0 +1,151 @@
+---
+title: Installation
+description: Install and deploy Jan Server on Kubernetes using minikube and Helm.
+---
+
+## Prerequisites
+
+Jan Server requires the following tools installed on your system:
+
+- **Docker**: For building container images
+- **minikube**: Local Kubernetes cluster for development
+- **Helm**: Package manager for Kubernetes applications
+- **kubectl**: Kubernetes command-line tool (installed with minikube)
+
+Jan Server currently supports minikube for local development. Production Kubernetes deployments are planned for future releases.
+
+## Quick Start
+
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/menloresearch/jan-server
+   cd jan-server
+   ```
+
+2. **Start minikube**
+   ```bash
+   minikube start
+   ```
+
+3. **Configure Docker environment**
+   ```bash
+   eval $(minikube docker-env)
+   alias kubectl="minikube kubectl --"
+   ```
+
+4. **Deploy Jan Server**
+   ```bash
+   ./scripts/run.sh
+   ```
+
+5. **Access the API**
+   
+   The script automatically forwards port 8080. Access the Swagger UI at:
+   ```
+   http://localhost:8080/api/swagger/index.html#/
+   ```
+
+
+## Manual Installation
+
+### Build Docker Images
+
+Build both required Docker images:
+
+```bash
+# Build API Gateway
+docker build -t jan-api-gateway:latest ./apps/jan-api-gateway
+
+# Build Inference Model
+docker build -t jan-inference-model:latest ./apps/jan-inference-model
+```
+
+The inference model image downloads the Jan-v1-4B model from Hugging Face during build. This requires an internet connection and several GB of download.
+
+### Deploy with Helm
+
+Install the Helm chart:
+
+```bash
+# Update Helm dependencies
+helm dependency update ./charts/umbrella-chart
+
+# Install Jan Server
+helm install jan-server ./charts/umbrella-chart
+```
+
+### Port Forwarding
+
+Forward the API gateway port to access from your local machine:
+
+```bash
+kubectl port-forward svc/jan-server-jan-api-gateway 8080:8080
+```
+
+## Verify Installation
+
+Check that all pods are running:
+
+```bash
+kubectl get pods
+```
+
+Expected output:
+```
+NAME                                               READY   STATUS    RESTARTS
+jan-server-jan-api-gateway-xxx                     1/1     Running   0
+jan-server-jan-inference-model-xxx                 1/1     Running   0
+jan-server-postgresql-0                            1/1     Running   0
+```
+
+Test the API gateway:
+```bash
+curl http://localhost:8080/health
+```
+
+## Uninstalling
+
+To remove Jan Server:
+
+```bash
+helm uninstall jan-server
+```
+
+To stop minikube:
+
+```bash
+minikube stop
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Pods in `ImagePullBackOff` state**
+- Ensure Docker images were built in the minikube environment
+- Run `eval $(minikube docker-env)` before building images
+
+**Port forwarding connection refused**
+- Verify the service is running: `kubectl get svc`
+- Check pod status: `kubectl get pods`
+- Review logs: `kubectl logs deployment/jan-server-jan-api-gateway`
+
+**Inference model download fails**
+- Ensure internet connectivity during Docker build
+- The Jan-v1-4B model is approximately 2.4GB
+
+### Resource Requirements
+
+**Minimum System Requirements:**
+- 8GB RAM
+- 20GB free disk space
+- 4 CPU cores
+
+**Recommended System Requirements:**
+- 16GB RAM
+- 50GB free disk space  
+- 8 CPU cores
+- GPU support (for faster inference)
+
+The inference model requires significant memory. Ensure your minikube cluster has adequate resources allocated.

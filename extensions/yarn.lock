@@ -517,41 +517,41 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fcb200&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=63c6e9&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/603e79794614f861a9cf5693a4bbc480a62242309a6cb94a97c81e31518032c7462b2edad93a4380a18110f817ab15d85dc91a7924fd6e103a3462f6915ee368
+  checksum: 10c0/417ea9bd3e5b53264596d2ee816c3e24299f8b721f6ea951d078342555da457ebca4d5b1e116bf187ac77ec0a9e3341211d464f4ffdbd2a3915139523688d41d
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fcb200&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=63c6e9&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/603e79794614f861a9cf5693a4bbc480a62242309a6cb94a97c81e31518032c7462b2edad93a4380a18110f817ab15d85dc91a7924fd6e103a3462f6915ee368
+  checksum: 10c0/417ea9bd3e5b53264596d2ee816c3e24299f8b721f6ea951d078342555da457ebca4d5b1e116bf187ac77ec0a9e3341211d464f4ffdbd2a3915139523688d41d
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fcb200&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=63c6e9&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/603e79794614f861a9cf5693a4bbc480a62242309a6cb94a97c81e31518032c7462b2edad93a4380a18110f817ab15d85dc91a7924fd6e103a3462f6915ee368
+  checksum: 10c0/417ea9bd3e5b53264596d2ee816c3e24299f8b721f6ea951d078342555da457ebca4d5b1e116bf187ac77ec0a9e3341211d464f4ffdbd2a3915139523688d41d
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fcb200&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=63c6e9&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/603e79794614f861a9cf5693a4bbc480a62242309a6cb94a97c81e31518032c7462b2edad93a4380a18110f817ab15d85dc91a7924fd6e103a3462f6915ee368
+  checksum: 10c0/417ea9bd3e5b53264596d2ee816c3e24299f8b721f6ea951d078342555da457ebca4d5b1e116bf187ac77ec0a9e3341211d464f4ffdbd2a3915139523688d41d
   languageName: node
   linkType: hard
 

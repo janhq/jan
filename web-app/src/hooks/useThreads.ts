@@ -14,6 +14,7 @@ type ThreadState = {
   deleteThread: (threadId: string) => void
   renameThread: (threadId: string, newTitle: string) => void
   deleteAllThreads: () => void
+  clearAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
   createThread: (
@@ -155,6 +156,24 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       return {
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  clearAllThreads: () => {
+    set((state) => {
+      const allThreadIds = Object.keys(state.threads)
+
+      // Delete all threads from server
+      allThreadIds.forEach((threadId) => {
+        getServiceHub().threads().deleteThread(threadId)
+      })
+
+      return {
+        threads: {},
+        currentThreadId: undefined,
+        searchIndex: new Fzf<Thread[]>([], {
           selector: (item: Thread) => item.title,
         }),
       }
