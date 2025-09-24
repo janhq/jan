@@ -7,6 +7,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
@@ -34,6 +35,7 @@ export const DialogEditModel = ({
   const { t } = useTranslation()
   const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+  const [modelName, setModelName] = useState<string>('')
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     completion: false,
     vision: false,
@@ -58,7 +60,7 @@ export const DialogEditModel = ({
     (m: any) => m.id === selectedModelId
   )
 
-  // Initialize capabilities from selected model
+  // Initialize capabilities and model name from selected model
   useEffect(() => {
     if (selectedModel) {
       const modelCapabilities = selectedModel.capabilities || []
@@ -70,6 +72,7 @@ export const DialogEditModel = ({
         web_search: modelCapabilities.includes('web_search'),
         reasoning: modelCapabilities.includes('reasoning'),
       })
+      setModelName(selectedModel.name || selectedModel.id)
     }
   }, [selectedModel])
 
@@ -84,6 +87,12 @@ export const DialogEditModel = ({
     }))
     // Mark that capabilities were updated by user action
     setCapabilitiesUpdated(true)
+  }
+
+  // Handle model name change
+  const handleModelNameChange = (newName: string) => {
+    console.log('Model name changed:', newName)
+    setModelName(newName)
   }
 
   // Use effect to update the provider when capabilities are explicitly changed by user
@@ -147,6 +156,23 @@ export const DialogEditModel = ({
             {t('providers:editModel.description')}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Model Name Section */}
+        <div className="py-1">
+          <label
+            htmlFor="model-name"
+            className="text-sm font-medium mb-3 block"
+          >
+            Model Name
+          </label>
+          <Input
+            id="model-name"
+            value={modelName}
+            onChange={(e) => handleModelNameChange(e.target.value)}
+            placeholder="Enter model name"
+            className="w-full"
+          />
+        </div>
 
         {/* Warning Banner */}
         <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded-md p-3">
