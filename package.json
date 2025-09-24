@@ -24,7 +24,7 @@
     "serve:web-app": "yarn workspace @janhq/web-app serve:web",
     "build:serve:web-app": "yarn build:web-app && yarn serve:web-app",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
-    "dev:ios": "yarn tauri ios dev",
+    "dev:ios": "RUSTC_WRAPPER= yarn tauri ios dev",
     "dev:android": "yarn tauri android dev",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",

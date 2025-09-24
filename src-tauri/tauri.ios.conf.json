@@ -1,10 +1,15 @@
 {
+  "build": {
+    "devUrl": null,
+    "frontendDist": "../web-app/dist"
+  },
   "app": {
     "security": {
       "capabilities": ["default"]
     }
   },
   "bundle": {
+    "active": true,
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     }
