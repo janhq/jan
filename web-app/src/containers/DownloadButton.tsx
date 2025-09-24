@@ -94,7 +94,11 @@ export function DownloadButtonPlaceholder({
   const handleDownload = () => {
     // Immediately set local downloading state
     addLocalDownloadingModel(modelId)
-    const mmprojPath = model.mmproj_models?.[0]?.path
+    const mmprojPath = (
+      model.mmproj_models?.find(
+        (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+      ) || model.mmproj_models?.[0]
+    )?.path
     serviceHub
       .models()
       .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)

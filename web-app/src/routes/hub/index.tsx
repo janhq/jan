@@ -777,10 +777,19 @@ function HubContent() {
                                                     .pullModelWithMetadata(
                                                       variant.model_id,
                                                       variant.path,
-                                                      filteredModels[
-                                                        virtualItem.index
-                                                      ].mmproj_models?.[0]
-                                                        ?.path,
+
+                                                      (
+                                                        filteredModels[
+                                                          virtualItem.index
+                                                        ].mmproj_models?.find(
+                                                          (e) =>
+                                                            e.model_id.toLowerCase() ===
+                                                            'mmproj-f16'
+                                                        ) ||
+                                                        filteredModels[
+                                                          virtualItem.index
+                                                        ].mmproj_models?.[0]
+                                                      )?.path,
                                                       huggingfaceToken
                                                     )
                                                 }}
