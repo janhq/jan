@@ -53,7 +53,7 @@ on:
         value: ${{ jobs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       DEB_SIG: ${{ steps.packageinfo.outputs.DEB_SIG }}
       APPIMAGE_SIG: ${{ steps.packageinfo.outputs.APPIMAGE_SIG }}
