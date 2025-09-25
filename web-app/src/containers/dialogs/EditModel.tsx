@@ -36,7 +36,7 @@ export const DialogEditModel = ({
   modelId,
 }: DialogEditModelProps) => {
   const { t } = useTranslation()
-  const { updateProvider } = useModelProvider()
+  const { updateProvider, setProviders } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
   const [originalModelName, setOriginalModelName] = useState<string>('')
@@ -81,7 +81,7 @@ export const DialogEditModel = ({
         web_search: modelCapabilities.includes('web_search'),
         reasoning: modelCapabilities.includes('reasoning'),
       })
-      const modelNameValue = selectedModel.name || selectedModel.id
+      const modelNameValue = selectedModel.id
       setModelName(modelNameValue)
       setOriginalModelName(modelNameValue)
 
@@ -129,6 +129,7 @@ export const DialogEditModel = ({
           .models()
           .updateModel(selectedModel.id, { id: modelName })
         setOriginalModelName(modelName)
+        await serviceHub.providers().getProviders().then(setProviders)
       }
 
       // Update capabilities if changed
