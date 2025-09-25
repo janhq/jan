@@ -103,25 +103,25 @@ jobs:
 
           # Update tauri plugin versions
 
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/tauri-plugin-hardware/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
           
-          echo "---------./src-tauri/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/tauri-plugin-hardware/package.json
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/tauri-plugin-llamacpp/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
 
-          echo "---------./src-tauri/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/tauri-plugin-llamacpp/package.json
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
 
-          ctoml ./src-tauri/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/tauri-plugin-hardware/Cargo.toml
+          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
           
-          ctoml ./src-tauri/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/tauri-plugin-llamacpp/Cargo.toml
+          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/Cargo.toml---------"
