@@ -53,7 +53,7 @@ const mainMenus = [
     isEnabled: true,
   },
   {
-    title: 'Projects',
+    title: 'common:projects',
     icon: IconFolderPlus,
     route: route.project,
     isEnabled: true,
@@ -400,7 +400,7 @@ const LeftPanel = () => {
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                  Projects
+                  {t('common:projects.title')}
                 </span>
               </div>
               <div className="flex flex-col">
@@ -635,7 +635,9 @@ const LeftPanel = () => {
         open={deleteProjectConfirmOpen}
         onOpenChange={setDeleteProjectConfirmOpen}
         onConfirm={confirmProjectDelete}
-        projectName={deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined}
+        projectName={
+          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
+        }
       />
     </>
   )

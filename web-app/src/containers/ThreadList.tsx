@@ -140,12 +140,6 @@ const SortableItem = memo(
         style={style}
         {...attributes}
         {...listeners}
-        onClick={handleClick}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setOpenDropdown(true)
-        }}
         className={cn(
           'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list transition-all',
           variant === 'project'
@@ -154,12 +148,18 @@ const SortableItem = memo(
           isDragging ? 'cursor-move' : 'cursor-pointer',
           isActive && 'bg-left-panel-fg/10'
         )}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setOpenDropdown(true)
+        }}
       >
         <div
           className={cn(
-            'pr-2 truncate',
-            variant === 'project' ? 'py-2' : 'py-1'
+            'pr-2 truncate flex-1',
+            variant === 'project' ? 'py-2 cursor-pointer' : 'py-1'
           )}
+          onClick={variant === 'project' ? handleClick : undefined}
         >
           <span>{thread.title || t('common:newThread')}</span>
           {variant === 'project' && (
@@ -172,7 +172,10 @@ const SortableItem = memo(
             </>
           )}
         </div>
-        <div className="flex items-center">
+        <div
+          className="flex items-center"
+          onClick={variant !== 'project' ? handleClick : undefined}
+        >
           <DropdownMenu
             open={openDropdown}
             onOpenChange={(open) => setOpenDropdown(open)}
@@ -277,6 +280,7 @@ const SortableItem = memo(
                 thread={thread}
                 onDelete={deleteThread}
                 onDropdownClose={() => setOpenDropdown(false)}
+                variant={variant}
               />
             </DropdownMenuContent>
           </DropdownMenu>
