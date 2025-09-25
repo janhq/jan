@@ -88,22 +88,36 @@ pub async fn is_model_supported<R: Runtime>(
         kv_cache_size
     );
 
-    // Use 90% of total memory as the usable limit
-    const USABLE_MEMORY_PERCENTAGE: f64 = 0.9;
-
+    const RESERVE_BYTES: u64 = 2288490189;
     // Calculate total VRAM from all GPUs
-    let total_vram: u64 = system_info
-        .gpus
-        .iter()
-        .map(|gpu| gpu.total_memory * 1024 * 1024) // Adjust field name as needed
-        .sum();
+    let total_vram: u64 = if system_info.gpus.is_empty() {
+        // On macOS with unified memory, GPU info may be empty
+        // Use total RAM as VRAM since memory is shared
+        log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
+        system_info.total_memory
+    } else {
+        system_info
+            .gpus
+            .iter()
+            .map(|g| g.total_memory * 1024 * 1024)
+            .sum::<u64>()
+    };
+
+    log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
 
     let total_system_memory = system_info.total_memory * 1024 * 1024;
 
-    let usable_total_memory = (total_system_memory as f64 * USABLE_MEMORY_PERCENTAGE
-        + total_vram as f64 * USABLE_MEMORY_PERCENTAGE) as u64;
-    let usable_vram = (total_vram as f64 * USABLE_MEMORY_PERCENTAGE) as u64;
+    let usable_vram = if total_vram > RESERVE_BYTES {
+        total_vram - RESERVE_BYTES
+    } else {
+        0
+    };
 
+    let usable_total_memory = if total_system_memory > RESERVE_BYTES {
+        (total_system_memory - RESERVE_BYTES) + usable_vram
+    } else {
+        0
+    };
     log::info!("System RAM: {} bytes", &total_system_memory);
     log::info!("Total VRAM: {} bytes", &total_vram);
     log::info!("Usable total memory: {} bytes", &usable_total_memory);
