@@ -124,7 +124,7 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  Jan is the open-source ChatGPT replacement.
+                  The best of open-source AI in an easy-to-use product.
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-center gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
