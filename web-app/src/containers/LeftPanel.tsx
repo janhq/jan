@@ -403,7 +403,7 @@ const LeftPanel = () => {
                   {t('common:projects.title')}
                 </span>
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col max-h-[140px] overflow-y-scroll">
                 {filteredProjects
                   .slice()
                   .sort((a, b) => b.updated_at - a.updated_at)
