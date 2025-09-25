@@ -82,24 +82,38 @@ pub async fn plan_model_load<R: Runtime>(
 
     log::info!("Got GPUs:\n{:?}", &sys_info.gpus);
 
-    let total_vram: u64 = sys_info
-        .gpus
-        .iter()
-        .map(|g| g.total_memory * 1024 * 1024)
-        .sum::<u64>();
-    log::info!(
-        "Total VRAM reported from tauri_plugin_hardware(in bytes): {}",
-        &total_vram
-    );
-    let usable_vram: u64 = (((total_vram - RESERVE_BYTES) as f64) * multiplier).max(0.0) as u64;
-    log::info!("Usable vram calculated: {}", &usable_vram);
-
     let total_ram: u64 = sys_info.total_memory * 1024 * 1024;
     log::info!(
         "Total system memory reported from tauri_plugin_hardware(in bytes): {}",
         &total_ram
     );
-    let usable_ram: u64 = (((total_ram - RESERVE_BYTES) as f64) * multiplier).max(0.0) as u64;
+
+    let total_vram: u64 = if sys_info.gpus.is_empty() {
+        // On macOS with unified memory, GPU info may be empty
+        // Use total RAM as VRAM since memory is shared
+        log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
+        total_ram
+    } else {
+        sys_info
+            .gpus
+            .iter()
+            .map(|g| g.total_memory * 1024 * 1024)
+            .sum::<u64>()
+    };
+
+    log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
+    let usable_vram: u64 = if total_vram > RESERVE_BYTES {
+        (((total_vram - RESERVE_BYTES) as f64) * multiplier) as u64
+    } else {
+        0
+    };
+    log::info!("Usable vram calculated: {}", &usable_vram);
+
+    let usable_ram: u64 = if total_ram > RESERVE_BYTES {
+        (((total_ram - RESERVE_BYTES) as f64) * multiplier).max(0.0) as u64
+    } else {
+        0
+    };
     log::info!("Usable ram calculated (in bytes): {}", &usable_ram);
 
     let mut gpu_layers = 0;
