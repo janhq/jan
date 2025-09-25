@@ -14,7 +14,7 @@
 /about/wall-of-love                             /handbook  302
 /handbook/contributing-to-jan/                  /handbook 302
 /handbook/core-contributors/how-we-hire/        /handbook 302
-/handbook/engineering-exellence/                /handbook 302
+/handbook/engineering-excellence/              /handbook 302
 /handbook/engineering/                          /handbook 302
 /handbook/product-and-community/                /handbook 302
 /handbook/products-and-innovations/             /handbook 302
@@ -62,7 +62,6 @@
 /continue-dev                                   /docs/desktop/server-examples/continue-dev 302
 /integrations                                   /docs/desktop/server-examples/continue-dev 302
 /integrations/coding/continue-dev               /docs/desktop/server-examples/continue-dev 302
-/guides/integrations/continue/                  /docs/desktop/server-examples/continue-dev 302
 /integrations/continue/                         /docs/desktop/server-examples/continue-dev 302
 /integrations/coding/tabby                      /docs/desktop/server-examples/tabby 302
 /integrations/messaging/llmcord                 /docs/desktop/server-examples/llmcord 302
