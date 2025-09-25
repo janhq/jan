@@ -79,8 +79,33 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
-          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          # Update tauri plugin versions
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/tauri-plugin-hardware/package.json
+          
+          echo "---------./src-tauri/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/tauri-plugin-hardware/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/tauri-plugin-llamacpp/package.json
+
+          echo "---------./src-tauri/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/tauri-plugin-llamacpp/package.json
+
+          ctoml ./src-tauri/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/tauri-plugin-hardware/Cargo.toml
+          
+          ctoml ./src-tauri/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/tauri-plugin-llamacpp/Cargo.toml
+
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/Cargo.toml---------"
+          cat ./src-tauri/Cargo.toml
+
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
 
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
