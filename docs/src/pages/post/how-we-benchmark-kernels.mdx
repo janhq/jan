@@ -3,7 +3,7 @@ title: "How we (try to) benchmark GPU kernels accurately"
 description: "We present the process behind how we decided to benchmark GPU kernels and iteratively improved our benchmarking pipeline"
 tags: ""
 categories: research
-ogImage: "_assets/cover-kernel-benchmarking.png"
+ogImage: "./_assets/cover-kernel-benchmarking.png"
 date: 2025-09-17
 ---
 
@@ -87,7 +87,7 @@ times = [s.elapsed_time(e) for s, e in zip(start_events, end_events)]
 
 The `torch.cuda.synchronize` tells the CPU to wait for the work on the GPU to finish, so that it can calculate the elapsed time after synchronization, which can be visualised here:
 
-![image](_assets//speechmatics-events.svg)
+![image](./_assets//speechmatics-events.svg)
 _Figure 1: Illustration taken from https://www.speechmatics.com/company/articles-and-news/timing-operations-in-pytorch_
 
 
@@ -110,7 +110,7 @@ Moreover, this also makes it much easier when calculating data reuse for the ker
 #### Example of not flushing L2 cache
 Previously when we were initially benchmarking our kernels, we had a small mistake of not flushing the L2 cache.
 
-![image](_assets//exceed-sol.png)
+![image](./_assets//exceed-sol.png)
 _Figure 2: Our SOL %  (which is a percentage of our observed maximum speed) is over 100% for the row for shape [2, 19456, 2560]._
 
 #### How to flush the L2 Cache
@@ -130,26 +130,26 @@ This instantiates data the size of the L2 cache, and by zeroing it in place, we 
 
 After flushing the L2 cache, we get a more sensible result here:
 
-![image](./_assets//fixed-l2.png)
+![image](././_assets//fixed-l2.png)
 _Figure 3: New SOL% has all values under 100% now after flushing L2 cache._
 
 ### 5. Timing short-lived kernels
 
 Initially, we used [Triton's](https://triton-lang.org/main/getting-started/installation.html) [`do_bench`](https://triton-lang.org/main/python-api/generated/triton.testing.do_bench.html) for benchmarking, as it has done everything we have mentioned above, such as warmup, CUDA Events and flushing L2 cache. However, we observed an issue with accurately benchmarking our kernels on smaller shapes. On smaller shapes, the kernel might be too fast, so it may finish before CPU issues a CUDA end event in Python.
 
-![image](./_assets//speechmatics-too-fast.png)
+![image](././_assets//speechmatics-too-fast.png)
 _Figure 4: Taken from [Speechmatics](https://www.speechmatics.com/company/articles-and-news/timing-operations-in-pytorch), kernel is faster than CUDA event end launch, and therefore the true timing for the kernel is not recorded._
 
 This results in kernels that look very slow:
 
-![image](./_assets//small-timed-bug.png)
+![image](././_assets//small-timed-bug.png)
 _Figure 5: Side by side comparison of Python benchmark latencies vs `ncu`'s timing (right) for shape [2, 19456,2560]. `ncu` records a much faster duration of 71.36 μs compared to Python's 103.9 μs_
 
 To fix this, we wrote a custom `do_bench_cuda()`, that inserts a dummy, untimed FP32 matmul before benchmarking each shape, so that the CPU has enough time to enqueue the CUDA end event.
 
 This led to more accurate latencies for our small M kernels.
 
-![image](./_assets//fixed-l2.png)
+![image](././_assets//fixed-l2.png)
 _Figure 6: There is a significant improvement in SOL% after inserting the dummy matmul._
 
 We then also repeat the benchmark function for each shape on 5 copies of input/output data to make the CUDA event duration longer.
@@ -205,7 +205,7 @@ As seen, although most of our codebase for benchmarking kernels in Python, devel
 
 Firstly, we suspected that clock speed could play a part in causing the discrepancy between `ncu`'s timings and our own benchmarking code. Clock speed can affect benchmarking times as it is the rate at which the GPU's processing units operate, and a higher clock speed translates to more operations per second, which can both speed up and slow down the kernel depending on how it was implemented.
 
-![image](./_assets//clock-speed-effect.png)
+![image](././_assets//clock-speed-effect.png)
 _Figure 7: Taken from [GPU Mode Lecture 56](https://www.youtube.com/watch?v=CtrqBmYtSEk). We can see clock speed affects kernel performance. For problem shape of 1024, it got faster after increasing clock speed, while for problem shape of 384, it became slower after clock speed increased._
 
 Looking at this [forum post](https://forums.developer.nvidia.com/t/nsight-compute-clock-speed-during-profiling/208646/3), we realised that one of the issues causing the discrepancy was because `ncu` by default locks the clock speed to the GPU base clock speed. We tried investigating by locking the clock speed to base clock speed, and also tried locking to max clock speed using `nvidia-smi -ac=<memClk>,<smClk>`. According to the GPU Mode lecture, this was not a proper solution.
@@ -220,7 +220,7 @@ However, we did find out that we should set the `ncu` `--clock-control` to `None
 #### 6.2 Discrepancies after `clock-control`
 
 At the time of writing, we have observed that `ncu` sometimes gives different latency results on the same benchmarking code with the same problem shapes. The cause of this is because when we set `clock-control` speed to `None`, the GPU clock speed is stochastic, and therefore affect the latency of the kernels measured. A more holistic approach would be to also benchmark kernels across different fixed clock speeds. 
-![image](./_assets//ncu-compare.png)
+![image](././_assets//ncu-compare.png)
 _Figure 8: On the same benchmarking code and problem shapes, we can see vast deviations in duration, which is caused by the differences in SM Frequency. This resonates with the graphs shown in Figure 7._
 
 As a result, there can be some discrepancy in `ncu`'s and our own benchmark timings. To figure out if your discrepancy is caused by the SM frequency, you can use the relationship
@@ -240,7 +240,7 @@ Explanation of arguments:
 
 Below is a side to side comparison of `ncu`'s benchmarked latency and our script after all the adjustments made.
 
-![image](./_assets//ncu-bench.png)
+![image](././_assets//ncu-bench.png)
 _Figure 9: Side by side comparison of the above `ncu` command (left) (measuring shape [2048,19456,2560]) with our own Python benchmarking script (right). We can see at most 10us difference between `Duration` in `ncu` and our benchmarking script's `Latency (us)` measurement._
 
 ## Conclusion and TLDR;
