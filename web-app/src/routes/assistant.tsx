@@ -12,6 +12,7 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform/types'
+import { Button } from '@/components/ui/button'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.assistant as any)({
@@ -61,72 +62,71 @@ function AssistantContent() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <span>{t('assistants:title')}</span>
+        <div className="flex items-center justify-between w-full mr-2">
+          <span>{t('assistants:title')}</span>
+          <Button
+            onClick={() => {
+              setEditingKey(null)
+              setOpen(true)
+            }}
+            size="sm"
+            className="relative z-50"
+          >
+            <IconCirclePlus size={16} />
+            Add Assistant
+          </Button>
+        </div>
       </HeaderPage>
-      <div className="h-full p-4 overflow-y-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="h-full p-4 w-3/4 mx-auto overflow-y-auto mt-2">
+        <div className="space-y-3">
           {assistants
             .slice()
             .sort((a, b) => a.created_at - b.created_at)
             .map((assistant) => (
               <div
-                className="bg-main-view-fg/3 p-3 rounded-md"
+                className="bg-main-view-fg/3 py-2 px-4 rounded-lg flex items-center gap-4"
                 key={assistant.id}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-base font-medium text-main-view-fg/80">
-                    <div className="flex items-center gap-1">
-                      {assistant?.avatar && (
-                        <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
-                          <AvatarEmoji
-                            avatar={assistant?.avatar}
-                            imageClassName="object-cover"
-                            textClassName="text-sm"
-                          />
-                        </span>
-                      )}
-                      <span className="line-clamp-1">{assistant.name}</span>
+                <div className="flex items-start gap-3 flex-1">
+                  {assistant?.avatar && (
+                    <div className="shrink-0 w-8 h-8 relative flex items-center justify-center bg-main-view-fg/4 rounded-md">
+                      <AvatarEmoji
+                        avatar={assistant?.avatar}
+                        imageClassName="w-5 h-5 object-contain"
+                        textClassName="text-lg"
+                      />
                     </div>
-                  </h3>
-                  <div className="flex items-center gap-0.5">
-                    <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                      title={t('assistants:editAssistant')}
-                      onClick={() => {
-                        setEditingKey(assistant.id)
-                        setOpen(true)
-                      }}
-                    >
-                      <IconPencil size={18} className="text-main-view-fg/50" />
-                    </div>
-                    <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                      title={t('assistants:deleteAssistant')}
-                      onClick={() => handleDelete(assistant.id)}
-                    >
-                      <IconTrash size={18} className="text-main-view-fg/50" />
-                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-medium text-main-view-fg/80 line-clamp-1">
+                      {assistant.name}
+                    </h3>
+                    <p className="text-main-view-fg/50 text-sm line-clamp-2 mt-0.5">
+                      {assistant.description}
+                    </p>
                   </div>
                 </div>
-                <p
-                  className="text-main-view-fg/50 mt-1 line-clamp-2"
-                  title={assistant.description}
-                >
-                  {assistant.description}
-                </p>
+                <div className="flex items-center">
+                  <button
+                    className="size-8 cursor-pointer flex items-center justify-center rounded-md hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                    title={t('assistants:editAssistant')}
+                    onClick={() => {
+                      setEditingKey(assistant.id)
+                      setOpen(true)
+                    }}
+                  >
+                    <IconPencil size={16} className="text-main-view-fg/50" />
+                  </button>
+                  <button
+                    className="size-8 cursor-pointer flex items-center justify-center rounded-md hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                    title={t('assistants:deleteAssistant')}
+                    onClick={() => handleDelete(assistant.id)}
+                  >
+                    <IconTrash size={16} className="text-main-view-fg/50" />
+                  </button>
+                </div>
               </div>
             ))}
-
-          <div
-            className="bg-main-view p-3 min-h-[88px] rounded-md border border-dashed border-main-view-fg/10 flex items-center justify-center cursor-pointer hover:bg-main-view-fg/1 transition-all duration-200 ease-in-out"
-            key="new-assistant"
-            onClick={() => {
-              setEditingKey(null)
-              setOpen(true)
-            }}
-          >
-            <IconCirclePlus className="text-main-view-fg/50" />
-          </div>
         </div>
         <AddEditAssistant
           open={open}
