@@ -80,6 +80,8 @@ pub async fn plan_model_load<R: Runtime>(
         .get(memory_mode.as_str())
         .ok_or("Invalid memory mode")?;
 
+    log::info!("Got GPUs:\n{:?}", &sys_info.gpus);
+
     let total_vram: u64 = sys_info
         .gpus
         .iter()
