@@ -124,7 +124,7 @@ function ProjectContent() {
             <div className="space-y-3">
               {folders
                 .slice()
-                .sort((a, b) => a.updated_at - b.updated_at)
+                .sort((a, b) => b.updated_at - a.updated_at)
                 .map((folder) => {
                   const projectThreads = getThreadsForProject(folder.id)
                   const isExpanded = expandedProjects.has(folder.id)
