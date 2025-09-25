@@ -16,6 +16,7 @@ import {
   IconEye,
   IconTool,
   IconAlertTriangle,
+  IconLoader2,
   // IconWorld,
   // IconAtom,
   // IconCodeCircle2,
@@ -44,6 +45,7 @@ export const DialogEditModel = ({
     Record<string, boolean>
   >({})
   const [isOpen, setIsOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const serviceHub = useServiceHub()
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     completion: false,
@@ -120,8 +122,9 @@ export const DialogEditModel = ({
 
   // Handle save changes
   const handleSaveChanges = async () => {
-    if (!selectedModel?.id) return
+    if (!selectedModel?.id || isLoading) return
 
+    setIsLoading(true)
     try {
       // Update model name if changed
       if (modelName !== originalModelName) {
@@ -169,6 +172,8 @@ export const DialogEditModel = ({
     } catch (error) {
       console.error('Failed to update model:', error)
       toast.error('Failed to update model. Please try again.')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -207,6 +212,7 @@ export const DialogEditModel = ({
             onChange={(e) => handleModelNameChange(e.target.value)}
             placeholder="Enter model name"
             className="w-full"
+            disabled={isLoading}
           />
         </div>
 
@@ -243,6 +249,7 @@ export const DialogEditModel = ({
                 onCheckedChange={(checked) =>
                   handleCapabilityChange('tools', checked)
                 }
+                disabled={isLoading}
               />
             </div>
 
@@ -259,6 +266,7 @@ export const DialogEditModel = ({
                 onCheckedChange={(checked) =>
                   handleCapabilityChange('vision', checked)
                 }
+                disabled={isLoading}
               />
             </div>
 
@@ -320,10 +328,17 @@ export const DialogEditModel = ({
         <div className="flex justify-end pt-4">
           <Button
             onClick={handleSaveChanges}
-            disabled={!hasUnsavedChanges()}
+            disabled={!hasUnsavedChanges() || isLoading}
             className="px-4 py-2"
           >
-            Save Changes
+            {isLoading ? (
+              <>
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Changes'
+            )}
           </Button>
         </div>
       </DialogContent>
