@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppState } from './useAppState'
 import { useMessages } from './useMessages'
 
+const VIEWPORT_PADDING = 40 // Offset from viewport bottom for user message positioning
+const MAX_DOM_RETRY_ATTEMPTS = 3 // Maximum attempts to find DOM elements before giving up
+
 export const useThreadScrolling = (
   threadId: string,
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
@@ -113,7 +116,7 @@ export const useThreadScrolling = (
 
         const viewableHeight = elements.scrollContainer.clientHeight
         const userMessageHeight = elements.lastUserMessage.offsetHeight
-        const calculatedPadding = Math.max(0, viewableHeight - 40 - userMessageHeight)
+        const calculatedPadding = Math.max(0, viewableHeight - VIEWPORT_PADDING - userMessageHeight)
 
         setPaddingHeight(calculatedPadding)
         originalPaddingRef.current = calculatedPadding
@@ -126,12 +129,18 @@ export const useThreadScrolling = (
         })
       }
 
-      requestAnimationFrame(() => {
-        calculatePadding()
-        if (!getDOMElements()?.lastUserMessage) {
-          requestAnimationFrame(calculatePadding)
+      let retryCount = 0
+
+      const tryCalculatePadding = () => {
+        if (getDOMElements()?.lastUserMessage) {
+          calculatePadding()
+        } else if (retryCount < MAX_DOM_RETRY_ATTEMPTS) {
+          retryCount++
+          requestAnimationFrame(tryCalculatePadding)
         }
-      })
+      }
+
+      requestAnimationFrame(tryCalculatePadding)
     }
 
     prevCountRef.current = messageCount
