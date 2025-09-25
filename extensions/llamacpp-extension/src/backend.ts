@@ -46,7 +46,6 @@ export async function getLocalInstalledBackends(): Promise<
       }
     }
   }
-  console.debug(local)
   return local
 }
 

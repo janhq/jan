@@ -86,6 +86,7 @@ export interface ModelPlan {
   maxContextLength: number
   noOffloadKVCache: boolean
   offloadMmproj: boolean
+  batchSize: number
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
