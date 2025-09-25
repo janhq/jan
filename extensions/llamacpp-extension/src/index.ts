@@ -1154,6 +1154,9 @@ export default class llamacpp_extension extends AIEngine {
       'models',
       modelId,
     ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([modelFolderPath, 'model.yaml']),
+    })
     const newFolderPath = await joinPath([
       await this.getProviderPath(),
       'models',
@@ -1163,7 +1166,20 @@ export default class llamacpp_extension extends AIEngine {
     if (await fs.existsSync(newFolderPath)) {
       throw new Error(`Model with ID ${model.id} already exists`)
     }
-    await fs.mv(modelFolderPath, newFolderPath)
+    await fs.mv(modelFolderPath, newFolderPath).then(() =>
+      // now replace what values have previous model name with format
+      invoke('write_yaml', {
+        ...modelConfig,
+        model_path: modelConfig.model_path.replace(
+          `${this.providerId}/models/${modelId}`,
+          `${this.providerId}/models/${model.id}`
+        ),
+        mmproj_path: modelConfig.mmproj_path.replace(
+          `${this.providerId}/models/${modelId}`,
+          `${this.providerId}/models/${model.id}`
+        ),
+      })
+    )
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
