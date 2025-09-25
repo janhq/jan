@@ -52,7 +52,7 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col flex-justify-center">
+    <div className="flex h-full flex-col justify-center">
       <HeaderPage>
         {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>

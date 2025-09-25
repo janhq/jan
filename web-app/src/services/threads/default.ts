@@ -30,6 +30,12 @@ export class DefaultThreadsService implements ThreadsService {
                 provider: e.assistants?.[0]?.model?.engine,
               },
               assistants: e.assistants ?? [defaultAssistant],
+              metadata: {
+                ...e.metadata,
+                // Override extracted fields to avoid duplication
+                order: e.metadata?.order,
+                is_favorite: e.metadata?.is_favorite,
+              },
             } as Thread
           })
         })
@@ -101,6 +107,7 @@ export class DefaultThreadsService implements ThreadsService {
           },
         ],
         metadata: {
+          ...thread.metadata,
           is_favorite: thread.isFavorite,
           order: thread.order,
         },
