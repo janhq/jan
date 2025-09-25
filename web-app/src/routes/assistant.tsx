@@ -60,7 +60,7 @@ function AssistantContent() {
   }
 
   return (
-    <div className="flex h-full flex-col flex-justify-center">
+    <div className="flex h-full flex-col justify-center">
       <HeaderPage>
         <div className="flex items-center justify-between w-full mr-2">
           <span>{t('assistants:title')}</span>
