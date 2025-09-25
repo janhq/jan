@@ -1,3 +1,4 @@
+/about                                          /handbook  302
 /about/                                         /handbook  302
 /about/community                                /handbook  302
 /about/handbook                                 /handbook  302
@@ -73,6 +74,6 @@
 /local-server/settings                          /docs/desktop/server-settings 302
 /local-server/tabby                             /docs/desktop/server-examples/tabby 302
 /local-server/troubleshooting                   /docs/desktop/troubleshooting 302
-/mcp/                                           /docs/desktop/mcp 302
+/mcp                                            /docs/desktop/mcp 302
 /quickstart                                     /docs/desktop/quickstart 302
 /server-examples/continue-dev                   /docs/desktop/server-examples/continue-dev 302
