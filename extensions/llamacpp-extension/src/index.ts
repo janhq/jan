@@ -1159,8 +1159,11 @@ export default class llamacpp_extension extends AIEngine {
       'models',
       model.id,
     ])
-    await fs.copyFile(modelFolderPath, newFolderPath)
-    await fs.rm(modelFolderPath, { recursive: true })
+    // Check if newFolderPath exists
+    if (await fs.existsSync(newFolderPath)) {
+      throw new Error(`Model with ID ${model.id} already exists`)
+    }
+    await fs.mv(modelFolderPath, newFolderPath)
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
