@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
@@ -22,6 +23,7 @@ import {
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { toast } from 'sonner'
 
 // No need to define our own interface, we'll use the existing Model type
 type DialogEditModelProps = {
@@ -37,6 +39,11 @@ export const DialogEditModel = ({
   const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
+  const [originalModelName, setOriginalModelName] = useState<string>('')
+  const [originalCapabilities, setOriginalCapabilities] = useState<
+    Record<string, boolean>
+  >({})
+  const [isOpen, setIsOpen] = useState(false)
   const serviceHub = useServiceHub()
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     completion: false,
@@ -74,12 +81,21 @@ export const DialogEditModel = ({
         web_search: modelCapabilities.includes('web_search'),
         reasoning: modelCapabilities.includes('reasoning'),
       })
-      setModelName(selectedModel.name || selectedModel.id)
+      const modelNameValue = selectedModel.name || selectedModel.id
+      setModelName(modelNameValue)
+      setOriginalModelName(modelNameValue)
+
+      const originalCaps = {
+        completion: modelCapabilities.includes('completion'),
+        vision: modelCapabilities.includes('vision'),
+        tools: modelCapabilities.includes('tools'),
+        embeddings: modelCapabilities.includes('embeddings'),
+        web_search: modelCapabilities.includes('web_search'),
+        reasoning: modelCapabilities.includes('reasoning'),
+      }
+      setOriginalCapabilities(originalCaps)
     }
   }, [selectedModel])
-
-  // Track if capabilities were updated by user action
-  const [capabilitiesUpdated, setCapabilitiesUpdated] = useState(false)
 
   // Update model capabilities - only update local state
   const handleCapabilityChange = (capability: string, enabled: boolean) => {
@@ -87,65 +103,80 @@ export const DialogEditModel = ({
       ...prev,
       [capability]: enabled,
     }))
-    // Mark that capabilities were updated by user action
-    setCapabilitiesUpdated(true)
   }
 
   // Handle model name change
   const handleModelNameChange = (newName: string) => {
-    if (!selectedModel?.id) return
-    console.log('Model name changed:', newName)
     setModelName(newName)
-    serviceHub.models().updateModel(selectedModel.id, { id: newName })
   }
 
-  // Use effect to update the provider when capabilities are explicitly changed by user
-  useEffect(() => {
-    // Only run if capabilities were updated by user action and we have a selected model
-    if (!capabilitiesUpdated || !selectedModel) return
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = () => {
+    const nameChanged = modelName !== originalModelName
+    const capabilitiesChanged =
+      JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
+    return nameChanged || capabilitiesChanged
+  }
 
-    // Reset the flag
-    setCapabilitiesUpdated(false)
+  // Handle save changes
+  const handleSaveChanges = async () => {
+    if (!selectedModel?.id) return
 
-    // Create updated capabilities array from the state
-    const updatedCapabilities = Object.entries(capabilities)
-      .filter(([, isEnabled]) => isEnabled)
-      .map(([capName]) => capName)
-
-    // Find and update the model in the provider
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updatedModels = provider.models.map((m: any) => {
-      if (m.id === selectedModelId) {
-        return {
-          ...m,
-          capabilities: updatedCapabilities,
-          // Mark that user has manually configured capabilities
-          _userConfiguredCapabilities: true,
-        }
+    try {
+      // Update model name if changed
+      if (modelName !== originalModelName) {
+        await serviceHub
+          .models()
+          .updateModel(selectedModel.id, { id: modelName })
+        setOriginalModelName(modelName)
       }
-      return m
-    })
 
-    // Update the provider with the updated models
-    updateProvider(provider.provider, {
-      ...provider,
-      models: updatedModels,
-    })
-  }, [
-    capabilitiesUpdated,
-    capabilities,
-    provider,
-    selectedModel,
-    selectedModelId,
-    updateProvider,
-  ])
+      // Update capabilities if changed
+      if (
+        JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
+      ) {
+        const updatedCapabilities = Object.entries(capabilities)
+          .filter(([, isEnabled]) => isEnabled)
+          .map(([capName]) => capName)
+
+        // Find and update the model in the provider
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatedModels = provider.models.map((m: any) => {
+          if (m.id === selectedModelId) {
+            return {
+              ...m,
+              capabilities: updatedCapabilities,
+              // Mark that user has manually configured capabilities
+              _userConfiguredCapabilities: true,
+            }
+          }
+          return m
+        })
+
+        // Update the provider with the updated models
+        updateProvider(provider.provider, {
+          ...provider,
+          models: updatedModels,
+        })
+
+        setOriginalCapabilities(capabilities)
+      }
+
+      // Show success toast and close dialog
+      toast.success('Model updated successfully')
+      setIsOpen(false)
+    } catch (error) {
+      console.error('Failed to update model:', error)
+      toast.error('Failed to update model. Please try again.')
+    }
+  }
 
   if (!selectedModel) {
     return null
   }
 
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
           <IconPencil size={18} className="text-main-view-fg/50" />
@@ -282,6 +313,17 @@ export const DialogEditModel = ({
               />
             </div> */}
           </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="flex justify-end pt-4">
+          <Button
+            onClick={handleSaveChanges}
+            disabled={!hasUnsavedChanges()}
+            className="px-4 py-2"
+          >
+            Save Changes
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
