@@ -153,4 +153,16 @@ export const modelSettings = {
       value: false,
     },
   },
+  batch_size: {
+    key: 'batch_size',
+    title: 'Batch Size',
+    description: 'Logical maximum batch size for processing prompts.',
+    controller_type: 'input',
+    controller_props: {
+      value: 2048,
+      placeholder: '2048',
+      type: 'number',
+      textAlign: 'right',
+    },
+  },
 }

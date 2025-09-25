@@ -193,7 +193,7 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
             fs::File::open(&path_buf).map_err(|e| e.to_string())?
         }
     };
-    
+
     #[cfg(not(windows))]
     let file = fs::File::open(&path_buf).map_err(|e| e.to_string())?;
     if path.ends_with(".tar.gz") {
@@ -222,7 +222,10 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
                 {
                     use std::os::unix::fs::PermissionsExt;
                     if let Some(mode) = entry.unix_mode() {
-                        let _ = std::fs::set_permissions(&outpath, std::fs::Permissions::from_mode(mode));
+                        let _ = std::fs::set_permissions(
+                            &outpath,
+                            std::fs::Permissions::from_mode(mode),
+                        );
                     }
                 }
             }
