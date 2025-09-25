@@ -22,7 +22,7 @@ Object.defineProperty(global, 'MODEL_CATALOG_URL', {
 
 describe('DefaultModelsService', () => {
   let modelsService: DefaultModelsService
-  
+
   const mockEngine = {
     list: vi.fn(),
     updateSettings: vi.fn(),
@@ -246,7 +246,9 @@ describe('DefaultModelsService', () => {
       })
       mockEngine.load.mockRejectedValue(error)
 
-      await expect(modelsService.startModel(provider, model)).rejects.toThrow(error)
+      await expect(modelsService.startModel(provider, model)).rejects.toThrow(
+        error
+      )
     })
     it('should not load model again', async () => {
       const mockSettings = {
@@ -263,7 +265,9 @@ describe('DefaultModelsService', () => {
         includes: () => true,
       })
       expect(mockEngine.load).toBeCalledTimes(0)
-      await expect(modelsService.startModel(provider, model)).resolves.toBe(undefined)
+      await expect(modelsService.startModel(provider, model)).resolves.toBe(
+        undefined
+      )
     })
   })
 
@@ -312,7 +316,9 @@ describe('DefaultModelsService', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toEqual(mockRepoData)
       expect(fetch).toHaveBeenCalledWith(
@@ -342,7 +348,9 @@ describe('DefaultModelsService', () => {
       )
 
       // Test with domain prefix
-      await modelsService.fetchHuggingFaceRepo('huggingface.co/microsoft/DialoGPT-medium')
+      await modelsService.fetchHuggingFaceRepo(
+        'huggingface.co/microsoft/DialoGPT-medium'
+      )
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
@@ -365,7 +373,9 @@ describe('DefaultModelsService', () => {
       expect(await modelsService.fetchHuggingFaceRepo('')).toBeNull()
 
       // Test string without slash
-      expect(await modelsService.fetchHuggingFaceRepo('invalid-repo')).toBeNull()
+      expect(
+        await modelsService.fetchHuggingFaceRepo('invalid-repo')
+      ).toBeNull()
 
       // Test whitespace only
       expect(await modelsService.fetchHuggingFaceRepo('   ')).toBeNull()
@@ -378,7 +388,8 @@ describe('DefaultModelsService', () => {
         statusText: 'Not Found',
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('nonexistent/model')
+      const result =
+        await modelsService.fetchHuggingFaceRepo('nonexistent/model')
 
       expect(result).toBeNull()
       expect(fetch).toHaveBeenCalledWith(
@@ -398,7 +409,9 @@ describe('DefaultModelsService', () => {
         statusText: 'Internal Server Error',
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toBeNull()
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -414,7 +427,9 @@ describe('DefaultModelsService', () => {
 
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toBeNull()
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -448,7 +463,9 @@ describe('DefaultModelsService', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toEqual(mockRepoData)
     })
@@ -487,7 +504,9 @@ describe('DefaultModelsService', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toEqual(mockRepoData)
     })
@@ -531,7 +550,9 @@ describe('DefaultModelsService', () => {
         json: vi.fn().mockResolvedValue(mockRepoData),
       })
 
-      const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
+      const result = await modelsService.fetchHuggingFaceRepo(
+        'microsoft/DialoGPT-medium'
+      )
 
       expect(result).toEqual(mockRepoData)
       // Verify the GGUF file is present in siblings
@@ -576,7 +597,8 @@ describe('DefaultModelsService', () => {
     }
 
     it('should convert HuggingFace repo to catalog model format', () => {
-      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       const expected: CatalogModel = {
         model_name: 'microsoft/DialoGPT-medium',
@@ -586,12 +608,12 @@ describe('DefaultModelsService', () => {
         num_quants: 2,
         quants: [
           {
-            model_id: 'model-q4_0',
+            model_id: 'microsoft/model-q4_0',
             path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf',
             file_size: '2.0 GB',
           },
           {
-            model_id: 'model-q8_0',
+            model_id: 'microsoft/model-q8_0',
             path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF',
             file_size: '4.0 GB',
           },
@@ -635,7 +657,8 @@ describe('DefaultModelsService', () => {
         siblings: undefined,
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithoutSiblings)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithoutSiblings)
 
       expect(result.num_quants).toBe(0)
       expect(result.quants).toEqual([])
@@ -663,7 +686,9 @@ describe('DefaultModelsService', () => {
         ],
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithVariousFileSizes)
+      const result = modelsService.convertHfRepoToCatalogModel(
+        repoWithVariousFileSizes
+      )
 
       expect(result.quants[0].file_size).toBe('500.0 MB')
       expect(result.quants[1].file_size).toBe('3.5 GB')
@@ -676,7 +701,8 @@ describe('DefaultModelsService', () => {
         tags: [],
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithEmptyTags)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithEmptyTags)
 
       expect(result.description).toBe('**Tags**: ')
     })
@@ -687,7 +713,8 @@ describe('DefaultModelsService', () => {
         downloads: undefined as any,
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithoutDownloads)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithoutDownloads)
 
       expect(result.downloads).toBe(0)
     })
@@ -714,15 +741,17 @@ describe('DefaultModelsService', () => {
         ],
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithVariousGGUF)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithVariousGGUF)
 
-      expect(result.quants[0].model_id).toBe('model')
-      expect(result.quants[1].model_id).toBe('MODEL')
-      expect(result.quants[2].model_id).toBe('complex-model-name')
+      expect(result.quants[0].model_id).toBe('microsoft/model')
+      expect(result.quants[1].model_id).toBe('microsoft/MODEL')
+      expect(result.quants[2].model_id).toBe('microsoft/complex-model-name')
     })
 
     it('should generate correct download paths', () => {
-      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       expect(result.quants[0].path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
@@ -733,7 +762,8 @@ describe('DefaultModelsService', () => {
     })
 
     it('should generate correct readme URL', () => {
-      const result = modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       expect(result.readme).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md'
@@ -767,13 +797,14 @@ describe('DefaultModelsService', () => {
         ],
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithMixedCase)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithMixedCase)
 
       expect(result.num_quants).toBe(3)
       expect(result.quants).toHaveLength(3)
-      expect(result.quants[0].model_id).toBe('model-1')
-      expect(result.quants[1].model_id).toBe('model-2')
-      expect(result.quants[2].model_id).toBe('model-3')
+      expect(result.quants[0].model_id).toBe('microsoft/model-1')
+      expect(result.quants[1].model_id).toBe('microsoft/model-2')
+      expect(result.quants[2].model_id).toBe('microsoft/model-3')
     })
 
     it('should handle edge cases with file size formatting', () => {
@@ -798,7 +829,8 @@ describe('DefaultModelsService', () => {
         ],
       }
 
-      const result = modelsService.convertHfRepoToCatalogModel(repoWithEdgeCases)
+      const result =
+        modelsService.convertHfRepoToCatalogModel(repoWithEdgeCases)
 
       expect(result.quants[0].file_size).toBe('0.0 MB')
       expect(result.quants[1].file_size).toBe('1.0 GB')
@@ -850,7 +882,10 @@ describe('DefaultModelsService', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await modelsService.isModelSupported('/path/to/model.gguf', 4096)
+      const result = await modelsService.isModelSupported(
+        '/path/to/model.gguf',
+        4096
+      )
 
       expect(result).toBe('GREEN')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
@@ -867,7 +902,10 @@ describe('DefaultModelsService', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await modelsService.isModelSupported('/path/to/model.gguf', 8192)
+      const result = await modelsService.isModelSupported(
+        '/path/to/model.gguf',
+        8192
+      )
 
       expect(result).toBe('YELLOW')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(
@@ -884,7 +922,9 @@ describe('DefaultModelsService', () => {
 
       mockEngineManager.get.mockReturnValue(mockEngineWithSupport)
 
-      const result = await modelsService.isModelSupported('/path/to/large-model.gguf')
+      const result = await modelsService.isModelSupported(
+        '/path/to/large-model.gguf'
+      )
 
       expect(result).toBe('RED')
       expect(mockEngineWithSupport.isModelSupported).toHaveBeenCalledWith(

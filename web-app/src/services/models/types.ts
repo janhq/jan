@@ -86,10 +86,12 @@ export interface ModelPlan {
   maxContextLength: number
   noOffloadKVCache: boolean
   offloadMmproj: boolean
+  batchSize: number
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
 export interface ModelsService {
+  getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchHuggingFaceRepo(

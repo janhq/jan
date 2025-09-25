@@ -103,6 +103,13 @@ export function ModelSetting({
           })
         }
 
+        if (model.settings?.batch_size && result.batchSize !== undefined) {
+          settingsToUpdate.push({
+            key: 'batch_size',
+            value: result.batchSize,
+          })
+        }
+
         // Apply all settings in a single update to avoid race conditions
         if (settingsToUpdate.length > 0) {
           handleMultipleSettingsChange(settingsToUpdate)
@@ -163,7 +170,8 @@ export function ModelSetting({
           key === 'ctx_len' ||
           key === 'ngl' ||
           key === 'chat_template' ||
-          key === 'offload_mmproj'
+          key === 'offload_mmproj' ||
+          key === 'batch_size'
       )
 
       if (requiresRestart) {
@@ -222,7 +230,8 @@ export function ModelSetting({
         key === 'ctx_len' ||
         key === 'ngl' ||
         key === 'chat_template' ||
-        key === 'offload_mmproj'
+        key === 'offload_mmproj' ||
+        key === 'batch_size'
       ) {
         // Check if model is running before stopping it
         serviceHub
