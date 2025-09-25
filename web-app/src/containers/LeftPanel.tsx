@@ -53,7 +53,7 @@ const mainMenus = [
     isEnabled: true,
   },
   {
-    title: 'common:projects',
+    title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
     isEnabled: true,

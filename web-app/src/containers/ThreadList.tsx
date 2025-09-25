@@ -37,7 +37,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { memo, useMemo, useState } from 'react'
+import { memo, MouseEvent, useMemo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { route } from '@/constants/routes'
@@ -87,7 +87,12 @@ const SortableItem = memo(
         match.params.threadId === thread.id
     )
 
-    const handleClick = () => {
+    const handleClick = (e: MouseEvent<HTMLDivElement>) => {
+      if (openDropdown) {
+        e.stopPropagation()
+        e.preventDefault()
+        return
+      }
       if (!isDragging) {
         // Only close panel and navigate if the thread is not already active
         if (!isActive) {
@@ -148,6 +153,7 @@ const SortableItem = memo(
           isDragging ? 'cursor-move' : 'cursor-pointer',
           isActive && 'bg-left-panel-fg/10'
         )}
+        onClick={(e) => handleClick(e)}
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -159,7 +165,6 @@ const SortableItem = memo(
             'pr-2 truncate flex-1',
             variant === 'project' ? 'py-2 cursor-pointer' : 'py-1'
           )}
-          onClick={variant === 'project' ? handleClick : undefined}
         >
           <span>{thread.title || t('common:newThread')}</span>
           {variant === 'project' && (
@@ -172,10 +177,7 @@ const SortableItem = memo(
             </>
           )}
         </div>
-        <div
-          className="flex items-center"
-          onClick={variant !== 'project' ? handleClick : undefined}
-        >
+        <div className="flex items-center">
           <DropdownMenu
             open={openDropdown}
             onOpenChange={(open) => setOpenDropdown(open)}
