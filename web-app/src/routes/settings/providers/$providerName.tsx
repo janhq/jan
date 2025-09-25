@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import CryptoJS from 'crypto-js'
 import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { cn, getProviderTitle } from '@/lib/utils'
 import {
   createFileRoute,
@@ -508,7 +510,7 @@ function ProviderDetail() {
                                 'third-step-setup-remote-provider',
                               setting.key === 'device' && 'hidden'
                             )}
-                            onChange={(newValue) => {
+                            onChange={async (newValue) => {
                               if (provider) {
                                 const newSettings = [...provider.settings]
                                 // Handle different value types by forcing the type
@@ -531,7 +533,13 @@ function ProviderDetail() {
                                   settingKey === 'api-key' &&
                                   typeof newValue === 'string'
                                 ) {
-                                  updateObj.api_key = newValue
+                                  const secretKey = await getServiceHub()
+                                    .core()
+                                    .getAppToken()
+                                  updateObj.api_key = CryptoJS.AES.encrypt(
+                                    newValue,
+                                    secretKey || 'fallback-key'
+                                  ).toString()
                                 } else if (
                                   settingKey === 'base-url' &&
                                   typeof newValue === 'string'

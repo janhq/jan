@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import CryptoJS from 'crypto-js'
 import {
   ContentType,
   ChatCompletionRole,
@@ -168,9 +169,25 @@ export const sendCompletion = async (
   if (!Object.keys(models).some((key) => key === providerName))
     providerName = 'openai-compatible'
 
+  // Decrypt API key if it exists and is encrypted
+  const secretKey = await getServiceHub().core().getAppToken()
+  const decryptApiKey = (encryptedKey: string, key: string): string => {
+    try {
+      const bytes = CryptoJS.AES.decrypt(encryptedKey, key)
+      const decryptedKey = bytes.toString(CryptoJS.enc.Utf8)
+      return decryptedKey || encryptedKey // Return original if decryption fails
+    } catch (error) {
+      console.warn('Failed to decrypt API key, using original value:', error)
+      return encryptedKey
+    }
+  }
+
+  const apiKey = provider.api_key
+    ? decryptApiKey(provider.api_key, secretKey || 'fallback-key')
+    : (secretKey ?? '')
+
   const tokenJS = new TokenJS({
-    apiKey:
-      provider.api_key ?? (await getServiceHub().core().getAppToken()) ?? '',
+    apiKey,
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
     // Use Tauri's fetch to avoid CORS issues only for openai-compatible provider
