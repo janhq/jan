@@ -54,8 +54,6 @@ export const useThreadScrolling = (
     }
   }, [scrollContainerRef])
 
-  }, [scrollContainerRef])
-
   const handleScroll = useCallback((e: Event) => {
     const target = e.target as HTMLDivElement
     const { scrollTop, scrollHeight, clientHeight } = target
@@ -70,7 +68,7 @@ export const useThreadScrolling = (
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
     lastScrollTopRef.current = scrollTop
-  }, [streamingContent])
+  }, [streamingContent, setIsAtBottom, setHasScrollbar])
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
@@ -91,7 +89,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }, [scrollContainerRef])
+  }, [scrollContainerRef, setIsAtBottom, setHasScrollbar])
 
   useEffect(() => {
     if (!scrollContainerRef.current) return
