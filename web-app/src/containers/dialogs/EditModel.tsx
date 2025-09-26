@@ -63,7 +63,8 @@ export const DialogEditModel = ({
     } else if (provider.models && provider.models.length > 0) {
       setSelectedModelId(provider.models[0].id)
     }
-  }, [provider, modelId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelId]) // Remove 'provider' dependency to prevent model ID changes when provider updates
 
   // Get the currently selected model
   const selectedModel = provider.models.find(
