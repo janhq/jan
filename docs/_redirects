@@ -97,6 +97,23 @@
 /docs/server-examples/n8n	                    /docs/desktop/server-examples/n8n 302
 /docs/server-troubleshooting	                /docs/desktop/troubleshooting 302
 /docs/privacy-policy	                        /privacy 302
+/docs/server-settings 	                        /docs/desktop/server-settings 302
+/docs/settings	                                /docs/desktop/settings 302
+/docs/llama-cpp-server	                        /docs/desktop/llama-cpp-server 302
+/docs/server-settings 	                        /docs/desktop/server-settings 302
+/docs/install/linux	                            /docs/desktop/install/linux 302
+/docs/install/macos	                            /docs/desktop/install/mac 302
+/docs/install/windows	                        /docs/desktop/install/windows 302
+/docs/mcp-examples/browser/browserbase	        /docs/desktop/mcp-examples/browser/browserbase 302
+/docs/jan-models/jan-nano-128	                /docs/desktop/jan-models/jan-nano-128 302
+/docs/mcp-examples/search/serper	            /docs/desktop/mcp-examples/search/serper 302
+/docs/mcp-examples/data-analysis/jupyter	    /docs/desktop/mcp-examples/data-analysis/jupyter 302
+/docs/mcp-examples/productivity/todoist	        /docs/desktop/mcp-examples/productivity/todoist 302
+/docs/mcp-examples/search/serper	            /docs/desktop/mcp-examples/search/serper 302
+/docs/remote-models/anthropic	                /docs/desktop/remote-models/anthropic 302
+/docs/remote-models/openrouter	                /docs/desktop/remote-models/openrouter 302
+/docs/server-examples/llmcord	                /docs/desktop/server-examples/llmcord 302
+/docs/server-examples/tabby	                    /docs/desktop/server-examples/tabby 302
 
 /guides/integrations/continue/                  /docs/desktop/server-examples/continue-dev 302
 /continue-dev                                   /docs/desktop/server-examples/continue-dev 302
