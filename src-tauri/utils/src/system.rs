@@ -81,7 +81,7 @@ pub fn setup_library_path(library_path: Option<&str>, command: &mut tokio::proce
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
-        use std::os::windows::process::CommandExt;
+        // use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);

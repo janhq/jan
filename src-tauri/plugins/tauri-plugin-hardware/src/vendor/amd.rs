@@ -126,13 +126,13 @@ mod windows_impl {
         pub iOSDisplayIndex: c_int,
     }
 
-    type ADL_MAIN_MALLOC_CALLBACK = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
-    type ADL_MAIN_CONTROL_CREATE = unsafe extern "C" fn(ADL_MAIN_MALLOC_CALLBACK, c_int) -> c_int;
-    type ADL_MAIN_CONTROL_DESTROY = unsafe extern "C" fn() -> c_int;
-    type ADL_ADAPTER_NUMBEROFADAPTERS_GET = unsafe extern "C" fn(*mut c_int) -> c_int;
-    type ADL_ADAPTER_ADAPTERINFO_GET = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
-    type ADL_ADAPTER_ACTIVE_GET = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
-    type ADL_GET_DEDICATED_VRAM_USAGE =
+    ype AdlMainMallocCallback = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
+    type AdlMainControlCreate = unsafe extern "C" fn(AdlMainMallocCallback, c_int) -> c_int;
+    type AdlMainControlDestroy = unsafe extern "C" fn() -> c_int;
+    type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut c_int) -> c_int;
+    type AdlAdapterAdapterinfoGet = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
+    type AdlAdapterActiveGet = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
+    type AdlGetDedicatedVramUsage =
         unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
 
     // === ADL Memory Allocator ===
