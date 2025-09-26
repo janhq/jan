@@ -127,8 +127,8 @@ mod windows_impl {
     }
 
     type AdlMainMallocCallback = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
-    type AdlMainControlCreate = unsafe extern "C" fn(AdlMainMallocCallback, c_int) -> c_int;
-    type AdlMainControlDestroy = unsafe extern "C" fn() -> c_int;
+    type ADLMAINCONTROLCREATE = unsafe extern "C" fn(AdlMainMallocCallback, c_int) -> c_int;
+    type ADLMAINCONTROLDESTROY = unsafe extern "C" fn() -> c_int;
     type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut c_int) -> c_int;
     type AdlAdapterAdapterinfoGet = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
     type AdlAdapterActiveGet = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
@@ -144,24 +144,24 @@ mod windows_impl {
         unsafe {
             let lib = Library::new("atiadlxx.dll").or_else(|_| Library::new("atiadlxy.dll"))?;
 
-            let adl_main_control_create: Symbol<ADL_MAIN_CONTROL_CREATE> =
-                lib.get(b"ADL_Main_Control_Create")?;
-            let adl_main_control_destroy: Symbol<ADL_MAIN_CONTROL_DESTROY> =
-                lib.get(b"ADL_Main_Control_Destroy")?;
-            let adl_adapter_number_of_adapters_get: Symbol<ADL_ADAPTER_NUMBEROFADAPTERS_GET> =
-                lib.get(b"ADL_Adapter_NumberOfAdapters_Get")?;
-            let adl_adapter_adapter_info_get: Symbol<ADL_ADAPTER_ADAPTERINFO_GET> =
-                lib.get(b"ADL_Adapter_AdapterInfo_Get")?;
-            let adl_adapter_active_get: Symbol<ADL_ADAPTER_ACTIVE_GET> =
-                lib.get(b"ADL_Adapter_Active_Get")?;
-            let adl_get_dedicated_vram_usage: Symbol<ADL_GET_DEDICATED_VRAM_USAGE> =
+            let adlmaincontrolcreate: Symbol<ADLMAINCONTROLCREATE> =
+                lib.get(b"AdlMainControlCreate")?;
+            let adlmaincontroldestroy: Symbol<ADLMAINCONTROLDESTROY> =
+                lib.get(b"AdlMainControlDestroy")?;
+            let adl_adapter_number_of_adapters_get: Symbol<AdlAdapterNumberofadaptersGet> =
+                lib.get(b"AdlAdapterNumberofadaptersGet")?;
+            let adl_adapter_adapter_info_get: Symbol<AdlAdapterAdapterinfoGet> =
+                lib.get(b"AdlAdapterAdapterinfoGet")?;
+            let AdlAdapterActiveGet: Symbol<AdlAdapterActiveGet> =
+                lib.get(b"AdlAdapterActiveGet")?;
+            let AdlGetDedicatedVramUsage: Symbol<AdlGetDedicatedVramUsage> =
                 lib.get(b"ADL2_Adapter_DedicatedVRAMUsage_Get")?;
 
             // TODO: try to put nullptr here. then we don't need direct libc dep
-            if adl_main_control_create(Some(adl_malloc), 1) != 0 {
+            if adlmaincontrolcreate(Some(adl_malloc), 1) != 0 {
                 return Err("ADL initialization error!".into());
             }
-            // NOTE: after this call, we must call ADL_Main_Control_Destroy
+            // NOTE: after this call, we must call AdlMainControlDestroy
             // whenver we encounter an error
 
             let mut num_adapters: c_int = 0;
@@ -184,11 +184,11 @@ mod windows_impl {
 
                 for adapter in adapter_info.iter() {
                     let mut is_active = 0;
-                    adl_adapter_active_get(adapter.iAdapterIndex, &mut is_active);
+                    AdlAdapterActiveGet(adapter.iAdapterIndex, &mut is_active);
 
                     if is_active != 0 {
                         let mut vram_mb = 0;
-                        let _ = adl_get_dedicated_vram_usage(
+                        let _ = AdlGetDedicatedVramUsage(
                             ptr::null_mut(),
                             adapter.iAdapterIndex,
                             &mut vram_mb,
@@ -202,7 +202,7 @@ mod windows_impl {
                 }
             }
 
-            adl_main_control_destroy();
+            adlmaincontroldestroy();
 
             Ok(vram_usages)
         }
