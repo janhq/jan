@@ -77,9 +77,9 @@ export default function Footer() {
   return (
     <footer className="py-4 w-full">
       <div className="mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-8">
           {/* Jan Logo and Newsletter */}
-          <div className="md:col-span-2">
+          <div className="md:col-span-1 lg:col-span-2">
             <h2 className="text-[52px] font-bold mb-6">Jan</h2>
             <div>
               <div className="flex items-center gap-2 mb-3">
@@ -138,7 +138,7 @@ export default function Footer() {
           {/* Menu Columns */}
           {FOOTER_MENUS.map((menu) => (
             <div key={menu.title} className="">
-              <h3 className="text-lg mb-4 font-bold">{menu.title}</h3>
+              <h3 className="text-base mb-4 font-bold">{menu.title}</h3>
               <ul className="space-y-2">
                 {menu.links.map((link) => (
                   <li key={link.name}>

@@ -400,20 +400,33 @@ export function DownloadManagement() {
                           className="text-main-view-fg/70 cursor-pointer"
                           title="Cancel download"
                           onClick={() => {
-                            serviceHub.models().abortDownload(download.name).then(() => {
-                              toast.info(
-                                t('common:toast.downloadCancelled.title'),
-                                {
-                                  id: 'cancel-download',
-                                  description: t(
-                                    'common:toast.downloadCancelled.description'
-                                  ),
-                                }
-                              )
-                              if (downloadProcesses.length === 0) {
-                                setIsPopoverOpen(false)
-                              }
-                            })
+                            // TODO: Consolidate cancellation logic
+                            if (download.id.startsWith('llamacpp')) {
+                              const downloadManager =
+                                window.core.extensionManager.getByName(
+                                  '@janhq/download-extension'
+                                )
+
+                              downloadManager.cancelDownload(download.id)
+                            } else {
+                              serviceHub
+                                .models()
+                                .abortDownload(download.name)
+                                .then(() => {
+                                  toast.info(
+                                    t('common:toast.downloadCancelled.title'),
+                                    {
+                                      id: 'cancel-download',
+                                      description: t(
+                                        'common:toast.downloadCancelled.description'
+                                      ),
+                                    }
+                                  )
+                                  if (downloadProcesses.length === 0) {
+                                    setIsPopoverOpen(false)
+                                  }
+                                })
+                            }
                           }}
                         />
                       </div>

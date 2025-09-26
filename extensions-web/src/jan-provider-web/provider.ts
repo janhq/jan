@@ -16,14 +16,20 @@ import {
 import { janApiClient, JanChatMessage } from './api'
 import { janProviderStore } from './store'
 
+// Jan models support tools via MCP
+const JAN_MODEL_CAPABILITIES = ['tools'] as const
+
 export default class JanProviderWeb extends AIEngine {
   readonly provider = 'jan'
   private activeSessions: Map<string, SessionInfo> = new Map()
 
   override async onLoad() {
     console.log('Loading Jan Provider Extension...')
-    
+
     try {
+      // Check and clear invalid Jan models (capabilities mismatch)
+      this.validateJanModelsLocalStorage()
+
       // Initialize authentication and fetch models
       await janApiClient.initialize()
       console.log('Jan Provider Extension loaded successfully')
@@ -35,22 +41,93 @@ export default class JanProviderWeb extends AIEngine {
     super.onLoad()
   }
 
+  // Verify Jan models capabilities in localStorage
+  private validateJanModelsLocalStorage() {
+    try {
+      console.log("Validating Jan models in localStorage...")
+      const storageKey = 'model-provider'
+      const data = localStorage.getItem(storageKey)
+      if (!data) return
+
+      const parsed = JSON.parse(data)
+      if (!parsed?.state?.providers) return
+
+      // Check if any Jan model has incorrect capabilities
+      let hasInvalidModel = false
+
+      for (const provider of parsed.state.providers) {
+        if (provider.provider === 'jan' && provider.models) {
+          for (const model of provider.models) {
+            console.log(`Checking Jan model: ${model.id}`, model.capabilities)
+            if (JSON.stringify(model.capabilities) !== JSON.stringify(JAN_MODEL_CAPABILITIES)) {
+              hasInvalidModel = true
+              console.log(`Found invalid Jan model: ${model.id}, clearing localStorage`)
+              break
+            }
+          }
+        }
+        if (hasInvalidModel) break
+      }
+
+      // If any invalid model found, just clear the storage
+      if (hasInvalidModel) {
+        // Force clear the storage
+        localStorage.removeItem(storageKey)
+        // Verify it's actually removed
+        const afterRemoval = localStorage.getItem(storageKey)
+        // If still present, try setting to empty state
+        if (afterRemoval) {
+          // Try alternative clearing method
+          localStorage.setItem(storageKey, JSON.stringify({ state: { providers: [] }, version: parsed.version || 3 }))
+        }
+        console.log('Cleared model-provider from localStorage due to invalid Jan capabilities')
+        // Force a page reload to ensure clean state
+        window.location.reload()
+      }
+    } catch (error) {
+      console.error('Failed to check Jan models:', error)
+    }
+  }
+
   override async onUnload() {
     console.log('Unloading Jan Provider Extension...')
-    
+
     // Clear all sessions
     for (const sessionId of this.activeSessions.keys()) {
       await this.unload(sessionId)
     }
-    
+
     janProviderStore.reset()
     console.log('Jan Provider Extension unloaded')
+  }
+
+  async get(modelId: string): Promise<modelInfo | undefined> {
+    return janApiClient
+      .getModels()
+      .then((list) => list.find((e) => e.id === modelId))
+      .then((model) =>
+        model
+          ? {
+              id: model.id,
+              name: model.id, // Use ID as name for now
+              quant_type: undefined,
+              providerId: this.provider,
+              port: 443, // HTTPS port for API
+              sizeBytes: 0, // Size not provided by Jan API
+              tags: [],
+              path: undefined, // Remote model, no local path
+              owned_by: model.owned_by,
+              object: model.object,
+              capabilities: [...JAN_MODEL_CAPABILITIES],
+            }
+          : undefined
+      )
   }
 
   async list(): Promise<modelInfo[]> {
     try {
       const janModels = await janApiClient.getModels()
-      
+
       return janModels.map((model) => ({
         id: model.id,
         name: model.id, // Use ID as name for now
@@ -62,7 +139,7 @@ export default class JanProviderWeb extends AIEngine {
         path: undefined, // Remote model, no local path
         owned_by: model.owned_by,
         object: model.object,
-        capabilities: ['tools'], // Jan models support both tools via MCP
+        capabilities: [...JAN_MODEL_CAPABILITIES],
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)
@@ -75,7 +152,7 @@ export default class JanProviderWeb extends AIEngine {
       // For Jan API, we don't actually "load" models in the traditional sense
       // We just create a session reference for tracking
       const sessionId = `jan-${modelId}-${Date.now()}`
-      
+
       const sessionInfo: SessionInfo = {
         pid: Date.now(), // Use timestamp as pseudo-PID
         port: 443, // HTTPS port
@@ -85,8 +162,10 @@ export default class JanProviderWeb extends AIEngine {
       }
 
       this.activeSessions.set(sessionId, sessionInfo)
-      
-      console.log(`Jan model session created: ${sessionId} for model ${modelId}`)
+
+      console.log(
+        `Jan model session created: ${sessionId} for model ${modelId}`
+      )
       return sessionInfo
     } catch (error) {
       console.error(`Failed to load Jan model ${modelId}:`, error)
@@ -97,23 +176,23 @@ export default class JanProviderWeb extends AIEngine {
   async unload(sessionId: string): Promise<UnloadResult> {
     try {
       const session = this.activeSessions.get(sessionId)
-      
+
       if (!session) {
         return {
           success: false,
-          error: `Session ${sessionId} not found`
+          error: `Session ${sessionId} not found`,
         }
       }
 
       this.activeSessions.delete(sessionId)
       console.log(`Jan model session unloaded: ${sessionId}`)
-      
+
       return { success: true }
     } catch (error) {
       console.error(`Failed to unload Jan session ${sessionId}:`, error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       }
     }
   }
@@ -136,9 +215,12 @@ export default class JanProviderWeb extends AIEngine {
       }
 
       // Convert core chat completion request to Jan API format
-      const janMessages: JanChatMessage[] = opts.messages.map(msg => ({
+      const janMessages: JanChatMessage[] = opts.messages.map((msg) => ({
         role: msg.role as 'system' | 'user' | 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+        content:
+          typeof msg.content === 'string'
+            ? msg.content
+            : JSON.stringify(msg.content),
       }))
 
       const janRequest = {
@@ -162,18 +244,18 @@ export default class JanProviderWeb extends AIEngine {
       } else {
         // Return single response
         const response = await janApiClient.createChatCompletion(janRequest)
-        
+
         // Check if aborted after completion
         if (abortController?.signal?.aborted) {
           throw new Error('Request was aborted')
         }
-        
+
         return {
           id: response.id,
           object: 'chat.completion' as const,
           created: response.created,
           model: response.model,
-          choices: response.choices.map(choice => ({
+          choices: response.choices.map((choice) => ({
             index: choice.index,
             message: {
               role: choice.message.role,
@@ -182,7 +264,12 @@ export default class JanProviderWeb extends AIEngine {
               reasoning_content: choice.message.reasoning_content,
               tool_calls: choice.message.tool_calls,
             },
-            finish_reason: (choice.finish_reason || 'stop') as 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call',
+            finish_reason: (choice.finish_reason || 'stop') as
+              | 'stop'
+              | 'length'
+              | 'tool_calls'
+              | 'content_filter'
+              | 'function_call',
           })),
           usage: response.usage,
         }
@@ -193,7 +280,10 @@ export default class JanProviderWeb extends AIEngine {
     }
   }
 
-  private async *createStreamingGenerator(janRequest: any, abortController?: AbortController) {
+  private async *createStreamingGenerator(
+    janRequest: any,
+    abortController?: AbortController
+  ) {
     let resolve: () => void
     let reject: (error: Error) => void
     const chunks: any[] = []
@@ -231,7 +321,7 @@ export default class JanProviderWeb extends AIEngine {
             object: chunk.object,
             created: chunk.created,
             model: chunk.model,
-            choices: chunk.choices.map(choice => ({
+            choices: chunk.choices.map((choice) => ({
               index: choice.index,
               delta: {
                 role: choice.delta.role,
@@ -261,14 +351,14 @@ export default class JanProviderWeb extends AIEngine {
         if (abortController?.signal?.aborted) {
           throw new Error('Request was aborted')
         }
-        
+
         while (yieldedIndex < chunks.length) {
           yield chunks[yieldedIndex]
           yieldedIndex++
         }
-        
+
         // Wait a bit before checking again
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
       }
 
       // Yield any remaining chunks
@@ -291,24 +381,38 @@ export default class JanProviderWeb extends AIEngine {
   }
 
   async delete(modelId: string): Promise<void> {
-    throw new Error(`Delete operation not supported for remote Jan API model: ${modelId}`)
+    throw new Error(
+      `Delete operation not supported for remote Jan API model: ${modelId}`
+    )
+  }
+
+  async update(modelId: string, model: Partial<modelInfo>): Promise<void> {
+    throw new Error(
+      `Update operation not supported for remote Jan API model: ${modelId}`
+    )
   }
 
   async import(modelId: string, _opts: ImportOptions): Promise<void> {
-    throw new Error(`Import operation not supported for remote Jan API model: ${modelId}`)
+    throw new Error(
+      `Import operation not supported for remote Jan API model: ${modelId}`
+    )
   }
 
   async abortImport(modelId: string): Promise<void> {
-    throw new Error(`Abort import operation not supported for remote Jan API model: ${modelId}`)
+    throw new Error(
+      `Abort import operation not supported for remote Jan API model: ${modelId}`
+    )
   }
 
   async getLoadedModels(): Promise<string[]> {
-    return Array.from(this.activeSessions.values()).map(session => session.model_id)
+    return Array.from(this.activeSessions.values()).map(
+      (session) => session.model_id
+    )
   }
 
   async isToolSupported(modelId: string): Promise<boolean> {
     // Jan models support tool calls via MCP
-    console.log(`Checking tool support for Jan model ${modelId}: supported`);
-    return true;
+    console.log(`Checking tool support for Jan model ${modelId}: supported`)
+    return true
   }
 }

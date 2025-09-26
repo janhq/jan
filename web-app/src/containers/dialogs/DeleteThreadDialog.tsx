@@ -21,12 +21,14 @@ interface DeleteThreadDialogProps {
   thread: Thread
   onDelete: (threadId: string) => void
   onDropdownClose: () => void
+  variant?: 'default' | 'project'
 }
 
 export function DeleteThreadDialog({
   thread,
   onDelete,
   onDropdownClose,
+  variant = 'default',
 }: DeleteThreadDialogProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -48,9 +50,11 @@ export function DeleteThreadDialog({
       id: 'delete-thread',
       description: t('common:toast.deleteThread.description'),
     })
-    setTimeout(() => {
-      navigate({ to: route.home })
-    }, 0)
+    if (variant !== 'project') {
+      setTimeout(() => {
+        navigate({ to: route.home })
+      }, 0)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

@@ -95,7 +95,7 @@ const Home = () => {
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
-                href=""
+                href={`https://github.com/menloresearch/jan/releases/tag/${lastVersion}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-black/40 px-3 lg:px-4 rounded-full h-10 inline-flex items-center max-w-full animate-fade-in delay-100"
@@ -109,7 +109,7 @@ const Home = () => {
                 </span>
               </a>
             </div>
-            <div className="mt-10">
+            <div className="mt-4">
               <div className="text-center relative lg:w-1/2 mx-auto">
                 <div className="flex flex-col lg:flex-row items-center justify-center gap-4 animate-fade-in-up delay-300">
                   <span>
@@ -124,15 +124,20 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  Jan is the open-source ChatGPT replacement.
+                  The best of open-source AI in an easy-to-use product.
                 </p>
               </div>
-              <div className="flex px-4 flex-col lg:flex-row items-center gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
-                <DropdownButton
-                  size="xxl"
-                  className="w-full !rounded-[20px] lg:w-auto"
-                  lastRelease={lastRelease}
-                />
+              <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
+                <div>
+                  <DropdownButton
+                    size="xxl"
+                    className="w-full !rounded-[20px] lg:w-auto"
+                    lastRelease={lastRelease}
+                  />
+                  <div className="font-medium text-center mt-2 text-white">
+                    +{totalDownload(release)} downloads
+                  </div>
+                </div>
                 <a
                   href="https://discord.com/invite/FTk2MvZwJH"
                   target="_blank"
@@ -189,7 +194,8 @@ const Home = () => {
                         </defs>
                       </svg>
                       <span className="text-sm">
-                        {formatCompactNumber(discordWidget.presence_count)}
+                        15k+
+                        {/* {formatCompactNumber(discordWidget.presence_count)} */}
                       </span>
                     </div>
                   </Button>
@@ -198,7 +204,7 @@ const Home = () => {
             </div>
           </div>
 
-          <div className="absolute w-full bottom-0 left-0 flex justify-center">
+          <div className="absolute w-full -bottom-10 left-0 flex justify-center">
             <img
               className="abs animate-float scale-[175%] md:scale-100"
               src={CuteRobotFlyingPNG.src}
@@ -448,9 +454,10 @@ const Home = () => {
                           <div className="flex items-center gap-1 ml-3">
                             <IoMdPeople className="size-5" />
                             <span className="text-sm">
-                              {formatCompactNumber(
+                              15k+
+                              {/* {formatCompactNumber(
                                 discordWidget.presence_count
-                              )}
+                              )} */}
                             </span>
                           </div>
                         </Button>
@@ -483,9 +490,10 @@ const Home = () => {
                           <div className="flex items-center gap-1 ml-3">
                             <IoMdPeople className="size-5" />
                             <span className="text-sm">
-                              {formatCompactNumber(
+                              15k+
+                              {/* {formatCompactNumber(
                                 discordWidget.presence_count
-                              )}
+                              )} */}
                             </span>
                           </div>
                         </Button>

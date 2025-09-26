@@ -17,24 +17,24 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@vitest/ui": "^3.2.4",
-    "cpx": "^1.5.0",
-    "jsdom": "^26.1.0",
-    "rimraf": "^3.0.2",
+    "@vitest/ui": "2.1.9",
+    "cpx": "1.5.0",
+    "jsdom": "26.1.0",
+    "rimraf": "3.0.2",
     "rolldown": "1.0.0-beta.1",
     "ts-loader": "^9.5.0",
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.4"
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
-    "@tauri-apps/api": "^2.5.0",
-    "@tauri-apps/plugin-http": "^2.5.1",
+    "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-http": "2.5.0",
     "@tauri-apps/plugin-log": "^2.6.0",
     "fetch-retry": "^5.0.6",
-    "ulidx": "^2.3.0"
+    "ulidx": "2.4.1"
   },
   "engines": {
     "node": ">=18.0.0"
