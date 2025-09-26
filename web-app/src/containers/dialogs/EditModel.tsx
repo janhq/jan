@@ -58,13 +58,27 @@ export const DialogEditModel = ({
 
   // Initialize with the provided model ID or the first model if available
   useEffect(() => {
-    if (modelId) {
-      setSelectedModelId(modelId)
-    } else if (provider.models && provider.models.length > 0) {
-      setSelectedModelId(provider.models[0].id)
+    // Only set the selected model ID if the dialog is not open to prevent switching during downloads
+    if (!isOpen) {
+      if (modelId) {
+        setSelectedModelId(modelId)
+      } else if (provider.models && provider.models.length > 0) {
+        setSelectedModelId(provider.models[0].id)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId]) // Remove 'provider' dependency to prevent model ID changes when provider updates
+  }, [modelId, isOpen]) // Add isOpen dependency to prevent switching when dialog is open
+
+  // Handle dialog opening - set the initial model selection
+  useEffect(() => {
+    if (isOpen && !selectedModelId) {
+      if (modelId) {
+        setSelectedModelId(modelId)
+      } else if (provider.models && provider.models.length > 0) {
+        setSelectedModelId(provider.models[0].id)
+      }
+    }
+  }, [isOpen, selectedModelId, modelId, provider.models])
 
   // Get the currently selected model
   const selectedModel = provider.models.find(
