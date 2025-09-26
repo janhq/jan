@@ -69,7 +69,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     if (!authService) {
       return []
     }
-    return authService.getAllProviders()
+    return (authService as any).getAllProviders()
   },
 
   loginWithProvider: async (providerId: ProviderType) => {
@@ -78,7 +78,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       throw new Error('Authentication not available on this platform')
     }
 
-    await authService.loginWithProvider(providerId)
+    await (authService as any).loginWithProvider(providerId)
   },
 
   handleProviderCallback: async (
@@ -91,7 +91,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       throw new Error('Authentication not available on this platform')
     }
 
-    await authService.handleProviderCallback(providerId, code, state)
+    await (authService as any).handleProviderCallback(providerId, code, state)
     // Reload auth state after successful callback
     await loadAuthState()
   },
@@ -102,7 +102,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       return false
     }
 
-    return authService.isAuthenticatedWithProvider(providerId)
+    return (authService as any).isAuthenticatedWithProvider(providerId)
   },
 
   logout: async () => {
@@ -133,7 +133,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     }
 
     try {
-      const profile = await authService.getCurrentUser(forceRefresh)
+      const profile = await (authService as any).getCurrentUser(forceRefresh)
       set({
         user: profile,
         isAuthenticated: profile !== null,
@@ -156,11 +156,11 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       set({ isLoading: true })
 
       // Check if user is authenticated with any provider
-      const isAuth = authService.isAuthenticated()
+      const isAuth = (authService as any).isAuthenticated()
 
       // Load user profile if authenticated
       if (isAuth) {
-        const profile = await authService.getCurrentUser(forceRefresh)
+        const profile = await (authService as any).getCurrentUser(forceRefresh)
         set({
           user: profile,
           isAuthenticated: profile !== null,
@@ -184,12 +184,12 @@ const useAuthStore = create<AuthState>()((set, get) => ({
 
   subscribeToAuthEvents: (callback: (event: MessageEvent) => void) => {
     const { authService } = get()
-    if (!authService || typeof authService.onAuthEvent !== 'function') {
+    if (!authService || typeof (authService as any).onAuthEvent !== 'function') {
       return () => {} // Return no-op cleanup
     }
 
     try {
-      return authService.onAuthEvent(callback)
+      return (authService as any).onAuthEvent(callback)
     } catch (error) {
       console.warn('Failed to subscribe to auth events:', error)
       return () => {}

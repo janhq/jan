@@ -11,7 +11,10 @@
   },
   "plugins": {},
   "bundle": {
-    "resources": ["resources/LICENSE", "resources/pre-install"],
-    "externalBin": []
+    "resources": ["resources/LICENSE"],
+    "externalBin": [],
+    "android": {
+      "minSdkVersion": 24
+    }
   }
 }
