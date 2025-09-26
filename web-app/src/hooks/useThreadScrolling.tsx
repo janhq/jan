@@ -54,6 +54,7 @@ export const useThreadScrolling = (
     }
   }, [scrollContainerRef])
 
+  }, [scrollContainerRef])
 
   const handleScroll = useCallback((e: Event) => {
     const target = e.target as HTMLDivElement
