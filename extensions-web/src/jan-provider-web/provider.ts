@@ -386,6 +386,12 @@ export default class JanProviderWeb extends AIEngine {
     )
   }
 
+  async update(modelId: string, model: Partial<modelInfo>): Promise<void> {
+    throw new Error(
+      `Update operation not supported for remote Jan API model: ${modelId}`
+    )
+  }
+
   async import(modelId: string, _opts: ImportOptions): Promise<void> {
     throw new Error(
       `Import operation not supported for remote Jan API model: ${modelId}`

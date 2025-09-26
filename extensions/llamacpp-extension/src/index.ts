@@ -1155,6 +1155,49 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Update a model with new information.
+   * @param modelId
+   * @param model
+   */
+  async update(modelId: string, model: Partial<modelInfo>): Promise<void> {
+    const modelFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([modelFolderPath, 'model.yml']),
+    })
+    const newFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      model.id,
+    ])
+    // Check if newFolderPath exists
+    if (await fs.existsSync(newFolderPath)) {
+      throw new Error(`Model with ID ${model.id} already exists`)
+    }
+    const newModelConfigPath = await joinPath([newFolderPath, 'model.yml'])
+    await fs.mv(modelFolderPath, newFolderPath).then(() =>
+      // now replace what values have previous model name with format
+      invoke('write_yaml', {
+        data: {
+          ...modelConfig,
+          model_path: modelConfig?.model_path?.replace(
+            `${this.providerId}/models/${modelId}`,
+            `${this.providerId}/models/${model.id}`
+          ),
+          mmproj_path: modelConfig?.mmproj_path?.replace(
+            `${this.providerId}/models/${modelId}`,
+            `${this.providerId}/models/${model.id}`
+          ),
+        },
+        savePath: newModelConfigPath,
+      })
+    )
+  }
+
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
     const isValidModelId = (id: string) => {
       // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
