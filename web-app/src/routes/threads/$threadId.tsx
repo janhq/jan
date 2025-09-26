@@ -23,6 +23,7 @@ import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { useNavigate } from '@tanstack/react-router'
+import { useThreadScrolling } from '@/hooks/useThreadScrolling'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -76,6 +77,8 @@ function ThreadDetail() {
   //     return
   //   }
   // }, [threadId, isTemporaryChat, thread, navigate])
+  // Get padding height for ChatGPT-style message positioning
+  const { paddingHeight } = useThreadScrolling(threadId, scrollContainerRef)
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -214,6 +217,12 @@ function ThreadDetail() {
             <StreamingContent
               threadId={threadId}
               data-test-id="thread-content-text"
+            />
+            {/* Persistent padding element for ChatGPT-style message positioning */}
+            <div
+              style={{ height: paddingHeight }}
+              className="flex-shrink-0"
+              data-testid="chat-padding"
             />
           </div>
         </div>

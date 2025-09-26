@@ -44,6 +44,12 @@ const mkdir = (...args: any[]) => globalThis.core.api?.mkdir({ args })
 const rm = (...args: any[]) => globalThis.core.api?.rm({ args })
 
 /**
+ * Moves a file from the source path to the destination path.
+ * @returns {Promise<any>} A Promise that resolves when the file is moved successfully.
+ */
+const mv = (...args: any[]) => globalThis.core.api?.mv({ args })
+
+/**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
  * @returns {Promise<any>} A Promise that resolves when the file is deleted.
@@ -92,6 +98,7 @@ export const fs = {
   readdirSync,
   mkdir,
   rm,
+  mv,
   unlinkSync,
   appendFileSync,
   copyFile,
