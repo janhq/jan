@@ -3,7 +3,7 @@
     "devUrl": null,
     "frontendDist": "../web-app/dist"
   },
-  "identifier": "jan.ai.app.ios",
+  "identifier": "jan.ai.app",
   "app": {
     "security": {
       "capabilities": ["mobile"]

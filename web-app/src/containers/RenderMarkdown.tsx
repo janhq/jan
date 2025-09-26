@@ -7,7 +7,7 @@ import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState, useMemo, useCallback } from 'react'
+import React, { memo, useState, useMemo, useCallback } from 'react'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -154,8 +154,8 @@ const CodeComponent = memo(
             )}
           </button>
         </div>
-        <SyntaxHighlighter
-          style={
+        {React.createElement(SyntaxHighlighter as React.ComponentType<any>, {
+          style:
             prismStyles[
               codeBlockStyle
                 .split('-')
@@ -165,31 +165,27 @@ const CodeComponent = memo(
                     : part.charAt(0).toUpperCase() + part.slice(1)
                 )
                 .join('') as keyof typeof prismStyles
-            ] || prismStyles.oneLight
-          }
-          language={language}
-          showLineNumbers={showLineNumbers}
-          wrapLines={true}
-          lineProps={
-            isWrapping
-              ? {
-                  style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
-                }
-              : {}
-          }
-          customStyle={{
+            ] || prismStyles.oneLight,
+          language,
+          showLineNumbers,
+          wrapLines: true,
+          lineProps: isWrapping
+            ? {
+                style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
+              }
+            : {},
+          customStyle: {
             margin: 0,
             padding: '8px',
             borderRadius: '0 0 4px 4px',
             overflow: 'auto',
             border: 'none',
-          }}
-          PreTag="div"
-          CodeTag={'code'}
-          {...props}
-        >
-          {code}
-        </SyntaxHighlighter>
+          },
+          PreTag: 'div',
+          CodeTag: 'code',
+          ...props,
+          children: code
+        })}
       </div>
     )
   }

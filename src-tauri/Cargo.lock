@@ -5333,6 +5333,7 @@ dependencies = [
  "sysinfo",
  "tauri",
  "tauri-plugin",
+ "tauri-plugin-hardware",
  "thiserror 2.0.12",
  "tokio",
 ]
