@@ -93,29 +93,6 @@ This handles everything: installs dependencies, builds core components, and laun
 - `make test` - Run tests and linting
 - `make clean` - Delete everything and start fresh
 
-### Run with Mise (easier)
-
-You can also run with [mise](https://mise.jdx.dev/), which is a bit easier as it ensures Node.js, Rust, and other dependency versions are automatically managed:
-
-```bash
-git clone https://github.com/menloresearch/jan
-cd jan
-
-# Install mise (if not already installed)
-curl https://mise.run | sh
-
-# Install tools and start development
-mise install    # installs Node.js, Rust, and other tools
-mise dev        # runs the full development setup
-```
-
-**Available mise commands:**
-- `mise dev` - Full development setup and launch
-- `mise build` - Production build
-- `mise test` - Run tests and linting
-- `mise clean` - Delete everything and start fresh
-- `mise tasks` - List all available tasks
-
 ### Manual Commands
 
 ```bash
