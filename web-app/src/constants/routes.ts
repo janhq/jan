@@ -3,6 +3,8 @@ export const route = {
   home: '/',
   appLogs: '/logs',
   assistant: '/assistant',
+  project: '/project',
+  projectDetail: '/project/$projectId',
   settings: {
     index: '/settings',
     model_providers: '/settings/providers',

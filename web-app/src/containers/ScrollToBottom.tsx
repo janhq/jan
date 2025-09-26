@@ -18,7 +18,7 @@ const ScrollToBottom = ({
 }) => {
   const { t } = useTranslation()
   const appMainViewBgColor = useAppearance((state) => state.appMainViewBgColor)
-  const { showScrollToBottomBtn, scrollToBottom, setIsUserScrolling } =
+  const { showScrollToBottomBtn, scrollToBottom } =
     useThreadScrolling(threadId, scrollContainerRef)
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -50,7 +50,6 @@ const ScrollToBottom = ({
           className="bg-main-view-fg/10 px-2 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
           onClick={() => {
             scrollToBottom(true)
-            setIsUserScrolling(false)
           }}
         >
           <p className="text-xs">{t('scrollToBottom')}</p>

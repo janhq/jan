@@ -7,8 +7,15 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 // Hook for the dropdown position
-function useDropdownPosition(open: boolean, containerRef: React.RefObject<HTMLDivElement | null>) {
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
+function useDropdownPosition(
+  open: boolean,
+  containerRef: React.RefObject<HTMLDivElement | null>
+) {
+  const [dropdownPosition, setDropdownPosition] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+  })
 
   const updateDropdownPosition = useCallback(() => {
     if (containerRef.current) {
@@ -51,10 +58,18 @@ function useDropdownPosition(open: boolean, containerRef: React.RefObject<HTMLDi
 }
 
 // Components for the different sections of the dropdown
-const ErrorSection = ({ error, t }: { error: string; t: (key: string) => string }) => (
+const ErrorSection = ({
+  error,
+  t,
+}: {
+  error: string
+  t: (key: string) => string
+}) => (
   <div className="px-3 py-2 text-sm text-destructive">
     <div className="flex items-center justify-between">
-      <span className="text-destructive font-medium">{t('common:failedToLoadModels')}</span>
+      <span className="text-destructive font-medium">
+        {t('common:failedToLoadModels')}
+      </span>
     </div>
     <div className="text-xs text-main-view-fg/50 mt-0">{error}</div>
   </div>
@@ -67,12 +82,20 @@ const LoadingSection = ({ t }: { t: (key: string) => string }) => (
   </div>
 )
 
-const EmptySection = ({ inputValue, t }: { inputValue: string; t: (key: string, options?: Record<string, string>) => string }) => (
+const EmptySection = ({
+  inputValue,
+  t,
+}: {
+  inputValue: string
+  t: (key: string, options?: Record<string, string>) => string
+}) => (
   <div className="px-3 py-3 text-sm text-main-view-fg/50 text-center">
     <div className="flex items-center justify-between">
       <div className="flex-1">
         {inputValue.trim() ? (
-          <span className="text-main-view-fg/50">{t('common:noModelsFoundFor', { searchValue: inputValue })}</span>
+          <span className="text-main-view-fg/50">
+            {t('common:noModelsFoundFor', { searchValue: inputValue })}
+          </span>
         ) : (
           <span className="text-main-view-fg/50">{t('common:noModels')}</span>
         )}
@@ -86,7 +109,7 @@ const ModelsList = ({
   value,
   highlightedIndex,
   onModelSelect,
-  onHighlight
+  onHighlight,
 }: {
   filteredModels: string[]
   value: string
@@ -127,67 +150,95 @@ function useKeyboardNavigation(
   onModelSelect: (model: string) => void,
   dropdownRef: React.RefObject<HTMLDivElement | null>
 ) {
-
   // Scroll to the highlighted element
   useEffect(() => {
     if (highlightedIndex >= 0 && dropdownRef.current) {
       requestAnimationFrame(() => {
-        const modelElements = dropdownRef.current?.querySelectorAll('[data-model]')
-        const highlightedElement = modelElements?.[highlightedIndex] as HTMLElement
+        const modelElements =
+          dropdownRef.current?.querySelectorAll('[data-model]')
+        const highlightedElement = modelElements?.[
+          highlightedIndex
+        ] as HTMLElement
         if (highlightedElement) {
           highlightedElement.scrollIntoView({
             block: 'nearest',
-            behavior: 'auto'
+            behavior: 'auto',
           })
         }
       })
     }
   }, [highlightedIndex, dropdownRef])
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Open the dropdown with the arrows if closed
-    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      if (models.length > 0) {
-        e.preventDefault()
-        setOpen(true)
-        setHighlightedIndex(0)
-      }
-      return
-    }
-
-    if (!open) return
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev < filteredModels.length - 1 ? prev + 1 : 0))
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setHighlightedIndex((prev: number) => filteredModels.length === 0 ? 0 : (prev > 0 ? prev - 1 : filteredModels.length - 1))
-        break
-      case 'Enter':
-        e.preventDefault()
-        if (highlightedIndex >= 0 && highlightedIndex < filteredModels.length) {
-          onModelSelect(filteredModels[highlightedIndex])
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      // Open the dropdown with the arrows if closed
+      if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        if (models.length > 0) {
+          e.preventDefault()
+          setOpen(true)
+          setHighlightedIndex(0)
         }
-        break
-      case 'Escape':
-        e.preventDefault()
-        e.stopPropagation()
-        setOpen(false)
-        setHighlightedIndex(-1)
-        break
-      case 'PageUp':
-        e.preventDefault()
-        setHighlightedIndex(0)
-        break
-      case 'PageDown':
-        e.preventDefault()
-        setHighlightedIndex(filteredModels.length - 1)
-        break
-    }
-  }, [open, setOpen, models.length, filteredModels, highlightedIndex, setHighlightedIndex, onModelSelect])
+        return
+      }
+
+      if (!open) return
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setHighlightedIndex((prev: number) =>
+            filteredModels.length === 0
+              ? 0
+              : prev < filteredModels.length - 1
+                ? prev + 1
+                : 0
+          )
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setHighlightedIndex((prev: number) =>
+            filteredModels.length === 0
+              ? 0
+              : prev > 0
+                ? prev - 1
+                : filteredModels.length - 1
+          )
+          break
+        case 'Enter':
+          e.preventDefault()
+          if (
+            highlightedIndex >= 0 &&
+            highlightedIndex < filteredModels.length
+          ) {
+            onModelSelect(filteredModels[highlightedIndex])
+          }
+          break
+        case 'Escape':
+          e.preventDefault()
+          e.stopPropagation()
+          setOpen(false)
+          setHighlightedIndex(-1)
+          break
+        case 'PageUp':
+          e.preventDefault()
+          setHighlightedIndex(0)
+          break
+        case 'PageDown':
+          e.preventDefault()
+          setHighlightedIndex(filteredModels.length - 1)
+          break
+      }
+    },
+    [
+      open,
+      setOpen,
+      models.length,
+      filteredModels,
+      highlightedIndex,
+      setHighlightedIndex,
+      onModelSelect,
+    ]
+  )
 
   return { handleKeyDown }
 }
@@ -266,13 +317,18 @@ export function ModelCombobox({
     }
 
     const events = ['mousedown', 'touchstart']
-    events.forEach(eventType => {
-      document.addEventListener(eventType, handleClickOutside, { capture: true, passive: true })
+    events.forEach((eventType) => {
+      document.addEventListener(eventType, handleClickOutside, {
+        capture: true,
+        passive: true,
+      })
     })
 
     return () => {
-      events.forEach(eventType => {
-        document.removeEventListener(eventType, handleClickOutside, { capture: true })
+      events.forEach((eventType) => {
+        document.removeEventListener(eventType, handleClickOutside, {
+          capture: true,
+        })
       })
     }
   }, [open])
@@ -286,26 +342,32 @@ export function ModelCombobox({
   }, [])
 
   // Handler for the input change
-  const handleInputChange = useCallback((newValue: string) => {
-    setInputValue(newValue)
-    onChange(newValue)
+  const handleInputChange = useCallback(
+    (newValue: string) => {
+      setInputValue(newValue)
+      onChange(newValue)
 
-    // Open the dropdown if the user types and there are models
-    if (newValue.trim() && models.length > 0) {
-      setOpen(true)
-    } else {
-      setOpen(false)
-    }
-  }, [onChange, models.length])
+      // Open the dropdown if the user types and there are models
+      if (newValue.trim() && models.length > 0) {
+        setOpen(true)
+      } else {
+        setOpen(false)
+      }
+    },
+    [onChange, models.length]
+  )
 
   // Handler for the model selection
-  const handleModelSelect = useCallback((model: string) => {
-    setInputValue(model)
-    onChange(model)
-    setOpen(false)
-    setHighlightedIndex(-1)
-    inputRef.current?.focus()
-  }, [onChange])
+  const handleModelSelect = useCallback(
+    (model: string) => {
+      setInputValue(model)
+      onChange(model)
+      setOpen(false)
+      setHighlightedIndex(-1)
+      inputRef.current?.focus()
+    },
+    [onChange]
+  )
 
   // Hook for the keyboard navigation
   const { handleKeyDown } = useKeyboardNavigation(
@@ -376,54 +438,52 @@ export function ModelCombobox({
             onClick={handleDropdownToggle}
             className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10"
           >
-            {loading ? (
-              <IconLoader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <IconChevronDown className="h-3 w-3 opacity-50" />
-            )}
+            <IconChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </div>
 
         {/* Custom dropdown rendered as portal */}
-        {open && dropdownPosition.width > 0 && createPortal(
-          <div
-            ref={dropdownRef}
-            className="fixed z-[9999] bg-main-view border border-main-view-fg/10 rounded-md shadow-lg max-h-[300px] overflow-y-auto text-main-view-fg animate-in fade-in-0 zoom-in-95 duration-200"
-            style={{
-              top: dropdownPosition.top,
-              left: dropdownPosition.left,
-              width: dropdownPosition.width,
-              minWidth: dropdownPosition.width,
-              maxWidth: dropdownPosition.width,
-              pointerEvents: 'auto',
-            }}
-            data-dropdown="model-combobox"
-            onPointerDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-          >
-            {/* Error state */}
-            {error && <ErrorSection error={error} t={t} />}
+        {open &&
+          dropdownPosition.width > 0 &&
+          createPortal(
+            <div
+              ref={dropdownRef}
+              className="fixed z-[9999] bg-main-view border border-main-view-fg/10 rounded-md shadow-lg max-h-[300px] overflow-y-auto text-main-view-fg animate-in fade-in-0 zoom-in-95 duration-200"
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width,
+                minWidth: dropdownPosition.width,
+                maxWidth: dropdownPosition.width,
+                pointerEvents: 'auto',
+              }}
+              data-dropdown="model-combobox"
+              onPointerDown={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              {/* Error state */}
+              {error && <ErrorSection error={error} t={t} />}
 
-            {/* Loading state */}
-            {loading && <LoadingSection t={t} />}
+              {/* Loading state */}
+              {loading && <LoadingSection t={t} />}
 
-            {/* Models list */}
-            {!loading && !error && (
-              filteredModels.length === 0 ? (
-                <EmptySection inputValue={inputValue} t={t} />
-              ) : (
-                <ModelsList
-                  filteredModels={filteredModels}
-                  value={value}
-                  highlightedIndex={highlightedIndex}
-                  onModelSelect={handleModelSelect}
-                  onHighlight={setHighlightedIndex}
-                />
-              )
-            )}
-          </div>,
-          document.body
-        )}
+              {/* Models list */}
+              {!loading &&
+                !error &&
+                (filteredModels.length === 0 ? (
+                  <EmptySection inputValue={inputValue} t={t} />
+                ) : (
+                  <ModelsList
+                    filteredModels={filteredModels}
+                    value={value}
+                    highlightedIndex={highlightedIndex}
+                    onModelSelect={handleModelSelect}
+                    onHighlight={setHighlightedIndex}
+                  />
+                ))}
+            </div>,
+            document.body
+          )}
       </div>
     </div>
   )

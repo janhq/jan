@@ -97,18 +97,6 @@
     }
   },
   {
-    "key": "batch_size",
-    "title": "Batch Size",
-    "description": "Logical maximum batch size for processing prompts.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 2048,
-      "placeholder": "2048",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
     "key": "ubatch_size",
     "title": "uBatch Size",
     "description": "Physical maximum batch size for processing prompts.",
