@@ -91,7 +91,7 @@ jobs:
         with:
           node-version: 20
       - name: Set up rust toolchains
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
