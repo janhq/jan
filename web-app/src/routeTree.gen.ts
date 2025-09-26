@@ -11,6 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as TemporaryChatImport } from './routes/temporary-chat'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as LogsImport } from './routes/logs'
 import { Route as AssistantImport } from './routes/assistant'
@@ -35,6 +36,12 @@ import { Route as SettingsProvidersProviderNameImport } from './routes/settings/
 import { Route as AuthGoogleCallbackImport } from './routes/auth.google.callback'
 
 // Create/Update Routes
+
+const TemporaryChatRoute = TemporaryChatImport.update({
+  id: '/temporary-chat',
+  path: '/temporary-chat',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const SystemMonitorRoute = SystemMonitorImport.update({
   id: '/system-monitor',
@@ -201,6 +208,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SystemMonitorImport
       parentRoute: typeof rootRoute
     }
+    '/temporary-chat': {
+      id: '/temporary-chat'
+      path: '/temporary-chat'
+      fullPath: '/temporary-chat'
+      preLoaderRoute: typeof TemporaryChatImport
+      parentRoute: typeof rootRoute
+    }
     '/hub/$modelId': {
       id: '/hub/$modelId'
       path: '/hub/$modelId'
@@ -337,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/temporary-chat': typeof TemporaryChatRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -362,6 +377,7 @@ export interface FileRoutesByTo {
   '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/temporary-chat': typeof TemporaryChatRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -383,11 +399,12 @@ export interface FileRoutesByTo {
 }
 
 export interface FileRoutesById {
-  '__root__': typeof rootRoute
+  __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/temporary-chat': typeof TemporaryChatRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -415,6 +432,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/logs'
     | '/system-monitor'
+    | '/temporary-chat'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -439,6 +457,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/logs'
     | '/system-monitor'
+    | '/temporary-chat'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -463,6 +482,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/logs'
     | '/system-monitor'
+    | '/temporary-chat'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -489,6 +509,7 @@ export interface RootRouteChildren {
   AssistantRoute: typeof AssistantRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  TemporaryChatRoute: typeof TemporaryChatRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
@@ -514,6 +535,7 @@ const rootRouteChildren: RootRouteChildren = {
   AssistantRoute: AssistantRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  TemporaryChatRoute: TemporaryChatRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
@@ -548,6 +570,7 @@ export const routeTree = rootRoute
         "/assistant",
         "/logs",
         "/system-monitor",
+        "/temporary-chat",
         "/hub/$modelId",
         "/local-api-server/logs",
         "/project/$projectId",
@@ -579,6 +602,9 @@ export const routeTree = rootRoute
     },
     "/system-monitor": {
       "filePath": "system-monitor.tsx"
+    },
+    "/temporary-chat": {
+      "filePath": "temporary-chat.tsx"
     },
     "/hub/$modelId": {
       "filePath": "hub/$modelId.tsx"
