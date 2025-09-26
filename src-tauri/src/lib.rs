@@ -8,7 +8,6 @@ use core::{
 };
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
-use tauri_plugin_deep_link::DeepLinkExt;
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
@@ -54,6 +53,7 @@ pub fn run() {
             core::filesystem::commands::readdir_sync,
             core::filesystem::commands::read_file_sync,
             core::filesystem::commands::rm,
+            core::filesystem::commands::mv,
             core::filesystem::commands::file_stat,
             core::filesystem::commands::write_file_sync,
             core::filesystem::commands::write_yaml,
@@ -163,6 +163,8 @@ pub fn run() {
 
             #[cfg(any(windows, target_os = "linux"))]
             {
+                use tauri_plugin_deep_link::DeepLinkExt;
+
                 app.deep_link().register_all()?;
             }
             setup_mcp(app);

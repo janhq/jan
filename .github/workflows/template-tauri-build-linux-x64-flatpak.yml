@@ -100,12 +100,35 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
-          # Temporarily enable devtool on prod build
-          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
-          cat ./src-tauri/Cargo.toml
+          # Update tauri plugin versions
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
+          
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          
+          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/Cargo.toml---------"
           cat ./src-tauri/Cargo.toml
+
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml  
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then

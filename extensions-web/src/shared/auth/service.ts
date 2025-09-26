@@ -48,6 +48,18 @@ export class JanAuthService {
    * Called on app load to check existing session
    */
   async initialize(): Promise<void> {
+    // Ensure refreshtoken is valid (in case of expired session or secret change)
+    try {
+      await refreshToken()
+    } catch (error) {
+      console.log('Failed to refresh token on init:', error)
+      // If refresh fails, logout to clear any invalid state
+      console.log('Logging out and clearing auth state to clear invalid session...')
+      await logoutUser()
+      this.clearAuthState()
+      this.authBroadcast.broadcastLogout()
+    }
+    // Authentication state check
     try {
       if (!this.isAuthenticated()) {
         // Not authenticated - ensure guest access

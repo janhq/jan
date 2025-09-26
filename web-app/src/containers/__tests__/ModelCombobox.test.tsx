@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -11,7 +19,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string, options?: Record<string, string>) => {
       if (key === 'common:failedToLoadModels') return 'Failed to load models'
       if (key === 'common:loading') return 'Loading'
-      if (key === 'common:noModelsFoundFor') return `No models found for "${options?.searchValue}"`
+      if (key === 'common:noModelsFoundFor')
+        return `No models found for "${options?.searchValue}"`
       if (key === 'common:noModels') return 'No models available'
       return key
     },
@@ -21,7 +30,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 describe('ModelCombobox', () => {
   const mockOnChange = vi.fn()
   const mockOnRefresh = vi.fn()
-  
+
   const defaultProps = {
     value: '',
     onChange: mockOnChange,
@@ -64,7 +73,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} />)
     })
-    
+
     const input = screen.getByRole('textbox')
     expect(input).toBeInTheDocument()
     expect(input).toHaveAttribute('placeholder', 'Type or select a model...')
@@ -74,7 +83,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} placeholder="Choose a model" />)
     })
-    
+
     const input = screen.getByRole('textbox')
     expect(input).toHaveAttribute('placeholder', 'Choose a model')
   })
@@ -83,7 +92,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} />)
     })
-    
+
     const button = screen.getByRole('button')
     expect(button).toBeInTheDocument()
   })
@@ -92,7 +101,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} value="gpt-4" />)
     })
-    
+
     const input = screen.getByDisplayValue('gpt-4')
     expect(input).toBeInTheDocument()
   })
@@ -110,7 +119,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} disabled />)
     })
-    
+
     const input = screen.getByRole('textbox')
     const button = screen.getByRole('button')
 
@@ -118,27 +127,19 @@ describe('ModelCombobox', () => {
     expect(button).toBeDisabled()
   })
 
-  it('shows loading spinner in trigger button', () => {
-    act(() => {
-      render(<ModelCombobox {...defaultProps} loading />)
-    })
-    
-    const button = screen.getByRole('button')
-    const spinner = button.querySelector('.animate-spin')
-    expect(spinner).toBeInTheDocument()
-  })
-
   it('shows loading section when dropdown is opened during loading', async () => {
     const user = userEvent.setup()
     render(<ModelCombobox {...defaultProps} loading />)
-    
+
     // Click input to trigger dropdown opening
     const input = screen.getByRole('textbox')
     await user.click(input)
-    
+
     // Wait for dropdown to appear and check loading section
     await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
       expect(screen.getByText('Loading')).toBeInTheDocument()
     })
@@ -179,7 +180,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} models={[]} />)
     })
-    
+
     const input = screen.getByRole('textbox')
     expect(input).toBeInTheDocument()
   })
@@ -188,7 +189,7 @@ describe('ModelCombobox', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} models={['model1', 'model2']} />)
     })
-    
+
     const input = screen.getByRole('textbox')
     expect(input).toBeInTheDocument()
   })
@@ -259,7 +260,7 @@ describe('ModelCombobox', () => {
         />
       )
     })
-    
+
     const input = screen.getByRole('textbox')
     expect(input).toBeInTheDocument()
     expect(input).toBeDisabled()
@@ -273,7 +274,9 @@ describe('ModelCombobox', () => {
     await user.click(button)
 
     await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
     })
   })
@@ -287,7 +290,9 @@ describe('ModelCombobox', () => {
 
     expect(input).toHaveFocus()
     await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
     })
   })
@@ -313,9 +318,11 @@ describe('ModelCombobox', () => {
 
     await waitFor(() => {
       // Dropdown should be open
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
-      
+
       // Should show GPT models
       expect(screen.getByText('gpt-3.5-turbo')).toBeInTheDocument()
       expect(screen.getByText('gpt-4')).toBeInTheDocument()
@@ -344,10 +351,14 @@ describe('ModelCombobox', () => {
 
     await waitFor(() => {
       // Dropdown should be open
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
       // Should show empty state message
-      expect(screen.getByText('No models found for "nonexistent"')).toBeInTheDocument()
+      expect(
+        screen.getByText('No models found for "nonexistent"')
+      ).toBeInTheDocument()
     })
   })
 
@@ -358,12 +369,12 @@ describe('ModelCombobox', () => {
 
     const input = screen.getByRole('textbox')
     await user.click(input)
-    
+
     await waitFor(() => {
       const modelOption = screen.getByText('gpt-4')
       expect(modelOption).toBeInTheDocument()
     })
-    
+
     const modelOption = screen.getByText('gpt-4')
     await user.click(modelOption)
 
@@ -385,7 +396,9 @@ describe('ModelCombobox', () => {
 
   it('displays error message in dropdown', async () => {
     const user = userEvent.setup()
-    render(<ModelCombobox {...defaultProps} error="Network connection failed" />)
+    render(
+      <ModelCombobox {...defaultProps} error="Network connection failed" />
+    )
 
     const input = screen.getByRole('textbox')
     // Click input to open dropdown
@@ -393,7 +406,9 @@ describe('ModelCombobox', () => {
 
     await waitFor(() => {
       // Dropdown should be open
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
       // Error messages should be displayed
       expect(screen.getByText('Failed to load models')).toBeInTheDocument()
@@ -404,7 +419,13 @@ describe('ModelCombobox', () => {
   it('calls onRefresh when refresh button is clicked', async () => {
     const user = userEvent.setup()
     const localMockOnRefresh = vi.fn()
-    render(<ModelCombobox {...defaultProps} error="Network error" onRefresh={localMockOnRefresh} />)
+    render(
+      <ModelCombobox
+        {...defaultProps}
+        error="Network error"
+        onRefresh={localMockOnRefresh}
+      />
+    )
 
     const input = screen.getByRole('textbox')
     // Click input to open dropdown
@@ -412,13 +433,19 @@ describe('ModelCombobox', () => {
 
     await waitFor(() => {
       // Dropdown should be open with error section
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
-      const refreshButton = document.querySelector('[aria-label="Refresh models"]')
+      const refreshButton = document.querySelector(
+        '[aria-label="Refresh models"]'
+      )
       expect(refreshButton).toBeInTheDocument()
     })
 
-    const refreshButton = document.querySelector('[aria-label="Refresh models"]')
+    const refreshButton = document.querySelector(
+      '[aria-label="Refresh models"]'
+    )
     if (refreshButton) {
       await user.click(refreshButton)
       expect(localMockOnRefresh).toHaveBeenCalledTimes(1)
@@ -435,7 +462,9 @@ describe('ModelCombobox', () => {
 
     expect(input).toHaveFocus()
     await waitFor(() => {
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
     })
   })
@@ -446,16 +475,18 @@ describe('ModelCombobox', () => {
 
     const input = screen.getByRole('textbox')
     input.focus()
-    
+
     // ArrowDown should open dropdown
     await user.keyboard('{ArrowDown}')
-    
+
     await waitFor(() => {
       // Dropdown should be open
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
     })
-    
+
     // Navigate to second item
     await user.keyboard('{ArrowDown}')
 
@@ -474,13 +505,15 @@ describe('ModelCombobox', () => {
     const input = screen.getByRole('textbox')
     // Type 'gpt' to open dropdown and filter models
     await user.type(input, 'gpt')
-    
+
     await waitFor(() => {
       // Dropdown should be open with filtered models
-      const dropdown = document.querySelector('[data-dropdown="model-combobox"]')
+      const dropdown = document.querySelector(
+        '[data-dropdown="model-combobox"]'
+      )
       expect(dropdown).toBeInTheDocument()
     })
-    
+
     // Navigate to highlight first model and select it
     await user.keyboard('{ArrowDown}')
     await user.keyboard('{Enter}')

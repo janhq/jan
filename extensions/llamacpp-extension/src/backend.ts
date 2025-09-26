@@ -46,7 +46,6 @@ export async function getLocalInstalledBackends(): Promise<
       }
     }
   }
-  console.debug(local)
   return local
 }
 
@@ -319,7 +318,10 @@ export async function downloadBackend(
     events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
     // Fallback: if GitHub fails, retry once with CDN
-    if (source === 'github') {
+    if (
+      source === 'github' &&
+      error?.toString() !== 'Error: Download cancelled'
+    ) {
       console.warn(`GitHub download failed, falling back to CDN:`, error)
       return await downloadBackend(backend, version, 'cdn')
     }

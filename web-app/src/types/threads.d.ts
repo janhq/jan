@@ -44,6 +44,14 @@ type Thread = {
   model?: ThreadModel
   updated: number
   order?: number
+  metadata?: {
+    project?: {
+      id: string
+      name: string
+      updated_at: number
+    }
+    [key: string]: unknown
+  }
 }
 
 type Assistant = {
