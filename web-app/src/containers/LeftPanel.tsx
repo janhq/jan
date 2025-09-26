@@ -431,9 +431,9 @@ const LeftPanel = () => {
                             >
                               <IconFolder
                                 size={16}
-                                className="text-left-panel-fg/70"
+                                className="text-left-panel-fg/70 shrink-0"
                               />
-                              <span className="text-sm text-left-panel-fg/90">
+                              <span className="text-sm text-left-panel-fg/90 truncate">
                                 {folder.name}
                               </span>
                             </Link>
