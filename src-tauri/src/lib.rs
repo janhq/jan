@@ -8,54 +8,23 @@ use core::{
 };
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-use tauri_plugin_deep_link::DeepLinkExt;
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
-#[cfg(desktop)]
-use crate::core::setup::setup_tray;
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg_attr(all(mobile, any(target_os = "android", target_os = "ios")), tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(desktop)]
     let mut builder = tauri::Builder::default();
-    #[cfg(mobile)]
-    let builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
-          let arg = argv.iter().find(|arg| arg.starts_with("jan://"));
-            if let Some(deep_link) = arg {
-                println!("deep link: {deep_link}");
-                // handle the deep link, e.g., emit an event to the webview
-                _app.app_handle().emit("deep-link", deep_link).unwrap();
-                if let Some(window) = _app.app_handle().get_webview_window("main") {
-                    let _ = window.set_focus();
-                }
-            }
         }));
     }
 
-    #[cfg(feature = "hardware")]
-    let app = builder
+    let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_llamacpp::init())
-        .plugin(tauri_plugin_hardware::init());
-
-    #[cfg(not(feature = "hardware"))]
-    let app = builder
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -63,7 +32,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init());
 
-    let app = app
+    #[cfg(feature = "deep-link")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_hardware::init());
+    }
+
+    let app = app_builder
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
             core::filesystem::commands::join_path,
@@ -138,24 +117,6 @@ pub fn run() {
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
-                    #[cfg(target_os = "macos")]
-                    window
-                        .app_handle()
-                        .set_activation_policy(tauri::ActivationPolicy::Accessory)
-                        .unwrap();
-
-                    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                    window.hide().unwrap();
-                    #[cfg(any(target_os = "ios", target_os = "android"))]
-                    let _ = window; // Use window to avoid unused variable warning
-                    api.prevent_close();
-                }
-            }
-            _ => {}
-        })
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -177,15 +138,11 @@ pub fn run() {
                 log::error!("Failed to install extensions: {}", e);
             }
 
-            #[cfg(desktop)]
-            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
-                log::info!("Enabling system tray icon");
-                let _ = setup_tray(app);
-            }
-
-            #[cfg(all(not(any(target_os = "ios", target_os = "android")), any(windows, target_os = "linux")))]
+            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
             {
-                app.deep_link().register_all()?;
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // Register the deep-link scheme programmatically
+                app.deep_link().register("jan")?;
             }
             setup_mcp(app);
             Ok(())
@@ -199,13 +156,6 @@ pub fn run() {
             // This is called when the app is actually exiting (e.g., macOS dock quit)
             // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
-            // Hide window immediately
-            if let Some(window) = app_handle.get_webview_window("main") {
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                let _ = window.hide();
-                #[cfg(any(target_os = "ios", target_os = "android"))]
-                let _ = window; // Use window to avoid unused variable warning
-            }
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
                     // Hide window immediately (not available on mobile platforms)

@@ -1,8 +1,12 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["default", "system-monitor-window"]
+    }
+  },
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
-    "externalBin": ["resources/bin/uv"],
+    "resources": ["resources/LICENSE"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

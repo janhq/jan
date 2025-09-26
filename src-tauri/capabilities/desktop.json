@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
+  "identifier": "desktop",
+  "description": "enables the default permissions for desktop platforms",
   "windows": ["main"],
   "remote": {
     "urls": ["http://*"]
   },
+  "platforms": ["linux", "macOS", "windows"],
   "permissions": [
     "core:default",
     "core:webview:allow-set-webview-zoom",
@@ -21,6 +22,11 @@
     "dialog:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
+    "store:default",
+    "llamacpp:default",
+    "deep-link:default",
+    "hardware:default",
+
     {
       "identifier": "http:default",
       "allow": [
@@ -52,8 +58,6 @@
           "url": "http://0.0.0.0:*"
         }
       ]
-    },
-    "store:default",
-    "llamacpp:default"
+    }
   ]
 }

@@ -3,17 +3,19 @@
     "devUrl": null,
     "frontendDist": "../web-app/dist"
   },
+  "identifier": "jan.ai.app.ios",
   "app": {
     "security": {
-      "capabilities": ["default"]
+      "capabilities": ["mobile"]
     }
   },
+  "plugins": {},
   "bundle": {
     "active": true,
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     },
-    "resources": ["resources/LICENSE", "resources/pre-install"],
+    "resources": ["resources/LICENSE"],
     "externalBin": []
   }
 }

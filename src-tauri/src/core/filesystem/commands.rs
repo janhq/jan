@@ -124,7 +124,7 @@ pub fn readdir_sync<R: Runtime>(
 
 #[tauri::command]
 pub fn write_yaml(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl Runtime>,
     data: serde_json::Value,
     save_path: &str,
 ) -> Result<(), String> {
@@ -145,7 +145,7 @@ pub fn write_yaml(
 }
 
 #[tauri::command]
-pub fn read_yaml(app: tauri::AppHandle, path: &str) -> Result<serde_json::Value, String> {
+pub fn read_yaml<R: Runtime>(app: tauri::AppHandle<R>, path: &str) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path = jan_utils::normalize_path(&jan_data_folder.join(path));
     if !path.starts_with(&jan_data_folder) {
@@ -162,7 +162,7 @@ pub fn read_yaml(app: tauri::AppHandle, path: &str) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
-pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result<(), String> {
+pub fn decompress<R: Runtime>(app: tauri::AppHandle<R>, path: &str, output_dir: &str) -> Result<(), String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
 

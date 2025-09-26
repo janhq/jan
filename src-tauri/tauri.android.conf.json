@@ -1,15 +1,20 @@
 {
+  "identifier": "jan.ai.app",
   "build": {
     "devUrl": null,
     "frontendDist": "../web-app/dist"
   },
   "app": {
     "security": {
-      "capabilities": ["default"]
+      "capabilities": ["mobile"]
     }
   },
+  "plugins": {},
   "bundle": {
-    "resources": ["resources/LICENSE", "resources/pre-install"],
-    "externalBin": []
+    "resources": ["resources/LICENSE"],
+    "externalBin": [],
+    "android": {
+      "minSdkVersion": 24
+    }
   }
 }

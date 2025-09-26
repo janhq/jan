@@ -72,8 +72,7 @@
       "windows": {
         "installMode": "passive"
       }
-    },
-    "deep-link": { "schemes": ["jan"] }
+    }
   },
   "bundle": {
     "active": true,
