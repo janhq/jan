@@ -42,6 +42,11 @@
   ${If} ${FileExists} "$INSTDIR\resources\LICENSE"
     CopyFiles /SILENT "$INSTDIR\resources\LICENSE" "$INSTDIR\LICENSE"
     DetailPrint "Copied LICENSE to install root"
+
+    ; Optional cleanup - remove from resources folder
+    Delete "$INSTDIR\resources\LICENSE"
+  ${Else}
+    DetailPrint "LICENSE not found at expected location: $INSTDIR\resources\LICENSE"
   ${EndIf}
 
   ; ---- Copy vulkan-1.dll to install root ----
@@ -51,6 +56,7 @@
     
     ; Optional cleanup - remove from resources folder
     Delete "$INSTDIR\resources\lib\vulkan-1.dll"
+
     ; Only remove the lib directory if it's empty after removing both files
     RMDir "$INSTDIR\resources\lib"
   ${Else}

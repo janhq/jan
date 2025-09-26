@@ -77,25 +77,6 @@ async function main() {
     // Expect EEXIST error
   }
 
-  // Download VC++ Redistributable 17
-  if (platform == 'win32') {
-    const vcFilename = 'vc_redist.x64.exe'
-    const vcUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
-    
-    console.log(`Downloading VC++ Redistributable...`)
-    const vcSavePath = path.join(tempDir, vcFilename)
-    if (!fs.existsSync(vcSavePath)) {
-      await download(vcUrl, vcSavePath)
-    }
-
-    // copy to tauri resources
-    try {
-      copySync(vcSavePath, libDir)
-    } catch (err) {
-      // Expect EEXIST error
-    }
-  }
-
   console.log('Downloads completed.')
 }
 

@@ -241,6 +241,12 @@ export abstract class AIEngine extends BaseExtension {
   }
 
   /**
+   * Gets model info
+   * @param modelId
+   */
+  abstract get(modelId: string): Promise<modelInfo | undefined>
+
+  /**
    * Lists available models
    */
   abstract list(): Promise<modelInfo[]>
@@ -282,11 +288,6 @@ export abstract class AIEngine extends BaseExtension {
    * Get currently loaded models
    */
   abstract getLoadedModels(): Promise<string[]>
-
-  /**
-   * Optional method to get the underlying chat client
-   */
-  getChatClient?(sessionId: string): any
 
   /**
    * Check if a tool is supported by the model
