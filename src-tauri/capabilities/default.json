@@ -21,6 +21,7 @@
     "dialog:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
+    "store:default",
     {
       "identifier": "http:default",
       "allow": [
@@ -52,8 +53,6 @@
           "url": "http://0.0.0.0:*"
         }
       ]
-    },
-    "store:default",
-    "llamacpp:default"
+    }
   ]
 }

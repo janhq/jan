@@ -41,6 +41,15 @@ else
 	@echo "Not macOS; skipping Rust target installation."
 endif
 
+# Install required Rust targets for Android builds
+install-android-rust-targets:
+	@echo "Checking and installing Android Rust targets..."
+	@rustup target list --installed | grep -q "aarch64-linux-android" || rustup target add aarch64-linux-android
+	@rustup target list --installed | grep -q "armv7-linux-androideabi" || rustup target add armv7-linux-androideabi
+	@rustup target list --installed | grep -q "i686-linux-android" || rustup target add i686-linux-android
+	@rustup target list --installed | grep -q "x86_64-linux-android" || rustup target add x86_64-linux-android
+	@echo "Android Rust targets ready!"
+
 dev: install-and-build
 	yarn download:bin
 	yarn download:lib
@@ -63,6 +72,18 @@ serve-web-app:
 
 build-serve-web-app: build-web-app
 	yarn serve:web-app
+
+# Mobile
+dev-android: install-and-build install-android-rust-targets
+	@echo "Setting up Android development environment..."
+	@if [ ! -d "src-tauri/gen/android" ]; then \
+		echo "Android app not initialized. Initializing..."; \
+		yarn tauri android init; \
+	fi
+	@echo "Sourcing Android environment setup..."
+	@bash autoqa/scripts/setup-android-env.sh echo "Android environment ready"
+	@echo "Starting Android development server..."
+	yarn dev:android
 
 # Linting
 lint: install-and-build
