@@ -100,7 +100,6 @@
 /docs/server-settings 	                        /docs/desktop/server-settings 302
 /docs/settings	                                /docs/desktop/settings 302
 /docs/llama-cpp-server	                        /docs/desktop/llama-cpp-server 302
-/docs/server-settings 	                        /docs/desktop/server-settings 302
 /docs/install/linux	                            /docs/desktop/install/linux 302
 /docs/install/macos	                            /docs/desktop/install/mac 302
 /docs/install/windows	                        /docs/desktop/install/windows 302
@@ -109,7 +108,6 @@
 /docs/mcp-examples/search/serper	            /docs/desktop/mcp-examples/search/serper 302
 /docs/mcp-examples/data-analysis/jupyter	    /docs/desktop/mcp-examples/data-analysis/jupyter 302
 /docs/mcp-examples/productivity/todoist	        /docs/desktop/mcp-examples/productivity/todoist 302
-/docs/mcp-examples/search/serper	            /docs/desktop/mcp-examples/search/serper 302
 /docs/remote-models/anthropic	                /docs/desktop/remote-models/anthropic 302
 /docs/remote-models/openrouter	                /docs/desktop/remote-models/openrouter 302
 /docs/server-examples/llmcord	                /docs/desktop/server-examples/llmcord 302
