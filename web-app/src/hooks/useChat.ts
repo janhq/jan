@@ -33,6 +33,7 @@ import {
 } from '@/utils/reasoning'
 import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
+import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export const useChat = () => {
   const [
@@ -80,11 +81,20 @@ export const useChat = () => {
 
   const getMessages = useMessages((state) => state.getMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const setMessages = useMessages((state) => state.setMessages)
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
+
+    // Check if we're in temporary chat mode
+    const isTemporaryMode = window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
+
+    // Clear messages for existing temporary thread on reload to ensure fresh start
+    if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+      setMessages(TEMPORARY_CHAT_ID, [])
+    }
 
     if (!currentThread) {
       // Get prompt directly from store when needed
@@ -93,14 +103,23 @@ export const useChat = () => {
       const assistants = useAssistant.getState().assistants
       const selectedModel = useModelProvider.getState().selectedModel
       const selectedProvider = useModelProvider.getState().selectedProvider
+
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        currentPrompt,
-        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
+        isTemporaryMode ? 'Temporary Chat' : currentPrompt,
+        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
+        undefined, // no project metadata
+        isTemporaryMode // pass temporary flag
       )
+
+      // Clear messages for temporary chat to ensure fresh start on reload
+      if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+        setMessages(TEMPORARY_CHAT_ID, [])
+      }
+
       router.navigate({
         to: route.threadsDetail,
         params: { threadId: currentThread.id },

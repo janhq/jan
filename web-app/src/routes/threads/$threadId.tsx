@@ -21,6 +21,8 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
+import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { useNavigate } from '@tanstack/react-router'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -30,6 +32,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
+  const navigate = useNavigate()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
@@ -37,6 +40,8 @@ function ThreadDetail() {
 
   const chatWidth = useAppearance((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
+
+  const isTemporaryChat = threadId === TEMPORARY_CHAT_ID
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -47,6 +52,30 @@ function ThreadDetail() {
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // // Handle route errors and redirects on page reload/fresh load
+  // useEffect(() => {
+  //   // Only handle redirects on fresh page loads (not on navigation)
+  //   const navigationEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
+  //   const isPageReload = navigationEntry?.type === 'reload' ||
+  //                       !document.referrer ||
+  //                       document.referrer === window.location.href
+
+  //   if (!isPageReload) return
+
+  //   // If trying to access temporary chat directly via URL, redirect to root with query param
+  //   if (isTemporaryChat) {
+  //     navigate({ to: '/', search: { [TEMPORARY_CHAT_QUERY_ID]: true } })
+  //     return
+  //   }
+
+  //   // If thread doesn't exist after threads are loaded, redirect to home
+  //   const threadsLoaded = Object.keys(useThreads.getState().threads).length > 0
+  //   if (!thread && threadsLoaded) {
+  //     navigate({ to: '/' })
+  //     return
+  //   }
+  // }, [threadId, isTemporaryChat, thread, navigate])
 
   useEffect(() => {
     setCurrentThreadId(threadId)

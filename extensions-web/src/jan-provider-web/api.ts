@@ -8,6 +8,41 @@ import { JanModel, janProviderStore } from './store'
 
 // JAN_API_BASE is defined in vite.config.ts
 
+// Constants
+const TEMPORARY_CHAT_ID = 'temporary-chat'
+
+/**
+ * Determines the appropriate API endpoint and request payload based on chat type
+ * @param request - The chat completion request
+ * @returns Object containing endpoint URL and processed request payload
+ */
+function getChatCompletionConfig(request: JanChatCompletionRequest, stream: boolean = false) {
+  const isTemporaryChat = request.conversation_id === TEMPORARY_CHAT_ID
+
+  // For temporary chats, use the stateless /chat/completions endpoint
+  // For regular conversations, use the stateful /conv/chat/completions endpoint
+  const endpoint = isTemporaryChat
+    ? `${JAN_API_BASE}/chat/completions`
+    : `${JAN_API_BASE}/conv/chat/completions`
+
+  const payload = {
+    ...request,
+    stream,
+    ...(isTemporaryChat ? {
+      // For temporary chat: don't store anything, remove conversation metadata
+      conversation_id: undefined,
+    } : {
+      // For regular chat: store everything, use conversation metadata
+      store: true,
+      store_reasoning: true,
+      conversation: request.conversation_id,
+      conversation_id: undefined,
+    })
+  }
+
+  return { endpoint, payload, isTemporaryChat }
+}
+
 export interface JanModelsResponse {
   object: string
   data: JanModel[]
@@ -115,18 +150,13 @@ export class JanApiClient {
     try {
       janProviderStore.clearError()
 
+      const { endpoint, payload } = getChatCompletionConfig(request, false)
+
       return await this.authService.makeAuthenticatedRequest<JanChatCompletionResponse>(
-        `${JAN_API_BASE}/conv/chat/completions`,
+        endpoint,
         {
           method: 'POST',
-          body: JSON.stringify({
-            ...request,
-            stream: false,
-            store: true,
-            store_reasoning: true,
-            conversation: request.conversation_id,
-            conversation_id: undefined,
-          }),
+          body: JSON.stringify(payload),
         }
       )
     } catch (error) {
@@ -144,23 +174,17 @@ export class JanApiClient {
   ): Promise<void> {
     try {
       janProviderStore.clearError()
-      
+
       const authHeader = await this.authService.getAuthHeader()
-      
-      const response = await fetch(`${JAN_API_BASE}/conv/chat/completions`, {
+      const { endpoint, payload } = getChatCompletionConfig(request, true)
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...authHeader,
         },
-        body: JSON.stringify({
-          ...request,
-          stream: true,
-          store: true,
-          store_reasoning: true,
-          conversation: request.conversation_id,
-          conversation_id: undefined,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {

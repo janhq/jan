@@ -6,6 +6,7 @@ import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 
 type HeaderPageProps = {
   children?: ReactNode
@@ -20,7 +21,7 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   // Parse temporary chat flag from URL search params directly to avoid invariant errors
   const searchString = window.location.search
   const urlSearchParams = new URLSearchParams(searchString)
-  const isTemporaryChat = isHomePage && urlSearchParams.get('temporary-chat') === 'true'
+  const isTemporaryChat = isHomePage && urlSearchParams.get(TEMPORARY_CHAT_QUERY_ID) === 'true'
 
   const handleChatToggle = () => {
     console.log('Chat toggle clicked!', { isTemporaryChat, isHomePage, currentPath })
@@ -30,7 +31,7 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
         router.navigate({ to: route.home, search: {} })
       } else {
         console.log('Switching to temporary chat')
-        router.navigate({ to: route.home, search: { 'temporary-chat': true } })
+        router.navigate({ to: route.home, search: { [TEMPORARY_CHAT_QUERY_ID]: true } })
       }
     }
   }

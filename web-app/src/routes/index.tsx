@@ -20,6 +20,7 @@ import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -29,7 +30,7 @@ export const Route = createFileRoute(route.home as any)({
     }
 
     // Only include temporary-chat if it's explicitly true
-    if (search['temporary-chat'] === 'true' || search['temporary-chat'] === true) {
+    if (search[TEMPORARY_CHAT_QUERY_ID] === 'true' || search[TEMPORARY_CHAT_QUERY_ID] === true) {
       result['temporary-chat'] = true
     }
 
