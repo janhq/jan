@@ -126,7 +126,7 @@ mod windows_impl {
         pub iOSDisplayIndex: c_int,
     }
 
-    ype AdlMainMallocCallback = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
+    type AdlMainMallocCallback = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
     type AdlMainControlCreate = unsafe extern "C" fn(AdlMainMallocCallback, c_int) -> c_int;
     type AdlMainControlDestroy = unsafe extern "C" fn() -> c_int;
     type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut c_int) -> c_int;
