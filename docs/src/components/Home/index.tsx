@@ -95,7 +95,7 @@ const Home = () => {
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
-                href=""
+                href={`https://github.com/menloresearch/jan/releases/tag/${lastVersion}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-black/40 px-3 lg:px-4 rounded-full h-10 inline-flex items-center max-w-full animate-fade-in delay-100"
