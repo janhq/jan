@@ -16,6 +16,9 @@ import {
 import { janApiClient, JanChatMessage } from './api'
 import { janProviderStore } from './store'
 
+// Jan models support tools via MCP
+const JAN_MODEL_CAPABILITIES = ['tools'] as const
+
 export default class JanProviderWeb extends AIEngine {
   readonly provider = 'jan'
   private activeSessions: Map<string, SessionInfo> = new Map()
@@ -24,6 +27,9 @@ export default class JanProviderWeb extends AIEngine {
     console.log('Loading Jan Provider Extension...')
 
     try {
+      // Check and clear invalid Jan models (capabilities mismatch)
+      this.validateJanModelsLocalStorage()
+
       // Initialize authentication and fetch models
       await janApiClient.initialize()
       console.log('Jan Provider Extension loaded successfully')
@@ -33,6 +39,54 @@ export default class JanProviderWeb extends AIEngine {
     }
 
     super.onLoad()
+  }
+
+  // Verify Jan models capabilities in localStorage
+  private validateJanModelsLocalStorage() {
+    try {
+      console.log("Validating Jan models in localStorage...")
+      const storageKey = 'model-provider'
+      const data = localStorage.getItem(storageKey)
+      if (!data) return
+
+      const parsed = JSON.parse(data)
+      if (!parsed?.state?.providers) return
+
+      // Check if any Jan model has incorrect capabilities
+      let hasInvalidModel = false
+
+      for (const provider of parsed.state.providers) {
+        if (provider.provider === 'jan' && provider.models) {
+          for (const model of provider.models) {
+            console.log(`Checking Jan model: ${model.id}`, model.capabilities)
+            if (JSON.stringify(model.capabilities) !== JSON.stringify(JAN_MODEL_CAPABILITIES)) {
+              hasInvalidModel = true
+              console.log(`Found invalid Jan model: ${model.id}, clearing localStorage`)
+              break
+            }
+          }
+        }
+        if (hasInvalidModel) break
+      }
+
+      // If any invalid model found, just clear the storage
+      if (hasInvalidModel) {
+        // Force clear the storage
+        localStorage.removeItem(storageKey)
+        // Verify it's actually removed
+        const afterRemoval = localStorage.getItem(storageKey)
+        // If still present, try setting to empty state
+        if (afterRemoval) {
+          // Try alternative clearing method
+          localStorage.setItem(storageKey, JSON.stringify({ state: { providers: [] }, version: parsed.version || 3 }))
+        }
+        console.log('Cleared model-provider from localStorage due to invalid Jan capabilities')
+        // Force a page reload to ensure clean state
+        window.location.reload()
+      }
+    } catch (error) {
+      console.error('Failed to check Jan models:', error)
+    }
   }
 
   override async onUnload() {
@@ -64,7 +118,7 @@ export default class JanProviderWeb extends AIEngine {
               path: undefined, // Remote model, no local path
               owned_by: model.owned_by,
               object: model.object,
-              capabilities: ['tools'], // Jan models support both tools via MCP
+              capabilities: [...JAN_MODEL_CAPABILITIES],
             }
           : undefined
       )
@@ -85,7 +139,7 @@ export default class JanProviderWeb extends AIEngine {
         path: undefined, // Remote model, no local path
         owned_by: model.owned_by,
         object: model.object,
-        capabilities: ['tools'], // Jan models support both tools via MCP
+        capabilities: [...JAN_MODEL_CAPABILITIES],
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)
