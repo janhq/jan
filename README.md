@@ -1,6 +1,6 @@
 # Jan - Open-source ChatGPT replacement
 
-<img width="2048" height="280" alt="Jan GitHub" src="https://github.com/user-attachments/assets/458c5146-4fa1-4311-9118-1ecc022c87cb" />
+<img width="2048" height="280" alt="github jan banner" src="https://github.com/user-attachments/assets/f3f87889-c133-433b-b250-236218150d3f" />
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -18,7 +18,7 @@
   - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a>
 </p>
 
-Jan is an AI assistant that can run 100% offline on your device. Download and run LLMs with **full control** and **privacy**.
+Jan is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
 
 ## Installation
 
@@ -27,7 +27,7 @@ The easiest way to get started is by downloading one of the following versions f
 <table>
   <tr>
     <td><b>Platform</b></td>
-    <td><b>Stable</b></td>
+    <td><b>Download</b></td>
   </tr>
   <tr>
     <td><b>Windows</b></td>
