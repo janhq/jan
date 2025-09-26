@@ -1,6 +1,6 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
-import { IconLayoutSidebar, IconMessage, IconClock } from '@tabler/icons-react'
+import { IconLayoutSidebar, IconMessage, IconMessageFilled } from '@tabler/icons-react'
 import { ReactNode } from '@tanstack/react-router'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -15,14 +15,23 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   const router = useRouter()
   const currentPath = router.state.location.pathname
 
-  const isTemporaryChatPage = currentPath === route.temporaryChat
   const isHomePage = currentPath === route.home
 
+  // Parse temporary chat flag from URL search params directly to avoid invariant errors
+  const searchString = window.location.search
+  const urlSearchParams = new URLSearchParams(searchString)
+  const isTemporaryChat = isHomePage && urlSearchParams.get('temporary-chat') === 'true'
+
   const handleChatToggle = () => {
-    if (isTemporaryChatPage) {
-      router.navigate({ to: route.home })
-    } else if (isHomePage) {
-      router.navigate({ to: route.temporaryChat })
+    console.log('Chat toggle clicked!', { isTemporaryChat, isHomePage, currentPath })
+    if (isHomePage) {
+      if (isTemporaryChat) {
+        console.log('Switching to regular chat')
+        router.navigate({ to: route.home, search: {} })
+      } else {
+        console.log('Switching to temporary chat')
+        router.navigate({ to: route.home, search: { 'temporary-chat': true } })
+      }
     }
   }
 
@@ -48,21 +57,21 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
         )}
         {children}
 
-        {/* Temporary Chat Toggle - Only show on home or temporary chat pages if feature is enabled */}
-        {PlatformFeatures[PlatformFeature.TEMPORARY_CHAT] && (isHomePage || isTemporaryChatPage) && (
+        {/* Temporary Chat Toggle - Only show on home page if feature is enabled */}
+        {PlatformFeatures[PlatformFeature.TEMPORARY_CHAT] && isHomePage && (
           <div className="ml-auto">
             <button
-              className="size-8 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+              className="size-8 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out relative z-20"
               onClick={handleChatToggle}
-              title={isTemporaryChatPage ? 'Switch to Regular Chat' : 'Start Temporary Chat'}
+              title={isTemporaryChat ? 'Switch to Regular Chat' : 'Start Temporary Chat'}
             >
-              {isTemporaryChatPage ? (
-                <IconMessage
+              {isTemporaryChat ? (
+                <IconMessageFilled
                   size={18}
                   className="text-main-view-fg"
                 />
               ) : (
-                <IconClock
+                <IconMessage
                   size={18}
                   className="text-main-view-fg"
                 />
