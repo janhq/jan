@@ -4,6 +4,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,9 +44,15 @@ type ChatInputProps = {
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  projectId?: string
 }
 
-const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
+const ChatInput = ({
+  model,
+  className,
+  initialMessage,
+  projectId,
+}: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -58,6 +65,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const updateThread = useThreads((state) => state.updateThread)
+  const { getFolderById } = useThreadManagement()
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
@@ -177,6 +186,28 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       uploadedFiles.length > 0 ? uploadedFiles : undefined
     )
     setUploadedFiles([])
+
+    // Handle project assignment for new threads
+    if (projectId && !currentThreadId) {
+      const project = getFolderById(projectId)
+      if (project) {
+        // Use setTimeout to ensure the thread is created first
+        setTimeout(() => {
+          const newCurrentThreadId = useThreads.getState().currentThreadId
+          if (newCurrentThreadId) {
+            updateThread(newCurrentThreadId, {
+              metadata: {
+                project: {
+                  id: project.id,
+                  name: project.name,
+                  updated_at: project.updated_at,
+                },
+              },
+            })
+          }
+        }, 100)
+      }
+    }
   }
 
   useEffect(() => {

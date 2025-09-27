@@ -30,6 +30,10 @@ export class DefaultModelsService implements ModelsService {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
 
+  async getModel(modelId: string): Promise<modelInfo | undefined> {
+    return this.getEngine()?.get(modelId)
+  }
+
   async fetchModels(): Promise<modelInfo[]> {
     return this.getEngine()?.list() ?? []
   }
@@ -127,7 +131,7 @@ export class DefaultModelsService implements ModelsService {
       const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
       return {
-        model_id: sanitizeModelId(modelId),
+        model_id: `${repo.author}/${sanitizeModelId(modelId)}`,
         path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
         file_size: formatFileSize(file.size),
       }
@@ -158,11 +162,16 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async updateModel(model: Partial<CoreModel>): Promise<void> {
+  async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
     if (model.settings)
       this.getEngine()?.updateSettings(
         model.settings as SettingComponentProps[]
       )
+    if (modelId !== model.id) {
+      await this.getEngine()
+        ?.update(modelId, model)
+        .then(() => console.log('Model updated successfully'))
+    }
   }
 
   async pullModel(
@@ -529,19 +538,21 @@ export class DefaultModelsService implements ModelsService {
       // Fallback if method is not available
       console.warn('planModelLoad method not available in llamacpp engine')
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     } catch (error) {
       console.error(`Error planning model load for path ${modelPath}:`, error)
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     }

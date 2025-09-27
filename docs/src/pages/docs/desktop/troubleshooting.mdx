@@ -328,19 +328,19 @@ This command ensures that the necessary permissions are granted for Jan's instal
 When you start a chat with a model and encounter a **Failed to Fetch** or **Something's Amiss** error, here are some possible solutions to resolve it:
 
 **1. Check System & Hardware Requirements**
-- Hardware dependencies: Ensure your device meets all [hardware requirements](docs/troubleshooting#step-1-verify-hardware-and-system-requirements)
-- OS: Ensure your operating system meets the minimum requirements ([Mac](/docs/desktop/mac#minimum-requirements), [Windows](/docs/desktop/windows#compatibility), [Linux](docs/desktop/linux#compatibility))
+- Hardware dependencies: Ensure your device meets all [hardware requirements](troubleshooting)
+- OS: Ensure your operating system meets the minimum requirements ([Mac](https://www.jan.ai/docs/desktop/install/mac#minimum-requirements), [Windows](/windows#compatibility), [Linux](docs/desktop/linux#compatibility))
 - RAM: Choose models that use less than 80% of your available RAM
   - For 8GB systems: Use models under 6GB
   - For 16GB systems: Use models under 13GB
 
 **2. Check Model Parameters**
-- In **Engine Settings** in right sidebar, check your `ngl` ([number of GPU layers](/docs/models/model-parameters#engine-parameters)) setting to see if it's too high
+- In **Engine Settings** in right sidebar, check your `ngl` ([number of GPU layers](/docs/desktop/model-parameters)) setting to see if it's too high
 - Start with a lower NGL value and increase gradually based on your GPU memory
 
 **3. Port Conflicts**
 
-If you check your [app logs](/docs/troubleshooting#how-to-get-error-logs) & see "Bind address failed at 127.0.0.1:39291", check port availability:
+If you check your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs) & see "Bind address failed at 127.0.0.1:39291", check port availability:
 ```
 # Mac
 netstat -an | grep 39291
@@ -371,7 +371,7 @@ This will delete all chat history, models, and settings.
 </Callout>
 
 **5. Try a clean installation**
-- Uninstall Jan & clean Jan data folders ([Mac](/docs/desktop/mac#uninstall-jan), [Windows](/docs/desktop/windows#uninstall-jan), [Linux](docs/desktop/linux#uninstall-jan))
+- Uninstall Jan & clean Jan data folders ([Mac](/docs/desktop/install/mac#uninstall-jan), [Windows](/docs/desktop/install/windows#uninstall-jan), [Linux](/docs/desktop/install/linux#uninstall-jan))
 - Install the latest [stable release](/download)
 
 <Callout type="warning">
@@ -392,7 +392,7 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 
 ## Need Further Support?
 If you can't find what you need in our troubleshooting guide, feel free reach out to us for extra help:
-- **Copy** your [app logs](/docs/troubleshooting#how-to-get-error-logs)
+- **Copy** your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
 - Go to our [Discord](https://discord.com/invite/FTk2MvZwJH) & send it to **#🆘|jan-help** channel for further support.
 
 

@@ -35,7 +35,6 @@ on:
       - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
-      - 'mise.toml'
 
 
 jobs:

@@ -16,6 +16,10 @@ Default permissions for the llamacpp plugin
 - `allow-get-all-sessions`
 - `allow-get-session-by-model`
 - `allow-read-gguf-metadata`
+- `allow-estimate-kv-cache-size`
+- `allow-get-model-size`
+- `allow-is-model-supported`
+- `allow-plan-model-load`
 
 ## Permission Table
 
@@ -48,6 +52,32 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <td>
 
 Denies the cleanup_llama_processes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-estimate-kv-cache-size`
+
+</td>
+<td>
+
+Enables the estimate_kv_cache_size command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-estimate-kv-cache-size`
+
+</td>
+<td>
+
+Denies the estimate_kv_cache_size command without any pre-configured scope.
 
 </td>
 </tr>
@@ -185,6 +215,32 @@ Denies the get_loaded_models command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-get-model-size`
+
+</td>
+<td>
+
+Enables the get_model_size command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-model-size`
+
+</td>
+<td>
+
+Denies the get_model_size command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-get-random-port`
 
 </td>
@@ -237,6 +293,32 @@ Denies the get_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-is-model-supported`
+
+</td>
+<td>
+
+Enables the is_model_supported command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-is-model-supported`
+
+</td>
+<td>
+
+Denies the is_model_supported command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-is-process-running`
 
 </td>
@@ -282,6 +364,32 @@ Enables the load_llama_model command without any pre-configured scope.
 <td>
 
 Denies the load_llama_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-plan-model-load`
+
+</td>
+<td>
+
+Enables the plan_model_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-plan-model-load`
+
+</td>
+<td>
+
+Denies the plan_model_load command without any pre-configured scope.
 
 </td>
 </tr>
