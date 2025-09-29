@@ -13,7 +13,7 @@ type ThreadFolder = {
 type ThreadManagementState = {
   folders: ThreadFolder[]
   setFolders: (folders: ThreadFolder[]) => void
-  addFolder: (name: string) => void
+  addFolder: (name: string) => ThreadFolder
   updateFolder: (id: string, name: string) => void
   deleteFolder: (id: string) => void
   getFolderById: (id: string) => ThreadFolder | undefined
@@ -37,6 +37,7 @@ export const useThreadManagement = create<ThreadManagementState>()(
         set((state) => ({
           folders: [...state.folders, newFolder],
         }))
+        return newFolder
       },
 
       updateFolder: (id, name) => {
