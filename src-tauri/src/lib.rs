@@ -12,6 +12,8 @@ use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tokio::sync::Mutex;
 
+use crate::core::setup::setup_tray;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -20,6 +22,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
+          let arg = argv.iter().find(|arg| arg.starts_with("jan://"));
+            if let Some(deep_link) = arg {
+                println!("deep link: {deep_link}");
+                // handle the deep link, e.g., emit an event to the webview
+                _app.app_handle().emit("deep-link", deep_link).unwrap();
+                if let Some(window) = _app.app_handle().get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            }
         }));
     }
 
@@ -42,6 +53,7 @@ pub fn run() {
             core::filesystem::commands::readdir_sync,
             core::filesystem::commands::read_file_sync,
             core::filesystem::commands::rm,
+            core::filesystem::commands::mv,
             core::filesystem::commands::file_stat,
             core::filesystem::commands::write_file_sync,
             core::filesystem::commands::write_yaml,
@@ -108,6 +120,21 @@ pub fn run() {
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
         })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
+                    #[cfg(target_os = "macos")]
+                    window
+                        .app_handle()
+                        .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                        .unwrap();
+
+                    window.hide().unwrap();
+                    api.prevent_close();
+                }
+            }
+            _ => {}
+        })
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -129,9 +156,15 @@ pub fn run() {
                 log::error!("Failed to install extensions: {}", e);
             }
 
+            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
+                log::info!("Enabling system tray icon");
+                let _ = setup_tray(app);
+            }
+
             #[cfg(any(windows, target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
+
                 app.deep_link().register_all()?;
             }
             setup_mcp(app);
@@ -146,14 +179,12 @@ pub fn run() {
             // This is called when the app is actually exiting (e.g., macOS dock quit)
             // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
+            // Hide window immediately
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.hide();
+            }
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    // Hide window immediately
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.hide();
-                        let _ = window.emit("kill-mcp-servers", ());
-                    }
-
                     // Quick cleanup with shorter timeout
                     let state = app_handle.state::<AppState>();
                     let _ = clean_up_mcp_servers(state).await;

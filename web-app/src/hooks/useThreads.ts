@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import { ulid } from 'ulidx'
-import { createThread, deleteThread, updateThread } from '@/services/threads'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
-import { sep } from '@tauri-apps/api/path'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -15,17 +14,20 @@ type ThreadState = {
   deleteThread: (threadId: string) => void
   renameThread: (threadId: string, newTitle: string) => void
   deleteAllThreads: () => void
+  clearAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
   createThread: (
     model: ThreadModel,
     title?: string,
-    assistant?: Assistant
+    assistant?: Assistant,
+    projectMetadata?: { id: string; name: string; updated_at: number }
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
   updateThreadTimestamp: (threadId: string) => void
+  updateThread: (threadId: string, updates: Partial<Thread>) => void
   searchIndex: Fzf<Thread[]> | null
 }
 
@@ -47,7 +49,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
                 id:
                   thread.model.provider === 'llama.cpp' ||
                   thread.model.provider === 'llamacpp'
-                    ? thread.model?.id.split(':').slice(0, 2).join(sep())
+                    ? thread.model?.id
+                        .split(':')
+                        .slice(0, 2)
+                        .join(getServiceHub().path().sep())
                     : thread.model?.id,
               }
             : undefined,
@@ -95,10 +100,12 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   },
   toggleFavorite: (threadId) => {
     set((state) => {
-      updateThread({
-        ...state.threads[threadId],
-        isFavorite: !state.threads[threadId].isFavorite,
-      })
+      getServiceHub()
+        .threads()
+        .updateThread({
+          ...state.threads[threadId],
+          isFavorite: !state.threads[threadId].isFavorite,
+        })
       return {
         threads: {
           ...state.threads,
@@ -115,7 +122,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
-      deleteThread(threadId)
+      getServiceHub().threads().deleteThread(threadId)
       return {
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
@@ -127,20 +134,28 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   deleteAllThreads: () => {
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
-      const favoriteThreadIds = allThreadIds.filter(
-        (threadId) => state.threads[threadId].isFavorite
-      )
-      const nonFavoriteThreadIds = allThreadIds.filter(
-        (threadId) => !state.threads[threadId].isFavorite
+
+      // Identify threads to keep (favorites OR have project metadata)
+      const threadsToKeepIds = allThreadIds.filter(
+        (threadId) =>
+          state.threads[threadId].isFavorite ||
+          state.threads[threadId].metadata?.project
       )
 
-      // Only delete non-favorite threads
-      nonFavoriteThreadIds.forEach((threadId) => {
-        deleteThread(threadId)
+      // Identify threads to delete (non-favorites AND no project metadata)
+      const threadsToDeleteIds = allThreadIds.filter(
+        (threadId) =>
+          !state.threads[threadId].isFavorite &&
+          !state.threads[threadId].metadata?.project
+      )
+
+      // Delete threads that are not favorites and not in projects
+      threadsToDeleteIds.forEach((threadId) => {
+        getServiceHub().threads().deleteThread(threadId)
       })
 
-      // Keep only favorite threads
-      const remainingThreads = favoriteThreadIds.reduce(
+      // Keep favorite threads and threads with project metadata
+      const remainingThreads = threadsToKeepIds.reduce(
         (acc, threadId) => {
           acc[threadId] = state.threads[threadId]
           return acc
@@ -151,6 +166,24 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       return {
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  clearAllThreads: () => {
+    set((state) => {
+      const allThreadIds = Object.keys(state.threads)
+
+      // Delete all threads from server
+      allThreadIds.forEach((threadId) => {
+        getServiceHub().threads().deleteThread(threadId)
+      })
+
+      return {
+        threads: {},
+        currentThreadId: undefined,
+        searchIndex: new Fzf<Thread[]>([], {
           selector: (item: Thread) => item.title,
         }),
       }
@@ -169,7 +202,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         {} as Record<string, Thread>
       )
       Object.values(updatedThreads).forEach((thread) => {
-        updateThread({ ...thread, isFavorite: false })
+        getServiceHub()
+          .threads()
+          .updateThread({ ...thread, isFavorite: false })
       })
       return { threads: updatedThreads }
     })
@@ -181,43 +216,53 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     return get().threads[threadId]
   },
   setCurrentThreadId: (threadId) => {
-    set({ currentThreadId: threadId })
+    if (threadId !== get().currentThreadId) set({ currentThreadId: threadId })
   },
-  createThread: async (model, title, assistant) => {
+  createThread: async (model, title, assistant, projectMetadata) => {
     const newThread: Thread = {
       id: ulid(),
       title: title ?? 'New Thread',
       model,
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
+      ...(projectMetadata && {
+        metadata: {
+          project: projectMetadata,
+        },
+      }),
     }
-    return await createThread(newThread).then((createdThread) => {
-      set((state) => {
-        // Get all existing threads as an array
-        const existingThreads = Object.values(state.threads)
+    return await getServiceHub()
+      .threads()
+      .createThread(newThread)
+      .then((createdThread) => {
+        set((state) => {
+          // Get all existing threads as an array
+          const existingThreads = Object.values(state.threads)
 
-        // Create new array with the new thread at the beginning
-        const reorderedThreads = [createdThread, ...existingThreads]
+          // Create new array with the new thread at the beginning
+          const reorderedThreads = [createdThread, ...existingThreads]
 
-        // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
-        get().setThreads(reorderedThreads)
+          // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
+          get().setThreads(reorderedThreads)
 
-        return {
-          currentThreadId: createdThread.id,
-        }
+          return {
+            currentThreadId: createdThread.id,
+          }
+        })
+        return createdThread
       })
-      return createdThread
-    })
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {
       if (!state.currentThreadId) return { ...state }
       const currentThread = state.getCurrentThread()
       if (currentThread)
-        updateThread({
-          ...currentThread,
-          assistants: [{ ...assistant, model: currentThread.model }],
-        })
+        getServiceHub()
+          .threads()
+          .updateThread({
+            ...currentThread,
+            assistants: [{ ...assistant, model: currentThread.model }],
+          })
       return {
         threads: {
           ...state.threads,
@@ -234,7 +279,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       if (!state.currentThreadId) return { ...state }
       const currentThread = state.getCurrentThread()
-      if (currentThread) updateThread({ ...currentThread, model })
+      if (currentThread)
+        getServiceHub()
+          .threads()
+          .updateThread({ ...currentThread, model })
       return {
         threads: {
           ...state.threads,
@@ -255,7 +303,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         title: newTitle,
         updated: Date.now() / 1000,
       }
-      updateThread(updatedThread) // External call, order is fine
+      getServiceHub().threads().updateThread(updatedThread) // External call, order is fine
       const newThreads = { ...state.threads, [threadId]: updatedThread }
       return {
         threads: newThreads,
@@ -285,11 +333,33 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       updatedThreads[threadId] = updatedThread
 
       // Update the backend for the main thread
-      updateThread(updatedThread)
+      getServiceHub().threads().updateThread(updatedThread)
 
       return {
         threads: updatedThreads,
         searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  updateThread: (threadId, updates) => {
+    set((state) => {
+      const thread = state.threads[threadId]
+      if (!thread) return state
+
+      const updatedThread = {
+        ...thread,
+        ...updates,
+        updated: Date.now() / 1000,
+      }
+
+      getServiceHub().threads().updateThread(updatedThread)
+
+      const newThreads = { ...state.threads, [threadId]: updatedThread }
+      return {
+        threads: newThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
           selector: (item: Thread) => item.title,
         }),
       }

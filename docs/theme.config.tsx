@@ -9,6 +9,7 @@ import { LibraryBig, Blocks, BrainCircuit, Computer } from 'lucide-react'
 import { AiOutlineGithub } from 'react-icons/ai'
 import { BiLogoDiscordAlt } from 'react-icons/bi'
 import { RiTwitterXFill } from 'react-icons/ri'
+import Navbar from '@/components/Navbar'
 
 const defaultUrl = 'https://jan.ai'
 const defaultImage = 'https://jan.ai/assets/images/general/og-image.png'
@@ -51,19 +52,7 @@ const config: DocsThemeConfig = {
     }
   },
   navbar: {
-    extraContent: (
-      <div className="inline-flex items-center gap-x-2">
-        <a href="https://discord.com/invite/FTk2MvZwJH" target="_blank">
-          <BiLogoDiscordAlt className="text-xl text-black/60 dark:text-white/60" />
-        </a>
-        <a href="https://twitter.com/jandotai" target="_blank">
-          <RiTwitterXFill className="text-lg text-black/60 dark:text-white/60" />
-        </a>
-        <a href="https://github.com/menloresearch/jan" target="_blank">
-          <AiOutlineGithub className="text-xl text-black/60 dark:text-white/60" />
-        </a>
-      </div>
-    ),
+    component: <Navbar />,
   },
   sidebar: {
     titleComponent: ({ type, title }) => {
@@ -72,39 +61,37 @@ const config: DocsThemeConfig = {
       if (type === 'separator' && title === 'Switcher') {
         return (
           <div className="-mx-2 hidden md:block">
-            {[
-              { title: 'Jan Desktop', path: '/docs', Icon: LibraryBig },
-              {
-                title: 'Jan Mobile',
-                path: '/platforms',
-                Icon: BrainCircuit,
-              },
-              // { title: 'Jan Mobile', path: '/platforms', Icon: Blocks },
-              {
-                title: 'Jan Server',
-                path: '/platforms',
-                Icon: Computer,
-              },
-            ].map((item) =>
-              asPath.startsWith(item.path) ? (
-                <div
-                  key={item.path}
-                  className="group mb-3 flex flex-row items-center gap-3 nx-text-primary-800 dark:nx-text-primary-600"
-                >
-                  <item.Icon className="w-7 h-7 p-1 border  border-gray-200 dark:border-gray-700 rounded nx-bg-primary-100 dark:nx-bg-primary-400/10" />
-                  {item.title}
-                </div>
-              ) : (
-                <Link
-                  href={item.path}
-                  key={item.path}
-                  className="group mb-3 flex flex-row items-center gap-3 text-gray-500 hover:text-primary/100"
-                >
-                  <item.Icon className="w-7 h-7 p-1 border rounded border-gray-200 dark:border-gray-700" />
-                  {item.title}
-                </Link>
-              )
-            )}
+            {(() => {
+              const items = [
+                {
+                  title: 'Jan Desktop',
+                  path: '/docs/desktop',
+                  Icon: LibraryBig,
+                },
+                { title: 'Jan Server', path: '/docs/server', Icon: Computer },
+              ]
+              return items.map((item) => {
+                const active = asPath.startsWith(item.path)
+                return active ? (
+                  <div
+                    key={item.path}
+                    className="group mb-3 flex flex-row items-center gap-3 nx-text-primary-800 dark:nx-text-primary-600"
+                  >
+                    <item.Icon className="w-7 h-7 p-1 border  border-gray-200 dark:border-gray-700 rounded nx-bg-primary-100 dark:nx-bg-primary-400/10" />
+                    {item.title}
+                  </div>
+                ) : (
+                  <Link
+                    href={item.path}
+                    key={item.path}
+                    className="group mb-3 flex flex-row items-center gap-3 text-gray-500 hover:text-primary/100"
+                  >
+                    <item.Icon className="w-7 h-7 p-1 border rounded border-gray-200 dark:border-gray-700" />
+                    {item.title}
+                  </Link>
+                )
+              })
+            })()}
           </div>
         )
       }
@@ -113,13 +100,21 @@ const config: DocsThemeConfig = {
     defaultMenuCollapseLevel: 1,
     toggleButton: true,
   },
+  darkMode: false,
   toc: {
     backToTop: true,
   },
   head: function useHead() {
     const { title, frontMatter } = useConfig()
-    const titleTemplate = (frontMatter?.title || title) + ' - ' + 'Jan'
     const { asPath } = useRouter()
+    const titleTemplate =
+      (asPath.includes('/desktop')
+        ? 'Jan Desktop'
+        : asPath.includes('/server')
+          ? 'Jan Server'
+          : 'Jan') +
+      ' - ' +
+      (frontMatter?.title || title)
 
     return (
       <Fragment>
@@ -156,7 +151,9 @@ const config: DocsThemeConfig = {
           content={
             frontMatter?.ogImage
               ? 'https://jan.ai/' + frontMatter?.ogImage
-              : 'https://jan.ai/assets/images/general/og-image.png'
+              : asPath.includes('/docs')
+                ? 'https://jan.ai/assets/images/general/og-image-docs.png'
+                : 'https://jan.ai/assets/images/general/og-image.png'
           }
         />
         <meta property="og:image:alt" content="Jan-OGImage" />
@@ -188,6 +185,7 @@ const config: DocsThemeConfig = {
   },
   nextThemes: {
     defaultTheme: 'light',
+    forcedTheme: 'light',
   },
 }
 

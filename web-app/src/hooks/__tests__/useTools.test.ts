@@ -8,19 +8,21 @@ const mockUpdateTools = vi.fn()
 const mockListen = vi.fn()
 const mockUnsubscribe = vi.fn()
 
-// Mock the dependencies
-vi.mock('@/services/mcp', () => ({
-  getTools: mockGetTools,
-}))
-
+// Mock useAppState
 vi.mock('../useAppState', () => ({
-  useAppState: () => ({
-    updateTools: mockUpdateTools,
-  }),
+  useAppState: (selector: any) => selector({ updateTools: mockUpdateTools }),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: mockListen,
+// Mock the ServiceHub
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    mcp: () => ({
+      getTools: mockGetTools,
+    }),
+    events: () => ({
+      listen: mockListen,
+    }),
+  }),
 }))
 
 describe('useTools', () => {

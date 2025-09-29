@@ -1,6 +1,6 @@
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 /**
  * Extension manifest object.
@@ -24,13 +24,17 @@ export class Extension {
   /** @type {string} Extension's version. */
   version?: string
 
+  /** @type {BaseExtension} Pre-loaded extension instance for web extensions. */
+  extensionInstance?: BaseExtension
+
   constructor(
     url: string,
     name: string,
     productName?: string,
     active?: boolean,
     description?: string,
-    version?: string
+    version?: string,
+    extensionInstance?: BaseExtension
   ) {
     this.name = name
     this.productName = productName
@@ -38,6 +42,7 @@ export class Extension {
     this.active = active
     this.description = description
     this.version = version
+    this.extensionInstance = extensionInstance
   }
 }
 
@@ -48,6 +53,7 @@ export type ExtensionManifest = {
   active?: boolean
   description?: string
   version?: string
+  extensionInstance?: BaseExtension // For web extensions
 }
 
 /**
@@ -143,19 +149,21 @@ export class ExtensionManager {
    * @returns An array of extensions.
    */
   async getActive(): Promise<Extension[]> {
-    const res = await invoke('get_active_extensions')
-    if (!res || !Array.isArray(res)) return []
+    const manifests = await getServiceHub().core().getActiveExtensions()
+    if (!manifests || !Array.isArray(manifests)) return []
 
-    const extensions: Extension[] = res.map((ext: ExtensionManifest) => {
+    const extensions: Extension[] = manifests.map((manifest: ExtensionManifest) => {
       return new Extension(
-        ext.url,
-        ext.name,
-        ext.productName,
-        ext.active,
-        ext.description,
-        ext.version
+        manifest.url,
+        manifest.name,
+        manifest.productName,
+        manifest.active,
+        manifest.description,
+        manifest.version,
+        manifest.extensionInstance // Pass the extension instance if available
       )
     })
+    
     return extensions
   }
 
@@ -165,9 +173,16 @@ export class ExtensionManager {
    * @returns {void}
    */
   async activateExtension(extension: Extension) {
-    // Import class
+    // Check if extension already has a pre-loaded instance (web extensions)
+    if (extension.extensionInstance) {
+      this.register(extension.name, extension.extensionInstance)
+      console.log(`Extension '${extension.name}' registered with pre-loaded instance`)
+      return
+    }
+    
+    // Import class for Tauri extensions
     const extensionUrl = extension.url
-    await import(/* @vite-ignore */ convertFileSrc(extensionUrl)).then(
+    await import(/* @vite-ignore */ getServiceHub().core().convertFileSrc(extensionUrl)).then(
       (extensionClass) => {
         // Register class if it has a default export
         if (
@@ -212,9 +227,7 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    const res = (await invoke('install_extension', {
-      extensions,
-    })) as ExtensionManifest[]
+    const res = await getServiceHub().core().installExtension(extensions)
     return res.map(async (ext: ExtensionManifest) => {
       const extension = new Extension(ext.name, ext.url)
       await this.activateExtension(extension)
@@ -228,11 +241,11 @@ export class ExtensionManager {
    * @param {boolean} reload Whether to reload all renderers after updating the extensions.
    * @returns {Promise.<boolean>} Whether uninstalling the extensions was successful.
    */
-  uninstall(extensions: string[], reload = true) {
+  async uninstall(extensions: string[], reload = true) {
     if (typeof window === 'undefined') {
       return
     }
-    return invoke('uninstall_extension', { extensions, reload })
+    return await getServiceHub().core().uninstallExtension(extensions, reload)
   }
 
   /**

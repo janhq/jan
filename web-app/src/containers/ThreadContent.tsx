@@ -2,14 +2,7 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
-import {
-  IconCopy,
-  IconCopyCheck,
-  IconRefresh,
-  IconTrash,
-  IconPencil,
-  IconInfoCircle,
-} from '@tabler/icons-react'
+import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
@@ -17,16 +10,10 @@ import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+  EditMessageDialog,
+  MessageMetadataDialog,
+  DeleteMessageDialog,
+} from '@/containers/dialogs'
 import {
   Tooltip,
   TooltipContent,
@@ -37,9 +24,8 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
-import CodeEditor from '@uiw/react-textarea-code-editor'
-import '@uiw/react-textarea-code-editor/dist.css'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -75,69 +61,6 @@ const CopyButton = ({ text }: { text: string }) => {
   )
 }
 
-const EditDialog = ({
-  message,
-  setMessage,
-}: {
-  message: string
-  setMessage: (message: string) => void
-}) => {
-  const { t } = useTranslation()
-  const [draft, setDraft] = useState(message)
-
-  const handleSave = () => {
-    if (draft !== message) {
-      setMessage(draft)
-    }
-  }
-
-  return (
-    <Dialog>
-      <DialogTrigger>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-              <IconPencil size={16} />
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('edit')}</p>
-          </TooltipContent>
-        </Tooltip>
-      </DialogTrigger>
-      <DialogContent className="w-3/4">
-        <DialogHeader>
-          <DialogTitle>{t('common:dialogs.editMessage.title')}</DialogTitle>
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className="mt-2 resize-none w-full"
-            onKeyDown={(e) => {
-              // Prevent key from being captured by parent components
-              e.stopPropagation()
-            }}
-          />
-          <DialogFooter className="mt-2 flex items-center">
-            <DialogClose asChild>
-              <Button variant="link" size="sm" className="hover:no-underline">
-                Cancel
-              </Button>
-            </DialogClose>
-            <DialogClose asChild>
-              <Button
-                disabled={draft === message || !draft}
-                onClick={handleSave}
-              >
-                Save
-              </Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogHeader>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
   (
@@ -145,13 +68,19 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
+      streamingThread?: string
 
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
-      updateMessage?: (item: ThreadMessage, message: string) => void
+      updateMessage?: (
+        item: ThreadMessage,
+        message: string,
+        imageUrls?: string[]
+      ) => void
     }
   ) => {
     const { t } = useTranslation()
+    const selectedModel = useModelProvider((state) => state.selectedModel)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -163,7 +92,10 @@ export const ThreadContent = memo(
       []
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
-    const { streamingContent } = useAppState()
+    // Only check if streaming is happening for this thread, not the content itself
+    const isStreamingThisThread = useAppState(
+      (state) => state.streamingContent?.thread_id === item.thread_id
+    )
 
     const text = useMemo(
       () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
@@ -205,8 +137,9 @@ export const ThreadContent = memo(
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
-    const { getMessages, deleteMessage } = useMessages()
-    const { sendMessage } = useChat()
+    const getMessages = useMessages((state) => state.getMessages)
+    const deleteMessage = useMessages((state) => state.deleteMessage)
+    const sendMessage = useChat()
 
     const regenerate = useCallback(() => {
       // Only regenerate assistant message is allowed
@@ -347,32 +280,26 @@ export const ThreadContent = memo(
             )}
 
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
-              <EditDialog
+              <EditMessageDialog
                 message={
                   item.content?.find((c) => c.type === 'text')?.text?.value ||
                   ''
                 }
-                setMessage={(message) => {
+                imageUrls={
+                  item.content
+                    ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
+                    .map((c) => c.image_url!.url)
+                    .filter((url): url is string => url !== undefined) || []
+                }
+                onSave={(message, imageUrls) => {
                   if (item.updateMessage) {
-                    item.updateMessage(item, message)
+                    item.updateMessage(item, message, imageUrls)
                   }
                 }}
               />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                    onClick={() => {
-                      deleteMessage(item.thread_id, item.id)
-                    }}
-                  >
-                    <IconTrash size={16} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{t('delete')}</p>
-                </TooltipContent>
-              </Tooltip>
+              <DeleteMessageDialog
+                onDelete={() => deleteMessage(item.thread_id, item.id)}
+              />
             </div>
           </div>
         )}
@@ -448,76 +375,20 @@ export const ThreadContent = memo(
                   <div
                     className={cn(
                       'flex items-center gap-2',
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id &&
-                        'hidden'
+                      item.isLastMessage && isStreamingThisThread && 'hidden'
                     )}
                   >
-                    <EditDialog
-                      message={item.content?.[0]?.text.value}
-                      setMessage={(message) =>
+                    <EditMessageDialog
+                      message={item.content?.[0]?.text.value || ''}
+                      onSave={(message) =>
                         item.updateMessage && item.updateMessage(item, message)
                       }
                     />
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                          onClick={() => {
-                            removeMessage()
-                          }}
-                        >
-                          <IconTrash size={16} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('delete')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Dialog>
-                      <DialogTrigger>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-                              <IconInfoCircle size={16} />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{t('metadata')}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>
-                            {t('common:dialogs.messageMetadata.title')}
-                          </DialogTitle>
-                          <div className="space-y-2">
-                            <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
-                              <CodeEditor
-                                value={JSON.stringify(
-                                  item.metadata || {},
-                                  null,
-                                  2
-                                )}
-                                language="json"
-                                readOnly
-                                style={{
-                                  fontFamily: 'ui-monospace',
-                                  backgroundColor: 'transparent',
-                                  height: '100%',
-                                }}
-                                className="w-full h-full !text-sm"
-                              />
-                            </div>
-                          </div>
-                        </DialogHeader>
-                      </DialogContent>
-                    </Dialog>
+                    <DeleteMessageDialog onDelete={removeMessage} />
+                    <MessageMetadataDialog metadata={item.metadata} />
 
-                    {item.isLastMessage && (
+                    {item.isLastMessage && selectedModel && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -536,9 +407,7 @@ export const ThreadContent = memo(
 
                   <TokenSpeedIndicator
                     streaming={Boolean(
-                      item.isLastMessage &&
-                        streamingContent &&
-                        streamingContent.thread_id === item.thread_id
+                      item.isLastMessage && isStreamingThisThread
                     )}
                     metadata={item.metadata}
                   />

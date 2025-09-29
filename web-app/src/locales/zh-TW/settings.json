@@ -6,6 +6,11 @@
   "noUpdateAvailable": "您正在運行最新版本",
   "devVersion": "檢測到開發版本",
   "updateError": "檢查更新失敗",
+  "checkForBackendUpdates": "檢查 Llamacpp 更新",
+  "checkForBackendUpdatesDesc": "檢查是否有更新的 Llamacpp 後端版本。",
+  "checkingForBackendUpdates": "正在檢查 Llamacpp 更新...",
+  "noBackendUpdateAvailable": "您正在運行最新的 Llamacpp 版本",
+  "backendUpdateError": "檢查 Llamacpp 更新失敗",
   "changeLocation": "更改位置",
   "copied": "已複製",
   "copyPath": "複製路徑",
@@ -156,6 +161,8 @@
     "title": "本機 API 伺服器",
     "description": "在本機執行與 OpenAI 相容的伺服器。",
     "startServer": "啟動伺服器",
+    "loadingModel": "載入模型",
+    "startingServer": "正在啟動伺服器",
     "stopServer": "停止伺服器",
     "serverLogs": "伺服器日誌",
     "serverLogsDesc": "檢視本機 API 伺服器的詳細日誌。",
@@ -175,7 +182,9 @@
     "cors": "跨來源資源共用 (CORS)",
     "corsDesc": "允許跨來源請求存取 API 伺服器。",
     "verboseLogs": "詳細伺服器日誌",
-    "verboseLogsDesc": "啟用詳細伺服器日誌以進行偵錯。"
+    "verboseLogsDesc": "啟用詳細伺服器日誌以進行偵錯。",
+    "proxyTimeout": "請求逾時",
+    "proxyTimeoutDesc": "等待本地模型回應的時間（秒）。"
   },
   "privacy": {
     "analytics": "分析",
@@ -194,6 +203,8 @@
     "showInFinder": "在 Finder 中顯示",
     "showInFileExplorer": "在檔案總管中顯示",
     "openContainingFolder": "打開包含資料夾",
+    "couldNotRelocateToRoot": "無法將資料夾重新定位到根目錄。請選擇其他位置。",
+    "couldNotResetRootDirectory": "當資料檔案夾設定為根目錄時，無法重置。請手動刪除資料檔案夾。",
     "failedToRelocateDataFolder": "無法重新定位資料夾",
     "failedToRelocateDataFolderDesc": "無法重新定位資料夾。請重試。",
     "devVersion": "檢測到開發版本",
@@ -244,5 +255,14 @@
       "cancel": "取消",
       "changeLocation": "變更位置"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "新的 Llamacpp 版本 {{version}}",
+    "backendUpdateAvailable": "Llamacpp 更新可用",
+    "remindMeLater": "稍後提醒我",
+    "updating": "正在更新...",
+    "updateNow": "立即更新",
+    "updateSuccess": "Llamacpp 更新成功",
+    "updateError": "更新 Llamacpp 失敗"
   }
 }

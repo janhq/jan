@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { abortDownload } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,6 +18,7 @@ export function DownloadManagement() {
   const { t } = useTranslation()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
+  const serviceHub = useServiceHub()
   const {
     downloads,
     updateProgress,
@@ -178,7 +179,7 @@ export function DownloadManagement() {
         description: t('common:toast.modelValidationStarted.description', {
           modelId: event.modelId,
         }),
-        duration: 10000,
+        duration: Infinity,
       })
     },
     [t]
@@ -199,7 +200,7 @@ export function DownloadManagement() {
         description: t('common:toast.modelValidationFailed.description', {
           modelId: event.modelId,
         }),
-        duration: 30000, // Requires manual dismissal for security-critical message
+        duration: 30000,
       })
     },
     [removeDownload, removeLocalDownloadingModel, t]
@@ -244,9 +245,12 @@ export function DownloadManagement() {
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
         id: 'download-complete',
-        description: t('common:toast.downloadAndVerificationComplete.description', {
-          item: state.modelId,
-        }),
+        description: t(
+          'common:toast.downloadAndVerificationComplete.description',
+          {
+            item: state.modelId,
+          }
+        ),
       })
     },
     [removeDownload, removeLocalDownloadingModel, t]
@@ -260,7 +264,10 @@ export function DownloadManagement() {
     events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
     events.on(DownloadEvent.onModelValidationStarted, onModelValidationStarted)
     events.on(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
-    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      onFileDownloadAndVerificationSuccess
+    )
 
     // Register app update event listeners
     events.on(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
@@ -278,7 +285,10 @@ export function DownloadManagement() {
         onModelValidationStarted
       )
       events.off(DownloadEvent.onModelValidationFailed, onModelValidationFailed)
-      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onFileDownloadAndVerificationSuccess)
+      events.off(
+        DownloadEvent.onFileDownloadAndVerificationSuccess,
+        onFileDownloadAndVerificationSuccess
+      )
 
       // Unregister app update event listeners
       events.off(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
@@ -390,20 +400,33 @@ export function DownloadManagement() {
                           className="text-main-view-fg/70 cursor-pointer"
                           title="Cancel download"
                           onClick={() => {
-                            abortDownload(download.name).then(() => {
-                              toast.info(
-                                t('common:toast.downloadCancelled.title'),
-                                {
-                                  id: 'cancel-download',
-                                  description: t(
-                                    'common:toast.downloadCancelled.description'
-                                  ),
-                                }
-                              )
-                              if (downloadProcesses.length === 0) {
-                                setIsPopoverOpen(false)
-                              }
-                            })
+                            // TODO: Consolidate cancellation logic
+                            if (download.id.startsWith('llamacpp')) {
+                              const downloadManager =
+                                window.core.extensionManager.getByName(
+                                  '@janhq/download-extension'
+                                )
+
+                              downloadManager.cancelDownload(download.id)
+                            } else {
+                              serviceHub
+                                .models()
+                                .abortDownload(download.name)
+                                .then(() => {
+                                  toast.info(
+                                    t('common:toast.downloadCancelled.title'),
+                                    {
+                                      id: 'cancel-download',
+                                      description: t(
+                                        'common:toast.downloadCancelled.description'
+                                      ),
+                                    }
+                                  )
+                                  if (downloadProcesses.length === 0) {
+                                    setIsPopoverOpen(false)
+                                  }
+                                })
+                            }
                           }}
                         />
                       </div>

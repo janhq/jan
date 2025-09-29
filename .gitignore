@@ -13,6 +13,7 @@ core/lib/**
 .yarnrc
 *.tsbuildinfo
 test_results.html
+pre-install
 
 # docs
 docs/yarn.lock
@@ -54,6 +55,8 @@ docs/.next/
 ## cargo
 target
 Cargo.lock
+src-tauri/resources/
 
 ## test
 test-data
+llm-docs

@@ -28,12 +28,41 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
-	yarn build:extensions
+	yarn build:extensions && yarn build:extensions-web
+
+# Install required Rust targets for macOS universal builds
+install-rust-targets:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Detected macOS, installing universal build targets..."
+	rustup target add x86_64-apple-darwin
+	rustup target add aarch64-apple-darwin
+	@echo "Rust targets installed successfully!"
+else
+	@echo "Not macOS; skipping Rust target installation."
+endif
 
 dev: install-and-build
 	yarn download:bin
 	yarn download:lib
 	yarn dev
+
+# Web application targets
+install-web-app: config-yarn
+	yarn install
+
+dev-web-app: install-web-app
+	yarn build:core
+	yarn dev:web-app
+
+build-web-app: install-web-app
+	yarn build:core
+	yarn build:web-app
+
+serve-web-app: 
+	yarn serve:web-app
+
+build-serve-web-app: build-web-app
+	yarn serve:web-app
 
 # Linting
 lint: install-and-build
@@ -43,20 +72,19 @@ lint: install-and-build
 test: lint
 	yarn download:bin
 	yarn download:lib
+ifeq ($(OS),Windows_NT)
+	yarn download:windows-installer
+endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-# Builds and publishes the app
-build-and-publish: install-and-build
-	yarn build
+	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
 # Build
-build: install-and-build
-	yarn download:lib
+build: install-and-build install-rust-targets
 	yarn build
 
 clean:

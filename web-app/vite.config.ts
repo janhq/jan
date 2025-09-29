@@ -30,8 +30,18 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    optimizeDeps: {
+      exclude: ['@jan/extensions-web'],
+    },
+    build: {
+      rollupOptions: {
+        external: ['@jan/extensions-web'],
+      },
+    },
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
+      IS_DEV: JSON.stringify(process.env.IS_DEV),
+      IS_WEB_APP: JSON.stringify(false),
       IS_MACOS: JSON.stringify(
         process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
       ),
@@ -53,6 +63,7 @@ export default defineConfig(({ mode }) => {
 
       POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
+      GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
       MODEL_CATALOG_URL: JSON.stringify(
         'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
       ),

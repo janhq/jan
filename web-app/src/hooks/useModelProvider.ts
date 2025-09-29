@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { sep } from '@tauri-apps/api/path'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 
 type ModelProviderState = {
@@ -93,7 +93,11 @@ export const useModelProvider = create<ModelProviderState>()(
                   ? legacyModels
                   : models
                 ).find(
-                  (m) => m.id.split(':').slice(0, 2).join(sep()) === model.id
+                  (m) =>
+                    m.id
+                      .split(':')
+                      .slice(0, 2)
+                      .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               return {
@@ -227,7 +231,7 @@ export const useModelProvider = create<ModelProviderState>()(
           >
         }
 
-        if (version === 0 && state?.providers) {
+        if (version <= 1 && state?.providers) {
           state.providers.forEach((provider) => {
             // Update cont_batching description for llamacpp provider
             if (provider.provider === 'llamacpp' && provider.settings) {
@@ -270,6 +274,46 @@ export const useModelProvider = create<ModelProviderState>()(
                     },
                   }
                 }
+
+                if (!model.settings.no_kv_offload) {
+                  model.settings.no_kv_offload = {
+                    ...modelSettings.no_kv_offload,
+                    controller_props: {
+                      ...modelSettings.no_kv_offload.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
+        if (version <= 2 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Update cont_batching description for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const contBatchingSetting = provider.settings.find(
+                (s) => s.key === 'cont_batching'
+              )
+              if (contBatchingSetting) {
+                contBatchingSetting.description =
+                  'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+              }
+            }
+
+            // Migrate model settings
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.batch_size) {
+                  model.settings.batch_size = {
+                    ...modelSettings.batch_size,
+                    controller_props: {
+                      ...modelSettings.batch_size.controller_props,
+                    },
+                  }
+                }
               })
             }
           })
@@ -277,7 +321,7 @@ export const useModelProvider = create<ModelProviderState>()(
 
         return state
       },
-      version: 1,
+      version: 3,
     }
   )
 )

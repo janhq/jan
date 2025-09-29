@@ -1,6 +1,6 @@
-# Jan - Local AI Assistant
+# Jan - Open-source ChatGPT replacement
 
-![Jan AI](docs/src/pages/docs/_assets/jan-app.png)
+<img width="2048" height="280" alt="github jan banner" src="https://github.com/user-attachments/assets/f3f87889-c133-433b-b250-236218150d3f" />
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -12,15 +12,13 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/quickstart">Getting Started</a>
-  - <a href="https://jan.ai/docs">Docs</a>
+  <a href="https://www.jan.ai/docs/desktop">Getting Started</a>
+  - <a href="https://discord.gg/Exe46xPMbK">Community</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
   - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a>
-  - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-Jan is an AI assistant that can run 100% offline on your device. Download and run LLMs with
-**full control** and **privacy**.
+Jan is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
 
 ## Installation
 
@@ -29,41 +27,36 @@ The easiest way to get started is by downloading one of the following versions f
 <table>
   <tr>
     <td><b>Platform</b></td>
-    <td><b>Stable</b></td>
-    <td><b>Nightly</b></td>
+    <td><b>Download</b></td>
   </tr>
   <tr>
     <td><b>Windows</b></td>
     <td><a href='https://app.jan.ai/download/latest/win-x64'>jan.exe</a></td>
-    <td><a href='https://app.jan.ai/download/nightly/win-x64'>jan.exe</a></td>
   </tr>
   <tr>
     <td><b>macOS</b></td>
     <td><a href='https://app.jan.ai/download/latest/mac-universal'>jan.dmg</a></td>
-    <td><a href='https://app.jan.ai/download/nightly/mac-universal'>jan.dmg</a></td>
   </tr>
   <tr>
     <td><b>Linux (deb)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-deb'>jan.deb</a></td>
-    <td><a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>jan.deb</a></td>
   </tr>
   <tr>
     <td><b>Linux (AppImage)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
-    <td><a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>jan.AppImage</a></td>
   </tr>
 </table>
 
-Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/menloresearch/jan/releases).
 
+Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/menloresearch/jan/releases).
 
 ## Features
 
-- **Local AI Models**: Download and run LLMs (Llama, Gemma, Qwen, etc.) from HuggingFace
-- **Cloud Integration**: Connect to OpenAI, Anthropic, Mistral, Groq, and others
+- **Local AI Models**: Download and run LLMs (Llama, Gemma, Qwen, GPT-oss etc.) from HuggingFace
+- **Cloud Integration**: Connect to GPT models via OpenAI, Claude models via Anthropic, Mistral, Groq, and others
 - **Custom Assistants**: Create specialized AI assistants for your tasks
 - **OpenAI-Compatible API**: Local server at `localhost:1337` for other applications
-- **Model Context Protocol**: MCP integration for enhanced capabilities
+- **Model Context Protocol**: MCP integration for agentic capabilities
 - **Privacy First**: Everything runs locally when you want it to
 
 ## Build from Source
@@ -92,29 +85,6 @@ This handles everything: installs dependencies, builds core components, and laun
 - `make build` - Production build
 - `make test` - Run tests and linting
 - `make clean` - Delete everything and start fresh
-
-### Run with Mise (easier)
-
-You can also run with [mise](https://mise.jdx.dev/), which is a bit easier as it ensures Node.js, Rust, and other dependency versions are automatically managed:
-
-```bash
-git clone https://github.com/menloresearch/jan
-cd jan
-
-# Install mise (if not already installed)
-curl https://mise.run | sh
-
-# Install tools and start development
-mise install    # installs Node.js, Rust, and other tools
-mise dev        # runs the full development setup
-```
-
-**Available mise commands:**
-- `mise dev` - Full development setup and launch
-- `mise build` - Production build
-- `mise test` - Run tests and linting
-- `mise clean` - Delete everything and start fresh
-- `mise tasks` - List all available tasks
 
 ### Manual Commands
 

@@ -9,25 +9,9 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
-import { open } from '@tauri-apps/plugin-dialog'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
-
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  factoryReset,
-  getJanDataFolder,
-  relocateJanDataFolder,
-} from '@/services/app'
+import { FactoryResetDialog } from '@/containers/dialogs'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   IconBrandDiscord,
   IconBrandGithub,
@@ -37,16 +21,16 @@ import {
   IconCopy,
   IconCopyCheck,
 } from '@tabler/icons-react'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { windowKey } from '@/constants/windows'
+// import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
-import { emit } from '@tauri-apps/api/event'
-import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import { isRootDir } from '@/utils/path'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -61,6 +45,7 @@ function General() {
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
+  const serviceHub = useServiceHub()
 
   const openFileTitle = (): string => {
     if (IS_MACOS) {
@@ -81,51 +66,27 @@ function General() {
 
   useEffect(() => {
     const fetchDataFolder = async () => {
-      const path = await getJanDataFolder()
+      const path = await serviceHub.app().getJanDataFolder()
       setJanDataFolder(path)
     }
 
     fetchDataFolder()
-  }, [])
+  }, [serviceHub])
 
   const resetApp = async () => {
+    // Prevent resetting if data folder is root directory
+    if (isRootDir(janDataFolder ?? '/')) {
+      toast.error(t('settings:general.couldNotResetRootDirectory'))
+      return
+    }
     pausePolling()
     // TODO: Loading indicator
-    await factoryReset()
+    await serviceHub.app().factoryReset()
   }
 
   const handleOpenLogs = async () => {
     try {
-      // Check if logs window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.logsAppWindow
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing logs window')
-      } else {
-        // Create a new logs window using Tauri v2 WebviewWindow API
-        const logsWindow = new WebviewWindow(windowKey.logsAppWindow, {
-          url: route.appLogs,
-          title: 'App Logs - Jan',
-          width: 800,
-          height: 600,
-          resizable: true,
-          center: true,
-        })
-
-        // Listen for window creation
-        logsWindow.once('tauri://created', () => {
-          console.log('Logs window created')
-        })
-
-        // Listen for window errors
-        logsWindow.once('tauri://error', (e) => {
-          console.error('Error creating logs window:', e)
-        })
-      }
+      await serviceHub.window().openLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }
@@ -142,7 +103,7 @@ function General() {
   }
 
   const handleDataFolderChange = async () => {
-    const selectedPath = await open({
+    const selectedPath = await serviceHub.dialog().open({
       multiple: false,
       directory: true,
       defaultPath: janDataFolder,
@@ -150,7 +111,7 @@ function General() {
 
     if (selectedPath === janDataFolder) return
     if (selectedPath !== null) {
-      setSelectedNewPath(selectedPath)
+      setSelectedNewPath(selectedPath as string)
       setIsDialogOpen(true)
     }
   }
@@ -158,11 +119,14 @@ function General() {
   const confirmDataFolderChange = async () => {
     if (selectedNewPath) {
       try {
-        await stopAllModels()
-        emit(SystemEvent.KILL_SIDECAR)
+        await serviceHub.models().stopAllModels()
+        serviceHub.events().emit(SystemEvent.KILL_SIDECAR)
         setTimeout(async () => {
           try {
-            await relocateJanDataFolder(selectedNewPath)
+            // Prevent relocating to root directory (e.g., C:\ or D:\ on Windows, / on Unix)
+            if (isRootDir(selectedNewPath))
+              throw new Error(t('settings:general.couldNotRelocateToRoot'))
+            await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
             window.core?.api?.relaunch()
@@ -180,7 +144,7 @@ function General() {
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
         // Revert the data folder path on error
-        const originalPath = await getJanDataFolder()
+        const originalPath = await serviceHub.app().getJanDataFolder()
         setJanDataFolder(originalPath)
 
         toast.error(t('settings:general.failedToRelocateDataFolderDesc'))
@@ -216,15 +180,17 @@ function General() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
             <Card title={t('common:general')}>
-              <CardItem
-                title={t('settings:general.appVersion')}
-                actions={
-                  <span className="text-main-view-fg/80 font-medium">
-                    v{VERSION}
-                  </span>
-                }
-              />
-              {!AUTO_UPDATER_DISABLED && (
+              {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
+                <CardItem
+                  title={t('settings:general.appVersion')}
+                  actions={
+                    <span className="text-main-view-fg/80 font-medium">
+                      v{VERSION}
+                    </span>
+                  }
+                />
+              )}
+              {!AUTO_UPDATER_DISABLED && PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
                   description={t('settings:general.checkForUpdatesDesc')}
@@ -252,7 +218,8 @@ function General() {
               />
             </Card>
 
-            {/* Data folder */}
+            {/* Data folder - Desktop only */}
+            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
             <Card title={t('common:dataFolder')}>
               <CardItem
                 title={t('settings:dataFolder.appData', {
@@ -369,7 +336,7 @@ function General() {
                         if (janDataFolder) {
                           try {
                             const logsPath = `${janDataFolder}/logs`
-                            await revealItemInDir(logsPath)
+                            await serviceHub.opener().revealItemInDir(logsPath)
                           } catch (error) {
                             console.error(
                               'Failed to reveal logs folder:',
@@ -392,7 +359,9 @@ function General() {
                 }
               />
             </Card>
-            {/* Advanced */}
+            )}
+            {/* Advanced - Desktop only */}
+            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
             <Card title="Advanced">
               <CardItem
                 title={t('settings:others.resetFactory', {
@@ -402,45 +371,15 @@ function General() {
                   ns: 'settings',
                 })}
                 actions={
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="destructive" size="sm">
-                        {t('common:reset')}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>
-                          {t('settings:general.factoryResetTitle')}
-                        </DialogTitle>
-                        <DialogDescription>
-                          {t('settings:general.factoryResetDesc')}
-                        </DialogDescription>
-                        <DialogFooter className="mt-2 flex items-center">
-                          <DialogClose asChild>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                            >
-                              {t('settings:general.cancel')}
-                            </Button>
-                          </DialogClose>
-                          <DialogClose asChild>
-                            <Button
-                              variant="destructive"
-                              onClick={() => resetApp()}
-                            >
-                              {t('settings:general.reset')}
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogHeader>
-                    </DialogContent>
-                  </Dialog>
+                  <FactoryResetDialog onReset={resetApp}>
+                    <Button variant="destructive" size="sm">
+                      {t('common:reset')}
+                    </Button>
+                  </FactoryResetDialog>
                 }
               />
             </Card>
+            )}
 
             {/* Other */}
             <Card title={t('common:others')}>
@@ -458,23 +397,25 @@ function General() {
                   />
                 }
               />
-              <CardItem
-                title={t('settings:general.huggingfaceToken', {
-                  ns: 'settings',
-                })}
-                description={t('settings:general.huggingfaceTokenDesc', {
-                  ns: 'settings',
-                })}
-                actions={
-                  <Input
-                    id="hf-token"
-                    value={huggingfaceToken || ''}
-                    onChange={(e) => setHuggingfaceToken(e.target.value)}
-                    placeholder={'hf_xxx'}
-                    required
-                  />
-                }
-              />
+              {PlatformFeatures[PlatformFeature.MODEL_HUB] && (
+                <CardItem
+                  title={t('settings:general.huggingfaceToken', {
+                    ns: 'settings',
+                  })}
+                  description={t('settings:general.huggingfaceTokenDesc', {
+                    ns: 'settings',
+                  })}
+                  actions={
+                    <Input
+                      id="hf-token"
+                      value={huggingfaceToken || ''}
+                      onChange={(e) => setHuggingfaceToken(e.target.value)}
+                      placeholder={'hf_xxx'}
+                      required
+                    />
+                  }
+                />
+              )}
             </Card>
 
             {/* Resources */}

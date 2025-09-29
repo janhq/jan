@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Używasz najnowszej wersji",
   "devVersion": "Wykryto wersję deweloperską",
   "updateError": "Nie udało się sprawdzić dostępności aktualizacji",
+  "checkForBackendUpdates": "Sprawdź Aktualizacje Llamacpp",
+  "checkForBackendUpdatesDesc": "Sprawdza czy dostępna jest nowa wersja backendu Llamacpp.",
+  "checkingForBackendUpdates": "Sprawdzanie aktualizacji Llamacpp...",
+  "noBackendUpdateAvailable": "Używasz najnowszej wersji Llamacpp",
+  "backendUpdateError": "Nie udało się sprawdzić aktualizacji Llamacpp",
   "changeLocation": "Zmień Położenie",
   "copied": "Skopiowano",
   "copyPath": "Skopiuj Ścieżkę",
@@ -156,6 +161,8 @@
     "title": "Lokalny Serwer API",
     "description": "Używaj lokalnego serwera kompatybilnego z API OpenAI.",
     "startServer": "Uruchom Serwer",
+    "loadingModel": "Ładowanie modelu",
+    "startingServer": "Uruchamianie serwera",
     "stopServer": "Zatrzymaj Serwer",
     "serverLogs": "Dzienniki Serwera",
     "serverLogsDesc": "Wyświetl szczegółowe dzienniki lokalnego serwera API.",
@@ -178,7 +185,9 @@
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Pozwalaj na żądania cross-origin do serwera API.",
     "verboseLogs": "Szczegółowe Wpisy Dzienników Serwera",
-    "verboseLogsDesc": "Włącz szczegółowe wpisy dzienników serwera na potrzeby rozwiązywania problemów."
+    "verboseLogsDesc": "Włącz szczegółowe wpisy dzienników serwera na potrzeby rozwiązywania problemów.",
+    "proxyTimeout": "Przekroczenie limitu czasu żądania",
+    "proxyTimeoutDesc": "Czas oczekiwania na odpowiedź od lokalnego modelu w sekundach."
   },
   "privacy": {
     "analytics": "Dane Analityczne",
@@ -197,6 +206,8 @@
     "showInFinder": "Pokaż w Finderze",
     "showInFileExplorer": "Pokaż w Explorerze",
     "openContainingFolder": "Otwórz Katalog Nadrzędny",
+    "couldNotRelocateToRoot": "Nie można przenieść folderu danych do katalogu głównego. Proszę wybrać inną lokalizację.",
+    "couldNotResetRootDirectory": "Nie można zresetować folderu danych, gdy jest ustawiony na katalog główny. Proszę ręcznie usunąć folder danych.",
     "failedToRelocateDataFolder": "Błąd zmiany katalogu danych",
     "failedToRelocateDataFolderDesc": "Nie udało się przenieść katalogu danych. Proszę spróbować później.",
     "devVersion": "Wykryto wersję deweloperską",
@@ -234,7 +245,7 @@
     "reportAnIssueDesc": "Znalazłeś/-aś błąd? Pomóż nam, zgłaszając go na GitHubie.",
     "reportIssue": "Zgłoś Problem",
     "credits": "Podziękowania",
-    "creditsDesc1": "Aplikacja Jan jest rozwijana z ❤️ przez Zespół Menlo.",
+    "creditsDesc1": "Aplikacja 👋 Jan jest rozwijana z ❤️ przez zespół Menlo Research.",
     "creditsDesc2": "Szczególne podziękowania dla naszych otwartoźródłowych zależności - zwłaszcza llama.cpp i Tauri - oraz dla naszej wspaniałej społeczności SI."
   },
   "extensions": {
@@ -249,5 +260,14 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Nowa wersja Llamacpp {{version}}",
+    "backendUpdateAvailable": "Dostępna aktualizacja Llamacpp",
+    "remindMeLater": "Przypomnij mi później",
+    "updating": "Aktualizowanie...",
+    "updateNow": "Aktualizuj teraz",
+    "updateSuccess": "Llamacpp został pomyślnie zaktualizowany",
+    "updateError": "Nie udało się zaktualizować Llamacpp"
   }
 }

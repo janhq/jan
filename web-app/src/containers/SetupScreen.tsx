@@ -11,14 +11,14 @@ function SetupScreen() {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
   const firstItemRemoteProvider =
-    providers.length > 0 ? providers[1].provider : 'openai'
+    providers.length > 0 ? providers[1]?.provider : 'openai'
 
   // Check if setup tour has been completed
   const isSetupCompleted =
     localStorage.getItem(localStorageKey.setupCompleted) === 'true'
 
   return (
-    <div className="flex h-full flex-col flex-justify-center">
+    <div className="flex h-full flex-col justify-center">
       <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-4/6 mx-auto">

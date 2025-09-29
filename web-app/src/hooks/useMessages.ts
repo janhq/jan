@@ -1,9 +1,6 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
-import {
-  createMessage,
-  deleteMessage as deleteMessageExt,
-} from '@/services/messages'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from './useAssistant'
 
 type MessageState = {
@@ -12,6 +9,7 @@ type MessageState = {
   setMessages: (threadId: string, messages: ThreadMessage[]) => void
   addMessage: (message: ThreadMessage) => void
   deleteMessage: (threadId: string, messageId: string) => void
+  clearAllMessages: () => void
 }
 
 export const useMessages = create<MessageState>()((set, get) => ({
@@ -32,7 +30,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
     const currentAssistant = useAssistant.getState().currentAssistant
 
     const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
     const newMessage = {
       ...message,
@@ -42,7 +40,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
         assistant: selectedAssistant,
       },
     }
-    createMessage(newMessage).then((createdMessage) => {
+    getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
       set((state) => ({
         messages: {
           ...state.messages,
@@ -55,7 +53,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
     })
   },
   deleteMessage: (threadId, messageId) => {
-    deleteMessageExt(threadId, messageId)
+    getServiceHub().messages().deleteMessage(threadId, messageId)
     set((state) => ({
       messages: {
         ...state.messages,
@@ -65,5 +63,8 @@ export const useMessages = create<MessageState>()((set, get) => ({
           ) || [],
       },
     }))
+  },
+  clearAllMessages: () => {
+    set({ messages: {} })
   },
 }))

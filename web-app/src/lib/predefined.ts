@@ -144,4 +144,25 @@ export const modelSettings = {
       type: 'text',
     },
   },
+  no_kv_offload: {
+    key: 'no_kv_offload',
+    title: 'Disable KV Offload',
+    description: 'Disable KV cache offload to GPU (if GPU is used).',
+    controller_type: 'checkbox',
+    controller_props: {
+      value: false,
+    },
+  },
+  batch_size: {
+    key: 'batch_size',
+    title: 'Batch Size',
+    description: 'Logical maximum batch size for processing prompts.',
+    controller_type: 'input',
+    controller_props: {
+      value: 2048,
+      placeholder: '2048',
+      type: 'number',
+      textAlign: 'right',
+    },
+  },
 }

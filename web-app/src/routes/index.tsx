@@ -3,7 +3,6 @@ import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useTools } from '@/hooks/useTools'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
@@ -18,6 +17,8 @@ type SearchParams = {
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -32,14 +33,14 @@ function Index() {
   const search = useSearch({ from: route.home as any })
   const selectedModel = search.model
   const { setCurrentThreadId } = useThreads()
-  useTools()
 
   // Conditional to check if there are any valid providers
-  // required min 1 api_key or 1 model in llama.cpp
+  // required min 1 api_key or 1 model in llama.cpp or jan provider
   const hasValidProviders = providers.some(
     (provider) =>
       provider.api_key?.length ||
-      (provider.provider === 'llamacpp' && provider.models.length)
+      (provider.provider === 'llamacpp' && provider.models.length) ||
+      (provider.provider === 'jan' && provider.models.length)
   )
 
   useEffect(() => {
@@ -51,9 +52,9 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col flex-justify-center">
+    <div className="flex h-full flex-col justify-center">
       <HeaderPage>
-        <DropdownAssistant />
+        {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>
       <div className="h-full px-4 md:px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-full md:w-4/6 mx-auto">

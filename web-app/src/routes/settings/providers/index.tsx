@@ -10,22 +10,15 @@ import { useNavigate } from '@tanstack/react-router'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { AddProviderDialog } from '@/containers/dialogs'
 import { Switch } from '@/components/ui/switch'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { openAIProviderSettings } from '@/consts/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
-import { stopAllModels } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -34,35 +27,62 @@ export const Route = createFileRoute(route.settings.model_providers as any)({
 
 function ModelProviders() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { providers, addProvider, updateProvider } = useModelProvider()
   const navigate = useNavigate()
-  const [name, setName] = useState('')
 
-  const createProvider = useCallback(() => {
-    if (
-      providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
-    ) {
-      toast.error(t('providerAlreadyExists', { name }))
-      return
-    }
-    const newProvider = {
-      provider: name,
-      active: true,
-      models: [],
-      settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
-      api_key: '',
-      base_url: 'https://api.openai.com/v1',
-    }
-    addProvider(newProvider)
-    setTimeout(() => {
-      navigate({
-        to: route.settings.providers,
-        params: {
-          providerName: name,
-        },
-      })
-    }, 0)
-  }, [providers, name, addProvider, t, navigate])
+  const createProvider = useCallback(
+    (name: string) => {
+      if (
+        providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
+      ) {
+        toast.error(t('providerAlreadyExists', { name }))
+        return
+      }
+      const newProvider = {
+        provider: name,
+        active: true,
+        models: [],
+        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
+        api_key: '',
+        base_url: 'https://api.openai.com/v1',
+      }
+      addProvider(newProvider)
+      setTimeout(() => {
+        navigate({
+          to: route.settings.providers,
+          params: {
+            providerName: name,
+          },
+        })
+      }, 0)
+    },
+    [providers, addProvider, t, navigate]
+  )
+
+  // Check if model provider settings are enabled for this platform
+  if (!PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS]) {
+    return (
+      <div className="flex flex-col h-full">
+        <HeaderPage>
+          <h1 className="font-medium">{t('common:settings')}</h1>
+        </HeaderPage>
+        <div className="flex h-full w-full flex-col sm:flex-row">
+          <SettingsMenu />
+          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-lg font-medium text-main-view-fg/80 mb-2">
+                {t('common:notAvailable')}
+              </h2>
+              <p className="text-main-view-fg/60">
+                Model provider settings are not available on the web platform.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -80,53 +100,18 @@ function ModelProviders() {
                   <span className="text-main-view-fg font-medium text-base">
                     {t('common:modelProviders')}
                   </span>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="flex items-center gap-2"
-                      >
-                        <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
-                          <IconCirclePlus size={16} />
-                          <span>{t('provider:addProvider')}</span>
-                        </div>
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>
-                          {t('provider:addOpenAIProvider')}
-                        </DialogTitle>
-                        <Input
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="mt-2"
-                          placeholder={t('provider:enterNameForProvider')}
-                          onKeyDown={(e) => {
-                            // Prevent key from being captured by parent components
-                            e.stopPropagation()
-                          }}
-                        />
-                        <DialogFooter className="mt-2 flex items-center">
-                          <DialogClose asChild>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                            >
-                              {t('common:cancel')}
-                            </Button>
-                          </DialogClose>
-                          <DialogClose asChild>
-                            <Button disabled={!name} onClick={createProvider}>
-                              {t('common:create')}
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogHeader>
-                    </DialogContent>
-                  </Dialog>
+                  <AddProviderDialog onCreateProvider={createProvider}>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
+                        <IconCirclePlus size={16} />
+                        <span>{t('provider:addProvider')}</span>
+                      </div>
+                    </Button>
+                  </AddProviderDialog>
                 </div>
               }
             >
@@ -171,8 +156,11 @@ function ModelProviders() {
                       <Switch
                         checked={provider.active}
                         onCheckedChange={async (e) => {
-                          if (!e && provider.provider.toLowerCase() === 'llamacpp') {
-                            await stopAllModels()
+                          if (
+                            !e &&
+                            provider.provider.toLowerCase() === 'llamacpp'
+                          ) {
+                            await serviceHub.models().stopAllModels()
                           }
                           updateProvider(provider.provider, {
                             ...provider,

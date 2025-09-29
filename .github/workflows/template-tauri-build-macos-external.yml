@@ -1,0 +1,103 @@
+name: tauri-build-macos-external
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
+jobs:
+  build-macos-external:
+    runs-on: macos-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Replace Icons for Beta Build
+        if: inputs.channel != 'stable'
+        shell: bash
+        run: |
+          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
+      - name: Update app version
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = false' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+          
+          # Update tauri plugin versions
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
+          
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          
+          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/Cargo.toml---------"
+          cat ./src-tauri/Cargo.toml
+          
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+            chmod +x .github/scripts/rename-tauri-app.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+            chmod +x .github/scripts/rename-workspace.sh
+            .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
+          fi
+
+      - name: Build app
+        run: |
+          make build
+        env:
+          APP_PATH: '.'
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
+          path: |
+            ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg

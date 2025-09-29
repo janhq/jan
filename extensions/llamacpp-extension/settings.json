@@ -37,6 +37,21 @@
     "controllerProps": { "value": true }
   },
   {
+    "key": "memory_util",
+    "title": "Smart Memory utilization",
+    "description": "Smart memory utilization mode for running local GGUF models",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "high",
+      "options": [
+        { "value": "high", "name": "High" },
+        { "value": "medium", "name": "Medium" },
+        { "value": "low", "name": "Low" }
+      ],
+      "recommended": "high"
+    }
+  },
+  {
     "key": "threads",
     "title": "Threads",
     "description": "Number of threads to use during generation (-1 for logical cores).",
@@ -77,18 +92,6 @@
     "controllerProps": {
       "value": -1,
       "placeholder": "-1",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
-    "key": "batch_size",
-    "title": "Batch Size",
-    "description": "Logical maximum batch size for processing prompts.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 2048,
-      "placeholder": "2048",
       "type": "number",
       "textAlign": "right"
     }
@@ -173,15 +176,6 @@
     "key": "mlock",
     "title": "MLock",
     "description": "Force system to keep model in RAM, preventing swapping/compression.",
-    "controllerType": "checkbox",
-    "controllerProps": {
-      "value": false
-    }
-  },
-  {
-    "key": "no_kv_offload",
-    "title": "Disable KV Offload",
-    "description": "Disable KV cache offload to GPU (if GPU is used).",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false

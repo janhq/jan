@@ -27,6 +27,14 @@
   "dataFolder": "Data Folder",
   "others": "Other",
   "language": "Language",
+  "login": "Log In",
+  "loginWith": "Log In With {{provider}}",
+  "loginFailed": "Failed To Log In",
+  "logout": "Log Out",
+  "loggingOut": "Logging Out...",
+  "loggedOut": "Successfully Logged Out",
+  "logoutFailed": "Failed To Log Out",
+  "profile": "Profile",
   "reset": "Reset",
   "search": "Search",
   "name": "Name",
@@ -75,6 +83,8 @@
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
+  "failedToLoadModels": "Failed to load models",
+  "noModels": "No models found",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
   "jan": "Jan",
@@ -109,6 +119,7 @@
     "chatInput": "Ask me anything..."
   },
   "confirm": "Confirm",
+  "continue": "Continue",
   "loading": "Loading...",
   "error": "Error",
   "success": "Success",
@@ -221,6 +232,52 @@
       "title": "Message Metadata"
     }
   },
+  "projects": {
+    "title": "Projects",
+    "addProject": "Add Project",
+    "addToProject": "Add to project",
+    "removeFromProject": "Remove from project",
+    "createNewProject": "Create New Project",
+    "editProject": "Edit Project",
+    "deleteProject": "Delete Project",
+    "projectName": "Project Name",
+    "enterProjectName": "Enter project name...",
+    "noProjectsAvailable": "No projects available",
+    "noProjectsYet": "No Projects Yet",
+    "noProjectsYetDesc": "Start a new project by clicking the Add Project button.",
+    "projectNotFound": "Project Not Found",
+    "projectNotFoundDesc": "The project you're looking for doesn't exist or has been deleted.",
+    "deleteProjectDialog": {
+      "title": "Delete Project",
+      "description": "Are you sure you want to delete this project? This action cannot be undone.",
+      "deleteButton": "Delete",
+      "successWithName": "Project \"{{projectName}}\" deleted successfully",
+      "successWithoutName": "Project deleted successfully",
+      "error": "Failed to delete project. Please try again.",
+      "ariaLabel": "Delete {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Create New Project",
+      "editTitle": "Edit Project",
+      "nameLabel": "Project Name",
+      "namePlaceholder": "Enter project name...",
+      "createButton": "Create",
+      "updateButton": "Update",
+      "alreadyExists": "Project \"{{projectName}}\" already exists",
+      "createSuccess": "Project \"{{projectName}}\" created successfully",
+      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "noConversationsIn": "No Conversations in {{projectName}}",
+    "startNewConversation": "Start a new conversation with {{projectName}} below",
+    "conversationsIn": "Conversations in {{projectName}}",
+    "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
+    "thread": "thread",
+    "threads": "threads",
+    "updated": "Updated:",
+    "collapseThreads": "Collapse threads",
+    "expandThreads": "Expand threads",
+    "update": "Update"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "All Threads Unfavorited",
@@ -273,6 +330,34 @@
     "downloadAndVerificationComplete": {
       "title": "Download Complete",
       "description": "Model \"{{item}}\" downloaded and verified successfully"
+    },
+    "projectCreated": {
+      "title": "Project Created",
+      "description": "Project \"{{projectName}}\" created successfully"
+    },
+    "projectRenamed": {
+      "title": "Project Renamed",
+      "description": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Project Deleted",
+      "description": "Project \"{{projectName}}\" deleted successfully"
+    },
+    "projectAlreadyExists": {
+      "title": "Project Already Exists",
+      "description": "Project \"{{projectName}}\" already exists"
+    },
+    "projectDeleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete project. Please try again."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread Assigned",
+      "description": "Thread assigned to \"{{projectName}}\" successfully"
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread Removed",
+      "description": "Thread removed from \"{{projectName}}\" successfully"
     }
   }
 }

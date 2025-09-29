@@ -126,8 +126,7 @@ jan/
 ├── scripts/              # Build utilities
 │
 ├── package.json          # Root workspace configuration
-├── Makefile              # Build automation commands
-├── mise.toml             # Mise tool configuration  
+├── Makefile              # Build automation commands  
 ├── LICENSE               # Apache 2.0 license
 └── README.md             # Project overview
 ```
@@ -147,19 +146,6 @@ jan/
 git clone https://github.com/menloresearch/jan
 cd jan
 make dev
-```
-
-**Option 2: The Easier Way (Mise)**
-```bash
-git clone https://github.com/menloresearch/jan
-cd jan
-
-# Install mise
-curl https://mise.run | sh
-
-# Let mise handle everything
-mise install    # installs Node.js, Rust, and other tools
-mise dev        # runs the full development setup
 ```
 
 ## How Can I Contribute?

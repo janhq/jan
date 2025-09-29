@@ -1,0 +1,263 @@
+---
+title: Configuration
+description: Configure Jan Server environment variables, authentication, and external integrations.
+---
+
+## Environment Variables
+
+Jan Server configuration is managed through environment variables defined in the Helm values file at `charts/umbrella-chart/values.yaml`.
+
+### API Gateway Configuration
+
+#### Core Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JAN_INFERENCE_MODEL_URL` | `http://jan-server-jan-inference-model:8101` | Internal URL for inference service |
+
+#### Authentication
+
+| Variable | Purpose | Format |
+|----------|---------|--------|
+| `JWT_SECRET` | JWT token signing | Base64 encoded HMAC-SHA256 key |
+| `APIKEY_SECRET` | API key signing | Base64 encoded HMAC-SHA256 key |
+
+The default JWT and API key secrets are for development only. Generate new secrets for production deployments.
+
+#### OAuth2 Integration
+
+| Variable | Description |
+|----------|-------------|
+| `OAUTH2_GOOGLE_CLIENT_ID` | Google OAuth2 application client ID |
+| `OAUTH2_GOOGLE_CLIENT_SECRET` | Google OAuth2 application secret |
+| `OAUTH2_GOOGLE_REDIRECT_URL` | Callback URL for OAuth2 flow |
+
+#### External APIs
+
+| Variable | Provider | Purpose |
+|----------|----------|---------|
+| `SERPER_API_KEY` | Serper | Web search integration |
+
+#### Database Connection
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_POSTGRESQL_WRITE_DSN` | `host=jan-server-postgresql user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable` | Write database connection |
+| `DB_POSTGRESQL_READ1_DSN` | `host=jan-server-postgresql user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable` | Read database connection |
+
+## Helm Configuration
+
+### Updating Values
+
+Edit the configuration in `charts/umbrella-chart/values.yaml`:
+
+```yaml
+jan-api-gateway:
+  env:
+    - name: SERPER_API_KEY
+      value: your_serper_api_key
+    - name: OAUTH2_GOOGLE_CLIENT_ID  
+      value: your_google_client_id
+    - name: OAUTH2_GOOGLE_CLIENT_SECRET
+      value: your_google_client_secret
+```
+
+### Applying Changes
+
+After modifying values, redeploy the application:
+
+```bash
+helm upgrade jan-server ./charts/umbrella-chart
+```
+
+## Authentication Setup
+
+### JWT Tokens
+
+Generate a secure JWT signing key:
+
+```bash
+# Generate 256-bit key for HMAC-SHA256
+openssl rand -base64 32
+```
+
+Update the `JWT_SECRET` value in your Helm configuration.
+
+### API Keys  
+
+Generate a secure API key signing secret:
+
+```bash
+# Generate 256-bit key for HMAC-SHA256
+openssl rand -base64 32
+```
+
+Update the `APIKEY_SECRET` value in your Helm configuration.
+
+### Google OAuth2
+
+1. **Create Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com)
+   - Create a new project or select existing
+
+2. **Enable OAuth2**
+   - Navigate to "APIs & Services" > "Credentials"
+   - Create OAuth2 client ID credentials
+   - Set application type to "Web application"
+
+3. **Configure Redirect URI**
+   ```
+   http://localhost:8080/auth/google/callback
+   ```
+   
+4. **Update Configuration**
+   - Set `OAUTH2_GOOGLE_CLIENT_ID` to your client ID
+   - Set `OAUTH2_GOOGLE_CLIENT_SECRET` to your client secret  
+   - Set `OAUTH2_GOOGLE_REDIRECT_URL` to your callback URL
+
+## External Integrations
+
+### Serper API
+
+Jan Server integrates with Serper for web search capabilities.
+
+1. **Get API Key**
+   - Register at [serper.dev](https://serper.dev)
+   - Generate API key from dashboard
+
+2. **Configure**
+   - Set `SERPER_API_KEY` in Helm values
+   - Redeploy the application
+
+### Adding New Integrations
+
+To add new external API integrations:
+
+1. **Update Helm Values**
+   ```yaml
+   jan-api-gateway:
+     env:
+       - name: YOUR_API_KEY
+         value: your_api_key_value
+   ```
+
+2. **Update Go Configuration**
+   
+   Add to `config/environment_variables/env.go`:
+   ```go
+   YourAPIKey string `env:"YOUR_API_KEY"`
+   ```
+
+3. **Redeploy**
+   ```bash
+   helm upgrade jan-server ./charts/umbrella-chart
+   ```
+
+## Database Configuration
+
+### Connection Settings
+
+The default PostgreSQL configuration uses:
+- **Host**: `jan-server-postgresql` (Kubernetes service name)
+- **Database**: `jan`
+- **User**: `jan-user`
+- **Password**: `jan-password`
+- **Port**: `5432`
+- **SSL**: Disabled (development only)
+
+### Production Database
+
+For production deployments:
+
+1. **External Database**
+   - Use managed PostgreSQL service (AWS RDS, Google Cloud SQL)
+   - Update DSN variables with external connection details
+
+2. **SSL/TLS**
+   - Enable `sslmode=require` in connection strings
+   - Configure certificate validation
+
+3. **Connection Pooling**
+   - Consider using connection pooler (PgBouncer, pgpool-II)
+   - Configure appropriate pool sizes
+
+## Model Configuration
+
+The inference model service is configured via Docker CMD parameters:
+
+```dockerfile
+CMD ["--model", "/models/Jan-v1-4B", \
+     "--served-model-name", "jan-v1-4b", \
+     "--host", "0.0.0.0", \
+     "--port", "8101", \
+     "--max-num-batched-tokens", "1024", \
+     "--enable-auto-tool-choice", \
+     "--tool-call-parser", "hermes", \
+     "--reasoning-parser", "qwen3"]
+```
+
+### Model Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `--model` | `/models/Jan-v1-4B` | Path to model files |
+| `--served-model-name` | `jan-v1-4b` | API model identifier |
+| `--max-num-batched-tokens` | `1024` | Maximum tokens per batch |
+| `--tool-call-parser` | `hermes` | Tool calling format |
+| `--reasoning-parser` | `qwen3` | Reasoning output format |
+
+Model configuration changes require rebuilding the inference Docker image. This will be configurable via environment variables in future releases.
+
+## Resource Configuration
+
+### Kubernetes Resources
+
+Current deployments use default resource limits. For production:
+
+```yaml
+jan-api-gateway:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+jan-inference-model:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+```
+
+### Storage
+
+PostgreSQL uses default Kubernetes storage. For production:
+
+```yaml
+postgresql:
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: fast-ssd
+```
+
+## Logging Configuration
+
+Configure logging levels via environment variables:
+
+```yaml
+jan-api-gateway:
+  env:
+    - name: LOG_LEVEL
+      value: info
+    - name: LOG_FORMAT
+      value: json
+```
+
+Available log levels: `debug`, `info`, `warn`, `error`
+Available formats: `text`, `json`

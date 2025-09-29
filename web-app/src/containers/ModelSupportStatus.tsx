@@ -6,9 +6,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { isModelSupported } from '@/services/models'
 import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 interface ModelSupportStatusProps {
   modelId: string | undefined
@@ -24,15 +23,16 @@ export const ModelSupportStatus = ({
   className,
 }: ModelSupportStatusProps) => {
   const [modelSupportStatus, setModelSupportStatus] = useState<
-    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null
+    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
   >(null)
+  const serviceHub = useServiceHub()
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
     async (
       id: string,
       ctxSize: number
-    ): Promise<'RED' | 'YELLOW' | 'GREEN' | null> => {
+    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
       try {
         const janDataFolder = await getJanDataFolderPath()
 
@@ -47,7 +47,7 @@ export const ModelSupportStatus = ({
 
         // Check if the standard model.gguf file exists
         if (await fs.existsSync(ggufModelPath)) {
-          return await isModelSupported(ggufModelPath, ctxSize)
+          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
         }
 
         // If model.gguf doesn't exist, try reading from model.yml (for imported models)
@@ -67,9 +67,9 @@ export const ModelSupportStatus = ({
         }
 
         // Read the model configuration to get the actual model path
-        const modelConfig = await invoke<{ model_path: string }>('read_yaml', {
-          path: `llamacpp/models/${id}/model.yml`,
-        })
+        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
+          `llamacpp/models/${id}/model.yml`
+        )
 
         // Handle both absolute and relative paths
         const actualModelPath =
@@ -78,7 +78,7 @@ export const ModelSupportStatus = ({
             ? modelConfig.model_path // absolute path, use as-is
             : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
 
-        return await isModelSupported(actualModelPath, ctxSize)
+        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
       } catch (error) {
         console.error(
           'Error checking model support with path resolution:',
@@ -88,7 +88,7 @@ export const ModelSupportStatus = ({
         return null
       }
     },
-    []
+    [serviceHub]
   )
 
   // Helper function to get icon color based on model support status

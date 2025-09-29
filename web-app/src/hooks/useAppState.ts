@@ -4,6 +4,13 @@ import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
+type PromptProgress = {
+  cache: number
+  processed: number
+  time_ms: number
+  total: number
+}
+
 type AppErrorMessage = {
   message?: string
   title?: string
@@ -20,6 +27,7 @@ type AppState = {
   currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
+  promptProgress?: PromptProgress
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -31,9 +39,11 @@ type AppState = {
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   resetTokenSpeed: () => void
+  clearAppState: () => void
   setOutOfContextDialog: (show: boolean) => void
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
+  updatePromptProgress: (progress: PromptProgress | undefined) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -44,13 +54,14 @@ export const useAppState = create<AppState>()((set) => ({
   abortControllers: {},
   tokenSpeed: undefined,
   currentToolCall: undefined,
+  promptProgress: undefined,
   cancelToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
 
     const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
+      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
     set(() => ({
       streamingContent: content
@@ -118,6 +129,16 @@ export const useAppState = create<AppState>()((set) => ({
     set({
       tokenSpeed: undefined,
     }),
+  clearAppState: () =>
+    set({
+      streamingContent: undefined,
+      abortControllers: {},
+      tokenSpeed: undefined,
+      currentToolCall: undefined,
+      cancelToolCall: undefined,
+      errorMessage: undefined,
+      showOutOfContextDialog: false,
+    }),
   setOutOfContextDialog: (show) => {
     set(() => ({
       showOutOfContextDialog: show,
@@ -131,6 +152,11 @@ export const useAppState = create<AppState>()((set) => ({
   setErrorMessage: (error) => {
     set(() => ({
       errorMessage: error,
+    }))
+  },
+  updatePromptProgress: (progress) => {
+    set(() => ({
+      promptProgress: progress,
     }))
   },
 }))

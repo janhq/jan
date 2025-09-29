@@ -34,6 +34,22 @@ pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> 
 }
 
 #[tauri::command]
+pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
+    if args.len() < 2 || args[0].is_empty() || args[1].is_empty() {
+        return Err("mv error: Invalid argument - source and destination required".to_string());
+    }
+
+    let source = resolve_path(app_handle.clone(), &args[0]);
+    let destination = resolve_path(app_handle, &args[1]);
+
+    if !source.exists() {
+        return Err("mv error: Source path does not exist".to_string());
+    }
+
+    fs::rename(&source, &destination).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn join_path<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     args: Vec<String>,
@@ -165,13 +181,6 @@ pub fn read_yaml(app: tauri::AppHandle, path: &str) -> Result<serde_json::Value,
 pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result<(), String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !path_buf.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: path {} is not under jan_data_folder {}",
-            path_buf.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
 
     let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
     if !output_dir_buf.starts_with(&jan_data_folder) {
@@ -191,13 +200,54 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
         )
     })?;
 
+    // Use short path on Windows to handle paths with spaces
+    #[cfg(windows)]
+    let file = {
+        if let Some(short_path) = jan_utils::path::get_short_path(&path_buf) {
+            fs::File::open(&short_path).map_err(|e| e.to_string())?
+        } else {
+            fs::File::open(&path_buf).map_err(|e| e.to_string())?
+        }
+    };
+
+    #[cfg(not(windows))]
     let file = fs::File::open(&path_buf).map_err(|e| e.to_string())?;
     if path.ends_with(".tar.gz") {
         let tar = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(tar);
         archive.unpack(&output_dir_buf).map_err(|e| e.to_string())?;
+    } else if path.ends_with(".zip") {
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+            let outpath = output_dir_buf.join(
+                entry
+                    .enclosed_name()
+                    .ok_or_else(|| "Invalid zip entry path".to_string())?,
+            );
+
+            if entry.name().ends_with('/') {
+                std::fs::create_dir_all(&outpath).map_err(|e| e.to_string())?;
+            } else {
+                if let Some(parent) = outpath.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                let mut outfile = std::fs::File::create(&outpath).map_err(|e| e.to_string())?;
+                std::io::copy(&mut entry, &mut outfile).map_err(|e| e.to_string())?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Some(mode) = entry.unix_mode() {
+                        let _ = std::fs::set_permissions(
+                            &outpath,
+                            std::fs::Permissions::from_mode(mode),
+                        );
+                    }
+                }
+            }
+        }
     } else {
-        return Err("Unsupported file format. Only .tar.gz is supported.".to_string());
+        return Err("Unsupported file format. Only .tar.gz and .zip are supported.".to_string());
     }
 
     Ok(())

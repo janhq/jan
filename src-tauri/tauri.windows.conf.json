@@ -1,10 +1,17 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "resources": ["resources/pre-install/**/*"],
+    "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll", "resources/lib/vc_redist.x64.exe", "resources/LICENSE"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
-      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh",
+        "installerIcon": "icons/icon.ico"
+      },
+      "webviewInstallMode": {
+        "silent": true,
+        "type": "downloadBootstrapper"
+      }
     }
   }
 }

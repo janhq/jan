@@ -4,23 +4,33 @@ import { useChat } from '../useChat'
 
 // Mock dependencies
 vi.mock('../usePrompt', () => ({
-  usePrompt: vi.fn(() => ({
-    prompt: 'test prompt',
-    setPrompt: vi.fn(),
-  })),
+  usePrompt: Object.assign(
+    (selector: any) => {
+      const state = {
+        prompt: 'test prompt',
+        setPrompt: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
+    { getState: () => ({ prompt: 'test prompt', setPrompt: vi.fn() }) }
+  ),
 }))
 
 vi.mock('../useAppState', () => ({
   useAppState: Object.assign(
-    vi.fn(() => ({
-      tools: [],
-      updateTokenSpeed: vi.fn(),
-      resetTokenSpeed: vi.fn(),
-      updateTools: vi.fn(),
-      updateStreamingContent: vi.fn(),
-      updateLoadingModel: vi.fn(),
-      setAbortController: vi.fn(),
-    })),
+    (selector?: any) => {
+      const state = {
+        tools: [],
+        updateTokenSpeed: vi.fn(),
+        resetTokenSpeed: vi.fn(),
+        updateTools: vi.fn(),
+        updateStreamingContent: vi.fn(),
+        updatePromptProgress: vi.fn(),
+        updateLoadingModel: vi.fn(),
+        setAbortController: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
     {
       getState: vi.fn(() => ({
         tokenSpeed: { tokensPerSecond: 10 },
@@ -30,80 +40,120 @@ vi.mock('../useAppState', () => ({
 }))
 
 vi.mock('../useAssistant', () => ({
-  useAssistant: vi.fn(() => ({
-    assistants: [{
-      id: 'test-assistant',
-      instructions: 'test instructions',
-      parameters: { stream: true },
-    }],
-    currentAssistant: {
-      id: 'test-assistant',
-      instructions: 'test instructions',
-      parameters: { stream: true },
-    },
-  })),
+  useAssistant: (selector: any) => {
+    const state = {
+      assistants: [{
+        id: 'test-assistant',
+        instructions: 'test instructions',
+        parameters: { stream: true },
+      }],
+      currentAssistant: {
+        id: 'test-assistant',
+        instructions: 'test instructions',
+        parameters: { stream: true },
+      },
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useModelProvider', () => ({
-  useModelProvider: vi.fn(() => ({
-    getProviderByName: vi.fn(() => ({
-      provider: 'openai',
-      models: [],
-    })),
-    selectedModel: {
-      id: 'test-model',
-      capabilities: ['tools'],
+  useModelProvider: Object.assign(
+    (selector: any) => {
+      const state = {
+        getProviderByName: vi.fn(() => ({
+          provider: 'openai',
+          models: [],
+        })),
+        selectedModel: {
+          id: 'test-model',
+          capabilities: ['tools'],
+        },
+        selectedProvider: 'openai',
+        updateProvider: vi.fn(),
+      }
+      return selector ? selector(state) : state
     },
-    selectedProvider: 'openai',
-    updateProvider: vi.fn(),
-  })),
+    {
+      getState: () => ({
+        getProviderByName: vi.fn(() => ({
+          provider: 'openai',
+          models: [],
+        })),
+        selectedModel: {
+          id: 'test-model',
+          capabilities: ['tools'],
+        },
+        selectedProvider: 'openai',
+        updateProvider: vi.fn(),
+      })
+    }
+  ),
 }))
 
 vi.mock('../useThreads', () => ({
-  useThreads: vi.fn(() => ({
-    getCurrentThread: vi.fn(() => ({
-      id: 'test-thread',
-      model: { id: 'test-model', provider: 'openai' },
-    })),
-    createThread: vi.fn(() => Promise.resolve({
-      id: 'test-thread',
-      model: { id: 'test-model', provider: 'openai' },
-    })),
-    updateThreadTimestamp: vi.fn(),
-  })),
+  useThreads: (selector: any) => {
+    const state = {
+      getCurrentThread: vi.fn(() => ({
+        id: 'test-thread',
+        model: { id: 'test-model', provider: 'openai' },
+      })),
+      createThread: vi.fn(() => Promise.resolve({
+        id: 'test-thread',
+        model: { id: 'test-model', provider: 'openai' },
+      })),
+      updateThreadTimestamp: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useMessages', () => ({
-  useMessages: vi.fn(() => ({
-    getMessages: vi.fn(() => []),
-    addMessage: vi.fn(),
-  })),
+  useMessages: (selector: any) => {
+    const state = {
+      getMessages: vi.fn(() => []),
+      addMessage: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useToolApproval', () => ({
-  useToolApproval: vi.fn(() => ({
-    approvedTools: [],
-    showApprovalModal: vi.fn(),
-    allowAllMCPPermissions: false,
-  })),
+  useToolApproval: (selector: any) => {
+    const state = {
+      approvedTools: [],
+      showApprovalModal: vi.fn(),
+      allowAllMCPPermissions: false,
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useToolAvailable', () => ({
-  useToolAvailable: vi.fn(() => ({
-    getDisabledToolsForThread: vi.fn(() => []),
-  })),
+  useToolAvailable: (selector: any) => {
+    const state = {
+      getDisabledToolsForThread: vi.fn(() => []),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useModelContextApproval', () => ({
-  useContextSizeApproval: vi.fn(() => ({
-    showApprovalModal: vi.fn(),
-  })),
+  useContextSizeApproval: (selector: any) => {
+    const state = {
+      showApprovalModal: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('../useModelLoad', () => ({
-  useModelLoad: vi.fn(() => ({
-    setModelLoadError: vi.fn(),
-  })),
+  useModelLoad: (selector: any) => {
+    const state = {
+      setModelLoadError: vi.fn(),
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -161,18 +211,18 @@ describe('useChat', () => {
 
   it('returns sendMessage function', () => {
     const { result } = renderHook(() => useChat())
-    
-    expect(result.current.sendMessage).toBeDefined()
-    expect(typeof result.current.sendMessage).toBe('function')
+
+    expect(result.current).toBeDefined()
+    expect(typeof result.current).toBe('function')
   })
 
   it('sends message successfully', async () => {
     const { result } = renderHook(() => useChat())
-    
+
     await act(async () => {
-      await result.current.sendMessage('Hello world')
+      await result.current('Hello world')
     })
-    
-    expect(result.current.sendMessage).toBeDefined()
+
+    expect(result.current).toBeDefined()
   })
 })

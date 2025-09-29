@@ -9,15 +9,26 @@ import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { getSystemUsage } from '@/services/hardware'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitor,
 })
 
 function SystemMonitor() {
+  return (
+    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
+      <SystemMonitorContent />
+    </PlatformGuard>
+  )
+}
+
+function SystemMonitorContent() {
   const { t } = useTranslation()
   const { hardwareData, systemUsage, updateSystemUsage } = useHardware()
+  const serviceHub = useServiceHub()
 
   const { devices: llamacppDevices, fetchDevices } = useLlamacppDevices()
 
@@ -29,9 +40,11 @@ function SystemMonitor() {
   // Poll system usage every 5 seconds
   useEffect(() => {
     const intervalId = setInterval(() => {
-      getSystemUsage()
+      serviceHub.hardware().getSystemUsage()
         .then((data) => {
-          updateSystemUsage(data)
+          if (data) {
+            updateSystemUsage(data)
+          }
         })
         .catch((error) => {
           console.error('Failed to get system usage:', error)
@@ -39,7 +52,7 @@ function SystemMonitor() {
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [updateSystemUsage])
+  }, [updateSystemUsage, serviceHub])
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =

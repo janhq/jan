@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -19,74 +20,86 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { useAssistant } from './useAssistant'
 
-import { stopModel, startModel, stopAllModels } from '@/services/models'
-
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
-import { updateSettings } from '@/services/providers'
 import { useContextSizeApproval } from './useModelContextApproval'
 import { useModelLoad } from './useModelLoad'
 import {
   ReasoningProcessor,
   extractReasoningFromMessage,
 } from '@/utils/reasoning'
+import { useAssistant } from './useAssistant'
+import { useShallow } from 'zustand/shallow'
 
 export const useChat = () => {
-  const { prompt, setPrompt } = usePrompt()
-  const {
-    tools,
+  const [
     updateTokenSpeed,
     resetTokenSpeed,
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
-  } = useAppState()
-  const { assistants, currentAssistant } = useAssistant()
-  const { updateProvider } = useModelProvider()
+  ] = useAppState(
+    useShallow((state) => [
+      state.updateTokenSpeed,
+      state.resetTokenSpeed,
+      state.updateStreamingContent,
+      state.updateLoadingModel,
+      state.setAbortController,
+    ])
+  )
+  const updatePromptProgress = useAppState(
+    (state) => state.updatePromptProgress
+  )
 
-  const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
-    useToolApproval()
-  const { showApprovalModal: showIncreaseContextSizeModal } =
-    useContextSizeApproval()
-  const { getDisabledToolsForThread } = useToolAvailable()
+  const updateProvider = useModelProvider((state) => state.updateProvider)
+  const serviceHub = useServiceHub()
 
-  const { getProviderByName, selectedModel, selectedProvider } =
-    useModelProvider()
+  const showApprovalModal = useToolApproval((state) => state.showApprovalModal)
+  const allowAllMCPPermissions = useToolApproval(
+    (state) => state.allowAllMCPPermissions
+  )
+  const showIncreaseContextSizeModal = useContextSizeApproval(
+    (state) => state.showApprovalModal
+  )
+  const getDisabledToolsForThread = useToolAvailable(
+    (state) => state.getDisabledToolsForThread
+  )
 
-  const {
-    getCurrentThread: retrieveThread,
-    createThread,
-    updateThreadTimestamp,
-  } = useThreads()
-  const { getMessages, addMessage } = useMessages()
-  const { setModelLoadError } = useModelLoad()
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+
+  const [createThread, retrieveThread, updateThreadTimestamp] = useThreads(
+    useShallow((state) => [
+      state.createThread,
+      state.getCurrentThread,
+      state.updateThreadTimestamp,
+    ])
+  )
+
+  const getMessages = useMessages((state) => state.getMessages)
+  const addMessage = useMessages((state) => state.addMessage)
+  const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
-
-  const provider = useMemo(() => {
-    return getProviderByName(selectedProvider)
-  }, [selectedProvider, getProviderByName])
-
-  const currentProviderId = useMemo(() => {
-    return provider?.provider || selectedProvider
-  }, [provider, selectedProvider])
-
-  const selectedAssistant =
-    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
+      // Get prompt directly from store when needed
+      const currentPrompt = usePrompt.getState().prompt
+      const currentAssistant = useAssistant.getState().currentAssistant
+      const assistants = useAssistant.getState().assistants
+      const selectedModel = useModelProvider.getState().selectedModel
+      const selectedProvider = useModelProvider.getState().selectedProvider
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        prompt,
-        selectedAssistant
+        currentPrompt,
+        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
       )
       router.navigate({
         to: route.threadsDetail,
@@ -94,26 +107,21 @@ export const useChat = () => {
       })
     }
     return currentThread
-  }, [
-    createThread,
-    prompt,
-    retrieveThread,
-    router,
-    selectedModel?.id,
-    selectedProvider,
-    selectedAssistant,
-  ])
+  }, [createThread, retrieveThread, router])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
-      await stopAllModels()
+      await serviceHub.models().stopAllModels()
       await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
-      await startModel(provider, modelId).catch(console.error)
+      await serviceHub
+        .models()
+        .startModel(provider, modelId)
+        .catch(console.error)
       updateLoadingModel(false)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     },
-    [updateLoadingModel]
+    [updateLoadingModel, serviceHub]
   )
 
   const increaseModelContextSize = useCallback(
@@ -189,7 +197,9 @@ export const useChat = () => {
         settings: newSettings,
       }
 
-      await updateSettings(providerName, updateObj.settings ?? [])
+      await serviceHub
+        .providers()
+        .updateSettings(providerName, updateObj.settings ?? [])
       updateProvider(providerName, {
         ...provider,
         ...updateObj,
@@ -198,7 +208,7 @@ export const useChat = () => {
       if (updatedProvider) await restartModel(updatedProvider, modelId)
       return updatedProvider
     },
-    [updateProvider, getProviderByName, restartModel]
+    [updateProvider, getProviderByName, restartModel, serviceHub]
   )
 
   const sendMessage = useCallback(
@@ -214,31 +224,34 @@ export const useChat = () => {
       }>
     ) => {
       const activeThread = await getCurrentThread()
+      const selectedProvider = useModelProvider.getState().selectedProvider
+      let activeProvider = getProviderByName(selectedProvider)
 
       resetTokenSpeed()
-      let activeProvider = currentProviderId
-        ? getProviderByName(currentProviderId)
-        : provider
       if (!activeThread || !activeProvider) return
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
+      updatePromptProgress(undefined)
       // Do not add new message on retry
       if (troubleshooting)
         addMessage(newUserThreadContent(activeThread.id, message, attachments))
       updateThreadTimestamp(activeThread.id)
-      setPrompt('')
+      usePrompt.getState().setPrompt('')
+      const selectedModel = useModelProvider.getState().selectedModel
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(activeProvider, selectedModel.id)
+          await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
-
+        const currentAssistant = useAssistant.getState().currentAssistant
         const builder = new CompletionMessagesBuilder(
           messages,
-          renderInstructions(currentAssistant?.instructions)
+          currentAssistant
+            ? renderInstructions(currentAssistant.instructions)
+            : undefined
         )
         if (troubleshooting) builder.addUserMessage(message, attachments)
 
@@ -246,7 +259,7 @@ export const useChat = () => {
 
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? tools.filter((tool) => {
+          ? useAppState.getState().tools.filter((tool) => {
               const disabledTools = getDisabledToolsForThread(activeThread.id)
               return !disabledTools.includes(tool.name)
             })
@@ -285,10 +298,10 @@ export const useChat = () => {
             builder.getMessages(),
             abortController,
             availableTools,
-            currentAssistant.parameters?.stream === false ? false : true,
+            currentAssistant?.parameters?.stream === false ? false : true,
             {
               ...modelSettings,
-              ...currentAssistant.parameters,
+              ...(currentAssistant?.parameters || {}),
             } as unknown as Record<string, object>
           )
 
@@ -389,6 +402,16 @@ export const useChat = () => {
                     break
                   }
 
+                  // Handle prompt progress if available
+                  if ('prompt_progress' in part && part.prompt_progress) {
+                    // Force immediate state update to ensure we see intermediate values
+                    flushSync(() => {
+                      updatePromptProgress(part.prompt_progress)
+                    })
+                    // Add a small delay to make progress visible
+                    await new Promise((resolve) => setTimeout(resolve, 100))
+                  }
+
                   // Error message
                   if (!part.choices) {
                     throw new Error(
@@ -475,9 +498,11 @@ export const useChat = () => {
             accumulatedText.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
-            provider?.provider === 'llamacpp'
+            activeProvider?.provider === 'llamacpp'
           ) {
-            await stopModel(activeThread.model.id, 'llamacpp')
+            await serviceHub
+              .models()
+              .stopModel(activeThread.model.id, 'llamacpp')
             throw new Error('No response received from the model')
           }
 
@@ -497,12 +522,13 @@ export const useChat = () => {
             builder,
             finalContent,
             abortController,
-            approvedTools,
+            useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
             allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)
+          updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length
@@ -524,26 +550,21 @@ export const useChat = () => {
       } finally {
         updateLoadingModel(false)
         updateStreamingContent(undefined)
+        updatePromptProgress(undefined)
       }
     },
     [
       getCurrentThread,
       resetTokenSpeed,
-      currentProviderId,
       getProviderByName,
-      provider,
       getMessages,
       setAbortController,
       updateStreamingContent,
+      updatePromptProgress,
       addMessage,
       updateThreadTimestamp,
-      setPrompt,
-      selectedModel,
-      currentAssistant,
-      tools,
       updateLoadingModel,
       getDisabledToolsForThread,
-      approvedTools,
       allowAllMCPPermissions,
       showApprovalModal,
       updateTokenSpeed,
@@ -551,8 +572,9 @@ export const useChat = () => {
       increaseModelContextSize,
       toggleOnContextShifting,
       setModelLoadError,
+      serviceHub,
     ]
   )
 
-  return { sendMessage }
+  return useMemo(() => sendMessage, [sendMessage])
 }

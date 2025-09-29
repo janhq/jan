@@ -13,19 +13,15 @@ import {
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import {
-  CatalogModel,
-  ModelQuant,
-  convertHfRepoToCatalogModel,
-  fetchHuggingFaceRepo,
-  pullModelWithMetadata,
-  isModelSupported,
-} from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -46,6 +42,14 @@ export const Route = createFileRoute('/hub/$modelId')({
 })
 
 function HubModelDetail() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubModelDetailContent />
+    </PlatformGuard>
+  )
+}
+
+function HubModelDetailContent() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
@@ -56,6 +60,7 @@ function HubModelDetail() {
   const llamaProvider = getProviderByName('llamacpp')
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
+  const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
 
   // State for README content
@@ -64,7 +69,7 @@ function HubModelDetail() {
 
   // State for model support status
   const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
+    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
   >({})
 
   useEffect(() => {
@@ -72,15 +77,16 @@ function HubModelDetail() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await fetchHuggingFaceRepo(
-      search.repo || modelId,
-      huggingfaceToken
-    )
+    const repoInfo = await serviceHub
+      .models()
+      .fetchHuggingFaceRepo(search.repo || modelId, huggingfaceToken)
     if (repoInfo) {
-      const repoDetail = convertHfRepoToCatalogModel(repoInfo)
-      setRepoData(repoDetail)
+      const repoDetail = serviceHub
+        .models()
+        .convertHfRepoToCatalogModel(repoInfo)
+      setRepoData(repoDetail || undefined)
     }
-  }, [modelId, search, huggingfaceToken])
+  }, [serviceHub, modelId, search, huggingfaceToken])
 
   useEffect(() => {
     fetchRepo()
@@ -160,7 +166,9 @@ function HubModelDetail() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supported = await isModelSupported(modelPath, 8192)
+        const supported = await serviceHub
+          .models()
+          .isModelSupported(modelPath, 8192)
         setModelSupportStatus((prev) => ({
           ...prev,
           [modelKey]: supported,
@@ -173,7 +181,7 @@ function HubModelDetail() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
   // Extract tags from quants (model variants)
@@ -465,12 +473,20 @@ function HubModelDetail() {
                                         addLocalDownloadingModel(
                                           variant.model_id
                                         )
-                                        pullModelWithMetadata(
-                                          variant.model_id,
-                                          variant.path,
-                                          modelData.mmproj_models?.[0]?.path,
-                                          huggingfaceToken
-                                        )
+                                        serviceHub
+                                          .models()
+                                          .pullModelWithMetadata(
+                                            variant.model_id,
+                                            variant.path,
+                                            (
+                                              modelData.mmproj_models?.find(
+                                                (e) =>
+                                                  e.model_id.toLowerCase() ===
+                                                  'mmproj-f16'
+                                              ) || modelData.mmproj_models?.[0]
+                                            )?.path,
+                                            huggingfaceToken
+                                          )
                                       }}
                                       className={cn(isDownloading && 'hidden')}
                                     >

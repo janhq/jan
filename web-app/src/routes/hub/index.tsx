@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
 import {
   useState,
   useMemo,
@@ -32,21 +34,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
-import Joyride, { CallBackProps, STATUS } from 'react-joyride'
-import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  CatalogModel,
-  pullModelWithMetadata,
-  fetchHuggingFaceRepo,
-  convertHfRepoToCatalogModel,
-  isModelSupported,
-} from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import type { CatalogModel } from '@/services/models/types'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -54,10 +49,9 @@ import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
+import { useShallow } from 'zustand/shallow'
 
-type ModelProps = {
-  model: CatalogModel
-}
 type SearchParams = {
   repo: string
 }
@@ -71,8 +65,17 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function Hub() {
+  return (
+    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
+      <HubContent />
+    </PlatformGuard>
+  )
+}
+
+function HubContent() {
   const parentRef = useRef(null)
-  const { huggingfaceToken } = useGeneralSetting()
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+  const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
   const sortOptions = [
@@ -87,7 +90,13 @@ function Hub() {
     }
   }, [])
 
-  const { sources, fetchSources, loading } = useModelSources()
+  const { sources, fetchSources, loading } = useModelSources(
+    useShallow((state) => ({
+      sources: state.sources,
+      fetchSources: state.fetchSources,
+      loading: state.loading,
+    }))
+  )
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -102,16 +111,9 @@ function Hub() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
   >({})
-  const [joyrideReady, setJoyrideReady] = useState(false)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
-  const downloadButtonRef = useRef<HTMLButtonElement>(null)
-  const hasTriggeredDownload = useRef(false)
-
-  const { getProviderByName } = useModelProvider()
-  const llamaProvider = getProviderByName('llamacpp')
 
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
@@ -162,9 +164,10 @@ function Hub() {
         ?.map((model) => ({
           ...model,
           quants: model.quants.filter((variant) =>
-            llamaProvider?.models.some(
-              (m: { id: string }) => m.id === variant.model_id
-            )
+            useModelProvider
+              .getState()
+              .getProviderByName('llamacpp')
+              ?.models.some((m: { id: string }) => m.id === variant.model_id)
           ),
         }))
         .filter((model) => model.quants.length > 0)
@@ -180,7 +183,6 @@ function Hub() {
     showOnlyDownloaded,
     huggingFaceRepo,
     searchOptions,
-    llamaProvider?.models,
   ])
 
   // The virtualizer
@@ -194,46 +196,54 @@ function Hub() {
     fetchSources()
   }, [fetchSources])
 
+  const fetchHuggingFaceModel = async (searchValue: string) => {
+    if (
+      !searchValue.length ||
+      (!searchValue.includes('/') && !searchValue.startsWith('http'))
+    ) {
+      return
+    }
+
+    setIsSearching(true)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+
+    addModelSourceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const repoInfo = await serviceHub
+          .models()
+          .fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+        if (repoInfo) {
+          const catalogModel = serviceHub
+            .models()
+            .convertHfRepoToCatalogModel(repoInfo)
+          if (
+            !sources.some(
+              (s) =>
+                catalogModel.model_name.trim().split('/').pop() ===
+                  s.model_name.trim() &&
+                catalogModel.developer.trim() === s.developer?.trim()
+            )
+          ) {
+            setHuggingFaceRepo(catalogModel)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching repository info:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 500)
+  }
+
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
 
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    if (
-      e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http'))
-    ) {
-      setIsSearching(true)
-
-      addModelSourceTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Fetch HuggingFace repository information
-          const repoInfo = await fetchHuggingFaceRepo(
-            e.target.value,
-            huggingfaceToken
-          )
-          if (repoInfo) {
-            const catalogModel = convertHfRepoToCatalogModel(repoInfo)
-            if (
-              !sources.some(
-                (s) =>
-                  catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim()
-              )
-            ) {
-              setHuggingFaceRepo(catalogModel)
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching repository info:', error)
-        } finally {
-          setIsSearching(false)
-        }
-      }, 500)
+    if (!showOnlyDownloaded) {
+      fetchHuggingFaceModel(e.target.value)
     }
   }
 
@@ -293,7 +303,9 @@ function Hub() {
       try {
         // Use the HuggingFace path for the model
         const modelPath = variant.path
-        const supportStatus = await isModelSupported(modelPath, 8192)
+        const supportStatus = await serviceHub
+          .models()
+          .isModelSupported(modelPath, 8192)
 
         setModelSupportStatus((prev) => ({
           ...prev,
@@ -307,175 +319,10 @@ function Hub() {
         }))
       }
     },
-    [modelSupportStatus]
+    [modelSupportStatus, serviceHub]
   )
 
-  const DownloadButtonPlaceholder = useMemo(() => {
-    return ({ model }: ModelProps) => {
-      // Check if this is a HuggingFace repository (no quants)
-      if (model.quants.length === 0) {
-        return (
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                window.open(
-                  `https://huggingface.co/${model.model_name}`,
-                  '_blank'
-                )
-              }}
-            >
-              View on HuggingFace
-            </Button>
-          </div>
-        )
-      }
-
-      const quant =
-        model.quants.find((e) =>
-          defaultModelQuantizations.some((m) =>
-            e.model_id.toLowerCase().includes(m)
-          )
-        ) ?? model.quants[0]
-      const modelId = quant?.model_id || model.model_name
-      const modelUrl = quant?.path || modelId
-      const isDownloading =
-        localDownloadingModels.has(modelId) ||
-        downloadProcesses.some((e) => e.id === modelId)
-      const downloadProgress =
-        downloadProcesses.find((e) => e.id === modelId)?.progress || 0
-      const isDownloaded = llamaProvider?.models.some(
-        (m: { id: string }) => m.id === modelId
-      )
-      const isRecommended = isRecommendedModel(model.model_name)
-
-      const handleDownload = () => {
-        // Immediately set local downloading state
-        addLocalDownloadingModel(modelId)
-        const mmprojPath = model.mmproj_models?.[0]?.path
-        pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
-      }
-
-      return (
-        <div
-          className={cn(
-            'flex items-center',
-            isRecommended && 'hub-download-button-step'
-          )}
-        >
-          {isDownloading && !isDownloaded && (
-            <div className={cn('flex items-center gap-2 w-20')}>
-              <Progress value={downloadProgress * 100} />
-              <span className="text-xs text-center text-main-view-fg/70">
-                {Math.round(downloadProgress * 100)}%
-              </span>
-            </div>
-          )}
-          {isDownloaded ? (
-            <Button
-              size="sm"
-              onClick={() => handleUseModel(modelId)}
-              data-test-id={`hub-model-${modelId}`}
-            >
-              {t('hub:use')}
-            </Button>
-          ) : (
-            <Button
-              data-test-id={`hub-model-${modelId}`}
-              size="sm"
-              onClick={handleDownload}
-              className={cn(isDownloading && 'hidden')}
-              ref={isRecommended ? downloadButtonRef : undefined}
-            >
-              {t('hub:download')}
-            </Button>
-          )}
-        </div>
-      )
-    }
-  }, [
-    localDownloadingModels,
-    downloadProcesses,
-    llamaProvider?.models,
-    isRecommendedModel,
-    t,
-    addLocalDownloadingModel,
-    huggingfaceToken,
-    handleUseModel,
-  ])
-
-  const { step } = useSearch({ from: Route.id })
-  const isSetup = step === 'setup_local_provider'
-
-  // Wait for DOM to be ready before starting Joyride
-  useEffect(() => {
-    if (!loading && filteredModels.length > 0 && isSetup) {
-      const timer = setTimeout(() => {
-        setJoyrideReady(true)
-      }, 100)
-      return () => clearTimeout(timer)
-    } else {
-      setJoyrideReady(false)
-    }
-  }, [loading, filteredModels.length, isSetup])
-
-  const handleJoyrideCallback = (data: CallBackProps) => {
-    const { status, index } = data
-
-    if (
-      status === STATUS.FINISHED &&
-      !isDownloading &&
-      isLastStep &&
-      !hasTriggeredDownload.current
-    ) {
-      const recommendedModel = filteredModels.find((model) =>
-        isRecommendedModel(model.model_name)
-      )
-      if (recommendedModel && recommendedModel.quants[0]?.model_id) {
-        if (downloadButtonRef.current) {
-          hasTriggeredDownload.current = true
-          downloadButtonRef.current.click()
-        }
-        return
-      }
-    }
-
-    if (status === STATUS.FINISHED) {
-      navigate({
-        to: route.hub.index,
-      })
-    }
-
-    // Track current step index
-    setCurrentStepIndex(index)
-  }
-
-  // Check if any model is currently downloading
-  const isDownloading =
-    localDownloadingModels.size > 0 || downloadProcesses.length > 0
-
-  const steps = [
-    {
-      target: '.hub-model-card-step',
-      title: t('hub:joyride.recommendedModelTitle'),
-      disableBeacon: true,
-      content: t('hub:joyride.recommendedModelContent'),
-    },
-    {
-      target: '.hub-download-button-step',
-      title: isDownloading
-        ? t('hub:joyride.downloadInProgressTitle')
-        : t('hub:joyride.downloadModelTitle'),
-      disableBeacon: true,
-      content: isDownloading
-        ? t('hub:joyride.downloadInProgressContent')
-        : t('hub:joyride.downloadModelContent'),
-    },
-  ]
-
   // Check if we're on the last step
-  const isLastStep = currentStepIndex === steps.length - 1
-
   const renderFilter = () => {
     return (
       <>
@@ -508,7 +355,15 @@ function Hub() {
         <div className="flex items-center gap-2">
           <Switch
             checked={showOnlyDownloaded}
-            onCheckedChange={setShowOnlyDownloaded}
+            onCheckedChange={(checked) => {
+              setShowOnlyDownloaded(checked)
+              if (checked) {
+                setHuggingFaceRepo(null)
+              } else {
+                // Re-trigger HuggingFace search when switching back to "All models"
+                fetchHuggingFaceModel(searchValue)
+              }
+            }}
           />
           <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
             {t('hub:downloaded')}
@@ -520,31 +375,6 @@ function Hub() {
 
   return (
     <>
-      <Joyride
-        run={joyrideReady}
-        floaterProps={{
-          hideArrow: true,
-        }}
-        steps={steps}
-        tooltipComponent={CustomTooltipJoyRide}
-        spotlightPadding={0}
-        continuous={true}
-        showSkipButton={!isLastStep}
-        hideCloseButton={true}
-        spotlightClicks={true}
-        disableOverlay={IS_LINUX}
-        disableOverlayClose={true}
-        callback={handleJoyrideCallback}
-        locale={{
-          back: t('hub:joyride.back'),
-          close: t('hub:joyride.close'),
-          last: !isDownloading
-            ? t('hub:joyride.lastWithDownload')
-            : t('hub:joyride.last'),
-          next: t('hub:joyride.next'),
-          skip: t('hub:joyride.skip'),
-        }}
-      />
       <div className="flex h-full w-full">
         <div className="flex flex-col h-full w-full ">
           <HeaderPage>
@@ -674,6 +504,7 @@ function Hub() {
                                 />
                                 <DownloadButtonPlaceholder
                                   model={filteredModels[virtualItem.index]}
+                                  handleUseModel={handleUseModel}
                                 />
                               </div>
                             </div>
@@ -884,10 +715,13 @@ function Hub() {
                                                 (e) => e.id === variant.model_id
                                               )?.progress || 0
                                             const isDownloaded =
-                                              llamaProvider?.models.some(
-                                                (m: { id: string }) =>
-                                                  m.id === variant.model_id
-                                              )
+                                              useModelProvider
+                                                .getState()
+                                                .getProviderByName('llamacpp')
+                                                ?.models.some(
+                                                  (m: { id: string }) =>
+                                                    m.id === variant.model_id
+                                                )
 
                                             if (isDownloading) {
                                               return (
@@ -938,14 +772,26 @@ function Hub() {
                                                   addLocalDownloadingModel(
                                                     variant.model_id
                                                   )
-                                                  pullModelWithMetadata(
-                                                    variant.model_id,
-                                                    variant.path,
-                                                    filteredModels[
-                                                      virtualItem.index
-                                                    ].mmproj_models?.[0]?.path,
-                                                    huggingfaceToken
-                                                  )
+                                                  serviceHub
+                                                    .models()
+                                                    .pullModelWithMetadata(
+                                                      variant.model_id,
+                                                      variant.path,
+
+                                                      (
+                                                        filteredModels[
+                                                          virtualItem.index
+                                                        ].mmproj_models?.find(
+                                                          (e) =>
+                                                            e.model_id.toLowerCase() ===
+                                                            'mmproj-f16'
+                                                        ) ||
+                                                        filteredModels[
+                                                          virtualItem.index
+                                                        ].mmproj_models?.[0]
+                                                      )?.path,
+                                                      huggingfaceToken
+                                                    )
                                                 }}
                                               >
                                                 <IconDownload

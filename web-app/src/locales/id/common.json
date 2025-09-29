@@ -27,6 +27,14 @@
   "dataFolder": "Folder Data",
   "others": "Lainnya",
   "language": "Bahasa",
+  "login": "Masuk",
+  "loginWith": "Masuk Dengan {{provider}}",
+  "loginFailed": "Gagal Masuk",
+  "logout": "Keluar",
+  "loggingOut": "Sedang Keluar...",
+  "loggedOut": "Berhasil Keluar",
+  "logoutFailed": "Gagal Keluar",
+  "profile": "Profil",
   "reset": "Setel Ulang",
   "search": "Cari",
   "name": "Nama",
@@ -109,6 +117,7 @@
     "chatInput": "Tanyakan apa saja padaku..."
   },
   "confirm": "Konfirmasi",
+  "continue": "Lanjutkan",
   "loading": "Memuat...",
   "error": "Kesalahan",
   "success": "Sukses",
@@ -119,6 +128,7 @@
   "createAssistant": "Buat Asisten",
   "enterApiKey": "Masukkan Kunci API",
   "scrollToBottom": "Gulir ke bawah",
+  "generateAiResponse": "Hasilkan Respons AI",
   "addModel": {
     "title": "Tambah Model",
     "modelId": "ID Model",
@@ -161,6 +171,13 @@
     "vision": "Visi",
     "embeddings": "Embedding",
     "notAvailable": "Belum tersedia"
+  },
+  "outOfContextError": {
+    "truncateInput": "Potong Input",
+    "title": "Kesalahan konteks habis",
+    "description": "Obrolan ini mencapai batas memori AI, seperti papan tulis yang penuh. Kami dapat memperluas jendela memori (disebut ukuran konteks) agar lebih mengingat, tetapi mungkin akan menggunakan lebih banyak memori komputer Anda. Kami juga dapat memotong input, yang berarti akan melupakan sebagian riwayat obrolan untuk memberi ruang bagi pesan baru.",
+    "increaseContextSizeDescription": "Apakah Anda ingin meningkatkan ukuran konteks?",
+    "increaseContextSize": "Tingkatkan Ukuran Konteks"
   },
   "toolApproval": {
     "title": "Permintaan Izin Alat",
@@ -265,6 +282,80 @@
     "downloadAndVerificationComplete": {
       "title": "Unduhan Selesai",
       "description": "Model \"{{item}}\" berhasil diunduh dan diverifikasi"
+    },
+    "projectCreated": {
+      "title": "Proyek Dibuat",
+      "description": "Proyek \"{{projectName}}\" berhasil dibuat"
+    },
+    "projectRenamed": {
+      "title": "Proyek Diganti Nama",
+      "description": "Proyek diganti nama dari \"{{oldName}}\" ke \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Proyek Dihapus",
+      "description": "Proyek \"{{projectName}}\" berhasil dihapus"
+    },
+    "projectAlreadyExists": {
+      "title": "Proyek Sudah Ada",
+      "description": "Proyek \"{{projectName}}\" sudah ada"
+    },
+    "projectDeleteFailed": {
+      "title": "Penghapusan Gagal",
+      "description": "Gagal menghapus proyek. Silakan coba lagi."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread Ditugaskan",
+      "description": "Thread berhasil ditugaskan ke \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread Dihapus",
+      "description": "Thread berhasil dihapus dari \"{{projectName}}\""
     }
+  },
+  "projects": {
+    "title": "Proyek",
+    "addProject": "Tambah Proyek",
+    "addToProject": "Tambahkan ke proyek",
+    "removeFromProject": "Hapus dari proyek",
+    "createNewProject": "Buat Proyek Baru",
+    "editProject": "Edit Proyek",
+    "deleteProject": "Hapus Proyek",
+    "projectName": "Nama Proyek",
+    "enterProjectName": "Masukkan nama proyek...",
+    "noProjectsAvailable": "Tidak ada proyek tersedia",
+    "noProjectsYet": "Belum Ada Proyek",
+    "noProjectsYetDesc": "Mulai proyek baru dengan mengklik tombol Tambah Proyek.",
+    "projectNotFound": "Proyek Tidak Ditemukan",
+    "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
+    "deleteProjectDialog": {
+      "title": "Hapus Proyek",
+      "description": "Apakah Anda yakin ingin menghapus proyek ini? Tindakan ini tidak dapat dibatalkan.",
+      "deleteButton": "Hapus",
+      "successWithName": "Proyek \"{{projectName}}\" berhasil dihapus",
+      "successWithoutName": "Proyek berhasil dihapus",
+      "error": "Gagal menghapus proyek. Silakan coba lagi.",
+      "ariaLabel": "Hapus {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Buat Proyek Baru",
+      "editTitle": "Edit Proyek",
+      "nameLabel": "Nama Proyek",
+      "namePlaceholder": "Masukkan nama proyek...",
+      "createButton": "Buat",
+      "updateButton": "Perbarui",
+      "alreadyExists": "Proyek \"{{projectName}}\" sudah ada",
+      "createSuccess": "Proyek \"{{projectName}}\" berhasil dibuat",
+      "renameSuccess": "Proyek diubah dari \"{{oldName}}\" menjadi \"{{newName}}\""
+    },
+    "noConversationsIn": "Tidak Ada Percakapan di {{projectName}}",
+    "startNewConversation": "Mulai percakapan baru dengan {{projectName}} di bawah",
+    "conversationsIn": "Percakapan di {{projectName}}",
+    "conversationsDescription": "Klik percakapan mana pun untuk melanjutkan chatting, atau mulai yang baru di bawah.",
+    "thread": "utas",
+    "threads": "utas",
+    "updated": "Diperbarui:",
+    "collapseThreads": "Tutup utas",
+    "expandThreads": "Buka utas",
+    "update": "Perbarui"
   }
 }

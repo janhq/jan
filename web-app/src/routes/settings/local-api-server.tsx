@@ -8,20 +8,21 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ServerHostSwitcher } from '@/containers/ServerHostSwitcher'
 import { PortInput } from '@/containers/PortInput'
+import { ProxyTimeoutInput } from '@/containers/ProxyTimeoutInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { startModel } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
-import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -29,7 +30,16 @@ export const Route = createFileRoute(route.settings.local_api_server as any)({
 })
 
 function LocalAPIServer() {
+  return (
+    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
+      <LocalAPIServerContent />
+    </PlatformGuard>
+  )
+}
+
+function LocalAPIServerContent() {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const {
     corsEnabled,
     setCorsEnabled,
@@ -42,10 +52,12 @@ function LocalAPIServer() {
     apiPrefix,
     apiKey,
     trustedHosts,
+    proxyTimeout,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
-  const { selectedModel, selectedProvider, getProviderByName } = useModelProvider()
+  const { selectedModel, selectedProvider, getProviderByName } =
+    useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
@@ -53,14 +65,17 @@ function LocalAPIServer() {
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      invoke('get_server_status').then((running) => {
-        if (running) {
-          setServerStatus('running')
-        }
-      })
+      serviceHub
+        .app()
+        .getServerStatus()
+        .then((running) => {
+          if (running) {
+            setServerStatus('running')
+          }
+        })
     }
     checkServerStatus()
-  }, [setServerStatus])
+  }, [serviceHub, setServerStatus])
 
   const handleApiKeyValidation = (isValid: boolean) => {
     setIsApiKeyEmpty(!isValid)
@@ -114,9 +129,16 @@ function LocalAPIServer() {
     return null
   }
 
+  const [isModelLoading, setIsModelLoading] = useState(false)
+
   const toggleAPIServer = async () => {
     // Validate API key before starting server
     if (serverStatus === 'stopped') {
+      console.log('Starting server with port:', serverPort)
+      toast.info('Starting server...', {
+        description: `Attempting to start server on port ${serverPort}`
+      })
+
       if (!apiKey || apiKey.toString().trim().length === 0) {
         setShowApiKeyError(true)
         return
@@ -133,12 +155,20 @@ function LocalAPIServer() {
       }
 
       setServerStatus('pending')
+      setIsModelLoading(true) // Start loading state
 
       // Start the model first
-      startModel(modelToStart.provider, modelToStart.model)
+      serviceHub
+        .models()
+        .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
+          setIsModelLoading(false) // Model loaded, stop loading state
 
+          // Add a small delay for the backend to update state
+          return new Promise((resolve) => setTimeout(resolve, 500))
+        })
+        .then(() => {
           // Then start the server
           return window.core?.api?.startServer({
             host: serverHost,
@@ -148,14 +178,46 @@ function LocalAPIServer() {
             trustedHosts,
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
+            proxyTimeout: proxyTimeout,
           })
         })
         .then(() => {
           setServerStatus('running')
         })
         .catch((error: unknown) => {
-          console.error('Error starting server:', error)
+          console.error('Error starting server or model:', error)
           setServerStatus('stopped')
+          setIsModelLoading(false) // Reset loading state on error
+          toast.dismiss()
+
+          // Extract error message from various error formats
+          const errorMsg = error && typeof error === 'object' && 'message' in error
+            ? String(error.message)
+            : String(error)
+
+          // Port-related errors (highest priority)
+          if (errorMsg.includes('Address already in use')) {
+            toast.error('Port has been occupied', {
+              description: `Port ${serverPort} is already in use. Please try a different port.`
+            })
+          }
+          // Model-related errors
+          else if (errorMsg.includes('Invalid or inaccessible model path')) {
+            toast.error('Invalid or inaccessible model path', {
+              description: errorMsg
+            })
+          }
+          else if (errorMsg.includes('model')) {
+            toast.error('Failed to start model', {
+              description: errorMsg
+            })
+          }
+          // Generic server errors
+          else {
+            toast.error('Failed to start server', {
+              description: errorMsg
+            })
+          }
         })
     } else {
       setServerStatus('pending')
@@ -171,41 +233,21 @@ function LocalAPIServer() {
     }
   }
 
+  const getButtonText = () => {
+    if (isModelLoading) {
+      return t('settings:localApiServer.loadingModel') // TODO: Update this translation
+    }
+    if (serverStatus === 'pending' && !isModelLoading) {
+      return t('settings:localApiServer.startingServer') // TODO: Update this translation
+    }
+    return isServerRunning
+      ? t('settings:localApiServer.stopServer')
+      : t('settings:localApiServer.startServer')
+  }
+
   const handleOpenLogs = async () => {
     try {
-      // Check if logs window already exists
-      const existingWindow = await WebviewWindow.getByLabel(
-        windowKey.logsWindowLocalApiServer
-      )
-
-      if (existingWindow) {
-        // If window exists, focus it
-        await existingWindow.setFocus()
-        console.log('Focused existing logs window')
-      } else {
-        // Create a new logs window using Tauri v2 WebviewWindow API
-        const logsWindow = new WebviewWindow(
-          windowKey.logsWindowLocalApiServer,
-          {
-            url: route.localApiServerlogs,
-            title: 'Local API server Logs - Jan',
-            width: 800,
-            height: 600,
-            resizable: true,
-            center: true,
-          }
-        )
-
-        // Listen for window creation
-        logsWindow.once('tauri://created', () => {
-          console.log('Logs window created')
-        })
-
-        // Listen for window errors
-        logsWindow.once('tauri://error', (e) => {
-          console.error('Error creating logs window:', e)
-        })
-      }
+      await serviceHub.window().openLocalApiServerLogsWindow()
     } catch (error) {
       console.error('Failed to open logs window:', error)
     }
@@ -239,10 +281,9 @@ function LocalAPIServer() {
                       onClick={toggleAPIServer}
                       variant={isServerRunning ? 'destructive' : 'default'}
                       size="sm"
+                      disabled={serverStatus === 'pending'} // Disable during any loading state
                     >
-                      {isServerRunning
-                        ? t('settings:localApiServer.stopServer')
-                        : t('settings:localApiServer.startServer')}
+                      {getButtonText()}
                     </Button>
                   </div>
                 </div>
@@ -293,38 +334,31 @@ function LocalAPIServer() {
               <CardItem
                 title={t('settings:localApiServer.serverHost')}
                 description={t('settings:localApiServer.serverHostDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<ServerHostSwitcher />}
+                actions={
+                  <ServerHostSwitcher isServerRunning={isServerRunning} />
+                }
               />
               <CardItem
                 title={t('settings:localApiServer.serverPort')}
                 description={t('settings:localApiServer.serverPortDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<PortInput />}
+                actions={<PortInput isServerRunning={isServerRunning} />}
               />
               <CardItem
                 title={t('settings:localApiServer.apiPrefix')}
                 description={t('settings:localApiServer.apiPrefixDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={<ApiPrefixInput />}
+                actions={<ApiPrefixInput isServerRunning={isServerRunning} />}
               />
               <CardItem
                 title={t('settings:localApiServer.apiKey')}
                 description={t('settings:localApiServer.apiKeyDesc')}
                 className={cn(
                   'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isServerRunning && 'opacity-50 pointer-events-none',
                   isApiKeyEmpty && showApiKeyError && 'pb-6'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"
                 actions={
                   <ApiKeyInput
+                    isServerRunning={isServerRunning}
                     showError={showApiKeyError}
                     onValidationChange={handleApiKeyValidation}
                   />
@@ -334,11 +368,19 @@ function LocalAPIServer() {
                 title={t('settings:localApiServer.trustedHosts')}
                 description={t('settings:localApiServer.trustedHostsDesc')}
                 className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isServerRunning && 'opacity-50 pointer-events-none'
+                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"
-                actions={<TrustedHostsInput />}
+                actions={
+                  <TrustedHostsInput isServerRunning={isServerRunning} />
+                }
+              />
+              <CardItem
+                title={t('settings:localApiServer.proxyTimeout')}
+                description={t('settings:localApiServer.proxyTimeoutDesc')}
+                actions={
+                  <ProxyTimeoutInput isServerRunning={isServerRunning} />
+                }
               />
             </Card>
 

@@ -1,18 +1,21 @@
-import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
   IconLayoutSidebar,
   IconDots,
-  IconCirclePlusFilled,
-  IconSettingsFilled,
-  IconTrash,
+  IconCirclePlus,
+  IconSettings,
   IconStar,
-  IconMessageFilled,
-  IconAppsFilled,
+  IconFolderPlus,
+  IconMessage,
+  IconApps,
   IconX,
   IconSearch,
-  IconClipboardSmileFilled,
+  IconClipboardSmile,
+  IconFolder,
+  IconPencil,
+  IconTrash,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import ThreadList from './ThreadList'
@@ -22,56 +25,65 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import { AuthLoginButton } from '@/containers/auth/AuthLoginButton'
+import { UserProfileMenu } from '@/containers/auth/UserProfileMenu'
+import { useAuth } from '@/hooks/useAuth'
 
 import { useThreads } from '@/hooks/useThreads'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo, useState, useEffect, useRef } from 'react'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
+
+import { DeleteAllThreadsDialog } from '@/containers/dialogs'
+import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
+import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 
 const mainMenus = [
   {
     title: 'common:newChat',
-    icon: IconCirclePlusFilled,
+    icon: IconCirclePlus,
     route: route.home,
+    isEnabled: true,
+  },
+  {
+    title: 'common:projects.title',
+    icon: IconFolderPlus,
+    route: route.project,
+    isEnabled: true,
   },
   {
     title: 'common:assistants',
-    icon: IconClipboardSmileFilled,
+    icon: IconClipboardSmile,
     route: route.assistant,
+    isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
   },
   {
     title: 'common:hub',
-    icon: IconAppsFilled,
+    icon: IconApps,
     route: route.hub.index,
+    isEnabled: PlatformFeatures[PlatformFeature.MODEL_HUB],
   },
   {
     title: 'common:settings',
-    icon: IconSettingsFilled,
+    icon: IconSettings,
     route: route.settings.general,
+    isEnabled: true,
   },
 ]
 
 const LeftPanel = () => {
-  const { open, setLeftPanel } = useLeftPanel()
+  const open = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
+  const { isAuthenticated } = useAuth()
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -115,9 +127,9 @@ const LeftPanel = () => {
         prevScreenSizeRef.current !== null &&
         prevScreenSizeRef.current !== currentIsSmallScreen
       ) {
-        if (currentIsSmallScreen) {
+        if (currentIsSmallScreen && open) {
           setLeftPanel(false)
-        } else {
+        } else if (!open) {
           setLeftPanel(true)
         }
         prevScreenSizeRef.current = currentIsSmallScreen
@@ -136,19 +148,42 @@ const LeftPanel = () => {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [setLeftPanel])
+  }, [setLeftPanel, open])
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
 
-  const { deleteAllThreads, unstarAllThreads, getFilteredThreads, threads } =
-    useThreads()
+  const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
+  const unstarAllThreads = useThreads((state) => state.unstarAllThreads)
+  const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
+  const threads = useThreads((state) => state.threads)
+
+  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+    useThreadManagement()
+
+  // Project dialog states
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [editingProjectKey, setEditingProjectKey] = useState<string | null>(
+    null
+  )
+  const [deleteProjectConfirmOpen, setDeleteProjectConfirmOpen] =
+    useState(false)
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
+    null
+  )
 
   const filteredThreads = useMemo(() => {
     return getFilteredThreads(searchTerm)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getFilteredThreads, searchTerm, threads])
+
+  const filteredProjects = useMemo(() => {
+    if (!searchTerm) return folders
+    return folders.filter((folder) =>
+      folder.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [folders, searchTerm])
 
   // Memoize categorized threads based on filteredThreads
   const favoritedThreads = useMemo(() => {
@@ -156,8 +191,32 @@ const LeftPanel = () => {
   }, [filteredThreads])
 
   const unFavoritedThreads = useMemo(() => {
-    return filteredThreads.filter((t) => !t.isFavorite)
+    return filteredThreads.filter((t) => !t.isFavorite && !t.metadata?.project)
   }, [filteredThreads])
+
+  // Project handlers
+  const handleProjectDelete = (id: string) => {
+    setDeletingProjectId(id)
+    setDeleteProjectConfirmOpen(true)
+  }
+
+  const confirmProjectDelete = () => {
+    if (deletingProjectId) {
+      deleteFolder(deletingProjectId)
+      setDeleteProjectConfirmOpen(false)
+      setDeletingProjectId(null)
+    }
+  }
+
+  const handleProjectSave = (name: string) => {
+    if (editingProjectKey) {
+      updateFolder(editingProjectKey, name)
+    } else {
+      addFolder(name)
+    }
+    setProjectDialogOpen(false)
+    setEditingProjectKey(null)
+  }
 
   // Disable body scroll when panel is open on small screens
   useEffect(() => {
@@ -171,8 +230,6 @@ const LeftPanel = () => {
       document.body.style.overflow = ''
     }
   }, [isSmallScreen, open])
-
-  const { downloads, localDownloadingModels } = useDownloadStore()
 
   return (
     <>
@@ -255,22 +312,12 @@ const LeftPanel = () => {
           )}
         </div>
 
-        <div className="flex flex-col justify-between overflow-hidden mt-0 !h-[calc(100%-42px)]">
-          <div
-            className={cn(
-              'flex flex-col',
-              Object.keys(downloads).length > 0 || localDownloadingModels.size > 0
-                ? 'h-[calc(100%-200px)]'
-                : 'h-[calc(100%-140px)]'
-            )}
-          >
+        <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
+          <div className="space-y-1 py-1">
             {IS_MACOS && (
               <div
                 ref={searchContainerMacRef}
-                className={cn(
-                  'relative mb-4 mt-1',
-                  isResizableContext ? 'mx-2' : 'mx-1'
-                )}
+                className={cn('relative mb-2 mt-1 mx-1')}
                 data-ignore-outside-clicks
               >
                 <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
@@ -296,7 +343,151 @@ const LeftPanel = () => {
                 )}
               </div>
             )}
-            <div className="flex flex-col w-full overflow-y-auto overflow-x-hidden">
+
+            {mainMenus.map((menu) => {
+              if (!menu.isEnabled) {
+                return null
+              }
+
+              // Handle authentication menu specially
+              if (menu.title === 'common:authentication') {
+                return (
+                  <div key={menu.title}>
+                    <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
+                    {isAuthenticated ? (
+                      <UserProfileMenu />
+                    ) : (
+                      <AuthLoginButton />
+                    )}
+                  </div>
+                )
+              }
+
+              // Regular menu items must have route and icon
+              if (!menu.route || !menu.icon) return null
+
+              const isActive = (() => {
+                // Settings routes
+                if (menu.route.includes(route.settings.index)) {
+                  return currentPath.includes(route.settings.index)
+                }
+
+                // Default exact match for other routes
+                return currentPath === menu.route
+              })()
+              return (
+                <Link
+                  key={menu.title}
+                  to={menu.route}
+                  onClick={() => isSmallScreen && setLeftPanel(false)}
+                  data-test-id={`menu-${menu.title}`}
+                  activeOptions={{ exact: true }}
+                  className={cn(
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    isActive && 'bg-left-panel-fg/10'
+                  )}
+                >
+                  <menu.icon size={18} className="text-left-panel-fg/70" />
+                  <span className="font-medium text-left-panel-fg/90">
+                    {t(menu.title)}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+
+          {filteredProjects.length > 0 && (
+            <div className="space-y-1 py-1">
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
+                  {t('common:projects.title')}
+                </span>
+              </div>
+              <div className="flex flex-col max-h-[140px] overflow-y-scroll">
+                {filteredProjects
+                  .slice()
+                  .sort((a, b) => b.updated_at - a.updated_at)
+                  .map((folder) => {
+                    const ProjectItem = () => {
+                      const [openDropdown, setOpenDropdown] = useState(false)
+                      const isProjectActive =
+                        currentPath === `/project/${folder.id}`
+
+                      return (
+                        <div key={folder.id} className="mb-1">
+                          <div
+                            className={cn(
+                              'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
+                              isProjectActive && 'bg-left-panel-fg/10'
+                            )}
+                          >
+                            <Link
+                              to="/project/$projectId"
+                              params={{ projectId: folder.id }}
+                              onClick={() =>
+                                isSmallScreen && setLeftPanel(false)
+                              }
+                              className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
+                            >
+                              <IconFolder
+                                size={16}
+                                className="text-left-panel-fg/70 shrink-0"
+                              />
+                              <span className="text-sm text-left-panel-fg/90 truncate">
+                                {folder.name}
+                              </span>
+                            </Link>
+                            <div className="flex items-center">
+                              <DropdownMenu
+                                open={openDropdown}
+                                onOpenChange={(open) => setOpenDropdown(open)}
+                              >
+                                <DropdownMenuTrigger asChild>
+                                  <IconDots
+                                    size={14}
+                                    className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                    }}
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent side="bottom" align="end">
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setEditingProjectKey(folder.id)
+                                      setProjectDialogOpen(true)
+                                    }}
+                                  >
+                                    <IconPencil size={16} />
+                                    <span>Edit</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleProjectDelete(folder.id)
+                                    }}
+                                  >
+                                    <IconTrash size={16} />
+                                    <span>Delete</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    return <ProjectItem key={folder.id} />
+                  })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
+            <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden">
               <div className="h-full w-full overflow-y-auto">
                 {favoritedThreads.length > 0 && (
                   <>
@@ -356,80 +547,27 @@ const LeftPanel = () => {
                       {t('common:recents')}
                     </span>
                     <div className="relative">
-                      <Dialog>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                            >
-                              <IconDots
-                                size={18}
-                                className="text-left-panel-fg/60"
-                              />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent side="bottom" align="end">
-                            <DialogTrigger asChild>
-                              <DropdownMenuItem
-                                onSelect={(e) => e.preventDefault()}
-                              >
-                                <IconTrash size={16} />
-                                <span>{t('common:deleteAll')}</span>
-                              </DropdownMenuItem>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>
-                                  {t('common:dialogs.deleteAllThreads.title')}
-                                </DialogTitle>
-                                <DialogDescription>
-                                  {t(
-                                    'common:dialogs.deleteAllThreads.description'
-                                  )}
-                                </DialogDescription>
-                                <DialogFooter className="mt-2">
-                                  <DialogClose asChild>
-                                    <Button
-                                      variant="link"
-                                      size="sm"
-                                      className="hover:no-underline"
-                                    >
-                                      {t('common:cancel')}
-                                    </Button>
-                                  </DialogClose>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => {
-                                      deleteAllThreads()
-                                      toast.success(
-                                        t(
-                                          'common:toast.deleteAllThreads.title'
-                                        ),
-                                        {
-                                          id: 'delete-all-thread',
-                                          description: t(
-                                            'common:toast.deleteAllThreads.description'
-                                          ),
-                                        }
-                                      )
-                                      setTimeout(() => {
-                                        navigate({ to: route.home })
-                                      }, 0)
-                                    }}
-                                  >
-                                    {t('common:deleteAll')}
-                                  </Button>
-                                </DialogFooter>
-                              </DialogHeader>
-                            </DialogContent>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </Dialog>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                            }}
+                          >
+                            <IconDots
+                              size={18}
+                              className="text-left-panel-fg/60"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent side="bottom" align="end">
+                          <DeleteAllThreadsDialog
+                            onDeleteAll={deleteAllThreads}
+                          />
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )}
@@ -452,7 +590,7 @@ const LeftPanel = () => {
                   <>
                     <div className="px-1 mt-2">
                       <div className="flex items-center gap-1 text-left-panel-fg/80">
-                        <IconMessageFilled size={18} />
+                        <IconMessage size={18} />
                         <h6 className="font-medium text-base">
                           {t('common:noThreadsYet')}
                         </h6>
@@ -469,37 +607,38 @@ const LeftPanel = () => {
                 </div>
               </div>
             </div>
-          </div>
+            {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
+              <div className="space-y-1 shrink-0 py-1">
+                <div>
+                  <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
+                  {isAuthenticated ? <UserProfileMenu /> : <AuthLoginButton />}
+                </div>
+              </div>
+            )}
 
-          <div className="space-y-1 shrink-0 py-1 mt-2">
-            {mainMenus.map((menu) => {
-              const isActive =
-                currentPath.includes(route.settings.index) &&
-                menu.route.includes(route.settings.index)
-              return (
-                <Link
-                  key={menu.title}
-                  to={menu.route}
-                  onClick={() => isSmallScreen && setLeftPanel(false)}
-                  data-test-id={`menu-${menu.title}`}
-                  className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
-                    isActive
-                      ? 'bg-left-panel-fg/10'
-                      : '[&.active]:bg-left-panel-fg/10'
-                  )}
-                >
-                  <menu.icon size={18} className="text-left-panel-fg/70" />
-                  <span className="font-medium text-left-panel-fg/90">
-                    {t(menu.title)}
-                  </span>
-                </Link>
-              )
-            })}
             <DownloadManagement />
           </div>
         </div>
       </aside>
+
+      {/* Project Dialogs */}
+      <AddProjectDialog
+        open={projectDialogOpen}
+        onOpenChange={setProjectDialogOpen}
+        editingKey={editingProjectKey}
+        initialData={
+          editingProjectKey ? getFolderById(editingProjectKey) : undefined
+        }
+        onSave={handleProjectSave}
+      />
+      <DeleteProjectDialog
+        open={deleteProjectConfirmOpen}
+        onOpenChange={setDeleteProjectConfirmOpen}
+        onConfirm={confirmProjectDelete}
+        projectName={
+          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
+        }
+      />
     </>
   )
 }

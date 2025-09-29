@@ -21,6 +21,7 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  chatCompletionRequestMessage,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -31,21 +32,29 @@ import {
   downloadBackend,
   isBackendInstalled,
   getBackendExePath,
+  getBackendDir,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
-  GgufMetadata,
   readGgufMetadata,
+  estimateKVCacheSize,
+  getModelSize,
+  isModelSupported,
+  planModelLoadInternal,
 } from '@janhq/tauri-plugin-llamacpp-api'
-import { getSystemUsage } from '@janhq/tauri-plugin-hardware-api'
+import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+
+// Error message constant - matches web-app/src/utils/error.ts
+const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
 type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
   llamacpp_env: string
+  memory_util: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
@@ -72,6 +81,15 @@ type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   ctx_shift: boolean
+}
+
+type ModelPlan = {
+  gpuLayers: number
+  maxContextLength: number
+  noOffloadKVCache: boolean
+  offloadMmproj?: boolean
+  batchSize: number
+  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
 interface DownloadItem {
@@ -114,6 +132,12 @@ interface DeviceList {
   name: string
   mem: number
   free: number
+}
+
+interface SystemMemory {
+  totalVRAM: number
+  totalRAM: number
+  totalMemory: number
 }
 
 /**
@@ -159,6 +183,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   llamacpp_env: string = ''
+  memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -190,6 +215,7 @@ export default class llamacpp_extension extends AIEngine {
 
     this.autoUnload = this.config.auto_unload
     this.llamacpp_env = this.config.llamacpp_env
+    this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
     this.providerPath = await joinPath([
@@ -307,10 +333,11 @@ export default class llamacpp_extension extends AIEngine {
           // Clear the invalid stored preference
           this.clearStoredBackendType()
           bestAvailableBackendString =
-            this.determineBestBackend(version_backends)
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = this.determineBestBackend(version_backends)
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -472,23 +499,52 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private determineBestBackend(
+  private async determineBestBackend(
     version_backends: { version: string; backend: string }[]
-  ): string {
+  ): Promise<string> {
     if (version_backends.length === 0) return ''
 
+    // Check GPU memory availability
+    let hasEnoughGpuMemory = false
+    try {
+      const sysInfo = await getSystemInfo()
+      for (const gpuInfo of sysInfo.gpus) {
+        if (gpuInfo.total_memory >= 6 * 1024) {
+          hasEnoughGpuMemory = true
+          break
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to get system info for GPU memory check:', error)
+      // Default to false if we can't determine GPU memory
+      hasEnoughGpuMemory = false
+    }
+
     // Priority list for backend types (more specific/performant ones first)
-    const backendPriorities: string[] = [
-      'cuda-cu12.0',
-      'cuda-cu11.7',
-      'vulkan',
-      'avx512',
-      'avx2',
-      'avx',
-      'noavx',
-      'arm64',
-      'x64',
-    ]
+    // Vulkan will be conditionally prioritized based on GPU memory
+    const backendPriorities: string[] = hasEnoughGpuMemory
+      ? [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'vulkan', // Include vulkan if we have enough GPU memory
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+        ]
+      : [
+          'cuda-cu12.0',
+          'cuda-cu11.7',
+          'avx512',
+          'avx2',
+          'avx',
+          'noavx',
+          'arm64',
+          'x64',
+          'vulkan', // demote to last if we don't have enough memory
+        ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
@@ -529,7 +585,80 @@ export default class llamacpp_extension extends AIEngine {
       return `${foundBestBackend.version}/${foundBestBackend.backend}`
     } else {
       // Fallback to newest version
+      logger.info(
+        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
+      )
       return `${version_backends[0].version}/${version_backends[0].backend}`
+    }
+  }
+
+  async updateBackend(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    try {
+      if (!targetBackendString)
+        throw new Error(
+          `Invalid backend string: ${targetBackendString} supplied to update function`
+        )
+
+      const [version, backend] = targetBackendString.split('/')
+
+      logger.info(
+        `Updating backend to ${targetBackendString} (backend type: ${backend})`
+      )
+
+      // Download new backend
+      await this.ensureBackendReady(backend, version)
+
+      // Add delay on Windows
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+
+      // Update configuration
+      this.config.version_backend = targetBackendString
+
+      // Store the backend type preference only if it changed
+      const currentStoredBackend = this.getStoredBackendType()
+      if (currentStoredBackend !== backend) {
+        this.setStoredBackendType(backend)
+        logger.info(`Updated stored backend type preference: ${backend}`)
+      }
+
+      // Update settings
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+
+      logger.info(`Successfully updated to backend: ${targetBackendString}`)
+
+      // Emit for updating frontend
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+        )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
+
+      // Clean up old versions of the same backend type
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      await this.removeOldBackend(version, backend)
+
+      return { wasUpdated: true, newBackend: targetBackendString }
+    } catch (error) {
+      logger.error('Backend update failed:', error)
+      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
   }
 
@@ -557,46 +686,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         'No valid backend currently selected, using best available backend'
       )
-      try {
-        const [bestVersion, bestBackend] = bestAvailableBackendString.split('/')
 
-        // Download new backend
-        await this.ensureBackendReady(bestBackend, bestVersion)
-
-        // Add delay on Windows
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-
-        // Update configuration
-        this.config.version_backend = bestAvailableBackendString
-
-        // Store the backend type preference only if it changed
-        const currentStoredBackend = this.getStoredBackendType()
-        if (currentStoredBackend !== bestBackend) {
-          this.setStoredBackendType(bestBackend)
-          logger.info(`Stored new backend type preference: ${bestBackend}`)
-        }
-
-        // Update settings
-        const settings = await this.getSettings()
-        await this.updateSettings(
-          settings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = bestAvailableBackendString
-            }
-            return item
-          })
-        )
-
-        logger.info(
-          `Successfully set initial backend: ${bestAvailableBackendString}`
-        )
-        return { wasUpdated: true, newBackend: bestAvailableBackendString }
-      } catch (error) {
-        logger.error('Failed to set initial backend:', error)
-        return { wasUpdated: false, newBackend: this.config.version_backend }
-      }
+      return await this.updateBackend(bestAvailableBackendString)
     }
 
     // Parse current backend configuration
@@ -636,65 +727,54 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Perform version update for the same backend type
-    try {
+    logger.info(
+      `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+    )
+
+    return await this.updateBackend(targetBackendString)
+  }
+
+  private parseBackendVersion(v: string): number {
+    // Remove any leading non‑digit characters (e.g. the "b")
+    const numeric = v.replace(/^[^\d]*/, '')
+    const n = Number(numeric)
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  async checkBackendForUpdates(): Promise<{
+    updateNeeded: boolean
+    newVersion: string
+  }> {
+    // Parse current backend configuration
+    const [currentVersion, currentBackend] = (
+      this.config.version_backend || ''
+    ).split('/')
+
+    if (!currentVersion || !currentBackend) {
+      logger.warn(
+        `Invalid current backend format: ${this.config.version_backend}`
+      )
+      return { updateNeeded: false, newVersion: '0' }
+    }
+
+    // Find the latest version for the currently selected backend type
+    const version_backends = await listSupportedBackends()
+    const targetBackendString = this.findLatestVersionForBackend(
+      version_backends,
+      currentBackend
+    )
+    const [latestVersion] = targetBackendString.split('/')
+    if (
+      this.parseBackendVersion(latestVersion) >
+      this.parseBackendVersion(currentVersion)
+    ) {
+      logger.info(`New update available: ${latestVersion}`)
+      return { updateNeeded: true, newVersion: latestVersion }
+    } else {
       logger.info(
-        `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+        `Already at latest version: ${currentVersion} = ${latestVersion}`
       )
-
-      // Download new version of the same backend type
-      await this.ensureBackendReady(currentBackend, latestVersion)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Update stored backend type preference only if it changed
-      const currentStoredBackend = this.getStoredBackendType()
-      if (currentStoredBackend !== currentBackend) {
-        this.setStoredBackendType(currentBackend)
-        logger.info(`Updated stored backend type preference: ${currentBackend}`)
-      }
-
-      // Update settings
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      logger.info(
-        `Successfully updated to backend: ${targetBackendString} (preserved backend type: ${currentBackend})`
-      )
-
-      // Emit for updating fe
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions of the same backend type
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-      await this.removeOldBackend(latestVersion, currentBackend)
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Auto-update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+      return { updateNeeded: false, newVersion: '0' }
     }
   }
 
@@ -836,6 +916,8 @@ export default class llamacpp_extension extends AIEngine {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
+    } else if (key === 'memory_util') {
+      this.memoryMode = value as string
     }
   }
 
@@ -845,6 +927,30 @@ export default class llamacpp_extension extends AIEngine {
       apiSecret: this.apiSecret,
     })
     return hash
+  }
+
+  override async get(modelId: string): Promise<modelInfo | undefined> {
+    const modelPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const path = await joinPath([modelPath, 'model.yml'])
+
+    if (!(await fs.existsSync(path))) return undefined
+
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path,
+    })
+
+    return {
+      id: modelId,
+      name: modelConfig.name ?? modelId,
+      quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
+      providerId: this.provider,
+      port: 0, // port is not known until the model is loaded
+      sizeBytes: modelConfig.size_bytes ?? 0,
+    } as modelInfo
   }
 
   // Implement the required LocalProvider interface methods
@@ -1000,6 +1106,98 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem('cortex_models_migrated', 'true')
   }
 
+  /*
+   * Manually installs a supported backend archive
+   *
+   */
+  async installBackend(path: string): Promise<void> {
+    const platformName = IS_WINDOWS ? 'win' : 'linux'
+    const re = /^llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
+    const archiveName = await basename(path)
+    logger.info(`Installing backend from path: ${path}`)
+
+    if (
+      !(await fs.existsSync(path)) ||
+      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
+    ) {
+      logger.error(`Invalid path or file ${path}`)
+      throw new Error(`Invalid path or file ${path}`)
+    }
+    const match = re.exec(archiveName)
+    if (!match) throw new Error('Failed to parse archive name')
+    const [, version, backend] = match
+    if (!version && !backend) {
+      throw new Error(`Invalid backend archive name: ${archiveName}`)
+    }
+    const backendDir = await getBackendDir(backend, version)
+    try {
+      await invoke('decompress', { path: path, outputDir: backendDir })
+    } catch (e) {
+      logger.error(`Failed to install: ${String(e)}`)
+    }
+    const binPath =
+      platformName === 'win'
+        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
+        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+
+    if (!fs.existsSync(binPath)) {
+      await fs.rm(backendDir)
+      throw new Error('Not a supported backend archive!')
+    }
+    try {
+      await this.configureBackends()
+      logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
+    } catch (e) {
+      logger.error('Backend installed but failed to refresh UI', e)
+      throw new Error(
+        `Backend installed but failed to refresh UI: ${String(e)}`
+      )
+    }
+  }
+
+  /**
+   * Update a model with new information.
+   * @param modelId
+   * @param model
+   */
+  async update(modelId: string, model: Partial<modelInfo>): Promise<void> {
+    const modelFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+    ])
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([modelFolderPath, 'model.yml']),
+    })
+    const newFolderPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      model.id,
+    ])
+    // Check if newFolderPath exists
+    if (await fs.existsSync(newFolderPath)) {
+      throw new Error(`Model with ID ${model.id} already exists`)
+    }
+    const newModelConfigPath = await joinPath([newFolderPath, 'model.yml'])
+    await fs.mv(modelFolderPath, newFolderPath).then(() =>
+      // now replace what values have previous model name with format
+      invoke('write_yaml', {
+        data: {
+          ...modelConfig,
+          model_path: modelConfig?.model_path?.replace(
+            `${this.providerId}/models/${modelId}`,
+            `${this.providerId}/models/${model.id}`
+          ),
+          mmproj_path: modelConfig?.mmproj_path?.replace(
+            `${this.providerId}/models/${modelId}`,
+            `${this.providerId}/models/${model.id}`
+          ),
+        },
+        savePath: newModelConfigPath,
+      })
+    )
+  }
+
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
     const isValidModelId = (id: string) => {
       // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
@@ -1064,7 +1262,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
-          events.emit('onFileDownloadUpdate', {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
             percent: transferred / total,
             size: { transferred, total },
@@ -1421,8 +1619,12 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (!cfg.ctx_shift) args.push('--no-context-shift')
-    if (cfg.flash_attn) args.push('--flash-attn')
+    if (cfg.ctx_shift) args.push('--context-shift')
+    if (Number(version.replace(/^b/, '')) >= 6325) {
+      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
+    } else {
+      if (cfg.flash_attn) args.push('--flash-attn')
+    }
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
@@ -1615,6 +1817,13 @@ export default class llamacpp_extension extends AIEngine {
           try {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
+
+            // Check for out-of-context error conditions
+            if (chunk.choices?.[0]?.finish_reason === 'length') {
+              // finish_reason 'length' indicates context limit was hit
+              throw new Error(OUT_OF_CONTEXT_SIZE)
+            }
+
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
@@ -1671,6 +1880,13 @@ export default class llamacpp_extension extends AIEngine {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
+    // always enable prompt progress return if stream is true
+    // Requires llamacpp version > b6399
+    // Example json returned from server
+    // {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1758113912,"id":"chatcmpl-UwZwgxQKyJMo7WzMzXlsi90YTUK2BJro","model":"qwen","system_fingerprint":"b1-e4912fc","object":"chat.completion.chunk","prompt_progress":{"total":36,"cache":0,"processed":36,"time_ms":5706760300}}
+    // (chunk.prompt_progress?.processed / chunk.prompt_progress?.total) * 100
+    // chunk.prompt_progress?.cache is for past tokens already in kv cache
+    opts.return_progress = true
 
     const body = JSON.stringify(opts)
     if (opts.stream) {
@@ -1693,7 +1909,15 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
-    return (await response.json()) as chatCompletion
+    const completionResponse = (await response.json()) as chatCompletion
+
+    // Check for out-of-context error conditions
+    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
+      // finish_reason 'length' indicates context limit was hit
+      throw new Error(OUT_OF_CONTEXT_SIZE)
+    }
+
+    return completionResponse
   }
 
   override async delete(modelId: string): Promise<void> {
@@ -1729,6 +1953,22 @@ export default class llamacpp_extension extends AIEngine {
    */
   async checkMmprojExists(modelId: string): Promise<boolean> {
     try {
+      const modelConfigPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+
+      // If mmproj_path is not defined in YAML, return false
+      if (modelConfig.mmproj_path) {
+        return true
+      }
+
       const mmprojPath = await joinPath([
         await this.getProviderPath(),
         'models',
@@ -1816,11 +2056,6 @@ export default class llamacpp_extension extends AIEngine {
     return responseData as EmbeddingResponse
   }
 
-  // Optional method for direct client access
-  override getChatClient(sessionId: string): any {
-    throw new Error('method not implemented yet')
-  }
-
   /**
    * Check if a tool is supported by the model
    * Currently read from GGUF chat_template
@@ -1848,134 +2083,286 @@ export default class llamacpp_extension extends AIEngine {
       'tokenizer.chat_template'
     ]?.includes('tools')
   }
-
   /**
-   *  estimate KVCache size of from a given metadata
-   *
+   * Get total system memory including both VRAM and RAM
    */
-  private async estimateKVCache(
-    meta: Record<string, string>,
-    ctx_size?: number
-  ): Promise<number> {
-    const arch = meta['general.architecture']
-    if (!arch) throw new Error('Invalid metadata: architecture not found')
+  private async getTotalSystemMemory(): Promise<SystemMemory> {
+    const devices = await this.getDevices()
+    let totalVRAM = 0
 
-    const nLayer = Number(meta[`${arch}.block_count`])
-    if (!nLayer) throw new Error('Invalid metadata: block_count not found')
-
-    const nHead = Number(meta[`${arch}.attention.head_count`])
-    if (!nHead) throw new Error('Invalid metadata: head_count not found')
-
-    // Try to get key/value lengths first (more accurate)
-    const keyLen = Number(meta[`${arch}.attention.key_length`])
-    const valLen = Number(meta[`${arch}.attention.value_length`])
-
-    let headDim: number
-
-    if (keyLen && valLen) {
-      // Use explicit key/value lengths if available
-      logger.info(
-        `Using explicit key_length: ${keyLen}, value_length: ${valLen}`
-      )
-      headDim = keyLen + valLen
-    } else {
-      // Fall back to embedding_length estimation
-      const embeddingLen = Number(meta[`${arch}.embedding_length`])
-      if (!embeddingLen)
-        throw new Error('Invalid metadata: embedding_length not found')
-
-      // Standard transformer: head_dim = embedding_dim / num_heads
-      // For KV cache: we need both K and V, so 2 * head_dim per head
-      headDim = (embeddingLen / nHead) * 2
-      logger.info(
-        `Using embedding_length estimation: ${embeddingLen}, calculated head_dim: ${headDim}`
-      )
-    }
-    let ctxLen: number
-    if (!ctx_size) {
-      ctxLen = Number(meta[`${arch}.context_length`])
-    } else {
-      ctxLen = ctx_size
+    if (devices.length > 0) {
+      // Sum total VRAM across all GPUs
+      totalVRAM = devices
+        .map((d) => d.mem * 1024 * 1024)
+        .reduce((a, b) => a + b, 0)
     }
 
-    logger.info(`ctxLen: ${ctxLen}`)
-    logger.info(`nLayer: ${nLayer}`)
-    logger.info(`nHead: ${nHead}`)
-    logger.info(`headDim: ${headDim}`)
+    // Get system RAM
+    const sys = await getSystemUsage()
+    const totalRAM = sys.used_memory * 1024 * 1024
 
-    // Consider f16 by default
-    // Can be extended by checking cache-type-v and cache-type-k
-    // but we are checking overall compatibility with the default settings
-    // fp16 = 8 bits * 2 = 16
-    const bytesPerElement = 2
+    const totalMemory = totalVRAM + totalRAM
 
-    // Total KV cache size per token = nHead * headDim * bytesPerElement
-    const kvPerToken = nHead * headDim * bytesPerElement
+    logger.info(
+      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
+    )
 
-    return ctxLen * nLayer * kvPerToken
-  }
-
-  private async getModelSize(path: string): Promise<number> {
-    if (path.startsWith('https://')) {
-      const res = await fetch(path, { method: 'HEAD' })
-      const len = res.headers.get('content-length')
-      return len ? parseInt(len, 10) : 0
-    } else {
-      return (await fs.fileStat(path)).size
+    return {
+      totalVRAM,
+      totalRAM,
+      totalMemory,
     }
   }
 
-  /*
-   * check the support status of a model by its path (local/remote)
-   *
-   * * Returns:
-   * - "RED"    → weights don't fit
-   * - "YELLOW" → weights fit, KV cache doesn't
-   * - "GREEN"  → both weights + KV cache fit
-   */
-  async isModelSupported(
+  private async getLayerSize(
     path: string,
-    ctx_size?: number
-  ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
+    meta: Record<string, string>
+  ): Promise<{ layerSize: number; totalLayers: number }> {
+    const modelSize = await getModelSize(path)
+    const arch = meta['general.architecture']
+    const totalLayers = Number(meta[`${arch}.block_count`]) + 2 // 1 for lm_head layer and 1 for embedding layer
+    if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
+    return { layerSize: modelSize / totalLayers, totalLayers }
+  }
+
+  private isAbsolutePath(p: string): boolean {
+    // Normalize back‑slashes to forward‑slashes first.
+    const norm = p.replace(/\\/g, '/')
+    return (
+      norm.startsWith('/') || // POSIX absolute
+      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
+      /^\/\/[^/]+/.test(norm) // UNC path //server/share
+    )
+  }
+  /*
+    * if (!this.isAbsolutePath(path))
+      path = await joinPath([await getJanDataFolderPath(), path])
+    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
+      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
+  */
+  async planModelLoad(
+    path: string,
+    mmprojPath?: string,
+    requestedCtx?: number
+  ): Promise<ModelPlan> {
+    if (!this.isAbsolutePath(path)) {
+      path = await joinPath([await getJanDataFolderPath(), path])
+    }
+    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
+      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     try {
-      const modelSize = await this.getModelSize(path)
-      logger.info(`modelSize: ${modelSize}`)
-      let gguf: GgufMetadata
-      gguf = await readGgufMetadata(path)
-      let kvCacheSize: number
-      if (ctx_size) {
-        kvCacheSize = await this.estimateKVCache(gguf.metadata, ctx_size)
-      } else {
-        kvCacheSize = await this.estimateKVCache(gguf.metadata)
-      }
-      // total memory consumption = model weights + kvcache + a small buffer for outputs
-      // output buffer is small so not considering here
-      const totalRequired = modelSize + kvCacheSize
-      logger.info(
-        `isModelSupported: Total memory requirement: ${totalRequired} for ${path}`
-      )
-      let availableMemBytes: number
-      const devices = await this.getDevices()
-      if (devices.length > 0) {
-        // Sum free memory across all GPUs
-        availableMemBytes = devices
-          .map((d) => d.free * 1024 * 1024)
-          .reduce((a, b) => a + b, 0)
-      } else {
-        // CPU fallback
-        const sys = await getSystemUsage()
-        availableMemBytes = (sys.total_memory - sys.used_memory) * 1024 * 1024
-      }
-      // check model size wrt system memory
-      if (modelSize > availableMemBytes) {
-        return 'RED'
-      } else if (modelSize + kvCacheSize > availableMemBytes) {
-        return 'YELLOW'
-      } else {
-        return 'GREEN'
-      }
+      const result = await planModelLoadInternal(path, this.memoryMode, mmprojPath, requestedCtx)
+      return result
     } catch (e) {
       throw new Error(String(e))
     }
+  }
+
+  /**
+   * Check the support status of a model by its path (local/remote)
+   *
+   * Returns:
+   * - "RED"    → weights don't fit in total memory
+   * - "YELLOW" → weights fit in VRAM but need system RAM, or KV cache doesn't fit
+   * - "GREEN"  → both weights + KV cache fit in VRAM
+   */
+  async isModelSupported(
+    path: string,
+    ctxSize?: number
+  ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
+    try {
+      const result = await isModelSupported(path, Number(ctxSize))
+      return result
+    } catch (e) {
+      throw new Error(String(e))
+    }
+  }
+
+  /**
+   * Validate GGUF file and check for unsupported architectures like CLIP
+   */
+  async validateGgufFile(filePath: string): Promise<{
+    isValid: boolean
+    error?: string
+    metadata?: any
+  }> {
+    try {
+      logger.info(`Validating GGUF file: ${filePath}`)
+      const metadata = await readGgufMetadata(filePath)
+
+      // Log full metadata for debugging
+      logger.info('Full GGUF metadata:', JSON.stringify(metadata, null, 2))
+
+      // Check if architecture is 'clip' which is not supported for text generation
+      const architecture = metadata.metadata?.['general.architecture']
+      logger.info(`Model architecture: ${architecture}`)
+
+      if (architecture === 'clip') {
+        const errorMessage =
+          'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
+        logger.error('CLIP architecture detected:', architecture)
+        return {
+          isValid: false,
+          error: errorMessage,
+          metadata,
+        }
+      }
+
+      logger.info('Model validation passed. Architecture:', architecture)
+      return {
+        isValid: true,
+        metadata,
+      }
+    } catch (error) {
+      logger.error('Failed to validate GGUF file:', error)
+      return {
+        isValid: false,
+        error: `Failed to read model metadata: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      }
+    }
+  }
+
+  async getTokensCount(opts: chatCompletionRequest): Promise<number> {
+    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+
+    // Check if the process is alive
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
+      }
+    } else {
+      throw new Error('Model has crashed! Please reload!')
+    }
+
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
+    }
+
+    // Count image tokens first
+    let imageTokens = 0
+    const hasImages = opts.messages.some(
+      (msg) =>
+        Array.isArray(msg.content) &&
+        msg.content.some((content) => content.type === 'image_url')
+    )
+
+    if (hasImages) {
+      logger.info('Conversation has images')
+      try {
+        // Read mmproj metadata to get vision parameters
+        logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
+
+        const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
+        logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
+        imageTokens = await this.calculateImageTokens(
+          opts.messages,
+          metadata.metadata
+        )
+      } catch (error) {
+        logger.warn('Failed to calculate image tokens:', error)
+        // Fallback to a rough estimate if metadata reading fails
+        imageTokens = this.estimateImageTokensFallback(opts.messages)
+      }
+    }
+
+    // Calculate text tokens
+    const messages = JSON.stringify({ messages: opts.messages })
+
+    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+      method: 'POST',
+      headers: headers,
+      body: messages,
+    })
+
+    if (!parseResponse.ok) {
+      const errorData = await parseResponse.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${
+          parseResponse.status
+        }: ${JSON.stringify(errorData)}`
+      )
+    }
+
+    const parsedPrompt = await parseResponse.json()
+
+    const response = await fetch(`${baseUrl}/tokenize`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        content: parsedPrompt.prompt,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
+      )
+    }
+
+    const dataTokens = await response.json()
+    const textTokens = dataTokens.tokens?.length || 0
+
+    return textTokens + imageTokens
+  }
+
+  private async calculateImageTokens(
+    messages: chatCompletionRequestMessage[],
+    metadata: Record<string, string>
+  ): Promise<number> {
+    // Extract vision parameters from metadata
+    const projectionDim =
+      Math.floor(Number(metadata['clip.vision.projection_dim']) / 10) || 256
+
+    // Count images in messages
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'image_url'
+        ).length
+      }
+    }
+
+    logger.info(
+      `Calculated ${projectionDim} tokens per image, ${imageCount} images total`
+    )
+    return projectionDim * imageCount - imageCount // remove the lingering <__image__> placeholder token
+  }
+
+  private estimateImageTokensFallback(
+    messages: chatCompletionRequestMessage[]
+  ): number {
+    // Fallback estimation if metadata reading fails
+    const estimatedTokensPerImage = 256 // Gemma's siglip
+
+    let imageCount = 0
+    for (const message of messages) {
+      if (Array.isArray(message.content)) {
+        imageCount += message.content.filter(
+          (content) => content.type === 'image_url'
+        ).length
+      }
+    }
+
+    logger.warn(
+      `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
+    )
+    return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> placeholder token
   }
 }

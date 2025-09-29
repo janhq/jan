@@ -27,6 +27,14 @@
   "dataFolder": "Katalog Danych",
   "others": "Inne",
   "language": "Język",
+  "login": "Zaloguj",
+  "loginWith": "Zaloguj Przez {{provider}}",
+  "loginFailed": "Logowanie Nie Powiodło Się",
+  "logout": "Wyloguj",
+  "loggingOut": "Wylogowywanie...",
+  "loggedOut": "Pomyślnie Wylogowano",
+  "logoutFailed": "Wylogowanie Nie Powiodło Się",
+  "profile": "Profil",
   "reset": "Przywróć",
   "search": "Szukaj",
   "name": "Nazwa",
@@ -109,6 +117,7 @@
     "chatInput": "Zapytaj mnie o cokolwiek…"
   },
   "confirm": "Potwierdź",
+  "continue": "Kontynuuj",
   "loading": "Wczytywanie…",
   "error": "Błąd",
   "success": "Sukces",
@@ -161,7 +170,7 @@
     "tools": "Narzędzia",
     "vision": "Wizja",
     "embeddings": "Osadzenia",
-    "notAvailable": "Jeszcze nie dostępne"
+    "notAvailable": "Jeszcze niedostępne"
   },
   "outOfContextError": {
     "truncateInput": "Przytnij Wejście",
@@ -220,6 +229,52 @@
     "messageMetadata": {
       "title": "Metadane Wiadomości"
     }
+  },
+  "projects": {
+    "title": "Projekty",
+    "addProject": "Dodaj Projekt",
+    "addToProject": "Dodaj do projektu",
+    "removeFromProject": "Usuń z projektu",
+    "createNewProject": "Utwórz Nowy Projekt",
+    "editProject": "Edytuj Projekt",
+    "deleteProject": "Usuń Projekt",
+    "projectName": "Nazwa Projektu",
+    "enterProjectName": "Wprowadź nazwę projektu...",
+    "noProjectsAvailable": "Brak dostępnych projektów",
+    "noProjectsYet": "Brak Projektów",
+    "noProjectsYetDesc": "Rozpocznij nowy projekt klikając przycisk Dodaj Projekt.",
+    "projectNotFound": "Projekt Nie Znaleziony",
+    "projectNotFoundDesc": "Projekt, którego szukasz nie istnieje lub został usunięty.",
+    "deleteProjectDialog": {
+      "title": "Usuń Projekt",
+      "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
+      "deleteButton": "Usuń",
+      "successWithName": "Projekt \"{{projectName}}\" został pomyślnie usunięty",
+      "successWithoutName": "Projekt został pomyślnie usunięty",
+      "error": "Nie udało się usunąć projektu. Spróbuj ponownie.",
+      "ariaLabel": "Usuń {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Utwórz Nowy Projekt",
+      "editTitle": "Edytuj Projekt",
+      "nameLabel": "Nazwa Projektu",
+      "namePlaceholder": "Wprowadź nazwę projektu...",
+      "createButton": "Utwórz",
+      "updateButton": "Aktualizuj",
+      "alreadyExists": "Projekt \"{{projectName}}\" już istnieje",
+      "createSuccess": "Projekt \"{{projectName}}\" został pomyślnie utworzony",
+      "renameSuccess": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
+    },
+    "noConversationsIn": "Brak Rozmów w {{projectName}}",
+    "startNewConversation": "Rozpocznij nową rozmowę z {{projectName}} poniżej",
+    "conversationsIn": "Rozmowy w {{projectName}}",
+    "conversationsDescription": "Kliknij na dowolną rozmowę aby kontynuować czat, lub rozpocznij nową poniżej.",
+    "thread": "wątek",
+    "threads": "wątki",
+    "updated": "Zaktualizowano:",
+    "collapseThreads": "Zwiń wątki",
+    "expandThreads": "Rozwiń wątki",
+    "update": "Aktualizuj"
   },
   "toast": {
     "allThreadsUnfavorited": {

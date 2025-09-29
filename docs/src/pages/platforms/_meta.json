@@ -1,9 +1,0 @@
-{
-  "-- Switcher": {
-    "type": "separator",
-    "title": "Switcher"
-  },
-  "index": {
-    "display": "hidden"
-  }
-}

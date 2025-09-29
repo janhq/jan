@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  fetchThreads,
-  createThread,
-  updateThread,
-  deleteThread,
-} from '../threads'
+import { DefaultThreadsService } from '../threads/default'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import { defaultAssistant } from '@/hooks/useAssistant'
@@ -24,7 +19,9 @@ vi.mock('@/hooks/useAssistant', () => ({
   },
 }))
 
-describe('threads service', () => {
+describe('DefaultThreadsService', () => {
+  let threadsService: DefaultThreadsService
+  
   const mockConversationalExtension = {
     listThreads: vi.fn(),
     createThread: vi.fn(),
@@ -37,6 +34,7 @@ describe('threads service', () => {
   }
 
   beforeEach(() => {
+    threadsService = new DefaultThreadsService()
     vi.clearAllMocks()
     ;(ExtensionManager.getInstance as any).mockReturnValue(mockExtensionManager)
   })
@@ -55,7 +53,7 @@ describe('threads service', () => {
 
       mockConversationalExtension.listThreads.mockResolvedValue(mockThreads)
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({
@@ -89,7 +87,7 @@ describe('threads service', () => {
 
       mockConversationalExtension.listThreads.mockResolvedValue(mockThreads)
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toHaveLength(2)
       expect(result[0]).toMatchObject({
@@ -115,7 +113,7 @@ describe('threads service', () => {
     it('should handle empty threads array', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue([])
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toEqual([])
     })
@@ -125,7 +123,7 @@ describe('threads service', () => {
         new Error('API Error')
       )
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toEqual([])
     })
@@ -133,7 +131,7 @@ describe('threads service', () => {
     it('should handle null/undefined response', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue(null)
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toEqual([])
     })
@@ -161,7 +159,7 @@ describe('threads service', () => {
         mockCreatedThread
       )
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(result).toMatchObject({
         id: '1',
@@ -184,7 +182,7 @@ describe('threads service', () => {
         new Error('Creation failed')
       )
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(result).toEqual(inputThread)
     })
@@ -201,7 +199,7 @@ describe('threads service', () => {
         order: 2,
       }
 
-      const result = updateThread(thread as Thread)
+      const result = threadsService.updateThread(thread as Thread)
 
       expect(mockConversationalExtension.modifyThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -222,7 +220,7 @@ describe('threads service', () => {
     it('should delete thread successfully', () => {
       const threadId = '1'
 
-      deleteThread(threadId)
+      threadsService.deleteThread(threadId)
 
       expect(mockConversationalExtension.deleteThread).toHaveBeenCalledWith(
         threadId
@@ -236,7 +234,7 @@ describe('threads service', () => {
         get: vi.fn().mockReturnValue(null),
       })
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toEqual([])
     })
@@ -252,12 +250,12 @@ describe('threads service', () => {
         model: { id: 'gpt-4', provider: 'openai' },
       }
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(result).toEqual(inputThread)
     })
 
-    it('should handle updateThread when extension manager returns null', () => {
+    it('should handle updateThread when extension manager returns null', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
         get: vi.fn().mockReturnValue(null),
       })
@@ -268,17 +266,17 @@ describe('threads service', () => {
         model: { id: 'gpt-4', provider: 'openai' },
       }
 
-      const result = updateThread(thread as Thread)
+      const result = await threadsService.updateThread(thread as Thread)
 
       expect(result).toBeUndefined()
     })
 
-    it('should handle deleteThread when extension manager returns null', () => {
+    it('should handle deleteThread when extension manager returns null', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
         get: vi.fn().mockReturnValue(null),
       })
 
-      const result = deleteThread('test-id')
+      const result = await threadsService.deleteThread('test-id')
 
       expect(result).toBeUndefined()
     })
@@ -294,7 +292,7 @@ describe('threads service', () => {
 
       mockConversationalExtension.listThreads.mockResolvedValue(mockThreads)
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({
@@ -320,7 +318,7 @@ describe('threads service', () => {
 
       mockConversationalExtension.listThreads.mockResolvedValue(mockThreads)
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({
@@ -354,7 +352,7 @@ describe('threads service', () => {
         mockCreatedThread
       )
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(mockConversationalExtension.createThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -388,7 +386,7 @@ describe('threads service', () => {
         mockCreatedThread
       )
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(mockConversationalExtension.createThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -412,7 +410,7 @@ describe('threads service', () => {
         order: 2,
       }
 
-      updateThread(thread as Thread)
+      threadsService.updateThread(thread as Thread)
 
       expect(mockConversationalExtension.modifyThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -437,7 +435,7 @@ describe('threads service', () => {
         order: 2,
       }
 
-      updateThread(thread as Thread)
+      threadsService.updateThread(thread as Thread)
 
       expect(mockConversationalExtension.modifyThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -453,7 +451,7 @@ describe('threads service', () => {
     it('should handle fetchThreads with non-array response', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue('not-an-array')
 
-      const result = await fetchThreads()
+      const result = await threadsService.fetchThreads()
 
       expect(result).toEqual([])
     })
@@ -478,7 +476,7 @@ describe('threads service', () => {
         mockCreatedThread
       )
 
-      const result = await createThread(inputThread as Thread)
+      const result = await threadsService.createThread(inputThread as Thread)
 
       expect(result).toMatchObject({
         id: '1',

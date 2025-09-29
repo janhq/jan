@@ -11,6 +11,8 @@ pub struct SessionInfo {
     pub model_id: String,
     pub model_path: String, // path of the loaded model
     pub api_key: String,
+    #[serde(default)]
+    pub mmproj_path: Option<String>,
 }
 
 pub struct LLamaBackendSession {

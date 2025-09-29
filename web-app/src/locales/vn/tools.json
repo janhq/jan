@@ -4,8 +4,9 @@
     "securityNotice": "Công cụ này muốn thực hiện một hành động. Vui lòng xem xét và phê duyệt.",
     "deny": "Từ chối",
     "allowOnce": "Cho phép một lần",
-    "alwaysAllow": "Luôn cho phép",
+    "alwaysAllow": "Cho phép trong chuỗi",
     "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
-    "parameters": "Tham số công cụ"
+    "parameters": "Tham số công cụ",
+    "permissionScope": "Quyền được cấp chỉ áp dụng cho cuộc trò chuyện này."
   }
 }

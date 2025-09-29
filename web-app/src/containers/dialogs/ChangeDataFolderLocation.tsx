@@ -33,7 +33,7 @@ export default function ChangeDataFolderLocation({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <IconFolder size={20} />

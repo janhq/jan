@@ -136,6 +136,11 @@ async function main() {
           console.log("Error Found:", err);
         }
       })
+      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-universal-apple-darwin'), (err) => {
+          if (err) {
+            console.log("Error Found:", err);
+          }
+        })
     } else if (platform === 'linux') {
       copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-unknown-linux-gnu'), (err) => {
         if (err) {
@@ -191,6 +196,11 @@ async function main() {
           console.log("Error Found:", err);
         }
       })
+      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-universal-apple-darwin'), (err) => {
+        if (err) {
+          console.log("Error Found:", err);
+        }
+      })
     } else if (platform === 'linux') {
       copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-unknown-linux-gnu'), (err) => {
         if (err) {
@@ -219,11 +229,6 @@ async function main() {
   console.log('UV downloaded.')
 
   console.log('Downloads completed.')
-}
-
-// Ensure the downloads directory exists
-if (!fs.existsSync('downloads')) {
-  fs.mkdirSync('downloads')
 }
 
 main().catch((err) => {

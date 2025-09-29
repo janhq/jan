@@ -1,13 +1,32 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { ExtensionManager } from './extension'
+import path from "path"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+
+export function basenameNoExt(filePath: string): string {
+  const base = path.basename(filePath);
+  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
+
+  // handle VALID extensions first
+  for (const ext of VALID_EXTENSIONS) {
+    if (base.toLowerCase().endsWith(ext)) {
+      return base.slice(0, -ext.length);
+    }
+  }
+
+  // fallback: remove only the last extension
+  return base.slice(0, -path.extname(base).length);
+}
+
 export function getProviderLogo(provider: string) {
   switch (provider) {
+    case 'jan':
+      return '/images/model-provider/jan.png'
     case 'llamacpp':
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
@@ -26,6 +45,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/gemini.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
+    case 'azure':
+      return '/images/model-provider/azure.svg'
     default:
       return undefined
   }
@@ -33,6 +54,8 @@ export function getProviderLogo(provider: string) {
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
+    case 'jan':
+      return 'Jan'
     case 'llamacpp':
       return 'Llama.cpp'
     case 'openai':
@@ -157,5 +180,5 @@ export function formatDuration(startTime: number, endTime?: number): string {
 }
 
 export function sanitizeModelId(modelId: string): string {
-  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, "_")
+  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
 }

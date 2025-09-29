@@ -1,0 +1,592 @@
+---
+title: Development
+description: Development setup, workflow, and contribution guidelines for Jan Server.
+---
+## Core Domain Models
+![Domain Models Diagram](https://github.com/menloresearch/jan-server/raw/main/apps/jan-api-gateway/docs/System_Design.png)
+## Development Setup
+
+### Prerequisites
+
+- **Go**: 1.24.6 or later
+- **Docker & Docker Compose**: For containerization
+- **PostgreSQL**: Database (or use Docker)
+- **Atlas**: For database migrations (`brew install ariga/tap/atlas`)
+- **minikube**: Local Kubernetes development
+- **Helm**: Package management
+- **Make**: Build automation
+
+### Local Development
+
+1. **Clone and setup**:
+   ```bash
+   git clone <repository-url>
+   cd jan-api-gateway/application
+   make setup
+   go mod tidy
+   ```
+
+2. **Start the server**:
+   ```bash
+   go run ./cmd/server
+   ```
+
+3. **Access the API**:
+   - API Base URL: `http://localhost:8080`
+   - Swagger UI: `http://localhost:8080/api/swagger/index.html`
+   - Health Check: `http://localhost:8080/healthcheck`
+   - Version Info: `http://localhost:8080/v1/version`
+   - Profiling Endpoints: `http://localhost:6060/debug/pprof/`
+
+### Initial Setup
+
+1. **Clone Repository**
+   ```bash
+   git clone https://github.com/menloresearch/jan-server
+   cd jan-server
+   ```
+
+2. **Setup API Gateway**
+   ```bash
+   cd apps/jan-api-gateway/application
+   make setup
+   go mod tidy
+   ```
+
+3. **Start the Server**
+   ```bash
+   go run ./cmd/server
+   ```
+
+4. **Access the API**
+   - API Base URL: `http://localhost:8080`
+   - Swagger UI: `http://localhost:8080/api/swagger/index.html`
+   - Health Check: `http://localhost:8080/healthcheck`
+   - Version Info: `http://localhost:8080/v1/version`
+   - Profiling Endpoints: `http://localhost:6060/debug/pprof/`
+
+### Environment Variables
+
+The system is configured through environment variables. Key configuration areas include:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_POSTGRESQL_WRITE_DSN` | Primary database connection | `postgres://jan_user:jan_password@localhost:5432/jan_api_gateway?sslmode=disable` |
+| `DB_POSTGRESQL_READ1_DSN` | Read replica database connection | Same as write DSN |
+| `JWT_SECRET` | JWT token signing secret | `your-super-secret-jwt-key-change-in-production` |
+| `APIKEY_SECRET` | API key encryption secret | `your-api-key-secret-change-in-production` |
+| `JAN_INFERENCE_MODEL_URL` | Jan inference service URL | `http://localhost:8000` |
+| `SERPER_API_KEY` | Serper API key for web search | `your-serper-api-key` |
+| `OAUTH2_GOOGLE_CLIENT_ID` | Google OAuth2 client ID | `your-google-client-id` |
+| `OAUTH2_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret | `your-google-client-secret` |
+| `OAUTH2_GOOGLE_REDIRECT_URL` | Google OAuth2 redirect URL | `http://localhost:8080/auth/google/callback` |
+| `ALLOWED_CORS_HOSTS` | Allowed CORS hosts, separated by commas, supporting prefix wildcards with '*' | `http://localhost:8080,*jan.ai` |
+| `SMTP_HOST` | SMTP server host for email notifications | `smtp.gmail.com` |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_USERNAME` | SMTP username | `your-smtp-username` |
+| `SMTP_PASSWORD` | SMTP password | `your-smtp-password` |
+| `SMTP_SENDER_EMAIL` | Default sender email address | `noreply@yourdomain.com` |
+| `INVITE_REDIRECT_URL` | Redirect URL for invitation acceptance | `http://localhost:8080/invite/accept` |
+
+3. **Generate Code**
+   ```bash
+   make setup
+   ```
+
+4. **Start Development Environment**
+   ```bash
+   # From project root
+   ./scripts/run.sh
+   ```
+
+## API Gateway Development
+
+### Project Structure
+
+```
+jan-api-gateway/
+├── application/                 # Main Go application
+│   ├── app/
+│   │   ├── cmd/server/         # Server entry point
+│   │   ├── domain/             # Business logic and entities
+│   │   ├── infrastructure/     # Database and external services
+│   │   ├── interfaces/         # HTTP handlers and routes
+│   │   └── utils/              # Utilities and helpers
+│   ├── config/                 # Configuration management
+│   ├── docs/                   # Swagger documentation
+│   └── Makefile               # Build automation
+├── docker/                     # Docker configuration
+└── LOCAL_DEV_SETUP.md         # Detailed development setup
+```
+
+### Database Migrations
+
+The project uses Atlas for database migrations. To generate and apply migrations:
+
+1. **Setup migration database**:
+   ```sql
+   CREATE ROLE migration WITH LOGIN PASSWORD 'migration';
+   ALTER ROLE migration WITH SUPERUSER;
+   CREATE DATABASE migration WITH OWNER = migration;
+   ```
+
+2. **Generate migration files**:
+   ```bash
+   # Generate schema files
+   go run ./cmd/codegen/dbmigration
+   
+   # Generate diff SQL
+   atlas schema diff --dev-url "postgres://migration:migration@localhost:5432/migration?sslmode=disable" \
+     --from file://tmp/release.hcl --to file://tmp/main.hcl > tmp/diff.sql
+   ```
+
+3. **Apply migrations**:
+   ```bash
+   # Auto-migration on startup (development)
+   go run ./cmd/server
+   
+   # Manual migration (production)
+   atlas migrate apply --url "your-production-db-url"
+   ```
+
+### Build Commands
+
+```bash
+# Install development dependencies
+make install
+
+# Generate API documentation
+make doc
+
+# Generate dependency injection code  
+make wire
+
+# Complete setup (doc + wire)
+make setup
+
+# Build application
+go build -o jan-api-gateway ./cmd/server
+```
+
+### Code Generation
+
+Jan Server uses code generation for several components:
+
+**Swagger Documentation:**
+```bash
+# Generates docs/swagger.json and docs/swagger.yaml
+swag init --parseDependency -g cmd/server/server.go -o docs
+```
+
+**Dependency Injection:**
+```bash
+# Generates wire_gen.go from wire.go providers
+wire ./cmd/server
+```
+
+**Database Models:**
+```bash
+# Generate GORM models (when schema changes)
+go run cmd/codegen/gorm/gorm.go
+```
+
+## Key Features Implementation
+
+### Streaming with Server-Sent Events
+The chat completion endpoints implement real-time streaming using Server-Sent Events (SSE) with chunked transfer encoding, providing low-latency responses for AI model interactions. The system supports both content and reasoning content streaming with proper buffering and event sequencing.
+
+### Multi-Tenant Architecture
+Organizations and projects provide hierarchical access control with fine-grained permissions and resource isolation. API keys can be scoped to organization or project levels with different types (admin, project, organization, service, ephemeral) for various use cases.
+
+### OpenAI Compatibility
+Full compatibility with OpenAI's chat completion API, including streaming, function calls, tool usage, and all standard parameters (temperature, max_tokens, etc.). The system also supports reasoning content and multimodal inputs.
+
+### Model Context Protocol (MCP)
+Comprehensive MCP implementation supporting tools, prompts, and resources with JSON-RPC 2.0 protocol. Includes Serper API integration for web search capabilities and webpage fetching functionality.
+
+### Database Architecture
+- Read/Write replica support with automatic load balancing using GORM dbresolver
+- Transaction management with automatic rollback on errors
+- Generated query interfaces using GORM Gen for type safety
+- Automatic schema migrations with Atlas integration
+- Support for complex data types including JSON fields and relationships
+
+### Monitoring & Observability
+- Built-in pprof endpoints for performance profiling on port 6060
+- Grafana Pyroscope integration for continuous profiling
+- Structured logging with unique request IDs and comprehensive request/response tracking
+- Automated health checks for inference model endpoints with cron-based monitoring
+- Model registry with dynamic service discovery and health status tracking
+
+### Local Development
+
+#### Running API Gateway Locally
+
+```bash
+cd apps/jan-api-gateway/application
+
+# Set environment variables
+export JAN_INFERENCE_MODEL_URL=http://localhost:8101
+export JWT_SECRET=your-jwt-secret
+export DB_POSTGRESQL_WRITE_DSN="host=localhost user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable"
+
+# Run the server
+go run ./cmd/server
+```
+
+#### Database Setup
+
+For local development, you can run PostgreSQL directly:
+
+```bash
+# Using Docker
+docker run -d \
+  --name jan-postgres \
+  -e POSTGRES_DB=jan \
+  -e POSTGRES_USER=jan-user \
+  -e POSTGRES_PASSWORD=jan-password \
+  -p 5432:5432 \
+  postgres:14
+```
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific test package
+go test ./app/service/...
+```
+
+### Test Structure
+
+```
+app/
+├── service/
+│   ├── auth_service.go
+│   ├── auth_service_test.go
+│   ├── conversation_service.go
+│   └── conversation_service_test.go
+└── handler/
+    ├── auth_handler.go
+    ├── auth_handler_test.go
+    ├── chat_handler.go
+    └── chat_handler_test.go
+```
+
+### Writing Tests
+
+Example service test:
+
+```go
+func TestAuthService_ValidateToken(t *testing.T) {
+    // Setup
+    service := NewAuthService(mockRepo, mockConfig)
+    
+    // Test cases
+    tests := []struct {
+        name        string
+        token       string
+        expectValid bool
+        expectError bool
+    }{
+        {"valid token", "valid.jwt.token", true, false},
+        {"invalid token", "invalid.token", false, true},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            valid, err := service.ValidateToken(tt.token)
+            assert.Equal(t, tt.expectValid, valid)
+            assert.Equal(t, tt.expectError, err != nil)
+        })
+    }
+}
+```
+
+## Docker Development
+
+### Building Images
+
+```bash
+# Build API gateway
+docker build -t jan-api-gateway:dev ./apps/jan-api-gateway
+
+# Build inference model
+docker build -t jan-inference-model:dev ./apps/jan-inference-model
+```
+
+### Development Compose
+
+For local development without Kubernetes:
+
+```yaml
+# docker-compose.dev.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: jan
+      POSTGRES_USER: jan-user
+      POSTGRES_PASSWORD: jan-password
+    ports:
+      - "5432:5432"
+      
+  api-gateway:
+    build: ./apps/jan-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - JAN_INFERENCE_MODEL_URL=http://inference-model:8101
+      - DB_POSTGRESQL_WRITE_DSN=host=postgres user=jan-user password=jan-password dbname=jan port=5432 sslmode=disable
+    depends_on:
+      - postgres
+      
+  inference-model:
+    build: ./apps/jan-inference-model
+    ports:
+      - "8101:8101"
+```
+
+## Debugging
+
+### Go Debugging
+
+For VS Code debugging, add to `.vscode/launch.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Jan API Gateway",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/apps/jan-api-gateway/application/cmd/server",
+      "env": {
+        "JAN_INFERENCE_MODEL_URL": "http://localhost:8101",
+        "JWT_SECRET": "development-secret"
+      }
+    }
+  ]
+}
+```
+
+### Application Logs
+
+```bash
+# View API gateway logs
+kubectl logs deployment/jan-server-jan-api-gateway -f
+
+# View inference model logs
+kubectl logs deployment/jan-server-jan-inference-model -f
+
+# View PostgreSQL logs
+kubectl logs statefulset/jan-server-postgresql -f
+```
+
+### Log Levels
+
+Set log level via environment variable:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## Code Style and Standards
+
+### Go Standards
+
+- Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)
+- Use `gofmt` for formatting
+- Run `go vet` for static analysis
+- Use meaningful variable and function names
+
+### API Standards
+
+- RESTful endpoint design
+- OpenAPI/Swagger annotations for all endpoints
+- Consistent error response format
+- Proper HTTP status codes
+
+### Git Workflow
+
+```bash
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Make changes and commit
+git add .
+git commit -m "feat: add new authentication endpoint"
+
+# Push and create PR
+git push origin feature/your-feature-name
+```
+
+### Commit Message Format
+
+Follow conventional commits:
+
+```
+feat: add new feature
+fix: resolve bug in authentication  
+docs: update API documentation
+test: add unit tests for service layer
+refactor: improve error handling
+```
+
+## Performance Testing
+
+### Load Testing
+
+Use [k6](https://k6.io) for API load testing:
+
+```javascript
+// load-test.js
+import http from 'k6/http';
+
+export default function () {
+  const response = http.post('http://localhost:8080/api/v1/chat/completions', {
+    model: 'jan-v1-4b',
+    messages: [
+      { role: 'user', content: 'Hello!' }
+    ]
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer your-token'
+    }
+  });
+  
+  check(response, {
+    'status is 200': (r) => r.status === 200,
+    'response time < 5000ms': (r) => r.timings.duration < 5000,
+  });
+}
+```
+
+Run load test:
+```bash
+k6 run --vus 10 --duration 30s load-test.js
+```
+
+### Memory Profiling
+
+Enable Go profiling endpoints:
+
+```go
+import _ "net/http/pprof"
+
+// In main.go
+go func() {
+    log.Println(http.ListenAndServe("localhost:6060", nil))
+}()
+```
+
+Profile memory usage:
+```bash
+go tool pprof http://localhost:6060/debug/pprof/heap
+```
+
+## Documentation
+
+- **API Documentation**: Available at `/api/swagger/index.html` when running locally
+- **OpenAI-Style Documentation**: Professional API reference documentation with OpenAI-style layout
+- **Development Setup**: See [LOCAL_DEV_SETUP.md](LOCAL_DEV_SETUP.md) for detailed VS Code/Cursor setup
+- **Architecture**: See the mermaid diagram above for system architecture
+
+### API Structure Overview
+
+The API is organized into the following main groups:
+
+1. **Authentication API** - User authentication and authorization
+2. **Chat Completions API** - Chat completions, models, and MCP functionality
+3. **Conversation-aware Chat API** - Conversation-based chat completions
+4. **Conversations API** - Conversation management and items
+5. **Responses API** - Response tracking and management
+6. **Administration API** - Organization and project management
+7. **Server API** - System information and health checks
+
+### Swagger Documentation
+
+The API documentation is automatically generated from code annotations and includes:
+- Interactive API explorer
+- Request/response examples
+- Authentication requirements
+- Error code documentation
+- Model schemas and validation rules
+
+## Contributing
+
+### Pull Request Process
+
+1. **Fork the repository**
+2. **Create feature branch** from `main`
+3. **Make changes** following code standards
+4. **Add tests** for new functionality
+5. **Update documentation** if needed
+6. **Submit pull request** with clear description
+
+### Code Review Checklist
+
+- [ ] Code follows Go standards
+- [ ] Tests added for new features
+- [ ] Documentation updated
+- [ ] API endpoints have Swagger annotations
+- [ ] No breaking changes without version bump
+- [ ] Security considerations addressed
+
+### Issues and Bug Reports
+
+When reporting bugs, include:
+
+- **Environment**: OS, Go version, minikube version
+- **Steps to reproduce**: Clear, minimal reproduction steps  
+- **Expected behavior**: What should happen
+- **Actual behavior**: What actually happens
+- **Logs**: Relevant error messages or logs
+
+For security issues, please report privately to the maintainers instead of creating public issues.
+
+## Release Process
+
+### Version Management
+
+Jan Server uses semantic versioning (semver):
+
+- **Major**: Breaking changes
+- **Minor**: New features, backward compatible
+- **Patch**: Bug fixes, backward compatible
+
+### Building Releases
+
+```bash
+# Tag release
+git tag -a v1.2.3 -m "Release v1.2.3"
+
+# Build release images
+docker build -t jan-api-gateway:v1.2.3 ./apps/jan-api-gateway
+docker build -t jan-inference-model:v1.2.3 ./apps/jan-inference-model
+
+# Push tags
+git push origin v1.2.3
+```
+
+### Deployment
+
+Production deployments follow the same Helm chart structure:
+
+```bash
+# Deploy specific version
+helm install jan-server ./charts/umbrella-chart \
+  --set jan-api-gateway.image.tag=v1.2.3 \
+  --set jan-inference-model.image.tag=v1.2.3
+```

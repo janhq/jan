@@ -215,7 +215,14 @@ async fn proxy_request(
     let path = get_destination_path(original_path, &config.prefix);
     let method = parts.method.clone();
 
-    let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
+    let whitelisted_paths = [
+        "/",
+        "/openapi.json",
+        "/favicon.ico",
+        "/docs/swagger-ui.css",
+        "/docs/swagger-ui-bundle.js",
+        "/docs/swagger-ui-standalone-preset.js",
+    ];
     let is_whitelisted_path = whitelisted_paths.contains(&path.as_str());
 
     if !is_whitelisted_path {
@@ -448,6 +455,82 @@ async fn proxy_request(
 
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
         }
+
+        (hyper::Method::GET, "/openapi.json") => {
+            let body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap());
+        }
+
+        // DOCS route
+        (hyper::Method::GET, "/") => {
+            let html = r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>API Docs</title>
+  <link rel="stylesheet" type="text/css" href="/docs/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="/docs/swagger-ui-bundle.js"></script>
+  <script>
+  window.onload = () => {
+    SwaggerUIBundle({
+      url: '/openapi.json',
+      dom_id: '#swagger-ui',
+    });
+  };
+  </script>
+</body>
+</html>
+    "#;
+
+            let mut response_builder = Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "text/html");
+
+            response_builder = add_cors_headers_with_host_and_origin(
+                response_builder,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+
+            return Ok(response_builder.body(Body::from(html)).unwrap());
+        }
+
+        (hyper::Method::GET, "/docs/swagger-ui.css") => {
+            let css = include_str!("../../../static/swagger-ui/swagger-ui.css");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "text/css")
+                .body(Body::from(css))
+                .unwrap());
+        }
+
+        (hyper::Method::GET, "/docs/swagger-ui-bundle.js") => {
+            let js = include_str!("../../../static/swagger-ui/swagger-ui-bundle.js");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "application/javascript")
+                .body(Body::from(js))
+                .unwrap());
+        }
+
+        (hyper::Method::GET, "/favicon.ico") => {
+            let icon = include_bytes!("../../../static/swagger-ui/favicon.ico");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "image/x-icon")
+                .body(Body::from(icon.as_ref()))
+                .unwrap());
+        }
+
         _ => {
             let is_explicitly_whitelisted_get = method == hyper::Method::GET
                 && whitelisted_paths.contains(&destination_path.as_str());
@@ -631,6 +714,7 @@ pub async fn start_server(
     prefix: String,
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
+    proxy_timeout: u64,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -648,7 +732,7 @@ pub async fn start_server(
     };
 
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
+        .timeout(std::time::Duration::from_secs(proxy_timeout))
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
@@ -665,7 +749,13 @@ pub async fn start_server(
         }
     });
 
-    let server = Server::bind(&addr).serve(make_svc);
+    let server = match Server::try_bind(&addr) {
+        Ok(builder) => builder.serve(make_svc),
+        Err(e) => {
+            log::error!("Failed to bind to {}: {}", addr, e);
+            return Err(Box::new(e));
+        }
+    };
     log::info!("Jan API server started on http://{}", addr);
 
     let server_task = tokio::spawn(async move {

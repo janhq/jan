@@ -6,6 +6,11 @@
   "noUpdateAvailable": "You're running the latest version",
   "devVersion": "Development version detected",
   "updateError": "Failed to check for updates",
+  "checkForBackendUpdates": "Check for Llamacpp Updates",
+  "checkForBackendUpdatesDesc": "Check if a newer version of the Llamacpp backend is available.",
+  "checkingForBackendUpdates": "Checking for Llamacpp updates...",
+  "noBackendUpdateAvailable": "You're running the latest Llamacpp version",
+  "backendUpdateError": "Failed to check for Llamacpp updates",
   "changeLocation": "Change Location",
   "copied": "Copied",
   "copyPath": "Copy Path",
@@ -95,6 +100,8 @@
     "resetAppearanceSuccessDesc": "All appearance settings have been restored to default.",
     "chatWidth": "Chat Width",
     "chatWidthDesc": "Customize the width of the chat view.",
+    "tokenCounterCompact": "Compact Token Counter",
+    "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
     "codeBlockDesc": "Choose a syntax highlighting style.",
     "showLineNumbers": "Show Line Numbers",
@@ -156,6 +163,8 @@
     "title": "Local API Server",
     "description": "Run an OpenAI-compatible server locally.",
     "startServer": "Start Server",
+    "loadingModel": "Loading Model",
+    "startingServer": "Starting Server",
     "stopServer": "Stop Server",
     "serverLogs": "Server Logs",
     "serverLogsDesc": "View detailed logs of the local API server.",
@@ -178,7 +187,9 @@
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Allow cross-origin requests to the API server.",
     "verboseLogs": "Verbose Server Logs",
-    "verboseLogsDesc": "Enable detailed server logs for debugging."
+    "verboseLogsDesc": "Enable detailed server logs for debugging.",
+    "proxyTimeout": "Request timeout",
+    "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds."
   },
   "privacy": {
     "analytics": "Analytics",
@@ -198,6 +209,8 @@
     "showInFileExplorer": "Show in File Explorer",
     "openContainingFolder": "Open Containing Folder",
     "failedToRelocateDataFolder": "Failed to relocate data folder",
+    "couldNotRelocateToRoot": "Cannot relocate data folder to root directory. Please choose another location.",
+    "couldNotResetRootDirectory": "Cannot reset data folder when it's set to a root directory. Please delete the data folder manually.",
     "failedToRelocateDataFolderDesc": "Failed to relocate data folder. Please try again.",
     "devVersion": "Development version detected",
     "noUpdateAvailable": "You're running the latest version",
@@ -249,5 +262,16 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     }
-  }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "New Llamacpp Version {{version}}",
+    "backendUpdateAvailable": "Llamacpp Update Available",
+    "remindMeLater": "Remind Me Later",
+    "updating": "Updating...",
+    "updateNow": "Update Now",
+    "updateSuccess": "Llamacpp updated successfully",
+    "updateError": "Failed to update Llamacpp"
+  },
+  "backendInstallSuccess": "Backend installed successfully",
+  "backendInstallError": "Failed to install backend"
 }

@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeDevCommand": "cross-env IS_TAURI=true IS_DEV=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {
@@ -84,6 +84,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": ["resources/LICENSE"]
   }
 }

@@ -3,10 +3,17 @@ import { renderHook, act } from '@testing-library/react'
 import { useMCPServers } from '../useMCPServers'
 import type { MCPServerConfig } from '../useMCPServers'
 
-// Mock the MCP service functions
-vi.mock('@/services/mcp', () => ({
-  updateMCPConfig: vi.fn().mockResolvedValue(undefined),
-  restartMCPServers: vi.fn().mockResolvedValue(undefined),
+// Mock the ServiceHub
+const mockUpdateMCPConfig = vi.fn().mockResolvedValue(undefined)
+const mockRestartMCPServers = vi.fn().mockResolvedValue(undefined)
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    mcp: () => ({
+      updateMCPConfig: mockUpdateMCPConfig,
+      restartMCPServers: mockRestartMCPServers,
+    }),
+  }),
 }))
 
 describe('useMCPServers', () => {
@@ -338,7 +345,6 @@ describe('useMCPServers', () => {
 
   describe('syncServers', () => {
     it('should call updateMCPConfig with current servers', async () => {
-      const { updateMCPConfig } = await import('@/services/mcp')
       const { result } = renderHook(() => useMCPServers())
       
       const serverConfig: MCPServerConfig = {
@@ -355,7 +361,7 @@ describe('useMCPServers', () => {
         await result.current.syncServers()
       })
 
-      expect(updateMCPConfig).toHaveBeenCalledWith(
+      expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
         JSON.stringify({
           mcpServers: {
             'test-server': serverConfig,
@@ -365,14 +371,13 @@ describe('useMCPServers', () => {
     })
 
     it('should call updateMCPConfig with empty servers object', async () => {
-      const { updateMCPConfig } = await import('@/services/mcp')
       const { result } = renderHook(() => useMCPServers())
 
       await act(async () => {
         await result.current.syncServers()
       })
 
-      expect(updateMCPConfig).toHaveBeenCalledWith(
+      expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
         JSON.stringify({
           mcpServers: {},
         })
@@ -381,8 +386,7 @@ describe('useMCPServers', () => {
   })
 
   describe('syncServersAndRestart', () => {
-    it('should call updateMCPConfig and then restartMCPServers', async () => {
-      const { updateMCPConfig, restartMCPServers } = await import('@/services/mcp')
+    it('should call updateMCPConfig and then mockRestartMCPServers', async () => {
       const { result } = renderHook(() => useMCPServers())
       
       const serverConfig: MCPServerConfig = {
@@ -399,14 +403,14 @@ describe('useMCPServers', () => {
         await result.current.syncServersAndRestart()
       })
 
-      expect(updateMCPConfig).toHaveBeenCalledWith(
+      expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
         JSON.stringify({
           mcpServers: {
             'python-server': serverConfig,
           },
         })
       )
-      expect(restartMCPServers).toHaveBeenCalled()
+      expect(mockRestartMCPServers).toHaveBeenCalled()
     })
   })
 

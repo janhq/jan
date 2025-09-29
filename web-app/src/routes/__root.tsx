@@ -1,8 +1,9 @@
-import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import LeftPanel from '@/containers/LeftPanel'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
+import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
 import { AppearanceProvider } from '@/providers/AppearanceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
@@ -14,6 +15,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { GoogleAnalyticsProvider } from '@/providers/GoogleAnalyticsProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -30,6 +32,10 @@ import { useCallback, useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
+import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { AuthProvider } from '@/providers/AuthProvider'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -76,13 +82,14 @@ const AppLayout = () => {
     const handleGlobalDrop = (e: DragEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // Only prevent if the target is not within a chat input or other valid drop zone
       const target = e.target as Element
-      const isValidDropZone = target?.closest('[data-drop-zone="true"]') || 
-                             target?.closest('.chat-input-drop-zone') ||
-                             target?.closest('[data-tauri-drag-region]')
-      
+      const isValidDropZone =
+        target?.closest('[data-drop-zone="true"]') ||
+        target?.closest('.chat-input-drop-zone') ||
+        target?.closest('[data-tauri-drag-region]')
+
       if (!isValidDropZone) {
         // Prevent the file from opening in the window
         return false
@@ -96,7 +103,7 @@ const AppLayout = () => {
 
     return () => {
       window.removeEventListener('dragenter', preventDefaults)
-      window.removeEventListener('dragover', preventDefaults)  
+      window.removeEventListener('dragover', preventDefaults)
       window.removeEventListener('drop', handleGlobalDrop)
     }
   }, [])
@@ -104,11 +111,13 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
+      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && <GoogleAnalyticsProvider />}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
+        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && <BackendUpdater />}
 
         {/* Use ResizablePanelGroup only on larger screens */}
         {!isSmallScreen && isLeftPanelOpen ? (
@@ -160,7 +169,9 @@ const AppLayout = () => {
           </div>
         )}
       </main>
-      {productAnalyticPrompt && <PromptAnalytic />}
+      {PlatformFeatures[PlatformFeature.ANALYTICS] && productAnalyticPrompt && (
+        <PromptAnalytic />
+      )}
     </Fragment>
   )
 }
@@ -183,30 +194,38 @@ const LogsLayout = () => {
 }
 
 function RootLayout() {
-  const router = useRouterState()
+  const getInitialLayoutType = () => {
+    const pathname = window.location.pathname
+    return (
+      pathname === route.localApiServerlogs ||
+      pathname === route.systemMonitor ||
+      pathname === route.appLogs
+    )
+  }
 
-  const isLocalAPIServerLogsRoute =
-    router.location.pathname === route.localApiServerlogs ||
-    router.location.pathname === route.systemMonitor ||
-    router.location.pathname === route.appLogs
-
+  const IS_LOGS_ROUTE = getInitialLayoutType()
   return (
     <Fragment>
-      <ThemeProvider />
-      <AppearanceProvider />
-      <ToasterProvider />
-      <TranslationProvider>
-        <ExtensionProvider>
-          <DataProvider />
-          <GlobalEventHandler />
-        </ExtensionProvider>
-        {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
-        {/* <TanStackRouterDevtools position="bottom-right" /> */}
-        <ToolApproval />
-        <LoadModelErrorDialog />
-        <ErrorDialog />
-        <OutOfContextPromiseModal />
-      </TranslationProvider>
+      <ServiceHubProvider>
+        <ThemeProvider />
+        <AppearanceProvider />
+        <ToasterProvider />
+        <TranslationProvider>
+          <ExtensionProvider>
+            <AuthProvider>
+              <DataProvider />
+              <GlobalEventHandler />
+              {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+            </AuthProvider>
+          </ExtensionProvider>
+          {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+          <LoadModelErrorDialog />
+          <ErrorDialog />
+          <OutOfContextPromiseModal />
+        </TranslationProvider>
+      </ServiceHubProvider>
     </Fragment>
   )
 }

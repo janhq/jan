@@ -6,6 +6,11 @@
   "noUpdateAvailable": "Du verwendest die neueste Version",
   "devVersion": "Entwicklungsversion erkannt",
   "updateError": "Fehler beim Suchen nach Updates",
+  "checkForBackendUpdates": "Llamacpp Updates prüfen",
+  "checkForBackendUpdatesDesc": "Prüfe, ob eine neuere Version des Llamacpp-Backends verfügbar ist.",
+  "checkingForBackendUpdates": "Suche nach Llamacpp Updates...",
+  "noBackendUpdateAvailable": "Du verwendest die neueste Llamacpp Version",
+  "backendUpdateError": "Fehler beim Suchen nach Llamacpp Updates",
   "changeLocation": "Ort ändern",
   "copied": "Kopiert",
   "copyPath": "Pfad kopieren",
@@ -95,6 +100,8 @@
     "resetAppearanceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
     "chatWidth": "Chat Breite",
     "chatWidthDesc": "Passe die Breite der Chatansicht an.",
+    "tokenCounterCompact": "Kompakter Token-Zähler",
+    "tokenCounterCompactDesc": "Token-Zähler im Chat-Eingabefeld anzeigen. Wenn deaktiviert, wird der Token-Zähler unter dem Eingabefeld angezeigt.",
     "codeBlockTitle": "Code Block",
     "codeBlockDesc": "Wähle einen Stil zur Syntaxhervorhebung.",
     "showLineNumbers": "Zeilennummern anzeigen",
@@ -155,7 +162,9 @@
   "localApiServer": {
     "title": "Lokaler API Server",
     "description": "Führe lokal einen OpenAI-kompatiblen Server aus.",
-    "startServer": "Start Server",
+    "startServer": "Server starten",
+    "loadingModel": "Modell laden",
+    "startingServer": "Server wird gestartet",
     "stopServer": "Stop Server",
     "serverLogs": "Server Logs",
     "serverLogsDesc": "Zeige detaillierte Logs des lokalen API-Servers an.",
@@ -175,7 +184,9 @@
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Erlaube Cross-Origin-Anfragen an den API-Server.",
     "verboseLogs": "Ausführliche Server Logs",
-    "verboseLogsDesc": "Aktiviere detaillierte Server Logs zum Debuggen"
+    "verboseLogsDesc": "Aktiviere detaillierte Server Logs zum Debuggen",
+    "proxyTimeout": "Zeitüberschreitung bei der Anfrage",
+    "proxyTimeoutDesc": "Wartezeit auf eine Antwort vom lokalen Modell in Sekunden."
   },
   "privacy": {
     "analytics": "Analytik",
@@ -244,5 +255,14 @@
       "cancel": "Abbrechen",
       "changeLocation": "Ort ändern"
     }
+  },
+  "backendUpdater": {
+    "newBackendVersion": "Neue Llamacpp Version {{version}}",
+    "backendUpdateAvailable": "Llamacpp Update verfügbar",
+    "remindMeLater": "Später erinnern",
+    "updating": "Aktualisiere...",
+    "updateNow": "Jetzt aktualisieren",
+    "updateSuccess": "Llamacpp erfolgreich aktualisiert",
+    "updateError": "Fehler beim Aktualisieren von Llamacpp"
   }
 }

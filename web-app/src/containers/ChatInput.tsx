@@ -4,6 +4,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,36 +33,61 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { getConnectedServers } from '@/services/mcp'
-import { checkMmprojExists } from '@/services/models'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTools } from '@/hooks/useTools'
+import { TokenCounter } from '@/components/TokenCounter'
+import { useMessages } from '@/hooks/useMessages'
+import { useShallow } from 'zustand/react/shallow'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  projectId?: string
 }
 
-const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
+const ChatInput = ({
+  model,
+  className,
+  initialMessage,
+  projectId,
+}: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const {
-    streamingContent,
-    abortControllers,
-    loadingModel,
-    tools,
-    cancelToolCall,
-  } = useAppState()
-  const { prompt, setPrompt } = usePrompt()
-  const { currentThreadId } = useThreads()
+  const serviceHub = useServiceHub()
+  const streamingContent = useAppState((state) => state.streamingContent)
+  const abortControllers = useAppState((state) => state.abortControllers)
+  const loadingModel = useAppState((state) => state.loadingModel)
+  const tools = useAppState((state) => state.tools)
+  const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const prompt = usePrompt((state) => state.prompt)
+  const setPrompt = usePrompt((state) => state.setPrompt)
+  const currentThreadId = useThreads((state) => state.currentThreadId)
+  const updateThread = useThreads((state) => state.updateThread)
+  const { getFolderById } = useThreadManagement()
   const { t } = useTranslation()
-  const { spellCheckChatInput } = useGeneralSetting()
+  const spellCheckChatInput = useGeneralSetting(
+    (state) => state.spellCheckChatInput
+  )
+  const tokenCounterCompact = useGeneralSetting(
+    (state) => state.tokenCounterCompact
+  )
+  useTools()
+
+  // Get current thread messages for token counting
+  const threadMessages = useMessages(
+    useShallow((state) =>
+      currentThreadId ? state.messages[currentThreadId] : []
+    )
+  )
 
   const maxRows = 10
 
-  const { selectedModel, selectedProvider } = useModelProvider()
-  const { sendMessage } = useChat()
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const sendMessage = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -77,12 +103,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [hasActiveModels, setHasActiveModels] = useState(false)
 
   // Check for connected MCP servers
   useEffect(() => {
     const checkConnectedServers = async () => {
       try {
-        const servers = await getConnectedServers()
+        const servers = await serviceHub.mcp().getConnectedServers()
         setConnectedServers(servers)
       } catch (error) {
         console.error('Failed to get connected servers:', error)
@@ -96,23 +123,37 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const intervalId = setInterval(checkConnectedServers, 3000)
 
     return () => clearInterval(intervalId)
-  }, [])
+  }, [serviceHub])
+
+  // Check for active models
+  useEffect(() => {
+    const checkActiveModels = async () => {
+      try {
+        const activeModels = await serviceHub
+          .models()
+          .getActiveModels('llamacpp')
+        setHasActiveModels(activeModels.length > 0)
+      } catch (error) {
+        console.error('Failed to get active models:', error)
+        setHasActiveModels(false)
+      }
+    }
+
+    checkActiveModels()
+
+    // Poll for active models every 3 seconds
+    const intervalId = setInterval(checkActiveModels, 3000)
+
+    return () => clearInterval(intervalId)
+  }, [serviceHub])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
     const checkMmprojSupport = async () => {
-      if (selectedModel?.id) {
+      if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
-          if (selectedProvider === 'llamacpp') {
-            const hasLocalMmproj = await checkMmprojExists(selectedModel.id)
-            setHasMmproj(hasLocalMmproj)
-          }
-          // For non-llamacpp providers, only check vision capability
-          else if (
-            selectedProvider !== 'llamacpp' &&
-            selectedModel?.capabilities?.includes('vision')
-          ) {
+          if (selectedModel?.capabilities?.includes('vision')) {
             setHasMmproj(true)
           } else {
             setHasMmproj(false)
@@ -125,7 +166,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
 
     checkMmprojSupport()
-  }, [selectedModel?.capabilities, selectedModel?.id, selectedProvider])
+  }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
@@ -145,6 +186,28 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       uploadedFiles.length > 0 ? uploadedFiles : undefined
     )
     setUploadedFiles([])
+
+    // Handle project assignment for new threads
+    if (projectId && !currentThreadId) {
+      const project = getFolderById(projectId)
+      if (project) {
+        // Use setTimeout to ensure the thread is created first
+        setTimeout(() => {
+          const newCurrentThreadId = useThreads.getState().currentThreadId
+          if (newCurrentThreadId) {
+            updateThread(newCurrentThreadId, {
+              metadata: {
+                project: {
+                  id: project.id,
+                  name: project.name,
+                  updated_at: project.updated_at,
+                },
+              },
+            })
+          }
+        }, 100)
+      }
+    }
   }
 
   useEffect(() => {
@@ -374,44 +437,109 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     }
   }
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const clipboardItems = e.clipboardData?.items
-    if (!clipboardItems) return
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    // Only process images if model supports mmproj
+    if (hasMmproj) {
+      const clipboardItems = e.clipboardData?.items
+      let hasProcessedImage = false
 
-    // Only allow paste if model supports mmproj
-    if (!hasMmproj) {
-      return
-    }
+      // Try clipboardData.items first (traditional method)
+      if (clipboardItems && clipboardItems.length > 0) {
+        const imageItems = Array.from(clipboardItems).filter((item) =>
+          item.type.startsWith('image/')
+        )
 
-    const imageItems = Array.from(clipboardItems).filter((item) =>
-      item.type.startsWith('image/')
-    )
+        if (imageItems.length > 0) {
+          e.preventDefault()
 
-    if (imageItems.length > 0) {
-      e.preventDefault()
+          const files: File[] = []
+          let processedCount = 0
 
-      const files: File[] = []
-      let processedCount = 0
+          imageItems.forEach((item) => {
+            const file = item.getAsFile()
+            if (file) {
+              files.push(file)
+            }
+            processedCount++
 
-      imageItems.forEach((item) => {
-        const file = item.getAsFile()
-        if (file) {
-          files.push(file)
+            // When all items are processed, handle the valid files
+            if (processedCount === imageItems.length) {
+              if (files.length > 0) {
+                const syntheticEvent = {
+                  target: {
+                    files: files,
+                  },
+                } as unknown as React.ChangeEvent<HTMLInputElement>
+
+                handleFileChange(syntheticEvent)
+                hasProcessedImage = true
+              }
+            }
+          })
+
+          // If we found image items but couldn't get files, fall through to modern API
+          if (processedCount === imageItems.length && !hasProcessedImage) {
+            // Continue to modern clipboard API fallback below
+          } else {
+            return // Successfully processed with traditional method
+          }
         }
-        processedCount++
+      }
 
-        // When all items are processed, handle the valid files
-        if (processedCount === imageItems.length && files.length > 0) {
-          const syntheticEvent = {
-            target: {
-              files: files,
-            },
-          } as unknown as React.ChangeEvent<HTMLInputElement>
+      // Modern Clipboard API fallback (for Linux, images copied from web, etc.)
+      if (
+        navigator.clipboard &&
+        'read' in navigator.clipboard &&
+        !hasProcessedImage
+      ) {
+        try {
+          const clipboardContents = await navigator.clipboard.read()
+          const files: File[] = []
 
-          handleFileChange(syntheticEvent)
+          for (const item of clipboardContents) {
+            const imageTypes = item.types.filter((type) =>
+              type.startsWith('image/')
+            )
+
+            for (const type of imageTypes) {
+              try {
+                const blob = await item.getType(type)
+                // Convert blob to File with better naming
+                const extension = type.split('/')[1] || 'png'
+                const file = new File(
+                  [blob],
+                  `pasted-image-${Date.now()}.${extension}`,
+                  { type }
+                )
+                files.push(file)
+              } catch (error) {
+                console.error('Error reading clipboard item:', error)
+              }
+            }
+          }
+
+          if (files.length > 0) {
+            e.preventDefault()
+            const syntheticEvent = {
+              target: {
+                files: files,
+              },
+            } as unknown as React.ChangeEvent<HTMLInputElement>
+
+            handleFileChange(syntheticEvent)
+            return
+          }
+        } catch (error) {
+          console.error('Clipboard API access failed:', error)
         }
-      })
+      }
+
+      // If we reach here, no image was found - allow normal text pasting to continue
+      console.log(
+        'No image data found in clipboard, allowing normal text paste'
+      )
     }
+    // If hasMmproj is false or no images found, allow normal text pasting to continue
   }
 
   return (
@@ -506,7 +634,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
-              onPaste={hasMmproj ? handlePaste : undefined}
+              onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
@@ -524,10 +652,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
         <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
           <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1">
+            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center',
+                  'px-1 flex items-center w-full',
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -683,35 +811,51 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               </div>
             </div>
 
-            {streamingContent ? (
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={() =>
-                  stopStreaming(currentThreadId ?? streamingContent.thread_id)
-                }
-              >
-                <IconPlayerStopFilled />
-              </Button>
-            ) : (
-              <Button
-                variant={
-                  !prompt.trim() && uploadedFiles.length === 0
-                    ? null
-                    : 'default'
-                }
-                size="icon"
-                disabled={!prompt.trim() && uploadedFiles.length === 0}
-                data-test-id="send-message-button"
-                onClick={() => handleSendMesage(prompt)}
-              >
-                {streamingContent ? (
-                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                ) : (
-                  <ArrowRight className="text-primary-fg" />
+            <div className="flex items-center gap-2">
+              {selectedProvider === 'llamacpp' &&
+                hasActiveModels &&
+                tokenCounterCompact &&
+                !initialMessage &&
+                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+                  <div className="flex-1 flex justify-center">
+                    <TokenCounter
+                      messages={threadMessages || []}
+                      compact={true}
+                      uploadedFiles={uploadedFiles}
+                    />
+                  </div>
                 )}
-              </Button>
-            )}
+
+              {streamingContent ? (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() =>
+                    stopStreaming(currentThreadId ?? streamingContent.thread_id)
+                  }
+                >
+                  <IconPlayerStopFilled />
+                </Button>
+              ) : (
+                <Button
+                  variant={
+                    !prompt.trim() && uploadedFiles.length === 0
+                      ? null
+                      : 'default'
+                  }
+                  size="icon"
+                  disabled={!prompt.trim() && uploadedFiles.length === 0}
+                  data-test-id="send-message-button"
+                  onClick={() => handleSendMesage(prompt)}
+                >
+                  {streamingContent ? (
+                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <ArrowRight className="text-primary-fg" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -733,6 +877,20 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
           </div>
         </div>
       )}
+
+      {selectedProvider === 'llamacpp' &&
+        hasActiveModels &&
+        !tokenCounterCompact &&
+        !initialMessage &&
+        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+          <div className="flex-1 w-full flex justify-start px-2">
+            <TokenCounter
+              messages={threadMessages || []}
+              compact={false}
+              uploadedFiles={uploadedFiles}
+            />
+          </div>
+        )}
     </div>
   )
 }

@@ -53,6 +53,9 @@ jobs:
       - name: Install dependencies
         working-directory: docs
         run: yarn install
+      - name: Clean output directory
+        working-directory: docs
+        run: rm -rf out/* .next/*
       - name: Build website
         working-directory: docs
         run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
