@@ -3,39 +3,23 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
+    sync::Arc,
 };
 use tar::Archive;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    App, Emitter, Manager,
+    App, Emitter, Manager, Wry,
 };
-use tauri_plugin_store::StoreExt;
-// use tokio::sync::Mutex;
-// use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
-//                                     // MCP
+use tauri_plugin_store::Store;
 
-// MCP
+use crate::core::mcp::helpers::add_server_config;
+
 use super::{
-    app::commands::get_jan_data_folder_path, extensions::commands::get_jan_extensions_path,
-    mcp::helpers::run_mcp_commands, state::AppState,
+    extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
 };
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
-    let mut store_path = get_jan_data_folder_path(app.clone());
-    store_path.push("store.json");
-    let store = app.store(store_path).expect("Store not initialized");
-    let stored_version = store
-        .get("version")
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_default();
-
-    let app_version = app
-        .config()
-        .version
-        .clone()
-        .unwrap_or_else(|| "".to_string());
-
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -50,13 +34,8 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
-    log::info!(
-        "Installing extensions. Clean up: {}, Stored version: {}, App version: {}",
-        clean_up,
-        stored_version,
-        app_version
-    );
-    if !clean_up && stored_version == app_version && extensions_path.exists() {
+    log::info!("Installing extensions. Clean up: {}", clean_up,);
+    if !clean_up && extensions_path.exists() {
         return Ok(());
     }
 
@@ -160,10 +139,36 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     )
     .map_err(|e| e.to_string())?;
 
-    // Store the new app version
-    store.set("version", serde_json::json!(app_version));
-    store.save().expect("Failed to save store");
+    Ok(())
+}
 
+// Migrate MCP servers configuration
+pub fn migrate_mcp_servers(
+    app_handle: tauri::AppHandle,
+    store: Arc<Store<Wry>>,
+) -> Result<(), String> {
+    let mcp_version = store
+        .get("mcp_version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_else(|| 0);
+    if mcp_version < 1 {
+        log::info!("Migrating MCP schema version 1");
+        let result = add_server_config(
+            app_handle,
+            "exa".to_string(),
+            serde_json::json!({
+                  "command": "npx",
+                  "args": ["-y", "exa-mcp-server"],
+                  "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
+                  "active": false
+            }),
+        );
+        if let Err(e) = result {
+            log::error!("Failed to add server config: {}", e);
+        }
+    }
+    store.set("mcp_version", 1);
+    store.save().expect("Failed to save store");
     Ok(())
 }
 

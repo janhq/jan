@@ -934,3 +934,36 @@ pub async fn should_restart_server(
         }
     }
 }
+
+// Add a new server configuration to the MCP config file
+pub fn add_server_config(
+    app_handle: tauri::AppHandle,
+    server_key: String,
+    server_value: Value,
+) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+
+    let mut config: Value = serde_json::from_str(
+        &std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config file: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to parse config: {e}"))?;
+
+    config
+        .as_object_mut()
+        .ok_or("Config root is not an object")?
+        .entry("mcpServers")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or("mcpServers is not an object")?
+        .insert(server_key, server_value);
+
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize config: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to write config file: {e}"))?;
+
+    Ok(())
+}
