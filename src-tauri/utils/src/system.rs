@@ -30,12 +30,12 @@ pub fn can_override_uvx(uv_path: String) -> bool {
     if !std::path::Path::new(uv_path.as_str()).exists() {
         #[cfg(feature = "logging")]
         log::warn!(
-            "bun binary not found at '{}', default npx binary will be used",
-            bun_path
+            "uv binary not found at '{}', default uvx binary will be used",
+            uv_path
         );
         return false;
     }
-    true // by default, we can override uv with bun binary
+    true // by default, we can override uvx with uv binary
 }
 
 /// Setup library paths for different operating systems
