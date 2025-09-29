@@ -130,7 +130,6 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
       if (is404Error) {
         // Trigger a navigation event to redirect to home
         // We'll use a custom event that the web app can listen to
-        console.log("detail:", { threadId, error: errorMessage })
         window.dispatchEvent(new CustomEvent(CONVERSATION_NOT_FOUND_EVENT, {
           detail: { threadId, error: errorMessage }
         }))
