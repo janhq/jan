@@ -210,7 +210,7 @@ function ThreadDetail() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <div className="flex-1">
+          <div>
             {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
               <DropdownAssistant />
             )}
@@ -218,7 +218,7 @@ function ThreadDetail() {
           <div className="flex-1 flex justify-center">
             {threadId === TEMPORARY_CHAT_ID && <TemporaryChatIndicator t={t} />}
           </div>
-          <div className="flex-1"></div>
+          <div></div>
         </div>
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)]">
