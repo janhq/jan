@@ -2,7 +2,7 @@
   "bundle": {
     "targets": ["deb", "appimage"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
-    "externalBin": ["resources/bin/uv"],
+    "externalBin": ["resources/bin/uv", "resources/bin/bun"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,
@@ -10,7 +10,8 @@
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun"
+          "usr/bin/bun": "resources/bin/bun",
+          "usr/bin/uv": "resources/bin/uv"
         }
       }
     }
