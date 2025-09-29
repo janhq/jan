@@ -1,5 +1,8 @@
 use crate::types::{GpuInfo, Vendor};
-use ash::{vk, Entry};
+use vulkano::device::physical::PhysicalDeviceType;
+use vulkano::instance::{Instance, InstanceCreateInfo};
+use vulkano::memory::MemoryHeapFlags;
+use vulkano::VulkanLibrary;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct VulkanInfo {
@@ -35,8 +38,8 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
-    match get_vulkan_gpus_internal(lib_path) {
+pub fn get_vulkan_gpus() -> Vec<GpuInfo> {
+    match get_vulkan_gpus_internal() {
         Ok(gpus) => gpus,
         Err(e) => {
             log::error!("Failed to get Vulkan GPUs: {:?}", e);
@@ -45,85 +48,58 @@ pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
     }
 }
 
-fn parse_c_string(buf: &[i8]) -> String {
-    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }
-        .to_str()
-        .unwrap_or_default()
-        .to_string()
-}
+fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
+    let library = VulkanLibrary::new()?;
 
-fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
-    let entry = if lib_path.is_empty() {
-        unsafe { Entry::load()? }
-    } else {
-        unsafe { Entry::load_from(lib_path)? }
-    };
-    let app_info = vk::ApplicationInfo {
-        api_version: vk::make_api_version(0, 1, 1, 0),
-        ..Default::default()
-    };
-    let create_info = vk::InstanceCreateInfo {
-        p_application_info: &app_info,
-        ..Default::default()
-    };
-    let instance = unsafe { entry.create_instance(&create_info, None)? };
+    let instance = Instance::new(
+        library,
+        InstanceCreateInfo {
+            application_name: Some("Jan GPU Detection".into()),
+            application_version: vulkano::Version::V1_1,
+            ..Default::default()
+        },
+    )?;
 
     let mut device_info_list = vec![];
 
-    for (i, device) in unsafe { instance.enumerate_physical_devices()? }
-        .iter()
-        .enumerate()
-    {
-        // create a chain of properties struct for VkPhysicalDeviceProperties2(3)
-        // https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceProperties2.html
-        // props2 -> driver_props -> id_props
-        let mut id_props = vk::PhysicalDeviceIDProperties::default();
-        let mut driver_props = vk::PhysicalDeviceDriverProperties {
-            p_next: &mut id_props as *mut _ as *mut std::ffi::c_void,
-            ..Default::default()
-        };
-        let mut props2 = vk::PhysicalDeviceProperties2 {
-            p_next: &mut driver_props as *mut _ as *mut std::ffi::c_void,
-            ..Default::default()
-        };
-        unsafe {
-            instance.get_physical_device_properties2(*device, &mut props2);
-        }
+    for (i, physical_device) in instance.enumerate_physical_devices()?.enumerate() {
+        let properties = physical_device.properties();
 
-        let props = props2.properties;
-        if props.device_type == vk::PhysicalDeviceType::CPU {
+        if properties.device_type == PhysicalDeviceType::Cpu {
             continue;
         }
 
+        let memory_properties = physical_device.memory_properties();
+        let total_memory: u64 = memory_properties
+            .memory_heaps
+            .iter()
+            .filter(|heap| heap.flags.intersects(MemoryHeapFlags::DEVICE_LOCAL))
+            .map(|heap| heap.size / (1024 * 1024))
+            .sum();
+
+        let device_uuid = physical_device.properties().device_uuid.unwrap_or([0; 16]);
+        let driver_version = format!("{}", properties.driver_version);
+
         let device_info = GpuInfo {
-            name: parse_c_string(&props.device_name),
-            total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
-                .memory_heaps
-                .iter()
-                .filter(|heap| heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL))
-                .map(|heap| heap.size / (1024 * 1024))
-                .sum(),
-            vendor: Vendor::from_vendor_id(props.vendor_id),
-            uuid: parse_uuid(&id_props.device_uuid),
-            driver_version: parse_c_string(&driver_props.driver_info),
+            name: properties.device_name.clone(),
+            total_memory,
+            vendor: Vendor::from_vendor_id(properties.vendor_id),
+            uuid: parse_uuid(&device_uuid),
+            driver_version,
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 index: i as u64,
-                device_type: format!("{:?}", props.device_type),
+                device_type: format!("{:?}", properties.device_type),
                 api_version: format!(
                     "{}.{}.{}",
-                    vk::api_version_major(props.api_version),
-                    vk::api_version_minor(props.api_version),
-                    vk::api_version_patch(props.api_version)
+                    properties.api_version.major,
+                    properties.api_version.minor,
+                    properties.api_version.patch
                 ),
-                device_id: props.device_id,
+                device_id: properties.device_id,
             }),
         };
         device_info_list.push(device_info);
-    }
-
-    unsafe {
-        instance.destroy_instance(None);
     }
 
     Ok(device_info_list)
