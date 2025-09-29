@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { cn } from '@/lib/utils'
+import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelSettingProps = {
@@ -261,7 +261,7 @@ export function ModelSetting({
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
-            {t('common:modelSettings.title', { modelId: model.id })}
+            {t('common:modelSettings.title', { modelId: getModelDisplayName(model) })}
           </SheetTitle>
           <SheetDescription>
             {t('common:modelSettings.description')}
