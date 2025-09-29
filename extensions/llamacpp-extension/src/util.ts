@@ -1,3 +1,23 @@
+// File path utilities
+export function basenameNoExt(filePath: string): string {
+  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
+  
+  // handle VALID extensions first
+  for (const ext of VALID_EXTENSIONS) {
+    if (filePath.toLowerCase().endsWith(ext)) {
+      return filePath.slice(0, -ext.length);
+    }
+  }
+  
+  // fallback: remove only the last extension
+  const lastDotIndex = filePath.lastIndexOf('.');
+  if (lastDotIndex > 0) {
+    return filePath.slice(0, lastDotIndex);
+  }
+  
+  return filePath;
+}
+
 // Zustand proxy state structure
 interface ProxyState {
   proxyEnabled: boolean
