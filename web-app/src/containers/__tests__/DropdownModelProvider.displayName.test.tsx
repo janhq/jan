@@ -14,13 +14,23 @@ type ModelProvider = {
     displayName?: string
     capabilities: string[]
   }>
-  settings: any[]
+  settings: unknown[]
 }
 
 type Model = {
   id: string
   displayName?: string
   capabilities?: string[]
+}
+
+type MockHookReturn = {
+  providers: ModelProvider[]
+  selectedProvider: string
+  selectedModel: Model
+  getProviderByName: (name: string) => ModelProvider | undefined
+  selectModelProvider: () => void
+  getModelBy: (id: string) => Model | undefined
+  updateProvider: () => void
 }
 
 // Mock the dependencies
@@ -142,10 +152,10 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       ),
       selectModelProvider: vi.fn(),
       getModelBy: vi.fn((id: string) =>
-        mockProviders[0].models.find((m: any) => m.id === id)
+        mockProviders[0].models.find((m: Model) => m.id === id)
       ),
       updateProvider: vi.fn(),
-    } as any)
+    } as MockHookReturn)
   })
 
   it('should display custom model name in the trigger button', () => {
@@ -167,10 +177,10 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       ),
       selectModelProvider: vi.fn(),
       getModelBy: vi.fn((id: string) =>
-        mockProviders[0].models.find((m: any) => m.id === id)
+        mockProviders[0].models.find((m: Model) => m.id === id)
       ),
       updateProvider: vi.fn(),
-    } as any)
+    } as MockHookReturn)
 
     render(<DropdownModelProvider />)
 
@@ -219,10 +229,10 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       ),
       selectModelProvider: mockSelectModelProvider,
       getModelBy: vi.fn((id: string) =>
-        mockProviders[0].models.find((m: any) => m.id === id)
+        mockProviders[0].models.find((m: Model) => m.id === id)
       ),
       updateProvider: vi.fn(),
-    } as any)
+    } as MockHookReturn)
 
     render(<DropdownModelProvider />)
 
@@ -253,10 +263,10 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       ),
       selectModelProvider: vi.fn(),
       getModelBy: vi.fn((id: string) =>
-        mockProviders[0].models.find((m: any) => m.id === id)
+        mockProviders[0].models.find((m: Model) => m.id === id)
       ),
       updateProvider: vi.fn(),
-    } as any)
+    } as MockHookReturn)
 
     rerender(<DropdownModelProvider />)
     // Check trigger now shows Short Name

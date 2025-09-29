@@ -23,7 +23,6 @@ import {
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useServiceHub } from '@/hooks/useServiceHub'
 import { toast } from 'sonner'
 
 // No need to define our own interface, we'll use the existing Model type
@@ -37,7 +36,7 @@ export const DialogEditModel = ({
   modelId,
 }: DialogEditModelProps) => {
   const { t } = useTranslation()
-  const { updateProvider, setProviders } = useModelProvider()
+  const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [displayName, setDisplayName] = useState<string>('')
   const [originalDisplayName, setOriginalDisplayName] = useState<string>('')
@@ -46,7 +45,6 @@ export const DialogEditModel = ({
   >({})
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const serviceHub = useServiceHub()
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     completion: false,
     vision: false,
@@ -82,8 +80,7 @@ export const DialogEditModel = ({
 
   // Get the currently selected model
   const selectedModel = provider.models.find(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (m: any) => m.id === selectedModelId
+    (m: Model) => m.id === selectedModelId
   )
 
   // Initialize capabilities and display name from selected model
@@ -99,7 +96,7 @@ export const DialogEditModel = ({
         reasoning: modelCapabilities.includes('reasoning'),
       })
       // Use existing displayName if available, otherwise fall back to model ID
-      const displayNameValue = (selectedModel as any).displayName || selectedModel.id
+      const displayNameValue = (selectedModel as Model & { displayName?: string }).displayName || selectedModel.id
       setDisplayName(displayNameValue)
       setOriginalDisplayName(displayNameValue)
 
@@ -147,7 +144,7 @@ export const DialogEditModel = ({
       // Update display name if changed
       if (displayName !== originalDisplayName) {
         // Update the model in the provider models array with displayName
-        updatedModels = updatedModels.map((m: any) => {
+        updatedModels = updatedModels.map((m: Model) => {
           if (m.id === selectedModelId) {
             return {
               ...m,
@@ -168,7 +165,7 @@ export const DialogEditModel = ({
           .map(([capName]) => capName)
 
         // Find and update the model in the provider
-        updatedModels = updatedModels.map((m: any) => {
+        updatedModels = updatedModels.map((m: Model) => {
           if (m.id === selectedModelId) {
             return {
               ...m,
