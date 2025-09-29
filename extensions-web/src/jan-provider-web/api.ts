@@ -5,6 +5,7 @@
 
 import { getSharedAuthService, JanAuthService } from '../shared'
 import { JanModel, janProviderStore } from './store'
+import { ApiError } from '../shared/types/errors'
 
 // JAN_API_BASE is defined in vite.config.ts
 
@@ -137,7 +138,8 @@ export class JanApiClient {
       
       return models
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch models'
+      const errorMessage = error instanceof ApiError ? error.message :
+                          error instanceof Error ? error.message : 'Failed to fetch models'
       janProviderStore.setError(errorMessage)
       janProviderStore.setLoadingModels(false)
       throw error
@@ -160,7 +162,8 @@ export class JanApiClient {
         }
       )
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create chat completion'
+      const errorMessage = error instanceof ApiError ? error.message :
+                          error instanceof Error ? error.message : 'Failed to create chat completion'
       janProviderStore.setError(errorMessage)
       throw error
     }
@@ -240,7 +243,8 @@ export class JanApiClient {
         reader.releaseLock()
       }
     } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown error occurred')
+      const err = error instanceof ApiError ? error :
+                 error instanceof Error ? error : new Error('Unknown error occurred')
       janProviderStore.setError(err.message)
       onError?.(err)
       throw err
@@ -254,7 +258,8 @@ export class JanApiClient {
       await this.getModels()
       console.log('Jan API client initialized successfully')
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to initialize API client'
+      const errorMessage = error instanceof ApiError ? error.message :
+                          error instanceof Error ? error.message : 'Failed to initialize API client'
       janProviderStore.setError(errorMessage)
       throw error
     } finally {
