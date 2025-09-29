@@ -34,7 +34,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
-    log::info!("Installing extensions. Clean up: {}", clean_up,);
+    log::info!("Installing extensions. Clean up: {}", clean_up);
     if !clean_up && extensions_path.exists() {
         return Ok(());
     }
