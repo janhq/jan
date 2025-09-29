@@ -104,6 +104,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 ...model,
                 settings: settings,
                 capabilities: existingModel?.capabilities || model.capabilities,
+                displayName: existingModel?.displayName || model.displayName,
               }
             })
 

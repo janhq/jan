@@ -39,8 +39,8 @@ export const DialogEditModel = ({
   const { t } = useTranslation()
   const { updateProvider, setProviders } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
-  const [modelName, setModelName] = useState<string>('')
-  const [originalModelName, setOriginalModelName] = useState<string>('')
+  const [displayName, setDisplayName] = useState<string>('')
+  const [originalDisplayName, setOriginalDisplayName] = useState<string>('')
   const [originalCapabilities, setOriginalCapabilities] = useState<
     Record<string, boolean>
   >({})
@@ -86,7 +86,7 @@ export const DialogEditModel = ({
     (m: any) => m.id === selectedModelId
   )
 
-  // Initialize capabilities and model name from selected model
+  // Initialize capabilities and display name from selected model
   useEffect(() => {
     if (selectedModel) {
       const modelCapabilities = selectedModel.capabilities || []
@@ -98,9 +98,10 @@ export const DialogEditModel = ({
         web_search: modelCapabilities.includes('web_search'),
         reasoning: modelCapabilities.includes('reasoning'),
       })
-      const modelNameValue = selectedModel.id
-      setModelName(modelNameValue)
-      setOriginalModelName(modelNameValue)
+      // Use existing displayName if available, otherwise fall back to model ID
+      const displayNameValue = (selectedModel as any).displayName || selectedModel.id
+      setDisplayName(displayNameValue)
+      setOriginalDisplayName(displayNameValue)
 
       const originalCaps = {
         completion: modelCapabilities.includes('completion'),
@@ -122,14 +123,14 @@ export const DialogEditModel = ({
     }))
   }
 
-  // Handle model name change
-  const handleModelNameChange = (newName: string) => {
-    setModelName(newName)
+  // Handle display name change
+  const handleDisplayNameChange = (newName: string) => {
+    setDisplayName(newName)
   }
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
-    const nameChanged = modelName !== originalModelName
+    const nameChanged = displayName !== originalDisplayName
     const capabilitiesChanged =
       JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
     return nameChanged || capabilitiesChanged
@@ -141,13 +142,21 @@ export const DialogEditModel = ({
 
     setIsLoading(true)
     try {
-      // Update model name if changed
-      if (modelName !== originalModelName) {
-        await serviceHub
-          .models()
-          .updateModel(selectedModel.id, { id: modelName })
-        setOriginalModelName(modelName)
-        await serviceHub.providers().getProviders().then(setProviders)
+      let updatedModels = provider.models
+
+      // Update display name if changed
+      if (displayName !== originalDisplayName) {
+        // Update the model in the provider models array with displayName
+        updatedModels = updatedModels.map((m: any) => {
+          if (m.id === selectedModelId) {
+            return {
+              ...m,
+              displayName: displayName,
+            }
+          }
+          return m
+        })
+        setOriginalDisplayName(displayName)
       }
 
       // Update capabilities if changed
@@ -159,8 +168,7 @@ export const DialogEditModel = ({
           .map(([capName]) => capName)
 
         // Find and update the model in the provider
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const updatedModels = provider.models.map((m: any) => {
+        updatedModels = updatedModels.map((m: any) => {
           if (m.id === selectedModelId) {
             return {
               ...m,
@@ -172,14 +180,14 @@ export const DialogEditModel = ({
           return m
         })
 
-        // Update the provider with the updated models
-        updateProvider(provider.provider, {
-          ...provider,
-          models: updatedModels,
-        })
-
         setOriginalCapabilities(capabilities)
       }
+
+      // Update the provider with the updated models
+      updateProvider(provider.provider, {
+        ...provider,
+        models: updatedModels,
+      })
 
       // Show success toast and close dialog
       toast.success('Model updated successfully')
@@ -213,22 +221,25 @@ export const DialogEditModel = ({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Model Name Section */}
+        {/* Model Display Name Section */}
         <div className="py-1">
           <label
-            htmlFor="model-name"
+            htmlFor="display-name"
             className="text-sm font-medium mb-3 block"
           >
-            Model Name
+            Display Name
           </label>
           <Input
-            id="model-name"
-            value={modelName}
-            onChange={(e) => handleModelNameChange(e.target.value)}
-            placeholder="Enter model name"
+            id="display-name"
+            value={displayName}
+            onChange={(e) => handleDisplayNameChange(e.target.value)}
+            placeholder="Enter display name"
             className="w-full"
             disabled={isLoading}
           />
+          <p className="text-xs text-main-view-fg/60 mt-1">
+            This is the name that will be shown in the interface. The original model file remains unchanged.
+          </p>
         </div>
 
         {/* Warning Banner */}
