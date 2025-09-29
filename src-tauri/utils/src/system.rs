@@ -25,7 +25,7 @@ pub fn can_override_npx(bun_path: String) -> bool {
     true // by default, we can override npx with bun binary
 }
 
-// Check if uv_path exists
+/// Checks if uv_path exists and determines if uvx can be overridden with the uv binary
 pub fn can_override_uvx(uv_path: String) -> bool {
     if !std::path::Path::new(uv_path.as_str()).exists() {
         #[cfg(feature = "logging")]
