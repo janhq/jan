@@ -133,7 +133,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaXTwitter className="size-5" />
                 </a>
                 <a
-                  href="http://linkedin.com/company/opensuperintelligence"
+                  href="https://linkedin.com/company/opensuperintelligence"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-lg flex items-center justify-center"
