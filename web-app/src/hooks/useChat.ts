@@ -120,6 +120,11 @@ export const useChat = () => {
         setMessages(TEMPORARY_CHAT_ID, [])
       }
 
+      // Set flag for temporary chat navigation
+      if (currentThread.id === TEMPORARY_CHAT_ID) {
+        sessionStorage.setItem('temp-chat-nav', 'true')
+      }
+
       router.navigate({
         to: route.threadsDetail,
         params: { threadId: currentThread.id },

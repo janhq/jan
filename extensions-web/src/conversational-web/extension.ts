@@ -12,6 +12,14 @@ import {
 import { RemoteApi } from './api'
 import { getDefaultAssistant, ObjectParser, combineConversationItemsToMessages } from './utils'
 
+const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
+
+interface ApiError extends Error {
+  message: string
+  status?: number
+  statusText?: string
+}
+
 export default class ConversationalExtensionWeb extends ConversationalExtension {
   private remoteApi: RemoteApi | undefined
 
@@ -111,6 +119,23 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
       return messages
     } catch (error) {
       console.error('Failed to list messages:', error)
+      // Check if it's a 404 error (conversation not found)
+      // The error message from the API includes the status code
+      const apiError = error as ApiError
+      const errorMessage = apiError?.message || ''
+      const is404Error = errorMessage.includes('404') ||
+                         errorMessage.includes('Not Found') ||
+                         errorMessage.includes('not found')
+
+      if (is404Error) {
+        // Trigger a navigation event to redirect to home
+        // We'll use a custom event that the web app can listen to
+        console.log("detail:", { threadId, error: errorMessage })
+        window.dispatchEvent(new CustomEvent(CONVERSATION_NOT_FOUND_EVENT, {
+          detail: { threadId, error: errorMessage }
+        }))
+      }
+
       return []
     }
   }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -22,11 +24,31 @@ import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
-import { useNavigate } from '@tanstack/react-router'
 import { useThreadScrolling } from '@/hooks/useThreadScrolling'
+
+const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  beforeLoad: ({ params }) => {
+    // Check if this is the temporary chat being accessed directly
+    if (params.threadId === TEMPORARY_CHAT_ID) {
+      // Check if we have the navigation flag in sessionStorage
+      const hasNavigationFlag = sessionStorage.getItem('temp-chat-nav')
+
+      if (!hasNavigationFlag) {
+        // Direct access - redirect to home with query parameter
+        throw redirect({
+          to: '/',
+          search: { [TEMPORARY_CHAT_QUERY_ID]: true },
+          replace: true,
+        })
+      }
+
+      // Clear the flag immediately after checking
+      sessionStorage.removeItem('temp-chat-nav')
+    }
+  },
   component: ThreadDetail,
 })
 
@@ -34,6 +56,7 @@ function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
@@ -41,8 +64,6 @@ function ThreadDetail() {
 
   const chatWidth = useAppearance((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
-
-  const isTemporaryChat = threadId === TEMPORARY_CHAT_ID
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -54,31 +75,32 @@ function ThreadDetail() {
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // // Handle route errors and redirects on page reload/fresh load
-  // useEffect(() => {
-  //   // Only handle redirects on fresh page loads (not on navigation)
-  //   const navigationEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
-  //   const isPageReload = navigationEntry?.type === 'reload' ||
-  //                       !document.referrer ||
-  //                       document.referrer === window.location.href
 
-  //   if (!isPageReload) return
-
-  //   // If trying to access temporary chat directly via URL, redirect to root with query param
-  //   if (isTemporaryChat) {
-  //     navigate({ to: '/', search: { [TEMPORARY_CHAT_QUERY_ID]: true } })
-  //     return
-  //   }
-
-  //   // If thread doesn't exist after threads are loaded, redirect to home
-  //   const threadsLoaded = Object.keys(useThreads.getState().threads).length > 0
-  //   if (!thread && threadsLoaded) {
-  //     navigate({ to: '/' })
-  //     return
-  //   }
-  // }, [threadId, isTemporaryChat, thread, navigate])
   // Get padding height for ChatGPT-style message positioning
   const { paddingHeight } = useThreadScrolling(threadId, scrollContainerRef)
+
+  // Listen for conversation not found events
+  useEffect(() => {
+    const handleConversationNotFound = (event: CustomEvent) => {
+      const { threadId: notFoundThreadId } = event.detail
+      if (notFoundThreadId === threadId) {
+        // Skip error handling for temporary chat - it's expected to not exist on server
+        if (threadId === TEMPORARY_CHAT_ID) {
+          return
+        }
+
+        toast.error(t('common:conversationNotAvailable'), {
+          description: t('common:conversationNotAvailableDescription')
+        })
+        navigate({ to: '/', replace: true })
+      }
+    }
+
+    window.addEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    return () => {
+      window.removeEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    }
+  }, [threadId, navigate])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
