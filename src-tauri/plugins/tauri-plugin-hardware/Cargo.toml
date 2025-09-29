@@ -11,7 +11,7 @@ exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
 links = "tauri-plugin-hardware"
 
 [dependencies]
-ash = "0.38.0"
+vulkano = "0.34"
 libc = "0.2"
 log = "0.4"
 nvml-wrapper = "0.10.0"
