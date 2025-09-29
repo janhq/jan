@@ -24,6 +24,13 @@ use super::{
 };
 
 pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
+    // Skip extension installation on mobile platforms
+    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        return Ok(());
+    }
+
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()

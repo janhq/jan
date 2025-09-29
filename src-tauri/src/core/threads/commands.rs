@@ -3,6 +3,7 @@ use std::io::Write;
 use tauri::Runtime;
 use uuid::Uuid;
 
+use super::db;
 use super::helpers::{
     get_lock_for_thread, read_messages_from_file, update_thread_metadata, write_messages_to_file,
 };
@@ -14,12 +15,18 @@ use super::{
     },
 };
 
-/// Lists all threads by reading their metadata from the threads directory.
+/// Lists all threads by reading their metadata from the threads directory or database.
 /// Returns a vector of thread metadata as JSON values.
 #[tauri::command]
 pub async fn list_threads<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    if db::should_use_sqlite() {
+        // Use SQLite on mobile platforms
+        return db::db_list_threads(app_handle).await;
+    }
+
+    // Use file-based storage on desktop
     ensure_data_dirs(app_handle.clone())?;
     let data_dir = get_data_dir(app_handle.clone());
     let mut threads = Vec::new();
@@ -56,6 +63,11 @@ pub async fn create_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     mut thread: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_create_thread(app_handle, thread).await;
+    }
+
+    // Use file-based storage on desktop
     ensure_data_dirs(app_handle.clone())?;
     let uuid = Uuid::new_v4().to_string();
     thread["id"] = serde_json::Value::String(uuid.clone());
@@ -76,6 +88,11 @@ pub async fn modify_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread: serde_json::Value,
 ) -> Result<(), String> {
+    if db::should_use_sqlite() {
+        return db::db_modify_thread(app_handle, thread).await;
+    }
+
+    // Use file-based storage on desktop
     let thread_id = thread
         .get("id")
         .and_then(|id| id.as_str())
@@ -96,6 +113,11 @@ pub async fn delete_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread_id: String,
 ) -> Result<(), String> {
+    if db::should_use_sqlite() {
+        return db::db_delete_thread(app_handle, &thread_id).await;
+    }
+
+    // Use file-based storage on desktop
     let thread_dir = get_thread_dir(app_handle.clone(), &thread_id);
     if thread_dir.exists() {
         let _ = fs::remove_dir_all(thread_dir);
@@ -110,6 +132,11 @@ pub async fn list_messages<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
+    if db::should_use_sqlite() {
+        return db::db_list_messages(app_handle, &thread_id).await;
+    }
+
+    // Use file-based storage on desktop
     read_messages_from_file(app_handle, &thread_id)
 }
 
@@ -120,6 +147,11 @@ pub async fn create_message<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     mut message: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_create_message(app_handle, message).await;
+    }
+
+    // Use file-based storage on desktop
     let thread_id = {
         let id = message
             .get("thread_id")
@@ -166,6 +198,11 @@ pub async fn modify_message<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     message: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_modify_message(app_handle, message).await;
+    }
+
+    // Use file-based storage on desktop
     let thread_id = message
         .get("thread_id")
         .and_then(|v| v.as_str())
@@ -204,6 +241,11 @@ pub async fn delete_message<R: Runtime>(
     thread_id: String,
     message_id: String,
 ) -> Result<(), String> {
+    if db::should_use_sqlite() {
+        return db::db_delete_message(app_handle, &thread_id, &message_id).await;
+    }
+
+    // Use file-based storage on desktop
     // Acquire per-thread lock before modifying
     {
         let lock = get_lock_for_thread(&thread_id).await;
@@ -227,6 +269,11 @@ pub async fn get_thread_assistant<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread_id: String,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_get_thread_assistant(app_handle, &thread_id).await;
+    }
+
+    // Use file-based storage on desktop
     let path = get_thread_metadata_path(app_handle, &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());
@@ -252,6 +299,11 @@ pub async fn create_thread_assistant<R: Runtime>(
     thread_id: String,
     assistant: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_create_thread_assistant(app_handle, &thread_id, assistant).await;
+    }
+
+    // Use file-based storage on desktop
     let path = get_thread_metadata_path(app_handle.clone(), &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());
@@ -277,6 +329,11 @@ pub async fn modify_thread_assistant<R: Runtime>(
     thread_id: String,
     assistant: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if db::should_use_sqlite() {
+        return db::db_modify_thread_assistant(app_handle, &thread_id, assistant).await;
+    }
+
+    // Use file-based storage on desktop
     let path = get_thread_metadata_path(app_handle.clone(), &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());

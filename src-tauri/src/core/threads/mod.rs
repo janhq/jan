@@ -12,6 +12,7 @@
 
 pub mod commands;
 mod constants;
+pub mod db;
 pub mod helpers;
 pub mod utils;
 
