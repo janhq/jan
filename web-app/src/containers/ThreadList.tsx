@@ -185,7 +185,10 @@ const SortableItem = memo(
             <DropdownMenuTrigger asChild>
               <IconDots
                 size={14}
-                className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                className={cn(
+                  'text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0',
+                  variant === 'project' && 'text-main-view-fg/60'
+                )}
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
