@@ -378,8 +378,8 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    explore_models_url: 'https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction',
+    base_url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    explore_models_url: 'https://www.alibabacloud.com/help/en/model-studio/models',
     provider: 'qwen',
     settings: [
       {
@@ -399,11 +399,11 @@ export const predefinedProviders = [
         key: 'base-url',
         title: 'Base URL',
         description:
-          'The base OpenAI-compatible endpoint to use. See the [Qwen documentation](https://help.aliyun.com/zh/dashscope/developer-reference/openai-compatible-api) for more information.',
+          'The base OpenAI-compatible endpoint to use. See the [Qwen documentation](https://www.alibabacloud.com/help/en/model-studio/use-qwen-by-calling-api) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-          value: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+          placeholder: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+          value: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
         },
       },
     ],
