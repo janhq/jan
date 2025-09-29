@@ -936,12 +936,23 @@ pub async fn should_restart_server(
 }
 
 // Add a new server configuration to the MCP config file
-pub fn add_server_config(
-    app_handle: tauri::AppHandle,
+pub fn add_server_config<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
     server_key: String,
     server_value: Value,
 ) -> Result<(), String> {
-    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    add_server_config_with_path(app_handle, server_key, server_value, None)
+}
+
+// Add a new server configuration to the MCP config file with custom path support
+pub fn add_server_config_with_path<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    server_key: String,
+    server_value: Value,
+    config_filename: Option<&str>,
+) -> Result<(), String> {
+    let config_filename = config_filename.unwrap_or("mcp_config.json");
+    let config_path = get_jan_data_folder_path(app_handle).join(config_filename);
 
     let mut config: Value = serde_json::from_str(
         &std::fs::read_to_string(&config_path)
