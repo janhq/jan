@@ -134,25 +134,22 @@ function ProjectContent() {
                       className="bg-main-view-fg/3 py-2 px-4 rounded-lg"
                       key={folder.id}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-start gap-3 flex-1">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
                           <div className="shrink-0 w-8 h-8 relative flex items-center justify-center bg-main-view-fg/4 rounded-md">
                             <IconFolder
                               size={16}
                               className="text-main-view-fg/50"
                             />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-base font-medium text-main-view-fg/80 line-clamp-1">
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3
+                                className="text-base font-medium text-main-view-fg/80 truncate flex-1 min-w-0"
+                                title={folder.name}
+                              >
                                 {folder.name}
                               </h3>
-                              <span className="text-xs bg-main-view-fg/10 text-main-view-fg/60 px-2 py-0.5 rounded-full">
-                                {projectThreads.length}{' '}
-                                {projectThreads.length === 1
-                                  ? t('projects.thread')
-                                  : t('projects.threads')}
-                              </span>
                             </div>
                             <p className="text-main-view-fg/50 text-xs line-clamp-2 mt-0.5">
                               {t('projects.updated')}{' '}
@@ -161,6 +158,12 @@ function ProjectContent() {
                           </div>
                         </div>
                         <div className="flex items-center">
+                          <span className="text-xs mr-4 bg-main-view-fg/10 text-main-view-fg/60 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
+                            {projectThreads.length}{' '}
+                            {projectThreads.length === 1
+                              ? t('projects.thread')
+                              : t('projects.threads')}
+                          </span>
                           {projectThreads.length > 0 && (
                             <button
                               className="size-8 cursor-pointer flex items-center justify-center rounded-md hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out mr-1"

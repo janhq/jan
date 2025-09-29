@@ -51,6 +51,7 @@ pub fn run() {
             core::filesystem::commands::readdir_sync,
             core::filesystem::commands::read_file_sync,
             core::filesystem::commands::rm,
+            core::filesystem::commands::mv,
             core::filesystem::commands::file_stat,
             core::filesystem::commands::write_file_sync,
             core::filesystem::commands::write_yaml,
@@ -141,8 +142,7 @@ pub fn run() {
             #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                // Register the deep-link scheme programmatically
-                app.deep_link().register("jan")?;
+                app.deep_link().register_all()?;
             }
             setup_mcp(app);
             Ok(())

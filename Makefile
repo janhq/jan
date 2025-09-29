@@ -60,7 +60,6 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	yarn download:lib
 	yarn dev
 
 # Web application targets
@@ -75,7 +74,7 @@ build-web-app: install-web-app
 	yarn build:core
 	yarn build:web-app
 
-serve-web-app: 
+serve-web-app:
 	yarn serve:web-app
 
 build-serve-web-app: build-web-app
@@ -117,7 +116,6 @@ lint: install-and-build
 # Testing
 test: lint
 	yarn download:bin
-	yarn download:lib
 ifeq ($(OS),Windows_NT)
 	yarn download:windows-installer
 endif

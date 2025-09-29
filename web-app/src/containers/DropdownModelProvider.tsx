@@ -6,7 +6,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import { IconSettings, IconX } from '@tabler/icons-react'
@@ -240,7 +240,7 @@ const DropdownModelProvider = ({
   // Update display model when selection changes
   useEffect(() => {
     if (selectedProvider && selectedModel) {
-      setDisplayModel(selectedModel.id)
+      setDisplayModel(getModelDisplayName(selectedModel))
     } else {
       setDisplayModel(t('common:selectAModel'))
     }
@@ -326,7 +326,7 @@ const DropdownModelProvider = ({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) => item.model.id.toLowerCase(),
+      selector: (item) => `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
 
@@ -390,7 +390,7 @@ const DropdownModelProvider = ({
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
       // Immediately update display to prevent double-click issues
-      setDisplayModel(searchableModel.model.id)
+      setDisplayModel(getModelDisplayName(searchableModel.model))
       setSearchValue('')
       setOpen(false)
 
@@ -576,7 +576,7 @@ const DropdownModelProvider = ({
                               />
                             </div>
                             <span className="text-main-view-fg/80 text-sm">
-                              {searchableModel.model.id}
+                              {getModelDisplayName(searchableModel.model)}
                             </span>
                             <div className="flex-1"></div>
                             {capabilities.length > 0 && (
@@ -669,7 +669,7 @@ const DropdownModelProvider = ({
                                   className="text-main-view-fg/80 text-sm"
                                   title={searchableModel.model.id}
                                 >
-                                  {searchableModel.model.id}
+                                  {getModelDisplayName(searchableModel.model)}
                                 </span>
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (

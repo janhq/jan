@@ -22,6 +22,7 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useThreadScrolling } from '@/hooks/useThreadScrolling'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -50,6 +51,9 @@ function ThreadDetail() {
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Get padding height for ChatGPT-style message positioning
+  const { paddingHeight } = useThreadScrolling(threadId, scrollContainerRef)
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -193,6 +197,12 @@ function ThreadDetail() {
             <StreamingContent
               threadId={threadId}
               data-test-id="thread-content-text"
+            />
+            {/* Persistent padding element for ChatGPT-style message positioning */}
+            <div
+              style={{ height: paddingHeight }}
+              className="flex-shrink-0"
+              data-testid="chat-padding"
             />
           </div>
         </div>

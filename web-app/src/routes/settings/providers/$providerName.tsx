@@ -3,7 +3,7 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import {
   createFileRoute,
   Link,
@@ -41,6 +41,7 @@ import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import { basenameNoExt } from '@/lib/utils'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -382,7 +383,7 @@ function ProviderDetail() {
         filters: [
           {
             name: 'Backend Archives',
-            extensions: ['tar.gz', 'zip'],
+            extensions: ['tar.gz', 'zip', 'gz'],
           },
         ],
       })
@@ -394,9 +395,7 @@ function ProviderDetail() {
         await installBackend(selectedFile)
 
         // Extract filename from the selected file path and replace spaces with dashes
-        const fileName = (
-          selectedFile.split(/[/\\]/).pop() || selectedFile
-        ).replace(/\s+/g, '-')
+        const fileName = basenameNoExt(selectedFile).replace(/\s+/g, "-")
 
         toast.success(t('settings:backendInstallSuccess'), {
           description: `Llamacpp ${fileName} installed`,
@@ -547,7 +546,7 @@ function ProviderDetail() {
                                     )
 
                                   if (deviceSettingIndex !== -1) {
-                                    ;(
+                                    (
                                       newSettings[deviceSettingIndex]
                                         .controller_props as {
                                         value: string
@@ -778,7 +777,7 @@ function ProviderDetail() {
                                 className="font-medium line-clamp-1"
                                 title={model.id}
                               >
-                                {model.id}
+                                {getModelDisplayName(model)}
                               </h1>
                               <Capabilities capabilities={capabilities} />
                             </div>

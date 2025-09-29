@@ -34,6 +34,22 @@ pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> 
 }
 
 #[tauri::command]
+pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
+    if args.len() < 2 || args[0].is_empty() || args[1].is_empty() {
+        return Err("mv error: Invalid argument - source and destination required".to_string());
+    }
+
+    let source = resolve_path(app_handle.clone(), &args[0]);
+    let destination = resolve_path(app_handle, &args[1]);
+
+    if !source.exists() {
+        return Err("mv error: Source path does not exist".to_string());
+    }
+
+    fs::rename(&source, &destination).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn join_path<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     args: Vec<String>,

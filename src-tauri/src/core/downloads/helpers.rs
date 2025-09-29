@@ -465,7 +465,11 @@ async fn download_single_file(
         .await
         .map_err(err_to_string)?;
 
-    log::info!("Started downloading: {}", item.url);
+    // Decode URL for better readability in logs
+    let decoded_url = url::Url::parse(&item.url)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| item.url.clone());
+    log::info!("Started downloading: {}", decoded_url);
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
@@ -584,7 +588,11 @@ async fn download_single_file(
         .await
         .map_err(err_to_string)?;
 
-    log::info!("Finished downloading: {}", item.url);
+    // Decode URL for better readability in logs
+    let decoded_url = url::Url::parse(&item.url)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| item.url.clone());
+    log::info!("Finished downloading: {}", decoded_url);
     Ok(save_path.to_path_buf())
 }
 

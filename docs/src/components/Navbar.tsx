@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { cn } from '@/lib/utils'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
 import { FiDownload } from 'react-icons/fi'
-import { FaXTwitter } from 'react-icons/fa6'
+import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
 import { Button } from './ui/button'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
@@ -112,6 +112,43 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   Download Jan
                 </Button>
               </a>
+            </li>
+
+            <li>
+              <div className={cn('flex gap-4', !isLanding && '!text-black')}>
+                <a
+                  href="https://discord.com/invite/FTk2MvZwJH"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaDiscord className="size-5" />
+                </a>
+                <a
+                  href="https://twitter.com/jandotai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaXTwitter className="size-5" />
+                </a>
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaLinkedinIn className="size-5" />
+                </a>
+                <a
+                  href="https://github.com/menloresearch/jan"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaGithub className="size-5" />
+                </a>
+              </div>
             </li>
           </ul>
         </nav>
@@ -231,6 +268,14 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   className="text-black rounded-lg flex items-center justify-center"
                 >
                   <FaXTwitter className="size-5" />
+                </a>
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-black rounded-lg flex items-center justify-center"
+                >
+                  <FaLinkedinIn className="size-5" />
                 </a>
                 <a
                   href="https://github.com/menloresearch/jan"
