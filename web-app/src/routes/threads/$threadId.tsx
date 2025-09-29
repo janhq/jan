@@ -25,8 +25,31 @@ import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { useThreadScrolling } from '@/hooks/useThreadScrolling'
+import { IconInfoCircle } from '@tabler/icons-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
+
+const TemporaryChatIndicator = ({ t }: { t: (key: string) => string }) => {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-main-view-fg/5 text-main-view-fg/70 text-sm">
+      <span>{t('common:temporaryChat')}</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="relative z-20">
+            <IconInfoCircle
+              size={14}
+              className="text-main-view-fg/50 hover:text-main-view-fg/70 transition-colors cursor-pointer"
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent className="z-[9999]">
+          <p>{t('common:temporaryChatTooltip')}</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  )
+}
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -187,9 +210,15 @@ function ThreadDetail() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-            <DropdownAssistant />
-          )}
+          <div className="flex-1">
+            {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
+              <DropdownAssistant />
+            )}
+          </div>
+          <div className="flex-1 flex justify-center">
+            {threadId === TEMPORARY_CHAT_ID && <TemporaryChatIndicator t={t} />}
+          </div>
+          <div className="flex-1"></div>
         </div>
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)]">

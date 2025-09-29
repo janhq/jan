@@ -126,6 +126,8 @@
   "warning": "Warning",
   "conversationNotAvailable": "Conversation not available",
   "conversationNotAvailableDescription": "The conversation you are trying to access is not available or has been deleted.",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatTooltip": "Temporary chat won't appear in your history",
   "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
   "searchModels": "Search models...",
   "searchStyles": "Search styles...",
