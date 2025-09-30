@@ -115,6 +115,9 @@
 /docs/built-in/tensorrt-llm                     /docs/desktop/llama-cpp 302
 /docs/desktop/docs/desktop/linux                /docs/desktop/install/linux 302
 /windows                                        /docs/desktop/install/windows 302
+/docs/quickstart                                /docs/ 302
+/docs/desktop/mac                               /docs/desktop/install/mac 302
+/handbook/open-superintelligence                /handbook/why/open-superintelligence 302
 
 /guides/integrations/continue/                  /docs/desktop/server-examples/continue-dev 302
 /continue-dev                                   /docs/desktop/server-examples/continue-dev 302
