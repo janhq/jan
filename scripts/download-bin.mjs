@@ -106,13 +106,11 @@ async function main() {
   }
 
   // Adjust these URLs based on latest releases
-  const bunVersion = '1.2.10' // Example Bun version
-  const bunUrl = `https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/bun-${bunPlatform}.zip`
+  const bunUrl = `https://github.com/oven-sh/bun/releases/latest/download/bun-${bunPlatform}.zip`
 
-  const uvVersion = '0.6.17' // Example UV version
-  let uvUrl = `https://github.com/astral-sh/uv/releases/download/${uvVersion}/uv-${uvPlatform}.tar.gz`
+  let uvUrl = `https://github.com/astral-sh/uv/releases/latest/download/uv-${uvPlatform}.tar.gz`
   if (platform === 'win32') {
-    uvUrl = `https://github.com/astral-sh/uv/releases/download/${uvVersion}/uv-${uvPlatform}.zip`
+    uvUrl = `https://github.com/astral-sh/uv/releases/latest/download/uv-${uvPlatform}.zip`
   }
 
   console.log(`Downloading Bun for ${bunPlatform}...`)
