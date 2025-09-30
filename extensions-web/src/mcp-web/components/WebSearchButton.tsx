@@ -2,13 +2,16 @@ import { useMemo, useCallback } from 'react'
 import { IconWorld } from '@tabler/icons-react'
 import { MCPToolComponentProps } from '@janhq/core'
 
+// List of tool names considered as web search tools
+const WEB_SEARCH_TOOL_NAMES = ['google_search', 'scrape'];
+
 export const WebSearchButton = ({
   tools,
   isToolEnabled,
   onToolToggle,
 }: MCPToolComponentProps) => {
   const webSearchTools = useMemo(
-    () => tools.filter((tool) => tool.name === 'google_search' || tool.name === 'scrape'),
+    () => tools.filter((tool) => WEB_SEARCH_TOOL_NAMES.includes(tool.name)),
     [tools]
   )
 
