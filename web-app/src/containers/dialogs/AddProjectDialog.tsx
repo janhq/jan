@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -20,8 +21,9 @@ interface AddProjectDialogProps {
     id: string
     name: string
     updated_at: number
+    systemPrompt?: string
   }
-  onSave: (name: string) => void
+  onSave: (name: string, systemPrompt?: string) => void
 }
 
 export default function AddProjectDialog({
@@ -33,11 +35,13 @@ export default function AddProjectDialog({
 }: AddProjectDialogProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(initialData?.name || '')
+  const [systemPrompt, setSystemPrompt] = useState(initialData?.systemPrompt || '')
   const { folders } = useThreadManagement()
 
   useEffect(() => {
     if (open) {
       setName(initialData?.name || '')
+      setSystemPrompt(initialData?.systemPrompt || '')
     }
   }, [open, initialData])
 
@@ -58,16 +62,23 @@ export default function AddProjectDialog({
       return
     }
 
-    onSave(trimmedName)
+    onSave(trimmedName, systemPrompt.trim() || undefined)
 
     // Show detailed success message
     if (editingKey && initialData) {
-      toast.success(
-        t('projects.addProjectDialog.renameSuccess', {
-          oldName: initialData.name,
-          newName: trimmedName
-        })
-      )
+      const nameChanged = trimmedName !== initialData.name
+
+      if (nameChanged) {
+        toast.success(
+          t('projects.addProjectDialog.renameSuccess', {
+            oldName: initialData.name,
+            newName: trimmedName
+          })
+        )
+      } else {
+        // Only system prompt changed
+        toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
+      }
     } else {
       toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
     }
@@ -78,11 +89,15 @@ export default function AddProjectDialog({
   const handleCancel = () => {
     onOpenChange(false)
     setName('')
+    setSystemPrompt('')
   }
 
   // Check if the button should be disabled
   const isButtonDisabled =
-    !name.trim() || (editingKey && name.trim() === initialData?.name)
+    !name.trim() ||
+    (editingKey &&
+     name.trim() === initialData?.name &&
+     systemPrompt.trim() === (initialData?.systemPrompt))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,6 +123,18 @@ export default function AddProjectDialog({
                   handleSave()
                 }
               }}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-main-view-fg/80">
+              System Prompt (Optional)
+            </label>
+            <Textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="Enter a custom system prompt that will be applied to all conversations in this project..."
+              className="mt-1"
+              rows={4}
             />
           </div>
         </div>

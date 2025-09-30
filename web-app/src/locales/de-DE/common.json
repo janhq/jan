@@ -263,7 +263,8 @@
       "updateButton": "Aktualisieren",
       "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
       "createSuccess": "Projekt \"{{projectName}}\" erfolgreich erstellt",
-      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt",
+      "updateSuccess": "Projekt \"{{projectName}}\" erfolgreich aktualisiert"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
     "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
@@ -419,7 +420,8 @@
       "updateButton": "Aktualisieren",
       "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
       "createSuccess": "Projekt \"{{projectName}}\" erfolgreich erstellt",
-      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt",
+      "updateSuccess": "Projekt \"{{projectName}}\" erfolgreich aktualisiert"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
     "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",

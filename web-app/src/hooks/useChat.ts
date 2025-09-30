@@ -32,6 +32,7 @@ import {
   extractReasoningFromMessage,
 } from '@/utils/reasoning'
 import { useAssistant } from './useAssistant'
+import { useThreadManagement } from './useThreadManagement'
 import { useShallow } from 'zustand/shallow'
 
 export const useChat = () => {
@@ -93,6 +94,7 @@ export const useChat = () => {
       const assistants = useAssistant.getState().assistants
       const selectedModel = useModelProvider.getState().selectedModel
       const selectedProvider = useModelProvider.getState().selectedProvider
+
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
@@ -101,6 +103,39 @@ export const useChat = () => {
         currentPrompt,
         assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
       )
+
+      // Check if we're in a project route and assign project metadata after thread creation
+      const currentPath = router.state.location.pathname
+      const projectMatch = currentPath.match(/^\/project\/(.+)$/)
+      if (projectMatch) {
+        const projectId = projectMatch[1]
+        const project = useThreadManagement.getState().getFolderById(projectId)
+        if (project) {
+          const updateThread = useThreads.getState().updateThread
+          updateThread(currentThread.id, {
+            metadata: {
+              project: {
+                id: project.id,
+                name: project.name,
+                updated_at: project.updated_at,
+              },
+            },
+          })
+          // Update the local thread object with the new metadata
+          currentThread = {
+            ...currentThread,
+            metadata: {
+              ...currentThread.metadata,
+              project: {
+                id: project.id,
+                name: project.name,
+                updated_at: project.updated_at,
+              },
+            },
+          }
+        }
+      }
+
       router.navigate({
         to: route.threadsDetail,
         params: { threadId: currentThread.id },
@@ -247,11 +282,21 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
         const currentAssistant = useAssistant.getState().currentAssistant
+
+        // Get project system prompt if thread belongs to a project
+        const projectSystemPrompt = activeThread.metadata?.project?.id
+          ? useThreadManagement.getState().getFolderById(activeThread.metadata.project.id)?.systemPrompt
+          : undefined
+
+        // Combine project system prompt with assistant instructions
+        const combinedInstructions = [
+          projectSystemPrompt,
+          currentAssistant ? renderInstructions(currentAssistant.instructions) : undefined
+        ].filter(Boolean).join('\n\n')
+
         const builder = new CompletionMessagesBuilder(
           messages,
-          currentAssistant
-            ? renderInstructions(currentAssistant.instructions)
-            : undefined
+          combinedInstructions || undefined
         )
         if (troubleshooting) builder.addUserMessage(message, attachments)
 

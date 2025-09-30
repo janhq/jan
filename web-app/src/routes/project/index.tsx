@@ -55,11 +55,11 @@ function ProjectContent() {
     }
   }
 
-  const handleSave = (name: string) => {
+  const handleSave = (name: string, systemPrompt?: string) => {
     if (editingKey) {
-      updateFolder(editingKey, name)
+      updateFolder(editingKey, name, systemPrompt)
     } else {
-      addFolder(name)
+      addFolder(name, systemPrompt)
     }
     setOpen(false)
     setEditingKey(null)

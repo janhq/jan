@@ -8,13 +8,14 @@ type ThreadFolder = {
   id: string
   name: string
   updated_at: number
+  systemPrompt?: string
 }
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
   setFolders: (folders: ThreadFolder[]) => void
-  addFolder: (name: string) => void
-  updateFolder: (id: string, name: string) => void
+  addFolder: (name: string, systemPrompt?: string) => void
+  updateFolder: (id: string, name: string, systemPrompt?: string) => void
   deleteFolder: (id: string) => void
   getFolderById: (id: string) => ThreadFolder | undefined
 }
@@ -28,22 +29,28 @@ export const useThreadManagement = create<ThreadManagementState>()(
         set({ folders })
       },
 
-      addFolder: (name) => {
+      addFolder: (name, systemPrompt) => {
         const newFolder: ThreadFolder = {
           id: ulid(),
           name,
           updated_at: Date.now(),
+          systemPrompt,
         }
         set((state) => ({
           folders: [...state.folders, newFolder],
         }))
       },
 
-      updateFolder: (id, name) => {
+      updateFolder: (id, name, systemPrompt) => {
         set((state) => ({
           folders: state.folders.map((folder) =>
             folder.id === id
-              ? { ...folder, name, updated_at: Date.now() }
+              ? {
+                  ...folder,
+                  name,
+                  updated_at: Date.now(),
+                  systemPrompt
+                }
               : folder
           ),
         }))

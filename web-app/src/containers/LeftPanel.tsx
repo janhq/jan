@@ -208,11 +208,11 @@ const LeftPanel = () => {
     }
   }
 
-  const handleProjectSave = (name: string) => {
+  const handleProjectSave = (name: string, systemPrompt?: string) => {
     if (editingProjectKey) {
-      updateFolder(editingProjectKey, name)
+      updateFolder(editingProjectKey, name, systemPrompt)
     } else {
-      addFolder(name)
+      addFolder(name, systemPrompt)
     }
     setProjectDialogOpen(false)
     setEditingProjectKey(null)

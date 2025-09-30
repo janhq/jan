@@ -265,7 +265,8 @@
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
-      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\"",
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",

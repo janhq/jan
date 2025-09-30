@@ -4,7 +4,6 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,8 +49,7 @@ type ChatInputProps = {
 const ChatInput = ({
   model,
   className,
-  initialMessage,
-  projectId,
+  initialMessage
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -65,8 +63,6 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
-  const updateThread = useThreads((state) => state.updateThread)
-  const { getFolderById } = useThreadManagement()
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
@@ -187,27 +183,8 @@ const ChatInput = ({
     )
     setUploadedFiles([])
 
-    // Handle project assignment for new threads
-    if (projectId && !currentThreadId) {
-      const project = getFolderById(projectId)
-      if (project) {
-        // Use setTimeout to ensure the thread is created first
-        setTimeout(() => {
-          const newCurrentThreadId = useThreads.getState().currentThreadId
-          if (newCurrentThreadId) {
-            updateThread(newCurrentThreadId, {
-              metadata: {
-                project: {
-                  id: project.id,
-                  name: project.name,
-                  updated_at: project.updated_at,
-                },
-              },
-            })
-          }
-        }, 100)
-      }
-    }
+    // Note: Project assignment for new threads is now handled directly in useChat.ts
+    // when creating the thread, ensuring the project system prompt is applied from the first message
   }
 
   useEffect(() => {
