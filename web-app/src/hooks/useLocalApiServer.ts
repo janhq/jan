@@ -41,7 +41,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       serverHost: '127.0.0.1',
       setServerHost: (value) => set({ serverHost: value }),
       // Use port 0 (auto-assign) for mobile to avoid conflicts, 1337 for desktop
-      serverPort: (typeof window !== 'undefined' && (window as any).IS_ANDROID) || (typeof window !== 'undefined' && (window as any).IS_IOS) ? 0 : 1337,
+      serverPort: (typeof window !== 'undefined' && (window as { IS_ANDROID?: boolean }).IS_ANDROID) || (typeof window !== 'undefined' && (window as { IS_IOS?: boolean }).IS_IOS) ? 0 : 1337,
       setServerPort: (value) => set({ serverPort: value }),
       apiPrefix: '/v1',
       setApiPrefix: (value) => set({ apiPrefix: value }),

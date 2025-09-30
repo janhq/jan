@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -154,7 +153,7 @@ const CodeComponent = memo(
             )}
           </button>
         </div>
-        {React.createElement(SyntaxHighlighter as React.ComponentType<any>, {
+        {React.createElement(SyntaxHighlighter as React.ComponentType<Record<string, unknown>>, {
           style:
             prismStyles[
               codeBlockStyle

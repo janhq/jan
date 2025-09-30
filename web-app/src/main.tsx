@@ -16,7 +16,7 @@ const setupMobileViewport = () => {
 
   if (isMobile) {
     // Update viewport meta tag to disable zoom
-    let viewportMeta = document.querySelector('meta[name="viewport"]')
+    const viewportMeta = document.querySelector('meta[name="viewport"]')
     if (viewportMeta) {
       viewportMeta.setAttribute('content',
         'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'

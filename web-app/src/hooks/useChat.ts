@@ -131,6 +131,7 @@ export const useChat = () => {
       })
     }
     return currentThread
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createThread, retrieveThread, router])
 
   const restartModel = useCallback(
