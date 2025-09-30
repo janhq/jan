@@ -20,5 +20,10 @@
     "title": "Research",
     "display": "normal",
     "href": "/blog?category=research"
+  },
+  "guides-cat": {
+    "title": "Guides",
+    "display": "normal",
+    "href": "/blog?category=guides"
   }
 }
