@@ -43,6 +43,7 @@ test-tauri = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
+    "desktop",
 ]
 
 [build-dependencies]
