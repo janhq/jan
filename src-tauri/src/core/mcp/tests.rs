@@ -28,8 +28,7 @@ async fn test_run_mcp_commands() {
         .expect("Failed to write to config file");
 
     // Call the run_mcp_commands function
-    let servers_state: SharedMcpServers =
-        Arc::new(Mutex::new(HashMap::new()));
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
     let result = run_mcp_commands(app.handle(), servers_state).await;
 
     // Assert that the function returns Ok(())
@@ -39,6 +38,7 @@ async fn test_run_mcp_commands() {
     std::fs::remove_file(&config_path).expect("Failed to remove config file");
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn test_bin_path_construction_with_join() {
     // Test that PathBuf::join properly constructs paths
@@ -52,6 +52,7 @@ fn test_bin_path_construction_with_join() {
     assert_eq!(bun_path_str, "/usr/local/bin/bun");
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn test_uv_path_construction_with_join() {
     // Test that PathBuf::join properly constructs paths for uv
@@ -70,10 +71,10 @@ fn test_uv_path_construction_with_join() {
 fn test_bin_path_construction_windows() {
     // Test Windows-style paths
     let bin_path = PathBuf::from(r"C:\Program Files\bin");
-    let bun_path = bin_path.join("bun");
+    let bun_path = bin_path.join("bun.exe");
 
-    assert_eq!(bun_path.to_string_lossy(), r"C:\Program Files\bin\bun");
+    assert_eq!(bun_path.to_string_lossy(), r"C:\Program Files\bin\bun.exe");
 
     let bun_path_str = bun_path.display().to_string();
-    assert_eq!(bun_path_str, r"C:\Program Files\bin\bun");
+    assert_eq!(bun_path_str, r"C:\Program Files\bin\bun.exe");
 }
