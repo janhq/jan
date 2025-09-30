@@ -148,6 +148,9 @@ pub async fn create_message<R: Runtime>(
 
         let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
         writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+
+        // Explicitly flush to ensure data is written before returning
+        file.flush().map_err(|e| e.to_string())?;
     }
 
     Ok(message)

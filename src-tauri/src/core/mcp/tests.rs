@@ -38,6 +38,7 @@ async fn test_run_mcp_commands() {
     std::fs::remove_file(&config_path).expect("Failed to remove config file");
 }
 
+#[test]
 fn test_add_server_config_new_file() {
     let app = mock_app();
     let app_path = get_jan_data_folder_path(app.handle().clone());
@@ -151,7 +152,14 @@ fn test_add_server_config_existing_servers() {
 fn test_add_server_config_missing_config_file() {
     let app = mock_app();
     let app_path = get_jan_data_folder_path(app.handle().clone());
-    let config_path = app_path.join("nonexistent_config.json");
+
+    // Ensure the directory exists
+    if let Some(parent) = app_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::create_dir_all(&app_path).ok();
+
+    let config_path = app_path.join("mcp_config.json");
 
     // Ensure the file doesn't exist
     if config_path.exists() {
