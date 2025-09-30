@@ -34,18 +34,18 @@ export const WebSearchButton = ({
   return (
     <button
       onClick={handleToggle}
-      className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 cursor-pointer ml-0.5 ${
+      className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 cursor-pointer ml-0.5 border-0 ${
         isEnabled
-          ? 'bg-primary text-primary-fg hover:bg-primary/90'
+          ? 'bg-accent/20 text-accent'
           : 'bg-transparent text-main-view-fg/70 hover:bg-main-view-fg/5'
       }`}
       title={isEnabled ? 'Disable Web Search' : 'Enable Web Search'}
     >
       <IconWorld
         size={16}
-        className={isEnabled ? 'text-primary-fg' : 'text-main-view-fg/70'}
+        className={isEnabled ? 'text-accent' : 'text-main-view-fg/70'}
       />
-      <span className={`text-sm font-medium ${isEnabled ? 'text-primary-fg' : ''}`}>Search</span>
+      <span className={`text-sm font-medium ${isEnabled ? 'text-accent' : ''}`}>Search</span>
     </button>
   )
 }
