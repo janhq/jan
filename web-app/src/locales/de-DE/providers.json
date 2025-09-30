@@ -35,7 +35,9 @@
     "modelId": "Modell ID",
     "enterModelId": "Modell ID eingeben",
     "exploreModels": "Sehe Modellliste von {{provider}}",
-    "addModel": "Modell hinzufügen"
+    "addModel": "Modell hinzufügen",
+    "modelExists": "Modell bereits vorhanden",
+    "modelExistsDesc": "Bitte wähle eine andere Modell-ID."
   },
   "deleteModel": {
     "title": "Lösche Modell: {{modelId}}",

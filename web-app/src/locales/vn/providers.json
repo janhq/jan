@@ -35,7 +35,9 @@
     "modelId": "ID mô hình",
     "enterModelId": "Nhập ID mô hình",
     "exploreModels": "Xem danh sách mô hình từ {{provider}}",
-    "addModel": "Thêm mô hình"
+    "addModel": "Thêm mô hình",
+    "modelExists": "Mô hình đã tồn tại",
+    "modelExistsDesc": "Vui lòng chọn một ID mô hình khác."
   },
   "deleteModel": {
     "title": "Xóa mô hình: {{modelId}}",
