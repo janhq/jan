@@ -131,7 +131,7 @@ export const useChat = () => {
       })
     }
     return currentThread
-  }, [createThread, retrieveThread, router])
+  }, [createThread, retrieveThread, router, setMessages])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
