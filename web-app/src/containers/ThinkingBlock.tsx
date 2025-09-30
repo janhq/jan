@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { extractThinkingContent } from '@/lib/utils'
 
 interface Props {
   text: string
@@ -41,19 +42,6 @@ const ThinkingBlock = ({ id, text }: Props) => {
   const handleClick = () => {
     const newExpandedState = !isExpanded
     setThinkingState(id, newExpandedState)
-  }
-
-  // Extract thinking content from either format
-  const extractThinkingContent = (text: string) => {
-    return text
-      .replace(/<\/?think>/g, '')
-      .replace(/<\|channel\|>analysis<\|message\|>/g, '')
-      .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
-      .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
-      .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
-      .replace(/<\|message\|>/g, '') // remove any remaining message markers
-      .replace(/<\|start\|>/g, '') // remove any remaining start markers
-      .trim()
   }
 
   const thinkingContent = extractThinkingContent(text)

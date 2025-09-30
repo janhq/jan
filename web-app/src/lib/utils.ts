@@ -182,3 +182,15 @@ export function formatDuration(startTime: number, endTime?: number): string {
 export function sanitizeModelId(modelId: string): string {
   return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
 }
+
+export const extractThinkingContent = (text: string) => {
+  return text
+    .replace(/<\/?think>/g, '')
+    .replace(/<\|channel\|>analysis<\|message\|>/g, '')
+    .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
+    .replace(/<\|message\|>/g, '') // remove any remaining message markers
+    .replace(/<\|start\|>/g, '') // remove any remaining start markers
+    .trim()
+}
