@@ -627,18 +627,26 @@ async fn schedule_mcp_start_task<R: Runtime>(
         }
     } else {
         let mut cmd = Command::new(config_params.command.clone());
-        let bun_x_path = bin_path.join("bun");
+        let bun_x_path = if cfg!(windows) {
+            bin_path.join("bun.exe")
+        } else {
+            bin_path.join("bun")
+        };
         if config_params.command.clone() == "npx"
             && can_override_npx(bun_x_path.display().to_string())
         {
             let mut cache_dir = app_path.clone();
             cache_dir.push(".npx");
-            cmd = Command::new(bun_x_path);
+            cmd = Command::new(bun_x_path.display().to_string());
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
         }
 
-        let uv_path = bin_path.join("uv");
+        let uv_path = if cfg!(windows) {
+            bin_path.join("uv.exe")
+        } else {
+            bin_path.join("uv")
+        };
         if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
         {
             let mut cache_dir = app_path.clone();
