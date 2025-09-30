@@ -3453,32 +3453,25 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jan/extensions-web@link:../extensions-web::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
-  version: 0.0.0-use.local
-  resolution: "@jan/extensions-web@link:../extensions-web::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
-  languageName: node
-  linkType: soft
-
-"@jan/extensions-web@workspace:extensions-web":
+"@jan/extensions-web@workspace:*, @jan/extensions-web@workspace:extensions-web":
   version: 0.0.0-use.local
   resolution: "@jan/extensions-web@workspace:extensions-web"
   dependencies:
     "@janhq/core": "workspace:*"
     "@modelcontextprotocol/sdk": "npm:1.17.5"
+    "@tabler/icons-react": "npm:^3.34.0"
+    "@types/react": "npm:19.1.2"
+    react: "npm:19.0.0"
     typescript: "npm:5.9.2"
     vite: "npm:5.4.20"
     vitest: "npm:2.1.9"
     zustand: "npm:5.0.8"
   peerDependencies:
     "@janhq/core": "*"
+    "@tabler/icons-react": "*"
+    react: 19.0.0
     zustand: 5.0.3
   languageName: unknown
-  linkType: soft
-
-"@janhq/core@link:../core::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
-  version: 0.0.0-use.local
-  resolution: "@janhq/core@link:../core::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
-  languageName: node
   linkType: soft
 
 "@janhq/core@workspace:*, @janhq/core@workspace:core":
@@ -3487,11 +3480,13 @@ __metadata:
   dependencies:
     "@npmcli/arborist": "npm:^7.1.0"
     "@types/node": "npm:^22.10.0"
+    "@types/react": "npm:19.1.2"
     "@vitest/coverage-v8": "npm:^2.1.8"
     "@vitest/ui": "npm:^2.1.8"
     eslint: "npm:8.57.0"
     happy-dom: "npm:^15.11.6"
     pacote: "npm:^21.0.0"
+    react: "npm:19.0.0"
     request: "npm:^2.88.2"
     request-progress: "npm:^3.0.0"
     rimraf: "npm:^6.0.1"
@@ -3501,6 +3496,8 @@ __metadata:
     typescript: "npm:^5.8.3"
     ulidx: "npm:^2.3.0"
     vitest: "npm:^2.1.8"
+  peerDependencies:
+    react: 19.0.0
   languageName: unknown
   linkType: soft
 
@@ -3512,8 +3509,8 @@ __metadata:
     "@dnd-kit/modifiers": "npm:9.0.0"
     "@dnd-kit/sortable": "npm:10.0.0"
     "@eslint/js": "npm:8.57.0"
-    "@jan/extensions-web": "link:../extensions-web"
-    "@janhq/core": "link:../core"
+    "@jan/extensions-web": "workspace:*"
+    "@janhq/core": "workspace:*"
     "@radix-ui/react-accordion": "npm:1.2.11"
     "@radix-ui/react-avatar": "npm:1.1.10"
     "@radix-ui/react-dialog": "npm:1.1.15"
@@ -7022,10 +7019,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tabler/icons-react@npm:^3.34.0":
+  version: 3.35.0
+  resolution: "@tabler/icons-react@npm:3.35.0"
+  dependencies:
+    "@tabler/icons": "npm:3.35.0"
+  peerDependencies:
+    react: ">= 16"
+  checksum: 10c0/8d280fcdae00916b001142ba0800ea05d8fa2acdcbd82f88a299b4141fb941237be2e826b86b1af710e038b4f8bb6f76f452c3309c29fd62398b4d5789c2b3e0
+  languageName: node
+  linkType: hard
+
 "@tabler/icons@npm:3.34.0":
   version: 3.34.0
   resolution: "@tabler/icons@npm:3.34.0"
   checksum: 10c0/7b4bb937e051ece9258ab4321363f284a4c1d53fbe0211c6976bff41d0ca031e8196156595bb30fa2bfb963f1771814d1438aa01a4422df9a6e21a46ebe6cc9b
+  languageName: node
+  linkType: hard
+
+"@tabler/icons@npm:3.35.0":
+  version: 3.35.0
+  resolution: "@tabler/icons@npm:3.35.0"
+  checksum: 10c0/93098828128ffed2cf412b39bd78992f93f25b22349a4e04523d2a018b7fe376ddeff105babcc3efedd707aa00b705425c7d9f598d6987552a563c62125795a2
   languageName: node
   linkType: hard
 

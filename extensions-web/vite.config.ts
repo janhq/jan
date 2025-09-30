@@ -9,7 +9,7 @@ export default defineConfig({
       fileName: 'index'
     },
     rollupOptions: {
-      external: ['@janhq/core', 'zustand']
+      external: ['@janhq/core', 'zustand', 'react', 'react-dom', 'react/jsx-runtime', '@tabler/icons-react']
     },
     emptyOutDir: false // Don't clean the output directory
   },
