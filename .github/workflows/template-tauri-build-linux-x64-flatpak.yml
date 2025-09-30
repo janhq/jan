@@ -91,10 +91,9 @@ jobs:
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
-                                           "usr/lib/Jan-${{ inputs.channel }}/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
+            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
             mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
@@ -104,7 +103,7 @@ jobs:
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-          
+
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
@@ -117,7 +116,7 @@ jobs:
           ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          
+
           ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
@@ -128,7 +127,7 @@ jobs:
 
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
-          cat ./src-tauri/Cargo.toml  
+          cat ./src-tauri/Cargo.toml
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
@@ -139,7 +138,7 @@ jobs:
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
 
             cat ./src-tauri/tauri.conf.json
-            
+
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
@@ -184,4 +183,3 @@ jobs:
         with:
           name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
-

@@ -3,7 +3,7 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import {
   createFileRoute,
   Link,
@@ -767,7 +767,7 @@ function ProviderDetail() {
                                 className="font-medium line-clamp-1"
                                 title={model.id}
                               >
-                                {model.id}
+                                {getModelDisplayName(model)}
                               </h1>
                               <Capabilities capabilities={capabilities} />
                             </div>

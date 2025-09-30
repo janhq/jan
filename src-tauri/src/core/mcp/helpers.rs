@@ -25,7 +25,7 @@ use crate::core::{
     mcp::models::McpServerConfig,
     state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
-use jan_utils::can_override_npx;
+use jan_utils::{can_override_npx, can_override_uvx};
 
 /// Calculate exponential backoff delay with jitter
 ///
@@ -627,19 +627,20 @@ async fn schedule_mcp_start_task<R: Runtime>(
         }
     } else {
         let mut cmd = Command::new(config_params.command.clone());
-        if config_params.command.clone() == "npx" && can_override_npx() {
+        let bun_x_path = format!("{}/bun", bin_path.display());
+        if config_params.command.clone() == "npx" && can_override_npx(bun_x_path.clone()) {
             let mut cache_dir = app_path.clone();
             cache_dir.push(".npx");
-            let bun_x_path = format!("{}/bun", bin_path.display());
             cmd = Command::new(bun_x_path);
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
         }
-        if config_params.command.clone() == "uvx" {
+
+        let uv_path = format!("{}/uv", bin_path.display());
+        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.clone()) {
             let mut cache_dir = app_path.clone();
             cache_dir.push(".uvx");
-            let bun_x_path = format!("{}/uv", bin_path.display());
-            cmd = Command::new(bun_x_path);
+            cmd = Command::new(uv_path);
             cmd.arg("tool");
             cmd.arg("run");
             cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());

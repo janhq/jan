@@ -1,7 +1,11 @@
 {
   "bundle": {
-    "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll", "resources/LICENSE", "resources/lib/vc_redist.x64.exe"],
+    "targets": ["nsis"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/lib/vc_redist.x64.exe",
+      "resources/LICENSE"
+    ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "nsis": {

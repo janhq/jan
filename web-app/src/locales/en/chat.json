@@ -1,6 +1,8 @@
 {
   "welcome": "Hi, how are you?",
   "description": "How can I help you today?",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatDescription": "Start a temporary conversation that won't be saved to your chat history.",
   "status": {
     "empty": "No Chats Found"
   },

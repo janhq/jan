@@ -3,6 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import { ExtensionManager } from './extension'
 import path from "path"
 
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
@@ -21,6 +22,14 @@ export function basenameNoExt(filePath: string): string {
 
   // fallback: remove only the last extension
   return base.slice(0, -path.extname(base).length);
+}
+
+
+/**
+ * Get the display name for a model, falling back to the model ID if no display name is set
+ */
+export function getModelDisplayName(model: Model): string {
+  return model.displayName || model.id
 }
 
 export function getProviderLogo(provider: string) {
