@@ -68,4 +68,7 @@ export enum PlatformFeature {
 
   // First message persisted thread - web-only feature for storing first user message locally during thread creation
   FIRST_MESSAGE_PERSISTED_THREAD = 'firstMessagePersistedThread',
+
+  // Temporary chat mode - web-only feature for ephemeral conversations like ChatGPT
+  TEMPORARY_CHAT = 'temporaryChat',
 }
