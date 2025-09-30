@@ -107,14 +107,15 @@ const config: DocsThemeConfig = {
   head: function useHead() {
     const { title, frontMatter } = useConfig()
     const { asPath } = useRouter()
-    const titleTemplate =
-      (asPath.includes('/desktop')
+    const titleTemplate = asPath.includes('/post/')
+      ? (frontMatter?.title || title)
+      : (asPath.includes('/desktop')
         ? 'Jan Desktop'
         : asPath.includes('/server')
           ? 'Jan Server'
           : 'Jan') +
-      ' - ' +
-      (frontMatter?.title || title)
+        ' - ' +
+        (frontMatter?.title || title)
 
     return (
       <Fragment>

@@ -23,7 +23,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useMessages } from '@/hooks/useMessages'
-import { cn } from '@/lib/utils'
+import { cn, extractThinkingContent } from '@/lib/utils'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 import {
@@ -167,14 +167,10 @@ const SortableItem = memo(
           )}
         >
           <span>{thread.title || t('common:newThread')}</span>
-          {variant === 'project' && (
-            <>
-              {variant === 'project' && getLastMessageInfo?.content && (
-                <div className="text-sm text-main-view-fg/60 mt-0.5 line-clamp-2">
-                  {getLastMessageInfo.content}
-                </div>
-              )}
-            </>
+          {variant === 'project' && getLastMessageInfo?.content && (
+            <span className="block text-sm text-main-view-fg/60 mt-0.5 truncate">
+              {extractThinkingContent(getLastMessageInfo.content)}
+            </span>
           )}
         </div>
         <div className="flex items-center">
@@ -185,7 +181,10 @@ const SortableItem = memo(
             <DropdownMenuTrigger asChild>
               <IconDots
                 size={14}
-                className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                className={cn(
+                  'text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0',
+                  variant === 'project' && 'text-main-view-fg/60'
+                )}
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()

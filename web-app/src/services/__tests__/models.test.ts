@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DefaultModelsService } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
-import { EngineManager, Model } from '@janhq/core'
+import { EngineManager } from '@janhq/core'
 
 // Mock EngineManager
 vi.mock('@janhq/core', () => ({
@@ -131,18 +131,19 @@ describe('DefaultModelsService', () => {
       expect(mockEngine.update).not.toHaveBeenCalled()
     })
 
-    it('should update model when modelId differs from model.id', async () => {
+    it('should handle model when modelId differs from model.id', async () => {
       const modelId = 'old-model-id'
       const model = {
         id: 'new-model-id',
         settings: [{ key: 'temperature', value: 0.7 }],
       }
-      mockEngine.update.mockResolvedValue(undefined)
 
       await modelsService.updateModel(modelId, model as any)
 
       expect(mockEngine.updateSettings).toHaveBeenCalledWith(model.settings)
-      expect(mockEngine.update).toHaveBeenCalledWith(modelId, model)
+      // Note: Model ID updates are now handled at the provider level in the frontend
+      // The engine no longer has an update method for model metadata
+      expect(mockEngine.update).not.toHaveBeenCalled()
     })
   })
 

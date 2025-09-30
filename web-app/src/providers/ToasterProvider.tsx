@@ -13,11 +13,15 @@ export function ToasterProvider() {
           alignItems: 'start',
           borderColor:
             'color-mix(in oklch, var(--app-main-view) 5%, transparent)',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none',
         },
         classNames: {
-          toast: 'toast',
-          title: '!text-main-view/90',
-          description: '!text-main-view/70',
+          toast: 'toast select-none',
+          title: '!text-main-view/90 select-none',
+          description: '!text-main-view/70 select-none',
         },
       }}
     />

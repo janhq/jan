@@ -4,11 +4,13 @@
  * Uses official MCP TypeScript SDK with proper session handling
  */
 
-import { MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
+import { MCPExtension, MCPTool, MCPToolCallResult, MCPToolComponentProps } from '@janhq/core'
 import { getSharedAuthService, JanAuthService } from '../shared'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './oauth-provider'
+import { WebSearchButton } from './components'
+import type { ComponentType } from 'react'
 
 // JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
 declare const JAN_API_BASE: string
@@ -231,5 +233,13 @@ export default class MCPExtensionWeb extends MCPExtension {
       console.error('Failed to refresh tools:', error)
       throw error
     }
+  }
+
+  /**
+   * Provides a custom UI component for web search tools
+   * @returns The WebSearchButton component
+   */
+  getToolComponent(): ComponentType<MCPToolComponentProps> | null {
+    return WebSearchButton
   }
 }

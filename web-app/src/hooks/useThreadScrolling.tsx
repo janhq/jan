@@ -3,7 +3,8 @@ import { useAppState } from './useAppState'
 import { useMessages } from './useMessages'
 
 const VIEWPORT_PADDING = 40 // Offset from viewport bottom for user message positioning
-const MAX_DOM_RETRY_ATTEMPTS = 3 // Maximum attempts to find DOM elements before giving up
+const MAX_DOM_RETRY_ATTEMPTS = 5 // Maximum attempts to find DOM elements before giving up
+const DOM_RETRY_DELAY = 100 // Delay in ms between DOM element retry attempts
 
 export const useThreadScrolling = (
   threadId: string,
@@ -16,6 +17,7 @@ export const useThreadScrolling = (
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasScrollbar, setHasScrollbar] = useState(false)
   const lastScrollTopRef = useRef(0)
+  const lastAssistantMessageRef = useRef<HTMLElement | null>(null)
 
   const messageCount = useMessages((state) => state.messages[threadId]?.length ?? 0)
   const lastMessageRole = useMessages((state) => {
@@ -33,13 +35,12 @@ export const useThreadScrolling = (
 
     const userMessages = scrollContainer.querySelectorAll('[data-message-author-role="user"]')
     const assistantMessages = scrollContainer.querySelectorAll('[data-message-author-role="assistant"]')
-
     return {
       scrollContainer,
       lastUserMessage: userMessages[userMessages.length - 1] as HTMLElement,
       lastAssistantMessage: assistantMessages[assistantMessages.length - 1] as HTMLElement,
     }
-  }, [])
+  }, [scrollContainerRef])
 
 
   const showScrollToBottomBtn = !isAtBottom && hasScrollbar
@@ -77,7 +78,7 @@ export const useThreadScrolling = (
       return () =>
         scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [handleScroll])
+  }, [handleScroll, scrollContainerRef])
 
   const checkScrollState = useCallback(() => {
     const scrollContainer = scrollContainerRef.current
@@ -89,7 +90,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }, [])
+  }, [scrollContainerRef])
 
   useEffect(() => {
     if (!scrollContainerRef.current) return
@@ -100,7 +101,7 @@ export const useThreadScrolling = (
       scrollToBottom(false)
       checkScrollState()
     }
-  }, [checkScrollState, scrollToBottom])
+  }, [checkScrollState, scrollToBottom, scrollContainerRef])
 
 
   const prevCountRef = useRef(messageCount)
@@ -121,6 +122,7 @@ export const useThreadScrolling = (
         setPaddingHeight(calculatedPadding)
         originalPaddingRef.current = calculatedPadding
 
+        // Scroll after padding is applied to the DOM
         requestAnimationFrame(() => {
           elements.scrollContainer.scrollTo({
             top: elements.scrollContainer.scrollHeight,
@@ -136,41 +138,66 @@ export const useThreadScrolling = (
           calculatePadding()
         } else if (retryCount < MAX_DOM_RETRY_ATTEMPTS) {
           retryCount++
-          requestAnimationFrame(tryCalculatePadding)
+          setTimeout(tryCalculatePadding, DOM_RETRY_DELAY)
         }
       }
 
-      requestAnimationFrame(tryCalculatePadding)
+      tryCalculatePadding()
     }
 
     prevCountRef.current = messageCount
-  }, [messageCount, lastMessageRole])
+  }, [messageCount, lastMessageRole, getDOMElements, setPaddingHeight])
 
   useEffect(() => {
     const previouslyStreaming = wasStreamingRef.current
     const currentlyStreaming = !!streamingContent && streamingContent.thread_id === threadId
 
+    const streamingStarted = !previouslyStreaming && currentlyStreaming
     const streamingEnded = previouslyStreaming && !currentlyStreaming
     const hasPaddingToAdjust = originalPaddingRef.current > 0
 
+    // Store the current assistant message when streaming starts
+    if (streamingStarted) {
+      const elements = getDOMElements()
+      lastAssistantMessageRef.current = elements?.lastAssistantMessage || null
+    }
+
     if (streamingEnded && hasPaddingToAdjust) {
-      requestAnimationFrame(() => {
+      let retryCount = 0
+
+      const adjustPaddingWhenReady = () => {
         const elements = getDOMElements()
-        if (!elements?.lastAssistantMessage || !elements?.lastUserMessage) return
+        const currentAssistantMessage = elements?.lastAssistantMessage
 
-        const userRect = elements.lastUserMessage.getBoundingClientRect()
-        const assistantRect = elements.lastAssistantMessage.getBoundingClientRect()
-        const actualSpacing = assistantRect.top - userRect.bottom
-        const totalAssistantHeight = elements.lastAssistantMessage.offsetHeight + actualSpacing
-        const newPadding = Math.max(0, originalPaddingRef.current - totalAssistantHeight)
+        // Check if a new assistant message has appeared (different from the one before streaming)
+        const hasNewAssistantMessage = currentAssistantMessage &&
+          currentAssistantMessage !== lastAssistantMessageRef.current
 
-        setPaddingHeight(newPadding)
-        originalPaddingRef.current = newPadding
-      })
+        if (hasNewAssistantMessage && elements?.lastUserMessage) {
+          const userRect = elements.lastUserMessage.getBoundingClientRect()
+          const assistantRect = currentAssistantMessage.getBoundingClientRect()
+          const actualSpacing = assistantRect.top - userRect.bottom
+          const totalAssistantHeight = currentAssistantMessage.offsetHeight + actualSpacing
+          const newPadding = Math.max(0, originalPaddingRef.current - totalAssistantHeight)
+
+          setPaddingHeight(newPadding)
+          originalPaddingRef.current = newPadding
+          lastAssistantMessageRef.current = currentAssistantMessage
+        } else if (retryCount < MAX_DOM_RETRY_ATTEMPTS) {
+          retryCount++
+          setTimeout(adjustPaddingWhenReady, DOM_RETRY_DELAY)
+        } else {
+          // Max retries hit - remove padding as fallback
+          setPaddingHeight(0)
+          originalPaddingRef.current = 0
+        }
+      }
+
+      adjustPaddingWhenReady()
     }
 
     wasStreamingRef.current = currentlyStreaming
-  }, [streamingContent, threadId])
+  }, [streamingContent, threadId, getDOMElements, setPaddingHeight])
 
   useEffect(() => {
     userIntendedPositionRef.current = null
@@ -180,7 +207,7 @@ export const useThreadScrolling = (
     prevCountRef.current = messageCount
     scrollToBottom(false)
     checkScrollState()
-  }, [threadId])
+  }, [threadId, messageCount, scrollToBottom, checkScrollState, setPaddingHeight])
 
   return useMemo(
     () => ({

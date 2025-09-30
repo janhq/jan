@@ -1,4 +1,4 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState, useNavigate } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
@@ -58,6 +58,9 @@ const mainMenus = [
     route: route.project,
     isEnabled: true,
   },
+]
+
+const secondaryMenus = [
   {
     title: 'common:assistants',
     icon: IconClipboardSmile,
@@ -82,6 +85,7 @@ const LeftPanel = () => {
   const open = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
 
@@ -212,7 +216,12 @@ const LeftPanel = () => {
     if (editingProjectKey) {
       updateFolder(editingProjectKey, name, systemPrompt)
     } else {
-      addFolder(name, systemPrompt)
+      const newProject = addFolder(name, systemPrompt)
+      // Navigate to the newly created project
+      navigate({
+        to: '/project/$projectId',
+        params: { projectId: newProject.id },
+      })
     }
     setProjectDialogOpen(false)
     setEditingProjectKey(null)
@@ -487,7 +496,7 @@ const LeftPanel = () => {
           )}
 
           <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
-            <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden">
+            <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
               <div className="h-full w-full overflow-y-auto">
                 {favoritedThreads.length > 0 && (
                   <>
@@ -607,6 +616,44 @@ const LeftPanel = () => {
                 </div>
               </div>
             </div>
+
+            {secondaryMenus.map((menu) => {
+              if (!menu.isEnabled) {
+                return null
+              }
+
+              // Regular menu items must have route and icon
+              if (!menu.route || !menu.icon) return null
+
+              const isActive = (() => {
+                // Settings routes
+                if (menu.route.includes(route.settings.index)) {
+                  return currentPath.includes(route.settings.index)
+                }
+
+                // Default exact match for other routes
+                return currentPath === menu.route
+              })()
+              return (
+                <Link
+                  key={menu.title}
+                  to={menu.route}
+                  onClick={() => isSmallScreen && setLeftPanel(false)}
+                  data-test-id={`menu-${menu.title}`}
+                  activeOptions={{ exact: true }}
+                  className={cn(
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    isActive && 'bg-left-panel-fg/10'
+                  )}
+                >
+                  <menu.icon size={18} className="text-left-panel-fg/70" />
+                  <span className="font-medium text-left-panel-fg/90">
+                    {t(menu.title)}
+                  </span>
+                </Link>
+              )
+            })}
+
             {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
               <div className="space-y-1 shrink-0 py-1">
                 <div>

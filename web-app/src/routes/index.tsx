@@ -13,18 +13,29 @@ type SearchParams = {
     id: string
     provider: string
   }
+  'temporary-chat'?: boolean
 }
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
-  validateSearch: (search: Record<string, unknown>): SearchParams => ({
-    model: search.model as SearchParams['model'],
-  }),
+  validateSearch: (search: Record<string, unknown>): SearchParams => {
+    const result: SearchParams = {
+      model: search.model as SearchParams['model'],
+    }
+
+    // Only include temporary-chat if it's explicitly true
+    if (search[TEMPORARY_CHAT_QUERY_ID] === 'true' || search[TEMPORARY_CHAT_QUERY_ID] === true) {
+      result['temporary-chat'] = true
+    }
+
+    return result
+  },
 })
 
 function Index() {
@@ -32,6 +43,7 @@ function Index() {
   const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const selectedModel = search.model
+  const isTemporaryChat = search['temporary-chat']
   const { setCurrentThreadId } = useThreads()
 
   // Conditional to check if there are any valid providers
@@ -60,10 +72,10 @@ function Index() {
         <div className="w-full md:w-4/6 mx-auto">
           <div className="mb-8 text-center">
             <h1 className="font-editorialnew text-main-view-fg text-4xl">
-              {t('chat:welcome')}
+              {isTemporaryChat ? t('chat:temporaryChat') : t('chat:welcome')}
             </h1>
             <p className="text-main-view-fg/70 text-lg mt-2">
-              {t('chat:description')}
+              {isTemporaryChat ? t('chat:temporaryChatDescription') : t('chat:description')}
             </p>
           </div>
           <div className="flex-1 shrink-0">
