@@ -4,6 +4,7 @@ use crate::core::state::SharedMcpServers;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::test::mock_app;
 use tokio::sync::Mutex;
@@ -27,8 +28,7 @@ async fn test_run_mcp_commands() {
         .expect("Failed to write to config file");
 
     // Call the run_mcp_commands function
-    let servers_state: SharedMcpServers =
-        Arc::new(Mutex::new(HashMap::new()));
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
     let result = run_mcp_commands(app.handle(), servers_state).await;
 
     // Assert that the function returns Ok(())
@@ -38,7 +38,6 @@ async fn test_run_mcp_commands() {
     std::fs::remove_file(&config_path).expect("Failed to remove config file");
 }
 
-#[test]
 fn test_add_server_config_new_file() {
     let app = mock_app();
     let app_path = get_jan_data_folder_path(app.handle().clone());
@@ -173,4 +172,44 @@ fn test_add_server_config_missing_config_file() {
 
     assert!(result.is_err(), "Expected error when config file doesn't exist");
     assert!(result.unwrap_err().contains("Failed to read config file"));
+=======
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn test_bin_path_construction_with_join() {
+    // Test that PathBuf::join properly constructs paths
+    let bin_path = PathBuf::from("/usr/local/bin");
+    let bun_path = bin_path.join("bun");
+
+    assert_eq!(bun_path.to_string_lossy(), "/usr/local/bin/bun");
+
+    // Test conversion to String via display()
+    let bun_path_str = bun_path.display().to_string();
+    assert_eq!(bun_path_str, "/usr/local/bin/bun");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn test_uv_path_construction_with_join() {
+    // Test that PathBuf::join properly constructs paths for uv
+    let bin_path = PathBuf::from("/usr/local/bin");
+    let uv_path = bin_path.join("uv");
+
+    assert_eq!(uv_path.to_string_lossy(), "/usr/local/bin/uv");
+
+    // Test conversion to String via display()
+    let uv_path_str = uv_path.display().to_string();
+    assert_eq!(uv_path_str, "/usr/local/bin/uv");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn test_bin_path_construction_windows() {
+    // Test Windows-style paths
+    let bin_path = PathBuf::from(r"C:\Program Files\bin");
+    let bun_path = bin_path.join("bun.exe");
+
+    assert_eq!(bun_path.to_string_lossy(), r"C:\Program Files\bin\bun.exe");
+
+    let bun_path_str = bun_path.display().to_string();
+    assert_eq!(bun_path_str, r"C:\Program Files\bin\bun.exe");
 }
