@@ -7,18 +7,6 @@ import {
 import { PlatformFeature } from '@/lib/platform/types'
 import { PlatformFeatures } from '@/lib/platform/const'
 
-// Type definition for the auth service from extensions-web
-interface AuthServiceInterface {
-  getAllProviders: () => string[]
-  loginWithProvider: (providerId: ProviderType) => Promise<void>
-  handleProviderCallback: (providerId: ProviderType, code: string, state?: string) => Promise<void>
-  isAuthenticatedWithProvider: (providerId: ProviderType) => boolean
-  logout: () => Promise<void>
-  getCurrentUser: (forceRefresh?: boolean) => Promise<User | null>
-  isAuthenticated: () => boolean
-  onAuthEvent: (callback: (event: MessageEvent) => void) => () => void
-}
-
 interface AuthState {
   // Auth service
   authService: JanAuthService | null
@@ -81,7 +69,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     if (!authService) {
       return []
     }
-    return (authService as AuthServiceInterface).getAllProviders()
+    return authService.getAllProviders()
   },
 
   loginWithProvider: async (providerId: ProviderType) => {
@@ -90,7 +78,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       throw new Error('Authentication not available on this platform')
     }
 
-    await (authService as AuthServiceInterface).loginWithProvider(providerId)
+    await authService.loginWithProvider(providerId)
   },
 
   handleProviderCallback: async (
@@ -103,7 +91,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       throw new Error('Authentication not available on this platform')
     }
 
-    await (authService as AuthServiceInterface).handleProviderCallback(providerId, code, state)
+    await authService.handleProviderCallback(providerId, code, state)
     // Reload auth state after successful callback
     await loadAuthState()
   },
@@ -114,7 +102,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       return false
     }
 
-    return (authService as AuthServiceInterface).isAuthenticatedWithProvider(providerId)
+    return authService.isAuthenticatedWithProvider(providerId)
   },
 
   logout: async () => {
@@ -145,7 +133,7 @@ const useAuthStore = create<AuthState>()((set, get) => ({
     }
 
     try {
-      const profile = await (authService as AuthServiceInterface).getCurrentUser(forceRefresh)
+      const profile = await authService.getCurrentUser(forceRefresh)
       set({
         user: profile,
         isAuthenticated: profile !== null,
@@ -168,11 +156,11 @@ const useAuthStore = create<AuthState>()((set, get) => ({
       set({ isLoading: true })
 
       // Check if user is authenticated with any provider
-      const isAuth = (authService as AuthServiceInterface).isAuthenticated()
+      const isAuth = authService.isAuthenticated()
 
       // Load user profile if authenticated
       if (isAuth) {
-        const profile = await (authService as AuthServiceInterface).getCurrentUser(forceRefresh)
+        const profile = await authService.getCurrentUser(forceRefresh)
         set({
           user: profile,
           isAuthenticated: profile !== null,
@@ -196,12 +184,12 @@ const useAuthStore = create<AuthState>()((set, get) => ({
 
   subscribeToAuthEvents: (callback: (event: MessageEvent) => void) => {
     const { authService } = get()
-    if (!authService || typeof (authService as AuthServiceInterface).onAuthEvent !== 'function') {
+    if (!authService || typeof authService.onAuthEvent !== 'function') {
       return () => {} // Return no-op cleanup
     }
 
     try {
-      return (authService as AuthServiceInterface).onAuthEvent(callback)
+      return authService.onAuthEvent(callback)
     } catch (error) {
       console.warn('Failed to subscribe to auth events:', error)
       return () => {}

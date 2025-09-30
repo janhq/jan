@@ -1,7 +1,7 @@
 {
   "app": {
     "security": {
-      "capabilities": ["default", "system-monitor-window"]
+      "capabilities": ["desktop", "system-monitor-window"]
     }
   },
   "bundle": {

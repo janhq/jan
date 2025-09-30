@@ -66,7 +66,9 @@
     "hoistingLimits": "workspaces"
   },
   "resolutions": {
-    "yallist": "4.0.0"
+    "yallist": "4.0.0",
+    "@types/react": "19.1.2",
+    "@types/react-dom": "19.1.2"
   },
   "packageManager": "yarn@4.5.3"
 }
