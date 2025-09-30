@@ -23,7 +23,7 @@ fn test_get_vulkan_gpus() {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[test]
 fn test_get_vulkan_gpus_on_desktop() {
-    let gpus = vulkan::get_vulkan_gpus("");
+    let gpus = vulkan::get_vulkan_gpus();
 
     // Test that function returns without panicking on desktop platforms
     assert!(gpus.len() >= 0);
@@ -54,7 +54,7 @@ fn test_get_vulkan_gpus_on_desktop() {
 #[cfg(target_os = "android")]
 #[test]
 fn test_get_vulkan_gpus_on_android() {
-    let gpus = vulkan::get_vulkan_gpus("");
+    let gpus = vulkan::get_vulkan_gpus();
 
     // Test that function returns without panicking on Android
     assert!(gpus.len() >= 0);
@@ -94,7 +94,7 @@ fn test_get_vulkan_gpus_on_android() {
 #[cfg(target_os = "ios")]
 #[test]
 fn test_get_vulkan_gpus_on_ios() {
-    let gpus = vulkan::get_vulkan_gpus("");
+    let gpus = vulkan::get_vulkan_gpus();
 
     // Note: iOS doesn't support Vulkan natively, so this might return empty
     // But the function should still work without crashing

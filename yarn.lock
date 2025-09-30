@@ -3460,13 +3460,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jan/extensions-web@link:../extensions-web::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
-  version: 0.0.0-use.local
-  resolution: "@jan/extensions-web@link:../extensions-web::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
-  languageName: node
-  linkType: soft
-
-"@jan/extensions-web@workspace:extensions-web":
+"@jan/extensions-web@workspace:*, @jan/extensions-web@workspace:extensions-web":
   version: 0.0.0-use.local
   resolution: "@jan/extensions-web@workspace:extensions-web"
   dependencies:
@@ -3480,12 +3474,6 @@ __metadata:
     "@janhq/core": "*"
     zustand: 5.0.3
   languageName: unknown
-  linkType: soft
-
-"@janhq/core@link:../core::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
-  version: 0.0.0-use.local
-  resolution: "@janhq/core@link:../core::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
-  languageName: node
   linkType: soft
 
 "@janhq/core@workspace:*, @janhq/core@workspace:core":
@@ -3519,8 +3507,8 @@ __metadata:
     "@dnd-kit/modifiers": "npm:9.0.0"
     "@dnd-kit/sortable": "npm:10.0.0"
     "@eslint/js": "npm:8.57.0"
-    "@jan/extensions-web": "link:../extensions-web"
-    "@janhq/core": "link:../core"
+    "@jan/extensions-web": "workspace:*"
+    "@janhq/core": "workspace:*"
     "@radix-ui/react-accordion": "npm:1.2.11"
     "@radix-ui/react-avatar": "npm:1.1.10"
     "@radix-ui/react-dialog": "npm:1.1.15"
