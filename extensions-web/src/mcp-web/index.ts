@@ -242,4 +242,19 @@ export default class MCPExtensionWeb extends MCPExtension {
   getToolComponent(): ComponentType<MCPToolComponentProps> | null {
     return WebSearchButton
   }
+
+  /**
+   * Returns the list of tool names that should be disabled by default for new users
+   * All MCP web tools are disabled by default to prevent accidental API usage
+   * @returns Array of tool names to disable by default
+   */
+  async getDefaultDisabledTools(): Promise<string[]> {
+    try {
+      const tools = await this.getTools()
+      return tools.map(tool => tool.name)
+    } catch (error) {
+      console.error('Failed to get default disabled tools:', error)
+      return []
+    }
+  }
 }
