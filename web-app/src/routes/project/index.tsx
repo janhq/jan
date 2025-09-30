@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -31,6 +31,7 @@ function Project() {
 
 function ProjectContent() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
     useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -59,7 +60,12 @@ function ProjectContent() {
     if (editingKey) {
       updateFolder(editingKey, name)
     } else {
-      addFolder(name)
+      const newProject = addFolder(name)
+      // Navigate to the newly created project
+      navigate({
+        to: '/project/$projectId',
+        params: { projectId: newProject.id },
+      })
     }
     setOpen(false)
     setEditingKey(null)

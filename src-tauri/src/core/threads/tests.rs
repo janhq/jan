@@ -82,7 +82,7 @@ async fn test_create_and_list_messages() {
     let messages = list_messages(app.handle().clone(), thread_id.clone())
         .await
         .unwrap();
-    assert!(messages.len() > 0);
+    assert!(messages.len() > 0, "Expected at least one message, but got none. Thread ID: {}", thread_id);
     assert_eq!(messages[0]["role"], "user");
 
     // Clean up

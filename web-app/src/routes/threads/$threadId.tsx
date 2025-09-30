@@ -23,8 +23,8 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
+import { ThreadPadding } from '@/containers/ThreadPadding'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
-import { useThreadScrolling } from '@/hooks/useThreadScrolling'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -99,9 +99,6 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
 
-  // Get padding height for ChatGPT-style message positioning
-  const { paddingHeight } = useThreadScrolling(threadId, scrollContainerRef)
-
   // Listen for conversation not found events
   useEffect(() => {
     const handleConversationNotFound = (event: CustomEvent) => {
@@ -123,7 +120,7 @@ function ThreadDetail() {
     return () => {
       window.removeEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
     }
-  }, [threadId, navigate])
+  }, [threadId, navigate, t])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -270,11 +267,7 @@ function ThreadDetail() {
               data-test-id="thread-content-text"
             />
             {/* Persistent padding element for ChatGPT-style message positioning */}
-            <div
-              style={{ height: paddingHeight }}
-              className="flex-shrink-0"
-              data-testid="chat-padding"
-            />
+           <ThreadPadding threadId={threadId} scrollContainerRef={scrollContainerRef} />
           </div>
         </div>
         <div
