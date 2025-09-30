@@ -1,4 +1,9 @@
-use crate::types::{GpuInfo, Vendor};
+use crate::types::GpuInfo;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::types::Vendor;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use ash::{vk, Entry};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -9,6 +14,7 @@ pub struct VulkanInfo {
     pub device_id: u32,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
         "{:02x}{:02x}{:02x}{:02x}-\
@@ -35,51 +41,35 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
-    match get_vulkan_gpus_internal(lib_path) {
-        Ok(gpus) => gpus,
-        Err(e) => {
-            log::error!("Failed to get Vulkan GPUs: {:?}", e);
-            vec![]
+pub fn get_vulkan_gpus(_lib_path: &str) -> Vec<GpuInfo> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        // On mobile platforms, Vulkan GPU detection is not supported
+        log::info!("Vulkan GPU detection is not supported on mobile platforms");
+        vec![]
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        match get_vulkan_gpus_internal(_lib_path) {
+            Ok(gpus) => gpus,
+            Err(e) => {
+                log::error!("Failed to get Vulkan GPUs: {:?}", e);
+                vec![]
+            }
         }
     }
 }
 
-fn parse_c_string_u8(buf: &[u8]) -> String {
-    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) }
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn parse_c_string(buf: &[std::ffi::c_char]) -> String {
+    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }
         .to_str()
         .unwrap_or_default()
         .to_string()
 }
 
-fn parse_c_string_i8(buf: &[i8]) -> String {
-    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) }
-        .to_str()
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn parse_c_string_platform_specific(buf: &[std::ffi::c_char]) -> String {
-    #[cfg(target_os = "android")]
-    {
-        // Android typically uses i8 for c_char
-        let i8_buf = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const i8, buf.len()) };
-        parse_c_string_i8(i8_buf)
-    }
-    #[cfg(target_os = "ios")]
-    {
-        // iOS typically uses i8 for c_char
-        let i8_buf = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const i8, buf.len()) };
-        parse_c_string_i8(i8_buf)
-    }
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        // Desktop platforms typically use u8 for c_char
-        let u8_buf = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len()) };
-        parse_c_string_u8(u8_buf)
-    }
-}
-
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
     let entry = if lib_path.is_empty() {
         unsafe { Entry::load()? }
@@ -124,7 +114,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
         }
 
         let device_info = GpuInfo {
-            name: parse_c_string_platform_specific(&props.device_name),
+            name: parse_c_string(&props.device_name),
             total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
                 .memory_heaps
                 .iter()
@@ -133,7 +123,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
                 .sum(),
             vendor: Vendor::from_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
-            driver_version: parse_c_string_platform_specific(&driver_props.driver_info),
+            driver_version: parse_c_string(&driver_props.driver_info),
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 index: i as u64,

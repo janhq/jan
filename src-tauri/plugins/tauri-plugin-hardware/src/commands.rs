@@ -17,7 +17,7 @@ pub fn get_system_info() -> SystemInfo {
                 gpu_map.insert(gpu.uuid.clone(), gpu);
             }
 
-            let vulkan_gpus = vulkan::get_vulkan_gpus();
+            let vulkan_gpus = vulkan::get_vulkan_gpus("");
 
             for gpu in vulkan_gpus {
                 match gpu_map.get_mut(&gpu.uuid) {
