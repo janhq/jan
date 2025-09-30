@@ -64,4 +64,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // First message persisted thread - enabled for web only
   [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri(),
+
+  // Temporary chat mode - enabled for web only
+  [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
 }
