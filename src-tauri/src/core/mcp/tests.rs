@@ -172,7 +172,7 @@ fn test_add_server_config_missing_config_file() {
 
     assert!(result.is_err(), "Expected error when config file doesn't exist");
     assert!(result.unwrap_err().contains("Failed to read config file"));
-=======
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn test_bin_path_construction_with_join() {
