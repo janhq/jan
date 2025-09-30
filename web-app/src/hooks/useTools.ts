@@ -8,7 +8,7 @@ import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
-  const { isDefaultsInitialized, setDefaultDisabledTools } = useToolAvailable()
+  const { isDefaultsInitialized, setDefaultDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
 
   useEffect(() => {
     async function setTools() {
@@ -27,6 +27,7 @@ export const useTools = () => {
           const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
           if (defaultDisabled.length > 0) {
             setDefaultDisabledTools(defaultDisabled)
+            markDefaultsAsInitialized()
           }
         }
       } catch (error) {

@@ -22,6 +22,7 @@ type ToolDisabledState = {
   setDefaultDisabledTools: (toolNames: string[]) => void
   getDefaultDisabledTools: () => string[]
   isDefaultsInitialized: () => boolean
+  markDefaultsAsInitialized: () => void
   // Initialize thread tools from default or existing thread settings
   initializeThreadTools: (threadId: string, allTools: MCPTool[]) => void
 }
@@ -78,7 +79,7 @@ export const useToolAvailable = create<ToolDisabledState>()(
       },
 
       setDefaultDisabledTools: (toolNames: string[]) => {
-        set({ defaultDisabledTools: toolNames, defaultsInitialized: true })
+        set({ defaultDisabledTools: toolNames })
       },
 
       getDefaultDisabledTools: () => {
@@ -87,6 +88,10 @@ export const useToolAvailable = create<ToolDisabledState>()(
 
       isDefaultsInitialized: () => {
         return get().defaultsInitialized
+      },
+
+      markDefaultsAsInitialized: () => {
+        set({ defaultsInitialized: true })
       },
 
       initializeThreadTools: (threadId: string, allTools: MCPTool[]) => {
