@@ -97,32 +97,47 @@ function LocalAPIServerContent() {
       }
       setShowApiKeyError(false)
 
-      const modelToStart = getModelToStart({
-        selectedModel,
-        selectedProvider,
-        getProviderByName,
-      })
-      // Only start server if we have a model to load
-      if (!modelToStart) {
-        console.warn(
-          'Cannot start Local API Server: No model available to load'
-        )
-        return
-      }
-
       setServerStatus('pending')
-      setIsModelLoading(true) // Start loading state
 
-      // Start the model first
+      // Check if there's already a loaded model
       serviceHub
         .models()
-        .startModel(modelToStart.provider, modelToStart.model)
-        .then(() => {
-          console.log(`Model ${modelToStart.model} started successfully`)
-          setIsModelLoading(false) // Model loaded, stop loading state
+        .getActiveModels()
+        .then((loadedModels) => {
+          if (loadedModels && loadedModels.length > 0) {
+            console.log(`Using already loaded model: ${loadedModels[0]}`)
+            // Model already loaded, just start the server
+            return Promise.resolve()
+          } else {
+            // No loaded model, start one first
+            const modelToStart = getModelToStart({
+              selectedModel,
+              selectedProvider,
+              getProviderByName,
+            })
 
-          // Add a small delay for the backend to update state
-          return new Promise((resolve) => setTimeout(resolve, 500))
+            // Only start server if we have a model to load
+            if (!modelToStart) {
+              console.warn(
+                'Cannot start Local API Server: No model available to load'
+              )
+              throw new Error('No model available to load')
+            }
+
+            setIsModelLoading(true) // Start loading state
+
+            // Start the model first
+            return serviceHub
+              .models()
+              .startModel(modelToStart.provider, modelToStart.model)
+              .then(() => {
+                console.log(`Model ${modelToStart.model} started successfully`)
+                setIsModelLoading(false) // Model loaded, stop loading state
+
+                // Add a small delay for the backend to update state
+                return new Promise((resolve) => setTimeout(resolve, 500))
+              })
+          }
         })
         .then(() => {
           // Then start the server
