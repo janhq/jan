@@ -210,11 +210,11 @@ const LeftPanel = () => {
     setDeletingProjectId(null)
   }
 
-  const handleProjectSave = (name: string) => {
+  const handleProjectSave = async (name: string) => {
     if (editingProjectKey) {
-      updateFolder(editingProjectKey, name)
+      await updateFolder(editingProjectKey, name)
     } else {
-      const newProject = addFolder(name)
+      const newProject = await addFolder(name)
       // Navigate to the newly created project
       navigate({
         to: '/project/$projectId',
