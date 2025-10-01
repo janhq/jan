@@ -13,7 +13,7 @@ Internal tracker for web component changes and features.
 - Performance enhancement: prevent thread items over fetching on app start
 - Fix Google Tag
 
-## v0.0.11 (Current)
+## v0.0.11
 **Release Date**: 2025-09-23
 **Commit SHA**: 494db746f7dd1f51241cec80bbf550901a0115e5
 
