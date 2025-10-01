@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
-import { useAppState } from './useAppState'
+import { useAppState, type PromptProgress } from './useAppState'
 import { useMessages } from './useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { defaultModel } from '@/lib/models'
@@ -24,7 +24,7 @@ import {
   ChatCompletionMessageToolCall,
   CompletionUsage,
 } from 'openai/resources'
-import { MessageStatus, ContentType } from '@janhq/core'
+import { MessageStatus, ContentType, ThreadMessage } from '@janhq/core'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -77,7 +77,7 @@ const finalizeMessage = (
   finalContent: ThreadMessage,
   addMessage: (message: ThreadMessage) => void,
   updateStreamingContent: (content: ThreadMessage | undefined) => void,
-  updatePromptProgress: (progress: unknown) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
   updateThreadTimestamp: (threadId: string) => void,
   updateMessage?: (message: ThreadMessage) => void,
   continueFromMessageId?: string
@@ -104,7 +104,10 @@ const processStreamingCompletion = async (
   currentCall: ChatCompletionMessageToolCall | null,
   updateStreamingContent: (content: ThreadMessage | undefined) => void,
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void,
-  updatePromptProgress: (progress: unknown) => void,
+  setTokenSpeed: (message: ThreadMessage, tokensPerSecond: number, totalTokens: number) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
+  timeToFirstToken: number,
+  tokenUsageRef: { current: CompletionUsage | undefined },
   continueFromMessageId?: string,
   updateMessage?: (message: ThreadMessage) => void,
   continueFromMessage?: ThreadMessage
@@ -134,7 +137,14 @@ const processStreamingCompletion = async (
       updateStreamingContent(currentContent)
     }
 
-    if (pendingDeltaCount > 0) {
+    if (tokenUsageRef.current) {
+      setTokenSpeed(
+        currentContent,
+        tokenUsageRef.current.completion_tokens /
+          Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+        tokenUsageRef.current.completion_tokens
+      )
+    } else if (pendingDeltaCount > 0) {
       updateTokenSpeed(currentContent, pendingDeltaCount)
     }
     pendingDeltaCount = 0
@@ -586,7 +596,7 @@ export const useChat = () => {
       const accumulatedTextRef = {
         value: continueFromMessage?.content?.[0]?.text?.value || ''
       }
-      let currentAssistant: Assistant | undefined
+      let currentAssistant: Assistant | undefined | null
 
       try {
         if (selectedModel?.id) {
@@ -695,6 +705,7 @@ export const useChat = () => {
           const toolCalls: ChatCompletionMessageToolCall[] = []
           const timeToFirstToken = Date.now()
           let tokenUsage: CompletionUsage | undefined = undefined
+          const tokenUsageRef = { current: tokenUsage }
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
@@ -723,11 +734,15 @@ export const useChat = () => {
                 currentCall,
                 updateStreamingContent,
                 updateTokenSpeed,
+                setTokenSpeed,
                 updatePromptProgress,
+                timeToFirstToken,
+                tokenUsageRef,
                 continueFromMessageId,
                 updateMessage,
                 continueFromMessage
               )
+              tokenUsage = tokenUsageRef.current
             }
           } catch (error) {
             const errorMessage =
