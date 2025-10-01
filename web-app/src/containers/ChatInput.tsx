@@ -4,7 +4,6 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -68,8 +67,6 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
-  const updateThread = useThreads((state) => state.updateThread)
-  const { getFolderById } = useThreadManagement()
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
@@ -180,7 +177,7 @@ const ChatInput = ({
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
 
-  const handleSendMesage = (prompt: string) => {
+  const handleSendMesage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -192,31 +189,10 @@ const ChatInput = ({
     sendMessage(
       prompt,
       true,
-      uploadedFiles.length > 0 ? uploadedFiles : undefined
+      uploadedFiles.length > 0 ? uploadedFiles : undefined,
+      projectId
     )
     setUploadedFiles([])
-
-    // Handle project assignment for new threads
-    if (projectId && !currentThreadId) {
-      const project = getFolderById(projectId)
-      if (project) {
-        // Use setTimeout to ensure the thread is created first
-        setTimeout(() => {
-          const newCurrentThreadId = useThreads.getState().currentThreadId
-          if (newCurrentThreadId) {
-            updateThread(newCurrentThreadId, {
-              metadata: {
-                project: {
-                  id: project.id,
-                  name: project.name,
-                  updated_at: project.updated_at,
-                },
-              },
-            })
-          }
-        }, 100)
-      }
-    }
   }
 
   useEffect(() => {
