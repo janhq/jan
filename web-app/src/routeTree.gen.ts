@@ -383,7 +383,7 @@ export interface FileRoutesByTo {
 }
 
 export interface FileRoutesById {
-  '__root__': typeof rootRoute
+  __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute

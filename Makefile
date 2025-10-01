@@ -41,6 +41,23 @@ else
 	@echo "Not macOS; skipping Rust target installation."
 endif
 
+# Install required Rust targets for Android builds
+install-android-rust-targets:
+	@echo "Checking and installing Android Rust targets..."
+	@rustup target list --installed | grep -q "aarch64-linux-android" || rustup target add aarch64-linux-android
+	@rustup target list --installed | grep -q "armv7-linux-androideabi" || rustup target add armv7-linux-androideabi
+	@rustup target list --installed | grep -q "i686-linux-android" || rustup target add i686-linux-android
+	@rustup target list --installed | grep -q "x86_64-linux-android" || rustup target add x86_64-linux-android
+	@echo "Android Rust targets ready!"
+
+# Install required Rust targets for iOS builds
+install-ios-rust-targets:
+	@echo "Checking and installing iOS Rust targets..."
+	@rustup target list --installed | grep -q "aarch64-apple-ios" || rustup target add aarch64-apple-ios
+	@rustup target list --installed | grep -q "aarch64-apple-ios-sim" || rustup target add aarch64-apple-ios-sim
+	@rustup target list --installed | grep -q "x86_64-apple-ios" || rustup target add x86_64-apple-ios
+	@echo "iOS Rust targets ready!"
+
 dev: install-and-build
 	yarn download:bin
 	yarn dev
@@ -62,6 +79,35 @@ serve-web-app:
 
 build-serve-web-app: build-web-app
 	yarn serve:web-app
+
+# Mobile
+dev-android: install-and-build install-android-rust-targets
+	@echo "Setting up Android development environment..."
+	@if [ ! -d "src-tauri/gen/android" ]; then \
+		echo "Android app not initialized. Initializing..."; \
+		yarn tauri android init; \
+	fi
+	@echo "Sourcing Android environment setup..."
+	@bash autoqa/scripts/setup-android-env.sh echo "Android environment ready"
+	@echo "Starting Android development server..."
+	yarn dev:android
+
+dev-ios: install-and-build install-ios-rust-targets
+	@echo "Setting up iOS development environment..."
+ifeq ($(shell uname -s),Darwin)
+	@if [ ! -d "src-tauri/gen/ios" ]; then \
+		echo "iOS app not initialized. Initializing..."; \
+		yarn tauri ios init; \
+	fi
+	@echo "Checking iOS development requirements..."
+	@xcrun --version > /dev/null 2>&1 || (echo "❌ Xcode command line tools not found. Install with: xcode-select --install" && exit 1)
+	@xcrun simctl list devices available | grep -q "iPhone\|iPad" || (echo "❌ No iOS simulators found. Install simulators through Xcode." && exit 1)
+	@echo "Starting iOS development server..."
+	yarn dev:ios
+else
+	@echo "❌ iOS development is only supported on macOS"
+	@exit 1
+endif
 
 # Linting
 lint: install-and-build

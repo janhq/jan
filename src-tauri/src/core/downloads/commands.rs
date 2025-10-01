@@ -3,12 +3,12 @@ use super::models::DownloadItem;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{Runtime, State};
 use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
-pub async fn download_files(
-    app: tauri::AppHandle,
+pub async fn download_files<R: Runtime>(
+    app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
     items: Vec<DownloadItem>,
     task_id: &str,

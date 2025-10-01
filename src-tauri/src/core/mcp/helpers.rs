@@ -627,17 +627,28 @@ async fn schedule_mcp_start_task<R: Runtime>(
         }
     } else {
         let mut cmd = Command::new(config_params.command.clone());
-        let bun_x_path = format!("{}/bun", bin_path.display());
-        if config_params.command.clone() == "npx" && can_override_npx(bun_x_path.clone()) {
+        let bun_x_path = if cfg!(windows) {
+            bin_path.join("bun.exe")
+        } else {
+            bin_path.join("bun")
+        };
+        if config_params.command.clone() == "npx"
+            && can_override_npx(bun_x_path.display().to_string())
+        {
             let mut cache_dir = app_path.clone();
             cache_dir.push(".npx");
-            cmd = Command::new(bun_x_path);
+            cmd = Command::new(bun_x_path.display().to_string());
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
         }
 
-        let uv_path = format!("{}/uv", bin_path.display());
-        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.clone()) {
+        let uv_path = if cfg!(windows) {
+            bin_path.join("uv.exe")
+        } else {
+            bin_path.join("uv")
+        };
+        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
+        {
             let mut cache_dir = app_path.clone();
             cache_dir.push(".uvx");
             cmd = Command::new(uv_path);
@@ -934,4 +945,48 @@ pub async fn should_restart_server(
             false
         }
     }
+}
+
+// Add a new server configuration to the MCP config file
+pub fn add_server_config<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    server_key: String,
+    server_value: Value,
+) -> Result<(), String> {
+    add_server_config_with_path(app_handle, server_key, server_value, None)
+}
+
+// Add a new server configuration to the MCP config file with custom path support
+pub fn add_server_config_with_path<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    server_key: String,
+    server_value: Value,
+    config_filename: Option<&str>,
+) -> Result<(), String> {
+    let config_filename = config_filename.unwrap_or("mcp_config.json");
+    let config_path = get_jan_data_folder_path(app_handle).join(config_filename);
+
+    let mut config: Value = serde_json::from_str(
+        &std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config file: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to parse config: {e}"))?;
+
+    config
+        .as_object_mut()
+        .ok_or("Config root is not an object")?
+        .entry("mcpServers")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or("mcpServers is not an object")?
+        .insert(server_key, server_value);
+
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize config: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to write config file: {e}"))?;
+
+    Ok(())
 }

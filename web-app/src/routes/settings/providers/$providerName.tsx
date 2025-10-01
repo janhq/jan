@@ -3,7 +3,7 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import {
   createFileRoute,
   Link,
@@ -318,17 +318,7 @@ function ProviderDetail() {
           .getActiveModels()
           .then((models) => setActiveModels(models || []))
       } catch (error) {
-        console.error('Error starting model:', error)
-        if (
-          error &&
-          typeof error === 'object' &&
-          'message' in error &&
-          typeof error.message === 'string'
-        ) {
-          setModelLoadError({ message: error.message })
-        } else {
-          setModelLoadError(typeof error === 'string' ? error : `${error}`)
-        }
+        setModelLoadError(error as ErrorObject)
       } finally {
         // Remove model from loading state
         setLoadingModels((prev) => prev.filter((id) => id !== modelId))
@@ -442,7 +432,7 @@ function ProviderDetail() {
   return (
     <>
       <Joyride
-        run={isSetup}
+        run={IS_IOS || IS_ANDROID ? false : isSetup}
         floaterProps={{
           hideArrow: true,
         }}
@@ -464,7 +454,7 @@ function ProviderDetail() {
           skip: t('providers:joyride.skip'),
         }}
       />
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
         <HeaderPage>
           <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
@@ -777,7 +767,7 @@ function ProviderDetail() {
                                 className="font-medium line-clamp-1"
                                 title={model.id}
                               >
-                                {model.id}
+                                {getModelDisplayName(model)}
                               </h1>
                               <Capabilities capabilities={capabilities} />
                             </div>

@@ -1,4 +1,3 @@
-use crate::core::app::commands::get_jan_data_folder_path;
 
 use super::commands::*;
 use serde_json::json;
@@ -9,11 +8,18 @@ use tauri::test::{mock_app, MockRuntime};
 // Helper to create a mock app handle with a temp data dir
 fn mock_app_with_temp_data_dir() -> (tauri::App<MockRuntime>, PathBuf) {
     let app = mock_app();
-    let data_dir = get_jan_data_folder_path(app.handle().clone());
+    // Create a unique test directory to avoid race conditions between parallel tests
+    let unique_id = std::thread::current().id();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let data_dir = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(format!("test-data-{:?}-{}", unique_id, timestamp));
     println!("Mock app data dir: {}", data_dir.display());
-    // Patch get_data_dir to use temp dir (requires get_data_dir to be overridable or injectable)
-    // For now, we assume get_data_dir uses tauri::api::path::app_data_dir(&app_handle)
-    // and that we can set the environment variable to redirect it.
+    // Ensure the unique test directory exists
+    let _ = fs::create_dir_all(&data_dir);
     (app, data_dir)
 }
 
@@ -82,7 +88,7 @@ async fn test_create_and_list_messages() {
     let messages = list_messages(app.handle().clone(), thread_id.clone())
         .await
         .unwrap();
-    assert!(messages.len() > 0);
+    assert!(messages.len() > 0, "Expected at least one message, but got none. Thread ID: {}", thread_id);
     assert_eq!(messages[0]["role"], "user");
 
     // Clean up

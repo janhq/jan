@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+import('../node_modules/@tauri-apps/cli/tauri.js');

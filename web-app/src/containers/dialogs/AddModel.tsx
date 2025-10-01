@@ -17,6 +17,7 @@ import { getProviderTitle } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ModelCapabilities } from '@/types/models'
 import { models as providerModels } from 'token.js'
+import { toast } from 'sonner'
 
 type DialogAddModelProps = {
   provider: ModelProvider
@@ -37,8 +38,13 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
 
   // Handle form submission
   const handleSubmit = () => {
-    if (!modelId.trim()) {
-      return // Don't submit if model ID is empty
+    if (!modelId.trim()) return // Don't submit if model ID is empty
+
+    if (provider.models.some((e) => e.id === modelId)) {
+      toast.error(t('providers:addModel.modelExists'), {
+        description: t('providers:addModel.modelExistsDesc'),
+      })
+      return // Don't submit if model ID already exists
     }
 
     // Create the new model

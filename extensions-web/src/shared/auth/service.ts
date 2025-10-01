@@ -16,6 +16,7 @@ import { logoutUser, refreshToken, guestLogin } from './api'
 import { AuthProviderRegistry } from './registry'
 import { AuthBroadcast } from './broadcast'
 import type { ProviderType } from './providers'
+import { ApiError } from '../types/errors'
 
 const authProviderRegistry = new AuthProviderRegistry()
 
@@ -160,7 +161,7 @@ export class JanAuthService {
       this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
     } catch (error) {
       console.error('Failed to refresh access token:', error)
-      if (error instanceof Error && error.message.includes('401')) {
+      if (error instanceof ApiError && error.isStatus(401)) {
         await this.handleSessionExpired()
       }
       throw error
@@ -305,9 +306,7 @@ export class JanAuthService {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(
-          `API request failed: ${response.status} ${response.statusText} - ${errorText}`
-        )
+        throw new ApiError(response.status, response.statusText, errorText)
       }
 
       return response.json()
@@ -418,7 +417,7 @@ export class JanAuthService {
       )
     } catch (error) {
       console.error('Failed to fetch user profile:', error)
-      if (error instanceof Error && error.message.includes('401')) {
+      if (error instanceof ApiError && error.isStatus(401)) {
         // Authentication failed - handle session expiry
         await this.handleSessionExpired()
         return null

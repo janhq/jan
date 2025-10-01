@@ -35,7 +35,9 @@
     "modelId": "模型 ID",
     "enterModelId": "输入模型 ID",
     "exploreModels": "查看 {{provider}} 的模型列表",
-    "addModel": "添加模型"
+    "addModel": "添加模型",
+    "modelExists": "模型已存在",
+    "modelExistsDesc": "请选择不同的模型 ID。"
   },
   "deleteModel": {
     "title": "删除模型：{{modelId}}",
