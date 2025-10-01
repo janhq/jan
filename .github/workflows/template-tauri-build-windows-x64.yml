@@ -252,13 +252,3 @@ jobs:
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
           asset_content_type: application/octet-stream
-      - name: Upload release assert if public provider is github
-        if: inputs.public_provider == 'github'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/msi/${{ steps.metadata.outputs.MSI_FILE_NAME  }}
-          asset_name: ${{ steps.metadata.outputs.MSI_FILE_NAME  }}
-          asset_content_type: application/octet-stream
