@@ -7,9 +7,13 @@ use std::{
 };
 use tar::Archive;
 use tauri::{
+    App, Emitter, Manager, Runtime, Wry
+};
+
+#[cfg(desktop)]
+use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    App, Emitter, Manager, Wry,
 };
 use tauri_plugin_store::Store;
 
@@ -19,7 +23,7 @@ use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
 };
 
-pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
+pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -202,10 +206,10 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-pub fn setup_mcp(app: &App) {
+pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
-    let app_handle: tauri::AppHandle = app.handle().clone();
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
@@ -216,6 +220,7 @@ pub fn setup_mcp(app: &App) {
     });
 }
 
+#[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;

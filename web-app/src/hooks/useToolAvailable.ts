@@ -8,6 +8,8 @@ type ToolDisabledState = {
   disabledTools: Record<string, string[]> // threadId -> toolNames[]
   // Global default disabled tools (for new threads/index page)
   defaultDisabledTools: string[]
+  // Flag to track if defaults have been initialized from extension
+  defaultsInitialized: boolean
 
   // Actions
   setToolDisabledForThread: (
@@ -19,6 +21,8 @@ type ToolDisabledState = {
   getDisabledToolsForThread: (threadId: string) => string[]
   setDefaultDisabledTools: (toolNames: string[]) => void
   getDefaultDisabledTools: () => string[]
+  isDefaultsInitialized: () => boolean
+  markDefaultsAsInitialized: () => void
   // Initialize thread tools from default or existing thread settings
   initializeThreadTools: (threadId: string, allTools: MCPTool[]) => void
 }
@@ -28,6 +32,7 @@ export const useToolAvailable = create<ToolDisabledState>()(
     (set, get) => ({
       disabledTools: {},
       defaultDisabledTools: [],
+      defaultsInitialized: false,
 
       setToolDisabledForThread: (
         threadId: string,
@@ -81,6 +86,14 @@ export const useToolAvailable = create<ToolDisabledState>()(
         return get().defaultDisabledTools
       },
 
+      isDefaultsInitialized: () => {
+        return get().defaultsInitialized
+      },
+
+      markDefaultsAsInitialized: () => {
+        set({ defaultsInitialized: true })
+      },
+
       initializeThreadTools: (threadId: string, allTools: MCPTool[]) => {
         const state = get()
         // If thread already has settings, don't override
@@ -109,6 +122,7 @@ export const useToolAvailable = create<ToolDisabledState>()(
       partialize: (state) => ({
         disabledTools: state.disabledTools,
         defaultDisabledTools: state.defaultDisabledTools,
+        defaultsInitialized: state.defaultsInitialized,
       }),
     }
   )

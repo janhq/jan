@@ -11,14 +11,18 @@ exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
 links = "tauri-plugin-hardware"
 
 [dependencies]
-vulkano = "0.34"
 libc = "0.2"
 log = "0.4"
-nvml-wrapper = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sysinfo = "0.34.2"
 tauri = { version = "2.5.0", default-features = false, features = ["test"] }
+
+# Desktop-only dependencies
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+vulkano = "0.34"
+ash = "0.37"
+nvml-wrapper = "0.10.0"
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]

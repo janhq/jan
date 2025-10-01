@@ -1,7 +1,8 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
+import { useMobileScreen, useSmallScreen } from '@/hooks/useMediaQuery'
 import { IconLayoutSidebar, IconMessage, IconMessageFilled } from '@tabler/icons-react'
-import { ReactNode } from '@tanstack/react-router'
+import { ReactNode } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { PlatformFeatures } from '@/lib/platform/const'
@@ -13,6 +14,8 @@ type HeaderPageProps = {
 }
 const HeaderPage = ({ children }: HeaderPageProps) => {
   const { open, setLeftPanel } = useLeftPanel()
+  const isMobile = useMobileScreen()
+  const isSmallScreen = useSmallScreen()
   const router = useRouter()
   const currentPath = router.state.location.pathname
 
@@ -39,16 +42,28 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   return (
     <div
       className={cn(
-        'h-10 pl-18 text-main-view-fg flex items-center shrink-0 border-b border-main-view-fg/5',
-        IS_MACOS && !open ? 'pl-18' : 'pl-4',
+        'h-10 text-main-view-fg flex items-center shrink-0 border-b border-main-view-fg/5',
+        // Mobile-first responsive padding
+        isMobile ? 'px-3' : 'px-4',
+        // macOS-specific padding when panel is closed
+        IS_MACOS && !open && !isSmallScreen ? 'pl-18' : '',
         children === undefined && 'border-none'
       )}
     >
-      <div className="flex items-center w-full gap-2">
+      <div className={cn(
+        'flex items-center w-full',
+        // Adjust gap based on screen size
+        isMobile ? 'gap-2' : 'gap-3'
+      )}>
         {!open && (
           <button
-            className="size-5 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10"
+            className={cn(
+              'cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10',
+              // Larger touch target on mobile
+              isMobile ? 'size-8 min-w-8' : 'size-5'
+            )}
             onClick={() => setLeftPanel(!open)}
+            aria-label="Toggle sidebar"
           >
             <IconLayoutSidebar
               size={18}
@@ -56,7 +71,12 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
             />
           </button>
         )}
-        {children}
+        <div className={cn(
+          'flex-1 min-w-0', // Allow content to shrink on small screens
+          isMobile && 'overflow-hidden'
+        )}>
+          {children}
+        </div>
 
         {/* Temporary Chat Toggle - Only show on home page if feature is enabled */}
         {PlatformFeatures[PlatformFeature.TEMPORARY_CHAT] && isHomePage && (

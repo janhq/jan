@@ -18,7 +18,8 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
 import { ContentType, ThreadMessage } from '@janhq/core'
-import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
+import { useTools } from '@/hooks/useTools'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
@@ -87,6 +88,8 @@ function ThreadDetail() {
 
   const chatWidth = useAppearance((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
+  const isMobile = useMobileScreen()
+  useTools()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -204,7 +207,7 @@ function ThreadDetail() {
   if (!messages || !threadModel) return null
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <div>
@@ -222,14 +225,19 @@ function ThreadDetail() {
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex flex-col h-full w-full overflow-auto px-4 pt-4 pb-3'
+            'flex flex-col h-full w-full overflow-auto pt-4 pb-3',
+            // Mobile-first responsive padding
+            isMobile ? 'px-3' : 'px-4'
           )}
         >
           <div
             className={cn(
-              'w-4/6 mx-auto flex max-w-full flex-col grow',
-              chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-              isSmallScreen && 'w-full'
+              'mx-auto flex max-w-full flex-col grow',
+              // Mobile-first width constraints
+              // Mobile and small screens always use full width, otherwise compact chat uses constrained width
+              isMobile || isSmallScreen || chatWidth !== 'compact'
+                ? 'w-full'
+                : 'w-full md:w-4/6'
             )}
           >
             {messages &&
@@ -272,9 +280,13 @@ function ThreadDetail() {
         </div>
         <div
           className={cn(
-            'mx-auto pt-2 pb-3 shrink-0 relative px-2',
-            chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-            isSmallScreen && 'w-full'
+            'mx-auto pt-2 pb-3 shrink-0 relative',
+            // Responsive padding and width
+            isMobile ? 'px-3' : 'px-2',
+            // Width: mobile/small screens or non-compact always full, compact desktop uses constrained
+            isMobile || isSmallScreen || chatWidth !== 'compact'
+              ? 'w-full'
+              : 'w-full md:w-4/6'
           )}
         >
           <ScrollToBottom
