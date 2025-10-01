@@ -112,9 +112,15 @@ const SortableItem = memo(
 
     const availableProjects = useMemo(() => {
       return folders
-        .filter((f) => f.id !== currentProjectId)
+        .filter((f) => {
+          // Exclude the current project page we're on
+          if (f.id === currentProjectId) return false
+          // Exclude the project this thread is already assigned to
+          if (f.id === thread.metadata?.project?.id) return false
+          return true
+        })
         .sort((a, b) => b.updated_at - a.updated_at)
-    }, [folders, currentProjectId])
+    }, [folders, currentProjectId, thread.metadata?.project?.id])
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
