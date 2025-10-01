@@ -33,7 +33,7 @@ pub fn write_messages_to_file(
     let mut file = File::create(path).map_err(|e| e.to_string())?;
     for msg in messages {
         let data = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+        writeln!(file, "{data}").map_err(|e| e.to_string())?;
     }
     Ok(())
 }
