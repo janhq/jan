@@ -32,7 +32,7 @@ function Project() {
 function ProjectContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+  const { folders, addFolder, updateFolder, getFolderById } =
     useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const [open, setOpen] = useState(false)
@@ -48,12 +48,9 @@ function ProjectContent() {
     setDeleteConfirmOpen(true)
   }
 
-  const confirmDelete = async () => {
-    if (deletingId) {
-      await deleteFolder(deletingId)
-      setDeleteConfirmOpen(false)
-      setDeletingId(null)
-    }
+  const handleDeleteClose = () => {
+    setDeleteConfirmOpen(false)
+    setDeletingId(null)
   }
 
   const handleSave = async (name: string) => {
@@ -244,8 +241,8 @@ function ProjectContent() {
       />
       <DeleteProjectDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        onConfirm={confirmDelete}
+        onOpenChange={handleDeleteClose}
+        projectId={deletingId ?? undefined}
         projectName={deletingId ? getFolderById(deletingId)?.name : undefined}
       />
     </div>

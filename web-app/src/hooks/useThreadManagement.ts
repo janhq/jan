@@ -10,6 +10,7 @@ type ThreadManagementState = {
   addFolder: (name: string) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
+  deleteFolderWithThreads: (id: string) => Promise<void>
   getFolderById: (id: string) => ThreadFolder | undefined
   getProjectById: (id: string) => Promise<ThreadFolder | undefined>
 }
@@ -54,6 +55,32 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
 
     const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)
+    const updatedProjects = await projectsService.getProjects()
+    set({ folders: updatedProjects })
+  },
+
+  deleteFolderWithThreads: async (id) => {
+    // Get all threads that belong to this project
+    const threadsState = useThreads.getState()
+    const projectThreads = Object.values(threadsState.threads).filter(
+      (thread) => thread.metadata?.project?.id === id
+    )
+
+    // Delete threads from backend first
+    const serviceHub = getServiceHub()
+    for (const thread of projectThreads) {
+      await serviceHub.threads().deleteThread(thread.id)
+    }
+
+    // Delete threads from frontend state
+    for (const thread of projectThreads) {
+      threadsState.deleteThread(thread.id)
+    }
+
+    // Delete the project from storage
+    const projectsService = serviceHub.projects()
+    await projectsService.deleteProject(id)
+
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
   },

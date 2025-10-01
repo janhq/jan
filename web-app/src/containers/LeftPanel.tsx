@@ -164,7 +164,7 @@ const LeftPanel = () => {
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
 
-  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+  const { folders, addFolder, updateFolder, getFolderById } =
     useThreadManagement()
 
   // Project dialog states
@@ -205,12 +205,9 @@ const LeftPanel = () => {
     setDeleteProjectConfirmOpen(true)
   }
 
-  const confirmProjectDelete = () => {
-    if (deletingProjectId) {
-      deleteFolder(deletingProjectId)
-      setDeleteProjectConfirmOpen(false)
-      setDeletingProjectId(null)
-    }
+  const handleProjectDeleteClose = () => {
+    setDeleteProjectConfirmOpen(false)
+    setDeletingProjectId(null)
   }
 
   const handleProjectSave = (name: string) => {
@@ -681,8 +678,8 @@ const LeftPanel = () => {
       />
       <DeleteProjectDialog
         open={deleteProjectConfirmOpen}
-        onOpenChange={setDeleteProjectConfirmOpen}
-        onConfirm={confirmProjectDelete}
+        onOpenChange={handleProjectDeleteClose}
+        projectId={deletingProjectId ?? undefined}
         projectName={
           deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
         }
