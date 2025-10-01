@@ -85,14 +85,9 @@ export function DataProvider() {
       .fetchThreads()
       .then((threads) => {
         setThreads(threads)
-        threads.forEach((thread) =>
-          serviceHub
-            .messages()
-            .fetchMessages(thread.id)
-            .then((messages) => setMessages(thread.id, messages))
-        )
+        // Messages will be loaded on-demand when user opens a thread
       })
-  }, [serviceHub, setThreads, setMessages])
+  }, [serviceHub, setThreads])
 
   // Check for app updates
   useEffect(() => {
