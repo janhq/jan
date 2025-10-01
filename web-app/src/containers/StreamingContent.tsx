@@ -48,7 +48,9 @@ export const StreamingContent = memo(({ threadId }: Props) => {
     return extractReasoningSegment(text)
   }, [lastAssistant])
 
-  if (!streamingContent || streamingContent.thread_id !== threadId) return null
+  if (!streamingContent || streamingContent.thread_id !== threadId) {
+    return null
+  }
 
   if (streamingReasoning && streamingReasoning === lastAssistantReasoning) {
     return null

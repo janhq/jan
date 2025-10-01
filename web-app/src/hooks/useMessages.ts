@@ -41,6 +41,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
       },
     }
 
+    // Optimistically update state immediately for instant UI feedback
     set((state) => ({
       messages: {
         ...state.messages,
@@ -51,6 +52,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
       },
     }))
 
+    // Persist to storage asynchronously
     getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
       set((state) => ({
         messages: {
@@ -61,6 +63,8 @@ export const useMessages = create<MessageState>()((set, get) => ({
             ) ?? [createdMessage],
         },
       }))
+    }).catch((error) => {
+      console.error('Failed to persist message:', error)
     })
   },
   deleteMessage: (threadId, messageId) => {
