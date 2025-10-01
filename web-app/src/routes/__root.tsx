@@ -111,13 +111,17 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
-      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && <GoogleAnalyticsProvider />}
+      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && (
+        <GoogleAnalyticsProvider />
+      )}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
-        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && <BackendUpdater />}
+        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
+          <BackendUpdater />
+        )}
 
         {/* Use ResizablePanelGroup only on larger screens */}
         {!isSmallScreen && isLeftPanelOpen ? (
@@ -158,11 +162,11 @@ const AppLayout = () => {
             {/* Main content panel */}
             <div
               className={cn(
-                'h-full flex w-full p-1 ',
+                'h-svh flex w-full md:p-1',
                 isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
               )}
             >
-              <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
+              <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full md:rounded-lg overflow-hidden">
                 <Outlet />
               </div>
             </div>

@@ -6,7 +6,7 @@
 /**
  * Supported platforms
  */
-export type Platform = 'tauri' | 'web'
+export type Platform = 'tauri' | 'web' | 'ios' | 'android'
 
 /**
  * Platform Feature Enum
@@ -15,6 +15,8 @@ export type Platform = 'tauri' | 'web'
 export enum PlatformFeature {
   // Hardware monitoring and GPU usage
   HARDWARE_MONITORING = 'hardwareMonitoring',
+
+  SHORTCUT = 'shortcut',
 
   // Local model inference (llama.cpp)
   LOCAL_INFERENCE = 'localInference',
@@ -30,16 +32,16 @@ export enum PlatformFeature {
 
   // HTTPS proxy
   HTTPS_PROXY = 'httpsProxy',
-  
+
   // Default model providers (OpenAI, Anthropic, etc.)
   DEFAULT_PROVIDERS = 'defaultProviders',
-  
+
   // Analytics and telemetry
   ANALYTICS = 'analytics',
-  
+
   // Web-specific automatic model selection from jan provider
   WEB_AUTO_MODEL_SELECTION = 'webAutoModelSelection',
-  
+
   // Model provider settings page management
   MODEL_PROVIDER_SETTINGS = 'modelProviderSettings',
 
@@ -66,4 +68,7 @@ export enum PlatformFeature {
 
   // First message persisted thread - web-only feature for storing first user message locally during thread creation
   FIRST_MESSAGE_PERSISTED_THREAD = 'firstMessagePersistedThread',
+
+  // Temporary chat mode - web-only feature for ephemeral conversations like ChatGPT
+  TEMPORARY_CHAT = 'temporaryChat',
 }

@@ -23,7 +23,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useMessages } from '@/hooks/useMessages'
-import { cn } from '@/lib/utils'
+import { cn, extractThinkingContent } from '@/lib/utils'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 import {
@@ -47,9 +47,11 @@ const SortableItem = memo(
   ({
     thread,
     variant,
+    currentProjectId,
   }: {
     thread: Thread
     variant?: 'default' | 'project'
+    currentProjectId?: string
   }) => {
     const {
       attributes,
@@ -107,6 +109,18 @@ const SortableItem = memo(
       // If thread.title is undefined or null, treat as empty string before replace.
       return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
     }, [thread.title])
+
+    const availableProjects = useMemo(() => {
+      return folders
+        .filter((f) => {
+          // Exclude the current project page we're on
+          if (f.id === currentProjectId) return false
+          // Exclude the project this thread is already assigned to
+          if (f.id === thread.metadata?.project?.id) return false
+          return true
+        })
+        .sort((a, b) => b.updated_at - a.updated_at)
+    }, [folders, currentProjectId, thread.metadata?.project?.id])
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
@@ -167,14 +181,10 @@ const SortableItem = memo(
           )}
         >
           <span>{thread.title || t('common:newThread')}</span>
-          {variant === 'project' && (
-            <>
-              {variant === 'project' && getLastMessageInfo?.content && (
-                <div className="text-sm text-main-view-fg/60 mt-0.5 line-clamp-2">
-                  {getLastMessageInfo.content}
-                </div>
-              )}
-            </>
+          {variant === 'project' && getLastMessageInfo?.content && (
+            <span className="block text-sm text-main-view-fg/60 mt-0.5 truncate">
+              {extractThinkingContent(getLastMessageInfo.content)}
+            </span>
           )}
         </div>
         <div className="flex items-center">
@@ -185,7 +195,10 @@ const SortableItem = memo(
             <DropdownMenuTrigger asChild>
               <IconDots
                 size={14}
-                className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                className={cn(
+                  'text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0',
+                  variant === 'project' && 'text-main-view-fg/60'
+                )}
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
@@ -227,29 +240,27 @@ const SortableItem = memo(
                   <span>Add to project</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  {folders.length === 0 ? (
+                  {availableProjects.length === 0 ? (
                     <DropdownMenuItem disabled>
                       <span className="text-left-panel-fg/50">
                         No projects available
                       </span>
                     </DropdownMenuItem>
                   ) : (
-                    folders
-                      .sort((a, b) => b.updated_at - a.updated_at)
-                      .map((folder) => (
-                        <DropdownMenuItem
-                          key={folder.id}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            assignThreadToProject(thread.id, folder.id)
-                          }}
-                        >
-                          <IconFolder size={16} />
-                          <span className="truncate max-w-[200px]">
-                            {folder.name}
-                          </span>
-                        </DropdownMenuItem>
-                      ))
+                    availableProjects.map((folder) => (
+                      <DropdownMenuItem
+                        key={folder.id}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          assignThreadToProject(thread.id, folder.id)
+                        }}
+                      >
+                        <IconFolder size={16} />
+                        <span className="truncate max-w-[200px]">
+                          {folder.name}
+                        </span>
+                      </DropdownMenuItem>
+                    ))
                   )}
                   {thread.metadata?.project && (
                     <>
@@ -297,9 +308,10 @@ type ThreadListProps = {
   isFavoriteSection?: boolean
   variant?: 'default' | 'project'
   showDate?: boolean
+  currentProjectId?: string
 }
 
-function ThreadList({ threads, variant = 'default' }: ThreadListProps) {
+function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadListProps) {
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
@@ -323,7 +335,7 @@ function ThreadList({ threads, variant = 'default' }: ThreadListProps) {
         strategy={verticalListSortingStrategy}
       >
         {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} variant={variant} />
+          <SortableItem key={index} thread={thread} variant={variant} currentProjectId={currentProjectId} />
         ))}
       </SortableContext>
     </DndContext>

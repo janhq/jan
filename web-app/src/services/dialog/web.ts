@@ -19,10 +19,14 @@ export class WebDialogService implements DialogService {
       }
 
       if (options?.filters) {
+        console.log('WebDialogService: Processing file filters:', options.filters)
         const extensions = options.filters.flatMap(filter => 
           filter.extensions.map(ext => `.${ext}`)
         )
-        input.accept = extensions.join(',')
+        console.log('WebDialogService: Generated extensions with dots:', extensions)
+        const acceptString = extensions.join(',')
+        console.log('WebDialogService: Final accept attribute:', acceptString)
+        input.accept = acceptString
       }
 
       input.onchange = (e) => {

@@ -80,7 +80,7 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
 }
 
 #[tauri::command]
-pub async fn restart_mcp_servers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), String> {
     let servers = state.mcp_servers.clone();
     // Stop the servers
     stop_mcp_servers(state.mcp_servers.clone()).await?;
@@ -119,7 +119,7 @@ pub async fn reset_mcp_restart_count(
 
 #[tauri::command]
 pub async fn get_connected_servers(
-    _app: AppHandle,
+    _app: AppHandle<impl Runtime>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     let servers = state.mcp_servers.clone();
@@ -293,7 +293,7 @@ pub async fn cancel_tool_call(
 }
 
 #[tauri::command]
-pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
+pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
 
@@ -308,7 +308,7 @@ pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn save_mcp_configs(app: AppHandle, configs: String) -> Result<(), String> {
+pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
     let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
     log::info!("save mcp configs, path: {:?}", path);

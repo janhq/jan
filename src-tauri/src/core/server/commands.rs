@@ -14,12 +14,12 @@ pub async fn start_server<R: Runtime>(
     api_key: String,
     trusted_hosts: Vec<String>,
     proxy_timeout: u64,
-) -> Result<bool, String> {
+) -> Result<u16, String> {
     let server_handle = state.server_handle.clone();
     let plugin_state: State<LlamacppState> = app_handle.state();
     let sessions = plugin_state.llama_server_process.clone();
 
-    proxy::start_server(
+    let actual_port = proxy::start_server(
         server_handle,
         sessions,
         host,
@@ -31,7 +31,7 @@ pub async fn start_server<R: Runtime>(
     )
     .await
     .map_err(|e| e.to_string())?;
-    Ok(true)
+    Ok(actual_port)
 }
 
 #[tauri::command]
