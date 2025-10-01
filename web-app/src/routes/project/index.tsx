@@ -48,19 +48,19 @@ function ProjectContent() {
     setDeleteConfirmOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deletingId) {
-      deleteFolder(deletingId)
+      await deleteFolder(deletingId)
       setDeleteConfirmOpen(false)
       setDeletingId(null)
     }
   }
 
-  const handleSave = (name: string) => {
+  const handleSave = async (name: string) => {
     if (editingKey) {
-      updateFolder(editingKey, name)
+      await updateFolder(editingKey, name)
     } else {
-      const newProject = addFolder(name)
+      const newProject = await addFolder(name)
       // Navigate to the newly created project
       navigate({
         to: '/project/$projectId',
