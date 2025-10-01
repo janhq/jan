@@ -24,6 +24,7 @@ import {
   ChatCompletionMessageToolCall,
   CompletionUsage,
 } from 'openai/resources'
+import { MessageStatus } from '@janhq/core'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -760,16 +761,25 @@ export const useChat = () => {
 
         // IMPORTANT: Check if aborted AFTER the while loop exits
         // The while loop exits when abort is true, so we handle it here
-        if (abortController.signal.aborted && accumulatedTextRef.value.length > 0) {
-          // Create final content for the partial message
-          const partialContent = newAssistantThreadContent(
-            activeThread.id,
-            accumulatedTextRef.value,
-            {
-              tokenSpeed: useAppState.getState().tokenSpeed,
-              assistant: currentAssistant,
-            }
-          )
+        // Only save interrupted messages for llamacpp provider
+        // Other providers (OpenAI, Claude, etc.) handle streaming differently
+        if (
+          abortController.signal.aborted &&
+          accumulatedTextRef.value.length > 0 &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          // Create final content for the partial message with Stopped status
+          const partialContent = {
+            ...newAssistantThreadContent(
+              activeThread.id,
+              accumulatedTextRef.value,
+              {
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+              }
+            ),
+            status: MessageStatus.Stopped,
+          }
           // Save the partial message
           addMessage(partialContent)
           updatePromptProgress(undefined)
@@ -777,23 +787,30 @@ export const useChat = () => {
         }
       } catch (error) {
         // If aborted, save the partial message even though an error occurred
-        // Check both accumulatedTextRef and streamingContent from app state
+        // Only save for llamacpp provider - other providers handle streaming differently
         const streamingContent = useAppState.getState().streamingContent
         const hasPartialContent = accumulatedTextRef.value.length > 0 ||
           (streamingContent && streamingContent.content?.[0]?.text?.value)
 
-        if (abortController.signal.aborted && hasPartialContent) {
+        if (
+          abortController.signal.aborted &&
+          hasPartialContent &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
           // Use streaming content if available, otherwise use accumulatedTextRef
           const contentText = streamingContent?.content?.[0]?.text?.value || accumulatedTextRef.value
 
-          const partialContent = newAssistantThreadContent(
-            activeThread.id,
-            contentText,
-            {
-              tokenSpeed: useAppState.getState().tokenSpeed,
-              assistant: currentAssistant,
-            }
-          )
+          const partialContent = {
+            ...newAssistantThreadContent(
+              activeThread.id,
+              contentText,
+              {
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+              }
+            ),
+            status: MessageStatus.Stopped,
+          }
           addMessage(partialContent)
           updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)

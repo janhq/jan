@@ -2,6 +2,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { ThreadContent } from './ThreadContent'
 import { memo, useMemo } from 'react'
 import { useMessages } from '@/hooks/useMessages'
+import { MessageStatus } from '@janhq/core'
 
 type Props = {
   threadId: string
@@ -53,6 +54,12 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   }
 
   if (streamingReasoning && streamingReasoning === lastAssistantReasoning) {
+    return null
+  }
+
+  // Don't show streaming content if there's already a stopped message
+  // (interrupted message that was just saved)
+  if (lastAssistant?.status === MessageStatus.Stopped) {
     return null
   }
 

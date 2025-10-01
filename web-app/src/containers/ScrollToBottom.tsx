@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+import { MessageStatus } from '@janhq/core'
 
 const ScrollToBottom = ({
   threadId,
@@ -28,11 +29,21 @@ const ScrollToBottom = ({
 
   const streamingContent = useAppState((state) => state.streamingContent)
 
+  // Check if last message is a partial assistant response (user interrupted)
+  // Only show button if message has Stopped status (interrupted by user)
+  const isPartialResponse =
+    messages.length >= 2 &&
+    messages[messages.length - 1]?.role === 'assistant' &&
+    messages[messages.length - 1]?.status === MessageStatus.Stopped &&
+    messages[messages.length - 2]?.role === 'user' &&
+    !messages[messages.length - 1]?.metadata?.tool_calls
+
   const showGenerateAIResponseBtn =
-    (messages[messages.length - 1]?.role === 'user' ||
+    ((messages[messages.length - 1]?.role === 'user' ||
       (messages[messages.length - 1]?.metadata &&
-        'tool_calls' in (messages[messages.length - 1].metadata ?? {}))) &&
-    !streamingContent
+        'tool_calls' in (messages[messages.length - 1].metadata ?? {})) ||
+      isPartialResponse) &&
+    !streamingContent)
 
   return (
     <div

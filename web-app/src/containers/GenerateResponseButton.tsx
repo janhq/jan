@@ -3,6 +3,8 @@ import { useMessages } from '@/hooks/useMessages'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Play } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
+import { useMemo } from 'react'
+import { MessageStatus } from '@janhq/core'
 
 export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
   const { t } = useTranslation()
@@ -13,7 +15,36 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
     }))
   )
   const sendMessage = useChat()
+
+  // Detect if last message is a partial assistant response (user stopped midway)
+  // Only true if message has Stopped status (interrupted by user)
+  const isPartialResponse = useMemo(() => {
+    if (!messages || messages.length < 2) return false
+    const lastMessage = messages[messages.length - 1]
+    const secondLastMessage = messages[messages.length - 2]
+
+    // Partial if: last is assistant with Stopped status, second-last is user, no tool calls
+    return (
+      lastMessage?.role === 'assistant' &&
+      lastMessage?.status === MessageStatus.Stopped &&
+      secondLastMessage?.role === 'user' &&
+      !lastMessage?.metadata?.tool_calls
+    )
+  }, [messages])
+
   const generateAIResponse = () => {
+    // If continuing a partial response, delete the partial message first
+    if (isPartialResponse) {
+      const partialMessage = messages[messages.length - 1]
+      deleteMessage(partialMessage.thread_id, partialMessage.id ?? '')
+      // Get the user message that prompted this partial response
+      const userMessage = messages[messages.length - 2]
+      if (userMessage?.content?.[0]?.text?.value) {
+        sendMessage(userMessage.content[0].text.value, false)
+      }
+      return
+    }
+
     const latestUserMessage = messages[messages.length - 1]
     if (
       latestUserMessage?.content?.[0]?.text?.value &&
@@ -39,7 +70,11 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
       className="mx-2 bg-main-view-fg/10 px-2 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
       onClick={generateAIResponse}
     >
-      <p className="text-xs">{t('common:generateAiResponse')}</p>
+      <p className="text-xs">
+        {isPartialResponse
+          ? t('common:continueAiResponse')
+          : t('common:generateAiResponse')}
+      </p>
       <Play size={12} />
     </div>
   )
