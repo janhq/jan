@@ -61,7 +61,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-selfhosted-15-arm64
     outputs:
       MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
