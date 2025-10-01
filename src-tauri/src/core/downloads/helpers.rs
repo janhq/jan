@@ -6,7 +6,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-use tauri::Emitter;
+use tauri::{Emitter, Runtime};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -25,7 +25,7 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
 async fn validate_downloaded_file(
     item: &DownloadItem,
     save_path: &Path,
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<impl Runtime>,
     cancel_token: &CancellationToken,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
@@ -298,7 +298,7 @@ pub async fn _get_file_size(
 
 /// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl Runtime>,
     items: &[DownloadItem],
     headers: &HashMap<String, String>,
     task_id: &str,
@@ -423,7 +423,7 @@ pub async fn _download_files_internal(
 
 /// Downloads a single file without blocking other downloads
 async fn download_single_file(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl Runtime>,
     item: &DownloadItem,
     header_map: &HeaderMap,
     save_path: &std::path::Path,
@@ -465,7 +465,11 @@ async fn download_single_file(
         .await
         .map_err(err_to_string)?;
 
-    log::info!("Started downloading: {}", item.url);
+    // Decode URL for better readability in logs
+    let decoded_url = url::Url::parse(&item.url)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| item.url.clone());
+    log::info!("Started downloading: {}", decoded_url);
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
@@ -584,7 +588,11 @@ async fn download_single_file(
         .await
         .map_err(err_to_string)?;
 
-    log::info!("Finished downloading: {}", item.url);
+    // Decode URL for better readability in logs
+    let decoded_url = url::Url::parse(&item.url)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| item.url.clone());
+    log::info!("Finished downloading: {}", decoded_url);
     Ok(save_path.to_path_buf())
 }
 

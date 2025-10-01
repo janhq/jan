@@ -1,18 +1,20 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["desktop", "system-monitor-window"]
+    }
+  },
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
-    "externalBin": ["resources/bin/uv"],
+    "resources": ["resources/LICENSE"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,
-        "files": {
-        }
+        "files": {}
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun",
-          "usr/lib/Jan/resources/lib/libvulkan.so": "resources/lib/libvulkan.so"
+          "usr/bin/bun": "resources/bin/bun"
         }
       }
     }
