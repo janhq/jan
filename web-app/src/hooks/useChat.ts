@@ -83,7 +83,7 @@ export const useChat = () => {
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
-  const getCurrentThread = useCallback(async () => {
+  const getCurrentThread = useCallback(async (projectId?: string) => {
     let currentThread = retrieveThread()
 
     if (!currentThread) {
@@ -93,13 +93,28 @@ export const useChat = () => {
       const assistants = useAssistant.getState().assistants
       const selectedModel = useModelProvider.getState().selectedModel
       const selectedProvider = useModelProvider.getState().selectedProvider
+
+      // Get project metadata if projectId is provided
+      let projectMetadata: { id: string; name: string; updated_at: number } | undefined
+      if (projectId) {
+        const project = await serviceHub.projects().getProjectById(projectId)
+        if (project) {
+          projectMetadata = {
+            id: project.id,
+            name: project.name,
+            updated_at: project.updated_at,
+          }
+        }
+      }
+
       currentThread = await createThread(
         {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
         currentPrompt,
-        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
+        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
+        projectMetadata,
       )
       router.navigate({
         to: route.threadsDetail,
@@ -221,9 +236,10 @@ export const useChat = () => {
         size: number
         base64: string
         dataUrl: string
-      }>
+      }>,
+      projectId?: string
     ) => {
-      const activeThread = await getCurrentThread()
+      const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
       let activeProvider = getProviderByName(selectedProvider)
 

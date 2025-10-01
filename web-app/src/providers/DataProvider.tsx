@@ -1,4 +1,3 @@
-import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
@@ -19,7 +18,6 @@ export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
 
-  const { setMessages } = useMessages()
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
@@ -87,14 +85,8 @@ export function DataProvider() {
       .fetchThreads()
       .then((threads) => {
         setThreads(threads)
-        threads.forEach((thread) =>
-          serviceHub
-            .messages()
-            .fetchMessages(thread.id)
-            .then((messages) => setMessages(thread.id, messages))
-        )
       })
-  }, [serviceHub, setThreads, setMessages])
+  }, [serviceHub, setThreads])
 
   // Check for app updates
   useEffect(() => {

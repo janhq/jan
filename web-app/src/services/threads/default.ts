@@ -62,6 +62,7 @@ export class DefaultThreadsService implements ThreadsService {
             },
           ],
           metadata: {
+            ...thread.metadata,
             order: thread.order,
           },
         })
