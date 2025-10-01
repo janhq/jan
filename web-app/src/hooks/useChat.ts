@@ -19,7 +19,10 @@ import {
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
-import { ChatCompletionMessageToolCall } from 'openai/resources'
+import {
+  ChatCompletionMessageToolCall,
+  CompletionUsage,
+} from 'openai/resources'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -42,6 +45,7 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
+    setTokenSpeed,
   ] = useAppState(
     useShallow((state) => [
       state.updateTokenSpeed,
@@ -49,6 +53,7 @@ export const useChat = () => {
       state.updateStreamingContent,
       state.updateLoadingModel,
       state.setAbortController,
+      state.setTokenSpeed,
     ])
   )
   const updatePromptProgress = useAppState(
@@ -347,6 +352,8 @@ export const useChat = () => {
           let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
+          const timeToFirstToken = Date.now()
+          let tokenUsage: CompletionUsage | undefined = undefined
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
@@ -361,6 +368,9 @@ export const useChat = () => {
 
               if (message?.tool_calls) {
                 toolCalls.push(...message.tool_calls)
+              }
+              if ('usage' in completion) {
+                tokenUsage = completion.usage
               }
             } else {
               // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
@@ -398,7 +408,14 @@ export const useChat = () => {
                     }
                   )
                   updateStreamingContent(currentContent)
-                  if (pendingDeltaCount > 0) {
+                  if (tokenUsage) {
+                    setTokenSpeed(
+                      currentContent,
+                      tokenUsage.completion_tokens /
+                        Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+                      tokenUsage.completion_tokens
+                    )
+                  } else if (pendingDeltaCount > 0) {
                     updateTokenSpeed(currentContent, pendingDeltaCount)
                   }
                   pendingDeltaCount = 0
@@ -427,7 +444,14 @@ export const useChat = () => {
                   }
                 )
                 updateStreamingContent(currentContent)
-                if (pendingDeltaCount > 0) {
+                if (tokenUsage) {
+                  setTokenSpeed(
+                    currentContent,
+                    tokenUsage.completion_tokens /
+                      Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+                    tokenUsage.completion_tokens
+                  )
+                } else if (pendingDeltaCount > 0) {
                   updateTokenSpeed(currentContent, pendingDeltaCount)
                 }
                 pendingDeltaCount = 0
@@ -457,6 +481,10 @@ export const useChat = () => {
                         ? (part.message as string)
                         : (JSON.stringify(part) ?? '')
                     )
+                  }
+
+                  if ('usage' in part && part.usage) {
+                    tokenUsage = part.usage
                   }
 
                   if (part.choices[0]?.delta?.tool_calls) {
