@@ -1,8 +1,45 @@
-import { defineConfig } from 'vite'
+import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+
+// Plugin to inject GA scripts in HTML
+function injectGoogleAnalytics(): Plugin {
+  return {
+    name: 'inject-google-analytics',
+    transformIndexHtml(html) {
+      const gaMeasurementId = process.env.GA_MEASUREMENT_ID
+
+      // Only inject GA scripts if GA_MEASUREMENT_ID is set
+      if (!gaMeasurementId) {
+        // Remove placeholder if no GA ID
+        return html.replace(/\s*<!-- INJECT_GOOGLE_ANALYTICS -->\n?/g, '')
+      }
+
+      const gaScripts = `<!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      gtag('consent','default',{
+        ad_storage:'denied',
+        analytics_storage:'denied',
+        ad_user_data:'denied',
+        ad_personalization:'denied',
+        wait_for_update:500
+      });
+      gtag('js', new Date());
+      gtag('config', '${gaMeasurementId}', {
+        debug_mode: (location.hostname === 'localhost'),
+        send_page_view: false
+      });
+    </script>`
+
+      return html.replace('<!-- INJECT_GOOGLE_ANALYTICS -->', gaScripts)
+    },
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -13,6 +50,7 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    injectGoogleAnalytics(),
   ],
   build: {
     outDir: './dist-web',

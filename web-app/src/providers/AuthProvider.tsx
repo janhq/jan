@@ -31,19 +31,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const fetchUserData = useCallback(async () => {
     try {
       const { setThreads } = useThreads.getState()
-      const { setMessages } = useMessages.getState()
 
       // Fetch threads first
       const threads = await serviceHub.threads().fetchThreads()
       setThreads(threads)
-
-      // Fetch messages for each thread
-      const messagePromises = threads.map(async (thread) => {
-        const messages = await serviceHub.messages().fetchMessages(thread.id)
-        setMessages(thread.id, messages)
-      })
-
-      await Promise.all(messagePromises)
     } catch (error) {
       console.error('Failed to fetch user data:', error)
     }

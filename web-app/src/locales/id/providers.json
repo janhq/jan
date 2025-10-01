@@ -35,7 +35,9 @@
     "modelId": "ID Model",
     "enterModelId": "Masukkan ID model",
     "exploreModels": "Lihat daftar model dari {{provider}}",
-    "addModel": "Tambah Model"
+    "addModel": "Tambah Model",
+    "modelExists": "Model sudah ada",
+    "modelExistsDesc": "Silakan pilih ID model yang berbeda."
   },
   "deleteModel": {
     "title": "Hapus Model: {{modelId}}",

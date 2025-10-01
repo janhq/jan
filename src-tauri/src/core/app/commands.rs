@@ -58,8 +58,8 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
 }
 
 #[tauri::command]
-pub fn update_app_configuration(
-    app_handle: tauri::AppHandle,
+pub fn update_app_configuration<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
     configuration: AppConfiguration,
 ) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
@@ -155,13 +155,13 @@ pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 }
 
 #[tauri::command]
-pub fn get_user_home_path(app: AppHandle) -> String {
+pub fn get_user_home_path<R: Runtime>(app: AppHandle<R>) -> String {
     return get_app_configurations(app.clone()).data_folder;
 }
 
 #[tauri::command]
-pub fn change_app_data_folder(
-    app_handle: tauri::AppHandle,
+pub fn change_app_data_folder<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
     new_data_folder: String,
 ) -> Result<(), String> {
     // Get current data folder path

@@ -1,7 +1,17 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["desktop"]
+    }
+  },
+
   "bundle": {
     "targets": ["nsis"],
-    "resources": ["resources/pre-install/**/*", "resources/lib/vulkan-1.dll", "resources/lib/vc_redist.x64.exe", "resources/LICENSE"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/lib/vc_redist.x64.exe",
+      "resources/LICENSE"
+    ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "nsis": {

@@ -1,0 +1,21 @@
+{
+  "build": {
+    "devUrl": null,
+    "frontendDist": "../web-app/dist"
+  },
+  "identifier": "jan.ai.app",
+  "app": {
+    "security": {
+      "capabilities": ["mobile"]
+    }
+  },
+  "plugins": {},
+  "bundle": {
+    "active": true,
+    "iOS": {
+      "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
+    },
+    "resources": ["resources/LICENSE"],
+    "externalBin": []
+  }
+}
