@@ -121,7 +121,7 @@ pub async fn is_model_supported<R: Runtime>(
     let usable_total_memory = if total_system_memory > RESERVE_BYTES {
         (total_system_memory - RESERVE_BYTES) + usable_vram
     } else {
-        0
+        usable_vram
     };
     log::info!("System RAM: {} bytes", &total_system_memory);
     log::info!("Total VRAM: {} bytes", &total_vram);
