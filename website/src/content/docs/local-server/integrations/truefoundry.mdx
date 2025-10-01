@@ -1,0 +1,73 @@
+---
+title: "TrueFoundry AI Gateway"
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    TrueFoundry integration,
+    TrueFoundry AI Gateway,
+  ]
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Integrate with TrueFoundry AI Gateway
+
+TrueFoundry provides an [enterprise-ready AI Gateway](https://www.truefoundry.com/ai-gateway) which can integrate with applications like Jan AI and provides governance and observability for your AI Applications. TrueFoundry AI Gateway serves as a unified interface for LLM access, providing:
+
+- **Unified API Access**: Connect to 250+ LLMs (OpenAI, Claude, Gemini, Groq, Mistral) through one API
+- **Low Latency**: Sub-3ms internal latency with intelligent routing and load balancing
+- **Enterprise Security**: SOC 2, HIPAA, GDPR compliance with RBAC and audit logging
+- **Quota and Cost Management**: Token-based quotas, rate limiting, and comprehensive usage tracking
+- **Observability**: Full request/response logging, metrics, and traces with customizable retention
+
+<Steps>
+1. **Prerequisites**
+   - Create a [TrueFoundry account](https://www.truefoundry.com/register)
+   - Set up your TrueFoundry AI Gateway following our [Quick Start guide](https://docs.truefoundry.com/gateway/quick-start)
+   
+   ![TrueFoundry Code Snippet](/assets/images/truefoundry/new-code-snippet.png)
+
+2. **Configure OpenAI Provider in Jan**
+   1. Open Jan application
+   2. Navigate to **Settings** → **Model Providers** → **OpenAI**
+   
+   ![Jan Settings - OpenAI Provider Configuration](/assets/images/truefoundry/jan-api-settings.png)
+   
+   3. Update the configuration:
+      - **API Key**: Enter your TrueFoundry API key
+      - **Base URL**: Enter your TrueFoundry gateway URL (e.g., `https://{your-control-plane}.truefoundry.com/api/llm`)
+
+3. **Add TrueFoundry Models**
+   1. In the **Models** section, click the **"+"** button to add new models
+   2. Enter model IDs in TrueFoundry format:
+      - `openai-main/gpt-4o`
+   
+   ![Add New Model Dialog](/assets/images/truefoundry/jan-add-model-name.png)
+
+4. **Start Using TrueFoundry Models**
+   1. Select your configured TrueFoundry model from the model dropdown
+   2. Begin conversations - requests will be routed through TrueFoundry's gateway
+   3. Switch between local models and TrueFoundry cloud models as needed
+   
+   ![Jan Chat Interface with TrueFoundry Models](/assets/images/truefoundry/jan-response.png)
+</Steps>
+
+## Benefits of TrueFoundry Integration
+
+With TrueFoundry's AI gateway integration, you gain access to:
+
+- **Multiple AI Providers**: Access models from OpenAI, Anthropic, Google, and other providers through a single interface
+- **Performance Monitoring**: Track latency metrics, token usage, and costs across all your AI requests
+- **Rate Limiting & Load Balancing**: Set up intelligent routing and fallback mechanisms for your models
+- **Cost Management**: Monitor and control spending across different AI providers
+- **Usage Analytics**: Understand patterns in model usage and performance across your team
+
+![TrueFoundry Gateway Metrics](/assets/images/truefoundry/gateway-metrics.png)
