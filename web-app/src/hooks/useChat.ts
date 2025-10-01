@@ -24,7 +24,7 @@ import {
   ChatCompletionMessageToolCall,
   CompletionUsage,
 } from 'openai/resources'
-import { MessageStatus } from '@janhq/core'
+import { MessageStatus, ContentType } from '@janhq/core'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -106,7 +106,8 @@ const processStreamingCompletion = async (
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void,
   updatePromptProgress: (progress: unknown) => void,
   continueFromMessageId?: string,
-  updateMessage?: (message: ThreadMessage) => void
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessage?: ThreadMessage
 ) => {
   // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
   let rafScheduled = false
@@ -123,9 +124,10 @@ const processStreamingCompletion = async (
     )
 
     // When continuing, update the message directly instead of using streamingContent
-    if (continueFromMessageId && updateMessage) {
+    if (continueFromMessageId && updateMessage && continueFromMessage) {
       updateMessage({
-        ...currentContent,
+        ...continueFromMessage, // Preserve original message metadata
+        content: currentContent.content, // Update content
         status: MessageStatus.Stopped, // Keep as Stopped while streaming
       })
     } else {
@@ -724,7 +726,8 @@ export const useChat = () => {
                 updateTokenSpeed,
                 updatePromptProgress,
                 continueFromMessageId,
-                updateMessage
+                updateMessage,
+                continueFromMessage
               )
             }
           } catch (error) {
@@ -790,7 +793,10 @@ export const useChat = () => {
           }
 
           // Normal completion flow (abort is handled after loop exits)
-          builder.addAssistantMessage(accumulatedTextRef.value, undefined, toolCalls)
+          // Don't add assistant message to builder if continuing - it's already there
+          if (!continueFromMessageId) {
+            builder.addAssistantMessage(accumulatedTextRef.value, undefined, toolCalls)
+          }
 
           // Check if proactive mode is enabled for this model
           const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
@@ -833,23 +839,40 @@ export const useChat = () => {
           accumulatedTextRef.value.length > 0 &&
           activeProvider?.provider === 'llamacpp'
         ) {
-          // Create final content for the partial message with Stopped status
-          const partialContent = {
-            ...newAssistantThreadContent(
-              activeThread.id,
-              accumulatedTextRef.value,
-              {
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: accumulatedTextRef.value,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
                 tokenSpeed: useAppState.getState().tokenSpeed,
                 assistant: currentAssistant,
-              }
-            ),
-            status: MessageStatus.Stopped,
-          }
-
-          // If continuing, update the existing message; otherwise add new
-          if (continueFromMessageId) {
-            updateMessage({ ...partialContent, id: continueFromMessageId })
+              },
+            })
           } else {
+            // Create final content for the partial message with Stopped status
+            const partialContent = {
+              ...newAssistantThreadContent(
+                activeThread.id,
+                accumulatedTextRef.value,
+                {
+                  tokenSpeed: useAppState.getState().tokenSpeed,
+                  assistant: currentAssistant,
+                }
+              ),
+              status: MessageStatus.Stopped,
+            }
             addMessage(partialContent)
           }
           updatePromptProgress(undefined)
@@ -870,22 +893,39 @@ export const useChat = () => {
           // Use streaming content if available, otherwise use accumulatedTextRef
           const contentText = streamingContent?.content?.[0]?.text?.value || accumulatedTextRef.value
 
-          const partialContent = {
-            ...newAssistantThreadContent(
-              activeThread.id,
-              contentText,
-              {
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: contentText,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
                 tokenSpeed: useAppState.getState().tokenSpeed,
                 assistant: currentAssistant,
-              }
-            ),
-            status: MessageStatus.Stopped,
-          }
-
-          // If continuing, update the existing message; otherwise add new
-          if (continueFromMessageId) {
-            updateMessage({ ...partialContent, id: continueFromMessageId })
+              },
+            })
           } else {
+            const partialContent = {
+              ...newAssistantThreadContent(
+                activeThread.id,
+                contentText,
+                {
+                  tokenSpeed: useAppState.getState().tokenSpeed,
+                  assistant: currentAssistant,
+                }
+              ),
+              status: MessageStatus.Stopped,
+            }
             addMessage(partialContent)
           }
           updatePromptProgress(undefined)
