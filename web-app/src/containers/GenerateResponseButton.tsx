@@ -33,14 +33,18 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
   }, [messages])
 
   const generateAIResponse = () => {
-    // If continuing a partial response, delete the partial message first
+    // If continuing a partial response, keep the message and continue from it
     if (isPartialResponse) {
       const partialMessage = messages[messages.length - 1]
-      deleteMessage(partialMessage.thread_id, partialMessage.id ?? '')
-      // Get the user message that prompted this partial response
       const userMessage = messages[messages.length - 2]
       if (userMessage?.content?.[0]?.text?.value) {
-        sendMessage(userMessage.content[0].text.value, false)
+        // Pass the partial message ID to continue from it
+        sendMessage(
+          userMessage.content[0].text.value,
+          false,
+          undefined,
+          partialMessage.id
+        )
       }
       return
     }

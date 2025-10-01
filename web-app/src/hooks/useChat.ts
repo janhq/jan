@@ -46,14 +46,20 @@ import { Attachment } from '@/types/attachment'
 const createThreadContent = (
   threadId: string,
   text: string,
-  toolCalls: ChatCompletionMessageToolCall[]
+  toolCalls: ChatCompletionMessageToolCall[],
+  messageId?: string
 ) => {
-  return newAssistantThreadContent(threadId, text, {
+  const content = newAssistantThreadContent(threadId, text, {
     tool_calls: toolCalls.map((e) => ({
       ...e,
       state: 'pending',
     })),
   })
+  // If continuing from a message, preserve the message ID
+  if (messageId) {
+    return { ...content, id: messageId }
+  }
+  return content
 }
 
 // Helper to cancel animation frame cross-platform
@@ -72,9 +78,16 @@ const finalizeMessage = (
   addMessage: (message: ThreadMessage) => void,
   updateStreamingContent: (content: ThreadMessage | undefined) => void,
   updatePromptProgress: (progress: unknown) => void,
-  updateThreadTimestamp: (threadId: string) => void
+  updateThreadTimestamp: (threadId: string) => void,
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessageId?: string
 ) => {
-  addMessage(finalContent)
+  // If continuing from a message, update it; otherwise add new message
+  if (continueFromMessageId && updateMessage) {
+    updateMessage({ ...finalContent, id: continueFromMessageId })
+  } else {
+    addMessage(finalContent)
+  }
   updateStreamingContent(emptyThreadContent)
   updatePromptProgress(undefined)
   updateThreadTimestamp(finalContent.thread_id)
@@ -91,7 +104,9 @@ const processStreamingCompletion = async (
   currentCall: ChatCompletionMessageToolCall | null,
   updateStreamingContent: (content: ThreadMessage | undefined) => void,
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void,
-  updatePromptProgress: (progress: unknown) => void
+  updatePromptProgress: (progress: unknown) => void,
+  continueFromMessageId?: string,
+  updateMessage?: (message: ThreadMessage) => void
 ) => {
   // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
   let rafScheduled = false
@@ -103,9 +118,20 @@ const processStreamingCompletion = async (
     const currentContent = createThreadContent(
       activeThread.id,
       accumulatedText.value,
-      toolCalls
+      toolCalls,
+      continueFromMessageId
     )
-    updateStreamingContent(currentContent)
+
+    // When continuing, update the message directly instead of using streamingContent
+    if (continueFromMessageId && updateMessage) {
+      updateMessage({
+        ...currentContent,
+        status: MessageStatus.Stopped, // Keep as Stopped while streaming
+      })
+    } else {
+      updateStreamingContent(currentContent)
+    }
+
     if (pendingDeltaCount > 0) {
       updateTokenSpeed(currentContent, pendingDeltaCount)
     }
@@ -240,6 +266,7 @@ export const useChat = () => {
 
   const getMessages = useMessages((state) => state.getMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const updateMessage = useMessages((state) => state.updateMessage)
   const setMessages = useMessages((state) => state.setMessages)
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
@@ -416,7 +443,8 @@ export const useChat = () => {
       updateAttachmentProcessing?: (
         fileName: string,
         status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
-      ) => void
+      ) => void,
+      continueFromMessageId?: string
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
@@ -527,7 +555,13 @@ export const useChat = () => {
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       updatePromptProgress(undefined)
-      // Do not add new message on retry
+
+      // Find the message to continue from if provided
+      const continueFromMessage = continueFromMessageId
+        ? messages.find((m) => m.id === continueFromMessageId)
+        : undefined
+
+      // Do not add new message on retry or when continuing
       // All attachments (images + docs) ingested successfully.
       // Build the user content once; use it for both the outbound request
       // and persisting to the store so both are identical.
@@ -539,7 +573,7 @@ export const useChat = () => {
         message,
         processedAttachments
       )
-      if (troubleshooting) {
+      if (troubleshooting && !continueFromMessageId) {
         addMessage(userContent)
       }
       updateThreadTimestamp(activeThread.id)
@@ -547,7 +581,10 @@ export const useChat = () => {
       const selectedModel = useModelProvider.getState().selectedModel
 
       // Declare accumulatedTextRef BEFORE try block so it's accessible in catch block
-      const accumulatedTextRef = { value: '' }
+      // If continuing, start with the previous content
+      const accumulatedTextRef = {
+        value: continueFromMessage?.content?.[0]?.text?.value || ''
+      }
       let currentAssistant: Assistant | undefined
 
       try {
@@ -557,14 +594,29 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
         currentAssistant = useAssistant.getState().currentAssistant
+
+        // Filter out the stopped message from context if continuing
+        const contextMessages = continueFromMessageId
+          ? messages.filter((m) => m.id !== continueFromMessageId)
+          : messages
+
         const builder = new CompletionMessagesBuilder(
-          messages,
+          contextMessages,
           currentAssistant
             ? renderInstructions(currentAssistant.instructions)
             : undefined
         )
         // Using addUserMessage to respect legacy code. Should be using the userContent above.
-        if (troubleshooting) builder.addUserMessage(userContent)
+        if (troubleshooting && !continueFromMessageId) {
+          builder.addUserMessage(userContent)
+        } else if (continueFromMessage) {
+          // When continuing, add the partial assistant response to the context
+          builder.addAssistantMessage(
+            continueFromMessage.content?.[0]?.text?.value || '',
+            undefined,
+            []
+          )
+        }
 
         let isCompleted = false
 
@@ -670,7 +722,9 @@ export const useChat = () => {
                 currentCall,
                 updateStreamingContent,
                 updateTokenSpeed,
-                updatePromptProgress
+                updatePromptProgress,
+                continueFromMessageId,
+                updateMessage
               )
             }
           } catch (error) {
@@ -717,7 +771,7 @@ export const useChat = () => {
           }
 
           // Create a final content object for adding to the thread
-          const finalContent = newAssistantThreadContent(
+          let finalContent = newAssistantThreadContent(
             activeThread.id,
             accumulatedTextRef.value,
             {
@@ -725,6 +779,15 @@ export const useChat = () => {
               assistant: currentAssistant,
             }
           )
+
+          // If continuing from a message, preserve the ID and set status to Ready
+          if (continueFromMessageId) {
+            finalContent = {
+              ...finalContent,
+              id: continueFromMessageId,
+              status: MessageStatus.Ready,
+            }
+          }
 
           // Normal completion flow (abort is handled after loop exits)
           builder.addAssistantMessage(accumulatedTextRef.value, undefined, toolCalls)
@@ -747,7 +810,9 @@ export const useChat = () => {
             addMessage,
             updateStreamingContent,
             updatePromptProgress,
-            updateThreadTimestamp
+            updateThreadTimestamp,
+            updateMessage,
+            continueFromMessageId
           )
 
           isCompleted = !toolCalls.length
@@ -780,8 +845,13 @@ export const useChat = () => {
             ),
             status: MessageStatus.Stopped,
           }
-          // Save the partial message
-          addMessage(partialContent)
+
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId) {
+            updateMessage({ ...partialContent, id: continueFromMessageId })
+          } else {
+            addMessage(partialContent)
+          }
           updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)
         }
@@ -811,7 +881,13 @@ export const useChat = () => {
             ),
             status: MessageStatus.Stopped,
           }
-          addMessage(partialContent)
+
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId) {
+            updateMessage({ ...partialContent, id: continueFromMessageId })
+          } else {
+            addMessage(partialContent)
+          }
           updatePromptProgress(undefined)
           updateThreadTimestamp(activeThread.id)
         } else if (!abortController.signal.aborted) {
