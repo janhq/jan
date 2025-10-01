@@ -58,7 +58,6 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   }
 
   // Don't show streaming content if there's already a stopped message
-  // (interrupted message that was just saved)
   if (lastAssistant?.status === MessageStatus.Stopped) {
     return null
   }

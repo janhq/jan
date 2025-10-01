@@ -29,8 +29,7 @@ const ScrollToBottom = ({
 
   const streamingContent = useAppState((state) => state.streamingContent)
 
-  // Check if last message is a partial assistant response (user interrupted)
-  // Only show button if message has Stopped status (interrupted by user)
+  // Check if last message is a partial assistant response and show continue buton (user interrupted)
   const isPartialResponse =
     messages.length >= 2 &&
     messages[messages.length - 1]?.role === 'assistant' &&

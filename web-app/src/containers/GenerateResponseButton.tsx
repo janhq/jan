@@ -17,13 +17,11 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
   const sendMessage = useChat()
 
   // Detect if last message is a partial assistant response (user stopped midway)
-  // Only true if message has Stopped status (interrupted by user)
   const isPartialResponse = useMemo(() => {
     if (!messages || messages.length < 2) return false
     const lastMessage = messages[messages.length - 1]
     const secondLastMessage = messages[messages.length - 2]
 
-    // Partial if: last is assistant with Stopped status, second-last is user, no tool calls
     return (
       lastMessage?.role === 'assistant' &&
       lastMessage?.status === MessageStatus.Stopped &&
@@ -33,12 +31,10 @@ export const GenerateResponseButton = ({ threadId }: { threadId: string }) => {
   }, [messages])
 
   const generateAIResponse = () => {
-    // If continuing a partial response, keep the message and continue from it
     if (isPartialResponse) {
       const partialMessage = messages[messages.length - 1]
       const userMessage = messages[messages.length - 2]
       if (userMessage?.content?.[0]?.text?.value) {
-        // Pass the partial message ID to continue from it
         sendMessage(
           userMessage.content[0].text.value,
           false,
