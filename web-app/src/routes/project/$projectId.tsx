@@ -105,7 +105,7 @@ function ProjectPage() {
             {/* Thread List or Empty State */}
             <div className="mb-0">
               {projectThreads.length > 0 ? (
-                <ThreadList threads={projectThreads} variant="project" />
+                <ThreadList threads={projectThreads} variant="project" currentProjectId={projectId} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <IconMessage
