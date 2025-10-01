@@ -1,4 +1,3 @@
-import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
@@ -19,7 +18,6 @@ export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
 
-  const { setMessages } = useMessages()
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
@@ -85,7 +83,6 @@ export function DataProvider() {
       .fetchThreads()
       .then((threads) => {
         setThreads(threads)
-        // Messages will be loaded on-demand when user opens a thread
       })
   }, [serviceHub, setThreads])
 

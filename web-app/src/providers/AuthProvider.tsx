@@ -35,8 +35,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Fetch threads first
       const threads = await serviceHub.threads().fetchThreads()
       setThreads(threads)
-
-      // Messages will be loaded on-demand when user opens a thread
     } catch (error) {
       console.error('Failed to fetch user data:', error)
     }
