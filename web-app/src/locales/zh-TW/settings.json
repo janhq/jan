@@ -171,7 +171,7 @@
     "swaggerDocsDesc": "查看互動式 API 文件（Swagger UI）。",
     "openDocs": "開啟文件",
     "startupConfiguration": "啟動設定",
-    "runOnStartup": "預設在啟動時啟用",
+    "runOnStartup": "Auto start",
     "runOnStartupDesc": "應用程式啟動時自動啟動本機 API 伺服器。使用上次使用的模型，如果不可用則選擇第一個可用模型。",
     "serverConfiguration": "伺服器設定",
     "serverHost": "伺服器主機",

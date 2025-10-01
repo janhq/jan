@@ -171,7 +171,7 @@
     "swaggerDocsDesc": "Lihat dokumentasi API interaktif (Swagger UI).",
     "openDocs": "Buka Dokumentasi",
     "startupConfiguration": "Konfigurasi Startup",
-    "runOnStartup": "Aktifkan secara default saat startup",
+    "runOnStartup": "Auto start",
     "runOnStartupDesc": "Mulai Server API Lokal secara otomatis saat aplikasi diluncurkan. Menggunakan model terakhir yang digunakan, atau memilih model pertama yang tersedia jika tidak tersedia.",
     "serverConfiguration": "Konfigurasi Server",
     "serverHost": "Host Server",

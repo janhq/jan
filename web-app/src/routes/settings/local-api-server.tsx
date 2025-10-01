@@ -261,6 +261,22 @@ function LocalAPIServerContent() {
               }
             >
               <CardItem
+                title={t('settings:localApiServer.runOnStartup')}
+                description={t('settings:localApiServer.runOnStartupDesc')}
+                actions={
+                  <Switch
+                    checked={enableOnStartup}
+                    onCheckedChange={(checked) => {
+                      if (!apiKey || apiKey.toString().trim().length === 0) {
+                        setShowApiKeyError(true)
+                        return
+                      }
+                      setEnableOnStartup(checked)
+                    }}
+                  />
+                }
+              />
+              <CardItem
                 title={t('settings:localApiServer.serverLogs')}
                 description={t('settings:localApiServer.serverLogsDesc')}
                 actions={
@@ -278,6 +294,7 @@ function LocalAPIServerContent() {
                   </Button>
                 }
               />
+
               <CardItem
                 title={t('settings:localApiServer.swaggerDocs')}
                 description={t('settings:localApiServer.swaggerDocsDesc')}
@@ -305,26 +322,6 @@ function LocalAPIServerContent() {
                       </div>
                     </Button>
                   </a>
-                }
-              />
-            </Card>
-
-            {/* Startup Configuration */}
-            <Card title={t('settings:localApiServer.startupConfiguration')}>
-              <CardItem
-                title={t('settings:localApiServer.runOnStartup')}
-                description={t('settings:localApiServer.runOnStartupDesc')}
-                actions={
-                  <Switch
-                    checked={enableOnStartup}
-                    onCheckedChange={(checked) => {
-                      if (!apiKey || apiKey.toString().trim().length === 0) {
-                        setShowApiKeyError(true)
-                        return
-                      }
-                      setEnableOnStartup(checked)
-                    }}
-                  />
                 }
               />
             </Card>

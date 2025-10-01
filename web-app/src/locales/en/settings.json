@@ -173,7 +173,7 @@
     "swaggerDocsDesc": "View interactive API documentation (Swagger UI).",
     "openDocs": "Open Docs",
     "startupConfiguration": "Startup Configuration",
-    "runOnStartup": "Enable by default on startup",
+    "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches. Uses last used model, or picks the first available model if unavailable.",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",

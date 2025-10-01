@@ -173,7 +173,7 @@
     "swaggerDocsDesc": "Xem tài liệu API tương tác (Swagger UI).",
     "openDocs": "Mở tài liệu",
     "startupConfiguration": "Cấu hình khởi động",
-    "runOnStartup": "Bật mặc định khi khởi động",
+    "runOnStartup": "Auto start",
     "runOnStartupDesc": "Tự động khởi động Máy chủ API Cục bộ khi ứng dụng khởi chạy. Sử dụng mô hình đã dùng gần nhất hoặc chọn mô hình đầu tiên có sẵn nếu không khả dụng.",
     "serverConfiguration": "Cấu hình máy chủ",
     "serverHost": "Máy chủ lưu trữ",
