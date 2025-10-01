@@ -1,4 +1,10 @@
 {
+  "app": {
+    "security": {
+      "capabilities": ["desktop"]
+    }
+  },
+
   "bundle": {
     "targets": ["nsis"],
     "resources": [

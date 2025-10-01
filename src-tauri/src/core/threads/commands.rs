@@ -127,7 +127,6 @@ pub async fn create_message<R: Runtime>(
             .ok_or("Missing thread_id")?;
         id.to_string()
     };
-    ensure_thread_dir_exists(app_handle.clone(), &thread_id)?;
     let path = get_messages_path(app_handle.clone(), &thread_id);
 
     if message.get("id").is_none() {
@@ -139,6 +138,9 @@ pub async fn create_message<R: Runtime>(
     {
         let lock = get_lock_for_thread(&thread_id).await;
         let _guard = lock.lock().await;
+
+        // Ensure directory exists right before file operations to handle race conditions
+        ensure_thread_dir_exists(app_handle.clone(), &thread_id)?;
 
         let mut file: File = fs::OpenOptions::new()
             .create(true)

@@ -154,6 +154,7 @@ const LeftPanel = () => {
     }
   }, [setLeftPanel, open])
 
+
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -243,7 +244,7 @@ const LeftPanel = () => {
   return (
     <>
       {/* Backdrop overlay for small screens */}
-      {isSmallScreen && open && (
+      {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
@@ -266,7 +267,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&

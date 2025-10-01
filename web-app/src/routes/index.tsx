@@ -3,6 +3,8 @@ import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useTools } from '@/hooks/useTools'
+import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
@@ -18,6 +20,7 @@ type SearchParams = {
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
+import { useMobileScreen } from '@/hooks/useMediaQuery'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
@@ -45,6 +48,8 @@ function Index() {
   const selectedModel = search.model
   const isTemporaryChat = search['temporary-chat']
   const { setCurrentThreadId } = useThreads()
+  const isMobile = useMobileScreen()
+  useTools()
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
@@ -64,17 +69,45 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col justify-center">
+    <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
       </HeaderPage>
-      <div className="h-full px-4 md:px-8 overflow-y-auto flex flex-col gap-2 justify-center">
-        <div className="w-full md:w-4/6 mx-auto">
-          <div className="mb-8 text-center">
-            <h1 className="font-editorialnew text-main-view-fg text-4xl">
+      <div
+        className={cn(
+          'h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
+        )}
+      >
+        <div
+          className={cn(
+            'mx-auto',
+            // Full width on mobile, constrained on desktop
+            isMobile ? 'w-full max-w-full' : 'w-full md:w-4/6'
+          )}
+        >
+          <div
+            className={cn(
+              'text-center',
+              // Adjust spacing for mobile
+              isMobile ? 'mb-6' : 'mb-8'
+            )}
+          >
+            <h1
+              className={cn(
+                'font-editorialnew text-main-view-fg',
+                // Responsive title size
+                isMobile ? 'text-2xl sm:text-3xl' : 'text-4xl'
+              )}
+            >
               {isTemporaryChat ? t('chat:temporaryChat') : t('chat:welcome')}
             </h1>
-            <p className="text-main-view-fg/70 text-lg mt-2">
+            <p
+              className={cn(
+                'text-main-view-fg/70 mt-2',
+                // Responsive description size
+                isMobile ? 'text-base' : 'text-lg'
+              )}
+            >
               {isTemporaryChat ? t('chat:temporaryChatDescription') : t('chat:description')}
             </p>
           </div>
