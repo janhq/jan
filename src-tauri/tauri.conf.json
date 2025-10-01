@@ -76,6 +76,7 @@
     }
   },
   "bundle": {
+    "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,
     "icon": [

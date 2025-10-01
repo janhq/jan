@@ -318,17 +318,7 @@ function ProviderDetail() {
           .getActiveModels()
           .then((models) => setActiveModels(models || []))
       } catch (error) {
-        console.error('Error starting model:', error)
-        if (
-          error &&
-          typeof error === 'object' &&
-          'message' in error &&
-          typeof error.message === 'string'
-        ) {
-          setModelLoadError({ message: error.message })
-        } else {
-          setModelLoadError(typeof error === 'string' ? error : `${error}`)
-        }
+        setModelLoadError(error as ErrorObject)
       } finally {
         // Remove model from loading state
         setLoadingModels((prev) => prev.filter((id) => id !== modelId))

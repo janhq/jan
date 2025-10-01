@@ -78,7 +78,7 @@ export const useThreadScrolling = (
       return () =>
         scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [handleScroll])
+  }, [handleScroll, scrollContainerRef])
 
   const checkScrollState = useCallback(() => {
     const scrollContainer = scrollContainerRef.current
@@ -90,7 +90,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }, [])
+  }, [scrollContainerRef])
 
   useEffect(() => {
     if (!scrollContainerRef.current) return
@@ -101,7 +101,7 @@ export const useThreadScrolling = (
       scrollToBottom(false)
       checkScrollState()
     }
-  }, [checkScrollState, scrollToBottom])
+  }, [checkScrollState, scrollToBottom, scrollContainerRef])
 
 
   const prevCountRef = useRef(messageCount)
@@ -146,7 +146,7 @@ export const useThreadScrolling = (
     }
 
     prevCountRef.current = messageCount
-  }, [messageCount, lastMessageRole])
+  }, [messageCount, lastMessageRole, getDOMElements, setPaddingHeight])
 
   useEffect(() => {
     const previouslyStreaming = wasStreamingRef.current
@@ -197,7 +197,7 @@ export const useThreadScrolling = (
     }
 
     wasStreamingRef.current = currentlyStreaming
-  }, [streamingContent, threadId])
+  }, [streamingContent, threadId, getDOMElements, setPaddingHeight])
 
   useEffect(() => {
     userIntendedPositionRef.current = null
@@ -207,7 +207,7 @@ export const useThreadScrolling = (
     prevCountRef.current = messageCount
     scrollToBottom(false)
     checkScrollState()
-  }, [threadId])
+  }, [threadId, messageCount, scrollToBottom, checkScrollState, setPaddingHeight])
 
   return useMemo(
     () => ({

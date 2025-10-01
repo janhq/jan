@@ -10,6 +10,7 @@ use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
+use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
 #[cfg_attr(all(mobile, any(target_os = "android", target_os = "ios")), tauri::mobile_entry_point)]
@@ -134,9 +135,44 @@ pub fn run() {
             )?;
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
-            // Install extensions
-            if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
+
+            // Start migration
+            let mut store_path = get_jan_data_folder_path(app.handle().clone());
+            store_path.push("store.json");
+            let store = app
+                .handle()
+                .store(store_path)
+                .expect("Store not initialized");
+            let stored_version = store
+                .get("version")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default();
+            let app_version = app
+                .config()
+                .version
+                .clone()
+                .unwrap_or_else(|| "".to_string());
+            // Migrate extensions
+            if let Err(e) =
+                setup::install_extensions(app.handle().clone(), stored_version != app_version)
+            {
                 log::error!("Failed to install extensions: {}", e);
+            }
+
+            // Migrate MCP servers
+            if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
+                log::error!("Failed to migrate MCP servers: {}", e);
+            }
+
+            // Store the new app version
+            store.set("version", serde_json::json!(app_version));
+            store.save().expect("Failed to save store");
+            // Migration completed
+            
+            #[cfg(desktop)]
+            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
+                log::info!("Enabling system tray icon");
+                let _ = setup::setup_tray(app);
             }
 
             #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]

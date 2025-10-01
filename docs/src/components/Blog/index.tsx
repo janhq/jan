@@ -19,6 +19,10 @@ const Blog = () => {
       name: 'Research',
       id: 'research',
     },
+    {
+      name: 'Guides',
+      id: 'guides',
+    },
   ]
 
   return (
