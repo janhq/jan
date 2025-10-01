@@ -25,4 +25,10 @@ export abstract class MCPExtension extends BaseExtension implements MCPInterface
    * @returns A React component or null if no custom component is provided
    */
   getToolComponent?(): ComponentType<MCPToolComponentProps> | null
+
+  /**
+   * Optional method to get the list of tool names that should be disabled by default
+   * @returns Array of tool names that should be disabled by default for new users
+   */
+  getDefaultDisabledTools?(): Promise<string[]>
 }
