@@ -15,8 +15,7 @@ import { IconPlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { getProviderTitle } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { ModelCapabilities } from '@/types/models'
-import { models as providerModels } from 'token.js'
+import { getModelCapabilities } from '@/lib/models'
 import { toast } from 'sonner'
 
 type DialogAddModelProps = {
@@ -52,23 +51,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
       id: modelId,
       model: modelId,
       name: modelId,
-      capabilities: [
-        ModelCapabilities.COMPLETION,
-        (
-          providerModels[
-            provider.provider as unknown as keyof typeof providerModels
-          ]?.supportsToolCalls as unknown as string[]
-        )?.includes(modelId)
-          ? ModelCapabilities.TOOLS
-          : undefined,
-        (
-          providerModels[
-            provider.provider as unknown as keyof typeof providerModels
-          ]?.supportsImages as unknown as string[]
-        )?.includes(modelId)
-          ? ModelCapabilities.VISION
-          : undefined,
-      ].filter(Boolean) as string[],
+      capabilities: getModelCapabilities(provider.provider, modelId),
       version: '1.0',
     }
 
