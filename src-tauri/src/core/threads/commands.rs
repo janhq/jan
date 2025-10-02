@@ -38,7 +38,7 @@ pub async fn list_threads<R: Runtime>(
                 match serde_json::from_str(&data) {
                     Ok(thread) => threads.push(thread),
                     Err(e) => {
-                        println!("Failed to parse thread file: {}", e);
+                        println!("Failed to parse thread file: {e}");
                         continue; // skip invalid thread files
                     }
                 }
@@ -149,7 +149,7 @@ pub async fn create_message<R: Runtime>(
             .map_err(|e| e.to_string())?;
 
         let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
-        writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+        writeln!(file, "{data}").map_err(|e| e.to_string())?;
 
         // Explicitly flush to ensure data is written before returning
         file.flush().map_err(|e| e.to_string())?;
@@ -234,7 +234,7 @@ pub async fn get_thread_assistant<R: Runtime>(
     let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let thread: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
     if let Some(assistants) = thread.get("assistants").and_then(|a| a.as_array()) {
-        if let Some(first) = assistants.get(0) {
+        if let Some(first) = assistants.first() {
             Ok(first.clone())
         } else {
             Err("Assistant not found".to_string())

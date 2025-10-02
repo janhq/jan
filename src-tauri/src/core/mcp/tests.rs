@@ -70,7 +70,7 @@ fn test_add_server_config_new_file() {
         Some("mcp_config_test_new.json"),
     );
 
-    assert!(result.is_ok(), "Failed to add server config: {:?}", result);
+    assert!(result.is_ok(), "Failed to add server config: {result:?}");
 
     // Verify the config was added correctly
     let config_content = std::fs::read_to_string(&config_path)
@@ -128,7 +128,7 @@ fn test_add_server_config_existing_servers() {
         Some("mcp_config_test_existing.json"),
     );
 
-    assert!(result.is_ok(), "Failed to add server config: {:?}", result);
+    assert!(result.is_ok(), "Failed to add server config: {result:?}");
 
     // Verify both servers exist
     let config_content = std::fs::read_to_string(&config_path)
