@@ -181,9 +181,11 @@ export const sendCompletion = async (
       return encryptedKey
     }
   }
-
+  if (!secretKey) {
+    throw new Error('Encryption key unavailable: cannot encrypt API key.')
+  }
   const apiKey = provider.api_key
-    ? decryptApiKey(provider.api_key, secretKey || 'fallback-key')
+    ? decryptApiKey(provider.api_key, secretKey)
     : (secretKey ?? '')
 
   const tokenJS = new TokenJS({

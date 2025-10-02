@@ -536,10 +536,11 @@ function ProviderDetail() {
                                   const secretKey = await getServiceHub()
                                     .core()
                                     .getAppToken()
-                                  updateObj.api_key = CryptoJS.AES.encrypt(
-                                    newValue,
-                                    secretKey || 'fallback-key'
-                                  ).toString()
+                                  if (secretKey)
+                                    updateObj.api_key = CryptoJS.AES.encrypt(
+                                      newValue,
+                                      secretKey
+                                    ).toString()
                                 } else if (
                                   settingKey === 'base-url' &&
                                   typeof newValue === 'string'
@@ -555,7 +556,7 @@ function ProviderDetail() {
                                     )
 
                                   if (deviceSettingIndex !== -1) {
-                                    (
+                                    ;(
                                       newSettings[deviceSettingIndex]
                                         .controller_props as {
                                         value: string
