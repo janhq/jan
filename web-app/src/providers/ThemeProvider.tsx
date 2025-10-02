@@ -36,7 +36,7 @@ export function ThemeProvider() {
       if (activeTheme === 'auto') {
         setIsDark(e.matches)
       } else {
-        setTheme(e.matches ? 'dark' : 'light')
+        setTheme(activeTheme)
       }
     }
 
