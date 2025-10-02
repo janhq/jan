@@ -12,12 +12,39 @@ import JanConversationalExtension from '@janhq/conversational-extension'
 
 export class MobileCoreService extends TauriCoreService {
   /**
-   * Override getActiveExtensions to return pre-loaded web extensions
-   * for mobile platforms where filesystem access is restricted.
+   * Override: Return pre-bundled extensions instead of reading from filesystem
    */
-  async getActiveExtensions(): Promise<ExtensionManifest[]> {
+  override async getActiveExtensions(): Promise<ExtensionManifest[]> {
+    return this.getBundledExtensions()
+  }
 
-    // Return conversational extension as a pre-loaded instance
+  /**
+   * Override: No-op on mobile - extensions are pre-bundled in the app
+   */
+  override async installExtensions(): Promise<void> {
+    console.log('[Mobile] Extensions are pre-bundled, skipping installation')
+  }
+
+  /**
+   * Override: No-op on mobile - cannot install additional extensions
+   */
+  override async installExtension(_extensions: ExtensionManifest[]): Promise<ExtensionManifest[]> {
+    console.log('[Mobile] Cannot install extensions on mobile, they are pre-bundled')
+    return this.getBundledExtensions()
+  }
+
+  /**
+   * Override: No-op on mobile - cannot uninstall bundled extensions
+   */
+  override async uninstallExtension(_extensions: string[], _reload = true): Promise<boolean> {
+    console.log('[Mobile] Cannot uninstall pre-bundled extensions on mobile')
+    return false
+  }
+
+  /**
+   * Private method to return pre-bundled mobile extensions
+   */
+  private getBundledExtensions(): ExtensionManifest[] {
     const conversationalExt = new JanConversationalExtension(
       'built-in',
       '@janhq/conversational-extension',
@@ -27,27 +54,16 @@ export class MobileCoreService extends TauriCoreService {
       '1.0.0'
     )
 
-    const extensions: ExtensionManifest[] = [
+    return [
       {
         name: '@janhq/conversational-extension',
         productName: 'Conversational Extension',
-        url: 'built-in', // Not loaded from file, but bundled
+        url: 'built-in',
         active: true,
         description: 'Manages conversation threads and messages',
         version: '1.0.0',
-        extensionInstance: conversationalExt, // Pre-instantiated!
+        extensionInstance: conversationalExt,
       },
     ]
-
-    return extensions
-  }
-
-  /**
-   * Mobile-specific install extensions implementation
-   * On mobile, extensions are pre-bundled, so this is a no-op
-   */
-  async installExtensions(): Promise<void> {
-    console.log('[Mobile] Extensions are pre-bundled, skipping installation')
-    // No-op on mobile - extensions are built-in
   }
 }
