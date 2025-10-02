@@ -16,7 +16,7 @@ fn mock_app_with_temp_data_dir() -> (tauri::App<MockRuntime>, PathBuf) {
         .as_nanos();
     let data_dir = std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
-        .join(format!("test-data-{:?}-{}", unique_id, timestamp));
+        .join(format!("test-data-{unique_id:?}-{timestamp}"));
     println!("Mock app data dir: {}", data_dir.display());
     // Ensure the unique test directory exists
     let _ = fs::create_dir_all(&data_dir);
@@ -42,7 +42,7 @@ async fn test_create_and_list_threads() {
 
     // List threads
     let threads = list_threads(app.handle().clone()).await.unwrap();
-    assert!(threads.len() > 0);
+    assert!(!threads.is_empty());
 
     // Clean up
     let _ = fs::remove_dir_all(data_dir);
@@ -88,7 +88,7 @@ async fn test_create_and_list_messages() {
     let messages = list_messages(app.handle().clone(), thread_id.clone())
         .await
         .unwrap();
-    assert!(messages.len() > 0, "Expected at least one message, but got none. Thread ID: {}", thread_id);
+    assert!(!messages.is_empty(), "Expected at least one message, but got none. Thread ID: {thread_id}");
     assert_eq!(messages[0]["role"], "user");
 
     // Clean up
