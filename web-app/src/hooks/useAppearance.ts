@@ -358,11 +358,12 @@ export const useAppearance = create<AppearanceState>()(
           // If color is being set to default, use theme-appropriate default
           let finalColor = color
           if (isDefaultColor(color)) {
-            // Use current blur support state to determine alpha
-            const currentAlpha = blurEffectsSupported && IS_TAURI ? 0.4 : 1
-            finalColor = isDark
-              ? { r: 25, g: 25, b: 25, a: currentAlpha }
-              : { r: 255, g: 255, b: 255, a: currentAlpha }
+            finalColor = isDark ? defaultAppBgColor : defaultLightAppBgColor
+          }
+
+          // Force alpha to 1 if blur effects are not supported
+          if (!blurEffectsSupported && ((IS_WINDOWS || IS_LINUX) || !IS_TAURI)) {
+            finalColor = { ...finalColor, a: 1 }
           }
 
           // Convert RGBA to a format culori can work with
