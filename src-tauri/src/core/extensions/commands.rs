@@ -13,7 +13,7 @@ pub fn get_jan_extensions_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> P
 #[tauri::command]
 pub fn install_extensions<R: Runtime>(app: AppHandle<R>) {
     if let Err(err) = setup::install_extensions(app, true) {
-        log::error!("Failed to install extensions: {}", err);
+        log::error!("Failed to install extensions: {err}");
     }
 }
 
@@ -30,7 +30,7 @@ pub fn get_active_extensions<R: Runtime>(app: AppHandle<R>) -> Vec<serde_json::V
     {
         let mut path = get_jan_extensions_path(app);
         path.push("extensions.json");
-        log::info!("get jan extensions, path: {:?}", path);
+        log::info!("get jan extensions, path: {path:?}");
 
         let contents = fs::read_to_string(path);
         let contents: Vec<serde_json::Value> = match contents {
@@ -49,12 +49,12 @@ pub fn get_active_extensions<R: Runtime>(app: AppHandle<R>) -> Vec<serde_json::V
                     })
                     .collect(),
                 Err(error) => {
-                    log::error!("Failed to parse extensions.json: {}", error);
+                    log::error!("Failed to parse extensions.json: {error}");
                     vec![]
                 }
             },
             Err(error) => {
-                log::error!("Failed to read extensions.json: {}", error);
+                log::error!("Failed to read extensions.json: {error}");
                 vec![]
             }
         };
