@@ -81,6 +81,8 @@ type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   ctx_shift: boolean
+  cpu_moe: boolean
+  n_cpu_moe: number
 }
 
 type ModelPlan = {
@@ -1629,6 +1631,22 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
+    
+    // MoE CPU offload flags - only add if backend supports them
+    // These flags were added in llama.cpp PR #15077
+    const backendVersion = Number(version.replace(/^b/, ''))
+    if (backendVersion >= 6325) {
+      if (cfg.cpu_moe) {
+        args.push('--cpu-moe')
+      } else if (cfg.n_cpu_moe > 0) {
+        args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
+      }
+    } else {
+      if (cfg.cpu_moe || cfg.n_cpu_moe > 0) {
+        logger.warn('MoE CPU offload flags require llama.cpp backend version >= 6325. Current version:', version)
+      }
+    }
+    
     if (isEmbedding) {
       args.push('--embedding')
       args.push('--pooling mean')

@@ -202,6 +202,17 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **Grammar File** | Constrain output format | Empty | For structured output (JSON, code, etc.) |
 | **JSON Schema File** | Enforce JSON structure | Empty | When you need specific JSON formats |
 
+### Mixture-of-Experts (MoE) Optimization
+
+| Setting | What It Does | Default Value | When to Change |
+|---------|-------------|---------------|----------------|
+| **Keep All MoE Weights on CPU** | Offload all MoE expert weights to CPU | Disabled | For large MoE models when GPU memory is limited |
+| **Keep First N MoE Layers on CPU** | Offload first N MoE layers to CPU | 0 (disabled) | Fine-tune memory usage for specific MoE models |
+
+<Callout type="info">
+These MoE settings are specifically for Mixture-of-Experts models (like Mixtral, Qwen2.5-MoE, etc.). They help reduce GPU memory usage by keeping expert weights on CPU while maintaining attention computations on GPU. Note: `--override-tensor` settings take precedence over these options.
+</Callout>
+
 ## Troubleshooting Common Issues
 
 **Models won't load:**

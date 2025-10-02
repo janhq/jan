@@ -143,7 +143,7 @@ describe('llamacpp_extension', () => {
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
-      vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
+      vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000, isDirectory: false })
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
 
@@ -213,9 +213,15 @@ describe('llamacpp_extension', () => {
         rope_scale: 1.0,
         rope_freq_base: 10000,
         rope_freq_scale: 1.0,
-        reasoning_budget: 0,
         auto_update_engine: false,
-        auto_unload: true
+        auto_unload: true,
+        cpu_moe: false,
+        n_cpu_moe: 0,
+        llamacpp_env: '',
+        memory_util: 'high',
+        offload_mmproj: true,
+        override_tensor_buffer_t: '',
+        ctx_shift: false
       }
       
       // Set up providerPath
@@ -260,6 +266,190 @@ describe('llamacpp_extension', () => {
         port: 3000,
         api_key: 'test-api-key'
       })
+    })
+
+    it('should add --cpu-moe flag when cpu_moe is enabled', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      
+      // Mock system info for getBackendExePath
+      const getSystemInfo = vi.fn().mockResolvedValue({
+        platform: 'win32',
+        arch: 'x64'
+      })
+      
+      const { getBackendExePath } = await import('../backend')
+      vi.mocked(getBackendExePath).mockResolvedValue('/path/to/llama-server.exe')
+      
+      // Set up providerPath
+      extension['providerPath'] = '/path/to/jan/llamacpp'
+      
+      // Mock config with cpu_moe enabled
+      extension['config'] = {
+        ...extension['config'],
+        cpu_moe: true,
+        n_cpu_moe: 0,
+        version_backend: 'v1.0.0/win-avx2-x64' // version >= 6325
+      }
+      
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      
+      // Mock model config
+      vi.mocked(invoke)
+        .mockResolvedValueOnce({ // read_yaml
+          model_path: 'test-model/model.gguf',
+          name: 'Test Model',
+          size_bytes: 1000000
+        })
+        .mockResolvedValueOnce('test-api-key') // generate_api_key
+        .mockResolvedValueOnce({ // load_llama_model
+          model_id: 'test-model',
+          pid: 123,
+          port: 3000,
+          api_key: 'test-api-key'
+        })
+      
+      // Mock fetch for health check
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: 'ok' })
+      } as any)
+
+      await extension.load('test-model')
+      
+      // Verify that invoke was called with --cpu-moe flag
+      expect(invoke).toHaveBeenCalledWith(
+        'plugin:llamacpp|load_llama_model',
+        expect.any(String), // backend_path
+        expect.any(String), // library_path
+        expect.arrayContaining(['--cpu-moe']), // args should contain --cpu-moe
+        expect.any(Object) // envs
+      )
+    })
+
+    it('should add --n-cpu-moe flag when n_cpu_moe is set', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      
+      // Mock system info for getBackendExePath
+      const getSystemInfo = vi.fn().mockResolvedValue({
+        platform: 'win32',
+        arch: 'x64'
+      })
+      
+      const { getBackendExePath } = await import('../backend')
+      vi.mocked(getBackendExePath).mockResolvedValue('/path/to/llama-server.exe')
+      
+      // Set up providerPath
+      extension['providerPath'] = '/path/to/jan/llamacpp'
+      
+      // Mock config with n_cpu_moe set
+      extension['config'] = {
+        ...extension['config'],
+        cpu_moe: false,
+        n_cpu_moe: 4,
+        version_backend: 'v1.0.0/win-avx2-x64' // version >= 6325
+      }
+      
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      
+      // Mock model config
+      vi.mocked(invoke)
+        .mockResolvedValueOnce({ // read_yaml
+          model_path: 'test-model/model.gguf',
+          name: 'Test Model',
+          size_bytes: 1000000
+        })
+        .mockResolvedValueOnce('test-api-key') // generate_api_key
+        .mockResolvedValueOnce({ // load_llama_model
+          model_id: 'test-model',
+          pid: 123,
+          port: 3000,
+          api_key: 'test-api-key'
+        })
+      
+      // Mock fetch for health check
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: 'ok' })
+      } as any)
+
+      await extension.load('test-model')
+      
+      // Verify that invoke was called with --n-cpu-moe flag
+      expect(invoke).toHaveBeenCalledWith(
+        'plugin:llamacpp|load_llama_model',
+        expect.any(String), // backend_path
+        expect.any(String), // library_path
+        expect.arrayContaining(['--n-cpu-moe', '4']), // args should contain --n-cpu-moe 4
+        expect.any(Object) // envs
+      )
+    })
+
+    it('should prefer --cpu-moe over --n-cpu-moe when both are set', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      
+      // Mock system info for getBackendExePath
+      const getSystemInfo = vi.fn().mockResolvedValue({
+        platform: 'win32',
+        arch: 'x64'
+      })
+      
+      const { getBackendExePath } = await import('../backend')
+      vi.mocked(getBackendExePath).mockResolvedValue('/path/to/llama-server.exe')
+      
+      // Set up providerPath
+      extension['providerPath'] = '/path/to/jan/llamacpp'
+      
+      // Mock config with both cpu_moe and n_cpu_moe set
+      extension['config'] = {
+        ...extension['config'],
+        cpu_moe: true,
+        n_cpu_moe: 4,
+        version_backend: 'v1.0.0/win-avx2-x64' // version >= 6325
+      }
+      
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      
+      // Mock model config
+      vi.mocked(invoke)
+        .mockResolvedValueOnce({ // read_yaml
+          model_path: 'test-model/model.gguf',
+          name: 'Test Model',
+          size_bytes: 1000000
+        })
+        .mockResolvedValueOnce('test-api-key') // generate_api_key
+        .mockResolvedValueOnce({ // load_llama_model
+          model_id: 'test-model',
+          pid: 123,
+          port: 3000,
+          api_key: 'test-api-key'
+        })
+      
+      // Mock fetch for health check
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: 'ok' })
+      } as any)
+
+      await extension.load('test-model')
+      
+      // Verify that invoke was called with --cpu-moe flag (not --n-cpu-moe)
+      expect(invoke).toHaveBeenCalledWith(
+        'plugin:llamacpp|load_llama_model',
+        expect.any(String), // backend_path
+        expect.any(String), // library_path
+        expect.arrayContaining(['--cpu-moe']), // args should contain --cpu-moe
+        expect.any(Object) // envs
+      )
+      
+      // Verify that --n-cpu-moe is NOT in the args
+      const callArgs = vi.mocked(invoke).mock.calls[2][2] as unknown as string[]
+      expect(callArgs).not.toContain('--n-cpu-moe')
     })
   })
 

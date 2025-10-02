@@ -351,5 +351,27 @@
       "placeholder": "path/to/schema.json",
       "type": "text"
     }
+  },
+  {
+    "key": "cpu_moe",
+    "title": "Keep All MoE Weights on CPU",
+    "description": "Keep all Mixture-of-Experts (MoE) weights on CPU. Useful for large MoE models to reduce GPU memory usage. Note: --override-tensor takes precedence over this setting.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "n_cpu_moe",
+    "title": "Keep First N MoE Layers on CPU",
+    "description": "Keep the first N MoE layers on CPU (0 = disabled). Alternative to keeping all MoE weights on CPU. Useful for optimizing memory usage with large MoE models.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0 (disabled)",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0
+    }
   }
 ]
