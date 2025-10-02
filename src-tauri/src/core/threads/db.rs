@@ -23,17 +23,8 @@ const DB_NAME: &str = "jan.db";
 /// Global database pool for mobile platforms
 static DB_POOL: OnceLock<Mutex<Option<SqlitePool>>> = OnceLock::new();
 
-/// Check if the platform should use SQLite (mobile platforms)
-pub fn should_use_sqlite() -> bool {
-    cfg!(any(target_os = "android", target_os = "ios"))
-}
-
 /// Initialize database with connection pool and run migrations
 pub async fn init_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    if !should_use_sqlite() {
-        return Ok(()); // Skip DB initialization on desktop
-    }
-
     // Get app data directory
     let app_data_dir = app
         .path()
