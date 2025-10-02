@@ -31,6 +31,28 @@ export function AppearanceProvider() {
   const { isDark } = useTheme()
   const showAlphaSlider = useBlurSupport()
 
+  // Force re-apply appearance on mount to fix theme desync issues on Windows
+  // This ensures that when navigating to routes (like logs), the theme is properly applied
+  useEffect(() => {
+    const {
+      setAppBgColor,
+      setAppMainViewBgColor,
+      appBgColor,
+      appMainViewBgColor,
+    } = useAppearance.getState()
+
+    // Re-trigger setters to ensure CSS variables are applied with correct theme
+    setAppBgColor(appBgColor)
+    setAppMainViewBgColor(appMainViewBgColor)
+  }, []) // Run once on mount
+
+  // Update colors when blur support changes (important for Windows/Linux)
+  useEffect(() => {
+    const { setAppBgColor, appBgColor } = useAppearance.getState()
+    // Re-apply color to update alpha based on blur support
+    setAppBgColor(appBgColor)
+  }, [showAlphaSlider])
+
   // Apply appearance settings on mount and when they change
   useEffect(() => {
     // Apply font size
@@ -196,6 +218,10 @@ export function AppearanceProvider() {
       setAppAccentBgColor,
       setAppDestructiveBgColor,
     } = useAppearance.getState()
+
+    // Force re-apply all colors when theme changes to ensure correct dark/light defaults
+    // This is especially important on Windows where the theme might not be properly
+    // synchronized when navigating to different routes (e.g., logs page)
 
     // If using default background color, update it when theme changes
     if (isDefaultColor(appBgColor)) {

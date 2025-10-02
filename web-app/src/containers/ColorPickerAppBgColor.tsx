@@ -1,4 +1,4 @@
-import { useAppearance, isDefaultColor, useBlurSupport } from '@/hooks/useAppearance'
+import { useAppearance, useBlurSupport } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -62,6 +62,15 @@ export function ColorPickerAppBgColor() {
     },
   ]
 
+  // Check if a color is the default color (considering both dark and light themes)
+  const isColorDefault = (color: RgbaColor): boolean => {
+    const isDarkDefault = color.r === 25 && color.g === 25 && color.b === 25
+    const isLightDefault = color.r === 255 && color.g === 255 && color.b === 255
+    // Accept both 0.4 and 1 as valid default alpha values (handles blur detection timing)
+    const hasDefaultAlpha = Math.abs(color.a - 0.4) < 0.01 || Math.abs(color.a - 1) < 0.01
+    return (isDarkDefault || isLightDefault) && hasDefaultAlpha
+  }
+
   return (
     <div className="flex items-center gap-1.5">
       {predefineAppBgColor.map((item, i) => {
@@ -69,13 +78,13 @@ export function ColorPickerAppBgColor() {
           (item.r === appBgColor.r &&
             item.g === appBgColor.g &&
             item.b === appBgColor.b &&
-            item.a === appBgColor.a) ||
-          (isDefaultColor(appBgColor) && isDefaultColor(item))
+            Math.abs(item.a - appBgColor.a) < 0.01) ||
+          (isColorDefault(appBgColor) && isColorDefault(item))
         return (
           <div
             key={i}
             className={cn(
-              'size-4 rounded-full border border-main-view-fg/20',
+              'size-4 rounded-full border border-main-view-fg/20 cursor-pointer',
               isSelected && 'ring-2 ring-accent border-none'
             )}
             onClick={() => {

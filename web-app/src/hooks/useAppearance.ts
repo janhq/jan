@@ -109,10 +109,14 @@ const isColorEqual = (color1: RgbaColor, color2: RgbaColor): boolean => {
 
 // Helper function to check if color is default (not customized)
 export const isDefaultColor = (color: RgbaColor): boolean => {
-  return (
-    isColorEqual(color, defaultAppBgColor) ||
-    isColorEqual(color, defaultLightAppBgColor)
-  )
+  // Check if RGB matches default (ignore alpha since it changes based on blur support)
+  const isDarkDefault = color.r === 25 && color.g === 25 && color.b === 25
+  const isLightDefault = color.r === 255 && color.g === 255 && color.b === 255
+
+  // Consider it default if RGB matches and alpha is either 0.4 or 1 (common values)
+  const hasDefaultAlpha = Math.abs(color.a - 0.4) < 0.01 || Math.abs(color.a - 1) < 0.01
+
+  return (isDarkDefault || isLightDefault) && hasDefaultAlpha
 }
 
 export const isDefaultColorMainView = (color: RgbaColor): boolean => {
@@ -213,8 +217,11 @@ export const useAppearance = create<AppearanceState>()(
             defaultFontSize
           )
 
-          // Reset app background color
-          const defaultBg = isDark ? defaultAppBgColor : defaultLightAppBgColor
+          // Reset app background color with correct alpha based on blur support
+          const currentAlpha = blurEffectsSupported && IS_TAURI ? 0.4 : 1
+          const defaultBg = isDark
+            ? { r: 25, g: 25, b: 25, a: currentAlpha }
+            : { r: 255, g: 255, b: 255, a: currentAlpha }
           const culoriRgbBg = rgb({
             mode: 'rgb',
             r: defaultBg.r / 255,
@@ -351,12 +358,11 @@ export const useAppearance = create<AppearanceState>()(
           // If color is being set to default, use theme-appropriate default
           let finalColor = color
           if (isDefaultColor(color)) {
-            finalColor = isDark ? defaultAppBgColor : defaultLightAppBgColor
-          }
-
-          // Force alpha to 1 if blur effects are not supported
-          if (!blurEffectsSupported && (IS_WINDOWS || IS_LINUX || !IS_TAURI)) {
-            finalColor = { ...finalColor, a: 1 }
+            // Use current blur support state to determine alpha
+            const currentAlpha = blurEffectsSupported && IS_TAURI ? 0.4 : 1
+            finalColor = isDark
+              ? { r: 25, g: 25, b: 25, a: currentAlpha }
+              : { r: 255, g: 255, b: 255, a: currentAlpha }
           }
 
           // Convert RGBA to a format culori can work with
@@ -629,11 +635,9 @@ export const useAppearance = create<AppearanceState>()(
           // Get the current theme state
           const { isDark } = useTheme.getState()
 
-          // If stored color is default, use theme-appropriate default
-          let finalColor = state.appBgColor
-          if (isDefaultColor(state.appBgColor)) {
-            finalColor = isDark ? defaultAppBgColor : defaultLightAppBgColor
-          }
+          // Just use the stored color as-is during rehydration
+          // The AppearanceProvider will handle alpha normalization after blur detection
+          const finalColor = state.appBgColor
 
           let finalColorMainView = state.appMainViewBgColor
           if (isDefaultColorMainView(state.appMainViewBgColor)) {
