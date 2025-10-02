@@ -3,7 +3,7 @@
  */
 
 import { Theme } from '@tauri-apps/api/window'
-import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
+import { getAllWebviewWindows, type WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { ThemeMode } from './types'
 import { DefaultThemeService } from './default'
 
@@ -16,7 +16,7 @@ export class TauriThemeService extends DefaultThemeService {
       const allWindows = await getAllWebviewWindows()
 
       // Convert to array if it's not already
-      const windowsArray = Array.isArray(allWindows)
+      const windowsArray: WebviewWindow[] = Array.isArray(allWindows)
         ? allWindows
         : Object.values(allWindows)
 
