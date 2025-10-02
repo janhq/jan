@@ -71,7 +71,9 @@ function Index() {
   return (
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
-        {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+        <div className="flex items-center justify-between w-full pr-2">
+          {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+        </div>
       </HeaderPage>
       <div
         className={cn(
