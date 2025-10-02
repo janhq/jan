@@ -154,7 +154,6 @@ const LeftPanel = () => {
     }
   }, [setLeftPanel, open])
 
-
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -640,7 +639,7 @@ const LeftPanel = () => {
                   data-test-id={`menu-${menu.title}`}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
                     isActive && 'bg-left-panel-fg/10'
                   )}
                 >

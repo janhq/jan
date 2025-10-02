@@ -1,4 +1,4 @@
-import { useAppearance, isDefaultColor } from '@/hooks/useAppearance'
+import { useAppearance, isDefaultColor, useBlurSupport } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -14,6 +14,12 @@ export function ColorPickerAppBgColor() {
   const { appBgColor, setAppBgColor } = useAppearance()
   const { isDark } = useTheme()
   const { t } = useTranslation()
+  const showAlphaSlider = useBlurSupport()
+
+  // Helper to get alpha value based on blur support
+  const getAlpha = (defaultAlpha: number) => {
+    return showAlphaSlider ? defaultAlpha : 1
+  }
 
   const predefineAppBgColor: RgbaColor[] = [
     isDark
@@ -21,38 +27,38 @@ export function ColorPickerAppBgColor() {
           r: 25,
           g: 25,
           b: 25,
-          a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+          a: getAlpha(0.4),
         }
       : {
           r: 255,
           g: 255,
           b: 255,
-          a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+          a: getAlpha(0.4),
         },
     {
       r: 70,
       g: 79,
       b: 229,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.5,
+      a: getAlpha(0.5),
     },
     {
       r: 238,
       g: 130,
       b: 238,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.5,
+      a: getAlpha(0.5),
     },
 
     {
       r: 255,
       g: 99,
       b: 71,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.5,
+      a: getAlpha(0.5),
     },
     {
       r: 255,
       g: 165,
       b: 0,
-      a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.5,
+      a: getAlpha(0.5),
     },
   ]
 
@@ -61,9 +67,9 @@ export function ColorPickerAppBgColor() {
       {predefineAppBgColor.map((item, i) => {
         const isSelected =
           (item.r === appBgColor.r &&
-          item.g === appBgColor.g &&
-          item.b === appBgColor.b &&
-          item.a === appBgColor.a) ||
+            item.g === appBgColor.g &&
+            item.b === appBgColor.b &&
+            item.a === appBgColor.a) ||
           (isDefaultColor(appBgColor) && isDefaultColor(item))
         return (
           <div

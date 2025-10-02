@@ -117,3 +117,108 @@ pub fn is_library_available(library: &str) -> bool {
         }
     }
 }
+
+// Check if the system supports blur/acrylic effects
+// - Windows: Checks build version (17134+ for acrylic support)
+// - Linux: Checks for KWin (KDE) or compositor with blur support
+// - macOS: Always supported
+#[tauri::command]
+pub fn supports_blur_effects() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 10 build 17134 (1803) and later support acrylic effects
+        // Windows 11 (build 22000+) has better support
+        use std::process::Command;
+
+        if let Ok(output) = Command::new("cmd")
+            .args(&["/C", "ver"])
+            .output()
+        {
+            if let Ok(version_str) = String::from_utf8(output.stdout) {
+                // Parse Windows version from output like "Microsoft Windows [Version 10.0.22631.4602]"
+                if let Some(version_part) = version_str.split("Version ").nth(1) {
+                    if let Some(build_str) = version_part.split('.').nth(2) {
+                        if let Ok(build) = build_str.split(']').next().unwrap_or("0").trim().parse::<u32>() {
+                            // Windows 10 build 17134+ or Windows 11 build 22000+ support blur
+                            let supports_blur = build >= 17134;
+                            if supports_blur {
+                                log::info!("✅ Windows build {} detected - Blur/Acrylic effects SUPPORTED", build);
+                            } else {
+                                log::warn!("❌ Windows build {} detected - Blur/Acrylic effects NOT SUPPORTED (requires build 17134+)", build);
+                            }
+                            return supports_blur;
+                        }
+                    }
+                }
+            }
+        }
+
+        // If we can't detect version, assume it doesn't support blur for safety
+        log::warn!("❌ Could not detect Windows version - Assuming NO blur support for safety");
+        false
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        // Check for KDE Plasma with KWin (best blur support)
+        if let Ok(output) = Command::new("kwin_x11").arg("--version").output() {
+            if output.status.success() {
+                log::info!("✅ KDE/KWin detected - Blur effects SUPPORTED");
+                return true;
+            }
+        }
+
+        // Check for Wayland KWin
+        if let Ok(output) = Command::new("kwin_wayland").arg("--version").output() {
+            if output.status.success() {
+                log::info!("✅ KDE/KWin Wayland detected - Blur effects SUPPORTED");
+                return true;
+            }
+        }
+
+        // Check for GNOME with blur extensions (less reliable)
+        if std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().contains("GNOME") {
+            log::info!("🔍 GNOME detected - Blur support depends on extensions");
+            // GNOME might have blur through extensions, allow it
+            return true;
+        }
+
+        // Check for Compiz (older but has blur)
+        if let Ok(_) = Command::new("compiz").arg("--version").output() {
+            log::info!("✅ Compiz compositor detected - Blur effects SUPPORTED");
+            return true;
+        }
+
+        // Check for Picom with blur (common X11 compositor)
+        if let Ok(output) = Command::new("picom").arg("--version").output() {
+            if output.status.success() {
+                log::info!("✅ Picom compositor detected - Blur effects SUPPORTED");
+                return true;
+            }
+        }
+
+        // Check environment variable for compositor
+        if let Ok(compositor) = std::env::var("COMPOSITOR") {
+            log::info!("🔍 Compositor detected: {} - Assuming blur support", compositor);
+            return true;
+        }
+
+        log::warn!("❌ No known blur-capable compositor detected on Linux");
+        false
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS always supports blur/vibrancy effects
+        log::info!("✅ macOS detected - Blur/Vibrancy effects SUPPORTED");
+        true
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        log::warn!("❌ Unknown platform - Assuming NO blur support");
+        false
+    }
+}

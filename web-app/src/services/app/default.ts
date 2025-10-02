@@ -39,4 +39,9 @@ export class DefaultAppService implements AppService {
     console.log('readYaml called with path:', path)
     throw new Error('readYaml not implemented in default app service')
   }
+
+  async supportsBlurEffects(): Promise<boolean> {
+    // On web/non-Windows platforms, always return false
+    return false
+  }
 }

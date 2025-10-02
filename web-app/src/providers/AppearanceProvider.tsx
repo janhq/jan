@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useAppearance, useBlurSupport } from '@/hooks/useAppearance'
 import { useTheme } from '@/hooks/useTheme'
 import {
   isDefaultColor,
@@ -29,14 +29,15 @@ export function AppearanceProvider() {
     appDestructiveTextColor,
   } = useAppearance()
   const { isDark } = useTheme()
+  const showAlphaSlider = useBlurSupport()
 
   // Apply appearance settings on mount and when they change
   useEffect(() => {
     // Apply font size
     document.documentElement.style.setProperty('--font-size-base', fontSize)
 
-    // Hide alpha slider when IS_LINUX || !IS_TAURI
-    const shouldHideAlpha = IS_LINUX || !IS_TAURI
+    // Hide alpha slider when blur is not supported
+    const shouldHideAlpha = !showAlphaSlider
     let alphaStyleElement = document.getElementById('alpha-slider-style')
 
     if (shouldHideAlpha) {
@@ -55,12 +56,13 @@ export function AppearanceProvider() {
     // Import culori functions dynamically to avoid SSR issues
     import('culori').then(({ rgb, oklch, formatCss }) => {
       // Convert RGBA to a format culori can work with
+      // Use alpha = 1 when blur is not supported
       const culoriRgb = rgb({
         mode: 'rgb',
         r: appBgColor.r / 255,
         g: appBgColor.g / 255,
         b: appBgColor.b / 255,
-        alpha: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : appBgColor.a,
+        alpha: showAlphaSlider ? appBgColor.a : 1,
       })
 
       const culoriRgbMainView = rgb({
@@ -176,6 +178,7 @@ export function AppearanceProvider() {
     appAccentTextColor,
     appDestructiveBgColor,
     appDestructiveTextColor,
+    showAlphaSlider,
   ])
 
   // Update appearance when theme changes

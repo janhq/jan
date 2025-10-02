@@ -4,6 +4,8 @@ import { localStorageKey } from '@/constants/localStorage'
 import { RgbaColor } from 'react-colorful'
 import { rgb, oklch, formatCss } from 'culori'
 import { useTheme } from './useTheme'
+import { useEffect, useState } from 'react'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px'
 export type ChatWidth = 'full' | 'compact'
@@ -41,19 +43,37 @@ export const fontSizeOptions = [
   { label: 'Extra Large', value: '18px' as FontSize },
 ]
 
+// Helper to determine if blur effects are supported
+// This will be dynamically checked on Windows and Linux
+let blurEffectsSupported = true
+if ((IS_WINDOWS || IS_LINUX) && IS_TAURI) {
+  // Default to false for Windows/Linux, will be checked async
+  blurEffectsSupported = false
+}
+
+// Helper to get the appropriate alpha value
+const getAlphaValue = () => {
+  // Web always uses alpha = 1
+  if (!IS_TAURI) return 1
+  // Windows/Linux use 1 if blur not supported, 0.4 if supported
+  if ((IS_WINDOWS || IS_LINUX) && !blurEffectsSupported) return 1
+  // macOS and Windows/Linux with blur support use 0.4
+  return 0.4
+}
+
 // Default appearance settings
 const defaultFontSize: FontSize = '15px'
 const defaultAppBgColor: RgbaColor = {
   r: 25,
   g: 25,
   b: 25,
-  a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+  a: getAlphaValue(),
 }
 const defaultLightAppBgColor: RgbaColor = {
   r: 255,
   g: 255,
   b: 255,
-  a: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : 0.4,
+  a: getAlphaValue(),
 }
 const defaultAppMainViewBgColor: RgbaColor = { r: 25, g: 25, b: 25, a: 1 }
 const defaultLightAppMainViewBgColor: RgbaColor = {
@@ -126,6 +146,45 @@ export const isDefaultColorDestructive = (color: RgbaColor): boolean => {
 // Helper function to get default text color based on theme
 export const getDefaultTextColor = (isDark: boolean): string => {
   return isDark ? defaultDarkLeftPanelTextColor : defaultLightLeftPanelTextColor
+}
+
+// Hook to check if alpha slider should be shown
+export const useBlurSupport = () => {
+  const [supportsBlur, setSupportsBlur] = useState(
+    IS_MACOS && IS_TAURI // Default to true only for macOS
+  )
+
+  useEffect(() => {
+    const checkBlurSupport = async () => {
+      if ((IS_WINDOWS || IS_LINUX) && IS_TAURI) {
+        try {
+          const supported = await getServiceHub().app().supportsBlurEffects()
+          blurEffectsSupported = supported
+          setSupportsBlur(supported)
+
+          const platform = IS_WINDOWS ? 'Windows' : 'Linux'
+          if (supported) {
+            console.log(`✅ ${platform} blur effects: SUPPORTED - Alpha slider will be shown`)
+          } else {
+            console.log(`❌ ${platform} blur effects: NOT SUPPORTED - Alpha slider will be hidden, alpha set to 1`)
+          }
+        } catch (error) {
+          console.error(`❌ Failed to check ${IS_WINDOWS ? 'Windows' : 'Linux'} blur support:`, error)
+          setSupportsBlur(false)
+        }
+      } else if (IS_MACOS && IS_TAURI) {
+        console.log('🍎 macOS platform: Blur effects supported, alpha slider shown')
+      } else if (!IS_TAURI) {
+        console.log('🌐 Web platform: Alpha slider hidden, alpha set to 1')
+      }
+    }
+
+    checkBlurSupport()
+  }, [])
+
+  // Return true if alpha slider should be shown
+  // Show on macOS (always), and conditionally on Windows/Linux based on detection
+  return IS_TAURI && (IS_MACOS || supportsBlur)
 }
 
 export const useAppearance = create<AppearanceState>()(
@@ -293,6 +352,11 @@ export const useAppearance = create<AppearanceState>()(
           let finalColor = color
           if (isDefaultColor(color)) {
             finalColor = isDark ? defaultAppBgColor : defaultLightAppBgColor
+          }
+
+          // Force alpha to 1 if blur effects are not supported
+          if (!blurEffectsSupported && (IS_WINDOWS || IS_LINUX || !IS_TAURI)) {
+            finalColor = { ...finalColor, a: 1 }
           }
 
           // Convert RGBA to a format culori can work with
