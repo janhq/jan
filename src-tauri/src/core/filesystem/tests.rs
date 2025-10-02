@@ -9,7 +9,7 @@ fn test_rm() {
     let app = mock_app();
     let path = "test_rm_dir";
     fs::create_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path)).unwrap();
-    let args = vec![format!("file://{}", path).to_string()];
+    let args = vec![format!("file://{path}").to_string()];
     let result = rm(app.handle().clone(), args);
     assert!(result.is_ok());
     assert!(!get_jan_data_folder_path(app.handle().clone())
@@ -21,7 +21,7 @@ fn test_rm() {
 fn test_mkdir() {
     let app = mock_app();
     let path = "test_mkdir_dir";
-    let args = vec![format!("file://{}", path).to_string()];
+    let args = vec![format!("file://{path}").to_string()];
     let result = mkdir(app.handle().clone(), args);
     assert!(result.is_ok());
     assert!(get_jan_data_folder_path(app.handle().clone())
@@ -39,7 +39,7 @@ fn test_join_path() {
     assert_eq!(
         result,
         get_jan_data_folder_path(app.handle().clone())
-            .join(&format!("test_dir{}test_file", std::path::MAIN_SEPARATOR))
+            .join(format!("test_dir{}test_file", std::path::MAIN_SEPARATOR))
             .to_string_lossy()
             .to_string()
     );

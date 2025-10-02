@@ -162,11 +162,15 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async updateModel(model: Partial<CoreModel>): Promise<void> {
-    if (model.settings)
+  async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
+    if (model.settings) {
       this.getEngine()?.updateSettings(
         model.settings as SettingComponentProps[]
       )
+    }
+    // Note: Model name/ID updates are handled at the provider level in the frontend
+    // The engine doesn't have an update method for model metadata
+    console.log('Model update request processed for modelId:', modelId)
   }
 
   async pullModel(

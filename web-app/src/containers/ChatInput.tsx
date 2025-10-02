@@ -37,15 +37,24 @@ import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
+import { McpExtensionToolLoader } from './McpExtensionToolLoader'
+import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  projectId?: string
 }
 
-const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
+const ChatInput = ({
+  model,
+  className,
+  initialMessage,
+  projectId,
+}: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -162,7 +171,13 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
-  const handleSendMesage = (prompt: string) => {
+  // Get MCP extension and its custom component
+  const extensionManager = ExtensionManager.getInstance()
+  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
+  const MCPToolComponent = mcpExtension?.getToolComponent?.()
+
+
+  const handleSendMesage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -174,7 +189,8 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     sendMessage(
       prompt,
       true,
-      uploadedFiles.length > 0 ? uploadedFiles : undefined
+      uploadedFiles.length > 0 ? uploadedFiles : undefined,
+      projectId
     )
     setUploadedFiles([])
   }
@@ -688,60 +704,72 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
 
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
-                    <TooltipProvider>
-                      <Tooltip
-                        open={tooltipToolsAvailable}
-                        onOpenChange={setTooltipToolsAvailable}
-                      >
-                        <TooltipTrigger
-                          asChild
-                          disabled={dropdownToolsAvailable}
+                    MCPToolComponent ? (
+                      // Use custom MCP component
+                      <McpExtensionToolLoader
+                        tools={tools}
+                        hasActiveMCPServers={hasActiveMCPServers}
+                        selectedModelHasTools={selectedModel?.capabilities?.includes('tools') ?? false}
+                        initialMessage={initialMessage}
+                        MCPToolComponent={MCPToolComponent}
+                      />
+                    ) : (
+                      // Use default tools dropdown
+                      <TooltipProvider>
+                        <Tooltip
+                          open={tooltipToolsAvailable}
+                          onOpenChange={setTooltipToolsAvailable}
                         >
-                          <div
-                            onClick={(e) => {
-                              setDropdownToolsAvailable(false)
-                              e.stopPropagation()
-                            }}
+                          <TooltipTrigger
+                            asChild
+                            disabled={dropdownToolsAvailable}
                           >
-                            <DropdownToolsAvailable
-                              initialMessage={initialMessage}
-                              onOpenChange={(isOpen) => {
-                                setDropdownToolsAvailable(isOpen)
-                                if (isOpen) {
-                                  setTooltipToolsAvailable(false)
-                                }
+                            <div
+                              onClick={(e) => {
+                                setDropdownToolsAvailable(false)
+                                e.stopPropagation()
                               }}
                             >
-                              {(isOpen, toolsCount) => {
-                                return (
-                                  <div
-                                    className={cn(
-                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                      isOpen && 'bg-main-view-fg/10'
-                                    )}
-                                  >
-                                    <IconTool
-                                      size={18}
-                                      className="text-main-view-fg/50"
-                                    />
-                                    {toolsCount > 0 && (
-                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
-                                        <span className="leading-0 text-xs">
-                                          {toolsCount > 99 ? '99+' : toolsCount}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              }}
-                            </DropdownToolsAvailable>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('tools')}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                              <DropdownToolsAvailable
+                                initialMessage={initialMessage}
+                                onOpenChange={(isOpen) => {
+                                  setDropdownToolsAvailable(isOpen)
+                                  if (isOpen) {
+                                    setTooltipToolsAvailable(false)
+                                  }
+                                }}
+                              >
+                                {(isOpen, toolsCount) => {
+                                  return (
+                                    <div
+                                      className={cn(
+                                        'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                        isOpen && 'bg-main-view-fg/10'
+                                      )}
+                                    >
+                                      <IconTool
+                                        size={18}
+                                        className="text-main-view-fg/50"
+                                      />
+                                      {toolsCount > 0 && (
+                                        <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
+                                          <span className="leading-0 text-xs">
+                                            {toolsCount > 99 ? '99+' : toolsCount}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                }}
+                              </DropdownToolsAvailable>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('tools')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )
                   )}
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
