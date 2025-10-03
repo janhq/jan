@@ -327,6 +327,28 @@ export const useModelProvider = create<ModelProviderState>()(
               if (provider.base_url === 'https://api.anthropic.com') {
                 provider.base_url = 'https://api.anthropic.com/v1'
               }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.anthropic.com/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.anthropic.com/v1'
+                }
+              }
+
               if (!provider.custom_header) {
                 provider.custom_header = [
                   {
