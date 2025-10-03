@@ -262,32 +262,29 @@ const SortableItem = memo(
                       </DropdownMenuItem>
                     ))
                   )}
-                  {thread.metadata?.project && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Remove project from metadata
-                          const projectName = thread.metadata?.project?.name
-                          updateThread(thread.id, {
-                            metadata: {
-                              ...thread.metadata,
-                              project: undefined,
-                            },
-                          })
-                          toast.success(
-                            `Thread removed from "${projectName}" successfully`
-                          )
-                        }}
-                      >
-                        <IconX size={16} />
-                        <span>Remove from project</span>
-                      </DropdownMenuItem>
-                    </>
-                  )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+              {thread.metadata?.project && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    // Remove project from metadata
+                    const projectName = thread.metadata?.project?.name
+                    updateThread(thread.id, {
+                      metadata: {
+                        ...thread.metadata,
+                        project: undefined,
+                      },
+                    })
+                    toast.success(
+                      `Thread removed from "${projectName}" successfully`
+                    )
+                  }}
+                >
+                  <IconX size={16} />
+                  <span>Remove</span>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DeleteThreadDialog
                 thread={thread}
