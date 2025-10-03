@@ -28,7 +28,7 @@ export class MobileCoreService extends TauriCoreService {
   /**
    * Override: No-op on mobile - cannot install additional extensions
    */
-  override async installExtension(_extensions: ExtensionManifest[]): Promise<ExtensionManifest[]> {
+  override async installExtension(): Promise<ExtensionManifest[]> {
     console.log('[Mobile] Cannot install extensions on mobile, they are pre-bundled')
     return this.getBundledExtensions()
   }
@@ -36,7 +36,7 @@ export class MobileCoreService extends TauriCoreService {
   /**
    * Override: No-op on mobile - cannot uninstall bundled extensions
    */
-  override async uninstallExtension(_extensions: string[], _reload = true): Promise<boolean> {
+  override async uninstallExtension(): Promise<boolean> {
     console.log('[Mobile] Cannot uninstall pre-bundled extensions on mobile')
     return false
   }

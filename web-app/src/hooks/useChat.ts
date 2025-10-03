@@ -149,7 +149,7 @@ export const useChat = () => {
       })
     }
     return currentThread
-  }, [createThread, retrieveThread, router, setMessages])
+  }, [createThread, retrieveThread, router, setMessages, serviceHub])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
@@ -639,6 +639,7 @@ export const useChat = () => {
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
+      setTokenSpeed,
     ]
   )
 
