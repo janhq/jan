@@ -332,12 +332,14 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          bestAvailableBackendString = await this.determineBestBackend(
+            version_backends
+          )
         }
       } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(
+          version_backends
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2151,7 +2153,12 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath && !this.isAbsolutePath(mmprojPath))
       mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     try {
-      const result = await planModelLoadInternal(path, this.memoryMode, mmprojPath, requestedCtx)
+      const result = await planModelLoadInternal(
+        path,
+        this.memoryMode,
+        mmprojPath,
+        requestedCtx
+      )
       return result
     } catch (e) {
       throw new Error(String(e))
@@ -2279,30 +2286,38 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Calculate text tokens
-    const messages = JSON.stringify({ messages: opts.messages })
+    // Use a direct approach: convert messages to text and tokenize directly
+    // This avoids issues with enable_thinking and assistant prefills
+    let textToTokenize = ''
 
-    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-      method: 'POST',
-      headers: headers,
-      body: messages,
-    })
+    for (const msg of opts.messages) {
+      const rolePrefix =
+        msg.role === 'user'
+          ? 'User: '
+          : msg.role === 'assistant'
+          ? 'Assistant: '
+          : msg.role === 'system'
+          ? 'System: '
+          : ''
 
-    if (!parseResponse.ok) {
-      const errorData = await parseResponse.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${
-          parseResponse.status
-        }: ${JSON.stringify(errorData)}`
-      )
+      if (typeof msg.content === 'string') {
+        textToTokenize += `${rolePrefix}${msg.content}\n`
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text' && part.text) {
+            textToTokenize += part.text
+          }
+          // Skip image tokens as they're calculated separately
+        }
+        textToTokenize += '\n'
+      }
     }
-
-    const parsedPrompt = await parseResponse.json()
 
     const response = await fetch(`${baseUrl}/tokenize`, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
-        content: parsedPrompt.prompt,
+        content: textToTokenize,
       }),
     })
 
