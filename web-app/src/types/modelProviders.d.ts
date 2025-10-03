@@ -48,7 +48,7 @@ type ProviderObject = {
   settings: ProviderSetting[]
   models: Model[]
   persist?: boolean
-  custom_header: ProviderCustomHeader[] | null
+  custom_header?: ProviderCustomHeader[] | null
 }
 
 /**
