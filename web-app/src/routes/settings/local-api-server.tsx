@@ -258,7 +258,7 @@ function LocalAPIServerContent() {
     }
   }
 
-  const isServerRunning = serverStatus === 'running'
+  const isServerRunning = serverStatus !== 'stopped'
 
   return (
     <div className="flex flex-col h-full">
