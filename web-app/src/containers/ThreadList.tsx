@@ -237,13 +237,13 @@ const SortableItem = memo(
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="gap-2">
                   <IconFolder size={16} />
-                  <span>Add to project</span>
+                  <span>{t('common:projects.addToProject')}</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
                   {availableProjects.length === 0 ? (
                     <DropdownMenuItem disabled>
                       <span className="text-left-panel-fg/50">
-                        No projects available
+                        {t('common:projects.noProjectsAvailable')}
                       </span>
                     </DropdownMenuItem>
                   ) : (
@@ -282,7 +282,7 @@ const SortableItem = memo(
                   }}
                 >
                   <IconX size={16} />
-                  <span>Remove</span>
+                  <span>{t('common:projects.removeFromProject')}</span>
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />

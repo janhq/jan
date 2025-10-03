@@ -211,6 +211,8 @@
     "projectNotFound": "Không tìm thấy dự án",
     "projectNotFoundDesc": "Dự án mà bạn đang tìm kiếm không tồn tại.",
     "deleteProjectConfirm": "Bạn có chắc chắn muốn xóa dự án này không? Hành động này không thể hoàn tác.",
+    "addToProject": "Thêm vào dự án",
+    "removeFromProject": "Xóa khỏi dự án",
     "noConversationsIn": "Chưa có cuộc trò chuyện nào trong {{projectName}}",
     "startNewConversation": "Bắt đầu một cuộc trò chuyện mới với {{projectName}} bên dưới",
     "conversationsIn": "Cuộc trò chuyện trong {{projectName}}",
@@ -221,6 +223,7 @@
     "collapseProject": "Thu gọn dự án",
     "expandProject": "Mở rộng dự án",
     "update": "Cập nhật",
+    "noProjectsAvailable": "Không có dự án nào",
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác"

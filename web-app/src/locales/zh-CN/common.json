@@ -211,6 +211,8 @@
     "projectNotFound": "未找到项目",
     "projectNotFoundDesc": "您正在查找的项目不存在。",
     "deleteProjectConfirm": "您确定要删除此项目吗？此操作无法撤销。",
+    "addToProject": "添加到项目",
+    "removeFromProject": "从项目中删除",
     "noConversationsIn": "{{projectName}} 中还没有对话",
     "startNewConversation": "在下方开始与 {{projectName}} 的新对话",
     "conversationsIn": "{{projectName}} 中的对话",
@@ -221,6 +223,7 @@
     "collapseProject": "收起项目",
     "expandProject": "展开项目",
     "update": "更新",
+    "noProjectsAvailable": "没有可用的项目",
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
     "tryDifferentSearch": "尝试不同的搜索词"
