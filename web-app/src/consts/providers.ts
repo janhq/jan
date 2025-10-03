@@ -141,7 +141,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.cohere.ai/compatibility/v1',
+    base_url: 'https://api.cohere.ai/v1',
     explore_models_url: 'https://docs.cohere.com/v2/docs/models',
     provider: 'cohere',
     settings: [
