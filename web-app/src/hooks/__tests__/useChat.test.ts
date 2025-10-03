@@ -320,7 +320,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('Hello world', true, undefined, undefined)
+        await result.current('Hello world', true, undefined, undefined, undefined)
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
@@ -354,7 +354,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('Continue', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
       expect(completionLib.newUserThreadContent).not.toHaveBeenCalled()
@@ -379,14 +379,18 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
-      expect(mockCompletionMessagesBuilder.addAssistantMessage).toHaveBeenCalledWith(
+      // Should be called twice: once with partial message (line 517-521), once after completion (line 689)
+      const assistantCalls = mockCompletionMessagesBuilder.addAssistantMessage.mock.calls
+      expect(assistantCalls.length).toBeGreaterThanOrEqual(1)
+      // First call should be with the partial response content
+      expect(assistantCalls[0]).toEqual([
         'Partial response',
         undefined,
         []
-      )
+      ])
     })
 
     it('should filter out stopped message from context when continuing', async () => {
@@ -408,15 +412,15 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
-      await waitFor(() => {
-        expect(messagesLib.CompletionMessagesBuilder).toHaveBeenCalledWith(
-          [userMsg], // stopped message filtered out
-          'test instructions'
-        )
-      })
+      // The CompletionMessagesBuilder is called with filtered messages (line 507-512)
+      // The stopped message should be filtered out from the context
+      expect(messagesLib.CompletionMessagesBuilder).toHaveBeenCalled()
+      const builderCall = (messagesLib.CompletionMessagesBuilder as any).mock.calls[0]
+      expect(builderCall[0]).toEqual([userMsg]) // stopped message filtered out
+      expect(builderCall[1]).toEqual('test instructions')
     })
 
     it('should update existing message instead of adding new one when continuing', async () => {
@@ -433,17 +437,16 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
-      await waitFor(() => {
-        expect(mockUpdateMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            id: 'msg-123',
-            status: MessageStatus.Ready,
-          })
-        )
-      })
+      // finalizeMessage is called at line 700-708, which should update the message
+      expect(mockUpdateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-123',
+          status: MessageStatus.Ready,
+        })
+      )
     })
 
     it('should start with previous content when continuing', async () => {
@@ -469,24 +472,24 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
-      // The accumulated text should contain the previous content
-      await waitFor(() => {
-        expect(mockUpdateMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            id: 'msg-123',
-            content: expect.arrayContaining([
-              expect.objectContaining({
-                text: expect.objectContaining({
-                  value: expect.stringContaining('Partial response'),
-                })
+      // The accumulated text should contain the previous content plus new content
+      // accumulatedTextRef starts with 'Partial response' (line 490)
+      // Then gets ' continued' appended (line 585)
+      expect(mockUpdateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-123',
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              text: expect.objectContaining({
+                value: 'Partial response continued',
               })
-            ])
-          })
-        )
-      })
+            })
+          ])
+        })
+      )
     })
 
     it('should handle attachments correctly when not continuing', async () => {
@@ -502,7 +505,7 @@ describe('useChat', () => {
       ]
 
       await act(async () => {
-        await result.current('Message with attachment', true, attachments, undefined)
+        await result.current('Message with attachment', true, attachments, undefined, undefined)
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
@@ -530,17 +533,16 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
-      await waitFor(() => {
-        expect(mockUpdateMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            id: 'msg-123',
-            status: MessageStatus.Ready,
-          })
-        )
-      })
+      // finalContent is created at line 678-683 with status Ready when continuing
+      expect(mockUpdateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-123',
+          status: MessageStatus.Ready,
+        })
+      )
     })
   })
 
@@ -573,7 +575,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, 'msg-123')
       })
 
       expect(result.current).toBeDefined()
