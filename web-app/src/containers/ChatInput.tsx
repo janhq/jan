@@ -132,7 +132,10 @@ const ChatInput = ({
         const activeModels = await serviceHub
           .models()
           .getActiveModels('llamacpp')
-        setHasActiveModels(activeModels.length > 0)
+        const hasMatchingActiveModel = activeModels.some(
+          (model) => String(model) === selectedModel?.id
+        )
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
         setHasActiveModels(false)
@@ -145,7 +148,7 @@ const ChatInput = ({
     const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
-  }, [serviceHub])
+  }, [serviceHub, selectedModel?.id])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
