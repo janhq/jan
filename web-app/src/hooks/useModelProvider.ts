@@ -320,9 +320,32 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 3 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate Anthropic provider base URL and add custom headers
+            if (provider.provider === 'anthropic') {
+              if (provider.base_url === 'https://api.anthropic.com') {
+                provider.base_url = 'https://api.anthropic.com/v1'
+              }
+              if (!provider.custom_header) {
+                provider.custom_header = [
+                  {
+                    header: 'anthropic-version',
+                    value: '2023-06-01',
+                  },
+                  {
+                    header: 'anthropic-dangerous-direct-browser-access',
+                    value: 'true',
+                  },
+                ]
+              }
+            }
+          })
+        }
+
         return state
       },
-      version: 3,
+      version: 4,
     }
   )
 )
