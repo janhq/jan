@@ -362,6 +362,34 @@ export const useModelProvider = create<ModelProviderState>()(
                 ]
               }
             }
+
+            if (provider.provider === 'cohere') {
+              if (provider.base_url === 'https://api.cohere.ai/compatibility/v1') {
+                provider.base_url = 'https://api.cohere.ai/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.cohere.ai/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.cohere.ai/v1'
+                }
+              }
+            }
+
           })
         }
 
