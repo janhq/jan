@@ -356,6 +356,9 @@
     "updated": "Diperbarui:",
     "collapseProject": "Tutup proyek",
     "expandProject": "Buka proyek",
-    "update": "Perbarui"
+    "update": "Perbarui",
+    "searchProjects": "Cari proyek...",
+    "noProjectsFound": "Tidak ada proyek ditemukan",
+    "tryDifferentSearch": "Coba kata kunci pencarian lain"
   }
 }

@@ -274,7 +274,10 @@
     "updated": "Aktualisiert:",
     "collapseProject": "Projekt einklappen",
     "expandProject": "Projekt ausklappen",
-    "update": "Aktualisieren"
+    "update": "Aktualisieren",
+    "searchProjects": "Projekte durchsuchen...",
+    "noProjectsFound": "Keine Projekte gefunden",
+    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff"
   },
   "toast": {
     "allThreadsUnfavorited": {
