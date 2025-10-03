@@ -332,12 +332,14 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          bestAvailableBackendString = await this.determineBestBackend(
+            version_backends
+          )
         }
       } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(
+          version_backends
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -2151,7 +2153,12 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath && !this.isAbsolutePath(mmprojPath))
       mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     try {
-      const result = await planModelLoadInternal(path, this.memoryMode, mmprojPath, requestedCtx)
+      const result = await planModelLoadInternal(
+        path,
+        this.memoryMode,
+        mmprojPath,
+        requestedCtx
+      )
       return result
     } catch (e) {
       throw new Error(String(e))
@@ -2279,12 +2286,18 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Calculate text tokens
-    const messages = JSON.stringify({ messages: opts.messages })
+    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
+    const tokenizeRequest = {
+      messages: opts.messages,
+      chat_template_kwargs: opts.chat_template_kwargs || {
+        enable_thinking: false,
+      },
+    }
 
     let parseResponse = await fetch(`${baseUrl}/apply-template`, {
       method: 'POST',
       headers: headers,
-      body: messages,
+      body: JSON.stringify(tokenizeRequest),
     })
 
     if (!parseResponse.ok) {
