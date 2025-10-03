@@ -506,6 +506,10 @@ Function .onInit
       Delete "$INSTDIR\*.*"
   ${EndIf}
 
+  ; Remove old Jan from %LOCALAPPDATA%\${PRODUCTNAME} if present
+  ${If} ${FileExists} "$LOCALAPPDATA\Jan\uninstall.exe"
+    ExecWait '"$LOCALAPPDATA\Jan\uninstall.exe" /S' $0
+
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
   !endif
