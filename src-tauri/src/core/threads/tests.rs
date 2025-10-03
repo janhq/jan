@@ -1,6 +1,7 @@
 
 use super::commands::*;
 use super::helpers::should_use_sqlite;
+use futures_util::future;
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -436,7 +437,7 @@ async fn test_concurrent_message_operations() {
         })
         .collect();
 
-    let results = futures::future::join_all(handles).await;
+    let results = future::join_all(handles).await;
     assert!(results.iter().all(|r| r.is_ok() && r.as_ref().unwrap().is_ok()));
 
     let messages = list_messages(app_handle, thread_id).await.unwrap();
@@ -448,6 +449,13 @@ async fn test_concurrent_message_operations() {
 #[tokio::test]
 async fn test_empty_thread_list() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
+    // Clean up any leftover test data
+    let test_data_threads = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("test-data")
+        .join("threads");
+    let _ = fs::remove_dir_all(&test_data_threads);
+
     let threads = list_threads(app.handle().clone()).await.unwrap();
     assert_eq!(threads.len(), 0);
     let _ = fs::remove_dir_all(data_dir);
