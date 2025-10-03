@@ -578,6 +578,9 @@ export class DefaultModelsService implements ModelsService {
                   }
                 }>
           }>
+          chat_template_kwargs?: {
+            enable_thinking: boolean
+          }
         }) => Promise<number>
       }
 
@@ -654,6 +657,9 @@ export class DefaultModelsService implements ModelsService {
         return await engine.getTokensCount({
           model: modelId,
           messages: transformedMessages,
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
         })
       }
 

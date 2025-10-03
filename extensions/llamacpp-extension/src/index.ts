@@ -2286,38 +2286,36 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Calculate text tokens
-    // Use a direct approach: convert messages to text and tokenize directly
-    // This avoids issues with enable_thinking and assistant prefills
-    let textToTokenize = ''
-
-    for (const msg of opts.messages) {
-      const rolePrefix =
-        msg.role === 'user'
-          ? 'User: '
-          : msg.role === 'assistant'
-          ? 'Assistant: '
-          : msg.role === 'system'
-          ? 'System: '
-          : ''
-
-      if (typeof msg.content === 'string') {
-        textToTokenize += `${rolePrefix}${msg.content}\n`
-      } else if (Array.isArray(msg.content)) {
-        for (const part of msg.content) {
-          if (part.type === 'text' && part.text) {
-            textToTokenize += part.text
-          }
-          // Skip image tokens as they're calculated separately
-        }
-        textToTokenize += '\n'
-      }
+    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
+    const tokenizeRequest = {
+      messages: opts.messages,
+      chat_template_kwargs: opts.chat_template_kwargs || {
+        enable_thinking: false,
+      },
     }
+
+    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(tokenizeRequest),
+    })
+
+    if (!parseResponse.ok) {
+      const errorData = await parseResponse.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${
+          parseResponse.status
+        }: ${JSON.stringify(errorData)}`
+      )
+    }
+
+    const parsedPrompt = await parseResponse.json()
 
     const response = await fetch(`${baseUrl}/tokenize`, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
-        content: textToTokenize,
+        content: parsedPrompt.prompt,
       }),
     })
 
