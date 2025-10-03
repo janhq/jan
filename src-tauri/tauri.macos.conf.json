@@ -6,6 +6,6 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/LICENSE"]
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"]
   }
 }
