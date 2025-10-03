@@ -272,8 +272,8 @@
     "thread": "wątek",
     "threads": "wątki",
     "updated": "Zaktualizowano:",
-    "collapseThreads": "Zwiń wątki",
-    "expandThreads": "Rozwiń wątki",
+    "collapseProject": "Zwiń projekt",
+    "expandProject": "Rozwiń projekt",
     "update": "Aktualizuj"
   },
   "toast": {

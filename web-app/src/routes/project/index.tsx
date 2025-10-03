@@ -222,8 +222,8 @@ function ProjectContent() {
                               className="size-8 cursor-pointer flex items-center justify-center rounded-md hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out mr-1"
                               title={
                                 isExpanded
-                                  ? t('projects.collapseThreads')
-                                  : t('projects.expandThreads')
+                                  ? t('projects.collapseProject')
+                                  : t('projects.expandProject')
                               }
                               onClick={() => toggleProjectExpansion(folder.id)}
                             >

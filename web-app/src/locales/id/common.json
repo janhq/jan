@@ -354,8 +354,8 @@
     "thread": "utas",
     "threads": "utas",
     "updated": "Diperbarui:",
-    "collapseThreads": "Tutup utas",
-    "expandThreads": "Buka utas",
+    "collapseProject": "Tutup proyek",
+    "expandProject": "Buka proyek",
     "update": "Perbarui"
   }
 }

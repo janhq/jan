@@ -199,6 +199,32 @@
     "title": "模型设置 - {{modelId}}",
     "description": "配置模型设置以优化性能和行为。"
   },
+  "projects": {
+    "title": "项目",
+    "addProject": "添加项目",
+    "editProject": "编辑项目",
+    "deleteProject": "删除项目",
+    "projectName": "项目名称",
+    "enterProjectName": "输入项目名称",
+    "noProjectsYet": "还没有项目",
+    "noProjectsYetDesc": "创建您的第一个项目来组织对话。",
+    "projectNotFound": "未找到项目",
+    "projectNotFoundDesc": "您正在查找的项目不存在。",
+    "deleteProjectConfirm": "您确定要删除此项目吗？此操作无法撤销。",
+    "noConversationsIn": "{{projectName}} 中还没有对话",
+    "startNewConversation": "在下方开始与 {{projectName}} 的新对话",
+    "conversationsIn": "{{projectName}} 中的对话",
+    "conversationsDescription": "点击任何对话以继续聊天，或在下方开始新的对话。",
+    "thread": "线程",
+    "threads": "线程",
+    "updated": "已更新：",
+    "collapseProject": "收起项目",
+    "expandProject": "展开项目",
+    "update": "更新",
+    "searchProjects": "搜索项目...",
+    "noProjectsFound": "未找到项目",
+    "tryDifferentSearch": "尝试不同的搜索词"
+  },
   "dialogs": {
     "changeDataFolder": {
       "title": "更改数据文件夹位置",

@@ -272,8 +272,8 @@
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
-    "collapseThreads": "Threads einklappen",
-    "expandThreads": "Threads ausklappen",
+    "collapseProject": "Projekt einklappen",
+    "expandProject": "Projekt ausklappen",
     "update": "Aktualisieren"
   },
   "toast": {
@@ -428,8 +428,8 @@
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
-    "collapseThreads": "Threads einklappen",
-    "expandThreads": "Threads ausklappen",
+    "collapseProject": "Projekt einklappen",
+    "expandProject": "Projekt ausklappen",
     "update": "Aktualisieren"
   }
 }
