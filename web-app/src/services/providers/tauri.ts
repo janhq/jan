@@ -151,6 +151,12 @@ export class TauriProvidersService extends DefaultProvidersService {
         headers['Authorization'] = `Bearer ${provider.api_key}`
       }
 
+      if (provider.custom_header) {
+        provider.custom_header.forEach((header) => {
+          headers[header.header] = header.value
+        })
+      }
+
       // Always use Tauri's fetch to avoid CORS issues
       const response = await fetchTauri(`${provider.base_url}/models`, {
         method: 'GET',

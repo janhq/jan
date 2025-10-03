@@ -48,6 +48,7 @@ type ProviderObject = {
   settings: ProviderSetting[]
   models: Model[]
   persist?: boolean
+  custom_header: ProviderCustomHeader[] | null
 }
 
 /**
@@ -70,4 +71,9 @@ type ProxyOptions = {
   verifyPeerSSL: boolean
   verifyHostSSL: boolean
   noProxy: string
+}
+
+type ProviderCustomHeader = {
+  header: string
+  value: string
 }
