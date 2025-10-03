@@ -320,9 +320,82 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 3 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate Anthropic provider base URL and add custom headers
+            if (provider.provider === 'anthropic') {
+              if (provider.base_url === 'https://api.anthropic.com') {
+                provider.base_url = 'https://api.anthropic.com/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.anthropic.com/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.anthropic.com/v1'
+                }
+              }
+
+              if (!provider.custom_header) {
+                provider.custom_header = [
+                  {
+                    header: 'anthropic-version',
+                    value: '2023-06-01',
+                  },
+                  {
+                    header: 'anthropic-dangerous-direct-browser-access',
+                    value: 'true',
+                  },
+                ]
+              }
+            }
+
+            if (provider.provider === 'cohere') {
+              if (provider.base_url === 'https://api.cohere.ai/compatibility/v1') {
+                provider.base_url = 'https://api.cohere.ai/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.cohere.ai/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.cohere.ai/v1'
+                }
+              }
+            }
+
+          })
+        }
+
         return state
       },
-      version: 3,
+      version: 4,
     }
   )
 )
