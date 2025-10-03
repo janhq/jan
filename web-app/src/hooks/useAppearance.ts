@@ -21,6 +21,7 @@ interface AppearanceState {
   appAccentTextColor: string
   appDestructiveTextColor: string
   appLeftPanelTextColor: string
+  customCss: string
   setChatWidth: (size: ChatWidth) => void
   setFontSize: (size: FontSize) => void
   setAppBgColor: (color: RgbaColor) => void
@@ -28,6 +29,7 @@ interface AppearanceState {
   setAppPrimaryBgColor: (color: RgbaColor) => void
   setAppAccentBgColor: (color: RgbaColor) => void
   setAppDestructiveBgColor: (color: RgbaColor) => void
+  setCustomCss: (css: string) => void
   resetAppearance: () => void
 }
 
@@ -40,6 +42,22 @@ export const fontSizeOptions = [
   { label: 'Large', value: '16px' as FontSize },
   { label: 'Extra Large', value: '18px' as FontSize },
 ]
+
+const CUSTOM_CSS_ID = 'jan-custom-css'
+
+const applyCustomCss = (css: string) => {
+  let styleTag = document.getElementById(CUSTOM_CSS_ID) as HTMLStyleElement | null
+  if (css) {
+    if (!styleTag) {
+      styleTag = document.createElement('style')
+      styleTag.id = CUSTOM_CSS_ID
+      document.head.appendChild(styleTag)
+    }
+    styleTag.innerHTML = css
+  } else {
+    styleTag?.remove()
+  }
+}
 
 // Default appearance settings
 const defaultFontSize: FontSize = '15px'
@@ -144,6 +162,7 @@ export const useAppearance = create<AppearanceState>()(
         appPrimaryTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appAccentTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appDestructiveTextColor: '#FFF',
+        customCss: '',
 
         resetAppearance: () => {
           const { isDark } = useTheme.getState()
@@ -258,6 +277,9 @@ export const useAppearance = create<AppearanceState>()(
             '#FFF'
           )
 
+          // Reset custom css
+          applyCustomCss('')
+
           // Update state
           set({
             fontSize: defaultFontSize,
@@ -271,6 +293,7 @@ export const useAppearance = create<AppearanceState>()(
             appAccentTextColor: '#FFF',
             appDestructiveBgColor: defaultDestructive,
             appDestructiveTextColor: '#FFF',
+            customCss: '',
           })
         },
 
@@ -548,6 +571,10 @@ export const useAppearance = create<AppearanceState>()(
             appDestructiveTextColor: textColor,
           })
         },
+        setCustomCss: (css: string) => {
+          applyCustomCss(css)
+          set({ customCss: css })
+        },
       }
     },
     {
@@ -561,6 +588,11 @@ export const useAppearance = create<AppearanceState>()(
             '--font-size-base',
             state.fontSize
           )
+
+          // Apply custom css
+          if (state.customCss) {
+            applyCustomCss(state.customCss)
+          }
 
           // Get the current theme state
           const { isDark } = useTheme.getState()

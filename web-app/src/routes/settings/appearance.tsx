@@ -20,6 +20,7 @@ import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
+import { Textarea } from '@/components/ui/textarea'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -28,7 +29,7 @@ export const Route = createFileRoute(route.settings.appearance as any)({
 
 function Appareances() {
   const { t } = useTranslation()
-  const { resetAppearance } = useAppearance()
+  const { resetAppearance, customCss, setCustomCss } = useAppearance()
   const { resetCodeBlockStyle } = useCodeblock()
 
   return (
@@ -82,6 +83,19 @@ function Appareances() {
                 description={t('settings:appearance.destructiveDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppDestructiveColor />}
+              />
+              <CardItem
+                title={t('settings:appearance.customCss')}
+                description={t('settings:appearance.customCssDesc')}
+                className="flex-col items-start"
+                actions={
+                  <Textarea
+                    className="w-full"
+                    value={customCss}
+                    onChange={(e) => setCustomCss(e.target.value)}
+                    placeholder={t('settings:appearance.customCssPlaceholder')}
+                  />
+                }
               />
               <CardItem
                 title={t('settings:appearance.resetToDefault')}
