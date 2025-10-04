@@ -11,6 +11,7 @@ import { ExtensionManager } from '@/lib/extension'
 import type { ProvidersService } from './types'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { getModelCapabilities } from '@/lib/models'
 
 export class WebProvidersService implements ProvidersService {
   async getProviders(): Promise<ModelProvider[]> {
@@ -88,19 +89,9 @@ export class WebProvidersService implements ProvidersService {
           models = builtInModels.map((model) => {
             const modelManifest = models.find((e) => e.id === model)
             // TODO: Check chat_template for tool call support
-            const capabilities = [
-              ModelCapabilities.COMPLETION,
-              (
-                providerModels[
-                  provider.provider as unknown as keyof typeof providerModels
-                ]?.supportsToolCalls as unknown as string[]
-              )?.includes(model)
-                ? ModelCapabilities.TOOLS
-                : undefined,
-            ].filter(Boolean) as string[]
             return {
               ...(modelManifest ?? { id: model, name: model }),
-              capabilities,
+              capabilities: getModelCapabilities(provider.provider, model),
             } as Model
           })
         }

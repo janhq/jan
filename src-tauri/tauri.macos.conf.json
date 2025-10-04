@@ -6,6 +6,7 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/LICENSE"]
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"]
   }
 }
