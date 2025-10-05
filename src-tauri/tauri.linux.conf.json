@@ -6,7 +6,8 @@
   },
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": ["resources/LICENSE"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,
