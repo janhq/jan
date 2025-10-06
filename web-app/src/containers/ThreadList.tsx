@@ -237,13 +237,13 @@ const SortableItem = memo(
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="gap-2">
                   <IconFolder size={16} />
-                  <span>Add to project</span>
+                  <span>{t('common:projects.addToProject')}</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
                   {availableProjects.length === 0 ? (
                     <DropdownMenuItem disabled>
                       <span className="text-left-panel-fg/50">
-                        No projects available
+                        {t('common:projects.noProjectsAvailable')}
                       </span>
                     </DropdownMenuItem>
                   ) : (
@@ -262,32 +262,32 @@ const SortableItem = memo(
                       </DropdownMenuItem>
                     ))
                   )}
-                  {thread.metadata?.project && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Remove project from metadata
-                          const projectName = thread.metadata?.project?.name
-                          updateThread(thread.id, {
-                            metadata: {
-                              ...thread.metadata,
-                              project: undefined,
-                            },
-                          })
-                          toast.success(
-                            `Thread removed from "${projectName}" successfully`
-                          )
-                        }}
-                      >
-                        <IconX size={16} />
-                        <span>Remove from project</span>
-                      </DropdownMenuItem>
-                    </>
-                  )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+              {thread.metadata?.project && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      // Remove project from metadata
+                      const projectName = thread.metadata?.project?.name
+                      updateThread(thread.id, {
+                        metadata: {
+                          ...thread.metadata,
+                          project: undefined,
+                        },
+                      })
+                      toast.success(
+                        `Thread removed from "${projectName}" successfully`
+                      )
+                    }}
+                  >
+                    <IconX size={16} />
+                    <span>Remove from project</span>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DeleteThreadDialog
                 thread={thread}
@@ -311,7 +311,11 @@ type ThreadListProps = {
   currentProjectId?: string
 }
 
-function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadListProps) {
+function ThreadList({
+  threads,
+  variant = 'default',
+  currentProjectId,
+}: ThreadListProps) {
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
@@ -335,7 +339,12 @@ function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadLi
         strategy={verticalListSortingStrategy}
       >
         {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} variant={variant} currentProjectId={currentProjectId} />
+          <SortableItem
+            key={index}
+            thread={thread}
+            variant={variant}
+            currentProjectId={currentProjectId}
+          />
         ))}
       </SortableContext>
     </DndContext>

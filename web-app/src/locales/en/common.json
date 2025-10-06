@@ -282,9 +282,12 @@
     "thread": "thread",
     "threads": "threads",
     "updated": "Updated:",
-    "collapseThreads": "Collapse threads",
-    "expandThreads": "Expand threads",
-    "update": "Update"
+    "collapseProject": "Collapse project",
+    "expandProject": "Expand project",
+    "update": "Update",
+    "searchProjects": "Search projects...",
+    "noProjectsFound": "No projects found",
+    "tryDifferentSearch": "Try a different search term"
   },
   "toast": {
     "allThreadsUnfavorited": {

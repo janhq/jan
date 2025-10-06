@@ -154,7 +154,6 @@ const LeftPanel = () => {
     }
   }, [setLeftPanel, open])
 
-
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -581,6 +580,10 @@ const LeftPanel = () => {
 
                 {filteredThreads.length === 0 && searchTerm.length > 0 && (
                   <div className="px-1 mt-2">
+                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
+                      {t('common:recents')}
+                    </span>
+
                     <div className="flex items-center gap-1 text-left-panel-fg/80">
                       <IconSearch size={18} />
                       <h6 className="font-medium text-base">
@@ -640,7 +643,7 @@ const LeftPanel = () => {
                   data-test-id={`menu-${menu.title}`}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
                     isActive && 'bg-left-panel-fg/10'
                   )}
                 >
