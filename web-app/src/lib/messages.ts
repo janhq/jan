@@ -2,6 +2,7 @@
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ThreadMessage } from '@janhq/core'
+import { removeReasoningContent } from '@/utils/reasoning'
 
 /**
  * @fileoverview Helper functions for creating chat completion request.
@@ -24,7 +25,7 @@ export class CompletionMessagesBuilder {
           if (msg.role === 'assistant') {
             return {
               role: msg.role,
-              content: this.normalizeContent(
+              content: removeReasoningContent(
                 msg.content[0]?.text?.value || '.'
               ),
             } as ChatCompletionMessageParam
@@ -135,7 +136,7 @@ export class CompletionMessagesBuilder {
   ) {
     this.messages.push({
       role: 'assistant',
-      content: this.normalizeContent(content),
+      content: removeReasoningContent(content),
       refusal: refusal,
       tool_calls: calls,
     })
@@ -201,31 +202,5 @@ export class CompletionMessagesBuilder {
     }
 
     return result
-  }
-  /**
-   * Normalize the content of a message by removing reasoning content.
-   * This is useful to ensure that reasoning content does not get sent to the model.
-   * @param content
-   * @returns
-   */
-  private normalizeContent = (content: string): string => {
-    // Reasoning content should not be sent to the model
-    if (content.includes('<think>')) {
-      const match = content.match(/<think>([\s\S]*?)<\/think>/)
-      if (match?.index !== undefined) {
-        const splitIndex = match.index + match[0].length
-        content = content.slice(splitIndex).trim()
-      }
-    }
-    if (content.includes('<|channel|>analysis<|message|>')) {
-      const match = content.match(
-        /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
-      )
-      if (match?.index !== undefined) {
-        const splitIndex = match.index + match[0].length
-        content = content.slice(splitIndex).trim()
-      }
-    }
-    return content
   }
 }

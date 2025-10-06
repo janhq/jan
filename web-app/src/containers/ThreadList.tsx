@@ -265,25 +265,28 @@ const SortableItem = memo(
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
               {thread.metadata?.project && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // Remove project from metadata
-                    const projectName = thread.metadata?.project?.name
-                    updateThread(thread.id, {
-                      metadata: {
-                        ...thread.metadata,
-                        project: undefined,
-                      },
-                    })
-                    toast.success(
-                      `Thread removed from "${projectName}" successfully`
-                    )
-                  }}
-                >
-                  <IconX size={16} />
-                  <span>{t('common:projects.removeFromProject')}</span>
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      // Remove project from metadata
+                      const projectName = thread.metadata?.project?.name
+                      updateThread(thread.id, {
+                        metadata: {
+                          ...thread.metadata,
+                          project: undefined,
+                        },
+                      })
+                      toast.success(
+                        `Thread removed from "${projectName}" successfully`
+                      )
+                    }}
+                  >
+                    <IconX size={16} />
+                    <span>Remove from project</span>
+                  </DropdownMenuItem>
+                </>
               )}
               <DropdownMenuSeparator />
               <DeleteThreadDialog
@@ -308,7 +311,11 @@ type ThreadListProps = {
   currentProjectId?: string
 }
 
-function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadListProps) {
+function ThreadList({
+  threads,
+  variant = 'default',
+  currentProjectId,
+}: ThreadListProps) {
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
@@ -332,7 +339,12 @@ function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadLi
         strategy={verticalListSortingStrategy}
       >
         {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} variant={variant} currentProjectId={currentProjectId} />
+          <SortableItem
+            key={index}
+            thread={thread}
+            variant={variant}
+            currentProjectId={currentProjectId}
+          />
         ))}
       </SortableContext>
     </DndContext>

@@ -24,6 +24,7 @@ import { predefinedProviders } from '@/consts/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { getLastUsedModel } from '@/utils/getModelToStart'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -39,16 +40,6 @@ interface SearchableModel {
 }
 
 // Helper functions for localStorage
-const getLastUsedModel = (): { provider: string; model: string } | null => {
-  try {
-    const stored = localStorage.getItem(localStorageKey.lastUsedModel)
-    return stored ? JSON.parse(stored) : null
-  } catch (error) {
-    console.debug('Failed to get last used model from localStorage:', error)
-    return null
-  }
-}
-
 const setLastUsedModel = (provider: string, model: string) => {
   try {
     localStorage.setItem(
@@ -325,8 +316,7 @@ const DropdownModelProvider = ({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) =>
-        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+      selector: (item) => `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
 
