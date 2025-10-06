@@ -78,7 +78,6 @@ pub fn run() {
             core::system::commands::factory_reset,
             core::system::commands::read_logs,
             core::system::commands::is_library_available,
-            core::system::commands::supports_blur_effects,
             // Server commands
             core::server::commands::start_server,
             core::server::commands::stop_server,

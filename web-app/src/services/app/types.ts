@@ -17,5 +17,4 @@ export interface AppService {
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
   readYaml<T = unknown>(path: string): Promise<T>
-  supportsBlurEffects(): Promise<boolean>
 }

@@ -6,6 +6,7 @@ import { rgb, oklch, formatCss } from 'culori'
 import { useTheme } from './useTheme'
 import { useEffect, useState } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { supportsBlurEffects } from '@/utils/blurSupport'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px'
 export type ChatWidth = 'full' | 'compact'
@@ -114,7 +115,8 @@ export const isDefaultColor = (color: RgbaColor): boolean => {
   const isLightDefault = color.r === 255 && color.g === 255 && color.b === 255
 
   // Consider it default if RGB matches and alpha is either 0.4 or 1 (common values)
-  const hasDefaultAlpha = Math.abs(color.a - 0.4) < 0.01 || Math.abs(color.a - 1) < 0.01
+  const hasDefaultAlpha =
+    Math.abs(color.a - 0.4) < 0.01 || Math.abs(color.a - 1) < 0.01
 
   return (isDarkDefault || isLightDefault) && hasDefaultAlpha
 }
@@ -162,22 +164,36 @@ export const useBlurSupport = () => {
     const checkBlurSupport = async () => {
       if ((IS_WINDOWS || IS_LINUX) && IS_TAURI) {
         try {
-          const supported = await getServiceHub().app().supportsBlurEffects()
+          // Get hardware info to check OS version
+          const hardwareInfo = await getServiceHub()
+            .hardware()
+            .getHardwareInfo()
+          const supported = supportsBlurEffects(hardwareInfo)
+
           blurEffectsSupported = supported
           setSupportsBlur(supported)
 
           const platform = IS_WINDOWS ? 'Windows' : 'Linux'
           if (supported) {
-            console.log(`✅ ${platform} blur effects: SUPPORTED - Alpha slider will be shown`)
+            console.log(
+              `✅ ${platform} blur effects: SUPPORTED - Alpha slider will be shown`
+            )
           } else {
-            console.log(`❌ ${platform} blur effects: NOT SUPPORTED - Alpha slider will be hidden, alpha set to 1`)
+            console.log(
+              `❌ ${platform} blur effects: NOT SUPPORTED - Alpha slider will be hidden, alpha set to 1`
+            )
           }
         } catch (error) {
-          console.error(`❌ Failed to check ${IS_WINDOWS ? 'Windows' : 'Linux'} blur support:`, error)
+          console.error(
+            `❌ Failed to check ${IS_WINDOWS ? 'Windows' : 'Linux'} blur support:`,
+            error
+          )
           setSupportsBlur(false)
         }
       } else if (IS_MACOS && IS_TAURI) {
-        console.log('🍎 macOS platform: Blur effects supported, alpha slider shown')
+        console.log(
+          '🍎 macOS platform: Blur effects supported, alpha slider shown'
+        )
       } else if (!IS_TAURI) {
         console.log('🌐 Web platform: Alpha slider hidden, alpha set to 1')
       }
@@ -362,7 +378,7 @@ export const useAppearance = create<AppearanceState>()(
           }
 
           // Force alpha to 1 if blur effects are not supported
-          if (!blurEffectsSupported && ((IS_WINDOWS || IS_LINUX) || !IS_TAURI)) {
+          if (!blurEffectsSupported && (IS_WINDOWS || IS_LINUX || !IS_TAURI)) {
             finalColor = { ...finalColor, a: 1 }
           }
 

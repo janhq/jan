@@ -45,9 +45,4 @@ export class WebAppService implements AppService {
     console.log('YAML reading not available in web mode')
     throw new Error('readYaml not implemented in web app service')
   }
-
-  async supportsBlurEffects(): Promise<boolean> {
-    // Web platforms don't support blur effects
-    return false
-  }
 }

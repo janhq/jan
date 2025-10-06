@@ -75,8 +75,4 @@ export class TauriAppService extends DefaultAppService {
   async readYaml<T = unknown>(path: string): Promise<T> {
     return await invoke<T>('read_yaml', { path })
   }
-
-  async supportsBlurEffects(): Promise<boolean> {
-    return await invoke<boolean>('supports_blur_effects')
-  }
 }
