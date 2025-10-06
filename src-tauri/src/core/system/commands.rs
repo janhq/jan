@@ -119,8 +119,8 @@ pub fn is_library_available(library: &str) -> bool {
 }
 
 // Check if the system supports blur/acrylic effects
-// - Windows: Checks build version (17134+ for acrylic support)
-// - Linux: Checks for KWin (KDE) or compositor with blur support
+// - Windows: Checks build version from OS info (17134+ for acrylic support)
+// - Linux: Checks for KWin (KDE) or compositor with blur support via environment variables
 // - macOS: Always supported
 #[tauri::command]
 pub fn supports_blur_effects() -> bool {
@@ -128,81 +128,65 @@ pub fn supports_blur_effects() -> bool {
     {
         // Windows 10 build 17134 (1803) and later support acrylic effects
         // Windows 11 (build 22000+) has better support
-        use std::process::Command;
-
-        if let Ok(output) = Command::new("cmd")
-            .args(&["/C", "ver"])
-            .output()
+        #[cfg(feature = "hardware")]
         {
-            if let Ok(version_str) = String::from_utf8(output.stdout) {
-                // Parse Windows version from output like "Microsoft Windows [Version 10.0.22631.4602]"
-                if let Some(version_part) = version_str.split("Version ").nth(1) {
-                    if let Some(build_str) = version_part.split('.').nth(2) {
-                        if let Ok(build) = build_str.split(']').next().unwrap_or("0").trim().parse::<u32>() {
-                            // Windows 10 build 17134+ or Windows 11 build 22000+ support blur
-                            let supports_blur = build >= 17134;
-                            if supports_blur {
-                                log::info!("✅ Windows build {} detected - Blur/Acrylic effects SUPPORTED", build);
-                            } else {
-                                log::warn!("❌ Windows build {} detected - Blur/Acrylic effects NOT SUPPORTED (requires build 17134+)", build);
-                            }
-                            return supports_blur;
+            use tauri_plugin_hardware::get_system_info;
+
+            let system_info = get_system_info();
+            // os_name format: "Windows 10 Pro (build 22631)"
+            if let Some(build_str) = system_info.os_name.split("build ").nth(1) {
+                if let Some(build_num) = build_str.split(')').next() {
+                    if let Ok(build) = build_num.trim().parse::<u32>() {
+                        let supports_blur = build >= 17134;
+                        if supports_blur {
+                            log::info!("✅ Windows build {} detected - Blur/Acrylic effects SUPPORTED", build);
+                        } else {
+                            log::warn!("❌ Windows build {} detected - Blur/Acrylic effects NOT SUPPORTED (requires build 17134+)", build);
                         }
+                        return supports_blur;
                     }
                 }
             }
         }
 
-        // If we can't detect version, assume it doesn't support blur for safety
-        log::warn!("❌ Could not detect Windows version - Assuming NO blur support for safety");
-        false
+        // Fallback: If hardware feature is disabled or parsing fails, assume modern Windows
+        log::info!("✅ Windows detected - Assuming modern build with blur support");
+        true
     }
 
     #[cfg(target_os = "linux")]
     {
-        use std::process::Command;
+        // Check desktop environment via environment variables
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+        let session = std::env::var("XDG_SESSION_DESKTOP").unwrap_or_default().to_lowercase();
 
-        // Check for KDE Plasma with KWin (best blur support)
-        if let Ok(output) = Command::new("kwin_x11").arg("--version").output() {
-            if output.status.success() {
-                log::info!("✅ KDE/KWin detected - Blur effects SUPPORTED");
-                return true;
-            }
+        // KDE Plasma with KWin (best blur support)
+        if desktop.contains("kde") || session.contains("kde") || session.contains("plasma") {
+            log::info!("✅ KDE/KWin detected - Blur effects SUPPORTED");
+            return true;
         }
 
-        // Check for Wayland KWin
-        if let Ok(output) = Command::new("kwin_wayland").arg("--version").output() {
-            if output.status.success() {
-                log::info!("✅ KDE/KWin Wayland detected - Blur effects SUPPORTED");
-                return true;
-            }
-        }
-
-        // Check for GNOME with blur extensions (less reliable)
-        if std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().contains("GNOME") {
+        // GNOME with blur extensions (conditional support)
+        if desktop.contains("gnome") || session.contains("gnome") {
             log::info!("🔍 GNOME detected - Blur support depends on extensions");
-            // GNOME might have blur through extensions, allow it
             return true;
         }
 
-        // Check for Compiz (older but has blur)
-        if let Ok(_) = Command::new("compiz").arg("--version").output() {
-            log::info!("✅ Compiz compositor detected - Blur effects SUPPORTED");
-            return true;
-        }
-
-        // Check for Picom with blur (common X11 compositor)
-        if let Ok(output) = Command::new("picom").arg("--version").output() {
-            if output.status.success() {
-                log::info!("✅ Picom compositor detected - Blur effects SUPPORTED");
+        // Check for compositor via environment variable
+        if let Ok(compositor) = std::env::var("COMPOSITOR") {
+            let comp_lower = compositor.to_lowercase();
+            if comp_lower.contains("kwin") || comp_lower.contains("picom") || comp_lower.contains("compiz") {
+                log::info!("✅ Compositor detected: {} - Blur effects SUPPORTED", compositor);
                 return true;
             }
         }
 
-        // Check environment variable for compositor
-        if let Ok(compositor) = std::env::var("COMPOSITOR") {
-            log::info!("🔍 Compositor detected: {} - Assuming blur support", compositor);
-            return true;
+        // Check wayland/X11 session type (Wayland typically has better compositor support)
+        if let Ok(session_type) = std::env::var("XDG_SESSION_TYPE") {
+            if session_type == "wayland" {
+                log::info!("🔍 Wayland session detected - Likely blur support available");
+                return true;
+            }
         }
 
         log::warn!("❌ No known blur-capable compositor detected on Linux");

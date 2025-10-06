@@ -1,6 +1,6 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "logs-app-window",
+  "identifier": "log-app-window",
   "description": "enables permissions for the logs app window",
   "windows": ["logs-app-window"],
   "platforms": ["linux", "macOS", "windows"],
