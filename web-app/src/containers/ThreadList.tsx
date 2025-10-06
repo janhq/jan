@@ -205,7 +205,7 @@ const SortableItem = memo(
                 }}
               />
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end" className="w-44">
+            <DropdownMenuContent side="bottom" align="end" className="min-w-44">
               {thread.isFavorite ? (
                 <DropdownMenuItem
                   onClick={(e) => {
@@ -239,7 +239,7 @@ const SortableItem = memo(
                   <IconFolder size={16} />
                   <span>{t('common:projects.addToProject')}</span>
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
+                <DropdownMenuSubContent className="max-h-60 min-w-44 overflow-y-auto">
                   {availableProjects.length === 0 ? (
                     <DropdownMenuItem disabled>
                       <span className="text-left-panel-fg/50">
@@ -308,7 +308,11 @@ type ThreadListProps = {
   currentProjectId?: string
 }
 
-function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadListProps) {
+function ThreadList({
+  threads,
+  variant = 'default',
+  currentProjectId,
+}: ThreadListProps) {
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
@@ -332,7 +336,12 @@ function ThreadList({ threads, variant = 'default', currentProjectId }: ThreadLi
         strategy={verticalListSortingStrategy}
       >
         {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} variant={variant} currentProjectId={currentProjectId} />
+          <SortableItem
+            key={index}
+            thread={thread}
+            variant={variant}
+            currentProjectId={currentProjectId}
+          />
         ))}
       </SortableContext>
     </DndContext>
