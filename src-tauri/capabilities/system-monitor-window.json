@@ -8,13 +8,28 @@
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
+    "core:window:allow-get-all-windows",
+    "core:event:allow-listen",
     "log:default",
     "core:webview:allow-create-webview-window",
+    "core:webview:allow-get-all-webviews",
     "core:window:allow-set-focus",
     "hardware:allow-get-system-info",
     "hardware:allow-get-system-usage",
     "llamacpp:allow-get-devices",
     "llamacpp:allow-read-gguf-metadata",
-    "deep-link:allow-get-current"
+    "deep-link:allow-get-current",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ],
+      "deny": []
+    }
   ]
 }
