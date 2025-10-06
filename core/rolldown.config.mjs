@@ -10,7 +10,7 @@ export default defineConfig([
       sourcemap: true,
     },
     platform: 'browser',
-    external: ['path'],
+    external: ['path', 'react', 'react-dom', 'react/jsx-runtime'],
     define: {
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       VERSION: JSON.stringify(pkgJson.version),

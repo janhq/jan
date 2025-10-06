@@ -6,6 +6,8 @@ import HeaderPage from './HeaderPage'
 import { isProd } from '@/lib/version'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey } from '@/constants/localStorage'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform'
 
 function SetupScreen() {
   const { t } = useTranslation()
@@ -21,7 +23,7 @@ function SetupScreen() {
     <div className="flex h-full flex-col justify-center">
       <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
-        <div className="w-4/6 mx-auto">
+        <div className="w-full lg:w-4/6 mx-auto">
           <div className="mb-8 text-left">
             <h1 className="font-editorialnew text-main-view-fg text-4xl">
               {t('setup:welcome')}
@@ -31,22 +33,24 @@ function SetupScreen() {
             </p>
           </div>
           <div className="flex gap-4 flex-col">
-            <Card
-              header={
-                <Link
-                  to={route.hub.index}
-                  search={{
-                    ...(!isProd ? { step: 'setup_local_provider' } : {}),
-                  }}
-                >
-                  <div>
-                    <h1 className="text-main-view-fg font-medium text-base">
-                      {t('setup:localModel')}
-                    </h1>
-                  </div>
-                </Link>
-              }
-            ></Card>
+            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
+              <Card
+                header={
+                  <Link
+                    to={route.hub.index}
+                    search={{
+                      ...(!isProd ? { step: 'setup_local_provider' } : {}),
+                    }}
+                  >
+                    <div>
+                      <h1 className="text-main-view-fg font-medium text-base">
+                        {t('setup:localModel')}
+                      </h1>
+                    </div>
+                  </Link>
+                }
+              />
+            )}
             <Card
               header={
                 <Link
@@ -65,7 +69,7 @@ function SetupScreen() {
                   </h1>
                 </Link>
               }
-            ></Card>
+            />
           </div>
         </div>
       </div>

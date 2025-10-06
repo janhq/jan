@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Write};
 use tauri::Runtime;
 
 // For async file write serialization
-use once_cell::sync::Lazy;
+use std::sync::OnceLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -11,12 +11,17 @@ use tokio::sync::Mutex;
 use super::utils::{get_messages_path, get_thread_metadata_path};
 
 // Global per-thread locks for message file writes
-pub static MESSAGE_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MESSAGE_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+
+/// Check if the platform should use SQLite (mobile platforms)
+pub fn should_use_sqlite() -> bool {
+    cfg!(any(target_os = "android", target_os = "ios"))
+}
 
 /// Get a lock for a specific thread to ensure thread-safe message file operations
 pub async fn get_lock_for_thread(thread_id: &str) -> Arc<Mutex<()>> {
-    let mut locks = MESSAGE_LOCKS.lock().await;
+    let locks = MESSAGE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks.lock().await;
     let lock = locks
         .entry(thread_id.to_string())
         .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -33,7 +38,7 @@ pub fn write_messages_to_file(
     let mut file = File::create(path).map_err(|e| e.to_string())?;
     for msg in messages {
         let data = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+        writeln!(file, "{data}").map_err(|e| e.to_string())?;
     }
     Ok(())
 }
