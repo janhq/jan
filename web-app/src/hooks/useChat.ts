@@ -19,7 +19,10 @@ import {
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
-import { ChatCompletionMessageToolCall } from 'openai/resources'
+import {
+  ChatCompletionMessageToolCall,
+  CompletionUsage,
+} from 'openai/resources'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -33,6 +36,7 @@ import {
 } from '@/utils/reasoning'
 import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
+import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export const useChat = () => {
   const [
@@ -41,6 +45,7 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
+    setTokenSpeed,
   ] = useAppState(
     useShallow((state) => [
       state.updateTokenSpeed,
@@ -48,6 +53,7 @@ export const useChat = () => {
       state.updateStreamingContent,
       state.updateLoadingModel,
       state.setAbortController,
+      state.setTokenSpeed,
     ])
   )
   const updatePromptProgress = useAppState(
@@ -80,11 +86,20 @@ export const useChat = () => {
 
   const getMessages = useMessages((state) => state.getMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const setMessages = useMessages((state) => state.setMessages)
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
   const getCurrentThread = useCallback(async (projectId?: string) => {
     let currentThread = retrieveThread()
+
+    // Check if we're in temporary chat mode
+    const isTemporaryMode = window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
+
+    // Clear messages for existing temporary thread on reload to ensure fresh start
+    if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+      setMessages(TEMPORARY_CHAT_ID, [])
+    }
 
     if (!currentThread) {
       // Get prompt directly from store when needed
@@ -112,17 +127,29 @@ export const useChat = () => {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        currentPrompt,
+        isTemporaryMode ? 'Temporary Chat' : currentPrompt,
         assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
         projectMetadata,
+        isTemporaryMode // pass temporary flag
       )
+
+      // Clear messages for temporary chat to ensure fresh start on reload
+      if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+        setMessages(TEMPORARY_CHAT_ID, [])
+      }
+
+      // Set flag for temporary chat navigation
+      if (currentThread.id === TEMPORARY_CHAT_ID) {
+        sessionStorage.setItem('temp-chat-nav', 'true')
+      }
+
       router.navigate({
         to: route.threadsDetail,
         params: { threadId: currentThread.id },
       })
     }
     return currentThread
-  }, [createThread, retrieveThread, router])
+  }, [createThread, retrieveThread, router, setMessages, serviceHub])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
@@ -325,6 +352,8 @@ export const useChat = () => {
           let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
+          const timeToFirstToken = Date.now()
+          let tokenUsage: CompletionUsage | undefined = undefined
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
@@ -339,6 +368,9 @@ export const useChat = () => {
 
               if (message?.tool_calls) {
                 toolCalls.push(...message.tool_calls)
+              }
+              if ('usage' in completion) {
+                tokenUsage = completion.usage
               }
             } else {
               // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
@@ -376,7 +408,14 @@ export const useChat = () => {
                     }
                   )
                   updateStreamingContent(currentContent)
-                  if (pendingDeltaCount > 0) {
+                  if (tokenUsage) {
+                    setTokenSpeed(
+                      currentContent,
+                      tokenUsage.completion_tokens /
+                        Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+                      tokenUsage.completion_tokens
+                    )
+                  } else if (pendingDeltaCount > 0) {
                     updateTokenSpeed(currentContent, pendingDeltaCount)
                   }
                   pendingDeltaCount = 0
@@ -405,7 +444,14 @@ export const useChat = () => {
                   }
                 )
                 updateStreamingContent(currentContent)
-                if (pendingDeltaCount > 0) {
+                if (tokenUsage) {
+                  setTokenSpeed(
+                    currentContent,
+                    tokenUsage.completion_tokens /
+                      Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+                    tokenUsage.completion_tokens
+                  )
+                } else if (pendingDeltaCount > 0) {
                   updateTokenSpeed(currentContent, pendingDeltaCount)
                 }
                 pendingDeltaCount = 0
@@ -435,6 +481,10 @@ export const useChat = () => {
                         ? (part.message as string)
                         : (JSON.stringify(part) ?? '')
                     )
+                  }
+
+                  if ('usage' in part && part.usage) {
+                    tokenUsage = part.usage
                   }
 
                   if (part.choices[0]?.delta?.tool_calls) {
@@ -589,6 +639,7 @@ export const useChat = () => {
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
+      setTokenSpeed,
     ]
   )
 

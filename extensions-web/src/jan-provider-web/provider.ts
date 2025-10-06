@@ -15,6 +15,7 @@ import {
 } from '@janhq/core' // cspell: disable-line
 import { janApiClient, JanChatMessage } from './api'
 import { janProviderStore } from './store'
+import { ApiError } from '../shared/types/errors'
 
 // Jan models support tools via MCP
 const JAN_MODEL_CAPABILITIES = ['tools'] as const
@@ -192,7 +193,8 @@ export default class JanProviderWeb extends AIEngine {
       console.error(`Failed to unload Jan session ${sessionId}:`, error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof ApiError ? error.message :
+               error instanceof Error ? error.message : 'Unknown error',
       }
     }
   }

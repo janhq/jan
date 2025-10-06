@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -16,21 +18,69 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
 import { ContentType, ThreadMessage } from '@janhq/core'
-import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
+import { useTools } from '@/hooks/useTools'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import ScrollToBottom from '@/containers/ScrollToBottom'
 import { PromptProgress } from '@/components/PromptProgress'
 import { ThreadPadding } from '@/containers/ThreadPadding'
+import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { IconInfoCircle } from '@tabler/icons-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+
+const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
+
+const TemporaryChatIndicator = ({ t }: { t: (key: string) => string }) => {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-main-view-fg/5 text-main-view-fg/70 text-sm">
+      <span>{t('common:temporaryChat')}</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="relative z-20">
+            <IconInfoCircle
+              size={14}
+              className="text-main-view-fg/50 hover:text-main-view-fg/70 transition-colors cursor-pointer"
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent className="z-[9999]">
+          <p>{t('common:temporaryChatTooltip')}</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  )
+}
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  beforeLoad: ({ params }) => {
+    // Check if this is the temporary chat being accessed directly
+    if (params.threadId === TEMPORARY_CHAT_ID) {
+      // Check if we have the navigation flag in sessionStorage
+      const hasNavigationFlag = sessionStorage.getItem('temp-chat-nav')
+
+      if (!hasNavigationFlag) {
+        // Direct access - redirect to home with query parameter
+        throw redirect({
+          to: '/',
+          search: { [TEMPORARY_CHAT_QUERY_ID]: true },
+          replace: true,
+        })
+      }
+
+      // Clear the flag immediately after checking
+      sessionStorage.removeItem('temp-chat-nav')
+    }
+  },
   component: ThreadDetail,
 })
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
+  const navigate = useNavigate()
+  const { t } = useTranslation()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
@@ -38,6 +88,8 @@ function ThreadDetail() {
 
   const chatWidth = useAppearance((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
+  const isMobile = useMobileScreen()
+  useTools()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -48,6 +100,30 @@ function ThreadDetail() {
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+
+  // Listen for conversation not found events
+  useEffect(() => {
+    const handleConversationNotFound = (event: CustomEvent) => {
+      const { threadId: notFoundThreadId } = event.detail
+      if (notFoundThreadId === threadId) {
+        // Skip error handling for temporary chat - it's expected to not exist on server
+        if (threadId === TEMPORARY_CHAT_ID) {
+          return
+        }
+
+        toast.error(t('common:conversationNotAvailable'), {
+          description: t('common:conversationNotAvailableDescription')
+        })
+        navigate({ to: '/', replace: true })
+      }
+    }
+
+    window.addEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    return () => {
+      window.removeEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    }
+  }, [threadId, navigate, t])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -131,26 +207,37 @@ function ThreadDetail() {
   if (!messages || !threadModel) return null
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-            <DropdownAssistant />
-          )}
+          <div>
+            {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
+              <DropdownAssistant />
+            )}
+          </div>
+          <div className="flex-1 flex justify-center">
+            {threadId === TEMPORARY_CHAT_ID && <TemporaryChatIndicator t={t} />}
+          </div>
+          <div></div>
         </div>
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)]">
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex flex-col h-full w-full overflow-auto px-4 pt-4 pb-3'
+            'flex flex-col h-full w-full overflow-auto pt-4 pb-3',
+            // Mobile-first responsive padding
+            isMobile ? 'px-3' : 'px-4'
           )}
         >
           <div
             className={cn(
-              'w-4/6 mx-auto flex max-w-full flex-col grow',
-              chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-              isSmallScreen && 'w-full'
+              'mx-auto flex max-w-full flex-col grow',
+              // Mobile-first width constraints
+              // Mobile and small screens always use full width, otherwise compact chat uses constrained width
+              isMobile || isSmallScreen || chatWidth !== 'compact'
+                ? 'w-full'
+                : 'w-full md:w-4/6'
             )}
           >
             {messages &&
@@ -193,9 +280,13 @@ function ThreadDetail() {
         </div>
         <div
           className={cn(
-            'mx-auto pt-2 pb-3 shrink-0 relative px-2',
-            chatWidth === 'compact' ? 'w-full md:w-4/6' : 'w-full',
-            isSmallScreen && 'w-full'
+            'mx-auto pt-2 pb-3 shrink-0 relative',
+            // Responsive padding and width
+            isMobile ? 'px-3' : 'px-2',
+            // Width: mobile/small screens or non-compact always full, compact desktop uses constrained
+            isMobile || isSmallScreen || chatWidth !== 'compact'
+              ? 'w-full'
+              : 'w-full md:w-4/6'
           )}
         >
           <ScrollToBottom

@@ -13,9 +13,7 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-use crate::core::setup::setup_tray;
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg_attr(all(mobile, any(target_os = "android", target_os = "ios")), tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
@@ -23,29 +21,29 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
-          let arg = argv.iter().find(|arg| arg.starts_with("jan://"));
-            if let Some(deep_link) = arg {
-                println!("deep link: {deep_link}");
-                // handle the deep link, e.g., emit an event to the webview
-                _app.app_handle().emit("deep-link", deep_link).unwrap();
-                if let Some(window) = _app.app_handle().get_webview_window("main") {
-                    let _ = window.set_focus();
-                }
-            }
         }));
     }
 
-    let app = builder
+    let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_llamacpp::init())
-        .plugin(tauri_plugin_hardware::init())
+        .plugin(tauri_plugin_llamacpp::init());
+
+    #[cfg(feature = "deep-link")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_hardware::init());
+    }
+
+    let app = app_builder
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
             core::filesystem::commands::join_path,
@@ -121,21 +119,6 @@ pub fn run() {
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
-                    #[cfg(target_os = "macos")]
-                    window
-                        .app_handle()
-                        .set_activation_policy(tauri::ActivationPolicy::Accessory)
-                        .unwrap();
-
-                    window.hide().unwrap();
-                    api.prevent_close();
-                }
-            }
-            _ => {}
-        })
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -150,8 +133,8 @@ pub fn run() {
                     ])
                     .build(),
             )?;
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
@@ -168,53 +151,69 @@ pub fn run() {
                 .config()
                 .version
                 .clone()
-                .unwrap_or_else(|| "".to_string());
+                .unwrap_or_default();
             // Migrate extensions
             if let Err(e) =
                 setup::install_extensions(app.handle().clone(), stored_version != app_version)
             {
-                log::error!("Failed to install extensions: {}", e);
+                log::error!("Failed to install extensions: {e}");
             }
 
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
-                log::error!("Failed to migrate MCP servers: {}", e);
+                log::error!("Failed to migrate MCP servers: {e}");
             }
 
             // Store the new app version
             store.set("version", serde_json::json!(app_version));
             store.save().expect("Failed to save store");
             // Migration completed
-
+            
+            #[cfg(desktop)]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
-                let _ = setup_tray(app);
+                let _ = setup::setup_tray(app);
             }
 
-            #[cfg(any(windows, target_os = "linux"))]
+            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-
                 app.deep_link().register_all()?;
             }
+
+            // Initialize SQLite database for mobile platforms
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::core::threads::db::init_database(&app_handle).await {
+                        log::error!("Failed to initialize mobile database: {}", e);
+                    }
+                });
+            }
+
             setup_mcp(app);
+            setup::setup_theme_listener(app)?;
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
     // Handle app lifecycle events
-    app.run(|app, event| match event {
-        RunEvent::Exit => {
+    app.run(|app, event| {
+        if let RunEvent::Exit = event {
             // This is called when the app is actually exiting (e.g., macOS dock quit)
             // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
-            // Hide window immediately
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let _ = window.hide();
-            }
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
+                    // Hide window immediately (not available on mobile platforms)
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                        { let _ = window.hide(); }
+                        let _ = window.emit("kill-mcp-servers", ());
+                    }
+
                     // Quick cleanup with shorter timeout
                     let state = app_handle.state::<AppState>();
                     let _ = clean_up_mcp_servers(state).await;
@@ -222,6 +221,5 @@ pub fn run() {
                 });
             });
         }
-        _ => {}
     });
 }
