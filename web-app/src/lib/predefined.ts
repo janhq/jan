@@ -1,3 +1,5 @@
+import { number } from 'framer-motion'
+
 export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
@@ -131,6 +133,18 @@ export const modelSettings = {
         'e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)',
       type: 'text',
       textAlign: 'right',
+    },
+  },
+  n_cpu_moe: {
+    key: 'n_cpu_moe',
+    title: 'Number of MoE weights in the CPU',
+    description:
+      'Keep the Mixture of Experts (MoE) weights of the first N layers in the CPU',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '24',
+      type: 'number',
     },
   },
   override_tensor_buffer_t: {

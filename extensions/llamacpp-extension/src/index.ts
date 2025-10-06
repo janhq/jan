@@ -39,7 +39,6 @@ import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
   readGgufMetadata,
-  estimateKVCacheSize,
   getModelSize,
   isModelSupported,
   planModelLoadInternal,
@@ -58,6 +57,7 @@ type LlamacppConfig = {
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
+  n_cpu_moe: number
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -1583,6 +1583,9 @@ export default class llamacpp_extension extends AIEngine {
     ])
     args.push('--jinja')
     args.push('-m', modelPath)
+    if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
+      args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
+    }
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
     // and offloading the expert FFNs to the CPU.

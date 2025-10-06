@@ -364,7 +364,9 @@ export const useModelProvider = create<ModelProviderState>()(
             }
 
             if (provider.provider === 'cohere') {
-              if (provider.base_url === 'https://api.cohere.ai/compatibility/v1') {
+              if (
+                provider.base_url === 'https://api.cohere.ai/compatibility/v1'
+              ) {
                 provider.base_url = 'https://api.cohere.ai/v1'
               }
 
@@ -389,13 +391,52 @@ export const useModelProvider = create<ModelProviderState>()(
                 }
               }
             }
+          })
+        }
 
+        if (version <= 4 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Update cont_batching description for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const contBatchingSetting = provider.settings.find(
+                (s) => s.key === 'cont_batching'
+              )
+              if (contBatchingSetting) {
+                contBatchingSetting.description =
+                  'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+              }
+            }
+
+            // Migrate model settings
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.cpu_moe) {
+                  model.settings.cpu_moe = {
+                    ...modelSettings.n_cpu_moe,
+                    controller_props: {
+                      ...modelSettings.cpu_moe.controller_props,
+                    },
+                  }
+                }
+
+                if (!model.settings.n_cpu_moe) {
+                  model.settings.n_cpu_moe = {
+                    ...modelSettings.n_cpu_moe,
+                    controller_props: {
+                      ...modelSettings.n_cpu_moe.controller_props,
+                    },
+                  }
+                }
+              })
+            }
           })
         }
 
         return state
       },
-      version: 4,
+      version: 5,
     }
   )
 )
