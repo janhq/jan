@@ -35,7 +35,7 @@ export const isAndroid = (): boolean => isPlatformAndroid()
 /**
  * Gets the current platform identifier.
  * 
- * @returns {Platform} 'tauri' for desktop application or 'web' for web application
+ * @returns {Platform} 'tauri' for desktop application, 'web' for web application, 'ios' for iOS, or 'android' for Android
  */
 export const getCurrentPlatform = (): Platform => {
   if (isPlatformIOS()) return 'ios'
