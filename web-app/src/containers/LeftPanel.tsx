@@ -36,6 +36,7 @@ import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import SearchDialog from '@/containers/dialogs/SearchDialog'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
@@ -93,6 +94,7 @@ const LeftPanel = () => {
   const isInitialMountRef = useRef(true)
   const panelRef = useRef<HTMLElement>(null)
   const searchContainerRef = useRef<HTMLButtonElement>(null)
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
 
   // Determine if we're in a resizable context (large screen with panel open)
   const isResizableContext = !isSmallScreen && open
@@ -332,9 +334,7 @@ const LeftPanel = () => {
             <div className="mb-2 mt-1">
               <button
                 ref={searchContainerRef}
-                onClick={() => {
-                  toast('Open search modal (not implemented)', { id: 'open-search' })
-                }}
+                onClick={() => setIsSearchDialogOpen(true)}
                 className={cn(
                   'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full',
                 )}
@@ -618,6 +618,7 @@ const LeftPanel = () => {
           deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
         }
       />
+      <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} />
     </>
   )
 }
