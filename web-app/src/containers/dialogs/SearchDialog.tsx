@@ -201,7 +201,6 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
       if (t.preview) content += ' ' + String(t.preview)
       if (t.content) content += ' ' + String(t.content)
       const threadMessages = (t.messages && Array.isArray(t.messages)) ? t.messages : (getMessages ? getMessages(t.id) : [])
-      console.log('Thread messages for', t.id, threadMessages)
       if (threadMessages && Array.isArray(threadMessages) && threadMessages.length > 0) {
         const extractText = (m: any) => {
           if (!m) return ''
