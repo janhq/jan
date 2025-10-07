@@ -31,6 +31,8 @@ vi.mock('zustand/middleware', () => ({
 // Mock global constants
 Object.defineProperty(global, 'IS_WINDOWS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_LINUX', { value: false, writable: true })
+Object.defineProperty(global, 'IS_MACOS', { value: false, writable: true })
+Object.defineProperty(global, 'IS_TAURI', { value: false, writable: true })
 Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
 
 describe('useAppearance', () => {
@@ -212,23 +214,54 @@ describe('useAppearance', () => {
 
       const { result } = renderHook(() => useAppearance())
       const testColor = { r: 128, g: 64, b: 192, a: 0.8 }
-      
+
       act(() => {
         result.current.setAppBgColor(testColor)
       })
-      
-      expect(result.current.appBgColor).toEqual(testColor)
+
+      // In web environment (IS_TAURI=false), alpha is forced to 1
+      expect(result.current.appBgColor).toEqual({ ...testColor, a: 1 })
     })
 
     it('should handle transparent colors', () => {
       const { result } = renderHook(() => useAppearance())
       const transparentColor = { r: 100, g: 100, b: 100, a: 0 }
-      
+
       act(() => {
         result.current.setAppAccentBgColor(transparentColor)
       })
-      
+
       expect(result.current.appAccentBgColor).toEqual(transparentColor)
+    })
+
+    it('should preserve alpha when blur is supported (macOS)', () => {
+      // Mock macOS environment
+      Object.defineProperty(global, 'IS_MACOS', { value: true, writable: true })
+      Object.defineProperty(global, 'IS_TAURI', { value: true, writable: true })
+      Object.defineProperty(global, 'IS_WINDOWS', { value: false, writable: true })
+      Object.defineProperty(global, 'IS_LINUX', { value: false, writable: true })
+
+      const setPropertySpy = vi.fn()
+      Object.defineProperty(document.documentElement, 'style', {
+        value: {
+          setProperty: setPropertySpy,
+        },
+        writable: true,
+      })
+
+      const { result } = renderHook(() => useAppearance())
+      const testColor = { r: 128, g: 64, b: 192, a: 0.5 }
+
+      act(() => {
+        result.current.setAppBgColor(testColor)
+      })
+
+      // On macOS with Tauri, alpha should be preserved
+      expect(result.current.appBgColor).toEqual(testColor)
+
+      // Reset for other tests
+      Object.defineProperty(global, 'IS_MACOS', { value: false, writable: true })
+      Object.defineProperty(global, 'IS_TAURI', { value: false, writable: true })
     })
   })
 

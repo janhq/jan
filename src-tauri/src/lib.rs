@@ -151,17 +151,17 @@ pub fn run() {
                 .config()
                 .version
                 .clone()
-                .unwrap_or_else(|| "".to_string());
+                .unwrap_or_default();
             // Migrate extensions
             if let Err(e) =
                 setup::install_extensions(app.handle().clone(), stored_version != app_version)
             {
-                log::error!("Failed to install extensions: {}", e);
+                log::error!("Failed to install extensions: {e}");
             }
 
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
-                log::error!("Failed to migrate MCP servers: {}", e);
+                log::error!("Failed to migrate MCP servers: {e}");
             }
 
             // Store the new app version
@@ -180,15 +180,28 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
             }
+
+            // Initialize SQLite database for mobile platforms
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::core::threads::db::init_database(&app_handle).await {
+                        log::error!("Failed to initialize mobile database: {}", e);
+                    }
+                });
+            }
+
             setup_mcp(app);
+            setup::setup_theme_listener(app)?;
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
     // Handle app lifecycle events
-    app.run(|app, event| match event {
-        RunEvent::Exit => {
+    app.run(|app, event| {
+        if let RunEvent::Exit = event {
             // This is called when the app is actually exiting (e.g., macOS dock quit)
             // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
@@ -208,6 +221,5 @@ pub fn run() {
                 });
             });
         }
-        _ => {}
     });
 }

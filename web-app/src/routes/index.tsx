@@ -11,7 +11,7 @@ import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 
 type SearchParams = {
-  model?: {
+  'model'?: {
     id: string
     provider: string
   }
@@ -33,7 +33,10 @@ export const Route = createFileRoute(route.home as any)({
     }
 
     // Only include temporary-chat if it's explicitly true
-    if (search[TEMPORARY_CHAT_QUERY_ID] === 'true' || search[TEMPORARY_CHAT_QUERY_ID] === true) {
+    if (
+      search[TEMPORARY_CHAT_QUERY_ID] === 'true' ||
+      search[TEMPORARY_CHAT_QUERY_ID] === true
+    ) {
       result['temporary-chat'] = true
     }
 
@@ -71,11 +74,13 @@ function Index() {
   return (
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
-        {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+        <div className="flex items-center justify-between w-full pr-2">
+          {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+        </div>
       </HeaderPage>
       <div
         className={cn(
-          'h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
+          'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
         )}
       >
         <div
@@ -108,7 +113,9 @@ function Index() {
                 isMobile ? 'text-base' : 'text-lg'
               )}
             >
-              {isTemporaryChat ? t('chat:temporaryChatDescription') : t('chat:description')}
+              {isTemporaryChat
+                ? t('chat:temporaryChatDescription')
+                : t('chat:description')}
             </p>
           </div>
           <div className="flex-1 shrink-0">

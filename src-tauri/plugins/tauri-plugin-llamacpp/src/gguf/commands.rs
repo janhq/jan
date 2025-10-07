@@ -87,19 +87,25 @@ pub async fn is_model_supported(
     );
 
     const RESERVE_BYTES: u64 = 2288490189;
-    let total_system_memory = system_info.total_memory * 1024 * 1024;
+    let total_system_memory: u64 = match system_info.gpus.is_empty() {
+        // on MacOS with unified memory, treat RAM = 0 for now
+        true => 0,
+        false => system_info.total_memory * 1024 * 1024,
+    };
+
     // Calculate total VRAM from all GPUs
-    let total_vram: u64 = if system_info.gpus.is_empty() {
+    let total_vram: u64 = match system_info.gpus.is_empty() {
         // On macOS with unified memory, GPU info may be empty
         // Use total RAM as VRAM since memory is shared
-        log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
-        total_system_memory
-    } else {
-        system_info
+        true => {
+            log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
+            system_info.total_memory * 1024 * 1024
+        }
+        false => system_info
             .gpus
             .iter()
             .map(|g| g.total_memory * 1024 * 1024)
-            .sum::<u64>()
+            .sum::<u64>(),
     };
 
     log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
@@ -113,7 +119,7 @@ pub async fn is_model_supported(
     let usable_total_memory = if total_system_memory > RESERVE_BYTES {
         (total_system_memory - RESERVE_BYTES) + usable_vram
     } else {
-        0
+        usable_vram
     };
     log::info!("System RAM: {} bytes", &total_system_memory);
     log::info!("Total VRAM: {} bytes", &total_vram);

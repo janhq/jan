@@ -31,17 +31,20 @@ function LogsViewer() {
   useEffect(() => {
     let lastLogsLength = 0
     function updateLogs() {
-      serviceHub.app().readLogs().then((logData) => {
-        let needScroll = false
-        const filteredLogs = logData.filter(Boolean) as LogEntry[]
-        if (filteredLogs.length > lastLogsLength) needScroll = true
+      serviceHub
+        .app()
+        .readLogs()
+        .then((logData) => {
+          let needScroll = false
+          const filteredLogs = logData.filter(Boolean) as LogEntry[]
+          if (filteredLogs.length > lastLogsLength) needScroll = true
 
-        lastLogsLength = filteredLogs.length
-        setLogs(filteredLogs)
+          lastLogsLength = filteredLogs.length
+          setLogs(filteredLogs)
 
-        // Scroll to bottom after initial logs are loaded
-        if (needScroll) setTimeout(() => scrollToBottom(), 100)
-      })
+          // Scroll to bottom after initial logs are loaded
+          if (needScroll) setTimeout(() => scrollToBottom(), 100)
+        })
     }
     updateLogs()
 

@@ -234,8 +234,6 @@ jobs:
           # Upload for tauri updater
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
-
-          aws s3 cp ./src-tauri/target/release/bundle/msi/${{ steps.metadata.outputs.MSI_FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.MSI_FILE_NAME }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
@@ -251,14 +249,4 @@ jobs:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
-          asset_content_type: application/octet-stream
-      - name: Upload release assert if public provider is github
-        if: inputs.public_provider == 'github'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/msi/${{ steps.metadata.outputs.MSI_FILE_NAME  }}
-          asset_name: ${{ steps.metadata.outputs.MSI_FILE_NAME  }}
           asset_content_type: application/octet-stream
