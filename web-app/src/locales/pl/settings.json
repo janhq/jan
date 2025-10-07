@@ -107,7 +107,9 @@
     "resetCodeBlockStyle": "Przywróć Domyślny Styl Bloków Kodu",
     "resetCodeBlockStyleDesc": "Przywraca domyślny styl bloku kodu.",
     "resetCodeBlockSuccess": "Pomyślnie Przywrócono Styl Bloku Kodu",
-    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych."
+    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych.",
+    "tokenCounterCompact": "Kompaktowy Licznik Tokenów",
+    "tokenCounterCompactDesc": "Pokaż licznik tokenów wewnątrz pola wprowadzania czatu. Po wyłączeniu, licznik tokenów pojawia się poniżej pola wprowadzania."
   },
   "hardware": {
     "os": "System Operacyjny",
@@ -272,5 +274,7 @@
     "updateNow": "Aktualizuj teraz",
     "updateSuccess": "Llamacpp został pomyślnie zaktualizowany",
     "updateError": "Nie udało się zaktualizować Llamacpp"
-  }
+  },
+  "backendInstallSuccess": "Backend został pomyślnie zainstalowany",
+  "backendInstallError": "Nie udało się zainstalować backendu"
 }
