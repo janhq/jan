@@ -171,7 +171,6 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
     if (!query && startTs === 0 && endTs === Infinity) return source
     const q = query.toLowerCase()
   return source.filter((t: any) => {
-        console.log(t)
         let latestTime = NaN
         const cand = t.updated
         if (cand) {
