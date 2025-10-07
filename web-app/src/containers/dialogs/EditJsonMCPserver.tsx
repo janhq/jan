@@ -93,13 +93,12 @@ export default function EditJsonMCPserver({
               onChange={(e) => setJsonContent(e.target.value)}
               onPaste={handlePaste}
               style={{
-                fontFamily: 'ui-monospace',
                 backgroundColor: 'transparent',
                 wordBreak: 'break-all',
                 overflowWrap: 'anywhere',
                 whiteSpace: 'pre-wrap',
               }}
-              className="w-full !text-sm overflow-hidden break-all"
+              className="w-full !text-sm overflow-hidden !break-all font-mono"
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}
