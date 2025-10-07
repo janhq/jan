@@ -117,7 +117,6 @@ lint: install-and-build
 test: lint
 	yarn download:bin
 ifeq ($(OS),Windows_NT)
-	yarn download:windows-installer
 endif
 	yarn test
 	yarn copy:assets:tauri
