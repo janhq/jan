@@ -345,7 +345,7 @@ const LeftPanel = () => {
                   {t('common:search')}
                 </span>
               </button>
-              {/* TODO: implement search modal that opens when clicking this trigger */}
+              
             </div>
           </div>
 
