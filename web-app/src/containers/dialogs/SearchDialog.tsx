@@ -466,7 +466,6 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
                     )
                   )
                 }
-                console.log('Rendering thread', thread.id, { title, dateStr, snippet, q })
 
                 return (
                   <div key={thread.id} className="py-1">
