@@ -228,9 +228,9 @@
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
     "tryDifferentSearch": "尝试不同的搜索词",
-  "filterByProject": "按项目过滤",
-  "filterByDate": "按日期过滤",
-  "selected": "已选择"
+    "filterByProject": "按项目过滤",
+    "filterByDate": "按日期过滤",
+    "selected": "已选择"
   },
   "dialogs": {
     "changeDataFolder": {
