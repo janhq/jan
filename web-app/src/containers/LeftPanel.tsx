@@ -10,7 +10,6 @@ import {
   IconFolderPlus,
   IconMessage,
   IconApps,
-  IconX,
   IconSearch,
   IconClipboardSmile,
   IconFolder,
@@ -86,15 +85,14 @@ const LeftPanel = () => {
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [searchTerm, setSearchTerm] = useState('')
+  // Search/filter removed — show everything
   const { isAuthenticated } = useAuth()
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
   const isInitialMountRef = useRef(true)
   const panelRef = useRef<HTMLElement>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchContainerMacRef = useRef<HTMLDivElement>(null)
+  const searchContainerRef = useRef<HTMLButtonElement>(null)
 
   // Determine if we're in a resizable context (large screen with panel open)
   const isResizableContext = !isSmallScreen && open
@@ -107,11 +105,7 @@ const LeftPanel = () => {
       }
     },
     null,
-    [
-      panelRef.current,
-      searchContainerRef.current,
-      searchContainerMacRef.current,
-    ]
+    [panelRef.current, searchContainerRef.current]
   )
 
   // Auto-collapse panel only when window is resized
@@ -160,7 +154,7 @@ const LeftPanel = () => {
 
   const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
   const unstarAllThreads = useThreads((state) => state.unstarAllThreads)
-  const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
+  // filtering removed; no longer using getFilteredThreads
   const threads = useThreads((state) => state.threads)
 
   const { folders, addFolder, updateFolder, getFolderById } =
@@ -177,17 +171,15 @@ const LeftPanel = () => {
     null
   )
 
+  // Show all threads (no filtering)
   const filteredThreads = useMemo(() => {
-    return getFilteredThreads(searchTerm)
+    // threads is an object/map in the store; convert to array
+    return Object.values(threads)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFilteredThreads, searchTerm, threads])
+  }, [threads])
 
-  const filteredProjects = useMemo(() => {
-    if (!searchTerm) return folders
-    return folders.filter((folder) =>
-      folder.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [folders, searchTerm])
+  // Show all projects (no filtering)
+  const filteredProjects = useMemo(() => folders, [folders])
 
   // Memoize categorized threads based on filteredThreads
   const favoritedThreads = useMemo(() => {
@@ -245,10 +237,7 @@ const LeftPanel = () => {
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
             // Don't close if clicking on search container or if currently searching
-            if (
-              searchContainerRef.current?.contains(e.target as Node) ||
-              searchContainerMacRef.current?.contains(e.target as Node)
-            ) {
+            if (searchContainerRef.current?.contains(e.target as Node)) {
               return
             }
             setLeftPanel(false)
@@ -283,72 +272,12 @@ const LeftPanel = () => {
               <IconLayoutSidebar size={18} className="text-left-panel-fg" />
             </div>
           </button>
-          {!IS_MACOS && (
-            <div
-              ref={searchContainerRef}
-              className={cn(
-                'relative top-1.5 mb-4 mt-1 z-50',
-                isResizableContext
-                  ? 'mx-2 w-[calc(100%-48px)]'
-                  : 'mx-1 w-[calc(100%-32px)]'
-              )}
-              data-ignore-outside-clicks
-            >
-              <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-              <input
-                type="text"
-                placeholder={t('common:search')}
-                className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation() // prevent bubbling
-                    setSearchTerm('')
-                  }}
-                >
-                  <IconX size={14} />
-                </button>
-              )}
-            </div>
-          )}
+          {/* Search bar moved below the main menu (under New Chat) for all platforms */}
         </div>
 
         <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
           <div className="space-y-1 py-1">
-            {IS_MACOS && (
-              <div
-                ref={searchContainerMacRef}
-                className={cn('relative mb-2 mt-1 mx-1')}
-                data-ignore-outside-clicks
-              >
-                <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-                <input
-                  type="text"
-                  placeholder={t('common:search')}
-                  className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <button
-                    data-ignore-outside-clicks
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation() // prevent bubbling
-                      setSearchTerm('')
-                    }}
-                  >
-                    <IconX size={14} />
-                  </button>
-                )}
-              </div>
-            )}
+          
 
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
@@ -400,6 +329,24 @@ const LeftPanel = () => {
                 </Link>
               )
             })}
+            <div className="mb-2 mt-1">
+              <button
+                ref={searchContainerRef}
+                onClick={() => {
+                  toast('Open search modal (not implemented)', { id: 'open-search' })
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full',
+                )}
+                data-test-id="menu-search"
+              >
+                <IconSearch size={18} className="text-left-panel-fg/70" />
+                <span className="font-medium text-left-panel-fg/90 truncate">
+                  {t('common:search')}
+                </span>
+              </button>
+              {/* TODO: implement search modal that opens when clicking this trigger */}
+            </div>
           </div>
 
           {filteredProjects.length > 0 && (
@@ -578,25 +525,9 @@ const LeftPanel = () => {
                   </div>
                 )}
 
-                {filteredThreads.length === 0 && searchTerm.length > 0 && (
-                  <div className="px-1 mt-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
-                      {t('common:recents')}
-                    </span>
+                
 
-                    <div className="flex items-center gap-1 text-left-panel-fg/80">
-                      <IconSearch size={18} />
-                      <h6 className="font-medium text-base">
-                        {t('common:noResultsFound')}
-                      </h6>
-                    </div>
-                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      {t('common:noResultsFoundDesc')}
-                    </p>
-                  </div>
-                )}
-
-                {Object.keys(threads).length === 0 && !searchTerm && (
+                {Object.keys(threads).length === 0 && (
                   <>
                     <div className="px-1 mt-2">
                       <div className="flex items-center gap-1 text-left-panel-fg/80">
