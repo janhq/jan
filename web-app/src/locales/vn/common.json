@@ -83,6 +83,13 @@
   "selectAModel": "Chọn một mô hình",
   "noToolsAvailable": "Không có công cụ nào",
   "noModelsFoundFor": "Không tìm thấy mô hình nào cho \"{{searchValue}}\"",
+  "failedToLoadModels": "Không thể tải mô hình",
+  "noModels": "Không tìm thấy mô hình nào",
+  "conversationNotAvailable": "Cuộc trò chuyện không khả dụng",
+  "conversationNotAvailableDescription": "Cuộc trò chuyện bạn đang cố gắng truy cập không khả dụng hoặc đã bị xóa.",
+  "temporaryChat": "Trò chuyện tạm thời",
+  "temporaryChatTooltip": "Trò chuyện tạm thời sẽ không xuất hiện trong lịch sử của bạn",
+  "generateAiResponse": "Tạo phản hồi AI",
   "customAvatar": "Ảnh đại diện tùy chỉnh",
   "editAssistant": "Chỉnh sửa Trợ lý",
   "jan": "Jan",
@@ -171,6 +178,13 @@
     "embeddings": "Nhúng",
     "notAvailable": "Chưa có"
   },
+  "outOfContextError": {
+    "truncateInput": "Cắt bớt đầu vào",
+    "title": "Lỗi hết ngữ cảnh",
+    "description": "Cuộc trò chuyện này đang đạt đến giới hạn bộ nhớ của AI, giống như một bảng trắng đang được lấp đầy. Chúng ta có thể mở rộng cửa sổ bộ nhớ (gọi là kích thước ngữ cảnh) để nó nhớ nhiều hơn, nhưng có thể sử dụng nhiều bộ nhớ máy tính của bạn hơn. Chúng ta cũng có thể cắt bớt đầu vào, có nghĩa là nó sẽ quên một số lịch sử trò chuyện để nhường chỗ cho các tin nhắn mới.",
+    "increaseContextSizeDescription": "Bạn có muốn tăng kích thước ngữ cảnh không?",
+    "increaseContextSize": "Tăng kích thước ngữ cảnh"
+  },
   "toolApproval": {
     "title": "Yêu cầu quyền truy cập công cụ",
     "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
@@ -202,6 +216,7 @@
   "projects": {
     "title": "Dự án",
     "addProject": "Thêm dự án",
+    "createNewProject": "Tạo dự án mới",
     "editProject": "Chỉnh sửa dự án",
     "deleteProject": "Xóa dự án",
     "projectName": "Tên dự án",
@@ -226,7 +241,31 @@
     "noProjectsAvailable": "Không có dự án nào",
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
-    "tryDifferentSearch": "Thử từ khóa tìm kiếm khác"
+    "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
+    "deleteProjectDialog": {
+      "title": "Xóa dự án",
+      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
+      "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
+      "deleteEmptyProject": "Hành động này sẽ xóa dự án \"{{projectName}}\".",
+      "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
+      "starredWarning": "Bạn vẫn có các chủ đề đã gắn dấu sao trong dự án.",
+      "deleteButton": "Xóa",
+      "successWithName": "Dự án \"{{projectName}}\" đã được xóa thành công",
+      "successWithoutName": "Dự án đã được xóa thành công",
+      "error": "Không thể xóa dự án. Vui lòng thử lại.",
+      "ariaLabel": "Xóa {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Tạo dự án mới",
+      "editTitle": "Chỉnh sửa dự án",
+      "nameLabel": "Tên dự án",
+      "namePlaceholder": "Nhập tên dự án...",
+      "createButton": "Tạo",
+      "updateButton": "Cập nhật",
+      "alreadyExists": "Dự án \"{{projectName}}\" đã tồn tại",
+      "createSuccess": "Dự án \"{{projectName}}\" đã được tạo thành công",
+      "renameSuccess": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -303,6 +342,34 @@
     "downloadAndVerificationComplete": {
       "title": "Tải xuống hoàn tất",
       "description": "Mô hình \"{{item}}\" đã được tải xuống và xác minh thành công"
+    },
+    "projectCreated": {
+      "title": "Dự án đã được tạo",
+      "description": "Dự án \"{{projectName}}\" đã được tạo thành công"
+    },
+    "projectRenamed": {
+      "title": "Dự án đã được đổi tên",
+      "description": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Dự án đã được xóa",
+      "description": "Dự án \"{{projectName}}\" đã được xóa thành công"
+    },
+    "projectAlreadyExists": {
+      "title": "Dự án đã tồn tại",
+      "description": "Dự án \"{{projectName}}\" đã tồn tại"
+    },
+    "projectDeleteFailed": {
+      "title": "Xóa thất bại",
+      "description": "Không thể xóa dự án. Vui lòng thử lại."
+    },
+    "threadAssignedToProject": {
+      "title": "Chủ đề đã được gán",
+      "description": "Chủ đề đã được gán cho \"{{projectName}}\" thành công"
+    },
+    "threadRemovedFromProject": {
+      "title": "Chủ đề đã được xóa",
+      "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
   }
 }
