@@ -39,7 +39,7 @@ function ModelProviders() {
         toast.error(t('providerAlreadyExists', { name }))
         return
       }
-      const newProvider = {
+      const newProvider: ProviderObject = {
         provider: name,
         active: true,
         models: [],
