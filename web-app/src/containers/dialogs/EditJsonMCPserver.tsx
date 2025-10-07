@@ -98,7 +98,7 @@ export default function EditJsonMCPserver({
                 overflowWrap: 'anywhere',
                 whiteSpace: 'pre-wrap',
               }}
-              className="w-full !text-sm overflow-hidden !break-all font-mono"
+              className="w-full !text-sm overflow-hidden !break-all !font-mono"
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}
