@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Autorisation d'outil requise",
+    "description": "L'assistant souhaite utiliser",
+    "securityNotice": "Des outils malveillants ou un contenu de conversation pourraient potentiellement inciter l'assistant à tenter des actions dangereuses. Examinez chaque appel d'outil attentivement avant d'approuver.",
+    "deny": "Refuser",
+    "allowOnce": "Autoriser une fois",
+    "alwaysAllow": "Autoriser dans le fil",
+    "parameters": "Paramètres de l'outil",
+    "permissionScope": "Les permissions accordées s'appliquent uniquement à cette conversation."
+  }
+}

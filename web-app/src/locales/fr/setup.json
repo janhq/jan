@@ -1,0 +1,6 @@
+{
+  "welcome": "Bienvenue dans Jan",
+  "description": "Pour commencer, vous devez soit télécharger un modèle IA local, soit vous connecter à un modèle cloud en utilisant une clé API",
+  "localModel": "Configurer un modèle local",
+  "remoteProvider": "Configurer un fournisseur distant"
+}

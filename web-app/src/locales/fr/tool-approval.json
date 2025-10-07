@@ -1,0 +1,12 @@
+{
+  "title": "Demande d'appel d'outil",
+  "description": "L'assistant souhaite utiliser l'outil : <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Avertissement de sécurité :</strong> Des outils malveillants ou un contenu de conversation pourraient potentiellement inciter l'assistant à tenter des actions dangereuses. Examinez chaque appel d'outil attentivement avant d'approuver.",
+  "deny": "Refuser",
+  "allowOnce": "Autoriser une fois",
+  "alwaysAllow": "Autoriser dans le fil",
+  "permissions": "Permissions",
+  "approve": "Approuver",
+  "reject": "Rejeter",
+  "parameters": "Paramètres de l'outil"
+}
