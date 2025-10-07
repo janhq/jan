@@ -128,6 +128,7 @@
   "createAssistant": "建立助理",
   "enterApiKey": "輸入 API 金鑰",
   "scrollToBottom": "滾動到底部",
+  "clear": "清除",
   "addModel": {
     "title": "新增模型",
     "modelId": "模型 ID",
@@ -226,7 +227,10 @@
     "noProjectsAvailable": "沒有可用的專案",
     "searchProjects": "搜尋專案...",
     "noProjectsFound": "找不到專案",
-    "tryDifferentSearch": "嘗試不同的搜尋詞"
+    "tryDifferentSearch": "嘗試不同的搜尋詞",
+    "filterByProject": "按專案篩選",
+    "filterByDate": "按日期篩選",
+    "selected": "已選擇"
   },
   "dialogs": {
     "changeDataFolder": {

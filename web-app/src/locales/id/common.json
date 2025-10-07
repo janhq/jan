@@ -129,6 +129,7 @@
   "enterApiKey": "Masukkan Kunci API",
   "scrollToBottom": "Gulir ke bawah",
   "generateAiResponse": "Hasilkan Respons AI",
+  "clear": "Bersihkan",
   "addModel": {
     "title": "Tambah Model",
     "modelId": "ID Model",
@@ -359,6 +360,9 @@
     "update": "Perbarui",
     "searchProjects": "Cari proyek...",
     "noProjectsFound": "Tidak ada proyek ditemukan",
-    "tryDifferentSearch": "Coba kata kunci pencarian lain"
+    "tryDifferentSearch": "Coba kata kunci pencarian lain",
+    "filterByProject": "Saring berdasarkan proyek",
+    "filterByDate": "Filter berdasarkan tanggal",
+    "selected": "dipilih"
   }
 }

@@ -128,6 +128,7 @@
   "createAssistant": "Tạo trợ lý",
   "enterApiKey": "Nhập khóa API",
   "scrollToBottom": "Cuộn xuống dưới cùng",
+  "clear": "Xóa",
   "addModel": {
     "title": "Thêm mô hình",
     "modelId": "ID mô hình",
@@ -226,7 +227,10 @@
     "noProjectsAvailable": "Không có dự án nào",
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
-    "tryDifferentSearch": "Thử từ khóa tìm kiếm khác"
+    "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
+    "filterByProject": "Lọc theo dự án",
+    "filterByDate": "Lọc theo ngày",
+    "selected": "đã chọn"
   },
   "dialogs": {
     "changeDataFolder": {

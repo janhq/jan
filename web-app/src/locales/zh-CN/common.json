@@ -128,6 +128,7 @@
   "createAssistant": "创建助手",
   "enterApiKey": "输入 API 密钥",
   "scrollToBottom": "滚动到底部",
+  "clear": "清除",
   "addModel": {
     "title": "添加模型",
     "modelId": "模型 ID",
@@ -226,7 +227,10 @@
     "noProjectsAvailable": "没有可用的项目",
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
-    "tryDifferentSearch": "尝试不同的搜索词"
+    "tryDifferentSearch": "尝试不同的搜索词",
+  "filterByProject": "按项目过滤",
+  "filterByDate": "按日期过滤",
+  "selected": "已选择"
   },
   "dialogs": {
     "changeDataFolder": {

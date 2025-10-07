@@ -129,6 +129,7 @@
   "enterApiKey": "Wprowadź klucz API",
   "scrollToBottom": "Przewiń na sam dół",
   "generateAiResponse": "Wygeneruj odpowiedź SI",
+  "clear": "Wyczyść",
   "addModel": {
     "title": "Dodaj Model",
     "modelId": "Identyfikator Modelu",
@@ -277,7 +278,10 @@
     "update": "Aktualizuj",
     "searchProjects": "Szukaj projektów...",
     "noProjectsFound": "Nie znaleziono projektów",
-    "tryDifferentSearch": "Spróbuj innego wyszukiwania"
+    "tryDifferentSearch": "Spróbuj innego wyszukiwania",
+    "filterByProject": "Filtruj według projektu",
+    "filterByDate": "Filtruj według daty",
+    "selected": "wybrano"
   },
   "toast": {
     "allThreadsUnfavorited": {

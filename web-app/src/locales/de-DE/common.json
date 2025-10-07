@@ -129,6 +129,7 @@
   "enterApiKey": "API Key eingeben",
   "scrollToBottom": "Zum Ende scrollen",
   "generateAiResponse": "KI-Antwort generieren",
+  "clear": "Löschen",
   "addModel": {
     "title": "Modell hinzufügen",
     "modelId": "Modell ID",
@@ -277,7 +278,10 @@
     "update": "Aktualisieren",
     "searchProjects": "Projekte durchsuchen...",
     "noProjectsFound": "Keine Projekte gefunden",
-    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff"
+    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
+    "selected": "ausgewählt",
+    "filterByProject": "Nach Projekten filtern",
+    "filterByDate": "Nach Datum filtern"
   },
   "toast": {
     "allThreadsUnfavorited": {

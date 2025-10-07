@@ -135,6 +135,7 @@
   "enterApiKey": "Enter API Key",
   "scrollToBottom": "Scroll to bottom",
   "generateAiResponse": "Generate AI Response",
+  "clear": "Clear",
   "addModel": {
     "title": "Add Model",
     "modelId": "Model ID",
@@ -287,7 +288,10 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+  "filterByProject": "Filter by project",
+  "filterByDate": "Filter by date",
+  "selected": "selected"
   },
   "toast": {
     "allThreadsUnfavorited": {
