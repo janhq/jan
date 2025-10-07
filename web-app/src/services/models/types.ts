@@ -86,6 +86,7 @@ export interface ModelPlan {
   maxContextLength: number
   noOffloadKVCache: boolean
   offloadMmproj: boolean
+  batchSize: number
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
@@ -98,7 +99,7 @@ export interface ModelsService {
     hfToken?: string
   ): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
-  updateModel(model: Partial<CoreModel>): Promise<void>
+  updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(
     id: string,
     modelPath: string,

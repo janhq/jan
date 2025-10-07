@@ -15,7 +15,6 @@ on:
       - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
-      - 'mise.toml'
 
 jobs:
   get-update-version:

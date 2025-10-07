@@ -5,7 +5,7 @@
  * then provides synchronous access to service instances throughout the app.
  */
 
-import { isPlatformTauri } from '@/lib/platform/utils'
+import { isPlatformTauri, isPlatformIOS, isPlatformAndroid } from '@/lib/platform/utils'
 
 // Import default services
 import { DefaultThemeService } from './theme/default'
@@ -26,6 +26,7 @@ import { DefaultUpdaterService } from './updater/default'
 import { DefaultPathService } from './path/default'
 import { DefaultCoreService } from './core/default'
 import { DefaultDeepLinkService } from './deeplink/default'
+import { DefaultProjectsService } from './projects/default'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -46,6 +47,7 @@ import type { UpdaterService } from './updater/types'
 import type { PathService } from './path/types'
 import type { CoreService } from './core/types'
 import type { DeepLinkService } from './deeplink/types'
+import type { ProjectsService } from './projects/types'
 
 export interface ServiceHub {
   // Service getters - all synchronous after initialization
@@ -67,6 +69,7 @@ export interface ServiceHub {
   path(): PathService
   core(): CoreService
   deeplink(): DeepLinkService
+  projects(): ProjectsService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -88,6 +91,7 @@ class PlatformServiceHub implements ServiceHub {
   private pathService: PathService = new DefaultPathService()
   private coreService: CoreService = new DefaultCoreService()
   private deepLinkService: DeepLinkService = new DefaultDeepLinkService()
+  private projectsService: ProjectsService = new DefaultProjectsService()
   private initialized = false
 
   /**
@@ -98,11 +102,14 @@ class PlatformServiceHub implements ServiceHub {
 
     console.log(
       'Initializing service hub for platform:',
-      isPlatformTauri() ? 'Tauri' : 'Web'
+      isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid() ? 'Tauri' :
+      isPlatformIOS() ? 'iOS' :
+      isPlatformAndroid() ? 'Android' : 'Web'
     )
 
     try {
-      if (isPlatformTauri()) {
+      if (isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid()) {
+        // Desktop Tauri
         const [
           themeModule,
           windowModule,
@@ -146,6 +153,44 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+      } else if (isPlatformIOS() || isPlatformAndroid()) {
+        const [
+          themeModule,
+          windowModule,
+          eventsModule,
+          appModule,
+          mcpModule,
+          providersModule,
+          dialogModule,
+          openerModule,
+          pathModule,
+          coreModule,
+          deepLinkModule,
+        ] = await Promise.all([
+          import('./theme/tauri'),
+          import('./window/tauri'),
+          import('./events/tauri'),
+          import('./app/tauri'),
+          import('./mcp/tauri'),
+          import('./providers/tauri'),
+          import('./dialog/tauri'),
+          import('./opener/tauri'),
+          import('./path/tauri'),
+          import('./core/mobile'), // Use mobile-specific core service
+          import('./deeplink/tauri'),
+        ])
+
+        this.themeService = new themeModule.TauriThemeService()
+        this.windowService = new windowModule.TauriWindowService()
+        this.eventsService = new eventsModule.TauriEventsService()
+        this.appService = new appModule.TauriAppService()
+        this.mcpService = new mcpModule.TauriMCPService()
+        this.providersService = new providersModule.TauriProvidersService()
+        this.dialogService = new dialogModule.TauriDialogService()
+        this.openerService = new openerModule.TauriOpenerService()
+        this.pathService = new pathModule.TauriPathService()
+        this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
+        this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
       } else {
         const [
           themeModule,
@@ -158,6 +203,7 @@ class PlatformServiceHub implements ServiceHub {
           deepLinkModule,
           providersModule,
           mcpModule,
+          projectsModule,
         ] = await Promise.all([
           import('./theme/web'),
           import('./app/web'),
@@ -169,6 +215,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./deeplink/web'),
           import('./providers/web'),
           import('./mcp/web'),
+          import('./projects/web'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -181,6 +228,7 @@ class PlatformServiceHub implements ServiceHub {
         this.deepLinkService = new deepLinkModule.WebDeepLinkService()
         this.providersService = new providersModule.WebProvidersService()
         this.mcpService = new mcpModule.WebMCPService()
+        this.projectsService = new projectsModule.WebProjectsService()
       }
 
       this.initialized = true
@@ -289,6 +337,11 @@ class PlatformServiceHub implements ServiceHub {
   deeplink(): DeepLinkService {
     this.ensureInitialized()
     return this.deepLinkService
+  }
+
+  projects(): ProjectsService {
+    this.ensureInitialized()
+    return this.projectsService
   }
 }
 

@@ -1,9 +1,8 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { getProxyConfig } from './util'
+import { getProxyConfig, basenameNoExt } from './util'
 import { dirname, basename } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
-
 /*
  * Reads currently installed backends in janDataFolderPath
  *
@@ -46,7 +45,6 @@ export async function getLocalInstalledBackends(): Promise<
       }
     }
   }
-  console.debug(local)
   return local
 }
 
@@ -74,10 +72,7 @@ async function fetchRemoteSupportedBackends(
 
       if (!name.startsWith(prefix)) continue
 
-      const backend = name
-        .replace(prefix, '')
-        .replace('.tar.gz', '')
-        .replace('.zip', '')
+      const backend = basenameNoExt(name).slice(prefix.length)
 
       if (supportedBackends.includes(backend)) {
         remote.push({ version, backend })
@@ -319,7 +314,10 @@ export async function downloadBackend(
     events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
     // Fallback: if GitHub fails, retry once with CDN
-    if (source === 'github') {
+    if (
+      source === 'github' &&
+      error?.toString() !== 'Error: Download cancelled'
+    ) {
       console.warn(`GitHub download failed, falling back to CDN:`, error)
       return await downloadBackend(backend, version, 'cdn')
     }

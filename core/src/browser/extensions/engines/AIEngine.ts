@@ -275,6 +275,10 @@ export abstract class AIEngine extends BaseExtension {
   abstract delete(modelId: string): Promise<void>
 
   /**
+   * Updates a model
+   */
+  abstract update(modelId: string, model: Partial<modelInfo>): Promise<void>
+  /**
    * Imports a model
    */
   abstract import(modelId: string, opts: ImportOptions): Promise<void>
@@ -288,11 +292,6 @@ export abstract class AIEngine extends BaseExtension {
    * Get currently loaded models
    */
   abstract getLoadedModels(): Promise<string[]>
-
-  /**
-   * Optional method to get the underlying chat client
-   */
-  getChatClient?(sessionId: string): any
 
   /**
    * Check if a tool is supported by the model

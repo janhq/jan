@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { cn } from '@/lib/utils'
+import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ModelSettingProps = {
@@ -103,6 +103,13 @@ export function ModelSetting({
           })
         }
 
+        if (model.settings?.batch_size && result.batchSize !== undefined) {
+          settingsToUpdate.push({
+            key: 'batch_size',
+            value: result.batchSize,
+          })
+        }
+
         // Apply all settings in a single update to avoid race conditions
         if (settingsToUpdate.length > 0) {
           handleMultipleSettingsChange(settingsToUpdate)
@@ -163,7 +170,10 @@ export function ModelSetting({
           key === 'ctx_len' ||
           key === 'ngl' ||
           key === 'chat_template' ||
-          key === 'offload_mmproj'
+          key === 'offload_mmproj' ||
+          key === 'batch_size' ||
+          key === 'cpu_moe' ||
+          key === 'n_cpu_moe'
       )
 
       if (requiresRestart) {
@@ -222,7 +232,10 @@ export function ModelSetting({
         key === 'ctx_len' ||
         key === 'ngl' ||
         key === 'chat_template' ||
-        key === 'offload_mmproj'
+        key === 'offload_mmproj' ||
+        key === 'batch_size' ||
+        key === 'cpu_moe' ||
+        key === 'n_cpu_moe'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -252,7 +265,9 @@ export function ModelSetting({
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
-            {t('common:modelSettings.title', { modelId: model.id })}
+            {t('common:modelSettings.title', {
+              modelId: getModelDisplayName(model),
+            })}
           </SheetTitle>
           <SheetDescription>
             {t('common:modelSettings.description')}

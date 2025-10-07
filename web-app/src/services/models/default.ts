@@ -162,11 +162,15 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async updateModel(model: Partial<CoreModel>): Promise<void> {
-    if (model.settings)
+  async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
+    if (model.settings) {
       this.getEngine()?.updateSettings(
         model.settings as SettingComponentProps[]
       )
+    }
+    // Note: Model name/ID updates are handled at the provider level in the frontend
+    // The engine doesn't have an update method for model metadata
+    console.log('Model update request processed for modelId:', modelId)
   }
 
   async pullModel(
@@ -533,19 +537,21 @@ export class DefaultModelsService implements ModelsService {
       // Fallback if method is not available
       console.warn('planModelLoad method not available in llamacpp engine')
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     } catch (error) {
       console.error(`Error planning model load for path ${modelPath}:`, error)
       return {
-        gpuLayers: 0,
+        gpuLayers: 100,
         maxContextLength: 2048,
-        noOffloadKVCache: true,
+        noOffloadKVCache: false,
         offloadMmproj: false,
+        batchSize: 2048,
         mode: 'Unsupported',
       }
     }
@@ -572,6 +578,9 @@ export class DefaultModelsService implements ModelsService {
                   }
                 }>
           }>
+          chat_template_kwargs?: {
+            enable_thinking: boolean
+          }
         }) => Promise<number>
       }
 
@@ -648,6 +657,9 @@ export class DefaultModelsService implements ModelsService {
         return await engine.getTokensCount({
           model: modelId,
           messages: transformedMessages,
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
         })
       }
 

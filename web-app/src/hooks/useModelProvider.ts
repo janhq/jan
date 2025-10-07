@@ -104,6 +104,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 ...model,
                 settings: settings,
                 capabilities: existingModel?.capabilities || model.capabilities,
+                displayName: existingModel?.displayName || model.displayName,
               }
             })
 
@@ -288,9 +289,143 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 2 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Update cont_batching description for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const contBatchingSetting = provider.settings.find(
+                (s) => s.key === 'cont_batching'
+              )
+              if (contBatchingSetting) {
+                contBatchingSetting.description =
+                  'Enable continuous batching (a.k.a dynamic batching) for concurrent requests.'
+              }
+            }
+
+            // Migrate model settings
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.batch_size) {
+                  model.settings.batch_size = {
+                    ...modelSettings.batch_size,
+                    controller_props: {
+                      ...modelSettings.batch_size.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
+        if (version <= 3 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate Anthropic provider base URL and add custom headers
+            if (provider.provider === 'anthropic') {
+              if (provider.base_url === 'https://api.anthropic.com') {
+                provider.base_url = 'https://api.anthropic.com/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.anthropic.com/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.anthropic.com'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.anthropic.com/v1'
+                }
+              }
+
+              if (!provider.custom_header) {
+                provider.custom_header = [
+                  {
+                    header: 'anthropic-version',
+                    value: '2023-06-01',
+                  },
+                  {
+                    header: 'anthropic-dangerous-direct-browser-access',
+                    value: 'true',
+                  },
+                ]
+              }
+            }
+
+            if (provider.provider === 'cohere') {
+              if (
+                provider.base_url === 'https://api.cohere.ai/compatibility/v1'
+              ) {
+                provider.base_url = 'https://api.cohere.ai/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.cohere.ai/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.cohere.ai/compatibility/v1'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.cohere.ai/v1'
+                }
+              }
+            }
+          })
+        }
+
+        if (version <= 4 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate model settings
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.cpu_moe) {
+                  model.settings.cpu_moe = {
+                    ...modelSettings.cpu_moe,
+                    controller_props: {
+                      ...modelSettings.cpu_moe.controller_props,
+                    },
+                  }
+                }
+
+                if (!model.settings.n_cpu_moe) {
+                  model.settings.n_cpu_moe = {
+                    ...modelSettings.n_cpu_moe,
+                    controller_props: {
+                      ...modelSettings.n_cpu_moe.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
         return state
       },
-      version: 2,
+      version: 5,
     }
   )
 )

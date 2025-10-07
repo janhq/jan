@@ -37,15 +37,26 @@ import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
+import { McpExtensionToolLoader } from './McpExtensionToolLoader'
+import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  projectId?: string
 }
 
-const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
+const ChatInput = ({
+  model,
+  className,
+  initialMessage,
+  projectId,
+}: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -79,6 +90,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
+  const { productAnalytic } = useAnalytic()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -123,7 +135,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
         const activeModels = await serviceHub
           .models()
           .getActiveModels('llamacpp')
-        setHasActiveModels(activeModels.length > 0)
+        const hasMatchingActiveModel = activeModels.some(
+          (model) => String(model) === selectedModel?.id
+        )
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
         setHasActiveModels(false)
@@ -136,7 +151,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
-  }, [serviceHub])
+  }, [serviceHub, selectedModel?.id])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -162,7 +177,12 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
-  const handleSendMesage = (prompt: string) => {
+  // Get MCP extension and its custom component
+  const extensionManager = ExtensionManager.getInstance()
+  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
+  const MCPToolComponent = mcpExtension?.getToolComponent?.()
+
+  const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -171,10 +191,24 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       return
     }
     setMessage('')
+
+    // Track message send event with PostHog (only if product analytics is enabled)
+    if (productAnalytic && selectedModel && selectedProvider) {
+      try {
+        posthog.capture('message_sent', {
+          model_provider: selectedProvider,
+          model_id: selectedModel.id,
+        })
+      } catch (error) {
+        console.debug('Failed to track message send event:', error)
+      }
+    }
+
     sendMessage(
       prompt,
       true,
-      uploadedFiles.length > 0 ? uploadedFiles : undefined
+      uploadedFiles.length > 0 ? uploadedFiles : undefined,
+      projectId
     )
     setUploadedFiles([])
   }
@@ -599,7 +633,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
+                  handleSendMessage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
@@ -687,7 +721,20 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 )}
 
                 {selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers && (
+                  hasActiveMCPServers &&
+                  (MCPToolComponent ? (
+                    // Use custom MCP component
+                    <McpExtensionToolLoader
+                      tools={tools}
+                      hasActiveMCPServers={hasActiveMCPServers}
+                      selectedModelHasTools={
+                        selectedModel?.capabilities?.includes('tools') ?? false
+                      }
+                      initialMessage={initialMessage}
+                      MCPToolComponent={MCPToolComponent}
+                    />
+                  ) : (
+                    // Use default tools dropdown
                     <TooltipProvider>
                       <Tooltip
                         open={tooltipToolsAvailable}
@@ -742,7 +789,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  )}
+                  ))}
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -815,7 +862,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   size="icon"
                   disabled={!prompt.trim() && uploadedFiles.length === 0}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMesage(prompt)}
+                  onClick={() => handleSendMessage(prompt)}
                 >
                   {streamingContent ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

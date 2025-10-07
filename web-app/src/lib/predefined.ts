@@ -133,6 +133,28 @@ export const modelSettings = {
       textAlign: 'right',
     },
   },
+  cpu_moe: {
+    key: 'cpu_moe',
+    title: 'Keep all Experts in CPU',
+    description:
+      'Keep all Mixture of Experts (MoE) weights in the CPU (if GPU is used).',
+    controller_type: 'checkbox',
+    controller_props: {
+      value: false,
+    },
+  },
+  n_cpu_moe: {
+    key: 'n_cpu_moe',
+    title: 'Number of MoE weights in the CPU',
+    description:
+      'Keep the Mixture of Experts (MoE) weights of the first N layers in the CPU (if GPU is used)',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '24',
+      type: 'number',
+    },
+  },
   override_tensor_buffer_t: {
     key: 'override_tensor_buffer_t',
     title: 'Override Tensor Buffer Type',
@@ -151,6 +173,18 @@ export const modelSettings = {
     controller_type: 'checkbox',
     controller_props: {
       value: false,
+    },
+  },
+  batch_size: {
+    key: 'batch_size',
+    title: 'Batch Size',
+    description: 'Logical maximum batch size for processing prompts.',
+    controller_type: 'input',
+    controller_props: {
+      value: 2048,
+      placeholder: '2048',
+      type: 'number',
+      textAlign: 'right',
     },
   },
 }

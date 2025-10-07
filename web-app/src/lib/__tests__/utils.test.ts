@@ -6,6 +6,7 @@ import {
   toGigabytes,
   formatMegaBytes,
   formatDuration,
+  getModelDisplayName,
 } from '../utils'
 
 describe('getProviderLogo', () => {
@@ -198,5 +199,54 @@ describe('formatDuration', () => {
     expect(formatDuration(start, 60000)).toBe('1m 0s') // exactly 1 minute
     expect(formatDuration(start, 3600000)).toBe('1h 0m 0s') // exactly 1 hour
     expect(formatDuration(start, 86400000)).toBe('1d 0h 0m 0s') // exactly 1 day
+  })
+})
+
+describe('getModelDisplayName', () => {
+  it('returns displayName when it exists', () => {
+    const model = {
+      id: 'llama-3.2-1b-instruct-q4_k_m.gguf',
+      displayName: 'My Custom Model',
+    } as Model
+    expect(getModelDisplayName(model)).toBe('My Custom Model')
+  })
+
+  it('returns model.id when displayName is undefined', () => {
+    const model = {
+      id: 'llama-3.2-1b-instruct-q4_k_m.gguf',
+    } as Model
+    expect(getModelDisplayName(model)).toBe('llama-3.2-1b-instruct-q4_k_m.gguf')
+  })
+
+  it('returns model.id when displayName is empty string', () => {
+    const model = {
+      id: 'llama-3.2-1b-instruct-q4_k_m.gguf',
+      displayName: '',
+    } as Model
+    expect(getModelDisplayName(model)).toBe('llama-3.2-1b-instruct-q4_k_m.gguf')
+  })
+
+  it('returns model.id when displayName is null', () => {
+    const model = {
+      id: 'llama-3.2-1b-instruct-q4_k_m.gguf',
+      displayName: null as any,
+    } as Model
+    expect(getModelDisplayName(model)).toBe('llama-3.2-1b-instruct-q4_k_m.gguf')
+  })
+
+  it('handles models with complex display names', () => {
+    const model = {
+      id: 'very-long-model-file-name-with-lots-of-details.gguf',
+      displayName: 'Short Name 🤖',
+    } as Model
+    expect(getModelDisplayName(model)).toBe('Short Name 🤖')
+  })
+
+  it('handles models with special characters in displayName', () => {
+    const model = {
+      id: 'model.gguf',
+      displayName: 'Model (Version 2.0) - Fine-tuned',
+    } as Model
+    expect(getModelDisplayName(model)).toBe('Model (Version 2.0) - Fine-tuned')
   })
 })

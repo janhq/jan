@@ -1,4 +1,3 @@
-console.log('Script is running')
 // scripts/download.js
 import https from 'https'
 import fs, { copyFile, mkdirSync } from 'fs'
@@ -69,7 +68,10 @@ function getPlatformArch() {
       arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
   } else if (platform === 'linux') {
     bunPlatform = arch === 'arm64' ? 'linux-aarch64' : 'linux-x64'
-    uvPlatform = arch === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
+    uvPlatform =
+      arch === 'arm64'
+        ? 'aarch64-unknown-linux-gnu'
+        : 'x86_64-unknown-linux-gnu'
   } else if (platform === 'win32') {
     bunPlatform = 'windows-x64' // Bun has limited Windows support
     uvPlatform = 'x86_64-pc-windows-msvc'
@@ -81,6 +83,10 @@ function getPlatformArch() {
 }
 
 async function main() {
+  if (process.env.SKIP_BINARIES) {
+    console.log('Skipping binaries download.')
+    process.exit(0)
+  }
   console.log('Starting main function')
   const platform = os.platform()
   const { bunPlatform, uvPlatform } = getPlatformArch()
@@ -100,13 +106,11 @@ async function main() {
   }
 
   // Adjust these URLs based on latest releases
-  const bunVersion = '1.2.10' // Example Bun version
-  const bunUrl = `https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/bun-${bunPlatform}.zip`
+  const bunUrl = `https://github.com/oven-sh/bun/releases/latest/download/bun-${bunPlatform}.zip`
 
-  const uvVersion = '0.6.17' // Example UV version
-  let uvUrl = `https://github.com/astral-sh/uv/releases/download/${uvVersion}/uv-${uvPlatform}.tar.gz`
+  let uvUrl = `https://github.com/astral-sh/uv/releases/latest/download/uv-${uvPlatform}.tar.gz`
   if (platform === 'win32') {
-    uvUrl = `https://github.com/astral-sh/uv/releases/download/${uvVersion}/uv-${uvPlatform}.zip`
+    uvUrl = `https://github.com/astral-sh/uv/releases/latest/download/uv-${uvPlatform}.zip`
   }
 
   console.log(`Downloading Bun for ${bunPlatform}...`)
@@ -124,29 +128,45 @@ async function main() {
       if (err) {
         console.log('Add execution permission failed!', err)
       }
-    });
+    })
     if (platform === 'darwin') {
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-apple-darwin'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
-        }
-      })
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-aarch64-apple-darwin'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
-        }
-      })
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-universal-apple-darwin'), (err) => {
+      copyFile(
+        path.join(binDir, 'bun'),
+        path.join(binDir, 'bun-x86_64-apple-darwin'),
+        (err) => {
           if (err) {
-            console.log("Error Found:", err);
+            console.log('Error Found:', err)
           }
-        })
-    } else if (platform === 'linux') {
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-unknown-linux-gnu'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
         }
-      })
+      )
+      copyFile(
+        path.join(binDir, 'bun'),
+        path.join(binDir, 'bun-aarch64-apple-darwin'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
+        }
+      )
+      copyFile(
+        path.join(binDir, 'bun'),
+        path.join(binDir, 'bun-universal-apple-darwin'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
+        }
+      )
+    } else if (platform === 'linux') {
+      copyFile(
+        path.join(binDir, 'bun'),
+        path.join(binDir, 'bun-x86_64-unknown-linux-gnu'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
+        }
+      )
     }
   } catch (err) {
     // Expect EEXIST error
@@ -157,11 +177,15 @@ async function main() {
       path.join(binDir)
     )
     if (platform === 'win32') {
-      copyFile(path.join(binDir, 'bun.exe'), path.join(binDir, 'bun-x86_64-pc-windows-msvc.exe'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      copyFile(
+        path.join(binDir, 'bun.exe'),
+        path.join(binDir, 'bun-x86_64-pc-windows-msvc.exe'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
+      )
     }
   } catch (err) {
     // Expect EEXIST error
@@ -176,52 +200,66 @@ async function main() {
     await decompress(uvPath, tempBinDir)
   }
   try {
-    copySync(
-      path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'),
-      path.join(binDir)
-    )
+    copySync(path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'), path.join(binDir))
     fs.chmod(path.join(binDir, 'uv'), 0o755, (err) => {
       if (err) {
         console.log('Add execution permission failed!', err)
       }
-    });
+    })
     if (platform === 'darwin') {
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-apple-darwin'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      copyFile(
+        path.join(binDir, 'uv'),
+        path.join(binDir, 'uv-x86_64-apple-darwin'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-aarch64-apple-darwin'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      )
+      copyFile(
+        path.join(binDir, 'uv'),
+        path.join(binDir, 'uv-aarch64-apple-darwin'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-universal-apple-darwin'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      )
+      copyFile(
+        path.join(binDir, 'uv'),
+        path.join(binDir, 'uv-universal-apple-darwin'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
+      )
     } else if (platform === 'linux') {
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-unknown-linux-gnu'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      copyFile(
+        path.join(binDir, 'uv'),
+        path.join(binDir, 'uv-x86_64-unknown-linux-gnu'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
+      )
     }
   } catch (err) {
     // Expect EEXIST error
   }
   try {
-    copySync(
-      path.join(tempBinDir, 'uv.exe'),
-      path.join(binDir)
-    )
+    copySync(path.join(tempBinDir, 'uv.exe'), path.join(binDir))
     if (platform === 'win32') {
-      copyFile(path.join(binDir, 'uv.exe'), path.join(binDir, 'uv-x86_64-pc-windows-msvc.exe'), (err) => {
-        if (err) {
-          console.log("Error Found:", err);
+      copyFile(
+        path.join(binDir, 'uv.exe'),
+        path.join(binDir, 'uv-x86_64-pc-windows-msvc.exe'),
+        (err) => {
+          if (err) {
+            console.log('Error Found:', err)
+          }
         }
-      })
+      )
     }
   } catch (err) {
     // Expect EEXIST error

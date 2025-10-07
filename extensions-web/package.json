@@ -22,16 +22,21 @@
   },
   "devDependencies": {
     "@janhq/core": "workspace:*",
-    "typescript": "^5.3.3",
-    "vite": "^5.0.0",
-    "vitest": "^2.0.0",
-    "zustand": "^5.0.8"
+    "@tabler/icons-react": "^3.34.0",
+    "@types/react": "19.1.2",
+    "react": "19.0.0",
+    "typescript": "5.9.2",
+    "vite": "5.4.20",
+    "vitest": "2.1.9",
+    "zustand": "5.0.8"
   },
   "peerDependencies": {
     "@janhq/core": "*",
-    "zustand": "^5.0.0"
+    "@tabler/icons-react": "*",
+    "react": "19.0.0",
+    "zustand": "5.0.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.5"
+    "@modelcontextprotocol/sdk": "1.17.5"
   }
 }

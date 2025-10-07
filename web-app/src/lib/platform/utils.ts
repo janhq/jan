@@ -1,6 +1,8 @@
 import { Platform, PlatformFeature } from './types'
 
 declare const IS_WEB_APP: boolean
+declare const IS_IOS: boolean
+declare const IS_ANDROID: boolean
 
 /**
  * Determines if the current platform is Tauri (desktop application).
@@ -18,12 +20,26 @@ export const isPlatformTauri = (): boolean => {
   return true
 }
 
+export const isPlatformIOS = (): boolean => {
+  return IS_IOS
+}
+
+export const isPlatformAndroid = (): boolean => {
+  return IS_ANDROID
+}
+
+export const isIOS = (): boolean => isPlatformIOS()
+
+export const isAndroid = (): boolean => isPlatformAndroid()
+
 /**
  * Gets the current platform identifier.
  * 
  * @returns {Platform} 'tauri' for desktop application or 'web' for web application
  */
 export const getCurrentPlatform = (): Platform => {
+  if (isPlatformIOS()) return 'ios'
+  if (isPlatformAndroid()) return 'android'
   return isPlatformTauri() ? 'tauri' : 'web'
 }
 

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-model-supported"
+description = "Enables the is_model_supported command without any pre-configured scope."
+commands.allow = ["is_model_supported"]
+
+[[permission]]
+identifier = "deny-is-model-supported"
+description = "Denies the is_model_supported command without any pre-configured scope."
+commands.deny = ["is_model_supported"]

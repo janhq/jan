@@ -119,10 +119,15 @@
     "chatInput": "Ask me anything..."
   },
   "confirm": "Confirm",
+  "continue": "Continue",
   "loading": "Loading...",
   "error": "Error",
   "success": "Success",
   "warning": "Warning",
+  "conversationNotAvailable": "Conversation not available",
+  "conversationNotAvailableDescription": "The conversation you are trying to access is not available or has been deleted.",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatTooltip": "Temporary chat won't appear in your history",
   "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
   "searchModels": "Search models...",
   "searchStyles": "Search styles...",
@@ -231,6 +236,59 @@
       "title": "Message Metadata"
     }
   },
+  "projects": {
+    "title": "Projects",
+    "addProject": "Add Project",
+    "addToProject": "Add to project",
+    "removeFromProject": "Remove from project",
+    "createNewProject": "Create New Project",
+    "editProject": "Edit Project",
+    "deleteProject": "Delete Project",
+    "projectName": "Project Name",
+    "enterProjectName": "Enter project name...",
+    "noProjectsAvailable": "No projects available",
+    "noProjectsYet": "No Projects Yet",
+    "noProjectsYetDesc": "Start a new project by clicking the Add Project button.",
+    "projectNotFound": "Project Not Found",
+    "projectNotFoundDesc": "The project you're looking for doesn't exist or has been deleted.",
+    "deleteProjectDialog": {
+      "title": "Delete Project",
+      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
+      "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
+      "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
+      "starredWarning": "You still have starred threads within the project.",
+      "deleteButton": "Delete",
+      "successWithName": "Project \"{{projectName}}\" deleted successfully",
+      "successWithoutName": "Project deleted successfully",
+      "error": "Failed to delete project. Please try again.",
+      "ariaLabel": "Delete {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Create New Project",
+      "editTitle": "Edit Project",
+      "nameLabel": "Project Name",
+      "namePlaceholder": "Enter project name...",
+      "createButton": "Create",
+      "updateButton": "Update",
+      "alreadyExists": "Project \"{{projectName}}\" already exists",
+      "createSuccess": "Project \"{{projectName}}\" created successfully",
+      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "noConversationsIn": "No Conversations in {{projectName}}",
+    "startNewConversation": "Start a new conversation with {{projectName}} below",
+    "conversationsIn": "Conversations in {{projectName}}",
+    "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
+    "thread": "thread",
+    "threads": "threads",
+    "updated": "Updated:",
+    "collapseProject": "Collapse project",
+    "expandProject": "Expand project",
+    "update": "Update",
+    "searchProjects": "Search projects...",
+    "noProjectsFound": "No projects found",
+    "tryDifferentSearch": "Try a different search term"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "All Threads Unfavorited",
@@ -283,6 +341,35 @@
     "downloadAndVerificationComplete": {
       "title": "Download Complete",
       "description": "Model \"{{item}}\" downloaded and verified successfully"
+    },
+    "projectCreated": {
+      "title": "Project Created",
+      "description": "Project \"{{projectName}}\" created successfully"
+    },
+    "projectRenamed": {
+      "title": "Project Renamed",
+      "description": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Project Deleted",
+      "description": "Project \"{{projectName}}\" deleted successfully"
+    },
+    "projectAlreadyExists": {
+      "title": "Project Already Exists",
+      "description": "Project \"{{projectName}}\" already exists"
+    },
+    "projectDeleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete project. Please try again."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread Assigned",
+      "description": "Thread assigned to \"{{projectName}}\" successfully"
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread Removed",
+      "description": "Thread removed from \"{{projectName}}\" successfully"
     }
   }
 }
+
