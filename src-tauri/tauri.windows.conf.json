@@ -14,7 +14,6 @@
     "targets": ["nsis", "msi"],
     "resources": [
       "resources/pre-install/**/*",
-      "resources/lib/vc_redist.x64.exe",
       "resources/LICENSE"
     ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
