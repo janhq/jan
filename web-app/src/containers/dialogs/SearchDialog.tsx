@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { IconCheck } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useMessages } from '@/hooks/useMessages'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface SearchDialogProps {
@@ -151,6 +152,7 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
   const allThreads = useMemo(() => Object.values(threadsMap), [threadsMap])
 
   const { folders } = useThreadManagement()
+  const getMessages = useMessages((s) => s.getMessages)
   // date range state: start defaults to Timestamp(0), end defaults to infinite (empty)
   const [startDateIso, setStartDateIso] = useState<string>('1970-01-01')
   const [endDateIso, setEndDateIso] = useState<string>('')
@@ -168,38 +170,29 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
 
     if (!query && startTs === 0 && endTs === Infinity) return source
     const q = query.toLowerCase()
-    return source.filter((t: any) => {
-      // compute latest timestamp for the thread (ms)
-      const dateCandidates: any[] = []
-      if (t.last_message?.created_at) dateCandidates.push(t.last_message.created_at)
-      if (t.messages && Array.isArray(t.messages)) {
-        for (const m of t.messages) {
-          if (m?.created_at) dateCandidates.push(m.created_at)
-          if (m?.timestamp) dateCandidates.push(m.timestamp)
-        }
-      }
-      dateCandidates.push(t.updated_at, t.created_at, t.metadata?.updated_at, t.metadata?.created_at)
-
-      let latestTime = NaN
-      for (const cand of dateCandidates) {
-        if (!cand) continue
-        let tt = NaN
-        if (typeof cand === 'number') tt = cand
-        else if (typeof cand === 'string') {
-          if (/^\d+$/.test(cand)) tt = Number(cand)
-          else {
-            const d = new Date(cand)
-            if (!isNaN(d.getTime())) tt = d.getTime()
+  return source.filter((t: any) => {
+        console.log(t)
+        let latestTime = NaN
+        const cand = t.updated
+        if (cand) {
+          let tt = NaN
+          if (typeof cand === 'number') tt = cand
+          else if (typeof cand === 'string') {
+            if (/^\d+$/.test(cand)) tt = Number(cand)
+            else {
+              const d = new Date(cand)
+              if (!isNaN(d.getTime())) tt = d.getTime()
+            }
+          }
+          if (!isNaN(tt)) {
+            if (tt < 1e12) tt = tt * 1000
+            latestTime = tt
           }
         }
-        if (isNaN(tt)) continue
-        if (tt < 1e12) tt = tt * 1000
-        if (isNaN(latestTime) || tt > latestTime) latestTime = tt
-      }
-      // if no timestamp, treat as 0
-      if (isNaN(latestTime)) latestTime = 0
-      // filter by date range
-      if (latestTime < startTs || latestTime > endTs) return false
+        // if no timestamp, treat as 0
+        if (isNaN(latestTime)) latestTime = 0
+        // filter by date range
+        if (latestTime < startTs || latestTime > endTs) return false
       const title = (t.title || t.name || t.metadata?.title || '').toString().toLowerCase()
       if (title.includes(q)) return true
 
@@ -207,8 +200,43 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
       let content = ''
       if (t.preview) content += ' ' + String(t.preview)
       if (t.content) content += ' ' + String(t.content)
-      if (t.messages && Array.isArray(t.messages)) {
-        content += ' ' + t.messages.map((m: any) => String(m.content || m.text || '')).join(' ')
+      const threadMessages = (t.messages && Array.isArray(t.messages)) ? t.messages : (getMessages ? getMessages(t.id) : [])
+      console.log('Thread messages for', t.id, threadMessages)
+      if (threadMessages && Array.isArray(threadMessages) && threadMessages.length > 0) {
+        const extractText = (m: any) => {
+          if (!m) return ''
+          // If message has a plain text field
+          if (typeof m.text === 'string') return m.text
+          if (typeof m.content === 'string') return m.content
+          // If content is an array of blocks: [{ text, value }]
+          if (Array.isArray(m.content)) {
+            try {
+              return m.content
+                .filter((b: any) => b && (b.type === 'text' || b.type === 'Text' || !b.type))
+                .map((b: any) => {
+                  // preferred path: block.text.value
+                  if (b?.text && typeof b.text === 'object' && typeof b.text.value === 'string') return b.text.value
+                  // fallback: block.value
+                  if (typeof b.value === 'string') return b.value
+                  // if block itself is a string
+                  if (typeof b === 'string') return b
+                  return ''
+                })
+                .filter(Boolean)
+                .join(' ')
+            } catch {
+              return ''
+            }
+          }
+          // Fallback to JSON-stringify small content
+          try {
+            return JSON.stringify(m.content || m)
+          } catch {
+            return ''
+          }
+        }
+
+        content += ' ' + threadMessages.map((m: any) => String(extractText(m) || '')).join(' ')
       }
       // metadata fields
       if (t.metadata) {
@@ -355,40 +383,23 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
             ) : (
               results.map((thread: any) => {
                 const title = thread.title || thread.metadata?.title || thread.id
-
-                // determine date: prefer the last message timestamp, else pick the latest available timestamp
-                const dateCandidates: any[] = []
-                if (thread.last_message?.created_at) dateCandidates.push(thread.last_message.created_at)
-                if (thread.messages && Array.isArray(thread.messages)) {
-                  for (const m of thread.messages) {
-                    if (m?.created_at) dateCandidates.push(m.created_at)
-                    if (m?.timestamp) dateCandidates.push(m.timestamp)
-                  }
-                }
-                dateCandidates.push(thread.updated_at, thread.created_at, thread.metadata?.updated_at, thread.metadata?.created_at)
-
                 let dateStr = 'undefined'
                 let latestTime = NaN
-                for (const cand of dateCandidates) {
-                  if (!cand) continue
+                const cand = thread.updated
+                if (cand) {
                   let t = NaN
-                  if (typeof cand === 'number') {
-                    t = cand
-                  } else if (typeof cand === 'string') {
-                    // numeric string (epoch seconds or ms)
-                    if (/^\d+$/.test(cand)) {
-                      t = Number(cand)
-                    } else {
+                  if (typeof cand === 'number') t = cand
+                  else if (typeof cand === 'string') {
+                    if (/^\d+$/.test(cand)) t = Number(cand)
+                    else {
                       const d = new Date(cand)
                       if (!isNaN(d.getTime())) t = d.getTime()
                     }
                   }
-
-                  if (isNaN(t)) continue
-                  // normalize seconds -> milliseconds (heuristic)
-                  if (t < 1e12) t = t * 1000
-
-                  if (isNaN(latestTime) || t > latestTime) latestTime = t
+                  if (!isNaN(t)) {
+                    if (t < 1e12) t = t * 1000
+                    latestTime = t
+                  }
                 }
 
                 if (!isNaN(latestTime)) {
@@ -399,8 +410,35 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
                 let content = ''
                 if (thread.preview) content += ' ' + String(thread.preview)
                 if (thread.content) content += ' ' + String(thread.content)
-                if (thread.messages && Array.isArray(thread.messages)) {
-                  content += ' ' + thread.messages.map((m: any) => String(m.content || m.text || '')).join(' ')
+                const threadMessages = (thread.messages && Array.isArray(thread.messages)) ? thread.messages : (getMessages ? getMessages(thread.id) : [])
+                if (threadMessages && Array.isArray(threadMessages) && threadMessages.length > 0) {
+                  const extractText = (m: any) => {
+                    if (!m) return ''
+                    if (typeof m.text === 'string') return m.text
+                    if (typeof m.content === 'string') return m.content
+                    if (Array.isArray(m.content)) {
+                      try {
+                        return m.content
+                          .filter((b: any) => b && (b.type === 'text' || b.type === 'Text' || !b.type))
+                          .map((b: any) => {
+                            if (b?.text && typeof b.text === 'object' && typeof b.text.value === 'string') return b.text.value
+                            if (typeof b.value === 'string') return b.value
+                            if (typeof b === 'string') return b
+                            return ''
+                          })
+                          .filter(Boolean)
+                          .join(' ')
+                      } catch {
+                        return ''
+                      }
+                    }
+                    try {
+                      return JSON.stringify(m.content || m)
+                    } catch {
+                      return ''
+                    }
+                  }
+                  content += ' ' + threadMessages.map((m: any) => String(extractText(m) || '')).join(' ')
                 }
 
                 const q = query.trim()
@@ -422,7 +460,7 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
                   const parts = text.split(new RegExp(`(${q.replace(/[-\\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'ig'))
                   return parts.map((part, i) =>
                     part.toLowerCase() === q.toLowerCase() ? (
-                      <strong key={i} className="font-semibold">{part}</strong>
+                      <strong key={i} className="font-bold bg-main-view-fg/10 rounded px-0.5">{part}</strong>
                     ) : (
                       <span key={i}>{part}</span>
                     )
@@ -438,8 +476,12 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
                       onClick={() => onOpenChange(false)}
                       className="block px-2 py-1 rounded hover:bg-main-view-fg/10"
                     >
-                      <div className="text-sm text-left-panel-fg/90 truncate whitespace-nowrap">{title}</div>
-                      {dateStr && <div className="text-xs text-main-view-fg/60">{dateStr}</div>}
+                      <div className="text-sm text-left-panel-fg/90 truncate whitespace-nowrap">{renderHighlighted(title, q)}</div>
+                      {dateStr && (
+                        <div className="text-xs text-main-view-fg/60">
+                          {q && dateStr.toLowerCase().includes(q.toLowerCase()) ? renderHighlighted(dateStr, q) : dateStr}
+                        </div>
+                      )}
                       {snippet ? (
                         <div className="text-xs text-main-view-fg/60 truncate whitespace-nowrap">{renderHighlighted(snippet, q)}</div>
                       ) : (
