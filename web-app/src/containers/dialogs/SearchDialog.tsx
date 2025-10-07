@@ -219,7 +219,7 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
 
       return content.toLowerCase().includes(q)
     })
-  }, [allThreads, query, selectedProjects])
+  }, [allThreads, query, selectedProjects, startDateIso, endDateIso])
 
   // Format YYYY-MM-DD ISO string into a locale-friendly date (dd/mm/yyyy where appropriate)
   const formatIso = (iso: string) => {
