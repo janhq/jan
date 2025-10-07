@@ -401,8 +401,13 @@ export const useModelProvider = create<ModelProviderState>()(
               provider.models.forEach((model) => {
                 if (!model.settings) model.settings = {}
 
-                if (model.settings && 'cpu_moe' in model.settings) {
-                  delete model.settings.cpu_moe
+                if (!model.settings.cpu_moe) {
+                  model.settings.cpu_moe = {
+                    ...modelSettings.cpu_moe,
+                    controller_props: {
+                      ...modelSettings.cpu_moe.controller_props,
+                    },
+                  }
                 }
 
                 if (!model.settings.n_cpu_moe) {

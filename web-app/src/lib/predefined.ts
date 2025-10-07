@@ -133,6 +133,16 @@ export const modelSettings = {
       textAlign: 'right',
     },
   },
+  cpu_moe: {
+    key: 'cpu_moe',
+    title: 'Keep all Experts in CPU',
+    description:
+      'Keep all Mixture of Experts (MoE) weights in the CPU (if GPU is used).',
+    controller_type: 'checkbox',
+    controller_props: {
+      value: false,
+    },
+  },
   n_cpu_moe: {
     key: 'n_cpu_moe',
     title: 'Number of MoE weights in the CPU',
