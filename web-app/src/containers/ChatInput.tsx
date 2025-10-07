@@ -179,7 +179,7 @@ const ChatInput = ({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
-  const handleSendMesage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -630,7 +630,7 @@ const ChatInput = ({
                 ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
+                  handleSendMessage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
@@ -859,7 +859,7 @@ const ChatInput = ({
                   size="icon"
                   disabled={!prompt.trim() && uploadedFiles.length === 0}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMesage(prompt)}
+                  onClick={() => handleSendMessage(prompt)}
                 >
                   {streamingContent ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
