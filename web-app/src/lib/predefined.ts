@@ -1,5 +1,3 @@
-import { number } from 'framer-motion'
-
 export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
