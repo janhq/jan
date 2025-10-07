@@ -15,7 +15,6 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { localStorageKey } from '@/constants/localStorage'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
@@ -23,6 +22,7 @@ import { useEffect, useState } from 'react'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { toast } from 'sonner'
+import { getModelToStart } from '@/utils/getModelToStart'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -82,54 +82,6 @@ function LocalAPIServerContent() {
     setIsApiKeyEmpty(!isValid)
   }
 
-  const getLastUsedModel = (): { provider: string; model: string } | null => {
-    try {
-      const stored = localStorage.getItem(localStorageKey.lastUsedModel)
-      return stored ? JSON.parse(stored) : null
-    } catch (error) {
-      console.debug('Failed to get last used model from localStorage:', error)
-      return null
-    }
-  }
-
-  // Helper function to determine which model to start
-  const getModelToStart = () => {
-    // Use last used model if available
-    const lastUsedModel = getLastUsedModel()
-    if (lastUsedModel) {
-      const provider = getProviderByName(lastUsedModel.provider)
-      if (
-        provider &&
-        provider.models.some((m) => m.id === lastUsedModel.model)
-      ) {
-        return { model: lastUsedModel.model, provider }
-      }
-    }
-
-    // Use selected model if available
-    if (selectedModel && selectedProvider) {
-      const provider = getProviderByName(selectedProvider)
-      if (provider) {
-        return { model: selectedModel.id, provider }
-      }
-    }
-
-    // Use first model from llamacpp provider
-    const llamacppProvider = getProviderByName('llamacpp')
-    if (
-      llamacppProvider &&
-      llamacppProvider.models &&
-      llamacppProvider.models.length > 0
-    ) {
-      return {
-        model: llamacppProvider.models[0].id,
-        provider: llamacppProvider,
-      }
-    }
-
-    return null
-  }
-
   const [isModelLoading, setIsModelLoading] = useState(false)
 
   const toggleAPIServer = async () => {
@@ -137,7 +89,7 @@ function LocalAPIServerContent() {
     if (serverStatus === 'stopped') {
       console.log('Starting server with port:', serverPort)
       toast.info('Starting server...', {
-        description: `Attempting to start server on port ${serverPort}`
+        description: `Attempting to start server on port ${serverPort}`,
       })
 
       if (!apiKey || apiKey.toString().trim().length === 0) {
@@ -146,28 +98,47 @@ function LocalAPIServerContent() {
       }
       setShowApiKeyError(false)
 
-      const modelToStart = getModelToStart()
-      // Only start server if we have a model to load
-      if (!modelToStart) {
-        console.warn(
-          'Cannot start Local API Server: No model available to load'
-        )
-        return
-      }
-
       setServerStatus('pending')
-      setIsModelLoading(true) // Start loading state
 
-      // Start the model first
+      // Check if there's already a loaded model
       serviceHub
         .models()
-        .startModel(modelToStart.provider, modelToStart.model)
-        .then(() => {
-          console.log(`Model ${modelToStart.model} started successfully`)
-          setIsModelLoading(false) // Model loaded, stop loading state
+        .getActiveModels()
+        .then((loadedModels) => {
+          if (loadedModels && loadedModels.length > 0) {
+            console.log(`Using already loaded model: ${loadedModels[0]}`)
+            // Model already loaded, just start the server
+            return Promise.resolve()
+          } else {
+            // No loaded model, start one first
+            const modelToStart = getModelToStart({
+              selectedModel,
+              selectedProvider,
+              getProviderByName,
+            })
 
-          // Add a small delay for the backend to update state
-          return new Promise((resolve) => setTimeout(resolve, 500))
+            // Only start server if we have a model to load
+            if (!modelToStart) {
+              console.warn(
+                'Cannot start Local API Server: No model available to load'
+              )
+              throw new Error('No model available to load')
+            }
+
+            setIsModelLoading(true) // Start loading state
+
+            // Start the model first
+            return serviceHub
+              .models()
+              .startModel(modelToStart.provider, modelToStart.model)
+              .then(() => {
+                console.log(`Model ${modelToStart.model} started successfully`)
+                setIsModelLoading(false) // Model loaded, stop loading state
+
+                // Add a small delay for the backend to update state
+                return new Promise((resolve) => setTimeout(resolve, 500))
+              })
+          }
         })
         .then(() => {
           // Then start the server
@@ -196,31 +167,31 @@ function LocalAPIServerContent() {
           toast.dismiss()
 
           // Extract error message from various error formats
-          const errorMsg = error && typeof error === 'object' && 'message' in error
-            ? String(error.message)
-            : String(error)
+          const errorMsg =
+            error && typeof error === 'object' && 'message' in error
+              ? String(error.message)
+              : String(error)
 
           // Port-related errors (highest priority)
           if (errorMsg.includes('Address already in use')) {
             toast.error('Port has been occupied', {
-              description: `Port ${serverPort} is already in use. Please try a different port.`
+              description: `Port ${serverPort} is already in use. Please try a different port.`,
             })
           }
           // Model-related errors
           else if (errorMsg.includes('Invalid or inaccessible model path')) {
             toast.error('Invalid or inaccessible model path', {
-              description: errorMsg
+              description: errorMsg,
             })
-          }
-          else if (errorMsg.includes('model')) {
+          } else if (errorMsg.includes('model')) {
             toast.error('Failed to start model', {
-              description: errorMsg
+              description: errorMsg,
             })
           }
           // Generic server errors
           else {
             toast.error('Failed to start server', {
-              description: errorMsg
+              description: errorMsg,
             })
           }
         })
@@ -295,6 +266,22 @@ function LocalAPIServerContent() {
               }
             >
               <CardItem
+                title={t('settings:localApiServer.runOnStartup')}
+                description={t('settings:localApiServer.runOnStartupDesc')}
+                actions={
+                  <Switch
+                    checked={enableOnStartup}
+                    onCheckedChange={(checked) => {
+                      if (!apiKey || apiKey.toString().trim().length === 0) {
+                        setShowApiKeyError(true)
+                        return
+                      }
+                      setEnableOnStartup(checked)
+                    }}
+                  />
+                }
+              />
+              <CardItem
                 title={t('settings:localApiServer.serverLogs')}
                 description={t('settings:localApiServer.serverLogsDesc')}
                 actions={
@@ -312,24 +299,34 @@ function LocalAPIServerContent() {
                   </Button>
                 }
               />
-            </Card>
 
-            {/* Startup Configuration */}
-            <Card title={t('settings:localApiServer.startupConfiguration')}>
               <CardItem
-                title={t('settings:localApiServer.runOnStartup')}
-                description={t('settings:localApiServer.runOnStartupDesc')}
+                title={t('settings:localApiServer.swaggerDocs')}
+                description={t('settings:localApiServer.swaggerDocsDesc')}
                 actions={
-                  <Switch
-                    checked={enableOnStartup}
-                    onCheckedChange={(checked) => {
-                      if (!apiKey || apiKey.toString().trim().length === 0) {
-                        setShowApiKeyError(true)
-                        return
-                      }
-                      setEnableOnStartup(checked)
-                    }}
-                  />
+                  <a
+                    href={`http://${serverHost}:${serverPort}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button
+                      asChild
+                      variant="link"
+                      size="sm"
+                      className="p-0 text-main-view-fg/80"
+                      disabled={!isServerRunning}
+                      title={t('settings:localApiServer.swaggerDocs')}
+                    >
+                      <div
+                        className={cn(
+                          'cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1',
+                          !isServerRunning && 'opacity-50 cursor-not-allowed'
+                        )}
+                      >
+                        <span>{t('settings:localApiServer.openDocs')}</span>
+                      </div>
+                    </Button>
+                  </a>
                 }
               />
             </Card>

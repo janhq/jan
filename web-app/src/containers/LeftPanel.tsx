@@ -56,7 +56,7 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: true,
+    isEnabled: !(IS_IOS || IS_ANDROID),
   },
 ]
 
@@ -349,7 +349,7 @@ const LeftPanel = () => {
             </div>
           </div>
 
-          {filteredProjects.length > 0 && (
+          {filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
@@ -574,7 +574,7 @@ const LeftPanel = () => {
                   data-test-id={`menu-${menu.title}`}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
                     isActive && 'bg-left-panel-fg/10'
                   )}
                 >

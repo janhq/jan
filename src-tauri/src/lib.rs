@@ -193,6 +193,7 @@ pub fn run() {
             }
 
             setup_mcp(app);
+            setup::setup_theme_listener(app)?;
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -40,6 +40,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 
 type ChatInputProps = {
   className?: string
@@ -88,6 +90,7 @@ const ChatInput = ({
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
+  const { productAnalytic } = useAnalytic()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -132,7 +135,10 @@ const ChatInput = ({
         const activeModels = await serviceHub
           .models()
           .getActiveModels('llamacpp')
-        setHasActiveModels(activeModels.length > 0)
+        const hasMatchingActiveModel = activeModels.some(
+          (model) => String(model) === selectedModel?.id
+        )
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
         setHasActiveModels(false)
@@ -145,7 +151,7 @@ const ChatInput = ({
     const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
-  }, [serviceHub])
+  }, [serviceHub, selectedModel?.id])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -176,8 +182,7 @@ const ChatInput = ({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
-
-  const handleSendMesage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -186,6 +191,19 @@ const ChatInput = ({
       return
     }
     setMessage('')
+
+    // Track message send event with PostHog (only if product analytics is enabled)
+    if (productAnalytic && selectedModel && selectedProvider) {
+      try {
+        posthog.capture('message_sent', {
+          model_provider: selectedProvider,
+          model_id: selectedModel.id,
+        })
+      } catch (error) {
+        console.debug('Failed to track message send event:', error)
+      }
+    }
+
     sendMessage(
       prompt,
       true,
@@ -615,7 +633,7 @@ const ChatInput = ({
                 ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
+                  handleSendMessage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
@@ -703,74 +721,75 @@ const ChatInput = ({
                 )}
 
                 {selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers && (
-                    MCPToolComponent ? (
-                      // Use custom MCP component
-                      <McpExtensionToolLoader
-                        tools={tools}
-                        hasActiveMCPServers={hasActiveMCPServers}
-                        selectedModelHasTools={selectedModel?.capabilities?.includes('tools') ?? false}
-                        initialMessage={initialMessage}
-                        MCPToolComponent={MCPToolComponent}
-                      />
-                    ) : (
-                      // Use default tools dropdown
-                      <TooltipProvider>
-                        <Tooltip
-                          open={tooltipToolsAvailable}
-                          onOpenChange={setTooltipToolsAvailable}
+                  hasActiveMCPServers &&
+                  (MCPToolComponent ? (
+                    // Use custom MCP component
+                    <McpExtensionToolLoader
+                      tools={tools}
+                      hasActiveMCPServers={hasActiveMCPServers}
+                      selectedModelHasTools={
+                        selectedModel?.capabilities?.includes('tools') ?? false
+                      }
+                      initialMessage={initialMessage}
+                      MCPToolComponent={MCPToolComponent}
+                    />
+                  ) : (
+                    // Use default tools dropdown
+                    <TooltipProvider>
+                      <Tooltip
+                        open={tooltipToolsAvailable}
+                        onOpenChange={setTooltipToolsAvailable}
+                      >
+                        <TooltipTrigger
+                          asChild
+                          disabled={dropdownToolsAvailable}
                         >
-                          <TooltipTrigger
-                            asChild
-                            disabled={dropdownToolsAvailable}
+                          <div
+                            onClick={(e) => {
+                              setDropdownToolsAvailable(false)
+                              e.stopPropagation()
+                            }}
                           >
-                            <div
-                              onClick={(e) => {
-                                setDropdownToolsAvailable(false)
-                                e.stopPropagation()
+                            <DropdownToolsAvailable
+                              initialMessage={initialMessage}
+                              onOpenChange={(isOpen) => {
+                                setDropdownToolsAvailable(isOpen)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
                               }}
                             >
-                              <DropdownToolsAvailable
-                                initialMessage={initialMessage}
-                                onOpenChange={(isOpen) => {
-                                  setDropdownToolsAvailable(isOpen)
-                                  if (isOpen) {
-                                    setTooltipToolsAvailable(false)
-                                  }
-                                }}
-                              >
-                                {(isOpen, toolsCount) => {
-                                  return (
-                                    <div
-                                      className={cn(
-                                        'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                        isOpen && 'bg-main-view-fg/10'
-                                      )}
-                                    >
-                                      <IconTool
-                                        size={18}
-                                        className="text-main-view-fg/50"
-                                      />
-                                      {toolsCount > 0 && (
-                                        <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
-                                          <span className="leading-0 text-xs">
-                                            {toolsCount > 99 ? '99+' : toolsCount}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                }}
-                              </DropdownToolsAvailable>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{t('tools')}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )
-                  )}
+                              {(isOpen, toolsCount) => {
+                                return (
+                                  <div
+                                    className={cn(
+                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                      isOpen && 'bg-main-view-fg/10'
+                                    )}
+                                  >
+                                    <IconTool
+                                      size={18}
+                                      className="text-main-view-fg/50"
+                                    />
+                                    {toolsCount > 0 && (
+                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
+                                        <span className="leading-0 text-xs">
+                                          {toolsCount > 99 ? '99+' : toolsCount}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              }}
+                            </DropdownToolsAvailable>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('tools')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ))}
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -843,7 +862,7 @@ const ChatInput = ({
                   size="icon"
                   disabled={!prompt.trim() && uploadedFiles.length === 0}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMesage(prompt)}
+                  onClick={() => handleSendMessage(prompt)}
                 >
                   {streamingContent ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
