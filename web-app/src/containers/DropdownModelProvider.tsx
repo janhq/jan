@@ -190,7 +190,18 @@ const DropdownModelProvider = ({
               return
             }
           }
-          selectModelProvider('', '')
+
+          // Fallback: auto-select first llamacpp model if available
+          const llamacppProvider = providers.find(
+            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+          )
+          if (llamacppProvider && llamacppProvider.models.length > 0) {
+            const firstModel = llamacppProvider.models[0]
+            selectModelProvider('llamacpp', firstModel.id)
+            setLastUsedModel('llamacpp', firstModel.id)
+          } else {
+            selectModelProvider('', '')
+          }
         }
       } else {
         // Get current state for web auto-selection check
@@ -316,7 +327,8 @@ const DropdownModelProvider = ({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) => `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+      selector: (item) =>
+        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
 
