@@ -57,6 +57,7 @@ type LlamacppConfig = {
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
+  cpu_moe: boolean
   n_cpu_moe: number
   override_tensor_buffer_t: string
   ctx_size: number
@@ -1583,6 +1584,7 @@ export default class llamacpp_extension extends AIEngine {
     ])
     args.push('--jinja')
     args.push('-m', modelPath)
+    if (cfg.cpu_moe) args.push('--cpu-moe')
     if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
       args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
     }

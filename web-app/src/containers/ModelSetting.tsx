@@ -172,6 +172,7 @@ export function ModelSetting({
           key === 'chat_template' ||
           key === 'offload_mmproj' ||
           key === 'batch_size' ||
+          key === 'cpu_moe' ||
           key === 'n_cpu_moe'
       )
 
@@ -233,6 +234,7 @@ export function ModelSetting({
         key === 'chat_template' ||
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
+        key === 'cpu_moe' ||
         key === 'n_cpu_moe'
       ) {
         // Check if model is running before stopping it
