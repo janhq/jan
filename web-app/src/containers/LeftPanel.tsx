@@ -403,7 +403,7 @@ const LeftPanel = () => {
           </div>
 
           {filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
-            <div className="space-y-1 py-1 bg-left-panel-fg/5 rounded-lg mx-1 mb-3">
+            <div className="space-y-1 py-1 rounded-lg mx-1 mb-3">
               <div className="flex items-center justify-between mb-2 px-2 pt-2">
                 <span className="block text-xs text-left-panel-fg/50 font-semibold">
                   {t('common:projects.title')}
@@ -496,7 +496,7 @@ const LeftPanel = () => {
             <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
               <div className="h-full w-full overflow-y-auto">
                 {/* Chats Section with distinct background */}
-                <div className="bg-left-panel-fg/3 rounded-lg mx-1 mb-3">
+                <div className="rounded-lg mx-1 mb-3">
                   {favoritedThreads.length > 0 && (
                     <>
                       <div className="flex items-center justify-between mb-2 px-2 pt-2">
