@@ -175,10 +175,13 @@ export const sendCompletion = async (
     try {
       const bytes = CryptoJS.AES.decrypt(encryptedKey, key)
       const decryptedKey = bytes.toString(CryptoJS.enc.Utf8)
-      return decryptedKey || encryptedKey // Return original if decryption fails
+      if (!decryptedKey) {
+        throw new Error('Failed to decrypt API key: result is empty')
+      }
+      return decryptedKey
     } catch (error) {
-      console.warn('Failed to decrypt API key, using original value:', error)
-      return encryptedKey
+      console.warn('Failed to decrypt API key:', error)
+      throw new Error('Failed to decrypt API key')
     }
   }
   if (!secretKey) {
