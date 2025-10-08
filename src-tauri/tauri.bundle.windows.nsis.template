@@ -697,6 +697,7 @@ Section Install
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
     SetOutPath $INSTDIR
+    File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
     SetOutPath $INSTDIR
@@ -819,6 +820,9 @@ Section Uninstall
   ; Delete the app directory and its content from disk
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
+
+  ; Delete LICENSE file
+    Delete "$INSTDIR\LICENSE"
 
   ; Delete resources
     Delete "$INSTDIR\resources\pre-install\janhq-assistant-extension-1.0.2.tgz"

@@ -15,7 +15,8 @@
   "bundle": {
     "active": true,
     "resources": [
-      "resources/pre-install/**/*"
+      "resources/pre-install/**/*",
+      "resources/LICENSE"
     ],
     "externalBin": [],
     "android": {
