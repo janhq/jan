@@ -182,7 +182,7 @@ export const sendCompletion = async (
     }
   }
   if (!secretKey) {
-    throw new Error('Encryption key unavailable: cannot encrypt API key.')
+    throw new Error('Encryption key unavailable: cannot decrypt API key.')
   }
   const apiKey = provider.api_key
     ? decryptApiKey(provider.api_key, secretKey)
