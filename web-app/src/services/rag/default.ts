@@ -1,9 +1,49 @@
 import type { RAGService } from './types'
-import type { MCPTool } from '@janhq/core'
+import type { MCPTool, MCPToolCallResult, RAGExtension } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
+import { ExtensionTypeEnum } from '@janhq/core'
 
 export class DefaultRAGService implements RAGService {
   async getTools(): Promise<MCPTool[]> {
-    // Temporarily return no tools; real tools will be provided by rag-extension later
+    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+    if (ext?.getTools) {
+      try {
+        return await ext.getTools()
+      } catch (e) {
+        console.error('RAG extension getTools failed:', e)
+      }
+    }
     return []
+  }
+
+  async callTool(args: { toolName: string; arguments: object; threadId?: string }): Promise<MCPToolCallResult> {
+    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+    if (!ext?.callTool) {
+      return { error: 'RAG extension not available', content: [{ type: 'text', text: 'RAG extension not available' }] }
+    }
+    try {
+      // Inject thread context when scope requires it
+      const a: any = { ...(args.arguments as any) }
+      if (!a.scope) a.scope = 'thread'
+      if (a.scope === 'thread' && !a.thread_id) {
+        a.thread_id = args.threadId
+      }
+      return await ext.callTool(args.toolName, a)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { error: msg, content: [{ type: 'text', text: `RAG tool failed: ${msg}` }] }
+    }
+  }
+
+  async getToolNames(): Promise<string[]> {
+    try {
+      const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+      if (ext?.getToolNames) return await ext.getToolNames()
+      // No fallback to full tool list; return empty to save bandwidth
+      return []
+    } catch (e) {
+      console.error('Failed to fetch RAG tool names:', e)
+      return []
+    }
   }
 }

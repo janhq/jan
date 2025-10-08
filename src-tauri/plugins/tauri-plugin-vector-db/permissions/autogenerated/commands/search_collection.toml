@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-search-collection"
+description = "Enables the search_collection command without any pre-configured scope."
+commands.allow = ["search_collection"]
+
+[[permission]]
+identifier = "deny-search-collection"
+description = "Denies the search_collection command without any pre-configured scope."
+commands.deny = ["search_collection"]

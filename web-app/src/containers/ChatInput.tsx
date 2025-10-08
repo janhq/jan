@@ -21,6 +21,8 @@ import {
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
+  IconPaperclip,
+  IconLoader2,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -38,8 +40,13 @@ import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, RAGExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { useAttachments } from '@/hooks/useAttachments'
+import { open } from '@tauri-apps/plugin-dialog'
+import { toast } from 'sonner'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 type ChatInputProps = {
   className?: string
@@ -100,10 +107,24 @@ const ChatInput = ({
       dataUrl: string
     }>
   >([])
+  // Document attachments (desktop RAG ingestion). We only index on send.
+  const [docFiles, setDocFiles] = useState<
+    Array<{
+      name: string
+      path: string
+      size?: number
+      type?: string
+    }>
+  >([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
+  const attachmentsEnabled = useAttachments((s) => s.enabled)
+  const [ingestingDocs, setIngestingDocs] = useState(false)
+  // Determine whether to show the Attach documents button (simple gating)
+  const showAttachmentButton =
+    attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -182,8 +203,35 @@ const ChatInput = ({
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim() && uploadedFiles.length === 0) {
+    if (!prompt.trim() && uploadedFiles.length === 0 && docFiles.length === 0) {
       return
+    }
+    // If we have pending doc files, index them first
+    if (docFiles.length > 0) {
+      try {
+        setIngestingDocs(true)
+        const rag = extensionManager.get<RAGExtension>(ExtensionTypeEnum.RAG)
+        if (!rag?.ingestAttachments) throw new Error('Retrieval extension not available')
+        for (const f of docFiles) {
+          const id = (toast as any).loading
+            ? (toast as any).loading(`Indexing ${f.name || f.path}…`)
+            : undefined
+          try {
+            await rag.ingestAttachments(currentThreadId!, [{ path: f.path, name: f.name }])
+            if (id) toast.success(`Indexed ${f.name || f.path}`, { id })
+          } catch (err) {
+            if (id) toast.error(`Failed to index ${f.name || f.path}`, { id })
+            throw err
+          }
+        }
+        setDocFiles([])
+      } catch (err) {
+        const desc = err instanceof Error ? err.message : String(err)
+        toast.error('Failed to index attachments', { description: desc })
+        setIngestingDocs(false)
+        return
+      }
+      setIngestingDocs(false)
     }
     setMessage('')
     sendMessage(
@@ -259,6 +307,42 @@ const ChatInput = ({
 
   const handleAttachmentClick = () => {
     fileInputRef.current?.click()
+  }
+
+  const handleAttachDocsIngest = async () => {
+    try {
+      if (!attachmentsEnabled) {
+        toast.info('Attachments are disabled in Settings')
+        return
+      }
+      if (!currentThreadId) {
+        toast.info('Please start a thread first to attach documents.')
+        return
+      }
+      const selection = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'Documents',
+            extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'ods', 'pptx', 'html', 'htm'],
+          },
+        ],
+      })
+      if (!selection) return
+      const paths = Array.isArray(selection) ? selection : [selection]
+      if (!paths.length) return
+      setDocFiles((prev) => [
+        ...prev,
+        ...paths.map((p) => ({
+          path: p,
+          name: p.split(/[\\/]/).pop() || p,
+        })),
+      ])
+    } catch (e) {
+      console.error('Failed to ingest attachments:', e)
+      const desc = e instanceof Error ? e.message : String(e)
+      toast.error('Failed to attach documents', { description: desc })
+    }
   }
 
   const handleRemoveFile = (indexToRemove: number) => {
@@ -560,7 +644,7 @@ const ChatInput = ({
             onDragOver={hasMmproj ? handleDragOver : undefined}
             onDrop={hasMmproj ? handleDrop : undefined}
           >
-            {uploadedFiles.length > 0 && (
+            {(uploadedFiles.length > 0 || docFiles.length > 0) && (
               <div className="flex gap-3 items-center p-2 pb-0">
                 {uploadedFiles.map((file, index) => {
                   return (
@@ -587,6 +671,27 @@ const ChatInput = ({
                     </div>
                   )
                 })}
+                {docFiles.map((file, index) => (
+                  <div
+                    key={`doc-${index}`}
+                    className="relative border border-main-view-fg/5 rounded-lg px-2 py-1 text-xs flex items-center gap-2 bg-main-view/40"
+                  >
+                    <IconPaperclip size={14} className="text-main-view-fg/50" />
+                    <span className="max-w-48 truncate" title={file.name}>
+                      {file.name}
+                    </span>
+                    <div
+                      className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                      onClick={() =>
+                        setDocFiles((prev) =>
+                          prev.filter((_, i) => i !== index)
+                        )
+                      }
+                    >
+                      <IconX className="text-destructive-fg" size={16} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             <TextareaAutosize
@@ -652,7 +757,7 @@ const ChatInput = ({
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* File attachment - show only for models with mmproj */}
+                {/* Vision image attachment - show only for models with mmproj */}
                 {hasMmproj && (
                   <TooltipProvider>
                     <Tooltip>
@@ -680,6 +785,39 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
+                {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                {selectedModel?.capabilities?.includes('tools') &&
+                  showAttachmentButton && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            onClick={handleAttachDocsIngest}
+                            className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer"
+                          >
+                            {ingestingDocs ? (
+                              <IconLoader2
+                                size={18}
+                                className="text-main-view-fg/50 animate-spin"
+                              />
+                            ) : (
+                              <IconPaperclip
+                                size={18}
+                                className="text-main-view-fg/50"
+                              />
+                            )}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {ingestingDocs
+                              ? 'Indexing documents…'
+                              : 'Attach documents'}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
@@ -703,74 +841,75 @@ const ChatInput = ({
                 )}
 
                 {selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers && (
-                    MCPToolComponent ? (
-                      // Use custom MCP component
-                      <McpExtensionToolLoader
-                        tools={tools}
-                        hasActiveMCPServers={hasActiveMCPServers}
-                        selectedModelHasTools={selectedModel?.capabilities?.includes('tools') ?? false}
-                        initialMessage={initialMessage}
-                        MCPToolComponent={MCPToolComponent}
-                      />
-                    ) : (
-                      // Use default tools dropdown
-                      <TooltipProvider>
-                        <Tooltip
-                          open={tooltipToolsAvailable}
-                          onOpenChange={setTooltipToolsAvailable}
+                  hasActiveMCPServers &&
+                  (MCPToolComponent ? (
+                    // Use custom MCP component
+                    <McpExtensionToolLoader
+                      tools={tools}
+                      hasActiveMCPServers={hasActiveMCPServers}
+                      selectedModelHasTools={
+                        selectedModel?.capabilities?.includes('tools') ?? false
+                      }
+                      initialMessage={initialMessage}
+                      MCPToolComponent={MCPToolComponent}
+                    />
+                  ) : (
+                    // Use default tools dropdown
+                    <TooltipProvider>
+                      <Tooltip
+                        open={tooltipToolsAvailable}
+                        onOpenChange={setTooltipToolsAvailable}
+                      >
+                        <TooltipTrigger
+                          asChild
+                          disabled={dropdownToolsAvailable}
                         >
-                          <TooltipTrigger
-                            asChild
-                            disabled={dropdownToolsAvailable}
+                          <div
+                            onClick={(e) => {
+                              setDropdownToolsAvailable(false)
+                              e.stopPropagation()
+                            }}
                           >
-                            <div
-                              onClick={(e) => {
-                                setDropdownToolsAvailable(false)
-                                e.stopPropagation()
+                            <DropdownToolsAvailable
+                              initialMessage={initialMessage}
+                              onOpenChange={(isOpen) => {
+                                setDropdownToolsAvailable(isOpen)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
                               }}
                             >
-                              <DropdownToolsAvailable
-                                initialMessage={initialMessage}
-                                onOpenChange={(isOpen) => {
-                                  setDropdownToolsAvailable(isOpen)
-                                  if (isOpen) {
-                                    setTooltipToolsAvailable(false)
-                                  }
-                                }}
-                              >
-                                {(isOpen, toolsCount) => {
-                                  return (
-                                    <div
-                                      className={cn(
-                                        'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                        isOpen && 'bg-main-view-fg/10'
-                                      )}
-                                    >
-                                      <IconTool
-                                        size={18}
-                                        className="text-main-view-fg/50"
-                                      />
-                                      {toolsCount > 0 && (
-                                        <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
-                                          <span className="leading-0 text-xs">
-                                            {toolsCount > 99 ? '99+' : toolsCount}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                }}
-                              </DropdownToolsAvailable>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{t('tools')}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )
-                  )}
+                              {(isOpen, toolsCount) => {
+                                return (
+                                  <div
+                                    className={cn(
+                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                      isOpen && 'bg-main-view-fg/10'
+                                    )}
+                                  >
+                                    <IconTool
+                                      size={18}
+                                      className="text-main-view-fg/50"
+                                    />
+                                    {toolsCount > 0 && (
+                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
+                                        <span className="leading-0 text-xs">
+                                          {toolsCount > 99 ? '99+' : toolsCount}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              }}
+                            </DropdownToolsAvailable>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('tools')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ))}
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -836,16 +975,23 @@ const ChatInput = ({
               ) : (
                 <Button
                   variant={
-                    !prompt.trim() && uploadedFiles.length === 0
+                    !prompt.trim() &&
+                    uploadedFiles.length === 0 &&
+                    docFiles.length === 0
                       ? null
                       : 'default'
                   }
                   size="icon"
-                  disabled={!prompt.trim() && uploadedFiles.length === 0}
+                  disabled={
+                    (!prompt.trim() &&
+                      uploadedFiles.length === 0 &&
+                      docFiles.length === 0) ||
+                    ingestingDocs
+                  }
                   data-test-id="send-message-button"
                   onClick={() => handleSendMesage(prompt)}
                 >
-                  {streamingContent ? (
+                  {streamingContent || ingestingDocs ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
                     <ArrowRight className="text-primary-fg" />

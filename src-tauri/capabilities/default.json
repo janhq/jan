@@ -22,6 +22,8 @@
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
     "store:default",
+    "vector-db:default",
+    "rag:default",
     {
       "identifier": "http:default",
       "allow": [

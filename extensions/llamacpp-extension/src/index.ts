@@ -1631,7 +1631,7 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
       args.push('--embedding')
-      args.push('--pooling mean')
+      args.push('--pooling', 'mean')
     } else {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
@@ -2013,43 +2013,55 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
+    // Ensure the sentence-transformer model is present
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
       const downloadedModelList = await this.list()
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
+      if (!downloadedModelList.some((model) => model.id === 'sentence-transformer-mini')) {
         await this.import('sentence-transformer-mini', {
           modelPath:
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
         })
       }
-      sInfo = await this.load('sentence-transformer-mini')
+      // Load specifically in embedding mode
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
-    const baseUrl = `http://localhost:${sInfo.port}/v1/embeddings`
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sInfo.api_key}`,
+
+    const attemptRequest = async (session: SessionInfo) => {
+      const baseUrl = `http://localhost:${session.port}/v1/embeddings`
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.api_key}`,
+      }
+      const body = JSON.stringify({
+        input: text,
+        model: session.model_id,
+        encoding_format: 'float',
+      })
+      const response = await fetch(baseUrl, {
+        method: 'POST',
+        headers,
+        body,
+      })
+      return response
     }
-    const body = JSON.stringify({
-      input: text,
-      model: sInfo.model_id,
-      encoding_format: 'float',
-    })
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      headers,
-      body,
-    })
+
+    // First try with the existing session (may have been started without --embedding previously)
+    let response = await attemptRequest(sInfo)
+
+    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
+    if (response.status === 501) {
+      try {
+        await this.unload('sentence-transformer-mini')
+      } catch {}
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      response = await attemptRequest(sInfo)
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
+        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
       )
     }
     const responseData = await response.json()

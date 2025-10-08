@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStorageKey } from '@/constants/localStorage'
+import { ExtensionManager } from '@/lib/extension'
+import { ExtensionTypeEnum, type RAGExtension } from '@janhq/core'
 
 export type AttachmentsSettings = {
   enabled: boolean
@@ -9,37 +9,152 @@ export type AttachmentsSettings = {
   retrievalThreshold: number
   chunkSizeTokens: number
   overlapTokens: number
+  searchMode: 'auto' | 'ann' | 'linear'
 }
 
 type AttachmentsStore = AttachmentsSettings & {
+  // Dynamic controller definitions for rendering UI
+  settingsDefs: any[]
+  loadSettingsDefs: () => Promise<void>
   setEnabled: (v: boolean) => void
   setMaxFileSizeMB: (v: number) => void
   setRetrievalLimit: (v: number) => void
   setRetrievalThreshold: (v: number) => void
   setChunkSizeTokens: (v: number) => void
   setOverlapTokens: (v: number) => void
+  setSearchMode: (v: 'auto' | 'ann' | 'linear') => void
 }
 
-export const useAttachments = create<AttachmentsStore>()(
-  persist(
-    (set) => ({
-      enabled: true,
-      maxFileSizeMB: 20,
-      retrievalLimit: 3,
-      retrievalThreshold: 0.5,
-      chunkSizeTokens: 512,
-      overlapTokens: 64,
-      setEnabled: (v) => set({ enabled: v }),
-      setMaxFileSizeMB: (v) => set({ maxFileSizeMB: Math.max(1, Math.min(200, Math.floor(v))) }),
-      setRetrievalLimit: (v) => set({ retrievalLimit: Math.max(1, Math.min(20, Math.floor(v))) }),
-      setRetrievalThreshold: (v) => set({ retrievalThreshold: Math.max(0, Math.min(1, v)) }),
-      setChunkSizeTokens: (v) => set({ chunkSizeTokens: Math.max(64, Math.min(8192, Math.floor(v))) }),
-      setOverlapTokens: (v) => set({ overlapTokens: Math.max(0, Math.min(1024, Math.floor(v))) }),
-    }),
-    {
-      name: `${localStorageKey.settingGeneral}-attachments`,
-      storage: createJSONStorage(() => localStorage),
-    }
-  )
-)
+const getRagExtension = (): RAGExtension | undefined => {
+  try {
+    return ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG) as any
+  } catch {
+    return undefined
+  }
+}
 
+export const useAttachments = create<AttachmentsStore>()((set) => ({
+  enabled: true,
+  maxFileSizeMB: 20,
+  retrievalLimit: 3,
+  retrievalThreshold: 0.3,
+  chunkSizeTokens: 512,
+  overlapTokens: 64,
+  searchMode: 'auto',
+  settingsDefs: [],
+  loadSettingsDefs: async () => {
+    const ext = getRagExtension() as any
+    if (!ext?.getSettings) return
+    try {
+      const defs = await ext.getSettings()
+      if (Array.isArray(defs)) set({ settingsDefs: defs })
+    } catch {}
+  },
+  setEnabled: async (v) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'enabled', controllerProps: { value: !!v } } as any])
+    }
+    set((s) => ({
+      enabled: v,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'enabled' ? { ...d, controllerProps: { ...d.controllerProps, value: !!v } } : d
+      ),
+    }))
+  },
+  setMaxFileSizeMB: async (val) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'max_file_size_mb', controllerProps: { value: val } } as any])
+    }
+    set((s) => ({
+      maxFileSizeMB: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'max_file_size_mb' ? { ...d, controllerProps: { ...d.controllerProps, value: val } } : d
+      ),
+    }))
+  },
+  setRetrievalLimit: async (val) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'retrieval_limit', controllerProps: { value: val } } as any])
+    }
+    set((s) => ({
+      retrievalLimit: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'retrieval_limit' ? { ...d, controllerProps: { ...d.controllerProps, value: val } } : d
+      ),
+    }))
+  },
+  setRetrievalThreshold: async (val) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'retrieval_threshold', controllerProps: { value: val } } as any])
+    }
+    set((s) => ({
+      retrievalThreshold: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'retrieval_threshold' ? { ...d, controllerProps: { ...d.controllerProps, value: val } } : d
+      ),
+    }))
+  },
+  setChunkSizeTokens: async (val) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'chunk_size_tokens', controllerProps: { value: val } } as any])
+    }
+    set((s) => ({
+      chunkSizeTokens: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'chunk_size_tokens' ? { ...d, controllerProps: { ...d.controllerProps, value: val } } : d
+      ),
+    }))
+  },
+  setOverlapTokens: async (val) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'overlap_tokens', controllerProps: { value: val } } as any])
+    }
+    set((s) => ({
+      overlapTokens: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'overlap_tokens' ? { ...d, controllerProps: { ...d.controllerProps, value: val } } : d
+      ),
+    }))
+  },
+  setSearchMode: async (v) => {
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([{ key: 'search_mode', controllerProps: { value: v } } as any])
+    }
+    set((s) => ({
+      searchMode: v,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'search_mode' ? { ...d, controllerProps: { ...d.controllerProps, value: v } } : d
+      ),
+    }))
+  },
+}))
+
+// Initialize from extension settings once on import
+;(async () => {
+  try {
+    const ext = getRagExtension() as any
+    if (!ext?.getSettings) return
+    const settings = await ext.getSettings()
+    if (!Array.isArray(settings)) return
+    const map = new Map<string, any>()
+    for (const s of settings) map.set(s.key, s?.controllerProps?.value)
+    // seed defs and values
+    useAttachments.setState((prev) => ({
+      settingsDefs: settings,
+      enabled: map.get('enabled') ?? prev.enabled,
+      maxFileSizeMB: map.get('max_file_size_mb') ?? prev.maxFileSizeMB,
+      retrievalLimit: map.get('retrieval_limit') ?? prev.retrievalLimit,
+      retrievalThreshold: map.get('retrieval_threshold') ?? prev.retrievalThreshold,
+      chunkSizeTokens: map.get('chunk_size_tokens') ?? prev.chunkSizeTokens,
+      overlapTokens: map.get('overlap_tokens') ?? prev.overlapTokens,
+      searchMode: map.get('search_mode') ?? prev.searchMode,
+    }))
+  } catch {}
+})()
