@@ -333,14 +333,12 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString = await this.determineBestBackend(
-            version_backends
-          )
+          bestAvailableBackendString =
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = await this.determineBestBackend(
-          version_backends
-        )
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -1530,6 +1528,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (
       this.autoUnload &&
+      !isEmbedding &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       // Wait for OTHER loading models to finish, then unload everything
@@ -1537,10 +1536,33 @@ export default class llamacpp_extension extends AIEngine {
         await Promise.all(otherLoadingPromises)
       }
 
-      // Now unload all loaded models
+      // Now unload all loaded Text models excluding embedding models
       const allLoadedModels = await this.getLoadedModels()
       if (allLoadedModels.length > 0) {
-        await Promise.all(allLoadedModels.map((model) => this.unload(model)))
+        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
+          allLoadedModels.map(async (modelId) => {
+            try {
+              return await this.findSessionByModel(modelId)
+            } catch (e) {
+              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
+              return null // treat as “not‑eligible for unload”
+            }
+          })
+        )
+
+        logger.info(JSON.stringify(sessionInfos))
+
+        const nonEmbeddingModels: string[] = sessionInfos
+          .filter(
+            (s): s is SessionInfo => s !== null && s.is_embedding === false
+          )
+          .map((s) => s.model_id)
+
+        if (nonEmbeddingModels.length > 0) {
+          await Promise.all(
+            nonEmbeddingModels.map((modelId) => this.unload(modelId))
+          )
+        }
       }
     }
     const args: string[] = []
@@ -1677,6 +1699,7 @@ export default class llamacpp_extension extends AIEngine {
           libraryPath,
           args,
           envs,
+          isEmbedding,
         }
       )
       return sInfo
@@ -2024,7 +2047,11 @@ export default class llamacpp_extension extends AIEngine {
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
       const downloadedModelList = await this.list()
-      if (!downloadedModelList.some((model) => model.id === 'sentence-transformer-mini')) {
+      if (
+        !downloadedModelList.some(
+          (model) => model.id === 'sentence-transformer-mini'
+        )
+      ) {
         await this.import('sentence-transformer-mini', {
           modelPath:
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
