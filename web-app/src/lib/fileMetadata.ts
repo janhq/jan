@@ -84,7 +84,17 @@ export function extractFilesFromPrompt(prompt: string): {
     const type = map['type']
     const size = map['size'] ? Number(map['size']) : undefined
     const chunkCount = map['chunks'] ? Number(map['chunks']) : undefined
-    files.push({ id, name, ...(type && { type }), ...(typeof size === 'number' && !Number.isNaN(size) ? { size } : {}), ...(typeof chunkCount === 'number' && !Number.isNaN(chunkCount) ? { chunkCount } : {}) })
+    const fileObj: FileMetadata = { id, name };
+    if (type) {
+      fileObj.type = type;
+    }
+    if (typeof size === 'number' && !Number.isNaN(size)) {
+      fileObj.size = size;
+    }
+    if (typeof chunkCount === 'number' && !Number.isNaN(chunkCount)) {
+      fileObj.chunkCount = chunkCount;
+    }
+    files.push(fileObj);
   }
 
   // Extract clean prompt (everything before [ATTACHED_FILES])
