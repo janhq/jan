@@ -76,6 +76,7 @@
     }
   },
   "bundle": {
+    "licenseFile": "../LICENSE",
     "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,
