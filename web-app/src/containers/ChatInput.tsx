@@ -23,6 +23,7 @@ import {
   IconX,
   IconPaperclip,
   IconLoader2,
+  IconCheck,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -40,7 +41,7 @@ import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension, RAGExtension } from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -49,6 +50,7 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
+import { Attachment, createImageAttachment, createDocumentAttachment } from '@/types/attachment'
 
 type ChatInputProps = {
   className?: string
@@ -101,33 +103,20 @@ const ChatInput = ({
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{
-      name: string
-      type: string
-      size: number
-      base64: string
-      dataUrl: string
-    }>
-  >([])
-  // Document attachments (desktop RAG ingestion). We only index on send.
-  const [docFiles, setDocFiles] = useState<
-    Array<{
-      name: string
-      path: string
-      size?: number
-      type?: string
-    }>
-  >([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
   const attachmentsEnabled = useAttachments((s) => s.enabled)
-  const [ingestingDocs, setIngestingDocs] = useState(false)
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+  // Derived: any document currently processing (ingestion in progress)
+  const ingestingDocs = attachments.some(
+    (a) => a.type === 'document' && a.processing
+  )
+  const ingestingAny = attachments.some((a) => a.processing)
 
   // Check for connected MCP servers
   useEffect(() => {
@@ -208,36 +197,10 @@ const ChatInput = ({
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim() && uploadedFiles.length === 0 && docFiles.length === 0) {
+    if (!prompt.trim()) {
       return
     }
-    // If we have pending doc files, index them first
-    if (docFiles.length > 0) {
-      try {
-        setIngestingDocs(true)
-        const rag = extensionManager.get<RAGExtension>(ExtensionTypeEnum.RAG)
-        if (!rag?.ingestAttachments) throw new Error('Retrieval extension not available')
-        for (const f of docFiles) {
-          const id = (toast as any).loading
-            ? (toast as any).loading(`Indexing ${f.name || f.path}…`)
-            : undefined
-          try {
-            await rag.ingestAttachments(currentThreadId!, [{ path: f.path, name: f.name }])
-            if (id) toast.success(`Indexed ${f.name || f.path}`, { id })
-          } catch (err) {
-            if (id) toast.error(`Failed to index ${f.name || f.path}`, { id })
-            throw err
-          }
-        }
-        setDocFiles([])
-      } catch (err) {
-        const desc = err instanceof Error ? err.message : String(err)
-        toast.error('Failed to index attachments', { description: desc })
-        setIngestingDocs(false)
-        return
-      }
-      setIngestingDocs(false)
-    }
+
     setMessage('')
 
     // Track message send event with PostHog (only if product analytics is enabled)
@@ -252,13 +215,39 @@ const ChatInput = ({
       }
     }
 
+    // Callback to update attachment processing state
+    const updateAttachmentProcessing = (
+      fileName: string,
+      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+    ) => {
+      if (status === 'clear_docs') {
+        setAttachments((prev) => prev.filter((a) => a.type !== 'document'))
+        return
+      }
+      if (status === 'clear_all') {
+        setAttachments([])
+        return
+      }
+      setAttachments((prev) =>
+        prev.map((att) =>
+          att.name === fileName
+            ? {
+                ...att,
+                processing: status === 'processing',
+                processed: status === 'done' ? true : att.processed,
+              }
+            : att
+        )
+      )
+    }
+
     sendMessage(
       prompt,
       true,
-      uploadedFiles.length > 0 ? uploadedFiles : undefined,
-      projectId
+      attachments.length > 0 ? attachments : undefined,
+      projectId,
+      updateAttachmentProcessing
     )
-    setUploadedFiles([])
   }
 
   useEffect(() => {
@@ -333,10 +322,6 @@ const ChatInput = ({
         toast.info('Attachments are disabled in Settings')
         return
       }
-      if (!currentThreadId) {
-        toast.info('Please start a thread first to attach documents.')
-        return
-      }
       const selection = await open({
         multiple: true,
         filters: [
@@ -349,24 +334,128 @@ const ChatInput = ({
       if (!selection) return
       const paths = Array.isArray(selection) ? selection : [selection]
       if (!paths.length) return
-      setDocFiles((prev) => [
-        ...prev,
-        ...paths.map((p) => ({
-          path: p,
-          name: p.split(/[\\/]/).pop() || p,
-        })),
-      ])
+
+      // Check for duplicates and fetch file sizes
+      const existingPaths = new Set(
+        attachments
+          .filter((a) => a.type === 'document' && a.path)
+          .map((a) => a.path)
+      )
+
+      const duplicates: string[] = []
+      const newDocAttachments: Attachment[] = []
+
+      for (const p of paths) {
+        if (existingPaths.has(p)) {
+          duplicates.push(p.split(/[\\/]/).pop() || p)
+          continue
+        }
+
+        const name = p.split(/[\\/]/).pop() || p
+        const fileType = name.split('.').pop()?.toLowerCase()
+        let size: number | undefined = undefined
+        try {
+          const stat = await fs.fileStat(p)
+          size = stat?.size ? Number(stat.size) : undefined
+        } catch (e) {
+          console.warn('Failed to read file size for', p, e)
+        }
+        newDocAttachments.push(
+          createDocumentAttachment({
+            name,
+            path: p,
+            fileType,
+            size,
+          })
+        )
+      }
+
+      if (duplicates.length > 0) {
+        toast.warning('Files already attached', {
+          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+        })
+      }
+
+      if (newDocAttachments.length > 0) {
+        // Add to state first with processing flag
+        setAttachments((prev) => [...prev, ...newDocAttachments])
+
+        // If thread exists, ingest immediately
+        if (currentThreadId) {
+          const ragExtension = ExtensionManager.getInstance().get(
+            ExtensionTypeEnum.RAG
+          ) as RAGExtension | undefined
+          if (!ragExtension) {
+            toast.error('RAG extension not available')
+            return
+          }
+
+          // Ingest each document
+          for (const doc of newDocAttachments) {
+            try {
+              // Mark as processing
+              setAttachments((prev) =>
+                prev.map((a) =>
+                  a.path === doc.path && a.type === 'document'
+                    ? { ...a, processing: true }
+                    : a
+                )
+              )
+
+              const result = await ragExtension.ingestAttachments(
+                currentThreadId,
+                [
+                  {
+                    path: doc.path!,
+                    name: doc.name,
+                    type: doc.fileType,
+                    size: doc.size,
+                  },
+                ]
+              )
+
+              const fileInfo = result.files?.[0]
+              if (fileInfo?.id) {
+                // Mark as processed with ID
+                setAttachments((prev) =>
+                  prev.map((a) =>
+                    a.path === doc.path && a.type === 'document'
+                      ? {
+                          ...a,
+                          processing: false,
+                          processed: true,
+                          id: fileInfo.id,
+                          chunkCount: fileInfo.chunk_count,
+                        }
+                      : a
+                  )
+                )
+              } else {
+                throw new Error('No file ID returned from ingestion')
+              }
+            } catch (error) {
+              console.error('Failed to ingest document:', error)
+              // Remove failed document
+              setAttachments((prev) =>
+                prev.filter((a) => !(a.path === doc.path && a.type === 'document'))
+              )
+              toast.error(`Failed to ingest ${doc.name}`, {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+        }
+      }
     } catch (e) {
-      console.error('Failed to ingest attachments:', e)
+      console.error('Failed to attach documents:', e)
       const desc = e instanceof Error ? e.message : String(e)
       toast.error('Failed to attach documents', { description: desc })
     }
   }
 
-  const handleRemoveFile = (indexToRemove: number) => {
-    setUploadedFiles((prev) =>
-      prev.filter((_, index) => index !== indexToRemove)
-    )
+  const handleRemoveAttachment = (indexToRemove: number) => {
+    setAttachments((prev) => prev.filter((_, index) => index !== indexToRemove))
   }
 
   const getFileTypeFromExtension = (fileName: string): string => {
@@ -382,20 +471,39 @@ const ChatInput = ({
     }
   }
 
+  const formatBytes = (bytes?: number): string => {
+    if (!bytes || bytes <= 0) return ''
+    const units = ['B', 'KB', 'MB', 'GB']
+    let i = 0
+    let val = bytes
+    while (val >= 1024 && i < units.length - 1) {
+      val /= 1024
+      i++
+    }
+    return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
 
     if (files && files.length > 0) {
       const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-      const newFiles: Array<{
-        name: string
-        type: string
-        size: number
-        base64: string
-        dataUrl: string
-      }> = []
+      const newFiles: Attachment[] = []
+      const duplicates: string[] = []
+      const existingImageNames = new Set(
+        attachments
+          .filter((a) => a.type === 'image')
+          .map((a) => a.name)
+      )
 
       Array.from(files).forEach((file) => {
+        // Check for duplicate image names
+        if (existingImageNames.has(file.name)) {
+          duplicates.push(file.name)
+          return
+        }
+
+
         // Check file size
         if (file.size > maxSize) {
           setMessage(`File is too large. Maximum size is 10MB.`)
@@ -429,26 +537,92 @@ const ChatInput = ({
           const result = reader.result
           if (typeof result === 'string') {
             const base64String = result.split(',')[1]
-            const fileData = {
+            const att = createImageAttachment({
               name: file.name,
               size: file.size,
-              type: actualType,
+              mimeType: actualType,
               base64: base64String,
               dataUrl: result,
-            }
-            newFiles.push(fileData)
+            })
+            newFiles.push(att)
             // Update state
             if (
               newFiles.length ===
               Array.from(files).filter((f) => {
                 const fType = getFileTypeFromExtension(f.name) || f.type
-                return f.size <= maxSize && allowedTypes.includes(fType)
+                return (
+                  f.size <= maxSize &&
+                  allowedTypes.includes(fType) &&
+                  !existingImageNames.has(f.name)
+                )
               }).length
             ) {
-              setUploadedFiles((prev) => {
-                const updated = [...prev, ...newFiles]
-                return updated
-              })
+              if (newFiles.length > 0) {
+                setAttachments((prev) => {
+                  const updated = [...prev, ...newFiles]
+                  return updated
+                })
+
+                // If thread exists, ingest images immediately
+                if (currentThreadId) {
+                  ;(async () => {
+                    for (const img of newFiles) {
+                      try {
+                        // Mark as processing
+                        setAttachments((prev) =>
+                          prev.map((a) =>
+                            a.name === img.name && a.type === 'image'
+                              ? { ...a, processing: true }
+                              : a
+                          )
+                        )
+
+                        const result = await serviceHub.uploads().ingestImage(
+                          currentThreadId,
+                          img
+                        )
+
+                        if (result?.id) {
+                          // Mark as processed with ID
+                          setAttachments((prev) =>
+                            prev.map((a) =>
+                              a.name === img.name && a.type === 'image'
+                                ? {
+                                    ...a,
+                                    processing: false,
+                                    processed: true,
+                                    id: result.id,
+                                  }
+                                : a
+                            )
+                          )
+                        } else {
+                          throw new Error('No ID returned from image ingestion')
+                        }
+                      } catch (error) {
+                        console.error('Failed to ingest image:', error)
+                        // Remove failed image
+                        setAttachments((prev) =>
+                          prev.filter(
+                            (a) => !(a.name === img.name && a.type === 'image')
+                          )
+                        )
+                        toast.error(`Failed to ingest ${img.name}`, {
+                          description:
+                            error instanceof Error ? error.message : String(error),
+                        })
+                      }
+                    }
+                  })()
+                }
+              }
+
+              if (duplicates.length > 0) {
+                toast.warning('Some images already attached', {
+                  description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+                })
+              }
+
               // Reset the file input value to allow re-uploading the same file
               if (fileInputRef.current) {
                 fileInputRef.current.value = ''
@@ -662,54 +836,90 @@ const ChatInput = ({
             onDragOver={hasMmproj ? handleDragOver : undefined}
             onDrop={hasMmproj ? handleDrop : undefined}
           >
-            {(uploadedFiles.length > 0 || docFiles.length > 0) && (
+            {attachments.length > 0 && (
               <div className="flex gap-3 items-center p-2 pb-0">
-                {uploadedFiles.map((file, index) => {
-                  return (
-                    <div
-                      key={index}
-                      className={cn(
-                        'relative border border-main-view-fg/5 rounded-lg',
-                        file.type.startsWith('image/') ? 'size-14' : 'h-14 '
-                      )}
-                    >
-                      {file.type.startsWith('image/') && (
-                        <img
-                          className="object-cover w-full h-full rounded-lg"
-                          src={file.dataUrl}
-                          alt={`${file.name} - ${index}`}
-                        />
-                      )}
-                      <div
-                        className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                        onClick={() => handleRemoveFile(index)}
-                      >
-                        <IconX className="text-destructive-fg" size={16} />
+                {attachments
+                  .map((att, idx) => ({ att, idx }))
+                  .map(({ att, idx }) => {
+                    const isImage = att.type === 'image'
+                    const ext = att.fileType || att.mimeType?.split('/')[1]
+                    return (
+                      <div key={`${att.type}-${idx}-${att.name}`} className="relative">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  'relative border border-main-view-fg/5 rounded-lg size-14 overflow-hidden bg-main-view/40',
+                                  'flex items-center justify-center'
+                                )}
+                              >
+                                {/* Inner content by state */}
+                                {isImage && att.dataUrl ? (
+                                  <img
+                                    className="object-cover w-full h-full"
+                                    src={att.dataUrl}
+                                    alt={`${att.name}`}
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center text-main-view-fg/70">
+                                    <IconPaperclip size={18} />
+                                    {ext && (
+                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                        .{ext}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Overlay spinner when processing */}
+                                {att.processing && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                    <IconLoader2
+                                      size={18}
+                                      className="text-main-view-fg/80 animate-spin"
+                                    />
+                                  </div>
+                                )}
+
+                                {/* Overlay success check when processed */}
+                                {att.processed && !att.processing && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/5">
+                                    <div className="bg-green-600/90 rounded-full p-1">
+                                      <IconCheck size={14} className="text-white" />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                <div className="font-medium truncate max-w-52" title={att.name}>
+                                  {att.name}
+                                </div>
+                                <div className="opacity-70">
+                                  {isImage
+                                    ? (att.mimeType || 'image')
+                                    : (ext ? `.${ext}` : 'document')}
+                                  {att.size ? ` · ${formatBytes(att.size)}` : ''}
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        {/* Remove button disabled while processing - outside overflow-hidden container */}
+                        {!att.processing && (
+                          <div
+                            className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                            onClick={() => handleRemoveAttachment(idx)}
+                          >
+                            <IconX className="text-destructive-fg" size={16} />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )
-                })}
-                {docFiles.map((file, index) => (
-                  <div
-                    key={`doc-${index}`}
-                    className="relative border border-main-view-fg/5 rounded-lg px-2 py-1 text-xs flex items-center gap-2 bg-main-view/40"
-                  >
-                    <IconPaperclip size={14} className="text-main-view-fg/50" />
-                    <span className="max-w-48 truncate" title={file.name}>
-                      {file.name}
-                    </span>
-                    <div
-                      className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                      onClick={() =>
-                        setDocFiles((prev) =>
-                          prev.filter((_, i) => i !== index)
-                        )
-                      }
-                    >
-                      <IconX className="text-destructive-fg" size={16} />
-                    </div>
-                  </div>
-                ))}
+                    )
+                  })}
               </div>
             )}
             <TextareaAutosize
@@ -975,7 +1185,15 @@ const ChatInput = ({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
-                      uploadedFiles={uploadedFiles}
+                      uploadedFiles={attachments
+                        .filter((a) => a.type === 'image' && a.dataUrl)
+                        .map((a) => ({
+                          name: a.name,
+                          type: a.mimeType || getFileTypeFromExtension(a.name),
+                          size: a.size || 0,
+                          base64: a.base64 || '',
+                          dataUrl: a.dataUrl!,
+                        }))}
                     />
                   </div>
                 )}
@@ -992,24 +1210,13 @@ const ChatInput = ({
                 </Button>
               ) : (
                 <Button
-                  variant={
-                    !prompt.trim() &&
-                    uploadedFiles.length === 0 &&
-                    docFiles.length === 0
-                      ? null
-                      : 'default'
-                  }
+                  variant={!prompt.trim() ? null : 'default'}
                   size="icon"
-                  disabled={
-                    (!prompt.trim() &&
-                      uploadedFiles.length === 0 &&
-                      docFiles.length === 0) ||
-                    ingestingDocs
-                  }
+                  disabled={!prompt.trim() || ingestingAny}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                 >
-                  {streamingContent || ingestingDocs ? (
+                  {streamingContent || ingestingAny ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
                     <ArrowRight className="text-primary-fg" />
@@ -1048,7 +1255,15 @@ const ChatInput = ({
             <TokenCounter
               messages={threadMessages || []}
               compact={false}
-              uploadedFiles={uploadedFiles}
+              uploadedFiles={attachments
+                .filter((a) => a.type === 'image' && a.dataUrl)
+                .map((a) => ({
+                  name: a.name,
+                  type: a.mimeType || getFileTypeFromExtension(a.name),
+                  size: a.size || 0,
+                  base64: a.base64 || '',
+                  dataUrl: a.dataUrl!,
+                }))}
             />
           </div>
         )}

@@ -1,6 +1,6 @@
 use crate::{VectorDBError, VectorDBState};
 use crate::db::{
-    self, AttachmentFileInfo, ChunkInput, SearchResult,
+    self, AttachmentFileInfo, SearchResult, MinimalChunkInput,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -8,6 +8,15 @@ use tauri::State;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Status {
     pub ann_available: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileInput {
+    pub path: String,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub file_type: Option<String>,
+    pub size: Option<i64>,
 }
 
 // ============================================================================
@@ -75,17 +84,47 @@ pub async fn create_collection<R: tauri::Runtime>(
 }
 
 #[tauri::command]
+pub async fn create_file<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    state: State<'_, VectorDBState>,
+    collection: String,
+    file: FileInput,
+) -> Result<AttachmentFileInfo, VectorDBError> {
+    let path = db::collection_path(&state.base_dir, &collection);
+    let conn = db::open_or_init_conn(&path)?;
+    db::create_file(
+        &conn,
+        &file.path,
+        file.name.as_deref(),
+        file.file_type.as_deref(),
+        file.size,
+    )
+}
+
+#[tauri::command]
 pub async fn insert_chunks<R: tauri::Runtime>(
     _app: tauri::AppHandle<R>,
     state: State<'_, VectorDBState>,
     collection: String,
-    chunks: Vec<ChunkInput>,
+    file_id: String,
+    chunks: Vec<MinimalChunkInput>,
 ) -> Result<(), VectorDBError> {
     let path = db::collection_path(&state.base_dir, &collection);
     let conn = db::open_or_init_conn(&path)?;
     let vec_loaded = db::try_load_sqlite_vec(&conn);
-    db::insert_chunks(&conn, chunks, vec_loaded)?;
-    Ok(())
+    db::insert_chunks(&conn, &file_id, chunks, vec_loaded)
+}
+
+#[tauri::command]
+pub async fn delete_file<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    state: State<'_, VectorDBState>,
+    collection: String,
+    file_id: String,
+) -> Result<(), VectorDBError> {
+    let path = db::collection_path(&state.base_dir, &collection);
+    let conn = db::open_or_init_conn(&path)?;
+    db::delete_file(&conn, &file_id)
 }
 
 #[tauri::command]

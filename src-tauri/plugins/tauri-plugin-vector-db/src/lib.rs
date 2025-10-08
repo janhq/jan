@@ -18,8 +18,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             commands::create_collection,
             commands::insert_chunks,
+            commands::create_file,
             commands::search_collection,
             commands::delete_chunks,
+            commands::delete_file,
             commands::delete_collection,
             commands::chunk_text,
             commands::get_status,

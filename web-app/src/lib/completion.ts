@@ -36,6 +36,8 @@ import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ExtensionManager } from './extension'
 import { useAppState } from '@/hooks/useAppState'
+import { injectFilesIntoPrompt } from './fileMetadata'
+import { Attachment } from '@/types/attachment'
 
 export type ChatCompletionResponse =
   | chatCompletion
@@ -54,38 +56,48 @@ export type ChatCompletionResponse =
 export const newUserThreadContent = (
   threadId: string,
   content: string,
-  attachments?: Array<{
-    name: string
-    type: string
-    size: number
-    base64: string
-    dataUrl: string
-  }>
+  attachments?: Attachment[]
 ): ThreadMessage => {
+  // Separate images and documents
+  const images = attachments?.filter((a) => a.type === 'image') || []
+  const documents = attachments?.filter((a) => a.type === 'document') || []
+
+  // Inject document metadata into the text content (id, name, fileType only - no path)
+  const docMetadata = documents
+    .filter((doc) => doc.id) // Only include processed documents
+    .map((doc) => ({
+      id: doc.id!,
+      name: doc.name,
+      type: doc.fileType,
+      size: typeof doc.size === 'number' ? doc.size : undefined,
+      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+    }))
+
+  const textWithFiles =
+    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
+
   const contentParts = [
     {
       type: ContentType.Text,
       text: {
-        value: content,
+        value: textWithFiles,
         annotations: [],
       },
     },
   ]
 
-  // Add attachments to content array
-  if (attachments) {
-    attachments.forEach((attachment) => {
-      if (attachment.type.startsWith('image/')) {
-        contentParts.push({
-          type: ContentType.Image,
-          image_url: {
-            url: `data:${attachment.type};base64,${attachment.base64}`,
-            detail: 'auto',
-          },
-        } as any)
-      }
-    })
-  }
+  // Add image attachments to content array
+  images.forEach((img) => {
+    if (img.base64 && img.mimeType) {
+      contentParts.push({
+        type: ContentType.Image,
+        image_url: {
+          url: `data:${img.mimeType};base64,${img.base64}`,
+          detail: 'auto',
+        },
+      } as any)
+    }
+  })
 
   return {
     type: 'text',

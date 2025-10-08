@@ -2,7 +2,6 @@ use crate::VectorDBError;
 use crate::utils::{cosine_similarity, from_le_bytes_vec, to_le_bytes_vec};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -16,18 +15,6 @@ pub struct FileMetadata {
     pub size: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChunkMetadata {
-    pub file: FileMetadata,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChunkInput {
-    pub id: Option<String>,
-    pub text: String,
-    pub embedding: Vec<f32>,
-    pub metadata: Option<ChunkMetadata>,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -47,6 +34,13 @@ pub struct AttachmentFileInfo {
     pub file_type: Option<String>,
     pub size: Option<i64>,
     pub chunk_count: i64,
+}
+
+// New minimal chunk input (no id/metadata) for file-scoped insertion
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MinimalChunkInput {
+    pub text: String,
+    pub embedding: Vec<f32>,
 }
 
 // ============================================================================
@@ -190,14 +184,84 @@ pub fn create_schema(conn: &Connection, dimension: usize) -> Result<bool, Vector
 // Insert Operations
 // ============================================================================
 
+pub fn create_file(
+    conn: &Connection,
+    path: &str,
+    name: Option<&str>,
+    file_type: Option<&str>,
+    size: Option<i64>,
+) -> Result<AttachmentFileInfo, VectorDBError> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Try get existing by path
+    if let Ok(Some(id)) = tx
+        .prepare("SELECT id FROM files WHERE path = ?1")
+        .and_then(|mut s| s.query_row(params![path], |r| r.get::<_, String>(0)).optional())
+    {
+        let row: AttachmentFileInfo = {
+            let mut stmt = tx.prepare(
+                "SELECT id, path, name, type, size, chunk_count FROM files WHERE id = ?1",
+            )?;
+            stmt.query_row(params![id.as_str()], |r| {
+                Ok(AttachmentFileInfo {
+                    id: r.get(0)?,
+                    path: r.get(1)?,
+                    name: r.get(2)?,
+                    file_type: r.get(3)?,
+                    size: r.get(4)?,
+                    chunk_count: r.get(5)?,
+                })
+            })?
+        };
+        tx.commit()?;
+        return Ok(row);
+    }
+
+    let new_id = Uuid::new_v4().to_string();
+    // Determine file size if not provided
+    let computed_size: Option<i64> = match size {
+        Some(s) if s > 0 => Some(s),
+        _ => {
+            match std::fs::metadata(path) {
+                Ok(meta) => Some(meta.len() as i64),
+                Err(_) => None,
+            }
+        }
+    };
+    tx.execute(
+        "INSERT INTO files (id, path, name, type, size, chunk_count) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+        params![new_id, path, name, file_type, computed_size],
+    )?;
+
+    let row: AttachmentFileInfo = {
+        let mut stmt = tx.prepare(
+            "SELECT id, path, name, type, size, chunk_count FROM files WHERE path = ?1",
+        )?;
+        stmt.query_row(params![path], |r| {
+            Ok(AttachmentFileInfo {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                name: r.get(2)?,
+                file_type: r.get(3)?,
+                size: r.get(4)?,
+                chunk_count: r.get(5)?,
+            })
+        })?
+    };
+
+    tx.commit()?;
+    Ok(row)
+}
+
 pub fn insert_chunks(
     conn: &Connection,
-    chunks: Vec<ChunkInput>,
+    file_id: &str,
+    chunks: Vec<MinimalChunkInput>,
     vec_loaded: bool,
 ) -> Result<(), VectorDBError> {
     let tx = conn.unchecked_transaction()?;
 
-    // Check if vec virtual table exists
+    // Check if vec table exists
     let has_vec = if vec_loaded {
         conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'")
@@ -209,69 +273,22 @@ pub fn insert_chunks(
         false
     };
 
-    let mut file_id_cache: HashMap<String, String> = HashMap::new();
-    let mut file_chunk_counters: HashMap<String, i64> = HashMap::new();
+    // Determine current max order
+    let mut current_order: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(chunk_file_order), -1) FROM chunks WHERE file_id = ?1",
+            params![file_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(-1);
 
     for ch in chunks.into_iter() {
+        current_order += 1;
         let emb = to_le_bytes_vec(&ch.embedding);
-
-        // Extract file info from metadata and get/create file_id
-        let mut file_id: Option<String> = None;
-        if let Some(ref meta) = ch.metadata {
-            let file_path = &meta.file.path;
-
-            // Check cache first
-            if let Some(cached_id) = file_id_cache.get(file_path) {
-                file_id = Some(cached_id.clone());
-            } else {
-                // Generate UUID for new file
-                let uuid = Uuid::new_v4().to_string();
-
-                // Insert or ignore if path already exists
-                tx.execute(
-                    "INSERT OR IGNORE INTO files (id, path, name, type, size) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        &uuid,
-                        &meta.file.path,
-                        &meta.file.name,
-                        &meta.file.file_type,
-                        meta.file.size
-                    ],
-                )?;
-
-                // Get the actual id (either the one we just inserted or existing one)
-                let id: String = tx.query_row(
-                    "SELECT id FROM files WHERE path = ?1",
-                    params![file_path],
-                    |row| row.get(0),
-                )?;
-                file_id = Some(id.clone());
-                file_id_cache.insert(file_path.clone(), id);
-            }
-        }
-
-        // Get or initialize chunk order for this file
-        let chunk_order = if let Some(ref fid) = file_id {
-            let counter = file_chunk_counters.entry(fid.clone()).or_insert_with(|| {
-                // Get max existing order for this file
-                tx.query_row(
-                    "SELECT COALESCE(MAX(chunk_file_order), -1) FROM chunks WHERE file_id = ?1",
-                    params![fid],
-                    |row| row.get::<_, i64>(0),
-                ).unwrap_or(-1)
-            });
-            *counter += 1;
-            *counter
-        } else {
-            0
-        };
-
-        // Generate UUID for chunk if not provided
-        let chunk_id = ch.id.unwrap_or_else(|| Uuid::new_v4().to_string());
-
+        let chunk_id = Uuid::new_v4().to_string();
         tx.execute(
             "INSERT OR REPLACE INTO chunks (id, text, embedding, file_id, chunk_file_order) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![chunk_id, ch.text, emb, file_id, chunk_order],
+            params![chunk_id, ch.text, emb, file_id, current_order],
         )?;
 
         if has_vec {
@@ -279,31 +296,32 @@ pub fn insert_chunks(
                 .prepare("SELECT rowid FROM chunks WHERE id=?1")?
                 .query_row(params![chunk_id], |r| r.get(0))?;
             let json_vec = serde_json::to_string(&ch.embedding).unwrap_or("[]".to_string());
-            match tx.execute(
+            let _ = tx.execute(
                 "INSERT OR REPLACE INTO chunks_vec(rowid, embedding) VALUES (?1, ?2)",
                 params![rowid, json_vec],
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("[VectorDB] ✗ Failed to insert into chunks_vec: {}", e);
-                }
-            }
+            );
         }
     }
 
-    // Update chunk_count for all affected files
-    for file_id in file_id_cache.values() {
-        let count: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM chunks WHERE file_id = ?1",
-            params![file_id],
-            |row| row.get(0),
-        )?;
-        tx.execute(
-            "UPDATE files SET chunk_count = ?1 WHERE id = ?2",
-            params![count, file_id],
-        )?;
-    }
+    // Update chunk_count
+    let count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM chunks WHERE file_id = ?1",
+        params![file_id],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "UPDATE files SET chunk_count = ?1 WHERE id = ?2",
+        params![count, file_id],
+    )?;
 
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn delete_file(conn: &Connection, file_id: &str) -> Result<(), VectorDBError> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM chunks WHERE file_id = ?1", params![file_id])?;
+    tx.execute("DELETE FROM files WHERE id = ?1", params![file_id])?;
     tx.commit()?;
     Ok(())
 }

@@ -1,11 +1,18 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 import type { MCPTool, MCPToolCallResult } from '../../types'
+import type { AttachmentFileInfo } from './vector-db'
 
 export interface AttachmentInput {
   path: string
   name?: string
   type?: string
   size?: number
+}
+
+export interface IngestAttachmentsResult {
+  filesProcessed: number
+  chunksInserted: number
+  files: AttachmentFileInfo[]
 }
 
 export const RAG_INTERNAL_SERVER = 'rag-internal'
@@ -25,8 +32,5 @@ export abstract class RAGExtension extends BaseExtension {
   abstract getToolNames(): Promise<string[]>
   abstract callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult>
 
-  abstract ingestAttachments(threadId: string, files: AttachmentInput[]): Promise<{
-    filesProcessed: number
-    chunksInserted: number
-  } | void>
+  abstract ingestAttachments(threadId: string, files: AttachmentInput[]): Promise<IngestAttachmentsResult>
 }

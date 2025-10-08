@@ -7,8 +7,10 @@ Default permissions for the vector-db plugin
 - `allow-get-status`
 - `allow-create-collection`
 - `allow-insert-chunks`
+- `allow-create-file`
 - `allow-search-collection`
 - `allow-delete-chunks`
+- `allow-delete-file`
 - `allow-delete-collection`
 - `allow-chunk-text`
 - `allow-list-attachments`
@@ -78,6 +80,32 @@ Denies the create_collection command without any pre-configured scope.
 <tr>
 <td>
 
+`vector-db:allow-create-file`
+
+</td>
+<td>
+
+Enables the create_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-create-file`
+
+</td>
+<td>
+
+Denies the create_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `vector-db:allow-delete-chunks`
 
 </td>
@@ -123,6 +151,32 @@ Enables the delete_collection command without any pre-configured scope.
 <td>
 
 Denies the delete_collection command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-delete-file`
+
+</td>
+<td>
+
+Enables the delete_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-delete-file`
+
+</td>
+<td>
+
+Denies the delete_file command without any pre-configured scope.
 
 </td>
 </tr>

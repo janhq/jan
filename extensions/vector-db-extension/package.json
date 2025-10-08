@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
+    "@janhq/tauri-plugin-rag-api": "link:../../src-tauri/plugins/tauri-plugin-rag",
     "@janhq/tauri-plugin-vector-db-api": "link:../../src-tauri/plugins/tauri-plugin-vector-db"
   },
   "files": [

@@ -13,8 +13,24 @@ use std::borrow::Cow;
 
 pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     let bytes = fs::read(file_path)?;
-    pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| RagError::ParseError(format!("PDF parse error: {}", e)))
+    let text = pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| RagError::ParseError(format!("PDF parse error: {}", e)))?;
+
+    // Validate that the PDF has extractable text (not image-based/scanned)
+    // Count meaningful characters (excluding whitespace)
+    let meaningful_chars = text.chars()
+        .filter(|c| !c.is_whitespace())
+        .count();
+
+    // Require at least 50 non-whitespace characters to consider it a text PDF
+    // This threshold filters out PDFs that are purely images or scanned documents
+    if meaningful_chars < 50 {
+        return Err(RagError::ParseError(
+            "PDF appears to be image-based or scanned. OCR is not supported yet. Please use a text-based PDF.".to_string()
+        ));
+    }
+
+    Ok(text)
 }
 
 pub fn parse_text(file_path: &str) -> Result<String, RagError> {

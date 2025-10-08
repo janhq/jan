@@ -25,6 +25,6 @@ export { MCPExtension } from './mcp'
 export * from './engines'
 
 export { RAGExtension, RAG_INTERNAL_SERVER } from './rag'
-export type { AttachmentInput } from './rag'
+export type { AttachmentInput, IngestAttachmentsResult } from './rag'
 export { VectorDBExtension } from './vector-db'
-export type { SearchMode, VectorDBStatus, VectorChunkInput, VectorSearchResult, AttachmentFileInfo } from './vector-db'
+export type { SearchMode, VectorDBStatus, VectorChunkInput, VectorSearchResult, AttachmentFileInfo, VectorDBFileInput, VectorDBIngestOptions } from './vector-db'

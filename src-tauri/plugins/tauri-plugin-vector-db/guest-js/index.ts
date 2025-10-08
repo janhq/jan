@@ -2,13 +2,6 @@ import { invoke } from '@tauri-apps/api/core'
 
 export type SearchMode = 'auto' | 'ann' | 'linear'
 
-export interface ChunkInput {
-  id?: string
-  text: string
-  embedding: number[]
-  metadata?: Record<string, any>
-}
-
 export interface SearchResult {
   id: string
   text: string
@@ -42,11 +35,26 @@ export async function createCollection(name: string, dimension: number): Promise
   return await invoke('plugin:vector-db|create_collection', { name, dimension })
 }
 
+export async function createFile(
+  collection: string,
+  file: { path: string; name?: string; type?: string; size?: number }
+): Promise<AttachmentFileInfo> {
+  return await invoke('plugin:vector-db|create_file', { collection, file })
+}
+
 export async function insertChunks(
   collection: string,
-  chunks: ChunkInput[]
+  fileId: string,
+  chunks: Array<{ text: string; embedding: number[] }>
 ): Promise<void> {
-  return await invoke('plugin:vector-db|insert_chunks', { collection, chunks })
+  return await invoke('plugin:vector-db|insert_chunks', { collection, fileId, chunks })
+}
+
+export async function deleteFile(
+  collection: string,
+  fileId: string
+): Promise<void> {
+  return await invoke('plugin:vector-db|delete_file', { collection, fileId })
 }
 
 export async function searchCollection(

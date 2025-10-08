@@ -7,10 +7,8 @@ export interface VectorDBStatus {
 }
 
 export interface VectorChunkInput {
-  id?: string
   text: string
   embedding: number[]
-  metadata?: Record<string, any>
 }
 
 export interface VectorSearchResult {
@@ -30,6 +28,19 @@ export interface AttachmentFileInfo {
   chunk_count: number
 }
 
+// High-level input types for file ingestion
+export interface VectorDBFileInput {
+  path: string
+  name?: string
+  type?: string
+  size?: number
+}
+
+export interface VectorDBIngestOptions {
+  chunkSize: number
+  chunkOverlap: number
+}
+
 /**
  * Vector DB extension base: abstraction over local vector storage and search.
  */
@@ -39,22 +50,31 @@ export abstract class VectorDBExtension extends BaseExtension {
   }
 
   abstract getStatus(): Promise<VectorDBStatus>
-  abstract createCollection(name: string, dimension: number): Promise<void>
-  abstract insertChunks(collection: string, chunks: VectorChunkInput[]): Promise<void>
+  abstract createCollection(threadId: string, dimension: number): Promise<void>
+  abstract insertChunks(
+    threadId: string,
+    fileId: string,
+    chunks: VectorChunkInput[]
+  ): Promise<void>
+  abstract ingestFile(
+    threadId: string,
+    file: VectorDBFileInput,
+    opts: VectorDBIngestOptions
+  ): Promise<AttachmentFileInfo>
   abstract searchCollection(
-    collection: string,
+    threadId: string,
     query_embedding: number[],
     limit: number,
     threshold: number,
     mode?: SearchMode,
     fileIds?: string[]
   ): Promise<VectorSearchResult[]>
-  abstract deleteChunks(collection: string, ids: string[]): Promise<void>
-  abstract deleteCollection(collection: string): Promise<void>
-  abstract chunkText(text: string, chunkSize: number, chunkOverlap: number): Promise<string[]>
-  abstract listAttachments(collection: string, limit?: number): Promise<AttachmentFileInfo[]>
+  abstract deleteChunks(threadId: string, ids: string[]): Promise<void>
+  abstract deleteFile(threadId: string, fileId: string): Promise<void>
+  abstract deleteCollection(threadId: string): Promise<void>
+  abstract listAttachments(threadId: string, limit?: number): Promise<AttachmentFileInfo[]>
   abstract getChunks(
-    collection: string,
+    threadId: string,
     fileId: string,
     startOrder: number,
     endOrder: number

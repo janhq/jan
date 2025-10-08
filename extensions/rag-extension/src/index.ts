@@ -1,7 +1,5 @@
-import { RAGExtension, MCPTool, MCPToolCallResult, ExtensionTypeEnum, VectorDBExtension, type AttachmentInput, type SettingComponentProps, AIEngine } from '@janhq/core'
+import { RAGExtension, MCPTool, MCPToolCallResult, ExtensionTypeEnum, VectorDBExtension, type AttachmentInput, type SettingComponentProps, AIEngine, type AttachmentFileInfo } from '@janhq/core'
 import './env.d'
-import * as ragApi from '@janhq/tauri-plugin-rag-api'
-import * as vecdbApi from '@janhq/tauri-plugin-vector-db-api'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
 
 export default class RagExtension extends RAGExtension {
@@ -75,11 +73,10 @@ export default class RagExtension extends RAGExtension {
     }
     try {
       const vec = window.core?.extensionManager.get(ExtensionTypeEnum.VectorDB) as unknown as VectorDBExtension
-      const collection = `attachments_${threadId}`
       if (!vec?.listAttachments) {
         return { error: 'Vector DB extension missing listAttachments', content: [{ type: 'text', text: 'Vector DB extension missing listAttachments' }] }
       }
-      const files = await vec.listAttachments(collection)
+      const files = await vec.listAttachments(threadId)
       return {
         error: '',
         content: [
@@ -143,9 +140,8 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const collection = `attachments_${threadId}`
       const results = await vec.searchCollection(
-        collection,
+        threadId,
         queryEmb,
         topK,
         threshold,
@@ -163,7 +159,6 @@ export default class RagExtension extends RAGExtension {
           file_id: r.file_id,
           chunk_file_order: r.chunk_file_order
         })) ?? [],
-        collection,
         mode,
       }
       return { error: '', content: [{ type: 'text', text: JSON.stringify(payload) }] }
@@ -203,8 +198,7 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const collection = `attachments_${threadId}`
-      const chunks = await vec.getChunks(collection, fileId, startOrder, endOrder)
+      const chunks = await vec.getChunks(threadId, fileId, startOrder, endOrder)
 
       const payload = {
         thread_id: threadId,
@@ -222,8 +216,15 @@ export default class RagExtension extends RAGExtension {
   async ingestAttachments(
     threadId: string,
     files: AttachmentInput[]
-  ): Promise<{ filesProcessed: number; chunksInserted: number } | void> {
-    if (!threadId || !Array.isArray(files) || files.length === 0) return
+  ): Promise<{ filesProcessed: number; chunksInserted: number; files: AttachmentFileInfo[] }> {
+    if (!threadId || !Array.isArray(files) || files.length === 0) {
+      return { filesProcessed: 0, chunksInserted: 0, files: [] }
+    }
+
+    // Respect feature flag: do nothing when disabled
+    if (this.config.enabled === false) {
+      return { filesProcessed: 0, chunksInserted: 0, files: [] }
+    }
 
     const vec = window.core?.extensionManager.get(ExtensionTypeEnum.VectorDB) as unknown as VectorDBExtension
     if (!vec?.createCollection || !vec?.insertChunks) {
@@ -237,41 +238,32 @@ export default class RagExtension extends RAGExtension {
     const chunkOverlap = s?.overlapTokens as number | undefined
 
     let totalChunks = 0
-    let processed = 0
-    const collection = `attachments_${threadId}`
-    let created = false
+    const processedFiles: AttachmentFileInfo[] = []
 
     for (const f of files) {
       if (!f?.path) continue
-      if (maxSize && f.size && f.size > maxSize * 1024 * 1024) continue
+      if (maxSize && f.size && f.size > maxSize * 1024 * 1024) {
+        throw new Error(`File '${f.name}' exceeds size limit (${f.size} bytes > ${maxSize} MB).`)
+      }
 
-      const type = f.type || 'application/octet-stream'
-      const chunks = await this.parseAndEmbed(f.path, type, {
-        chunkSize: chunkSize ?? 512,
-        chunkOverlap: chunkOverlap ?? 64,
-        meta: { file: { name: f.name || f.path.split(/[\\/]/).pop(), path: f.path, type: f.type, size: f.size }, threadId },
-      })
-
-      if (!chunks?.length) {
-        processed += 1
+      const fileName = f.name || f.path.split(/[\\/]/).pop()
+      // Preferred/required path: let Vector DB extension handle full file ingestion
+      const canIngestFile = typeof (vec as any)?.ingestFile === 'function'
+      if (!canIngestFile) {
+        console.error('[RAG] Vector DB extension missing ingestFile; cannot ingest document')
         continue
       }
-
-      // Ensure collection
-      if (!created) {
-        await vec.createCollection(collection, chunks[0].embedding.length)
-        created = true
-      }
-
-      await vec.insertChunks(
-        collection,
-        chunks.map((c) => ({ text: c.text, embedding: c.embedding, metadata: c.metadata }))
+      const info = await (vec as VectorDBExtension).ingestFile(
+        threadId,
+        { path: f.path, name: fileName, type: f.type, size: f.size },
+        { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
       )
-      totalChunks += chunks.length
-      processed += 1
+      totalChunks += Number(info?.chunk_count || 0)
+      processedFiles.push(info)
     }
 
-    return { filesProcessed: processed, chunksInserted: totalChunks }
+    // Return files we ingested with real IDs directly from ingestFile
+    return { filesProcessed: processedFiles.length, chunksInserted: totalChunks, files: processedFiles }
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -309,20 +301,5 @@ export default class RagExtension extends RAGExtension {
     const out: number[][] = new Array(texts.length)
     for (const item of data) out[item.index] = item.embedding
     return out
-  }
-
-  private async parseAndEmbed(
-    filePath: string,
-    fileType: string,
-    opts: { chunkSize: number; chunkOverlap: number; meta?: Record<string, any> }
-  ): Promise<Array<{ text: string; embedding: number[]; metadata?: Record<string, any> }>> {
-    const text = await ragApi.parseDocument(filePath, fileType)
-    const chunks = await vecdbApi.chunkText(text, opts.chunkSize, opts.chunkOverlap)
-    const embeddings = await this.embedTexts(chunks)
-    return chunks.map((text, i) => ({
-      text,
-      embedding: embeddings[i],
-      metadata: opts.meta,
-    }))
   }
 }

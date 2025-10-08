@@ -63,7 +63,9 @@ log = "0.4"
 rmcp = { version = "0.6.0", features = [
     "client",
     "transport-sse-client",
+    "transport-sse-client-reqwest",
     "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
     "transport-child-process",
     "tower",
     "reqwest",

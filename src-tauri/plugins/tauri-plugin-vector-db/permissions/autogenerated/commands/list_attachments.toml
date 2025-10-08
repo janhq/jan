@@ -11,4 +11,3 @@ commands.allow = ["list_attachments"]
 identifier = "deny-list-attachments"
 description = "Denies the list_attachments command without any pre-configured scope."
 commands.deny = ["list_attachments"]
-
