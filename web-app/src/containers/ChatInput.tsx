@@ -565,7 +565,7 @@ const ChatInput = ({
 
                 // If thread exists, ingest images immediately
                 if (currentThreadId) {
-                  ;(async () => {
+                  void (async () => {
                     for (const img of newFiles) {
                       try {
                         // Mark as processing

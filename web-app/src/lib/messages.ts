@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { ThreadMessage } from '@janhq/core'
+import { ThreadMessage, ContentType } from '@janhq/core'
 import { removeReasoningContent } from '@/utils/reasoning'
 // Attachments are now handled upstream in newUserThreadContent
+
+type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 /**
  * @fileoverview Helper functions for creating chat completion request.
@@ -22,7 +23,14 @@ export class CompletionMessagesBuilder {
     this.messages.push(
       ...messages
         .filter((e) => !e.metadata?.error)
-        .map<ChatCompletionMessageParam>((msg) => this.toCompletionParamFromThread(msg))
+        .map<ChatCompletionMessageParam>((msg) => {
+          const param = this.toCompletionParamFromThread(msg)
+          // In constructor context, normalize empty user text to a placeholder
+          if (param.role === 'user' && typeof param.content === 'string' && param.content === '') {
+            return { ...param, content: '.' }
+          }
+          return param
+        })
     )
   }
 
@@ -45,19 +53,20 @@ export class CompletionMessagesBuilder {
 
     // User messages: handle multimodal content
     if (Array.isArray(msg.content) && msg.content.length > 1) {
-      const content = msg.content.map((part: any) => {
-        if (part.type === 'text') {
-          return { type: 'text', text: part.text?.value ?? '' }
+      const content = msg.content.map((part: ThreadContent) => {
+        if (part.type === ContentType.Text) {
+          return { type: 'text' as const, text: part.text?.value ?? '' }
         }
-        if (part.type === 'image_url') {
+        if (part.type === ContentType.Image) {
           return {
-            type: 'image_url',
+            type: 'image_url' as const,
             image_url: { url: part.image_url?.url || '', detail: part.image_url?.detail || 'auto' },
           }
         }
-        return part
+        // Fallback for unknown content types
+        return { type: 'text' as const, text: '' }
       })
-      return { role: 'user', content } as any
+      return { role: 'user', content } as ChatCompletionMessageParam
     }
     // Single text part
     const text = msg?.content?.[0]?.text?.value ?? '.'

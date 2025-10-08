@@ -380,7 +380,7 @@ export const useChat = () => {
       // Build the user content once; use it for both the outbound request
       // and persisting to the store so both are identical.
       if (updateAttachmentProcessing) {
-        updateAttachmentProcessing('__CLEAR_ALL__' as any, 'clear_all')
+        updateAttachmentProcessing('__CLEAR_ALL__', 'clear_all')
       }
       const userContent = newUserThreadContent(
         activeThread.id,

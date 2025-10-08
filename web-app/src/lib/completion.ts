@@ -241,7 +241,10 @@ export const sendCompletion = async (
         usableTools = [...tools, ...ragTools]
       }
     }
-  } catch {}
+  } catch (e) {
+    // Ignore RAG tool injection errors during completion setup
+    console.debug('Skipping RAG tools injection:', e)
+  }
 
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 

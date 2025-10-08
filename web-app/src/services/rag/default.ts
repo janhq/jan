@@ -16,14 +16,15 @@ export class DefaultRAGService implements RAGService {
     return []
   }
 
-  async callTool(args: { toolName: string; arguments: object; threadId?: string }): Promise<MCPToolCallResult> {
+  async callTool(args: { toolName: string; arguments: Record<string, unknown>; threadId?: string }): Promise<MCPToolCallResult> {
     const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
     if (!ext?.callTool) {
       return { error: 'RAG extension not available', content: [{ type: 'text', text: 'RAG extension not available' }] }
     }
     try {
       // Inject thread context when scope requires it
-      const a: any = { ...(args.arguments as any) }
+      type ToolCallArgs = Record<string, unknown> & { scope?: string; thread_id?: string }
+      const a: ToolCallArgs = { ...(args.arguments as Record<string, unknown>) }
       if (!a.scope) a.scope = 'thread'
       if (a.scope === 'thread' && !a.thread_id) {
         a.thread_id = args.threadId

@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { useAttachments } from '@/hooks/useAttachments'
+import type { SettingComponentProps } from '@janhq/core'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
@@ -11,14 +11,13 @@ import { PlatformFeature } from '@/lib/platform/types'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.settings.attachments as any)({
+export const Route = createFileRoute('/settings/attachments')({
   component: AttachmentsSettings,
 })
 
 // Helper to extract constraints from settingsDefs
-function getConstraints(def: any) {
-  const props = def?.controllerProps || {}
+function getConstraints(def: SettingComponentProps) {
+  const props = def.controllerProps as Partial<{ min: number; max: number; step: number }>
   return {
     min: props.min ?? -Infinity,
     max: props.max ?? Infinity,
@@ -27,7 +26,7 @@ function getConstraints(def: any) {
 }
 
 // Helper to validate and clamp numeric values
-function clampValue(val: any, def: any, currentValue: number): number {
+function clampValue(val: unknown, def: SettingComponentProps, currentValue: number): number {
   const num = typeof val === 'number' ? val : Number(val)
   if (!Number.isFinite(num)) return currentValue
   const { min, max, step } = getConstraints(def)
@@ -40,7 +39,7 @@ function AttachmentsSettings() {
   const { t } = useTranslation()
   const hookDefs = useAttachments((s) => s.settingsDefs)
   const loadDefs = useAttachments((s) => s.loadSettingsDefs)
-  const [defs, setDefs] = useState<any[]>([])
+  const [defs, setDefs] = useState<SettingComponentProps[]>([])
 
   // Load schema from extension via the hook once
   useEffect(() => {
@@ -73,32 +72,36 @@ function AttachmentsSettings() {
   )
 
   // Local state for inputs to allow intermediate values while typing
-  const [localValues, setLocalValues] = useState<Record<string, any>>({})
+  const [localValues, setLocalValues] = useState<Record<string, string | number | boolean | string[]>>({})
 
   // Debounce timers
-  const timersRef = useRef<Record<string, NodeJS.Timeout>>({})
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // Cleanup timers on unmount
   useEffect(() => {
+    const timers = timersRef.current
     return () => {
-      Object.values(timersRef.current).forEach(clearTimeout)
+      Object.values(timers).forEach(clearTimeout)
     }
   }, [])
 
   // Debounced setter with validation
-  const debouncedSet = useCallback((key: string, val: any, def: any) => {
+  const debouncedSet = useCallback((key: string, val: unknown, def: SettingComponentProps) => {
     // Clear existing timer for this key
     if (timersRef.current[key]) {
       clearTimeout(timersRef.current[key])
     }
 
     // Set local value immediately for responsive UI
-    setLocalValues((prev) => ({ ...prev, [key]: val }))
+    setLocalValues((prev) => ({
+      ...prev,
+      [key]: val as string | number | boolean | string[]
+    }))
 
     // For non-numeric inputs, apply immediately without debounce
     if (key === 'enabled' || key === 'search_mode') {
       if (key === 'enabled') sel.setEnabled(!!val)
-      else if (key === 'search_mode') sel.setSearchMode(val)
+      else if (key === 'search_mode') sel.setSearchMode(val as 'auto' | 'ann' | 'linear')
       return
     }
 
@@ -136,7 +139,10 @@ function AttachmentsSettings() {
       }
 
       // Update local value to validated one
-      setLocalValues((prev) => ({ ...prev, [key]: validated }))
+      setLocalValues((prev) => ({
+        ...prev,
+        [key]: validated as string | number | boolean | string[]
+      }))
     }, 500) // 500ms debounce
   }, [sel])
 
@@ -174,8 +180,30 @@ function AttachmentsSettings() {
                     }
                   })()
 
-                  const currentValue = localValues[d.key] !== undefined ? localValues[d.key] : storeValue
-                  const props = { ...(d.controllerProps || {}), value: currentValue }
+                  const currentValue =
+                    localValues[d.key] !== undefined ? localValues[d.key] : storeValue
+
+                  // Convert to DynamicControllerSetting compatible props
+                  const baseProps = d.controllerProps
+                  const normalizedValue: string | number | boolean = (() => {
+                    if (Array.isArray(currentValue)) {
+                      return currentValue.join(',')
+                    }
+                    return currentValue as string | number | boolean
+                  })()
+
+                  const props = {
+                    value: normalizedValue,
+                    placeholder: 'placeholder' in baseProps ? baseProps.placeholder : undefined,
+                    type: 'type' in baseProps ? baseProps.type : undefined,
+                    options: 'options' in baseProps ? baseProps.options : undefined,
+                    input_actions: 'inputActions' in baseProps ? baseProps.inputActions : undefined,
+                    rows: undefined,
+                    min: 'min' in baseProps ? baseProps.min : undefined,
+                    max: 'max' in baseProps ? baseProps.max : undefined,
+                    step: 'step' in baseProps ? baseProps.step : undefined,
+                    recommended: 'recommended' in baseProps ? baseProps.recommended : undefined,
+                  }
 
                   const title = d.titleKey ? t(d.titleKey) : d.title
                   const description = d.descriptionKey ? t(d.descriptionKey) : d.description
@@ -188,7 +216,7 @@ function AttachmentsSettings() {
                       actions={
                         <DynamicControllerSetting
                           controllerType={d.controllerType}
-                          controllerProps={props as any}
+                          controllerProps={props}
                           onChange={(val) => debouncedSet(d.key, val, d)}
                         />
                       }

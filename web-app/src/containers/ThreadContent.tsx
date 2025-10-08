@@ -184,9 +184,9 @@ export const ThreadContent = memo(
             }
             return null
           })
-          .filter(Boolean)
+          .filter((v) => v !== null)
         // Keep embedded document metadata in the message for regenerate
-        sendMessage(rawText, true, attachments)
+        sendMessage(textContent, true, attachments)
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 

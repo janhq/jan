@@ -41,7 +41,7 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
     {
       name: GET_CHUNKS,
       description:
-        'Retrieve chunks from a file by their order range. For a single chunk, use start_order = end_order. Thread context is inferred automatically; you may optionally provide {"scope":"thread"}.',
+        'Retrieve chunks from a file by their order range. For a single chunk, use start_order = end_order. Thread context is inferred automatically; you may optionally provide {"scope":"thread"}. Use sparingly; intended for advanced usage. Prefer using retrieve instead for relevance-based fetching.',
       inputSchema: {
         type: 'object',
         properties: {
