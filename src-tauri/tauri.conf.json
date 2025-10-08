@@ -13,7 +13,6 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "zoomHotkeysEnabled": true,
         "label": "main",
         "title": "Jan",
         "width": 1024,
@@ -40,7 +39,12 @@
       }
     ],
     "security": {
-      "capabilities": ["default", "logs-app-window", "logs-window", "system-monitor-window"],
+      "capabilities": [
+        "default",
+        "logs-app-window",
+        "logs-window",
+        "system-monitor-window"
+      ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
         "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
@@ -76,6 +80,7 @@
     }
   },
   "bundle": {
+    "licenseFile": "../LICENSE",
     "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,
