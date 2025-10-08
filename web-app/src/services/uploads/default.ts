@@ -1,5 +1,5 @@
 import type { UploadsService, UploadResult } from './types'
-import type { Attachment, } from '@/types/attachment'
+import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
