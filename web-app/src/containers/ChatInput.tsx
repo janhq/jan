@@ -47,6 +47,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 
 type ChatInputProps = {
   className?: string
@@ -95,6 +97,7 @@ const ChatInput = ({
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
+  const { productAnalytic } = useAnalytic()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -153,7 +156,10 @@ const ChatInput = ({
         const activeModels = await serviceHub
           .models()
           .getActiveModels('llamacpp')
-        setHasActiveModels(activeModels.length > 0)
+        const hasMatchingActiveModel = activeModels.some(
+          (model) => String(model) === selectedModel?.id
+        )
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
         setHasActiveModels(false)
@@ -166,7 +172,7 @@ const ChatInput = ({
     const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
-  }, [serviceHub])
+  }, [serviceHub, selectedModel?.id])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -197,8 +203,7 @@ const ChatInput = ({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
-
-  const handleSendMesage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -234,6 +239,19 @@ const ChatInput = ({
       setIngestingDocs(false)
     }
     setMessage('')
+
+    // Track message send event with PostHog (only if product analytics is enabled)
+    if (productAnalytic && selectedModel && selectedProvider) {
+      try {
+        posthog.capture('message_sent', {
+          model_provider: selectedProvider,
+          model_id: selectedModel.id,
+        })
+      } catch (error) {
+        console.debug('Failed to track message send event:', error)
+      }
+    }
+
     sendMessage(
       prompt,
       true,
@@ -720,7 +738,7 @@ const ChatInput = ({
                 ) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
-                  handleSendMesage(prompt)
+                  handleSendMessage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
@@ -989,7 +1007,7 @@ const ChatInput = ({
                     ingestingDocs
                   }
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMesage(prompt)}
+                  onClick={() => handleSendMessage(prompt)}
                 >
                   {streamingContent || ingestingDocs ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

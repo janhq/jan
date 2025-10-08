@@ -12,6 +12,8 @@
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
+    "core:window:allow-get-all-windows",
+    "core:event:allow-listen",
     "shell:allow-spawn",
     "shell:allow-open",
     "core:app:allow-set-app-theme",
