@@ -13,8 +13,7 @@
   "bundle": {
     "targets": ["nsis", "msi"],
     "resources": [
-      "resources/pre-install/**/*",
-      "resources/LICENSE"
+      "resources/pre-install/**/*"
     ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {

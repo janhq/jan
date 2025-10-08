@@ -31,8 +31,8 @@
     "build:android": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_CLEAN=true yarn tauri android build -- --no-default-features --features mobile",
     "build:ios": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile",
     "build:ios:device": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile --export-method debugging",
-    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
-    "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
+    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
+    "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:tauri:win32": "yarn download:bin && yarn tauri build",
@@ -68,6 +68,5 @@
     "yallist": "4.0.0",
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2"
-  },
-  "packageManager": "yarn@4.5.3"
+  }
 }

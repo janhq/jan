@@ -18,8 +18,7 @@
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     },
     "resources": [
-      "resources/pre-install/**/*",
-      "resources/LICENSE"
+      "resources/pre-install/**/*"
     ],
     "externalBin": []
   }
