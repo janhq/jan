@@ -1,9 +1,33 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { ExtensionManager } from './extension'
+import path from "path"
+
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+export function basenameNoExt(filePath: string): string {
+  const base = path.basename(filePath);
+  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
+
+  // handle VALID extensions first
+  for (const ext of VALID_EXTENSIONS) {
+    if (base.toLowerCase().endsWith(ext)) {
+      return base.slice(0, -ext.length);
+    }
+  }
+
+  // fallback: remove only the last extension
+  return base.slice(0, -path.extname(base).length);
+}
+
+/**
+ * Get the display name for a model, falling back to the model ID if no display name is set
+ */
+export function getModelDisplayName(model: Model): string {
+  return model.displayName || model.id
 }
 
 export function getProviderLogo(provider: string) {
@@ -164,4 +188,16 @@ export function formatDuration(startTime: number, endTime?: number): string {
 
 export function sanitizeModelId(modelId: string): string {
   return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
+}
+
+export const extractThinkingContent = (text: string) => {
+  return text
+    .replace(/<\/?think>/g, '')
+    .replace(/<\|channel\|>analysis<\|message\|>/g, '')
+    .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
+    .replace(/<\|message\|>/g, '') // remove any remaining message markers
+    .replace(/<\|start\|>/g, '') // remove any remaining start markers
+    .trim()
 }

@@ -1,4 +1,4 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState, useNavigate } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
@@ -56,8 +56,11 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: true,
+    isEnabled: !(IS_IOS || IS_ANDROID),
   },
+]
+
+const secondaryMenus = [
   {
     title: 'common:assistants',
     icon: IconClipboardSmile,
@@ -82,6 +85,7 @@ const LeftPanel = () => {
   const open = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
 
@@ -159,7 +163,7 @@ const LeftPanel = () => {
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
 
-  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+  const { folders, addFolder, updateFolder, getFolderById } =
     useThreadManagement()
 
   // Project dialog states
@@ -200,19 +204,21 @@ const LeftPanel = () => {
     setDeleteProjectConfirmOpen(true)
   }
 
-  const confirmProjectDelete = () => {
-    if (deletingProjectId) {
-      deleteFolder(deletingProjectId)
-      setDeleteProjectConfirmOpen(false)
-      setDeletingProjectId(null)
-    }
+  const handleProjectDeleteClose = () => {
+    setDeleteProjectConfirmOpen(false)
+    setDeletingProjectId(null)
   }
 
-  const handleProjectSave = (name: string) => {
+  const handleProjectSave = async (name: string) => {
     if (editingProjectKey) {
-      updateFolder(editingProjectKey, name)
+      await updateFolder(editingProjectKey, name)
     } else {
-      addFolder(name)
+      const newProject = await addFolder(name)
+      // Navigate to the newly created project
+      navigate({
+        to: '/project/$projectId',
+        params: { projectId: newProject.id },
+      })
     }
     setProjectDialogOpen(false)
     setEditingProjectKey(null)
@@ -234,7 +240,7 @@ const LeftPanel = () => {
   return (
     <>
       {/* Backdrop overlay for small screens */}
-      {isSmallScreen && open && (
+      {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
@@ -257,7 +263,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&
@@ -396,7 +402,7 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {filteredProjects.length > 0 && (
+          {filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
@@ -487,7 +493,7 @@ const LeftPanel = () => {
           )}
 
           <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
-            <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden">
+            <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
               <div className="h-full w-full overflow-y-auto">
                 {favoritedThreads.length > 0 && (
                   <>
@@ -574,6 +580,10 @@ const LeftPanel = () => {
 
                 {filteredThreads.length === 0 && searchTerm.length > 0 && (
                   <div className="px-1 mt-2">
+                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
+                      {t('common:recents')}
+                    </span>
+
                     <div className="flex items-center gap-1 text-left-panel-fg/80">
                       <IconSearch size={18} />
                       <h6 className="font-medium text-base">
@@ -607,6 +617,44 @@ const LeftPanel = () => {
                 </div>
               </div>
             </div>
+
+            {secondaryMenus.map((menu) => {
+              if (!menu.isEnabled) {
+                return null
+              }
+
+              // Regular menu items must have route and icon
+              if (!menu.route || !menu.icon) return null
+
+              const isActive = (() => {
+                // Settings routes
+                if (menu.route.includes(route.settings.index)) {
+                  return currentPath.includes(route.settings.index)
+                }
+
+                // Default exact match for other routes
+                return currentPath === menu.route
+              })()
+              return (
+                <Link
+                  key={menu.title}
+                  to={menu.route}
+                  onClick={() => isSmallScreen && setLeftPanel(false)}
+                  data-test-id={`menu-${menu.title}`}
+                  activeOptions={{ exact: true }}
+                  className={cn(
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
+                    isActive && 'bg-left-panel-fg/10'
+                  )}
+                >
+                  <menu.icon size={18} className="text-left-panel-fg/70" />
+                  <span className="font-medium text-left-panel-fg/90">
+                    {t(menu.title)}
+                  </span>
+                </Link>
+              )
+            })}
+
             {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
               <div className="space-y-1 shrink-0 py-1">
                 <div>
@@ -633,8 +681,8 @@ const LeftPanel = () => {
       />
       <DeleteProjectDialog
         open={deleteProjectConfirmOpen}
-        onOpenChange={setDeleteProjectConfirmOpen}
-        onConfirm={confirmProjectDelete}
+        onOpenChange={handleProjectDeleteClose}
+        projectId={deletingProjectId ?? undefined}
         projectName={
           deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
         }

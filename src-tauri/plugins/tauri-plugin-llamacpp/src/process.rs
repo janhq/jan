@@ -1,8 +1,6 @@
 use std::collections::HashSet;
-use std::time::Duration;
 use sysinfo::{Pid, System};
 use tauri::{Manager, Runtime, State};
-use tokio::time::timeout;
 
 use crate::state::{LlamacppState, SessionInfo};
 use jan_utils::generate_random_port;
@@ -56,6 +54,8 @@ pub async fn get_random_available_port<R: Runtime>(
 pub async fn graceful_terminate_process(child: &mut tokio::process::Child) {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
+    use std::time::Duration;
+    use tokio::time::timeout;
 
     if let Some(raw_pid) = child.id() {
         let raw_pid = raw_pid as i32;

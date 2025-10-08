@@ -6,6 +6,37 @@ import { useNavigate, useMatches } from '@tanstack/react-router'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
+// Mock global platform constants - simulate desktop (Tauri) environment
+Object.defineProperty(global, 'IS_IOS', { value: false, writable: true })
+Object.defineProperty(global, 'IS_ANDROID', { value: false, writable: true })
+Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
+
+// Mock platform features
+vi.mock('@/lib/platform/const', () => ({
+  PlatformFeatures: {
+    hardwareMonitoring: true,
+    shortcut: true, // Desktop has shortcuts enabled
+    localInference: true,
+    localApiServer: true,
+    modelHub: true,
+    systemIntegrations: true,
+    httpsProxy: true,
+    defaultProviders: true,
+    analytics: true,
+    webAutoModelSelection: false,
+    modelProviderSettings: true,
+    mcpAutoApproveTools: false,
+    mcpServersSettings: true,
+    extensionsSettings: true,
+    assistants: true,
+    authentication: false,
+    googleAnalytics: false,
+    alternateShortcutBindings: false,
+    firstMessagePersistedThread: false,
+    temporaryChat: false,
+  },
+}))
+
 // Mock dependencies
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, className }: any) => (
@@ -81,6 +112,12 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:appearance')).toBeInTheDocument()
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
     expect(screen.getByText('common:modelProviders')).toBeInTheDocument()
+    // Platform-specific features tested separately
+  })
+
+  it('renders keyboard shortcuts on desktop platforms', () => {
+    // This test assumes desktop platform (mocked in setup with shortcut: true)
+    render(<SettingsMenu />)
     expect(screen.getByText('common:keyboardShortcuts')).toBeInTheDocument()
     expect(screen.getByText('common:hardware')).toBeInTheDocument()
     expect(screen.getByText('common:local_api_server')).toBeInTheDocument()

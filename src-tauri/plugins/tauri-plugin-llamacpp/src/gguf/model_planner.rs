@@ -3,7 +3,6 @@ use crate::gguf::utils::estimate_kv_cache_internal;
 use crate::gguf::utils::read_gguf_metadata_internal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::Runtime;
 use tauri_plugin_hardware::get_system_info;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -27,15 +26,14 @@ pub enum ModelMode {
 }
 
 #[tauri::command]
-pub async fn plan_model_load<R: Runtime>(
+pub async fn plan_model_load(
     path: String,
     memory_mode: String,
     mmproj_path: Option<String>,
     requested_ctx: Option<u64>,
-    app: tauri::AppHandle<R>,
 ) -> Result<ModelPlan, String> {
     let model_size = get_model_size(path.clone()).await?;
-    let sys_info = get_system_info(app.clone());
+    let sys_info = get_system_info();
     let gguf = read_gguf_metadata_internal(path.clone()).await?;
 
     let mut mmproj_size: u64 = 0;
@@ -82,25 +80,25 @@ pub async fn plan_model_load<R: Runtime>(
 
     log::info!("Got GPUs:\n{:?}", &sys_info.gpus);
 
-    let total_ram: u64 = sys_info.total_memory * 1024 * 1024;
-    log::info!(
-        "Total system memory reported from tauri_plugin_hardware(in bytes): {}",
-        &total_ram
-    );
+    let total_ram: u64 = match sys_info.gpus.is_empty() {
+        // Consider RAM as 0 for unified memory
+        true => 0,
+        false => sys_info.total_memory * 1024 * 1024,
+    };
 
-    let total_vram: u64 = if sys_info.gpus.is_empty() {
-        // On macOS with unified memory, GPU info may be empty
-        // Use total RAM as VRAM since memory is shared
-        log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
-        total_ram
-    } else {
-        sys_info
+    // Calculate total VRAM from all GPUs
+    let total_vram: u64 = match sys_info.gpus.is_empty() {
+        true => {
+            log::info!("No GPUs detected (likely unified memory system), using total RAM as VRAM");
+            sys_info.total_memory * 1024 * 1024
+        }
+        false => sys_info
             .gpus
             .iter()
             .map(|g| g.total_memory * 1024 * 1024)
-            .sum::<u64>()
+            .sum::<u64>(),
     };
-
+    log::info!("Total RAM reported/calculated (in bytes): {}", &total_ram);
     log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
     let usable_vram: u64 = if total_vram > RESERVE_BYTES {
         (((total_vram - RESERVE_BYTES) as f64) * multiplier) as u64

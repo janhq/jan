@@ -43,6 +43,7 @@ import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import { basenameNoExt } from '@/lib/utils'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -319,17 +320,7 @@ function ProviderDetail() {
           .getActiveModels()
           .then((models) => setActiveModels(models || []))
       } catch (error) {
-        console.error('Error starting model:', error)
-        if (
-          error &&
-          typeof error === 'object' &&
-          'message' in error &&
-          typeof error.message === 'string'
-        ) {
-          setModelLoadError({ message: error.message })
-        } else {
-          setModelLoadError(typeof error === 'string' ? error : `${error}`)
-        }
+        setModelLoadError(error as ErrorObject)
       } finally {
         // Remove model from loading state
         setLoadingModels((prev) => prev.filter((id) => id !== modelId))
@@ -384,7 +375,7 @@ function ProviderDetail() {
         filters: [
           {
             name: 'Backend Archives',
-            extensions: ['tar.gz', 'zip'],
+            extensions: ['tar.gz', 'zip', 'gz'],
           },
         ],
       })
@@ -396,9 +387,7 @@ function ProviderDetail() {
         await installBackend(selectedFile)
 
         // Extract filename from the selected file path and replace spaces with dashes
-        const fileName = (
-          selectedFile.split(/[/\\]/).pop() || selectedFile
-        ).replace(/\s+/g, '-')
+        const fileName = basenameNoExt(selectedFile).replace(/\s+/g, "-")
 
         toast.success(t('settings:backendInstallSuccess'), {
           description: `Llamacpp ${fileName} installed`,
@@ -445,7 +434,7 @@ function ProviderDetail() {
   return (
     <>
       <Joyride
-        run={isSetup}
+        run={IS_IOS || IS_ANDROID ? false : isSetup}
         floaterProps={{
           hideArrow: true,
         }}
@@ -467,7 +456,7 @@ function ProviderDetail() {
           skip: t('providers:joyride.skip'),
         }}
       />
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
         <HeaderPage>
           <h1 className="font-medium">{t('common:settings')}</h1>
         </HeaderPage>
@@ -787,7 +776,7 @@ function ProviderDetail() {
                                 className="font-medium line-clamp-1"
                                 title={model.id}
                               >
-                                {model.id}
+                                {getModelDisplayName(model)}
                               </h1>
                               <Capabilities capabilities={capabilities} />
                             </div>

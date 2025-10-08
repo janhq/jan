@@ -3,38 +3,33 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
+    sync::Arc,
 };
 use tar::Archive;
 use tauri::{
+    App, Emitter, Manager, Runtime, Wry, WindowEvent
+};
+
+#[cfg(desktop)]
+use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    App, Emitter, Manager,
 };
-use tauri_plugin_store::StoreExt;
-// use tokio::sync::Mutex;
-// use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
-//                                     // MCP
+use tauri_plugin_store::Store;
 
-// MCP
+use crate::core::mcp::helpers::add_server_config;
+
 use super::{
-    app::commands::get_jan_data_folder_path, extensions::commands::get_jan_extensions_path,
-    mcp::helpers::run_mcp_commands, state::AppState,
+    extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
 };
 
-pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
-    let mut store_path = get_jan_data_folder_path(app.clone());
-    store_path.push("store.json");
-    let store = app.store(store_path).expect("Store not initialized");
-    let stored_version = store
-        .get("version")
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_default();
-
-    let app_version = app
-        .config()
-        .version
-        .clone()
-        .unwrap_or_else(|| "".to_string());
+pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
+    // Skip extension installation on mobile platforms
+    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        return Ok(());
+    }
 
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
@@ -50,13 +45,8 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
-    log::info!(
-        "Installing extensions. Clean up: {}, Stored version: {}, App version: {}",
-        clean_up,
-        stored_version,
-        app_version
-    );
-    if !clean_up && stored_version == app_version && extensions_path.exists() {
+    log::info!("Installing extensions. Clean up: {clean_up}");
+    if !clean_up && extensions_path.exists() {
         return Ok(());
     }
 
@@ -85,7 +75,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "tgz") {
+        if path.extension().is_some_and(|ext| ext == "tgz") {
             let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
             let gz_decoder = GzDecoder::new(tar_gz);
             let mut archive = Archive::new(gz_decoder);
@@ -151,7 +141,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
 
             extensions_list.push(new_extension);
 
-            log::info!("Installed extension to {:?}", extension_dir);
+            log::info!("Installed extension to {extension_dir:?}");
         }
     }
     fs::write(
@@ -160,10 +150,36 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     )
     .map_err(|e| e.to_string())?;
 
-    // Store the new app version
-    store.set("version", serde_json::json!(app_version));
-    store.save().expect("Failed to save store");
+    Ok(())
+}
 
+// Migrate MCP servers configuration
+pub fn migrate_mcp_servers(
+    app_handle: tauri::AppHandle,
+    store: Arc<Store<Wry>>,
+) -> Result<(), String> {
+    let mcp_version = store
+        .get("mcp_version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    if mcp_version < 1 {
+        log::info!("Migrating MCP schema version 1");
+        let result = add_server_config(
+            app_handle,
+            "exa".to_string(),
+            serde_json::json!({
+                  "command": "npx",
+                  "args": ["-y", "exa-mcp-server"],
+                  "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
+                  "active": false
+            }),
+        );
+        if let Err(e) = result {
+            log::error!("Failed to add server config: {e}");
+        }
+    }
+    store.set("mcp_version", 1);
+    store.save().expect("Failed to save store");
     Ok(())
 }
 
@@ -197,13 +213,13 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-pub fn setup_mcp(app: &App) {
+pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
-    let app_handle: tauri::AppHandle = app.handle().clone();
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
-            log::error!("Failed to run mcp commands: {}", e);
+            log::error!("Failed to run mcp commands: {e}");
         }
         app_handle
             .emit("mcp-update", "MCP servers updated")
@@ -211,6 +227,7 @@ pub fn setup_mcp(app: &App) {
     });
 }
 
+#[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
@@ -248,8 +265,37 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 app.exit(0);
             }
             other => {
-                println!("menu item {} not handled", other);
+                println!("menu item {other} not handled");
             }
         })
         .build(app)
+}
+
+pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
+    // Setup theme listener for main window
+    if let Some(window) = app.get_webview_window("main") {
+        setup_window_theme_listener(app.handle().clone(), window);
+    }
+
+    Ok(())
+}
+
+fn setup_window_theme_listener<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) {
+    let window_label = window.label().to_string();
+    let app_handle_clone = app_handle.clone();
+
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let theme_str = match theme {
+                tauri::Theme::Light => "light",
+                tauri::Theme::Dark => "dark",
+                _ => "auto",
+            };
+            log::info!("System theme changed to: {} for window: {}", theme_str, window_label);
+            let _ = app_handle_clone.emit("theme-changed", theme_str);
+        }
+    });
 }

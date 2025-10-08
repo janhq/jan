@@ -1,4 +1,14 @@
 {
+  "app": {
+    "security": {
+      "capabilities": [
+        "desktop",
+        "system-monitor-window",
+        "log-app-window",
+        "logs-window"
+      ]
+    }
+  },
   "bundle": {
     "targets": ["app", "dmg"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE"],

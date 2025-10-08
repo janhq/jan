@@ -77,7 +77,33 @@ export function useMediaQuery(
   return matches || false
 }
 
-// Specific hook for small screen detection
+// Specific hooks for different screen sizes
 export const useSmallScreen = (): boolean => {
   return useMediaQuery('(max-width: 768px)')
+}
+
+export const useMobileScreen = (): boolean => {
+  return useMediaQuery('(max-width: 640px)')
+}
+
+export const useTabletScreen = (): boolean => {
+  return useMediaQuery('(min-width: 641px) and (max-width: 1024px)')
+}
+
+export const useDesktopScreen = (): boolean => {
+  return useMediaQuery('(min-width: 1025px)')
+}
+
+// Orientation detection
+export const usePortrait = (): boolean => {
+  return useMediaQuery('(orientation: portrait)')
+}
+
+export const useLandscape = (): boolean => {
+  return useMediaQuery('(orientation: landscape)')
+}
+
+// Touch device detection
+export const useTouchDevice = (): boolean => {
+  return useMediaQuery('(pointer: coarse)')
 }

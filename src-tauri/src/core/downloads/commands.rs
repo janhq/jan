@@ -3,12 +3,12 @@ use super::models::DownloadItem;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{Runtime, State};
 use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
-pub async fn download_files(
-    app: tauri::AppHandle,
+pub async fn download_files<R: Runtime>(
+    app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
     items: Vec<DownloadItem>,
     task_id: &str,
@@ -19,7 +19,7 @@ pub async fn download_files(
     {
         let mut download_manager = state.download_manager.lock().await;
         if download_manager.cancel_tokens.contains_key(task_id) {
-            return Err(format!("task_id {} exists", task_id));
+            return Err(format!("task_id {task_id} exists"));
         }
         download_manager
             .cancel_tokens
@@ -60,9 +60,9 @@ pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> 
     let mut download_manager = state.download_manager.lock().await;
     if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
         token.cancel();
-        log::info!("Cancelled download task: {}", task_id);
+        log::info!("Cancelled download task: {task_id}");
         Ok(())
     } else {
-        Err(format!("No download task: {}", task_id))
+        Err(format!("No download task: {task_id}"))
     }
 }

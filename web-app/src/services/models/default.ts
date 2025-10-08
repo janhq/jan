@@ -163,15 +163,14 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
-    if (model.settings)
+    if (model.settings) {
       this.getEngine()?.updateSettings(
         model.settings as SettingComponentProps[]
       )
-    if (modelId !== model.id) {
-      await this.getEngine()
-        ?.update(modelId, model)
-        .then(() => console.log('Model updated successfully'))
     }
+    // Note: Model name/ID updates are handled at the provider level in the frontend
+    // The engine doesn't have an update method for model metadata
+    console.log('Model update request processed for modelId:', modelId)
   }
 
   async pullModel(
@@ -579,6 +578,9 @@ export class DefaultModelsService implements ModelsService {
                   }
                 }>
           }>
+          chat_template_kwargs?: {
+            enable_thinking: boolean
+          }
         }) => Promise<number>
       }
 
@@ -655,6 +657,9 @@ export class DefaultModelsService implements ModelsService {
         return await engine.getTokensCount({
           model: modelId,
           messages: transformedMessages,
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
         })
       }
 
