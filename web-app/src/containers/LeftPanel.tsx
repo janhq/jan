@@ -56,7 +56,7 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: true,
+    isEnabled: !(IS_IOS || IS_ANDROID),
   },
 ]
 
@@ -402,7 +402,7 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {filteredProjects.length > 0 && (
+          {filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">

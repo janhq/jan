@@ -79,6 +79,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@janhq/conversational-extension': path.resolve(__dirname, '../extensions-web/src/conversational-web/index.ts'),
     },
   },
   define: {
