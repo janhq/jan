@@ -156,8 +156,13 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
   // get latest backends from Github
-  const remoteBackendVersions =
+  let remoteBackendVersions = []
+  try {
+    remoteBackendVersions =
     await fetchRemoteSupportedBackends(supportedBackends)
+  } catch (e) {
+      console.debug(`Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`)
+  }
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()
