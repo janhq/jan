@@ -25,8 +25,8 @@ export RANLIB_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x
 # Additional environment variables for Rust cross-compilation
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang"
 
-# Only set global CC and AR for Android builds (when TAURI_ANDROID_BUILD is set)
-if [ "$TAURI_ANDROID_BUILD" = "true" ]; then
+# Only set global CC and AR for Android builds (when IS_ANDROID is set)
+if [ "$IS_ANDROID" = "true" ]; then
     export CC="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang"
     export AR="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
     echo "Global CC and AR set for Android build"

@@ -7,7 +7,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@janhq/conversational-extension": ["../extensions/conversational-extension/src/index.ts"]
     }
   }
 }

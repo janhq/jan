@@ -16,7 +16,7 @@ Before testing, set-up the following in the old version to make sure that we can
 - [ ] Change the `App Data` to some other folder
 - [ ] Create a Custom Provider 
 - [ ] Disable some model providers
-- [NEW] Change llama.cpp setting of 2 models 
+- [ ] Change llama.cpp setting of 2 models 
 #### Validate that the update does not corrupt existing user data or settings (before and after update show the same information):
 - [ ] Threads
 	- [ ] Previously used model and assistants is shown correctly 
@@ -73,35 +73,44 @@ Before testing, set-up the following in the old version to make sure that we can
 		- [ ] Ensure that when this value is changed, there is no broken UI caused by it
 	- [ ] Code Block
 	- [ ] Show Line Numbers
-- [ENG] Ensure that when click on `Reset` in the `Appearance` section, it reset back to the default values
-- [ENG] Ensure that when click on `Reset` in the `Code Block` section, it reset back to the default values
+- [ ] [0.7.0] Compact Token Counter will show token counter in side chat input when toggle, if not it will show a small token counter below the chat input
+- [ ] [ENG] Ensure that when click on `Reset` in the `Appearance` section, it reset back to the default values
+- [ ] [ENG] Ensure that when click on `Reset` in the `Code Block` section, it reset back to the default values
 
 #### In `Model Providers`:
 
 In `Llama.cpp`:
 - [ ] After downloading a model from hub, the model is listed with the correct name under `Models`
 - [ ] Can import `gguf` model with no error
+- [ ] [0.7.0] While importing, there should be an import indication appear under `Models`
 - [ ] Imported model will be listed with correct name under the `Models`
+- [ ] [0.6.9] Take a `gguf` file and delete the `.gguf` extensions from the file name, import it into Jan and verify that it works.
+- [ ] [0.6.10] Can import vlm models and chat with images
+- [ ] [0.6.10] Import a file that is not `mmproj` in the `mmproj field` should show validation error
+- [ ] [0.6.10] Import `mmproj` from different models should error
+- [ ] [0.7.0] Users can customize model display names according to their own preferences.
 - [ ] Check that when click `delete` the model will be removed from the list
 - [ ] Deleted model doesn't appear in the selectable models section in chat input (even in old threads that use the model previously)
 - [ ] Ensure that user can re-import deleted imported models
+- [ ] [0.6.8] Ensure that there is a recommended `llama.cpp` for each system and that it works out of the box for users.
+- [ ] [0.6.10] Change to an older version of llama.cpp backend. Click on `Check for Llamacpp Updates` it should alert that there is a new version.
+- [ ] [0.7.0] Users can cancel a backend download while it is in progress.
+- [ ] [0.6.10] Try `Install backend from file` for a backend and it should show as an option for backend
+- [ ] [0.7.0] User can install a backend from file in both .tar.gz and .zip formats, and the backend appears in the backend selection menu
+- [ ] [0.7.0] A manually installed backend is automatically selected after import, and the backend menu updates to show it as the latest imported backend.
 - [ ] Enable `Auto-Unload Old Models`, and ensure that only one model can run / start at a time. If there are two model running at the time of enable, both of them will be stopped. 
 - [ ] Disable `Auto-Unload Old Models`, and ensure that multiple models can run at the same time.
 - [ ] Enable  `Context Shift` and ensure that context can run for long without encountering memory error. Use the `banana test` by turn on fetch MCP => ask local model to fetch and summarize the history of banana (banana has a very long history on wiki it turns out). It should run out of context memory sufficiently fast if `Context Shift` is not enabled.
+
+In `Model Settings`:
 - [ ] [0.6.8] Ensure that user can change the Jinja chat template of individual model and it doesn't affect the template of other model
-- [ ] [0.6.8] Ensure that there is a recommended `llama.cpp` for each system and that it works out of the box for users.
 - [ ] [0.6.8] Ensure we can override Tensor Buffer Type in the model settings to offload layers between GPU and CPU => Download any MoE Model (i.e., gpt-oss-20b) => Set tensor buffer type as `blk\\.([0-30]*[02468])\\.ffn_.*_exps\\.=CPU` => check if those tensors are in cpu and run inference (you can view the app.log if it contains `--override-tensor", "blk\\\\.([0-30]*[02468])\\\\.ffn_.*_exps\\\\.=CPU`)
-- [ ] [0.6.9] Take a `gguf` file and delete the `.gguf` extensions from the file name, import it into Jan and verify that it works.
-- [ ] [0.6.10] Can import vlm models and chat with images
-- [ ] [0.6.10] Import model on mmproj field should show validation error
-- [ ] [0.6.10] Import mmproj from different models should not be able to chat with the models
-- [ ] [0.6.10] Change to an older version of llama.cpp backend. Click on `Check for Llamacpp Updates` it should alert that there is a new version.
-- [ ] [0.6.10] Try `Install backend from file` for a backend and it should show as an option for backend
 
 In Remote Model Providers:
 - [ ] Check that the following providers are presence:
 	- [ ] OpenAI
 	- [ ] Anthropic
+    - [ ] [0.7.0] Azure
 	- [ ] Cohere
 	- [ ] OpenRouter
 	- [ ] Mistral
@@ -113,12 +122,15 @@ In Remote Model Providers:
 - [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
 - [ ] Adding of new model manually works and user can chat with the newly added model without error (you can add back the model you just delete for testing)
-- [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Jan
+- [ ] [0.7.0] Vision capabilities are now automatically detected for vision models
+- [ ] [0.7.0] New default models are available for adding to remote providers through a drop down (OpenAI, Mistral, Groq)
+
 In Custom Providers:
 - [ ] Ensure that user can create a new custom providers with the right baseURL and API key.
 - [ ] Click `Refresh` should retrieve a list of available models from the Custom Providers.
 - [ ] User can chat with the custom providers
 - [ ] Ensure that Custom Providers can be deleted and won't reappear in a new session
+- [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Jan
 
 In general:
 - [ ] Disabled Model Provider should not show up as selectable in chat input of new thread and old thread alike (old threads' chat input should show `Select Model` instead of disabled model)
@@ -162,9 +174,10 @@ Ensure that the following section information show up for hardware
 - [ ] When the user click `Always Allow` on the pop up, the tool will retain permission and won't ask for confirmation again. (this applied at an individual tool level, not at the MCP server level)
 - [ ] If `Allow All MCP Tool Permissions` is enabled, in every new thread,  there should not be any confirmation dialog pop up when a tool is called.
 - [ ] When the pop-up appear, make sure that the `Tool Parameters` is also shown with detail in the pop-up
-- [ ] [0.6.9] Go to Enter JSON configuration when created a new MCp => paste the JSON config inside => click `Save` => server works
+- [ ] [0.6.9] Go to Enter JSON configuration when created a new MCP => paste the JSON config inside => click `Save` => server works
 - [ ] [0.6.9] If individual JSON config format is failed, the MCP server should not be activated
 - [ ] [0.6.9] Make sure that MCP server can be used with streamable-http transport => connect to Smithery and test MCP server
+- [ ] [0.7.0] When deleting an MCP Server, a toast notification is shown
 
 #### In `Local API Server`:
 - [ ] User can `Start Server` and chat with the default endpoint
@@ -175,7 +188,8 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.9] When the startup configuration, the last used model is also automatically start (users does not have to manually start a model before starting the server)
 - [ ] [0.6.9] Make sure that you can send an image to a Local API Server and it also works (can set up Local API Server as a Custom Provider in Jan to test)
 - [ ] [0.6.10] Make sure you are still able to see API key when server local status is running
-
+- [ ] [0.7.0] Users can see the Jan API Server Swagger UI by opening the following path in their browser `http://<ip>:<port>`
+- [ ] [0.7.0] Users can set the trusted host to * in the server configuration to accept requests from all host or without host
 #### In `HTTPS Proxy`:
 - [ ] Model download request goes through proxy endpoint
 
@@ -188,6 +202,7 @@ Ensure that the following section information show up for hardware
 - [ ] Clicking download work inside the Model card HTML
 - [ ] [0.6.9] Check that the model recommendation base on user hardware work as expected in the Model Hub
 - [ ] [0.6.10] Check that model of the same name but different author can be found in the Hub catalog (test with [https://huggingface.co/unsloth/Qwen3-4B-Thinking-2507-GGUF](https://huggingface.co/unsloth/Qwen3-4B-Thinking-2507-GGUF))
+- [ ] [0.7.0] Support downloading models with the same name from different authors, models not listed on the hub will be prefixed with the author name
 
 ## D. Threads
 
@@ -214,19 +229,30 @@ Ensure that the following section information show up for hardware
 - [ ] User can send message with different type of text content (e.g text, emoji, ...)
 - [ ] When request model to generate a markdown table, the table is correctly formatted as returned from the model.
 - [ ] When model generate code, ensure that the code snippets is properly formatted according to the `Appearance -> Code Block` setting.
+- [ ] [0.7.0] LaTeX formulas now render correctly in chat. Both inline \(...\) and block \[...\] formats are supported. Code blocks and HTML tags are not affected
 - [ ] Users can edit their old message and user can regenerate the answer based on the new message
 - [ ] User can click `Copy` to copy the model response
+- [ ] [0.6.10] When click on copy code block from model generation, it will only copy one code-block at a time instead of multiple code block at once
 - [ ] User can click `Delete` to delete either the user message or the model response.
 - [ ] The token speed appear when a response from model is being generated and the final value is show under the response. 
 - [ ] Make sure that user when using IME keyboard to type Chinese and Japanese character and they press `Enter`, the `Send` button doesn't trigger automatically after each words.
-- [ ] [0.6.9] Attach an image to the chat input and see if you can chat with it using a remote model
-- [ ] [0.6.9] Attach an image to the chat input and see if you can chat with it using a local model
+- [ ] [0.6.9] Attach an image to the chat input and see if you can chat with it using a Remote model & Local model
 - [ ] [0.6.9] Check that you can paste an image to text box from your system clipboard (Copy - Paste)
-- [ ] [0.6.9] Make sure that user can favourite a model in the llama.cpp list and see the favourite model selection in chat input
+- [ ] [0.6.10] User can Paste (e.g Ctrl + v) text into chat input when it is a vision model
+- [ ] [0.6.9] Make sure that user can favourite a model in the Model list and see the favourite model selection in chat input
 - [ ] [0.6.10] User can click mode's setting on chat, enable Auto-Optimize Settings, and continue chatting with the model without interruption.
   - [ ] Verify this works with at least two models of different sizes (e.g., 1B and 7B).
-- [ ] [0.6.10] User can Paste (e.g Ctrl + v) text into chat input when it is a vision model
-- [ ] [0.6.10] When click on copy code block from model generation, it will only copy one code-block at a time instead of multiple code block at once
+- [ ] [0.7.0] When chatting with a model, the UI displays a token usage counter showing the percentage of context consumed.
+- [ ] [0.7.0] When chatting with a model, the scroll no longer follows the model’s streaming response; it only auto-scrolls when the user sends a new message
+#### In Project
+
+- [ ] [0.7.0] User can create new project
+- [ ] [0.7.0] User can add existing threads to a project
+- [ ] [0.7.0] When the user attempts to delete a project, a confirmation dialog must appear warning that this action will permanently delete the project and all its associated threads. 
+- [ ] [0.7.0] The user can successfully delete a project, and all threads contained within that project are also permanently deleted.
+- [ ] [0.7.0] A thread that already belongs to a project cannot be re-added to the same project.
+- [ ] [0.7.0] Favorited threads retain their "favorite" status even after being added to a project
+
 ## E. Assistants
 - [ ] There is always at least one default Assistant which is Jan
 - [ ] The default Jan assistant has `stream = True` by default 
@@ -238,6 +264,7 @@ Ensure that the following section information show up for hardware
 
 In `Settings -> General`:
 - [ ] Change the location of the `App Data` to some other path that is not the default path
+- [ ] [0.7.0] Users cannot set the data location to root directories (e.g., C:\, D:\ on Windows), but can select subfolders within those drives (e.g., C:\data, D:\data)
 - [ ] Click on `Reset` button in `Other` to factory reset the app:
 	- [ ] All threads deleted
 	- [ ] All Assistant deleted except for default Jan Assistant

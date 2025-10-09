@@ -7,7 +7,7 @@ use std::{
 };
 use tar::Archive;
 use tauri::{
-    App, Emitter, Manager, Runtime, Wry
+    App, Emitter, Manager, Runtime, Wry, WindowEvent
 };
 
 #[cfg(desktop)]
@@ -24,6 +24,13 @@ use super::{
 };
 
 pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
+    // Skip extension installation on mobile platforms
+    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        return Ok(());
+    }
+
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -262,4 +269,33 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
             }
         })
         .build(app)
+}
+
+pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
+    // Setup theme listener for main window
+    if let Some(window) = app.get_webview_window("main") {
+        setup_window_theme_listener(app.handle().clone(), window);
+    }
+
+    Ok(())
+}
+
+fn setup_window_theme_listener<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) {
+    let window_label = window.label().to_string();
+    let app_handle_clone = app_handle.clone();
+
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let theme_str = match theme {
+                tauri::Theme::Light => "light",
+                tauri::Theme::Dark => "dark",
+                _ => "auto",
+            };
+            log::info!("System theme changed to: {} for window: {}", theme_str, window_label);
+            let _ = app_handle_clone.emit("theme-changed", theme_str);
+        }
+    });
 }
