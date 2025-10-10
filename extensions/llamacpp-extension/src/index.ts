@@ -39,7 +39,6 @@ import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
   readGgufMetadata,
-  estimateKVCacheSize,
   getModelSize,
   isModelSupported,
   planModelLoadInternal,
@@ -58,6 +57,8 @@ type LlamacppConfig = {
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
+  cpu_moe: boolean
+  n_cpu_moe: number
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -332,12 +333,14 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          bestAvailableBackendString = await this.determineBestBackend(
+            version_backends
+          )
         }
       } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(
+          version_backends
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -1581,6 +1584,10 @@ export default class llamacpp_extension extends AIEngine {
     ])
     args.push('--jinja')
     args.push('-m', modelPath)
+    if (cfg.cpu_moe) args.push('--cpu-moe')
+    if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
+      args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
+    }
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
     // and offloading the expert FFNs to the CPU.
@@ -2005,6 +2012,69 @@ export default class llamacpp_extension extends AIEngine {
         libraryPath,
         envs,
       })
+      // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
+      // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
+      try {
+        const sysInfo = await getSystemInfo()
+        if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
+          const usage = await getSystemUsage()
+          if (usage && Array.isArray(usage.gpus)) {
+            const uuidToUsage: Record<string, { total_memory: number; used_memory: number }> = {}
+            for (const u of usage.gpus as any[]) {
+              if (u && typeof u.uuid === 'string') {
+                uuidToUsage[u.uuid] = u
+              }
+            }
+
+            const indexToAmdUuid = new Map<number, string>()
+            for (const gpu of sysInfo.gpus as any[]) {
+              const vendorStr =
+                typeof gpu?.vendor === 'string'
+                  ? gpu.vendor
+                  : typeof gpu?.vendor === 'object' && gpu.vendor !== null
+                    ? String(gpu.vendor)
+                    : ''
+              if (
+                vendorStr.toUpperCase().includes('AMD') &&
+                gpu?.vulkan_info &&
+                typeof gpu.vulkan_info.index === 'number' &&
+                typeof gpu.uuid === 'string'
+              ) {
+                indexToAmdUuid.set(gpu.vulkan_info.index, gpu.uuid)
+              }
+            }
+
+            if (indexToAmdUuid.size > 0) {
+              const adjusted = dList.map((dev) => {
+                if (dev.id?.startsWith('Vulkan')) {
+                  const match = /^Vulkan(\d+)/.exec(dev.id)
+                  if (match) {
+                    const vIdx = Number(match[1])
+                    const uuid = indexToAmdUuid.get(vIdx)
+                    if (uuid) {
+                      const u = uuidToUsage[uuid]
+                      if (
+                        u &&
+                        typeof u.total_memory === 'number' &&
+                        typeof u.used_memory === 'number'
+                      ) {
+                        const total = Math.max(0, Math.floor(u.total_memory))
+                        const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
+                        return { ...dev, mem: total, free }
+                      }
+                    }
+                  }
+                }
+                return dev
+              })
+              return adjusted
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn('Device memory override (AMD/Linux) failed:', e)
+      }
+
       return dList
     } catch (error) {
       logger.error('Failed to query devices:\n', error)
@@ -2151,7 +2221,12 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath && !this.isAbsolutePath(mmprojPath))
       mmprojPath = await joinPath([await getJanDataFolderPath(), path])
     try {
-      const result = await planModelLoadInternal(path, this.memoryMode, mmprojPath, requestedCtx)
+      const result = await planModelLoadInternal(
+        path,
+        this.memoryMode,
+        mmprojPath,
+        requestedCtx
+      )
       return result
     } catch (e) {
       throw new Error(String(e))
@@ -2279,12 +2354,18 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Calculate text tokens
-    const messages = JSON.stringify({ messages: opts.messages })
+    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
+    const tokenizeRequest = {
+      messages: opts.messages,
+      chat_template_kwargs: opts.chat_template_kwargs || {
+        enable_thinking: false,
+      },
+    }
 
     let parseResponse = await fetch(`${baseUrl}/apply-template`, {
       method: 'POST',
       headers: headers,
-      body: messages,
+      body: JSON.stringify(tokenizeRequest),
     })
 
     if (!parseResponse.ok) {

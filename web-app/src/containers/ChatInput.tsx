@@ -40,6 +40,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 
 type ChatInputProps = {
   className?: string
@@ -88,6 +90,7 @@ const ChatInput = ({
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
+  const { productAnalytic } = useAnalytic()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -132,7 +135,10 @@ const ChatInput = ({
         const activeModels = await serviceHub
           .models()
           .getActiveModels('llamacpp')
-        setHasActiveModels(activeModels.length > 0)
+        const hasMatchingActiveModel = activeModels.some(
+          (model) => String(model) === selectedModel?.id
+        )
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
         setHasActiveModels(false)
@@ -145,7 +151,7 @@ const ChatInput = ({
     const intervalId = setInterval(checkActiveModels, 3000)
 
     return () => clearInterval(intervalId)
-  }, [serviceHub])
+  }, [serviceHub, selectedModel?.id])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -176,12 +182,28 @@ const ChatInput = ({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
-  
-  const handleSendMesage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
     }
+    if (!prompt.trim() && uploadedFiles.length === 0) {
+      return
+    }
+    setMessage('')
+
+    // Track message send event with PostHog (only if product analytics is enabled)
+    if (productAnalytic && selectedModel && selectedProvider) {
+      try {
+        posthog.capture('message_sent', {
+          model_provider: selectedProvider,
+          model_id: selectedModel.id,
+        })
+      } catch (error) {
+        console.debug('Failed to track message send event:', error)
+      }
+    }
+
     sendMessage(
       prompt,
       true,
@@ -839,7 +861,7 @@ const ChatInput = ({
                   size="icon"
                   disabled={!prompt.trim() && uploadedFiles.length === 0}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMesage(prompt)}
+                  onClick={() => handleSendMessage(prompt)}
                 >
                   {streamingContent ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

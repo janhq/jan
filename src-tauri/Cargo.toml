@@ -35,6 +35,7 @@ mobile = [
     "tauri/protocol-asset",
     "tauri/test",
     "tauri/wry",
+    "dep:sqlx",
 ]
 test-tauri = [
     "tauri/wry",
@@ -59,7 +60,6 @@ hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
-reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls-vendored"] }
 rmcp = { version = "0.6.0", features = [
     "client",
     "transport-sse-client",
@@ -83,6 +83,7 @@ tauri-plugin-opener = "2.2.7"
 tauri-plugin-os = "2.2.1"
 tauri-plugin-shell = "2.2.0"
 tauri-plugin-store = "2"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"
@@ -105,11 +106,13 @@ libc = "0.2.172"
 windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls-vendored"] }
 tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+reqwest = { version = "0.11", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
 tauri-plugin-dialog = { version = "2.2.1", default-features = false }
 tauri-plugin-http = { version = "2", default-features = false }
 tauri-plugin-log = { version = "2.0.0-rc", default-features = false }

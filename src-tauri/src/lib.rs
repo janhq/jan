@@ -180,7 +180,20 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
             }
+
+            // Initialize SQLite database for mobile platforms
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::core::threads::db::init_database(&app_handle).await {
+                        log::error!("Failed to initialize mobile database: {}", e);
+                    }
+                });
+            }
+
             setup_mcp(app);
+            setup::setup_theme_listener(app)?;
             Ok(())
         })
         .build(tauri::generate_context!())
