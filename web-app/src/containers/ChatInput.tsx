@@ -50,7 +50,11 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
-import { Attachment, createImageAttachment, createDocumentAttachment } from '@/types/attachment'
+import {
+  Attachment,
+  createImageAttachment,
+  createDocumentAttachment,
+} from '@/types/attachment'
 
 type ChatInputProps = {
   className?: string
@@ -123,10 +127,19 @@ const ChatInput = ({
     const checkConnectedServers = async () => {
       try {
         const servers = await serviceHub.mcp().getConnectedServers()
-        setConnectedServers(servers)
+        // Only update state if the servers list has actually changed
+        setConnectedServers((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(servers)) {
+            return prev
+          }
+          return servers
+        })
       } catch (error) {
         console.error('Failed to get connected servers:', error)
-        setConnectedServers([])
+        setConnectedServers((prev) => {
+          if (prev.length === 0) return prev
+          return []
+        })
       }
     }
 
@@ -148,10 +161,22 @@ const ChatInput = ({
         const hasMatchingActiveModel = activeModels.some(
           (model) => String(model) === selectedModel?.id
         )
-        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
+        const newHasActiveModels =
+          activeModels.length > 0 && hasMatchingActiveModel
+
+        // Only update state if the value has actually changed
+        setHasActiveModels((prev) => {
+          if (prev === newHasActiveModels) {
+            return prev
+          }
+          return newHasActiveModels
+        })
       } catch (error) {
         console.error('Failed to get active models:', error)
-        setHasActiveModels(false)
+        setHasActiveModels((prev) => {
+          if (prev === false) return prev
+          return false
+        })
       }
     }
 
@@ -327,7 +352,19 @@ const ChatInput = ({
         filters: [
           {
             name: 'Documents',
-            extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'ods', 'pptx', 'html', 'htm'],
+            extensions: [
+              'pdf',
+              'docx',
+              'txt',
+              'md',
+              'csv',
+              'xlsx',
+              'xls',
+              'ods',
+              'pptx',
+              'html',
+              'htm',
+            ],
           },
         ],
       })
@@ -437,7 +474,9 @@ const ChatInput = ({
               console.error('Failed to ingest document:', error)
               // Remove failed document
               setAttachments((prev) =>
-                prev.filter((a) => !(a.path === doc.path && a.type === 'document'))
+                prev.filter(
+                  (a) => !(a.path === doc.path && a.type === 'document')
+                )
               )
               toast.error(`Failed to ingest ${doc.name}`, {
                 description:
@@ -491,9 +530,7 @@ const ChatInput = ({
       const newFiles: Attachment[] = []
       const duplicates: string[] = []
       const existingImageNames = new Set(
-        attachments
-          .filter((a) => a.type === 'image')
-          .map((a) => a.name)
+        attachments.filter((a) => a.type === 'image').map((a) => a.name)
       )
 
       Array.from(files).forEach((file) => {
@@ -502,7 +539,6 @@ const ChatInput = ({
           duplicates.push(file.name)
           return
         }
-
 
         // Check file size
         if (file.size > maxSize) {
@@ -577,10 +613,9 @@ const ChatInput = ({
                           )
                         )
 
-                        const result = await serviceHub.uploads().ingestImage(
-                          currentThreadId,
-                          img
-                        )
+                        const result = await serviceHub
+                          .uploads()
+                          .ingestImage(currentThreadId, img)
 
                         if (result?.id) {
                           // Mark as processed with ID
@@ -609,7 +644,9 @@ const ChatInput = ({
                         )
                         toast.error(`Failed to ingest ${img.name}`, {
                           description:
-                            error instanceof Error ? error.message : String(error),
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
                         })
                       }
                     }
@@ -844,7 +881,10 @@ const ChatInput = ({
                     const isImage = att.type === 'image'
                     const ext = att.fileType || att.mimeType?.split('/')[1]
                     return (
-                      <div key={`${att.type}-${idx}-${att.name}`} className="relative">
+                      <div
+                        key={`${att.type}-${idx}-${att.name}`}
+                        className="relative"
+                      >
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -886,7 +926,10 @@ const ChatInput = ({
                                 {att.processed && !att.processing && (
                                   <div className="absolute inset-0 flex items-center justify-center bg-black/5">
                                     <div className="bg-green-600/90 rounded-full p-1">
-                                      <IconCheck size={14} className="text-white" />
+                                      <IconCheck
+                                        size={14}
+                                        className="text-white"
+                                      />
                                     </div>
                                   </div>
                                 )}
@@ -894,14 +937,21 @@ const ChatInput = ({
                             </TooltipTrigger>
                             <TooltipContent>
                               <div className="text-xs">
-                                <div className="font-medium truncate max-w-52" title={att.name}>
+                                <div
+                                  className="font-medium truncate max-w-52"
+                                  title={att.name}
+                                >
                                   {att.name}
                                 </div>
                                 <div className="opacity-70">
                                   {isImage
-                                    ? (att.mimeType || 'image')
-                                    : (ext ? `.${ext}` : 'document')}
-                                  {att.size ? ` · ${formatBytes(att.size)}` : ''}
+                                    ? att.mimeType || 'image'
+                                    : ext
+                                      ? `.${ext}`
+                                      : 'document'}
+                                  {att.size
+                                    ? ` · ${formatBytes(att.size)}`
+                                    : ''}
                                 </div>
                               </div>
                             </TooltipContent>
