@@ -631,7 +631,7 @@ const ChatInput = ({
                   // - The streaming content has finished
                   // - Prompt is not empty
                   if (!streamingContent && prompt.trim()) {
-                    handleSendMesage(prompt)
+                    handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
