@@ -2,11 +2,17 @@ import { invoke } from '@tauri-apps/api/core'
 
 // Types
 export interface SessionInfo {
-  pid: number
-  port: number
-  model_id: string
-  model_path: string
-  api_key: string
+    pid: number;
+    port: number;
+    model_id: string;
+    model_path: string;
+    api_key: string;
+    mmproj_path?: string;
+}
+
+export interface UnloadResult {
+    success: boolean;
+    error?: string;
 }
 
 export interface DeviceInfo {
@@ -29,19 +35,17 @@ export async function cleanupLlamaProcesses(): Promise<void> {
 // LlamaCpp server commands
 export async function loadLlamaModel(
   backendPath: string,
-  libraryPath?: string,
-  args: string[] = [],
-  isEmbedding: boolean = false
+  args: string[],
+  envs: Record<string, string>
 ): Promise<SessionInfo> {
   return await invoke('plugin:llamacpp|load_llama_model', {
     backendPath,
-    libraryPath,
     args,
-    isEmbedding,
+    envs
   })
 }
 
-export async function unloadLlamaModel(pid: number): Promise<void> {
+export async function unloadLlamaModel(pid: number): Promise<UnloadResult> {
   return await invoke('plugin:llamacpp|unload_llama_model', { pid })
 }
 

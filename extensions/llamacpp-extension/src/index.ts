@@ -38,10 +38,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
+  loadLlamaModel,
   readGgufMetadata,
   getModelSize,
   isModelSupported,
   planModelLoadInternal,
+  unloadLlamaModel,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -69,7 +71,7 @@ type LlamacppConfig = {
   device: string
   split_mode: string
   main_gpu: number
-  flash_attn: boolean
+  flash_attn: string
   cont_batching: boolean
   no_mmap: boolean
   mlock: boolean
@@ -1646,14 +1648,11 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--split-mode', cfg.split_mode)
     if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
       args.push('--main-gpu', String(cfg.main_gpu))
+    // Note: Older llama.cpp versions are no longer supported
+    if (cfg.flash_attn !== undefined || cfg.flash_attn === '') args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
-    if (Number(version.replace(/^b/, '')) >= 6325) {
-      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
-    } else {
-      if (cfg.flash_attn) args.push('--flash-attn')
-    }
     if (cfg.cont_batching) args.push('--cont-batching')
     args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
@@ -1688,20 +1687,9 @@ export default class llamacpp_extension extends AIEngine {
 
     logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
-    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
 
     try {
-      // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>(
-        'plugin:llamacpp|load_llama_model',
-        {
-          backendPath,
-          libraryPath,
-          args,
-          envs,
-          isEmbedding,
-        }
-      )
+      const sInfo = await loadLlamaModel(backendPath, args, envs)
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1717,12 +1705,7 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await invoke<UnloadResult>(
-        'plugin:llamacpp|unload_llama_model',
-        {
-          pid: pid,
-        }
-      )
+      const result = await unloadLlamaModel(pid)
 
       // If successful, remove from active sessions
       if (result.success) {
@@ -2042,7 +2025,10 @@ export default class llamacpp_extension extends AIEngine {
         if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
           const usage = await getSystemUsage()
           if (usage && Array.isArray(usage.gpus)) {
-            const uuidToUsage: Record<string, { total_memory: number; used_memory: number }> = {}
+            const uuidToUsage: Record<
+              string,
+              { total_memory: number; used_memory: number }
+            > = {}
             for (const u of usage.gpus as any[]) {
               if (u && typeof u.uuid === 'string') {
                 uuidToUsage[u.uuid] = u
@@ -2082,7 +2068,10 @@ export default class llamacpp_extension extends AIEngine {
                         typeof u.used_memory === 'number'
                       ) {
                         const total = Math.max(0, Math.floor(u.total_memory))
-                        const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
+                        const free = Math.max(
+                          0,
+                          Math.floor(u.total_memory - u.used_memory)
+                        )
                         return { ...dev, mem: total, free }
                       }
                     }
