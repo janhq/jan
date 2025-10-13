@@ -54,6 +54,10 @@ const config: DocsThemeConfig = {
   navbar: {
     component: <Navbar />,
   },
+  sidebar: {
+    defaultMenuCollapseLevel: 1,
+    autoCollapse: true
+  },
   darkMode: false,
   toc: {
     backToTop: true,
