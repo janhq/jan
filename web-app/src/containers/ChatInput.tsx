@@ -40,8 +40,6 @@ import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
-import { useAnalytic } from '@/hooks/useAnalytic'
-import posthog from 'posthog-js'
 
 type ChatInputProps = {
   className?: string
@@ -90,7 +88,6 @@ const ChatInput = ({
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
-  const { productAnalytic } = useAnalytic()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -191,18 +188,6 @@ const ChatInput = ({
       return
     }
     setMessage('')
-
-    // Track message send event with PostHog (only if product analytics is enabled)
-    if (productAnalytic && selectedModel && selectedProvider) {
-      try {
-        posthog.capture('message_sent', {
-          model_provider: selectedProvider,
-          model_id: selectedModel.id,
-        })
-      } catch (error) {
-        console.debug('Failed to track message send event:', error)
-      }
-    }
 
     sendMessage(
       prompt,
