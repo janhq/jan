@@ -973,7 +973,6 @@ const ChatInput = ({
             )}
             <TextareaAutosize
               ref={textareaRef}
-              disabled={Boolean(streamingContent)}
               minRows={2}
               rows={1}
               maxRows={10}
@@ -989,15 +988,15 @@ const ChatInput = ({
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  prompt.trim() &&
-                  !isComposing
-                ) {
+                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                   e.preventDefault()
-                  // Submit the message when Enter is pressed without Shift
-                  handleSendMessage(prompt)
+                  // Submit prompt when the following conditions are met:
+                  // - Enter is pressed without Shift
+                  // - The streaming content has finished
+                  // - Prompt is not empty
+                  if (!streamingContent && prompt.trim()) {
+                    handleSendMessage(prompt)
+                  }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
