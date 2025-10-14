@@ -48,7 +48,6 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
 import {
   Attachment,
