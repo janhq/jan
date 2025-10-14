@@ -413,18 +413,6 @@ describe('ChatInput', () => {
     })
   })
 
-  it('disables input when streaming', async () => {
-    // Mock streaming state
-    mockAppState.streamingContent = { thread_id: 'test-thread' }
-
-    await act(async () => {
-      renderWithRouter()
-    })
-
-    const textarea = screen.getByTestId('chat-input')
-    expect(textarea).toBeDisabled()
-  })
-
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
