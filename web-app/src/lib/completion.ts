@@ -12,6 +12,9 @@ import {
   Tool,
 } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useAttachments } from '@/hooks/useAttachments'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -33,6 +36,8 @@ import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ExtensionManager } from './extension'
 import { useAppState } from '@/hooks/useAppState'
+import { injectFilesIntoPrompt } from './fileMetadata'
+import { Attachment } from '@/types/attachment'
 
 export type ChatCompletionResponse =
   | chatCompletion
@@ -51,38 +56,48 @@ export type ChatCompletionResponse =
 export const newUserThreadContent = (
   threadId: string,
   content: string,
-  attachments?: Array<{
-    name: string
-    type: string
-    size: number
-    base64: string
-    dataUrl: string
-  }>
+  attachments?: Attachment[]
 ): ThreadMessage => {
+  // Separate images and documents
+  const images = attachments?.filter((a) => a.type === 'image') || []
+  const documents = attachments?.filter((a) => a.type === 'document') || []
+
+  // Inject document metadata into the text content (id, name, fileType only - no path)
+  const docMetadata = documents
+    .filter((doc) => doc.id) // Only include processed documents
+    .map((doc) => ({
+      id: doc.id!,
+      name: doc.name,
+      type: doc.fileType,
+      size: typeof doc.size === 'number' ? doc.size : undefined,
+      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+    }))
+
+  const textWithFiles =
+    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
+
   const contentParts = [
     {
       type: ContentType.Text,
       text: {
-        value: content,
+        value: textWithFiles,
         annotations: [],
       },
     },
   ]
 
-  // Add attachments to content array
-  if (attachments) {
-    attachments.forEach((attachment) => {
-      if (attachment.type.startsWith('image/')) {
-        contentParts.push({
-          type: ContentType.Image,
-          image_url: {
-            url: `data:${attachment.type};base64,${attachment.base64}`,
-            detail: 'auto',
-          },
-        } as any)
-      }
-    })
-  }
+  // Add image attachments to content array
+  images.forEach((img) => {
+    if (img.base64 && img.mimeType) {
+      contentParts.push({
+        type: ContentType.Image,
+        image_url: {
+          url: `data:${img.mimeType};base64,${img.base64}`,
+          detail: 'auto',
+        },
+      } as any)
+    }
+  })
 
   return {
     type: 'text',
@@ -216,6 +231,21 @@ export const sendCompletion = async (
     }
   }
 
+  // Inject RAG tools on-demand (not in global tools list)
+  let usableTools = tools
+  try {
+    const attachmentsEnabled = useAttachments.getState().enabled
+    if (attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]) {
+      const ragTools = await getServiceHub().rag().getTools().catch(() => [])
+      if (Array.isArray(ragTools) && ragTools.length) {
+        usableTools = [...tools, ...ragTools]
+      }
+    }
+  } catch (e) {
+    // Ignore RAG tool injection errors during completion setup
+    console.debug('Skipping RAG tools injection:', e)
+  }
+
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
@@ -224,8 +254,8 @@ export const sendCompletion = async (
           messages: messages as chatCompletionRequestMessage[],
           model: thread.model?.id,
           thread_id: thread.id,
-          tools: normalizeTools(tools),
-          tool_choice: tools.length ? 'auto' : undefined,
+          tools: normalizeTools(usableTools),
+          tool_choice: usableTools.length ? 'auto' : undefined,
           stream: true,
           ...params,
         },
@@ -239,8 +269,8 @@ export const sendCompletion = async (
             provider: providerName as any,
             model: thread.model?.id,
             messages,
-            tools: normalizeTools(tools),
-            tool_choice: tools.length ? 'auto' : undefined,
+            tools: normalizeTools(usableTools),
+            tool_choice: usableTools.length ? 'auto' : undefined,
             ...params,
           },
           {
@@ -252,8 +282,8 @@ export const sendCompletion = async (
           provider: providerName,
           model: thread.model?.id,
           messages,
-          tools: normalizeTools(tools),
-          tool_choice: tools.length ? 'auto' : undefined,
+          tools: normalizeTools(usableTools),
+          tool_choice: usableTools.length ? 'auto' : undefined,
           ...params,
         })
   return completion
@@ -373,6 +403,16 @@ export const postMessageProcessing = async (
 ) => {
   // Handle completed tool calls
   if (calls.length) {
+    // Fetch RAG tool names from RAG service
+    let ragToolNames = new Set<string>()
+    try {
+      const names = await getServiceHub().rag().getToolNames()
+      ragToolNames = new Set(names)
+    } catch (e) {
+      console.error('Failed to load RAG tool names:', e)
+    }
+    const ragFeatureAvailable =
+      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
@@ -411,23 +451,46 @@ export const postMessageProcessing = async (
           )
         }
       }
-      const approved =
-        allowAllMCPPermissions ||
-        approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
-        (showModal
-          ? await showModal(
-              toolCall.function.name,
-              message.thread_id,
-              toolParameters
-            )
-          : true)
 
-      const { promise, cancel } = getServiceHub()
-        .mcp()
-        .callToolWithCancellation({
-          toolName: toolCall.function.name,
-          arguments: toolCall.function.arguments.length ? toolParameters : {},
-        })
+      const toolName = toolCall.function.name
+      const toolArgs = toolCall.function.arguments.length ? toolParameters : {}
+      const isRagTool = ragToolNames.has(toolName)
+
+      // Auto-approve RAG tools (local/safe operations), require permission for MCP tools
+      const approved = isRagTool
+        ? true
+        : allowAllMCPPermissions ||
+          approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
+          (showModal
+            ? await showModal(
+                toolCall.function.name,
+                message.thread_id,
+                toolParameters
+              )
+            : true)
+
+      const { promise, cancel } = isRagTool
+        ? ragFeatureAvailable
+          ? {
+              promise: getServiceHub().rag().callTool({ toolName, arguments: toolArgs, threadId: message.thread_id }),
+              cancel: async () => {},
+            }
+          : {
+              promise: Promise.resolve({
+                error: 'attachments_unavailable',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Attachments feature is disabled or unavailable on this platform.',
+                  },
+                ],
+              }),
+              cancel: async () => {},
+            }
+        : getServiceHub().mcp().callToolWithCancellation({
+            toolName,
+            arguments: toolArgs,
+          })
 
       useAppState.getState().setCancelToolCall(cancel)
 
@@ -441,7 +504,7 @@ export const postMessageProcessing = async (
                   text: `Error calling tool ${toolCall.function.name}: ${e.message ?? e}`,
                 },
               ],
-              error: true,
+              error: String(e?.message ?? e ?? 'Tool call failed'),
             }
           })
         : {
@@ -451,6 +514,7 @@ export const postMessageProcessing = async (
                 text: 'The user has chosen to disallow the tool call.',
               },
             ],
+            error: 'disallowed',
           }
 
       if (typeof result === 'string') {
@@ -461,6 +525,7 @@ export const postMessageProcessing = async (
               text: result,
             },
           ],
+          error: '',
         }
       }
 

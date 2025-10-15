@@ -333,14 +333,12 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString = await this.determineBestBackend(
-            version_backends
-          )
+          bestAvailableBackendString =
+            await this.determineBestBackend(version_backends)
         }
       } else {
-        bestAvailableBackendString = await this.determineBestBackend(
-          version_backends
-        )
+        bestAvailableBackendString =
+          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -1530,6 +1528,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (
       this.autoUnload &&
+      !isEmbedding &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       // Wait for OTHER loading models to finish, then unload everything
@@ -1537,10 +1536,33 @@ export default class llamacpp_extension extends AIEngine {
         await Promise.all(otherLoadingPromises)
       }
 
-      // Now unload all loaded models
+      // Now unload all loaded Text models excluding embedding models
       const allLoadedModels = await this.getLoadedModels()
       if (allLoadedModels.length > 0) {
-        await Promise.all(allLoadedModels.map((model) => this.unload(model)))
+        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
+          allLoadedModels.map(async (modelId) => {
+            try {
+              return await this.findSessionByModel(modelId)
+            } catch (e) {
+              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
+              return null // treat as “not‑eligible for unload”
+            }
+          })
+        )
+
+        logger.info(JSON.stringify(sessionInfos))
+
+        const nonEmbeddingModels: string[] = sessionInfos
+          .filter(
+            (s): s is SessionInfo => s !== null && s.is_embedding === false
+          )
+          .map((s) => s.model_id)
+
+        if (nonEmbeddingModels.length > 0) {
+          await Promise.all(
+            nonEmbeddingModels.map((modelId) => this.unload(modelId))
+          )
+        }
       }
     }
     const args: string[] = []
@@ -1638,7 +1660,7 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
       args.push('--embedding')
-      args.push('--pooling mean')
+      args.push('--pooling', 'mean')
     } else {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
@@ -1677,6 +1699,7 @@ export default class llamacpp_extension extends AIEngine {
           libraryPath,
           args,
           envs,
+          isEmbedding,
         }
       )
       return sInfo
@@ -2083,6 +2106,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
+    // Ensure the sentence-transformer model is present
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
       const downloadedModelList = await this.list()
@@ -2096,30 +2120,45 @@ export default class llamacpp_extension extends AIEngine {
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
         })
       }
-      sInfo = await this.load('sentence-transformer-mini')
+      // Load specifically in embedding mode
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
-    const baseUrl = `http://localhost:${sInfo.port}/v1/embeddings`
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sInfo.api_key}`,
+
+    const attemptRequest = async (session: SessionInfo) => {
+      const baseUrl = `http://localhost:${session.port}/v1/embeddings`
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.api_key}`,
+      }
+      const body = JSON.stringify({
+        input: text,
+        model: session.model_id,
+        encoding_format: 'float',
+      })
+      const response = await fetch(baseUrl, {
+        method: 'POST',
+        headers,
+        body,
+      })
+      return response
     }
-    const body = JSON.stringify({
-      input: text,
-      model: sInfo.model_id,
-      encoding_format: 'float',
-    })
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      headers,
-      body,
-    })
+
+    // First try with the existing session (may have been started without --embedding previously)
+    let response = await attemptRequest(sInfo)
+
+    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
+    if (response.status === 501) {
+      try {
+        await this.unload('sentence-transformer-mini')
+      } catch {}
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      response = await attemptRequest(sInfo)
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
+        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
       )
     }
     const responseData = await response.json()

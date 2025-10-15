@@ -496,6 +496,9 @@ async fn schedule_mcp_start_task<R: Runtime>(
             client_info: Implementation {
                 name: "Jan Streamable Client".to_string(),
                 version: "0.0.1".to_string(),
+                title: None,
+                website_url: None,
+                icons: None,
             },
         };
         let client = client_info.serve(transport).await.inspect_err(|e| {
@@ -567,6 +570,9 @@ async fn schedule_mcp_start_task<R: Runtime>(
             client_info: Implementation {
                 name: "Jan SSE Client".to_string(),
                 version: "0.0.1".to_string(),
+                title: None,
+                website_url: None,
+                icons: None,
             },
         };
         let client = client_info.serve(transport).await.map_err(|e| {

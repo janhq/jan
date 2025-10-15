@@ -78,6 +78,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // First message persisted thread - enabled for web and mobile platforms
   [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri() || isPlatformIOS() || isPlatformAndroid(),
 
-    // Temporary chat mode - enabled for web only
+  // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
+
+  // Attachments/RAG UI and tooling - desktop only for now
+  [PlatformFeature.ATTACHMENTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }
