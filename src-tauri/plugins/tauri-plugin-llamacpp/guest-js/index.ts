@@ -6,6 +6,7 @@ export interface SessionInfo {
     port: number;
     model_id: string;
     model_path: string;
+    is_embedding: boolean
     api_key: string;
     mmproj_path?: string;
 }
@@ -36,12 +37,14 @@ export async function cleanupLlamaProcesses(): Promise<void> {
 export async function loadLlamaModel(
   backendPath: string,
   args: string[],
-  envs: Record<string, string>
+  envs: Record<string, string>,
+  isEmbedding: boolean
 ): Promise<SessionInfo> {
   return await invoke('plugin:llamacpp|load_llama_model', {
     backendPath,
     args,
-    envs
+    envs,
+    isEmbedding
   })
 }
 

@@ -551,9 +551,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
-      if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) return 'vulkan'
+      if (backendString.includes('cuda-12-common_cpus')) return 'cuda-cu12.0'
+      if (backendString.includes('cuda-11-common_cpus')) return 'cuda-cu11.7'
+      if (backendString.includes('vulkan-common_cpus')) return 'vulkan'
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -1689,7 +1689,7 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(backendPath, args, envs)
+      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding)
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
