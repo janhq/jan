@@ -48,7 +48,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import posthog from 'posthog-js'
+
 import {
   Attachment,
   createImageAttachment,
@@ -225,18 +225,6 @@ const ChatInput = ({
     }
 
     setMessage('')
-
-    // Track message send event with PostHog (only if product analytics is enabled)
-    if (productAnalytic && selectedModel && selectedProvider) {
-      try {
-        posthog.capture('message_sent', {
-          model_provider: selectedProvider,
-          model_id: selectedModel.id,
-        })
-      } catch (error) {
-        console.debug('Failed to track message send event:', error)
-      }
-    }
 
     // Callback to update attachment processing state
     const updateAttachmentProcessing = (
