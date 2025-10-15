@@ -1,8 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { ThreadMessage } from '@janhq/core'
+import { ThreadMessage, ContentType } from '@janhq/core'
 import { removeReasoningContent } from '@/utils/reasoning'
+// Attachments are now handled upstream in newUserThreadContent
+
+type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 /**
  * @fileoverview Helper functions for creating chat completion request.
@@ -22,105 +24,69 @@ export class CompletionMessagesBuilder {
       ...messages
         .filter((e) => !e.metadata?.error)
         .map<ChatCompletionMessageParam>((msg) => {
-          if (msg.role === 'assistant') {
-            return {
-              role: msg.role,
-              content: removeReasoningContent(
-                msg.content[0]?.text?.value || '.'
-              ),
-            } as ChatCompletionMessageParam
-          } else {
-            // For user messages, handle multimodal content
-            if (msg.content.length > 1) {
-              // Multiple content parts (text + images + files)
-
-              const content = msg.content.map((contentPart) => {
-                if (contentPart.type === 'text') {
-                  return {
-                    type: 'text',
-                    text: contentPart.text?.value || '',
-                  }
-                } else if (contentPart.type === 'image_url') {
-                  return {
-                    type: 'image_url',
-                    image_url: {
-                      url: contentPart.image_url?.url || '',
-                      detail: contentPart.image_url?.detail || 'auto',
-                    },
-                  }
-                } else {
-                  return contentPart
-                }
-              })
-              return {
-                role: msg.role,
-                content,
-              } as ChatCompletionMessageParam
-            } else {
-              // Single text content
-              return {
-                role: msg.role,
-                content: msg.content[0]?.text?.value || '.',
-              } as ChatCompletionMessageParam
-            }
+          const param = this.toCompletionParamFromThread(msg)
+          // In constructor context, normalize empty user text to a placeholder
+          if (param.role === 'user' && typeof param.content === 'string' && param.content === '') {
+            return { ...param, content: '.' }
           }
+          return param
         })
     )
   }
 
+  // Normalize a ThreadMessage into a ChatCompletionMessageParam for Token.js
+  private toCompletionParamFromThread(msg: ThreadMessage): ChatCompletionMessageParam {
+    if (msg.role === 'assistant') {
+      return {
+        role: 'assistant',
+        content: removeReasoningContent(msg.content?.[0]?.text?.value || '.'),
+      } as ChatCompletionMessageParam
+    }
+
+    // System messages are uncommon here; normalize to plain text
+    if (msg.role === 'system') {
+      return {
+        role: 'system',
+        content: msg.content?.[0]?.text?.value || '.',
+      } as ChatCompletionMessageParam
+    }
+
+    // User messages: handle multimodal content
+    if (Array.isArray(msg.content) && msg.content.length > 1) {
+      const content = msg.content.map((part: ThreadContent) => {
+        if (part.type === ContentType.Text) {
+          return { type: 'text' as const, text: part.text?.value ?? '' }
+        }
+        if (part.type === ContentType.Image) {
+          return {
+            type: 'image_url' as const,
+            image_url: { url: part.image_url?.url || '', detail: part.image_url?.detail || 'auto' },
+          }
+        }
+        // Fallback for unknown content types
+        return { type: 'text' as const, text: '' }
+      })
+      return { role: 'user', content } as ChatCompletionMessageParam
+    }
+    // Single text part
+    const text = msg?.content?.[0]?.text?.value ?? '.'
+    return { role: 'user', content: text }
+  }
+
   /**
-   * Add a user message to the messages array.
-   * @param content - The content of the user message.
-   * @param attachments - Optional attachments for the message.
+   * Add a user message to the messages array from a parsed ThreadMessage.
+   * Upstream code should construct the message via newUserThreadContent
+   * and pass it here to avoid duplicated logic.
    */
-  addUserMessage(
-    content: string,
-    attachments?: Array<{
-      name: string
-      type: string
-      size: number
-      base64: string
-      dataUrl: string
-    }>
-  ) {
+  addUserMessage(message: ThreadMessage) {
+    if (message.role !== 'user') {
+      throw new Error('addUserMessage expects a user ThreadMessage')
+    }
     // Ensure no consecutive user messages
     if (this.messages[this.messages.length - 1]?.role === 'user') {
       this.messages.pop()
     }
-
-    // Handle multimodal content with attachments
-    if (attachments && attachments.length > 0) {
-      const messageContent: any[] = [
-        {
-          type: 'text',
-          text: content,
-        },
-      ]
-
-      // Add attachments (images and PDFs)
-      attachments.forEach((attachment) => {
-        if (attachment.type.startsWith('image/')) {
-          messageContent.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:${attachment.type};base64,${attachment.base64}`,
-              detail: 'auto',
-            },
-          })
-        }
-      })
-
-      this.messages.push({
-        role: 'user',
-        content: messageContent,
-      } as any)
-    } else {
-      // Text-only message
-      this.messages.push({
-        role: 'user',
-        content: content,
-      })
-    }
+    this.messages.push(this.toCompletionParamFromThread(message))
   }
 
   /**
