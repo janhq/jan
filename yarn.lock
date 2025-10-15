@@ -3491,7 +3491,7 @@ __metadata:
     "@vitest/coverage-v8": "npm:^2.1.8"
     "@vitest/ui": "npm:^2.1.8"
     eslint: "npm:8.57.0"
-    happy-dom: "npm:^15.11.6"
+    happy-dom: "npm:^20.0.0"
     pacote: "npm:^21.0.0"
     react: "npm:19.0.0"
     request: "npm:^2.88.2"
@@ -3604,7 +3604,7 @@ __metadata:
     sonner: "npm:2.0.5"
     tailwind-merge: "npm:3.3.1"
     tailwindcss: "npm:4.1.4"
-    token.js: "npm:token.js-fork@0.7.27"
+    token.js: "npm:token.js-fork@0.7.29"
     tw-animate-css: "npm:1.2.8"
     typescript: "npm:5.9.2"
     typescript-eslint: "npm:8.31.0"
@@ -7811,6 +7811,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^20.0.0":
+  version: 20.19.21
+  resolution: "@types/node@npm:20.19.21"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/a5bedcc71b363abfa425c01e69696820736614dfba03d2363df6d306d2ee6f7619b370c72b4ec75d992e5d76eaccdcdeb362276cac1cd01756db6dec2eb8227c
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^22.10.0":
   version: 22.18.3
   resolution: "@types/node@npm:22.18.3"
@@ -7893,6 +7902,13 @@ __metadata:
   version: 9.0.8
   resolution: "@types/uuid@npm:9.0.8"
   checksum: 10c0/b411b93054cb1d4361919579ef3508a1f12bf15b5fdd97337d3d351bece6c921b52b6daeef89b62340fd73fd60da407878432a1af777f40648cbe53a01723489
+  languageName: node
+  linkType: hard
+
+"@types/whatwg-mimetype@npm:^3.0.2":
+  version: 3.0.2
+  resolution: "@types/whatwg-mimetype@npm:3.0.2"
+  checksum: 10c0/dad39d1e4abe760a0a963c84bbdbd26b1df0eb68aff83bdf6ecbb50ad781ead777f6906d19a87007790b750f7500a12e5624d31fc6a1529d14bd19b5c3a316d1
   languageName: node
   linkType: hard
 
@@ -10527,13 +10543,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"entities@npm:^4.5.0":
-  version: 4.5.0
-  resolution: "entities@npm:4.5.0"
-  checksum: 10c0/5b039739f7621f5d1ad996715e53d964035f75ad3b9a4d38c6b3804bb226e282ffeae2443624d8fdd9c47d8e926ae9ac009c54671243f0c3294c26af7cc85250
-  languageName: node
-  linkType: hard
-
 "entities@npm:^6.0.0":
   version: 6.0.1
   resolution: "entities@npm:6.0.1"
@@ -12257,14 +12266,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"happy-dom@npm:^15.11.6":
-  version: 15.11.7
-  resolution: "happy-dom@npm:15.11.7"
+"happy-dom@npm:^20.0.0":
+  version: 20.0.1
+  resolution: "happy-dom@npm:20.0.1"
   dependencies:
-    entities: "npm:^4.5.0"
-    webidl-conversions: "npm:^7.0.0"
+    "@types/node": "npm:^20.0.0"
+    "@types/whatwg-mimetype": "npm:^3.0.2"
     whatwg-mimetype: "npm:^3.0.0"
-  checksum: 10c0/22b08cac20192b08edf2e9c857ceeda8333a3301c4b5965a9550787b00db60d6d107c726390bd45a35305cd12ab086abd656bf957a408be0fcdc9fcd389f1973
+  checksum: 10c0/fb867fcca270ebb185b6f2031721d3ea43c99e0699069187dceee99b14683baca243157feed2ce0da3ba8905b914262caa7bc8403384175a0ad2c81e19bf2f5a
   languageName: node
   linkType: hard
 
@@ -19473,9 +19482,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"token.js@npm:token.js-fork@0.7.27":
-  version: 0.7.27
-  resolution: "token.js-fork@npm:0.7.27"
+"token.js@npm:token.js-fork@0.7.29":
+  version: 0.7.29
+  resolution: "token.js-fork@npm:0.7.29"
   dependencies:
     "@anthropic-ai/sdk": "npm:0.24.3"
     "@aws-sdk/client-bedrock-runtime": "npm:3.609.0"
@@ -19486,7 +19495,7 @@ __metadata:
     mime-types: "npm:^2.1.35"
     nanoid: "npm:^5.0.7"
     openai: "npm:4.91.1"
-  checksum: 10c0/ec4e8e441b6747db29eed0d21e364eaf8d4636e3d8376bdd63d836499970de15357e8c0b2ef1e470027e7a2c8bc4924138a86f6d207469b6f0b6fb0f24f6d035
+  checksum: 10c0/b045de56e06a1066b1fdfcca24bc57e7b10aa6cd1995b9ded27af699afcf0e72e216c3672cc3a85b10ce5b6ea81e7d1d453859f073861176b0c816e8f91e6627
   languageName: node
   linkType: hard
 
