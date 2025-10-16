@@ -35,6 +35,7 @@
   "checkParams": "Silakan periksa parameter sesuai dengan tutorial.",
   "title": "Server MCP",
   "experimental": "Eksperimental",
+  "importFromAPI": "Impor API MCP",
   "editAllJson": "Edit Semua JSON Server",
   "findMore": "Temukan lebih banyak server MCP di",
   "allowPermissions": "Izinkan Semua Izin Alat MCP",

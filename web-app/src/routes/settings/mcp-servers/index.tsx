@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useMatches, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -8,6 +8,7 @@ import {
   IconPlus,
   IconTrash,
   IconCodeCircle,
+  IconFileImport,
 } from '@tabler/icons-react'
 import { useMCPServers, MCPServerConfig } from '@/hooks/useMCPServers'
 import { useEffect, useState } from 'react'
@@ -132,6 +133,8 @@ function MCPServersDesktop() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
+  const matches = useMatches()
+  const navigate = useNavigate()
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
   const handleOpenDialog = (serverKey?: string) => {
@@ -170,9 +173,13 @@ function MCPServersDesktop() {
       syncServers()
     }
   }
+  const handleImportFromAPI = async () => {
+    navigate({ to: '/settings/mcp-servers/hub' })
+    console.log(matches)
+  }
 
   const handleEdit = (serverKey: string) => {
-    handleOpenDialog(serverKey)
+    handleOpenDialog(serverKey)   
   }
 
   const handleDeleteClick = (serverKey: string) => {
@@ -327,6 +334,16 @@ function MCPServersDesktop() {
                     </div>
 
                     <div className="flex items-center gap-0.5">
+                      <div
+                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                        onClick={() => handleImportFromAPI()}
+                        title={t('mcp-servers:importFromAPI')}
+                      >
+                        <IconFileImport
+                          size={18}
+                          className="text-main-view-fg/50"
+                        />
+                      </div>
                       <div
                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                         onClick={() => handleOpenJsonEditor()}

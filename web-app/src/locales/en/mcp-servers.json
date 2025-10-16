@@ -35,6 +35,7 @@
   "checkParams": "Please check the parameters according to the tutorial.",
   "title": "MCP Servers",
   "experimental": "Experimental",
+  "importFromAPI": "Import MCP API",
   "editAllJson": "Edit All Servers JSON",
   "findMore": "Find more MCP servers at",
   "allowPermissions": "Allow All MCP Tool Permissions",

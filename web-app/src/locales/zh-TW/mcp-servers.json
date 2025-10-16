@@ -35,6 +35,7 @@
   "checkParams": "請根據教學檢查參數。",
   "title": "MCP 伺服器",
   "experimental": "實驗性",
+  "importFromAPI": "匯入 MCP API",
   "editAllJson": "編輯所有伺服器的 JSON",
   "findMore": "在以下位置尋找更多 MCP 伺服器",
   "allowPermissions": "允許所有 MCP 工具權限",

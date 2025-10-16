@@ -35,6 +35,7 @@
   "checkParams": "Vui lòng kiểm tra các tham số theo hướng dẫn.",
   "title": "Máy chủ MCP",
   "experimental": "Thử nghiệm",
+  "importFromAPI": "Nhập API MCP",
   "editAllJson": "Chỉnh sửa tất cả JSON của máy chủ",
   "findMore": "Tìm thêm máy chủ MCP tại",
   "allowPermissions": "Cho phép tất cả các quyền của công cụ MCP",

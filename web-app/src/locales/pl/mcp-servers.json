@@ -35,6 +35,7 @@
   "checkParams": "Proszę sprawdzić parametry we wprowadzeniu.",
   "title": "Serwery MCP",
   "experimental": "Eksperymentalne",
+  "importFromAPI": "Importuj z API MCP",
   "editAllJson": "Edytuj JSON Wszystkich Serwerów",
   "findMore": "Znajdź więcej serwerów MCP na",
   "allowPermissions": "Pozwalaj na Wszystkie Użycia Narzędzi MCP",
