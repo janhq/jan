@@ -80,18 +80,36 @@ function RouteComponent() {
       }
     }
     function fixMalformedJson(input: string): string {
-        let fixed = input.trim();
-        fixed = fixed.replace(/(\w+)\s*:/g, '"$1":');
-        fixed = fixed.replace(/:\s*config\.([A-Za-z0-9_]+)/g, ': "config.$1"');
-        fixed = fixed.replace(/(\[\s*)([A-Za-z0-9@\/._-]+)(\s*\])/g, '$1"$2"$3');
+      const trimmed = input.trim()
+
+      // If already valid JSON, return as-is
+      try {
+        JSON.parse(trimmed)
+        return trimmed
+      } catch {
+        // fallthrough to attempts below
+      }
+      const JSON5Lib = (globalThis as any).JSON5
+      if (JSON5Lib && typeof JSON5Lib.parse === 'function') {
         try {
-            JSON.parse(fixed);
-        } catch (err) {
-            throw new Error(`This JSON is invalid : ${err}`);
+          const obj = JSON5Lib.parse(trimmed)
+          return JSON.stringify(obj)
+        } catch {
         }
-        return fixed;
-    }          
-        
+      }
+      let fixed = trimmed.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":')
+
+      // Remove trailing commas in objects/arrays which are invalid in JSON
+      fixed = fixed.replace(/,\s*([}\]])/g, '$1')
+
+      // Final parse check
+      try {
+        JSON.parse(fixed)
+        return fixed
+      } catch (err) {
+        throw new Error(`Invalid JSON after attempted fixes: ${err}`)
+      }
+    }
     
     const fetchPage = useCallback(async (p: number, search?: string) => {
       setIsLoading(true)
@@ -277,7 +295,7 @@ function RouteComponent() {
 
                           <div className="mt-6 flex items-center justify-end gap-3">
                             {(item.githubUrl || item.github_url) && (
-                              <a href={item.githubUrl || item.github_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{t('repository', 'Repository')}</a>
+                              <a href={item.githubUrl || item.github_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{t('repository', 'Repository')}</a>
                             )}
                             <Button size="sm" onClick={async () => {
                               const key = item.name
@@ -292,14 +310,16 @@ function RouteComponent() {
                                 const mcp : Array<MCPServerConfig> = []
                                 for (const conn of connections) {
                                     let stdioFunction = conn.stdioFunction;
-                                    stdioFunction = stdioFunction.match(/=>\s*((.*?))(?=\s*$|\s*=>)/)[1];
+                                    const m = stdioFunction.match(/=>\\s*\\((.*)\\)\\s*$/s); 
+                                    if (!m) continue; 
+                                    stdioFunction = m[1];
                                     
                                     stdioFunction = stdioFunction.trim()
                                     if (stdioFunction.startsWith('(')) stdioFunction = stdioFunction.slice(1)
                                     if (stdioFunction.endsWith(')')) stdioFunction = stdioFunction.slice(0, -1)
                                     
                                     const config : MCPServerConfig = JSON.parse(fixMalformedJson(stdioFunction)) as MCPServerConfig;
-                                    if (!config && !config.command) continue;
+                                    if (!config  !config.command) continue;
                                     mcp.push(config);
                         
 

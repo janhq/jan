@@ -1,4 +1,4 @@
-import { createFileRoute, useMatches, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -133,7 +133,6 @@ function MCPServersDesktop() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
-  const matches = useMatches()
   const navigate = useNavigate()
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
@@ -175,7 +174,7 @@ function MCPServersDesktop() {
   }
   const handleImportFromAPI = async () => {
     navigate({ to: '/settings/mcp-servers/hub' })
-    console.log(matches)
+    
   }
 
   const handleEdit = (serverKey: string) => {
