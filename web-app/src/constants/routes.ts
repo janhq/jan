@@ -10,6 +10,7 @@ export const route = {
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',
+    attachments: '/settings/attachments',
     appearance: '/settings/appearance',
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',

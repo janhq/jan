@@ -19,11 +19,11 @@ export const useTools = () => {
         )
 
         // Fetch tools
-        const data = await getServiceHub().mcp().getTools()
-        updateTools(data)
+        const mcpTools = await getServiceHub().mcp().getTools()
+        updateTools(mcpTools)
 
         // Initialize default disabled tools for new users (only once)
-        if (!isDefaultsInitialized() && data.length > 0 && mcpExtension?.getDefaultDisabledTools) {
+        if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
           const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
           if (defaultDisabled.length > 0) {
             setDefaultDisabledTools(defaultDisabled)

@@ -45,7 +45,7 @@ export default class JanProviderWeb extends AIEngine {
   // Verify Jan models capabilities in localStorage
   private validateJanModelsLocalStorage() {
     try {
-      console.log("Validating Jan models in localStorage...")
+      console.log('Validating Jan models in localStorage...')
       const storageKey = 'model-provider'
       const data = localStorage.getItem(storageKey)
       if (!data) return
@@ -60,9 +60,14 @@ export default class JanProviderWeb extends AIEngine {
         if (provider.provider === 'jan' && provider.models) {
           for (const model of provider.models) {
             console.log(`Checking Jan model: ${model.id}`, model.capabilities)
-            if (JSON.stringify(model.capabilities) !== JSON.stringify(JAN_MODEL_CAPABILITIES)) {
+            if (
+              JSON.stringify(model.capabilities) !==
+              JSON.stringify(JAN_MODEL_CAPABILITIES)
+            ) {
               hasInvalidModel = true
-              console.log(`Found invalid Jan model: ${model.id}, clearing localStorage`)
+              console.log(
+                `Found invalid Jan model: ${model.id}, clearing localStorage`
+              )
               break
             }
           }
@@ -79,9 +84,17 @@ export default class JanProviderWeb extends AIEngine {
         // If still present, try setting to empty state
         if (afterRemoval) {
           // Try alternative clearing method
-          localStorage.setItem(storageKey, JSON.stringify({ state: { providers: [] }, version: parsed.version || 3 }))
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify({
+              state: { providers: [] },
+              version: parsed.version || 3,
+            })
+          )
         }
-        console.log('Cleared model-provider from localStorage due to invalid Jan capabilities')
+        console.log(
+          'Cleared model-provider from localStorage due to invalid Jan capabilities'
+        )
         // Force a page reload to ensure clean state
         window.location.reload()
       }
@@ -159,6 +172,7 @@ export default class JanProviderWeb extends AIEngine {
         port: 443, // HTTPS port
         model_id: modelId,
         model_path: `remote:${modelId}`, // Indicate this is a remote model
+        is_embedding: false, // assume false here, TODO: might need further implementation
         api_key: '', // API key handled by auth service
       }
 
@@ -193,8 +207,12 @@ export default class JanProviderWeb extends AIEngine {
       console.error(`Failed to unload Jan session ${sessionId}:`, error)
       return {
         success: false,
-        error: error instanceof ApiError ? error.message :
-               error instanceof Error ? error.message : 'Unknown error',
+        error:
+          error instanceof ApiError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'Unknown error',
       }
     }
   }
