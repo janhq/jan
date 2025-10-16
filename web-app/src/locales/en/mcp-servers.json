@@ -45,4 +45,12 @@
   "env": "Env",
   "serverStatusActive": "Server {{serverKey}} activated successfully",
   "serverStatusInactive": "Server {{serverKey}} deactivated successfully"
+
+  ,"searchAria": "Search MCP"
+  ,"searchPlaceholder": "Search MCP servers..."
+  ,"noResults": "No results found"
+  ,"repository": "Repository"
+  ,"install": "Install"
+  ,"reinstall": "Reinstall"
+  ,"installing": "Installing..."
 }

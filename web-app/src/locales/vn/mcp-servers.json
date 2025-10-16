@@ -45,4 +45,12 @@
   "env": "Môi trường",
   "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
   "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công"
+
+  ,"searchAria": "Tìm MCP"
+  ,"searchPlaceholder": "Tìm máy chủ MCP..."
+  ,"noResults": "Không tìm thấy kết quả"
+  ,"repository": "Kho mã"
+  ,"install": "Cài đặt"
+  ,"reinstall": "Cài lại"
+  ,"installing": "Đang cài đặt..."
 }

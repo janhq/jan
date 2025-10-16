@@ -8,6 +8,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { MCPServerConfig, useMCPServers } from '@/hooks/useMCPServers'
 import { toast } from 'sonner'
 import { IconArrowLeft } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n'
 import { route } from '@/constants/routes'
 import { Input } from '@/components/ui/input'
 export const Route = createFileRoute('/settings/mcp-servers/hub')({
@@ -47,6 +48,7 @@ function RouteComponent() {
     const containerRef = useRef<HTMLDivElement | null>(null)
     const navigate = Route.useNavigate()    
   const serviceHub = useServiceHub()
+  const { t } = useTranslation('mcp-servers')
   const { addServer, editServer, getServerConfig, syncServers, deleteServer } = useMCPServers()
   const [installing, setInstalling] = useState<Record<string, boolean>>({})
 
@@ -187,14 +189,14 @@ function RouteComponent() {
                         <div className="flex items-center justify-center size-5 rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
                         <IconArrowLeft size={18} className="text-main-view-fg" />
                         </div>
-                        <span className="text-main-view-fg">Back to MCP Servers</span>
+                        <span className="text-main-view-fg">{t('title', 'Back to MCP Servers')}</span>
                     </button>
                     <Input
-                    aria-label="Search MCP"
-                    placeholder="Search MCP servers..."
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    className='max-w-[20%] z-20'
+                      aria-label={t('searchAria', 'Search MCP')}
+                      placeholder={t('searchPlaceholder', 'Search MCP servers...')}
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      className='max-w-[20%] z-20'
                     />
 
                 </div>
@@ -210,7 +212,7 @@ function RouteComponent() {
                 data-testid="mcp-list-container"
             >
                 {filtered.length === 0 && !isLoading ? (
-                <div className='text-center text-muted-foreground mt-4'>No results found</div>
+                <div className='text-center text-muted-foreground mt-4'>{t('noResults', 'No results found')}</div>
                 ) : (
                 <ul style={{listStyle: 'none', padding: 0, margin: 0}}>
                     {filtered.map(item => (
@@ -275,7 +277,7 @@ function RouteComponent() {
 
                           <div className="mt-6 flex items-center justify-end gap-3">
                             {(item.githubUrl || item.github_url) && (
-                              <a href={item.githubUrl || item.github_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">Repository</a>
+                              <a href={item.githubUrl || item.github_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{t('repository', 'Repository')}</a>
                             )}
                             <Button size="sm" onClick={async () => {
                               const key = item.name
@@ -323,7 +325,7 @@ function RouteComponent() {
                                     toast.error('Failed to sync server. Please try again.')
                                     setInstalling(prev => ({...prev, [item.id]: false}))
                                 })
-                            }}>{installing[item.id] ? 'Installing...' : getServerConfig(item.name) ? 'Reinstall' : 'Install'}</Button>
+                            }}>{installing[item.id] ? t('installing', 'Installing...') : getServerConfig(item.name) ? t('reinstall', 'Reinstall') : t('install', 'Install')}</Button>
                           </div>
                         </div>
                       </li>

@@ -45,4 +45,12 @@
   "env": "Zmienne Środowiskowe",
   "serverStatusActive": "Pomyślnie aktywowano serwer {{serverKey}}",
   "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}"
+
+  ,"searchAria": "Szukaj MCP"
+  ,"searchPlaceholder": "Wyszukaj serwery MCP..."
+  ,"noResults": "Brak wyników"
+  ,"repository": "Repozytorium"
+  ,"install": "Zainstaluj"
+  ,"reinstall": "Zainstaluj ponownie"
+  ,"installing": "Instalowanie..."
 }

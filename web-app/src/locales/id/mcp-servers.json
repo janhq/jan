@@ -45,4 +45,12 @@
   "env": "Lingkungan",
   "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
   "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan"
+
+  ,"searchAria": "Cari MCP"
+  ,"searchPlaceholder": "Cari server MCP..."
+  ,"noResults": "Tidak ada hasil"
+  ,"repository": "Repository"
+  ,"install": "Instal"
+  ,"reinstall": "Instal ulang"
+  ,"installing": "Menginstal..."
 }

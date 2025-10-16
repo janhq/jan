@@ -45,4 +45,12 @@
   "env": "環境",
   "serverStatusActive": "伺服器 {{serverKey}} 啟用成功",
   "serverStatusInactive": "伺服器 {{serverKey}} 停用成功"
+
+  ,"searchAria": "搜尋 MCP"
+  ,"searchPlaceholder": "搜尋 MCP 伺服器..."
+  ,"noResults": "未找到結果"
+  ,"repository": "資料庫"
+  ,"install": "安裝"
+  ,"reinstall": "重新安裝"
+  ,"installing": "安裝中..."
 }
