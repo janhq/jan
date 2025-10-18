@@ -1649,12 +1649,12 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
       args.push('--main-gpu', String(cfg.main_gpu))
     // Note: Older llama.cpp versions are no longer supported
-    if (cfg.flash_attn !== undefined || cfg.flash_attn !== '') args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
+    if (cfg.flash_attn !== undefined || !cfg.flash_attn || cfg.flash_attn !== '') args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
     if (cfg.cont_batching) args.push('--cont-batching')
-    args.push('--no-mmap')
+    if (cfg.no_mmap) args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
