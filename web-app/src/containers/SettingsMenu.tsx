@@ -74,6 +74,12 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
+      title: 'common:attachments',
+      route: route.settings.attachments,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.ATTACHMENTS],
+    },
+    {
       title: 'common:appearance',
       route: route.settings.appearance,
       hasSubMenu: false,

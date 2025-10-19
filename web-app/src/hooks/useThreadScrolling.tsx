@@ -54,6 +54,7 @@ export const useThreadScrolling = (
     }
   }, [scrollContainerRef])
 
+
   const handleScroll = useCallback((e: Event) => {
     const target = e.target as HTMLDivElement
     const { scrollTop, scrollHeight, clientHeight } = target
@@ -68,7 +69,7 @@ export const useThreadScrolling = (
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
     lastScrollTopRef.current = scrollTop
-  }, [streamingContent, setIsAtBottom, setHasScrollbar])
+  }, [streamingContent])
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
@@ -77,7 +78,7 @@ export const useThreadScrolling = (
       return () =>
         scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [handleScroll, scrollContainerRef])
+  }, [handleScroll])
 
   const checkScrollState = useCallback(() => {
     const scrollContainer = scrollContainerRef.current
@@ -89,7 +90,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }, [scrollContainerRef, setIsAtBottom, setHasScrollbar])
+  }, [])
 
   useEffect(() => {
     if (!scrollContainerRef.current) return
@@ -100,7 +101,7 @@ export const useThreadScrolling = (
       scrollToBottom(false)
       checkScrollState()
     }
-  }, [checkScrollState, scrollToBottom, scrollContainerRef])
+  }, [checkScrollState, scrollToBottom])
 
 
   const prevCountRef = useRef(messageCount)
@@ -145,7 +146,7 @@ export const useThreadScrolling = (
     }
 
     prevCountRef.current = messageCount
-  }, [messageCount, lastMessageRole, getDOMElements, setPaddingHeight])
+  }, [messageCount, lastMessageRole])
 
   useEffect(() => {
     const previouslyStreaming = wasStreamingRef.current
@@ -196,7 +197,7 @@ export const useThreadScrolling = (
     }
 
     wasStreamingRef.current = currentlyStreaming
-  }, [streamingContent, threadId, getDOMElements, setPaddingHeight])
+  }, [streamingContent, threadId])
 
   useEffect(() => {
     userIntendedPositionRef.current = null
@@ -206,7 +207,7 @@ export const useThreadScrolling = (
     prevCountRef.current = messageCount
     scrollToBottom(false)
     checkScrollState()
-  }, [threadId, messageCount, scrollToBottom, checkScrollState, setPaddingHeight])
+  }, [threadId])
 
   return useMemo(
     () => ({

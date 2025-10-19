@@ -26,6 +26,7 @@ import { Route as SettingsHttpsProxyImport } from './routes/settings/https-proxy
 import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
+import { Route as SettingsAttachmentsImport } from './routes/settings/attachments'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
 import { Route as ProjectProjectIdImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
@@ -123,6 +124,12 @@ const SettingsGeneralRoute = SettingsGeneralImport.update({
 const SettingsExtensionsRoute = SettingsExtensionsImport.update({
   id: '/settings/extensions',
   path: '/settings/extensions',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsAttachmentsRoute = SettingsAttachmentsImport.update({
+  id: '/settings/attachments',
+  path: '/settings/attachments',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -227,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/appearance'
       fullPath: '/settings/appearance'
       preLoaderRoute: typeof SettingsAppearanceImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/attachments': {
+      id: '/settings/attachments'
+      path: '/settings/attachments'
+      fullPath: '/settings/attachments'
+      preLoaderRoute: typeof SettingsAttachmentsImport
       parentRoute: typeof rootRoute
     }
     '/settings/extensions': {
@@ -341,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -366,6 +381,7 @@ export interface FileRoutesByTo {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -392,6 +408,7 @@ export interface FileRoutesById {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -419,6 +436,7 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -443,6 +461,7 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -467,6 +486,7 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -493,6 +513,7 @@ export interface RootRouteChildren {
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
@@ -518,6 +539,7 @@ const rootRouteChildren: RootRouteChildren = {
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
@@ -552,6 +574,7 @@ export const routeTree = rootRoute
         "/local-api-server/logs",
         "/project/$projectId",
         "/settings/appearance",
+        "/settings/attachments",
         "/settings/extensions",
         "/settings/general",
         "/settings/hardware",
@@ -591,6 +614,9 @@ export const routeTree = rootRoute
     },
     "/settings/appearance": {
       "filePath": "settings/appearance.tsx"
+    },
+    "/settings/attachments": {
+      "filePath": "settings/attachments.tsx"
     },
     "/settings/extensions": {
       "filePath": "settings/extensions.tsx"

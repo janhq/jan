@@ -33,7 +33,7 @@ const DropdownAssistant = () => {
   return (
     <>
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-        <div className="flex items-center justify-between gap-2 bg-main-view-fg/5 py-1 hover:bg-main-view-fg/8 px-2 rounded-sm">
+        <div className="inline-flex items-center justify-between gap-2 bg-main-view-fg/5 py-1 hover:bg-main-view-fg/8 px-2 rounded-sm">
           <DropdownMenuTrigger asChild>
             <button className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-40">
               <div className="text-main-view-fg/80 flex items-center gap-1">

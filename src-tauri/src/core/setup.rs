@@ -7,7 +7,7 @@ use std::{
 };
 use tar::Archive;
 use tauri::{
-    App, Emitter, Manager, Runtime, Wry
+    App, Emitter, Manager, Runtime, Wry, WindowEvent
 };
 
 #[cfg(desktop)]
@@ -24,6 +24,13 @@ use super::{
 };
 
 pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
+    // Skip extension installation on mobile platforms
+    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        return Ok(());
+    }
+
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -38,7 +45,7 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
     if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
-    log::info!("Installing extensions. Clean up: {}", clean_up);
+    log::info!("Installing extensions. Clean up: {clean_up}");
     if !clean_up && extensions_path.exists() {
         return Ok(());
     }
@@ -68,7 +75,7 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "tgz") {
+        if path.extension().is_some_and(|ext| ext == "tgz") {
             let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
             let gz_decoder = GzDecoder::new(tar_gz);
             let mut archive = Archive::new(gz_decoder);
@@ -134,7 +141,7 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
 
             extensions_list.push(new_extension);
 
-            log::info!("Installed extension to {:?}", extension_dir);
+            log::info!("Installed extension to {extension_dir:?}");
         }
     }
     fs::write(
@@ -154,7 +161,7 @@ pub fn migrate_mcp_servers(
     let mcp_version = store
         .get("mcp_version")
         .and_then(|v| v.as_i64())
-        .unwrap_or_else(|| 0);
+        .unwrap_or(0);
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
@@ -168,7 +175,7 @@ pub fn migrate_mcp_servers(
             }),
         );
         if let Err(e) = result {
-            log::error!("Failed to add server config: {}", e);
+            log::error!("Failed to add server config: {e}");
         }
     }
     store.set("mcp_version", 1);
@@ -212,7 +219,7 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
-            log::error!("Failed to run mcp commands: {}", e);
+            log::error!("Failed to run mcp commands: {e}");
         }
         app_handle
             .emit("mcp-update", "MCP servers updated")
@@ -258,8 +265,37 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 app.exit(0);
             }
             other => {
-                println!("menu item {} not handled", other);
+                println!("menu item {other} not handled");
             }
         })
         .build(app)
+}
+
+pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
+    // Setup theme listener for main window
+    if let Some(window) = app.get_webview_window("main") {
+        setup_window_theme_listener(app.handle().clone(), window);
+    }
+
+    Ok(())
+}
+
+fn setup_window_theme_listener<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) {
+    let window_label = window.label().to_string();
+    let app_handle_clone = app_handle.clone();
+
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let theme_str = match theme {
+                tauri::Theme::Light => "light",
+                tauri::Theme::Dark => "dark",
+                _ => "auto",
+            };
+            log::info!("System theme changed to: {} for window: {}", theme_str, window_label);
+            let _ = app_handle_clone.emit("theme-changed", theme_str);
+        }
+    });
 }

@@ -3,6 +3,7 @@ import { ThreadMessage, ContentType } from '@janhq/core'
 import { useServiceHub } from './useServiceHub'
 import { useModelProvider } from './useModelProvider'
 import { usePrompt } from './usePrompt'
+import { removeReasoningContent } from '@/utils/reasoning'
 
 export interface TokenCountData {
   tokenCount: number
@@ -69,7 +70,19 @@ export const useTokensCount = (
         } as ThreadMessage)
       }
     }
-    return result
+    return result.map((e) => ({
+      ...e,
+      content: e.content.map((c) => ({
+        ...c,
+        text:
+          c.type === 'text'
+            ? {
+                value: removeReasoningContent(c.text?.value ?? '.'),
+                annotations: [],
+              }
+            : c.text,
+      })),
+    }))
   }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt

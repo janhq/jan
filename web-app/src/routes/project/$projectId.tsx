@@ -3,12 +3,10 @@ import { useMemo } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
-import SetupScreen from '@/containers/SetupScreen'
 import ThreadList from '@/containers/ThreadList'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 
@@ -26,7 +24,6 @@ export const Route = createFileRoute('/project/$projectId')({
 function ProjectPage() {
   const { t } = useTranslation()
   const { projectId } = useParams({ from: '/project/$projectId' })
-  const { providers } = useModelProvider()
   const { getFolderById } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
 
@@ -42,18 +39,6 @@ function ProjectPage() {
       .filter((thread) => thread.metadata?.project?.id === projectId)
       .sort((a, b) => (b.updated || 0) - (a.updated || 0))
   }, [threads, projectId])
-
-  // Conditional to check if there are any valid providers
-  const hasValidProviders = providers.some(
-    (provider) =>
-      provider.api_key?.length ||
-      (provider.provider === 'llamacpp' && provider.models.length) ||
-      (provider.provider === 'jan' && provider.models.length)
-  )
-
-  if (!hasValidProviders) {
-    return <SetupScreen />
-  }
 
   if (!project) {
     return (
@@ -93,7 +78,9 @@ function ProjectPage() {
               {projectThreads.length > 0 && (
                 <>
                   <h2 className="text-xl font-semibold text-main-view-fg mb-2">
-                    {t('projects.conversationsIn', { projectName: project.name })}
+                    {t('projects.conversationsIn', {
+                      projectName: project.name,
+                    })}
                   </h2>
                   <p className="text-main-view-fg/70">
                     {t('projects.conversationsDescription')}
@@ -105,7 +92,11 @@ function ProjectPage() {
             {/* Thread List or Empty State */}
             <div className="mb-0">
               {projectThreads.length > 0 ? (
-                <ThreadList threads={projectThreads} variant="project" />
+                <ThreadList
+                  threads={projectThreads}
+                  variant="project"
+                  currentProjectId={projectId}
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <IconMessage
@@ -113,10 +104,14 @@ function ProjectPage() {
                     className="text-main-view-fg/30 mb-4"
                   />
                   <h3 className="text-lg font-medium text-main-view-fg/60 mb-2">
-                    {t('projects.noConversationsIn', { projectName: project.name })}
+                    {t('projects.noConversationsIn', {
+                      projectName: project.name,
+                    })}
                   </h3>
                   <p className="text-main-view-fg/50 text-sm">
-                    {t('projects.startNewConversation', { projectName: project.name })}
+                    {t('projects.startNewConversation', {
+                      projectName: project.name,
+                    })}
                   </p>
                 </div>
               )}

@@ -71,4 +71,7 @@ export enum PlatformFeature {
 
   // Temporary chat mode - web-only feature for ephemeral conversations like ChatGPT
   TEMPORARY_CHAT = 'temporaryChat',
+
+  // Attachments/RAG UI and tooling (desktop-only for now)
+  ATTACHMENTS = 'attachments',
 }
