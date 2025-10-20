@@ -16,6 +16,7 @@ const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'de-DE', label: 'Deutsch' },
+  { value: 'pt-BR', label: 'Português (Brasil)' },
 ]
 
 export default function LanguageSwitcher() {
