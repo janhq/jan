@@ -1,0 +1,229 @@
+name: build-windows-x64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      aws_s3_prefix:
+        required: false
+        type: string
+        default: '/latest/'
+      beta:
+        required: false
+        type: boolean
+        default: false
+      nightly:
+        required: false
+        type: boolean
+        default: false
+      cortex_api_port:
+        required: false
+        type: string
+        default: null
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Replace Icons for Beta Build
+        if: inputs.beta == true && inputs.nightly != true
+        shell: bash
+        run: |
+          rm -rf electron/icons/*
+
+          cp electron/icons_dev/jan-beta-512x512.png electron/icons/512x512.png
+          cp electron/icons_dev/jan-beta.ico electron/icons/icon.ico
+          cp electron/icons_dev/jan-beta.png electron/icons/icon.png
+          cp electron/icons_dev/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
+          cp electron/icons_dev/jan-beta-tray.png electron/icons/icon-tray.png
+
+      - name: Replace Icons for Nightly Build
+        if: inputs.nightly == true && inputs.beta != true
+        shell: bash
+        run: |
+          rm -rf electron/icons/*
+
+          cp electron/icons_dev/jan-nightly-512x512.png electron/icons/512x512.png
+          cp electron/icons_dev/jan-nightly.ico electron/icons/icon.ico
+          cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
+          cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
+          cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update app version base on tag
+        if: inputs.public_provider != 'github'
+        id: version_update
+        shell: bash
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update the version in electron/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
+
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json nightly
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh nightly
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
+          cat ./package.json
+          echo "------------------------"
+
+      - name: Change App Name for beta version
+        if: inputs.beta == true
+        shell: bash
+        run: |
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json beta
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json beta
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh beta
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
+          cat ./package.json
+          echo "------------------------"
+          cat ./electron/scripts/uninstaller.nsh
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
+
+      - name: Update app version base on tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        shell: bash
+        run: |
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+        env:
+          VERSION_TAG: ${{ inputs.new_version }}
+
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global AzureSignTool
+
+      - name: Build and publish app to aws s3 r2 or github artifactory
+        shell: bash
+        if: inputs.public_provider != 'github'
+        run: |
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build
+          else
+            make build-and-publish
+          fi
+        env:
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: homebrewltd
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: homebrewltd
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AZURE_CERT_NAME: homebrewltd
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-win-x64-${{ inputs.new_version }}
+          path: ./electron/dist/*.exe

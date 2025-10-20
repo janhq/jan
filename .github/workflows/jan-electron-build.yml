@@ -1,0 +1,91 @@
+name: Electron Builder - Tag
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+jobs:
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  create-draft-release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    permissions:
+      contents: write
+    steps:
+      - name: Extract tag name without v prefix
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+      - name: Create Draft Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "${{ env.VERSION }}"
+          draft: true
+          prerelease: false
+
+  build-macos:
+    uses: ./.github/workflows/template-build-macos.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      beta: false
+      nightly: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      beta: false
+      nightly: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      beta: false
+      nightly: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  update_release_draft:
+    needs: [build-macos, build-windows-x64, build-linux-x64]
+    permissions:
+      # write permission is required to create a github release
+      contents: write
+      # write permission is required for autolabeler
+      # otherwise, read permission is required at least
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      # (Optional) GitHub Enterprise requires GHE_HOST variable set
+      #- name: Set GHE_HOST
+      #  run: |
+      #    echo "GHE_HOST=${GITHUB_SERVER_URL##https:\/\/}" >> $GITHUB_ENV
+
+      # Drafts your next Release notes as Pull Requests are merged into "master"
+      - uses: release-drafter/release-drafter@v5
+        # (Optional) specify config name to use, relative to .github/. Default: release-drafter.yml
+        # with:
+        #   config-name: my-config.yml
+        #   disable-autolabeler: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
