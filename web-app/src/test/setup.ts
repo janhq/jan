@@ -17,6 +17,7 @@ vi.mock('@/lib/platform/const', () => ({
     systemIntegrations: true,
     httpsProxy: true,
     defaultProviders: true,
+    projects: true,
     analytics: true,
     webAutoModelSelection: false,
     modelProviderSettings: true,
@@ -25,6 +26,7 @@ vi.mock('@/lib/platform/const', () => ({
     extensionsSettings: true,
     assistants: true,
     authentication: false,
+    attachments: true,
   }
 }))
 

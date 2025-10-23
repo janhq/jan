@@ -44,7 +44,6 @@ import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
-import { open } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -333,7 +332,7 @@ const ChatInput = ({
         toast.info('Attachments are disabled in Settings')
         return
       }
-      const selection = await open({
+      const selection = await serviceHub.dialog().open({
         multiple: true,
         filters: [
           {

@@ -73,6 +73,7 @@ vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
     WEB_AUTO_MODEL_SELECTION: false,
     MODEL_PROVIDER_SETTINGS: true,
+    projects: true,
   },
 }))
 

@@ -122,6 +122,7 @@ vi.mock('@/lib/platform/const', () => ({
     ASSISTANTS: true,
     MODEL_HUB: true,
     AUTHENTICATION: false,
+    projects: true,
   },
 }))
 
