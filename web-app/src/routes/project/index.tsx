@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
@@ -28,7 +30,11 @@ export const Route = createFileRoute('/project/')({
 })
 
 function Project() {
-  return <ProjectContent />
+  return (
+    <PlatformGuard feature={PlatformFeature.PROJECTS}>
+      <ProjectContent />
+    </PlatformGuard>
+  )
 }
 
 function ProjectContent() {

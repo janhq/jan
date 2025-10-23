@@ -35,6 +35,8 @@ export enum PlatformFeature {
 
   // Default model providers (OpenAI, Anthropic, etc.)
   DEFAULT_PROVIDERS = 'defaultProviders',
+  // Projects management
+  PROJECTS = 'projects',
 
   // Analytics and telemetry
   ANALYTICS = 'analytics',

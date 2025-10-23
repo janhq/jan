@@ -14,6 +14,7 @@ import {
   ImportOptions,
 } from '@janhq/core' // cspell: disable-line
 import { janApiClient, JanChatMessage } from './api'
+import { syncJanModelsLocalStorage } from './helpers'
 import { janProviderStore } from './store'
 import { ApiError } from '../shared/types/errors'
 
@@ -45,112 +46,9 @@ export default class JanProviderWeb extends AIEngine {
       console.log('Validating Jan models in localStorage...')
 
       const remoteModels = await janApiClient.getModels()
-      const remoteModelMap = new Map(remoteModels.map((model) => [model.id, model]))
-
-      const storageKey = 'model-provider'
-      const data = localStorage.getItem(storageKey)
-      if (!data) return
-
-      type StoredModel = {
-        id?: string
-        capabilities?: unknown
-        [key: string]: unknown
-      }
-
-      type StoredProvider = {
-        provider?: string
-        models?: StoredModel[]
-        [key: string]: unknown
-      }
-
-      type StoredState = {
-        state?: {
-          providers?: StoredProvider[]
-          [key: string]: unknown
-        }
-        version?: number
-        [key: string]: unknown
-      }
-
-      let parsed: StoredState
-      try {
-        parsed = JSON.parse(data) as StoredState
-      } catch (parseError) {
-        console.warn('Failed to parse Jan model storage; clearing:', parseError)
-        localStorage.removeItem(storageKey)
-        return
-      }
-
-      if (!parsed?.state?.providers) return
-
-      let storageUpdated = false
-
-      const normalizeCapabilities = (capabilities: string[]): string[] =>
-        [...new Set(capabilities)].sort((a, b) => a.localeCompare(b))
-
-      for (const provider of parsed.state.providers) {
-        if (provider.provider !== 'jan' || !Array.isArray(provider.models)) {
-          continue
-        }
-
-        const updatedModels: StoredModel[] = []
-
-        for (const model of provider.models) {
-          const modelId = typeof model.id === 'string' ? model.id : null
-          if (!modelId) {
-            storageUpdated = true
-            continue
-          }
-
-          const remoteModel = remoteModelMap.get(modelId)
-          if (!remoteModel) {
-            console.log(`Removing unknown Jan model from localStorage: ${modelId}`)
-            storageUpdated = true
-            continue
-          }
-
-          const remoteCapabilities = Array.isArray(remoteModel.capabilities)
-            ? remoteModel.capabilities
-            : []
-          const storedCapabilities = Array.isArray(model.capabilities)
-            ? model.capabilities.filter(
-                (cap): cap is string => typeof cap === 'string'
-              )
-            : []
-
-          const normalizedStored = normalizeCapabilities(storedCapabilities)
-          const normalizedRemote = normalizeCapabilities(remoteCapabilities)
-
-          const capabilitiesMatch =
-            normalizedStored.length === normalizedRemote.length &&
-            normalizedStored.every((cap, index) => cap === normalizedRemote[index])
-
-          if (!capabilitiesMatch) {
-            console.log(
-              `Updating capabilities for Jan model ${modelId}:`,
-              normalizedStored,
-              '=>',
-              normalizedRemote
-            )
-            updatedModels.push({
-              ...model,
-              capabilities: remoteModel.capabilities,
-            })
-            storageUpdated = true
-          } else {
-            updatedModels.push(model)
-          }
-        }
-
-        if (updatedModels.length !== provider.models.length) {
-          storageUpdated = true
-        }
-
-        provider.models = updatedModels
-      }
+      const storageUpdated = syncJanModelsLocalStorage(remoteModels)
 
       if (storageUpdated) {
-        localStorage.setItem(storageKey, JSON.stringify(parsed))
         console.log(
           'Synchronized Jan models in localStorage with server capabilities; reloading...'
         )
