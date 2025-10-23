@@ -5,7 +5,7 @@
  * then provides synchronous access to service instances throughout the app.
  */
 
-import { isPlatformTauri } from '@/lib/platform/utils'
+import { isPlatformTauri, isPlatformIOS, isPlatformAndroid } from '@/lib/platform/utils'
 
 // Import default services
 import { DefaultThemeService } from './theme/default'
@@ -27,6 +27,10 @@ import { DefaultPathService } from './path/default'
 import { DefaultCoreService } from './core/default'
 import { DefaultDeepLinkService } from './deeplink/default'
 import { DefaultProjectsService } from './projects/default'
+import { DefaultRAGService } from './rag/default'
+import type { RAGService } from './rag/types'
+import { DefaultUploadsService } from './uploads/default'
+import type { UploadsService } from './uploads/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -70,6 +74,8 @@ export interface ServiceHub {
   core(): CoreService
   deeplink(): DeepLinkService
   projects(): ProjectsService
+  rag(): RAGService
+  uploads(): UploadsService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -92,6 +98,8 @@ class PlatformServiceHub implements ServiceHub {
   private coreService: CoreService = new DefaultCoreService()
   private deepLinkService: DeepLinkService = new DefaultDeepLinkService()
   private projectsService: ProjectsService = new DefaultProjectsService()
+  private ragService: RAGService = new DefaultRAGService()
+  private uploadsService: UploadsService = new DefaultUploadsService()
   private initialized = false
 
   /**
@@ -102,11 +110,14 @@ class PlatformServiceHub implements ServiceHub {
 
     console.log(
       'Initializing service hub for platform:',
-      isPlatformTauri() ? 'Tauri' : 'Web'
+      isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid() ? 'Tauri' :
+      isPlatformIOS() ? 'iOS' :
+      isPlatformAndroid() ? 'Android' : 'Web'
     )
 
     try {
-      if (isPlatformTauri()) {
+      if (isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid()) {
+        // Desktop Tauri
         const [
           themeModule,
           windowModule,
@@ -149,6 +160,44 @@ class PlatformServiceHub implements ServiceHub {
         this.updaterService = new updaterModule.TauriUpdaterService()
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
+        this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+      } else if (isPlatformIOS() || isPlatformAndroid()) {
+        const [
+          themeModule,
+          windowModule,
+          eventsModule,
+          appModule,
+          mcpModule,
+          providersModule,
+          dialogModule,
+          openerModule,
+          pathModule,
+          coreModule,
+          deepLinkModule,
+        ] = await Promise.all([
+          import('./theme/tauri'),
+          import('./window/tauri'),
+          import('./events/tauri'),
+          import('./app/tauri'),
+          import('./mcp/tauri'),
+          import('./providers/tauri'),
+          import('./dialog/tauri'),
+          import('./opener/tauri'),
+          import('./path/tauri'),
+          import('./core/mobile'), // Use mobile-specific core service
+          import('./deeplink/tauri'),
+        ])
+
+        this.themeService = new themeModule.TauriThemeService()
+        this.windowService = new windowModule.TauriWindowService()
+        this.eventsService = new eventsModule.TauriEventsService()
+        this.appService = new appModule.TauriAppService()
+        this.mcpService = new mcpModule.TauriMCPService()
+        this.providersService = new providersModule.TauriProvidersService()
+        this.dialogService = new dialogModule.TauriDialogService()
+        this.openerService = new openerModule.TauriOpenerService()
+        this.pathService = new pathModule.TauriPathService()
+        this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
       } else {
         const [
@@ -301,6 +350,16 @@ class PlatformServiceHub implements ServiceHub {
   projects(): ProjectsService {
     this.ensureInitialized()
     return this.projectsService
+  }
+
+  rag(): RAGService {
+    this.ensureInitialized()
+    return this.ragService
+  }
+
+  uploads(): UploadsService {
+    this.ensureInitialized()
+    return this.uploadsService
   }
 }
 

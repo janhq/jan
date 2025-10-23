@@ -5,19 +5,30 @@ import {
   removeYamlFrontMatter,
   extractModelName,
   extractModelRepo,
+  getModelCapabilities,
 } from '../models'
+import { ModelCapabilities } from '@/types/models'
 
 // Mock the token.js module
 vi.mock('token.js', () => ({
   models: {
     openai: {
       models: ['gpt-3.5-turbo', 'gpt-4'],
+      supportsToolCalls: ['gpt-3.5-turbo', 'gpt-4'],
+      supportsImages: ['gpt-4-vision-preview'],
     },
     anthropic: {
       models: ['claude-3-sonnet', 'claude-3-haiku'],
+      supportsToolCalls: ['claude-3-sonnet'],
+      supportsImages: ['claude-3-sonnet', 'claude-3-haiku'],
     },
     mistral: {
       models: ['mistral-7b', 'mistral-8x7b'],
+      supportsToolCalls: ['mistral-8x7b'],
+    },
+    // Provider with no capability arrays
+    cohere: {
+      models: ['command', 'command-light'],
     },
   },
 }))
@@ -221,5 +232,76 @@ describe('extractModelRepo', () => {
     expect(extractModelRepo('https://huggingface.co/cortexso/tinyllama/')).toBe(
       'cortexso/tinyllama/'
     )
+  })
+})
+
+describe('getModelCapabilities', () => {
+  it('returns completion capability for all models', () => {
+    const capabilities = getModelCapabilities('openai', 'gpt-3.5-turbo')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+  })
+
+  it('includes tools capability when model supports it', () => {
+    const capabilities = getModelCapabilities('openai', 'gpt-3.5-turbo')
+    expect(capabilities).toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+  })
+
+  it('excludes tools capability when model does not support it', () => {
+    const capabilities = getModelCapabilities('mistral', 'mistral-7b')
+    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+  })
+
+  it('includes vision capability when model supports it', () => {
+    const capabilities = getModelCapabilities('openai', 'gpt-4-vision-preview')
+    expect(capabilities).toContain(ModelCapabilities.VISION)
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+  })
+
+  it('excludes vision capability when model does not support it', () => {
+    const capabilities = getModelCapabilities('openai', 'gpt-3.5-turbo')
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+
+  it('includes both tools and vision when model supports both', () => {
+    const capabilities = getModelCapabilities('anthropic', 'claude-3-sonnet')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+    expect(capabilities).toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).toContain(ModelCapabilities.VISION)
+  })
+
+  it('handles provider with no capability arrays gracefully', () => {
+    const capabilities = getModelCapabilities('cohere', 'command')
+    expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
+    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+
+  it('handles unknown provider gracefully', () => {
+    const capabilities = getModelCapabilities('openrouter', 'some-model')
+    expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
+    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+
+  it('handles model not in capability list', () => {
+    const capabilities = getModelCapabilities('anthropic', 'claude-3-haiku')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+    expect(capabilities).toContain(ModelCapabilities.VISION)
+    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
+  })
+
+  it('returns only completion for provider with partial capability data', () => {
+    // Mistral has supportsToolCalls but no supportsImages
+    const capabilities = getModelCapabilities('mistral', 'mistral-7b')
+    expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
+  })
+
+  it('handles model that supports tools but not vision', () => {
+    const capabilities = getModelCapabilities('mistral', 'mistral-8x7b')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+    expect(capabilities).toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
   })
 })

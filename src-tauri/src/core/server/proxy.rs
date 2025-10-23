@@ -67,7 +67,7 @@ async fn proxy_request(
                 .any(|&method| method.eq_ignore_ascii_case(requested_method));
 
         if !method_allowed {
-            log::warn!("CORS preflight: Method '{}' not allowed", requested_method);
+            log::warn!("CORS preflight: Method '{requested_method}' not allowed");
             return Ok(Response::builder()
                 .status(StatusCode::METHOD_NOT_ALLOWED)
                 .body(Body::from("Method not allowed"))
@@ -80,14 +80,12 @@ async fn proxy_request(
 
         let is_trusted = if is_whitelisted_path {
             log::debug!(
-                "CORS preflight: Bypassing host check for whitelisted path: {}",
-                request_path
+                "CORS preflight: Bypassing host check for whitelisted path: {request_path}"
             );
             true
         } else if !host.is_empty() {
             log::debug!(
-                "CORS preflight: Host is '{}', trusted hosts: {:?}",
-                host,
+                "CORS preflight: Host is '{host}', trusted hosts: {:?}",
                 &config.trusted_hosts
             );
             is_valid_host(host, &config.trusted_hosts)
@@ -98,9 +96,7 @@ async fn proxy_request(
 
         if !is_trusted {
             log::warn!(
-                "CORS preflight: Host '{}' not trusted for path '{}'",
-                host,
-                request_path
+                "CORS preflight: Host '{host}' not trusted for path '{request_path}'"
             );
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
@@ -158,8 +154,7 @@ async fn proxy_request(
 
         if !headers_valid {
             log::warn!(
-                "CORS preflight: Some requested headers not allowed: {}",
-                requested_headers
+                "CORS preflight: Some requested headers not allowed: {requested_headers}"
             );
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
@@ -186,9 +181,7 @@ async fn proxy_request(
         }
 
         log::debug!(
-            "CORS preflight response: host_trusted={}, origin='{}'",
-            is_trusted,
-            origin
+            "CORS preflight response: host_trusted={is_trusted}, origin='{origin}'"
         );
         return Ok(response.body(Body::empty()).unwrap());
     }
@@ -252,7 +245,7 @@ async fn proxy_request(
                 .unwrap());
         }
     } else {
-        log::debug!("Bypassing host validation for whitelisted path: {}", path);
+        log::debug!("Bypassing host validation for whitelisted path: {path}");
     }
 
     if !is_whitelisted_path && !config.proxy_api_key.is_empty() {
@@ -285,8 +278,7 @@ async fn proxy_request(
         }
     } else if is_whitelisted_path {
         log::debug!(
-            "Bypassing authorization check for whitelisted path: {}",
-            path
+            "Bypassing authorization check for whitelisted path: {path}"
         );
     }
 
@@ -312,8 +304,7 @@ async fn proxy_request(
         | (hyper::Method::POST, "/completions")
         | (hyper::Method::POST, "/embeddings") => {
             log::debug!(
-                "Handling POST request to {} requiring model lookup in body",
-                destination_path
+                "Handling POST request to {destination_path} requiring model lookup in body",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
@@ -336,13 +327,12 @@ async fn proxy_request(
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
-                        log::debug!("Extracted model_id: {}", model_id);
+                        log::debug!("Extracted model_id: {model_id}");
                         let sessions_guard = sessions.lock().await;
 
                         if sessions_guard.is_empty() {
                             log::warn!(
-                                "Request for model '{}' but no models are running.",
-                                model_id
+                                "Request for model '{model_id}' but no models are running."
                             );
                             let mut error_response =
                                 Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
@@ -363,9 +353,9 @@ async fn proxy_request(
                         {
                             target_port = Some(session.info.port);
                             session_api_key = Some(session.info.api_key.clone());
-                            log::debug!("Found session for model_id {}", model_id,);
+                            log::debug!("Found session for model_id {model_id}");
                         } else {
-                            log::warn!("No running session found for model_id: {}", model_id);
+                            log::warn!("No running session found for model_id: {model_id}");
                             let mut error_response =
                                 Response::builder().status(StatusCode::NOT_FOUND);
                             error_response = add_cors_headers_with_host_and_origin(
@@ -376,15 +366,13 @@ async fn proxy_request(
                             );
                             return Ok(error_response
                                 .body(Body::from(format!(
-                                    "No running session found for model '{}'",
-                                    model_id
+                                    "No running session found for model '{model_id}'"
                                 )))
                                 .unwrap());
                         }
                     } else {
                         log::warn!(
-                            "POST body for {} is missing 'model' field or it's not a string",
-                            destination_path
+                            "POST body for {destination_path} is missing 'model' field or it's not a string"
                         );
                         let mut error_response =
                             Response::builder().status(StatusCode::BAD_REQUEST);
@@ -401,9 +389,7 @@ async fn proxy_request(
                 }
                 Err(e) => {
                     log::warn!(
-                        "Failed to parse POST body for {} as JSON: {}",
-                        destination_path,
-                        e
+                        "Failed to parse POST body for {destination_path} as JSON: {e}"
                     );
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -535,7 +521,7 @@ async fn proxy_request(
             let is_explicitly_whitelisted_get = method == hyper::Method::GET
                 && whitelisted_paths.contains(&destination_path.as_str());
             if is_explicitly_whitelisted_get {
-                log::debug!("Handled whitelisted GET path: {}", destination_path);
+                log::debug!("Handled whitelisted GET path: {destination_path}");
                 let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -546,9 +532,7 @@ async fn proxy_request(
                 return Ok(error_response.body(Body::from("Not Found")).unwrap());
             } else {
                 log::warn!(
-                    "Unhandled method/path for dynamic routing: {} {}",
-                    method,
-                    destination_path
+                    "Unhandled method/path for dynamic routing: {method} {destination_path}"
                 );
                 let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
                 error_response = add_cors_headers_with_host_and_origin(
@@ -581,7 +565,7 @@ async fn proxy_request(
         }
     };
 
-    let upstream_url = format!("http://127.0.0.1:{}{}", port, destination_path);
+    let upstream_url = format!("http://127.0.0.1:{port}{destination_path}");
 
     let mut outbound_req = client.request(method.clone(), &upstream_url);
 
@@ -593,13 +577,14 @@ async fn proxy_request(
 
     if let Some(key) = session_api_key {
         log::debug!("Adding session Authorization header");
-        outbound_req = outbound_req.header("Authorization", format!("Bearer {}", key));
+        outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
     } else {
         log::debug!("No session API key available for this request");
     }
 
     let outbound_req_with_body = if let Some(bytes) = buffered_body {
-        log::debug!("Sending buffered body ({} bytes)", bytes.len());
+        let bytes_len = bytes.len();
+        log::debug!("Sending buffered body ({bytes_len} bytes)");
         outbound_req.body(bytes)
     } else {
         log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
@@ -618,7 +603,7 @@ async fn proxy_request(
     match outbound_req_with_body.send().await {
         Ok(response) => {
             let status = response.status();
-            log::debug!("Received response with status: {}", status);
+            log::debug!("Received response with status: {status}");
 
             let mut builder = Response::builder().status(status);
 
@@ -648,7 +633,7 @@ async fn proxy_request(
                             }
                         }
                         Err(e) => {
-                            log::error!("Stream error: {}", e);
+                            log::error!("Stream error: {e}");
                             break;
                         }
                     }
@@ -659,8 +644,8 @@ async fn proxy_request(
             Ok(builder.body(body).unwrap())
         }
         Err(e) => {
-            let error_msg = format!("Proxy request to model failed: {}", e);
-            log::error!("{}", error_msg);
+            let error_msg = format!("Proxy request to model failed: {e}");
+            log::error!("{error_msg}");
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -675,14 +660,12 @@ async fn proxy_request(
 
 fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
-    host: &str,
+    _host: &str,
     origin: &str,
-    trusted_hosts: &[Vec<String>],
+    _trusted_hosts: &[Vec<String>],
 ) -> hyper::http::response::Builder {
     let mut builder = builder;
-    let allow_origin_header = if !origin.is_empty() && is_valid_host(host, trusted_hosts) {
-        origin.to_string()
-    } else if !origin.is_empty() {
+    let allow_origin_header = if !origin.is_empty() {
         origin.to_string()
     } else {
         "*".to_string()
@@ -706,6 +689,7 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
     handle_guard.is_some()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_server(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
@@ -721,9 +705,9 @@ pub async fn start_server(
         return Err("Server is already running".into());
     }
 
-    let addr: SocketAddr = format!("{}:{}", host, port)
+    let addr: SocketAddr = format!("{host}:{port}")
         .parse()
-        .map_err(|e| format!("Invalid address: {}", e))?;
+        .map_err(|e| format!("Invalid address: {e}"))?;
 
     let config = ProxyConfig {
         prefix,
@@ -752,15 +736,15 @@ pub async fn start_server(
     let server = match Server::try_bind(&addr) {
         Ok(builder) => builder.serve(make_svc),
         Err(e) => {
-            log::error!("Failed to bind to {}: {}", addr, e);
+            log::error!("Failed to bind to {addr}: {e}");
             return Err(Box::new(e));
         }
     };
-    log::info!("Jan API server started on http://{}", addr);
+    log::info!("Jan API server started on http://{addr}");
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
-            log::error!("Server error: {}", e);
+            log::error!("Server error: {e}");
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
         }
         Ok(())
@@ -768,7 +752,7 @@ pub async fn start_server(
 
     *handle_guard = Some(server_task);
     let actual_port = addr.port();
-    log::info!("Jan API server started successfully on port {}", actual_port);
+    log::info!("Jan API server started successfully on port {actual_port}");
     Ok(actual_port)
 }
 

@@ -1,0 +1,33 @@
+{
+  "name": "@janhq/rag-extension",
+  "productName": "RAG Tools",
+  "version": "0.1.0",
+  "description": "Registers RAG tools and orchestrates retrieval across parser, embeddings, and vector DB",
+  "main": "dist/index.js",
+  "module": "dist/module.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "cpx": "1.5.0",
+    "rimraf": "6.0.1",
+    "rolldown": "1.0.0-beta.1",
+    "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "@janhq/tauri-plugin-rag-api": "link:../../src-tauri/plugins/tauri-plugin-rag",
+    "@janhq/tauri-plugin-vector-db-api": "link:../../src-tauri/plugins/tauri-plugin-vector-db"
+  },
+  "files": [
+    "dist/*",
+    "package.json"
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
+}

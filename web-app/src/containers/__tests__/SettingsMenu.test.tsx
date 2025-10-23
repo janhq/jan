@@ -34,6 +34,7 @@ vi.mock('@/lib/platform/const', () => ({
     alternateShortcutBindings: false,
     firstMessagePersistedThread: false,
     temporaryChat: false,
+    projects: true,
   },
 }))
 

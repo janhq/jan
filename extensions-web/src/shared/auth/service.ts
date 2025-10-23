@@ -5,7 +5,7 @@
 
 declare const JAN_API_BASE: string
 
-import { User, AuthState, AuthBroadcastMessage } from './types'
+import { User, AuthState, AuthBroadcastMessage, AuthTokens } from './types'
 import {
   AUTH_STORAGE_KEYS,
   AUTH_ENDPOINTS,
@@ -115,7 +115,7 @@ export class JanAuthService {
 
       // Store tokens and set authenticated state
       this.accessToken = tokens.access_token
-      this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
+      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
       this.setAuthProvider(providerId)
 
       this.authBroadcast.broadcastLogin()
@@ -158,7 +158,7 @@ export class JanAuthService {
       const tokens = await refreshToken()
 
       this.accessToken = tokens.access_token
-      this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
+      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
     } catch (error) {
       console.error('Failed to refresh access token:', error)
       if (error instanceof ApiError && error.isStatus(401)) {
@@ -343,6 +343,23 @@ export class JanAuthService {
     localStorage.removeItem(AUTH_STORAGE_KEYS.AUTH_PROVIDER)
   }
 
+  private computeTokenExpiry(tokens: AuthTokens): number {
+    if (tokens.expires_at) {
+      const expiresAt = new Date(tokens.expires_at).getTime()
+      if (!Number.isNaN(expiresAt)) {
+        return expiresAt
+      }
+      console.warn('Invalid expires_at format in auth tokens:', tokens.expires_at)
+    }
+
+    if (typeof tokens.expires_in === 'number') {
+      return Date.now() + tokens.expires_in * 1000
+    }
+
+    console.warn('Auth tokens missing expiry information; defaulting to immediate expiry')
+    return Date.now()
+  }
+
   /**
    * Ensure guest access is available
    */
@@ -352,7 +369,7 @@ export class JanAuthService {
       if (!this.accessToken || Date.now() > this.tokenExpiryTime) {
         const tokens = await guestLogin()
         this.accessToken = tokens.access_token
-        this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
+        this.tokenExpiryTime = this.computeTokenExpiry(tokens)
       }
     } catch (error) {
       console.error('Failed to ensure guest access:', error)
@@ -387,7 +404,6 @@ export class JanAuthService {
         case AUTH_EVENTS.LOGOUT:
           // Another tab logged out, clear our state
           this.clearAuthState()
-          this.ensureGuestAccess().catch(console.error)
           break
       }
     })

@@ -10,6 +10,7 @@ import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
+import { getModelCapabilities } from '@/lib/models'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -26,32 +27,16 @@ export class TauriProvidersService extends DefaultProvidersService {
             provider.provider as unknown as keyof typeof providerModels
           ].models as unknown as string[]
 
-          if (Array.isArray(builtInModels))
+          if (Array.isArray(builtInModels)) {
             models = builtInModels.map((model) => {
               const modelManifest = models.find((e) => e.id === model)
               // TODO: Check chat_template for tool call support
-              const capabilities = [
-                ModelCapabilities.COMPLETION,
-                (
-                  providerModels[
-                    provider.provider as unknown as keyof typeof providerModels
-                  ]?.supportsToolCalls as unknown as string[]
-                )?.includes(model)
-                  ? ModelCapabilities.TOOLS
-                  : undefined,
-                (
-                  providerModels[
-                    provider.provider as unknown as keyof typeof providerModels
-                  ]?.supportsImages as unknown as string[]
-                )?.includes(model)
-                  ? ModelCapabilities.VISION
-                  : undefined,
-              ].filter(Boolean) as string[]
               return {
                 ...(modelManifest ?? { id: model, name: model }),
-                capabilities,
+                capabilities: getModelCapabilities(provider.provider, model),
               } as Model
             })
+          }
         }
 
         return {
@@ -164,6 +149,12 @@ export class TauriProvidersService extends DefaultProvidersService {
       if (provider.api_key) {
         headers['x-api-key'] = provider.api_key
         headers['Authorization'] = `Bearer ${provider.api_key}`
+      }
+
+      if (provider.custom_header) {
+        provider.custom_header.forEach((header) => {
+          headers[header.header] = header.value
+        })
       }
 
       // Always use Tauri's fetch to avoid CORS issues
