@@ -7,7 +7,7 @@ import { removeReasoningContent } from '@/utils/reasoning'
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 // Define a temporary type for the expected tool result shape (ToolResult as before)
-type ToolResult = {
+export type ToolResult = {
   content: Array<{
     type?: string
     text?: string
