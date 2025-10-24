@@ -6,6 +6,48 @@ import { removeReasoningContent } from '@/utils/reasoning'
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
+// Define a temporary type for the expected tool result shape (ToolResult as before)
+type ToolResult = {
+  content: Array<{
+    type?: string
+    text?: string
+    data?: string
+    image_url?: { url: string; detail?: string }
+  }>
+  error?: string
+}
+
+// Helper function to convert the tool's output part into an API content part
+const convertToolPartToApiContentPart = (part: ToolResult['content'][0]) => {
+  if (part.text) {
+    return { type: 'text', text: part.text }
+  }
+
+  // Handle base64 image data
+  if (part.data) {
+    // Assume default image type, though a proper tool should return the mime type
+    const mimeType =
+      part.type === 'image' ? 'image/png' : part.type || 'image/png'
+    const dataUrl = `data:${mimeType};base64,${part.data}`
+
+    return {
+      type: 'image_url',
+      image_url: {
+        url: dataUrl,
+        detail: 'auto',
+      },
+    }
+  }
+
+  // Handle pre-formatted image URL
+  if (part.image_url) {
+    return { type: 'image_url', image_url: part.image_url }
+  }
+
+  // Fallback to text stringification for structured but unhandled data
+  return { type: 'text', text: JSON.stringify(part) }
+}
+
 /**
  * @fileoverview Helper functions for creating chat completion request.
  * These functions are used to create chat completion request objects
@@ -26,7 +68,11 @@ export class CompletionMessagesBuilder {
         .map<ChatCompletionMessageParam>((msg) => {
           const param = this.toCompletionParamFromThread(msg)
           // In constructor context, normalize empty user text to a placeholder
-          if (param.role === 'user' && typeof param.content === 'string' && param.content === '') {
+          if (
+            param.role === 'user' &&
+            typeof param.content === 'string' &&
+            param.content === ''
+          ) {
             return { ...param, content: '.' }
           }
           return param
@@ -35,7 +81,9 @@ export class CompletionMessagesBuilder {
   }
 
   // Normalize a ThreadMessage into a ChatCompletionMessageParam for Token.js
-  private toCompletionParamFromThread(msg: ThreadMessage): ChatCompletionMessageParam {
+  private toCompletionParamFromThread(
+    msg: ThreadMessage
+  ): ChatCompletionMessageParam {
     if (msg.role === 'assistant') {
       return {
         role: 'assistant',
@@ -60,7 +108,10 @@ export class CompletionMessagesBuilder {
         if (part.type === ContentType.Image) {
           return {
             type: 'image_url' as const,
-            image_url: { url: part.image_url?.url || '', detail: part.image_url?.detail || 'auto' },
+            image_url: {
+              url: part.image_url?.url || '',
+              detail: part.image_url?.detail || 'auto',
+            },
           }
         }
         // Fallback for unknown content types
@@ -113,10 +164,35 @@ export class CompletionMessagesBuilder {
    * @param content - The content of the tool message.
    * @param toolCallId - The ID of the tool call associated with the message.
    */
-  addToolMessage(content: string, toolCallId: string) {
+  addToolMessage(result: ToolResult, toolCallId: string) {
+    let content: string | any[] = ''
+
+    // Check for multimodal content (more than just a simple text string)
+    const hasMultimodalContent = result.content?.some(
+      (p) => p.data || p.image_url
+    )
+
+    if (hasMultimodalContent) {
+      // Build the structured content array
+      content = result.content.map(convertToolPartToApiContentPart)
+    } else if (result.content?.[0]?.text) {
+      // Standard text case
+      content = result.content[0].text
+    } else if (result.error) {
+      // Error case
+      content = `Tool execution failed: ${result.error}`
+    } else {
+      // Fallback: serialize the whole result structure if content is unexpected
+      try {
+        content = JSON.stringify(result)
+      } catch {
+        content = 'Tool call completed, unexpected output format.'
+      }
+    }
     this.messages.push({
       role: 'tool',
-      content: content,
+      // for role 'tool',  need to use 'as ChatCompletionMessageParam'
+      content: content as any,
       tool_call_id: toolCallId,
     })
   }
