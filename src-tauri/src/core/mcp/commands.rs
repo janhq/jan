@@ -30,28 +30,28 @@ pub async fn activate_mcp_server<R: Runtime>(
 
 #[tauri::command]
 pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    log::info!("Deactivating MCP server: {}", name);
+    log::info!("Deactivating MCP server: {name}");
 
     // First, mark server as manually deactivated to prevent restart
     // Remove from active servers list to prevent restart
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.remove(&name);
-        log::info!("Removed MCP server {} from active servers list", name);
+        log::info!("Removed MCP server {name} from active servers list");
     }
 
     // Mark as not successfully connected to prevent restart logic
     {
         let mut connected = state.mcp_successfully_connected.lock().await;
         connected.insert(name.clone(), false);
-        log::info!("Marked MCP server {} as not successfully connected", name);
+        log::info!("Marked MCP server {name} as not successfully connected");
     }
 
     // Reset restart count
     {
         let mut counts = state.mcp_restart_counts.lock().await;
         counts.remove(&name);
-        log::info!("Reset restart count for MCP server {}", name);
+        log::info!("Reset restart count for MCP server {name}");
     }
 
     // Now remove and stop the server
@@ -60,7 +60,7 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
 
     let service = servers_map
         .remove(&name)
-        .ok_or_else(|| format!("Server {} not found", name))?;
+        .ok_or_else(|| format!("Server {name} not found"))?;
 
     // Release the lock before calling cancel
     drop(servers_map);
@@ -89,7 +89,7 @@ pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_,
     restart_active_mcp_servers(&app, servers).await?;
 
     app.emit("mcp-update", "MCP servers updated")
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+        .map_err(|e| format!("Failed to emit event: {e}"))?;
 
     Ok(())
 }
@@ -110,9 +110,7 @@ pub async fn reset_mcp_restart_count(
     let old_count = *count;
     *count = 0;
     log::info!(
-        "MCP server {} restart count reset from {} to 0.",
-        server_name,
-        old_count
+        "MCP server {server_name} restart count reset from {old_count} to 0."
     );
     Ok(())
 }
@@ -219,7 +217,7 @@ pub async fn call_tool(
             continue; // Tool not found in this server, try next
         }
 
-        println!("Found tool {} in server", tool_name);
+        println!("Found tool {tool_name} in server");
 
         // Call the tool with timeout and cancellation support
         let tool_call = service.call_tool(CallToolRequestParam {
@@ -234,22 +232,20 @@ pub async fn call_tool(
                     match result {
                         Ok(call_result) => call_result.map_err(|e| e.to_string()),
                         Err(_) => Err(format!(
-                            "Tool call '{}' timed out after {} seconds",
-                            tool_name,
+                            "Tool call '{tool_name}' timed out after {} seconds",
                             MCP_TOOL_CALL_TIMEOUT.as_secs()
                         )),
                     }
                 }
                 _ = cancel_rx => {
-                    Err(format!("Tool call '{}' was cancelled", tool_name))
+                    Err(format!("Tool call '{tool_name}' was cancelled"))
                 }
             }
         } else {
             match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
                 Ok(call_result) => call_result.map_err(|e| e.to_string()),
                 Err(_) => Err(format!(
-                    "Tool call '{}' timed out after {} seconds",
-                    tool_name,
+                    "Tool call '{tool_name}' timed out after {} seconds",
                     MCP_TOOL_CALL_TIMEOUT.as_secs()
                 )),
             }
@@ -264,7 +260,7 @@ pub async fn call_tool(
         return result;
     }
 
-    Err(format!("Tool {} not found", tool_name))
+    Err(format!("Tool {tool_name} not found"))
 }
 
 /// Cancels a running tool call by its cancellation token
@@ -285,10 +281,10 @@ pub async fn cancel_tool_call(
     if let Some(cancel_tx) = cancellations.remove(&cancellation_token) {
         // Send cancellation signal - ignore if receiver is already dropped
         let _ = cancel_tx.send(());
-        println!("Tool call with token {} cancelled", cancellation_token);
+        println!("Tool call with token {cancellation_token} cancelled");
         Ok(())
     } else {
-        Err(format!("Cancellation token {} not found", cancellation_token))
+        Err(format!("Cancellation token {cancellation_token} not found"))
     }
 }
 
@@ -301,7 +297,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
     if !path.exists() {
         log::info!("mcp_config.json not found, creating default empty config");
         fs::write(&path, DEFAULT_MCP_CONFIG)
-            .map_err(|e| format!("Failed to create default MCP config: {}", e))?;
+            .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
     }
 
     fs::read_to_string(path).map_err(|e| e.to_string())
@@ -311,7 +307,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
 pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
     let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
-    log::info!("save mcp configs, path: {:?}", path);
+    log::info!("save mcp configs, path: {path:?}");
 
     fs::write(path, configs).map_err(|e| e.to_string())
 }

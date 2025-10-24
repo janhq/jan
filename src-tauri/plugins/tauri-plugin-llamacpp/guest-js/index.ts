@@ -30,12 +30,14 @@ export async function cleanupLlamaProcesses(): Promise<void> {
 export async function loadLlamaModel(
   backendPath: string,
   libraryPath?: string,
-  args: string[] = []
+  args: string[] = [],
+  isEmbedding: boolean = false
 ): Promise<SessionInfo> {
   return await invoke('plugin:llamacpp|load_llama_model', {
     backendPath,
     libraryPath,
     args,
+    isEmbedding,
   })
 }
 

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useAppearance, useBlurSupport } from '@/hooks/useAppearance'
 import { useTheme } from '@/hooks/useTheme'
 import {
   isDefaultColor,
@@ -29,14 +29,37 @@ export function AppearanceProvider() {
     appDestructiveTextColor,
   } = useAppearance()
   const { isDark } = useTheme()
+  const showAlphaSlider = useBlurSupport()
+
+  // Force re-apply appearance on mount to fix theme desync issues on Windows
+  // This ensures that when navigating to routes (like logs), the theme is properly applied
+  useEffect(() => {
+    const {
+      setAppBgColor,
+      setAppMainViewBgColor,
+      appBgColor,
+      appMainViewBgColor,
+    } = useAppearance.getState()
+
+    // Re-trigger setters to ensure CSS variables are applied with correct theme
+    setAppBgColor(appBgColor)
+    setAppMainViewBgColor(appMainViewBgColor)
+  }, []) // Run once on mount
+
+  // Update colors when blur support changes (important for Windows/Linux)
+  useEffect(() => {
+    const { setAppBgColor, appBgColor } = useAppearance.getState()
+    // Re-apply color to update alpha based on blur support
+    setAppBgColor(appBgColor)
+  }, [showAlphaSlider])
 
   // Apply appearance settings on mount and when they change
   useEffect(() => {
     // Apply font size
     document.documentElement.style.setProperty('--font-size-base', fontSize)
 
-    // Hide alpha slider when IS_LINUX || !IS_TAURI
-    const shouldHideAlpha = IS_LINUX || !IS_TAURI
+    // Hide alpha slider when blur is not supported
+    const shouldHideAlpha = !showAlphaSlider
     let alphaStyleElement = document.getElementById('alpha-slider-style')
 
     if (shouldHideAlpha) {
@@ -55,12 +78,13 @@ export function AppearanceProvider() {
     // Import culori functions dynamically to avoid SSR issues
     import('culori').then(({ rgb, oklch, formatCss }) => {
       // Convert RGBA to a format culori can work with
+      // Use alpha = 1 when blur is not supported
       const culoriRgb = rgb({
         mode: 'rgb',
         r: appBgColor.r / 255,
         g: appBgColor.g / 255,
         b: appBgColor.b / 255,
-        alpha: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : appBgColor.a,
+        alpha: showAlphaSlider ? appBgColor.a : 1,
       })
 
       const culoriRgbMainView = rgb({
@@ -176,6 +200,7 @@ export function AppearanceProvider() {
     appAccentTextColor,
     appDestructiveBgColor,
     appDestructiveTextColor,
+    showAlphaSlider,
   ])
 
   // Update appearance when theme changes
@@ -193,6 +218,10 @@ export function AppearanceProvider() {
       setAppAccentBgColor,
       setAppDestructiveBgColor,
     } = useAppearance.getState()
+
+    // Force re-apply all colors when theme changes to ensure correct dark/light defaults
+    // This is especially important on Windows where the theme might not be properly
+    // synchronized when navigating to different routes (e.g., logs page)
 
     // If using default background color, update it when theme changes
     if (isDefaultColor(appBgColor)) {

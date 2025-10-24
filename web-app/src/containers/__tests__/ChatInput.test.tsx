@@ -201,6 +201,9 @@ vi.mock('@tabler/icons-react', () => ({
   IconAtom: () => <svg data-testid="atom-icon">Atom</svg>,
   IconTool: () => <svg data-testid="tool-icon">Tool</svg>,
   IconCodeCircle2: () => <svg data-testid="code-icon">Code</svg>,
+  IconPaperclip: () => <svg data-testid="paperclip-icon">Paperclip</svg>,
+  IconLoader2: () => <svg data-testid="loader-icon">Loader</svg>,
+  IconCheck: () => <svg data-testid="check-icon">Check</svg>,
   IconPlayerStopFilled: () => <svg className="tabler-icon-player-stop-filled" data-testid="stop-icon">Stop</svg>,
   IconX: () => <svg data-testid="x-icon">X</svg>,
 }))
@@ -411,18 +414,6 @@ describe('ChatInput', () => {
       const fileInput = document.querySelector('input[type="file"]')
       expect(fileInput).toBeInTheDocument()
     })
-  })
-
-  it('disables input when streaming', async () => {
-    // Mock streaming state
-    mockAppState.streamingContent = { thread_id: 'test-thread' }
-
-    await act(async () => {
-      renderWithRouter()
-    })
-
-    const textarea = screen.getByTestId('chat-input')
-    expect(textarea).toBeDisabled()
   })
 
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {

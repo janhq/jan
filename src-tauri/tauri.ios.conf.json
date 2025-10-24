@@ -1,9 +1,11 @@
 {
+  "identifier": "jan.ai.app.ios",
   "build": {
     "devUrl": null,
-    "frontendDist": "../web-app/dist"
+    "frontendDist": "../web-app/dist",
+    "beforeDevCommand": "cross-env IS_DEV=true IS_IOS=true yarn build:web",
+    "beforeBuildCommand": "cross-env IS_IOS=true yarn build:web"
   },
-  "identifier": "jan.ai.app",
   "app": {
     "security": {
       "capabilities": ["mobile"]
@@ -15,7 +17,10 @@
     "iOS": {
       "developmentTeam": "<DEVELOPMENT_TEAM_ID>"
     },
-    "resources": ["resources/LICENSE"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE"
+    ],
     "externalBin": []
   }
 }

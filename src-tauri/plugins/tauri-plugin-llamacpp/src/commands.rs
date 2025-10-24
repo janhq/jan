@@ -44,6 +44,7 @@ pub async fn load_llama_model<R: Runtime>(
     library_path: Option<&str>,
     mut args: Vec<String>,
     envs: HashMap<String, String>,
+    is_embedding: bool,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -223,6 +224,7 @@ pub async fn load_llama_model<R: Runtime>(
         port: port,
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
+        is_embedding: is_embedding,
         api_key: api_key,
         mmproj_path: mmproj_path_string,
     };

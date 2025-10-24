@@ -32,7 +32,9 @@ export const useTheme = create<ThemeState>()(
             await getServiceHub().theme().setTheme(null)
             set(() => ({ activeTheme, isDark: isDarkMode }))
           } else {
-            await getServiceHub().theme().setTheme(activeTheme as ThemeMode)
+            await getServiceHub()
+              .theme()
+              .setTheme(activeTheme as ThemeMode)
             set(() => ({ activeTheme, isDark: activeTheme === 'dark' }))
           }
         },

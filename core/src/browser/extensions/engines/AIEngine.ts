@@ -182,6 +182,7 @@ export interface SessionInfo {
   port: number // llama-server output port (corrected from portid)
   model_id: string //name of the model
   model_path: string // path of the loaded model
+  is_embedding: boolean
   api_key: string
   mmproj_path?: string
 }
