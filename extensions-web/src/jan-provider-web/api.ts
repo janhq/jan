@@ -8,7 +8,7 @@ import { ApiError } from '../shared/types/errors'
 import { JAN_API_ROUTES } from './const'
 import { JanModel, janProviderStore } from './store'
 
-// JAN_API_BASE is defined in vite.config.ts
+// MENLO_PLATFORM_BASE_URL is defined in vite.config.ts
 
 // Constants
 const TEMPORARY_CHAT_ID = 'temporary-chat'
@@ -20,7 +20,7 @@ const TEMPORARY_CHAT_ID = 'temporary-chat'
  */
 function getChatCompletionConfig(request: JanChatCompletionRequest, stream: boolean = false) {
   const isTemporaryChat = request.conversation_id === TEMPORARY_CHAT_ID
-  const endpoint = `${JAN_API_BASE}${JAN_API_ROUTES.CHAT_COMPLETIONS}`
+  const endpoint = `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.CHAT_COMPLETIONS}`
 
   const payload = {
     ...request,
@@ -162,7 +162,7 @@ export class JanApiClient {
 
       this.modelsFetchPromise = (async () => {
         const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
-          `${JAN_API_BASE}${JAN_API_ROUTES.MODELS}`
+          `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.MODELS}`
         )
 
         const summaries = response.data || []
@@ -327,7 +327,7 @@ export class JanApiClient {
 
   private async fetchSupportedParameters(modelId: string): Promise<string[]> {
     try {
-      const endpoint = `${JAN_API_BASE}${JAN_API_ROUTES.MODEL_CATALOGS}/${this.encodeModelIdForCatalog(modelId)}`
+      const endpoint = `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.MODEL_CATALOGS}/${this.encodeModelIdForCatalog(modelId)}`
       const catalog = await this.authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
       return this.extractSupportedParameters(catalog)
     } catch (error) {
