@@ -209,7 +209,6 @@ function RenderMarkdownComponent({
   isWrapping,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
-  console.log({ isUser })
 
   // State for tracking which code block has been copied
   const [copiedId, setCopiedId] = useState<string | null>(null)
