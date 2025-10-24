@@ -48,7 +48,7 @@ export class RemoteApi {
     return this.authService.makeAuthenticatedRequest<ConversationResponse>(
       url,
       {
-        method: 'PATCH',
+        method: 'POST',
         body: JSON.stringify(data),
       }
     )
