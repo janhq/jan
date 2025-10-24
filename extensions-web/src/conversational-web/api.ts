@@ -16,7 +16,7 @@ import {
   ListConversationItemsResponse
 } from './types'
 
-declare const JAN_API_BASE: string
+declare const MENLO_PLATFORM_BASE_URL: string
 
 export class RemoteApi {
   private authService: JanAuthService
@@ -28,7 +28,7 @@ export class RemoteApi {
   async createConversation(
     data: Conversation
   ): Promise<ConversationResponse> {
-    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATIONS}`
+    const url = `${MENLO_PLATFORM_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}`
 
     return this.authService.makeAuthenticatedRequest<ConversationResponse>(
       url,
@@ -43,7 +43,7 @@ export class RemoteApi {
     conversationId: string,
     data: Conversation
   ): Promise<ConversationResponse> {
-    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATION_BY_ID(conversationId)}`
+    const url = `${MENLO_PLATFORM_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATION_BY_ID(conversationId)}`
 
     return this.authService.makeAuthenticatedRequest<ConversationResponse>(
       url,
@@ -70,7 +70,7 @@ export class RemoteApi {
     }
 
     const queryString = queryParams.toString()
-    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATIONS}${queryString ? `?${queryString}` : ''}`
+    const url = `${MENLO_PLATFORM_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}${queryString ? `?${queryString}` : ''}`
 
     return this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
       url,
@@ -114,7 +114,7 @@ export class RemoteApi {
   }
 
   async deleteConversation(conversationId: string): Promise<void> {
-    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATION_BY_ID(conversationId)}`
+    const url = `${MENLO_PLATFORM_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATION_BY_ID(conversationId)}`
 
     await this.authService.makeAuthenticatedRequest(
       url,
@@ -141,7 +141,7 @@ export class RemoteApi {
     }
 
     const queryString = queryParams.toString()
-    const url = `${JAN_API_BASE}${CONVERSATION_API_ROUTES.CONVERSATION_ITEMS(conversationId)}${queryString ? `?${queryString}` : ''}`
+    const url = `${MENLO_PLATFORM_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATION_ITEMS(conversationId)}${queryString ? `?${queryString}` : ''}`
 
     return this.authService.makeAuthenticatedRequest<ListConversationItemsResponse>(
       url,
