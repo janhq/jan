@@ -32,7 +32,7 @@ type ExtendedConfigOptions = ConfigOptions & {
 }
 import { ulid } from 'ulidx'
 import { MCPTool } from '@/types/completion'
-import { CompletionMessagesBuilder } from './messages'
+import { CompletionMessagesBuilder, ToolResult } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ExtensionManager } from './extension'
 import { useAppState } from '@/hooks/useAppState'
@@ -543,7 +543,7 @@ export const postMessageProcessing = async (
           },
         ],
       }
-      builder.addToolMessage(result.content[0]?.text ?? '', toolCall.id)
+      builder.addToolMessage(result as ToolResult, toolCall.id)
       // update message metadata
     }
     return message
