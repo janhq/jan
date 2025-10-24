@@ -209,6 +209,7 @@ function RenderMarkdownComponent({
   isWrapping,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
+  console.log({ isUser })
 
   // State for tracking which code block has been copied
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -229,12 +230,8 @@ function RenderMarkdownComponent({
 
   // Stable remarkPlugins reference
   const remarkPlugins = useMemo(() => {
-    const basePlugins = [remarkGfm, remarkMath, remarkEmoji]
-    if (isUser) {
-      basePlugins.push(remarkBreaks)
-    }
-    return basePlugins
-  }, [isUser])
+    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks]
+  }, [])
 
   // Stable rehypePlugins reference
   const rehypePlugins = useMemo(() => {
