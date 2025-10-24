@@ -162,32 +162,37 @@ export class CompletionMessagesBuilder {
 
   /**
    * Add a tool message to the messages array.
-   * @param content - The content of the tool message.
+   * @param content - The content of the tool message (string or ToolResult object).
    * @param toolCallId - The ID of the tool call associated with the message.
    */
-  addToolMessage(result: ToolResult, toolCallId: string) {
+  addToolMessage(result: string | ToolResult, toolCallId: string) {
     let content: string | any[] = ''
 
-    // Check for multimodal content (more than just a simple text string)
-    const hasMultimodalContent = result.content?.some(
-      (p) => p.data || p.image_url
-    )
-
-    if (hasMultimodalContent) {
-      // Build the structured content array
-      content = result.content.map(convertToolPartToApiContentPart)
-    } else if (result.content?.[0]?.text) {
-      // Standard text case
-      content = result.content[0].text
-    } else if (result.error) {
-      // Error case
-      content = `Tool execution failed: ${result.error}`
+    // Handle simple string case
+    if (typeof result === 'string') {
+      content = result
     } else {
-      // Fallback: serialize the whole result structure if content is unexpected
-      try {
-        content = JSON.stringify(result)
-      } catch {
-        content = 'Tool call completed, unexpected output format.'
+      // Check for multimodal content (more than just a simple text string)
+      const hasMultimodalContent = result.content?.some(
+        (p) => p.data || p.image_url
+      )
+
+      if (hasMultimodalContent) {
+        // Build the structured content array
+        content = result.content.map(convertToolPartToApiContentPart)
+      } else if (result.content?.[0]?.text) {
+        // Standard text case
+        content = result.content[0].text
+      } else if (result.error) {
+        // Error case
+        content = `Tool execution failed: ${result.error}`
+      } else {
+        // Fallback: serialize the whole result structure if content is unexpected
+        try {
+          content = JSON.stringify(result)
+        } catch {
+          content = 'Tool call completed, unexpected output format.'
+        }
       }
     }
     this.messages.push({
