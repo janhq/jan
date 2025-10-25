@@ -28,16 +28,23 @@ export const TTSButton = ({ text }: { text: string }) => {
       onClick={handleTTS}
     >
       {isPlaying ? (
-        <>
-          <IconPlayerStop size={16} className="text-accent" />
-        </>
+        
+        <Tooltip>  
+          <TooltipTrigger asChild>  
+            <IconPlayerStop size={16} className="text-accent" />  
+          </TooltipTrigger>  
+          <TooltipContent>  
+            <p>{t('StopTTS')}</p>  
+          </TooltipContent>  
+        </Tooltip>  
+        
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <IconVolume3 size={16} />
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('TTS')}</p>
+            <p>{t('playTTS')}</p>
           </TooltipContent>
         </Tooltip>
       )}

@@ -45,10 +45,8 @@ function cleanText(text: string) {
     '<', '>', '|', '--'
   ];
   const ttsRegex = new RegExp(`[${ttsReadableChars.map(c => '\\' + c).join('')}]`, 'g');
-  const unicodeRegex = "/[^\u0000-\u007F]/g";
   return text
     .replace(ttsRegex, '')    
-    .replace(unicodeRegex, '') 
     .trim(); 
 
 }
