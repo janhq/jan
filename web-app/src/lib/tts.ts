@@ -38,13 +38,28 @@ export async function getVoices(): Promise<SpeechSynthesisVoice[]> {
     }, 1500)
   })
 }
+function cleanText(text: string) {
+  const ttsReadableChars = [
+    '*', '/', '\\', '@', '#', '$', '%', '&',
+    '+', '=', '(', ')', '[', ']', '{', '}', '"', "'", '^', '_', '~',
+    '<', '>', '|', '--'
+  ];
+  const ttsRegex = new RegExp(`[${ttsReadableChars.map(c => '\\' + c).join('')}]`, 'g');
+  const unicodeRegex = "/[^\u0000-\u007F]/g";
+  return text
+    .replace(ttsRegex, '')    
+    .replace(unicodeRegex, '') 
+    .trim(); 
+
+}
 export async function speak(text: string, opts: SpeakOptions = {}) {
   if (!text) return Promise.reject(new Error('No text provided'))
+  const cleanedText = cleanText(text)
     
     
   stop()
     
-  const utterance = new SpeechSynthesisUtterance(text)
+  const utterance = new SpeechSynthesisUtterance(cleanedText)
   if (opts.lang) utterance.lang = opts.lang
   if (typeof opts.rate === 'number') utterance.rate = opts.rate
   if (typeof opts.pitch === 'number') utterance.pitch = opts.pitch
