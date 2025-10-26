@@ -7,35 +7,23 @@ description: Connect Jan to multi-engine web search with structured JSON results
 keywords:
 
   [
-
     Jan,
-
     MCP,
-
     Model Context Protocol,
-
     Serpex,
-
+    Google search API,
+    Real-time Search API,
+    MCP Web search
     SERP API,
-
     multi-engine search,
-
-    web search,
-
+    web search
     real-time search,
-
     tool calling,
-
     Jan v1,
-
     Google search,
-
     Bing search,
-
     DuckDuckGo,
-
     Brave search,
-
   ]
 
 ---
@@ -44,31 +32,20 @@ import { Callout, Steps } from 'nextra/components'
 
 # Serpex Search MCP
 
-[Serpex](https://serpex.dev) provides unified access to multiple search engines (Google, Bing, DuckDuckGo, Brave, Yahoo, Yandex) through a single API, making it perfect for giving AI models access to real-time web information with automatic engine routing, captcha handling, and structured JSON results.
+[Serpex](https://serpex.dev) provides unified access to multiple search engines (Google, Bing, DuckDuckGo, Brave, Yahoo, Yandex) through a single API, making it perfect for giving AI models access to real-time web information with automatic engine routing and structured JSON results.
 
 ## Available Tools
 
 - `serpex_search`: Search across multiple engines with automatic routing and time filtering
-
-## Key Features
-
-- **Web Search**: Search across multiple engines with automatic routing
-- **Multi-Engine Support**: Google, Bing, DuckDuckGo, Brave, Yahoo, Yandex
-- **Auto Routing**: Automatically selects the best available search engine
-- **Time Filtering**: Filter results by time range (day, week, month, year)
-- **Structured Results**: Get clean, structured JSON data
-- **No Captcha Hassles**: Built-in captcha solving and proxy rotation
-- **Fast & Affordable**: Optimized infrastructure for speed and cost-efficiency
 
 ## Prerequisites
 
 - Jan with experimental features enabled
 - Serpex API key from [serpex.dev](https://serpex.dev)
 - Model with tool calling support (recommended: Jan v1)
-- Node.js installed for creating custom MCP server
 
 <Callout type="info">
-Serpex offers a generous free tier perfect for testing and personal projects. The API is fast, affordable, and handles blocking and captchas automatically.
+Serpex offers 200 free credits to get started, with requests starting at just $0.0008 each. The API handles retries, blocking and captchas automatically.
 </Callout>
 
 ## Setup
@@ -101,7 +78,7 @@ Click `+` in MCP Servers section:
 **Configuration:**
 - **Server Name**: `serpex`
 - **Command**: `npx`
-- **Arguments**: `-y serpex-search-mcp-server`
+- **Arguments**: `-y serpex-mcp`
 - **Environment Variables**:
   - Key: `SERPEX_API_KEY`, Value: `your-api-key`
 
@@ -177,35 +154,6 @@ Find coffee shops in San Francisco that opened this year.
 4. **Result Parsing**: Returns clean, structured JSON with titles, URLs, snippets, and metadata
 5. **Synthesis**: Jan v1 combines search results into a comprehensive, conversational answer
 
-## Key Advantages of Serpex
-
-- **Multi-Engine Support**: Access Google, Bing, DuckDuckGo, Brave, Yahoo, and Yandex through one API
-- **Auto Routing**: Automatic engine selection based on availability and performance
-- **Block-Free**: Handles captchas, rate limits, and blocking automatically
-- **Fast & Affordable**: Optimized for speed and cost-effectiveness
-- **Structured Data**: Clean JSON output perfect for AI processing
-- **Time Filtering**: Filter results by recency (day, week, month, year)
-
-## Search Parameters
-
-The `serpex_search` tool supports these parameters:
-
-- **q** (required): Your search query
-- **engine** (optional): Choose from:
-  - `auto` (default) - Automatically selects best engine
-  - `google` - Google Search
-  - `bing` - Microsoft Bing
-  - `duckduckgo` - DuckDuckGo
-  - `brave` - Brave Search
-  - `yahoo` - Yahoo Search
-  - `yandex` - Yandex
-- **time_range** (optional): Filter by time:
-  - `all` (default)
-  - `day` - Past 24 hours
-  - `week` - Past 7 days
-  - `month` - Past 30 days
-  - `year` - Past year
-
 ## Tips for Best Results
 
 - **Be specific**: "Tesla Model 3 2024 price in California" works better than "Tesla price"
@@ -217,74 +165,35 @@ The `serpex_search` tool supports these parameters:
 ## Troubleshooting
 
 ### Server Won't Start
-
 - Verify `SERPEX_API_KEY` is set correctly in environment variables
 - Check that Node.js is installed and accessible
 - Ensure all dependencies are installed: `npm install`
-- Verify the path to `index.js` is absolute and correct
 
 ### No Results Returned
-
 - Check your API key is valid at [serpex.dev](https://serpex.dev)
 - Verify you have available credits in your Serpex account
 - Try with `engine: 'auto'` to let Serpex choose the best engine
-- Check the MCP server logs for error messages
 
 ### Tool Not Showing in Jan
-
 - Ensure experimental features are enabled
 - Verify MCP is enabled and permissions are granted
 - Restart Jan after adding the MCP server
 - Check that Jan v1 has tools enabled in model settings
 
-### API Rate Limits
+<Callout type="warning">
+Each search query consumes API credits. Monitor usage at serpex.dev dashboard.
+</Callout>
 
-- Serpex has generous rate limits on all plans
-- Free tier: Check your dashboard for current limits
-- Paid plans: Higher limits and priority routing
-- Use caching when possible to reduce API calls
-
-## Advantages Over Other Search APIs
-
-- **Multi-Engine**: Access 6 engines vs single engine APIs
-- **Auto Routing**: No manual engine switching needed
-- **No Captchas**: Built-in handling vs manual solving
-- **Affordable**: Competitive pricing with generous free tier
-- **Structured Data**: Consistent JSON format across all engines
-- **Fast Response**: Optimized infrastructure
-
-## API Limits & Pricing
+## API Limits
 
 Serpex offers flexible pricing:
 
 - **Free Tier**: Generous limits for testing and personal use
-- **Pay-as-you-go**: Only pay for what you use
-- **Enterprise**: Custom limits and SLA options
+- **Rate Limit**: 300 requests/second
+- **Pay-as-you-go**: Only pay for what you use, no subscription
 
 Visit [serpex.dev/pricing](https://serpex.dev/pricing) for current pricing details.
 
 ## Next Steps
 
-Serpex MCP enables Jan v1 to access current web information across multiple search engines, making it a powerful research assistant. Combine with other MCP tools for even more capabilities:
-
-- Use Serpex for search, then E2B for data analysis
-- Combine with Jupyter for visualization
-- Integrate with file system tools for saving research
-
-## Learn More
-
-- [Serpex Documentation](https://serpex.dev/docs)
-- [Serpex API Reference](https://serpex.dev/docs/api)
-- [MCP Server on npm](https://www.npmjs.com/package/serpex-search-mcp-server)
-- [Serpex TypeScript SDK](https://www.npmjs.com/package/serpex)
-- [Serpex Python SDK](https://pypi.org/project/serpex)
-
-## Additional Resources
-
-- [Model Context Protocol Specification](https://modelcontextprotocol.io)
-- [Jan MCP Documentation](https://jan.ai/docs/desktop/mcp)
-- [Serpex Pricing](https://serpex.dev/pricing)
-
-<Callout type="success">
-Using Serpex MCP with Jan v1 gives you powerful web search capabilities across multiple engines. The npm package is regularly updated with improvements and bug fixes.
-</Callout>
+Serpex MCP enables Jan v1 to access current web information across multiple search engines, making it a powerful research assistant. Combine with other MCP tools for even more capabilities - use Serpex for search, then E2B for data analysis, or Jupyter for visualization.
