@@ -94,196 +94,21 @@ Serpex offers a generous free tier perfect for testing and personal projects. Th
 3. Navigate to your dashboard
 4. Copy your API key
 
-### Create Custom Serpex MCP Server
-
-Since there isn't a pre-built Serpex MCP server package yet, you can create a simple one using the Serpex SDK:
-
-1. **Create a new directory for your MCP server:**
-
-   ```bash
-   mkdir serpex-mcp-server
-   cd serpex-mcp-server
-   npm init -y
-   ```
-
-2. **Install dependencies:**
-
-   ```bash
-   npm install serpex @modelcontextprotocol/sdk
-   ```
-
-3. **Create `index.js` with the following content:**
-
-   ```javascript
-   #!/usr/bin/env node
-
-   import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-   import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-   import { SerpexClient } from 'serpex';
-
-   const API_KEY = process.env.SERPEX_API_KEY;
-   if (!API_KEY) {
-     console.error('SERPEX_API_KEY environment variable is required');
-     process.exit(1);
-   }
-
-   const client = new SerpexClient(API_KEY);
-
-   const server = new Server(
-     {
-       name: 'serpex-search',
-       version: '1.0.0',
-     },
-     {
-       capabilities: {
-         tools: {},
-       },
-     }
-   );
-
-   server.setRequestHandler('tools/list', async () => ({
-     tools: [
-       {
-         name: 'serpex_search',
-         description: 'Search the web using Serpex multi-engine API. Supports Google, Bing, DuckDuckGo, Brave, Yahoo, and Yandex. Returns structured JSON results with snippets, URLs, and metadata.',
-         inputSchema: {
-           type: 'object',
-           properties: {
-             q: {
-               type: 'string',
-               description: 'Search query',
-             },
-             engine: {
-               type: 'string',
-               description: 'Search engine to use (auto, google, bing, duckduckgo, brave, yahoo, yandex)',
-               enum: ['auto', 'google', 'bing', 'duckduckgo', 'brave', 'yahoo', 'yandex'],
-               default: 'auto',
-             },
-             time_range: {
-               type: 'string',
-               description: 'Time range filter',
-               enum: ['all', 'day', 'week', 'month', 'year'],
-               default: 'all',
-             },
-             category: {
-               type: 'string',
-               description: 'Search category',
-               enum: ['web'],
-               default: 'web',
-             },
-           },
-           required: ['q'],
-         },
-       },
-     ],
-   }));
-
-   server.setRequestHandler('tools/call', async (request) => {
-     if (request.params.name === 'serpex_search') {
-       try {
-         const { q, engine = 'auto', time_range = 'all', category = 'web' } = request.params.arguments;
-
-         const results = await client.search({
-           q,
-           engine,
-           time_range,
-           category,
-         });
-
-         // Format results for better readability
-         const formattedResults = results.results.slice(0, 10).map((r, i) => ({
-           position: r.position || i + 1,
-           title: r.title,
-           url: r.url,
-           snippet: r.snippet,
-         }));
-
-         return {
-           content: [
-             {
-               type: 'text',
-               text: JSON.stringify({
-                 query: results.query,
-                 engine: results.engines[0] || engine,
-                 total_results: results.metadata.number_of_results,
-                 results: formattedResults,
-                 answers: results.answers || [],
-                 suggestions: results.suggestions || [],
-               }, null, 2),
-             },
-           ],
-         };
-       } catch (error) {
-         return {
-           content: [
-             {
-               type: 'text',
-               text: `Error: ${error.message}`,
-             },
-           ],
-           isError: true,
-         };
-       }
-     }
-
-     throw new Error(`Unknown tool: ${request.params.name}`);
-   });
-
-   async function main() {
-     const transport = new StdioServerTransport();
-     await server.connect(transport);
-     console.error('Serpex MCP Server running on stdio');
-   }
-
-   main().catch((error) => {
-     console.error('Server error:', error);
-     process.exit(1);
-   });
-   ```
-
-4. **Update `package.json`:**
-
-   ```json
-   {
-     "name": "serpex-mcp-server",
-     "version": "1.0.0",
-     "type": "module",
-     "bin": {
-       "serpex-mcp-server": "./index.js"
-     },
-     "dependencies": {
-       "serpex": "^2.2.0",
-       "@modelcontextprotocol/sdk": "^1.0.0"
-     }
-   }
-   ```
-
-5. **Make the script executable:**
-
-   ```bash
-   chmod +x index.js
-   ```
-
-6. **Test your MCP server:**
-
-   ```bash
-   SERPEX_API_KEY=your_api_key_here node index.js
-   ```
-
-### Configure MCP Server in Jan
+### Configure MCP Server
 
 Click `+` in MCP Servers section:
 
 **Configuration:**
-
 - **Server Name**: `serpex`
-- **Command**: `node`
-- **Arguments**: `/path/to/serpex-mcp-server/index.js`
+- **Command**: `npx`
+- **Arguments**: `-y serpex-search-mcp-server`
 - **Environment Variables**:
   - Key: `SERPEX_API_KEY`, Value: `your-api-key`
 
+![Serper MCP configuration in Jan](../../_assets/serper_janparams.png)
+
 <Callout type="tip">
-Replace `/path/to/serpex-mcp-server/index.js` with the actual absolute path to your index.js file.
+Using `npx` means you don't need to install anything - it will automatically download and run the latest version of the Serpex MCP server from npm.
 </Callout>
 
 ### Download Jan v1
@@ -451,17 +276,15 @@ Serpex MCP enables Jan v1 to access current web information across multiple sear
 - [Serpex Documentation](https://serpex.dev/docs)
 - [Serpex API Reference](https://serpex.dev/docs/api)
 - [MCP Server on npm](https://www.npmjs.com/package/serpex-search-mcp-server)
-- [GitHub Repository](https://github.com/divyeshradadiya/jan)
+- [Serpex TypeScript SDK](https://www.npmjs.com/package/serpex)
+- [Serpex Python SDK](https://pypi.org/project/serpex)
 
 ## Additional Resources
 
-- [Serpex Official Website](https://serpex.dev)
-- [Serpex API Documentation](https://serpex.dev/docs)
-- [Serpex TypeScript SDK](https://www.npmjs.com/package/serpex)
-- [Serpex Python SDK](https://pypi.org/project/serpex)
 - [Model Context Protocol Specification](https://modelcontextprotocol.io)
 - [Jan MCP Documentation](https://jan.ai/docs/desktop/mcp)
+- [Serpex Pricing](https://serpex.dev/pricing)
 
 <Callout type="success">
-Want to contribute? Help us create an official Serpex MCP server package and publish it to npm! Join the discussion on [GitHub](https://github.com/divyeshradadiya/serp-backend).
+Using Serpex MCP with Jan v1 gives you powerful web search capabilities across multiple engines. The npm package is regularly updated with improvements and bug fixes.
 </Callout>
