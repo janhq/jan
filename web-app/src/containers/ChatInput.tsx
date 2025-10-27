@@ -108,6 +108,7 @@ const ChatInput = ({
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [hasProactive, setHasProactive] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   // Determine whether to show the Attach documents button (simple gating)
@@ -205,6 +206,29 @@ const ChatInput = ({
 
     checkMmprojSupport()
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
+
+  // Check for proactive capability when model changes
+  useEffect(() => {
+    const checkProactiveSupport = () => {
+      if (selectedModel && selectedModel?.id) {
+        // Proactive mode requires both tools and vision capabilities
+        const hasTools = selectedModel?.capabilities?.includes('tools')
+        const hasVision = selectedModel?.capabilities?.includes('vision')
+        const hasProactiveCapability = selectedModel?.capabilities?.includes('proactive')
+
+        if (hasTools && hasVision && hasProactiveCapability) {
+          setHasProactive(true)
+          // TODO: Implement proactive mode template insertion
+          // This is where we'll add the proactive mode prompt/template
+          // when sending messages with models that have proactive capability enabled
+        } else {
+          setHasProactive(false)
+        }
+      }
+    }
+
+    checkProactiveSupport()
+  }, [selectedModel, selectedModel?.capabilities])
 
   // Check if there are active MCP servers
   const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
