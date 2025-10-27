@@ -1,0 +1,12 @@
+{
+  "welcome": "こんにちは、何かお手伝いできることはありますか？",
+  "description": "今日はどのようなご用件でしょうか？",
+  "temporaryChat": "一時的なチャット",
+  "temporaryChatDescription": "チャット履歴に保存されない一時的な会話を開始します。",
+  "status": {
+    "empty": "チャットが見つかりません"
+  },
+  "sendMessage": "メッセージを送信",
+  "newConversation": "新しい会話",
+  "clearHistory": "履歴を消去"
+}
