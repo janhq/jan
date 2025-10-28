@@ -218,9 +218,6 @@ const ChatInput = ({
 
         if (hasTools && hasVision && hasProactiveCapability) {
           setHasProactive(true)
-          // TODO: Implement proactive mode template insertion
-          // This is where we'll add the proactive mode prompt/template
-          // when sending messages with models that have proactive capability enabled
         } else {
           setHasProactive(false)
         }
