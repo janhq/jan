@@ -139,7 +139,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
 
           return {
             ...system,
-            href: `https://github.com/menloresearch/jan/releases/download/${lastRelease.tag_name}/${downloadUrl}`,
+            href: `https://github.com/janhq/jan/releases/download/${lastRelease.tag_name}/${downloadUrl}`,
             size: asset ? formatFileSize(asset.size) : undefined,
           }
         })

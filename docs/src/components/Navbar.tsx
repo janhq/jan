@@ -95,7 +95,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             })}
             <li>
               <a
-                href="https://github.com/menloresearch/jan/releases/latest"
+                href="https://github.com/janhq/jan/releases/latest"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -141,7 +141,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaLinkedinIn className="size-5" />
                 </a>
                 <a
-                  href="https://github.com/menloresearch/jan"
+                  href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-lg flex items-center justify-center"
@@ -156,7 +156,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
         {/* Mobile Download Button and Hamburger */}
         <div className="lg:hidden flex items-center gap-3">
           <a
-            href="https://github.com/menloresearch/jan/releases/latest"
+            href="https://github.com/janhq/jan/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -278,7 +278,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaLinkedinIn className="size-5" />
                 </a>
                 <a
-                  href="https://github.com/menloresearch/jan"
+                  href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-black rounded-lg flex items-center justify-center"
@@ -296,7 +296,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   asChild
                 >
                   <a
-                    href="https://github.com/menloresearch/jan/releases/latest"
+                    href="https://github.com/janhq/jan/releases/latest"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
