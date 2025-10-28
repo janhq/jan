@@ -488,6 +488,7 @@ const filterOldProactiveScreenshots = (builder: CompletionMessagesBuilder) => {
   // Reconstruct builder with filtered messages
   // Note: This is a workaround since CompletionMessagesBuilder doesn't have a setter
   // We'll need to access the private messages array
+  // eslint-disable-next-line no-extra-semi
   ;(builder as any).messages = filteredMessages
 }
 
@@ -518,8 +519,6 @@ export const postMessageProcessing = async (
 ) => {
   // Handle completed tool calls
   if (calls.length) {
-    // Track if any browser MCP tool was called
-    let hasBrowserMCPToolCall = false
     // Fetch RAG tool names from RAG service
     let ragToolNames = new Set<string>()
     try {
@@ -662,11 +661,6 @@ export const postMessageProcessing = async (
         ],
       }
       builder.addToolMessage(result as ToolResult, toolCall.id)
-
-      // Mark if we used a browser tool (for proactive mode)
-      if (isBrowserTool) {
-        hasBrowserMCPToolCall = true
-      }
 
       // Proactive mode: Capture screenshot/snapshot after browser tool execution
       if (isProactiveMode && isBrowserTool && !abortController.signal.aborted) {
