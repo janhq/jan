@@ -13,7 +13,7 @@ jobs:
       deployments: write
       pull-requests: write
     env:
-      JAN_API_BASE: "https://api.menlo.ai/v1"
+      MENLO_PLATFORM_BASE_URL: "https://api.jan.ai/v1"
       GA_MEASUREMENT_ID: "G-YK53MX8M8M"
       CLOUDFLARE_PROJECT_NAME: "jan-server-web"
     steps:

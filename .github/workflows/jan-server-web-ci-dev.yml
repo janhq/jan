@@ -12,7 +12,11 @@ jobs:
   build-and-preview:
     runs-on: [ubuntu-24-04-docker]
     env:
+<<<<<<< HEAD
       JAN_API_BASE: "https://api-dev.menlo.ai/v1"
+=======
+      MENLO_PLATFORM_BASE_URL: "https://api-dev.jan.ai/v1"
+>>>>>>> c854c54c0 (chore: update api domain to jan.ai (#6832))
     permissions:
       pull-requests: write
       contents: write
