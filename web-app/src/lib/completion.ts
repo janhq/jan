@@ -26,6 +26,8 @@ import {
   ConfigOptions,
 } from 'token.js'
 
+import { getModelCapabilities } from '@/lib/models'
+
 // Extended config options to include custom fetch function
 type ExtendedConfigOptions = ConfigOptions & {
   fetch?: typeof fetch
@@ -38,6 +40,7 @@ import { ExtensionManager } from './extension'
 import { useAppState } from '@/hooks/useAppState'
 import { injectFilesIntoPrompt } from './fileMetadata'
 import { Attachment } from '@/types/attachment'
+import { ModelCapabilities } from '@/types/models'
 
 export type ChatCompletionResponse =
   | chatCompletion
@@ -232,10 +235,25 @@ export const sendCompletion = async (
   }
 
   // Inject RAG tools on-demand (not in global tools list)
+  const providerModelConfig = provider.models?.find(
+    (model) => model.id === thread.model?.id || model.model === thread.model?.id
+  )
+  const effectiveCapabilities = Array.isArray(
+    providerModelConfig?.capabilities
+  )
+    ? providerModelConfig?.capabilities ?? []
+    : getModelCapabilities(provider.provider, thread.model.id)
+  const modelSupportsTools = effectiveCapabilities.includes(
+    ModelCapabilities.TOOLS
+  )
   let usableTools = tools
   try {
     const attachmentsEnabled = useAttachments.getState().enabled
-    if (attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]) {
+    if (
+      attachmentsEnabled &&
+      PlatformFeatures[PlatformFeature.ATTACHMENTS] &&
+      modelSupportsTools
+    ) {
       const ragTools = await getServiceHub().rag().getTools().catch(() => [])
       if (Array.isArray(ragTools) && ragTools.length) {
         usableTools = [...tools, ...ragTools]
