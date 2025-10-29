@@ -11,6 +11,7 @@ import ThreadList from '@/containers/ThreadList'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 
 import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform/types'
 import { IconMessage } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,14 @@ export const Route = createFileRoute('/project/$projectId')({
 })
 
 function ProjectPage() {
+  return (
+    <PlatformGuard feature={PlatformFeature.PROJECTS}>
+      <ProjectPageContent />
+    </PlatformGuard>
+  )
+}
+
+function ProjectPageContent() {
   const { t } = useTranslation()
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById } = useThreadManagement()

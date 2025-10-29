@@ -12,8 +12,8 @@ import { JanMCPOAuthProvider } from './oauth-provider'
 import { WebSearchButton } from './components'
 import type { ComponentType } from 'react'
 
-// JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
-declare const JAN_API_BASE: string
+// MENLO_PLATFORM_BASE_URL is defined in vite.config.ts (defaults to 'https://api-dev.menlo.ai/jan/v1')
+declare const MENLO_PLATFORM_BASE_URL: string
 
 export default class MCPExtensionWeb extends MCPExtension {
   private mcpEndpoint = '/mcp'
@@ -77,7 +77,7 @@ export default class MCPExtensionWeb extends MCPExtension {
 
       // Create transport with OAuth provider (handles token refresh automatically)
       const transport = new StreamableHTTPClientTransport(
-        new URL(`${JAN_API_BASE}${this.mcpEndpoint}`),
+        new URL(`${MENLO_PLATFORM_BASE_URL}${this.mcpEndpoint}`),
         {
           authProvider: this.oauthProvider
           // No sessionId needed - server will generate one automatically
