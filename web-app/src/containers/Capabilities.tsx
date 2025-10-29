@@ -10,6 +10,7 @@ import {
   IconAtom,
   IconWorld,
   IconCodeCircle2,
+  IconSparkles,
 } from '@tabler/icons-react'
 import { Fragment } from 'react/jsx-runtime'
 
@@ -29,6 +30,8 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = <IconEye className="size-4" />
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
+        } else if (capability === 'proactive') {
+          icon = <IconSparkles className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
         } else if (capability === 'embeddings') {
@@ -54,7 +57,11 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>
-                      {capability === 'web_search' ? 'Web Search' : capability}
+                      {capability === 'web_search'
+                        ? 'Web Search'
+                        : capability === 'proactive'
+                        ? 'Proactive'
+                        : capability}
                     </p>
                   </TooltipContent>
                 </Tooltip>
