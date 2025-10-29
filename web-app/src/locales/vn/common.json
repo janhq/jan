@@ -80,6 +80,7 @@
   "tools": "Công cụ",
   "webSearch": "Tìm kiếm trên web",
   "reasoning": "Lý luận",
+  "proactive": "Chủ động",
   "selectAModel": "Chọn một mô hình",
   "noToolsAvailable": "Không có công cụ nào",
   "noModelsFoundFor": "Không tìm thấy mô hình nào cho \"{{searchValue}}\"",

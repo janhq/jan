@@ -61,6 +61,7 @@
     "capabilities": "Capabilities",
     "tools": "Tools",
     "vision": "Vision",
+    "proactive": "Proactive (Experimental)",
     "embeddings": "Embeddings",
     "notAvailable": "Not available yet",
     "warning": {

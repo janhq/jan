@@ -61,6 +61,7 @@
     "capabilities": "功能",
     "tools": "工具",
     "vision": "视觉",
+    "proactive": "主动模式（实验性）",
     "embeddings": "嵌入",
     "notAvailable": "尚不可用",
     "warning": {

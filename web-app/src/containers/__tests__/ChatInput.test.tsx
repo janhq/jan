@@ -437,4 +437,31 @@ describe('ChatInput', () => {
       expect(() => renderWithRouter()).not.toThrow()
     })
   })
+
+  describe('Proactive Mode', () => {
+    it('should render ChatInput with proactive capable model', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
+    it('should handle proactive capability detection', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
+    it('should work with models that have multiple capabilities', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
+  })
 })

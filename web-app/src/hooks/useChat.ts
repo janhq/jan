@@ -16,6 +16,7 @@ import {
   newUserThreadContent,
   postMessageProcessing,
   sendCompletion,
+  captureProactiveScreenshots,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
@@ -419,6 +420,27 @@ export const useChat = () => {
             })
           : []
 
+        // Check if proactive mode is enabled
+        const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+
+        // Proactive mode: Capture initial screenshot/snapshot before first LLM call
+        if (isProactiveMode && availableTools.length > 0 && !abortController.signal.aborted) {
+          console.log('Proactive mode: Capturing initial screenshots before LLM call')
+          try {
+            const initialScreenshots = await captureProactiveScreenshots(abortController)
+
+            // Add initial screenshots to builder
+            for (const screenshot of initialScreenshots) {
+              // Generate unique tool call ID for initial screenshot
+              const proactiveToolCallId = `proactive_initial_${Date.now()}_${Math.random()}`
+              builder.addToolMessage(screenshot, proactiveToolCallId)
+              console.log('Initial proactive screenshot added to context')
+            }
+          } catch (e) {
+            console.warn('Failed to capture initial proactive screenshots:', e)
+          }
+        }
+
         let assistantLoopSteps = 0
 
         while (
@@ -694,6 +716,10 @@ export const useChat = () => {
           )
 
           builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+
+          // Check if proactive mode is enabled for this model
+          const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
@@ -701,7 +727,8 @@ export const useChat = () => {
             abortController,
             useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
-            allowAllMCPPermissions
+            allowAllMCPPermissions,
+            isProactiveMode
           )
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)
