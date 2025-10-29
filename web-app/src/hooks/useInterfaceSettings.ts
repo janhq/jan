@@ -9,7 +9,6 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { supportsBlurEffects } from '@/utils/blurSupport'
 import {
   DEFAULT_THREAD_SCROLL_BEHAVIOR,
-  THREAD_SCROLL_BEHAVIOR,
   ThreadScrollBehavior,
   isThreadScrollBehavior,
 } from '@/constants/threadScroll'
@@ -288,7 +287,9 @@ const migrateFromGeneralSettings = (): string | null => {
     localStorage.setItem(localStorageKey.settingInterface, migrated)
 
     if (parsed?.state) {
-      const { threadScrollBehavior: _removed, ...rest } = parsed.state
+      const rest = { ...parsed.state }
+      delete rest.threadScrollBehavior
+
       const cleaned = JSON.stringify({
         ...parsed,
         state: rest,
