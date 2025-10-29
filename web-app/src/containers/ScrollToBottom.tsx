@@ -1,9 +1,9 @@
-import { useThreadScrolling } from '@/hooks/useThreadScrolling'
+﻿import { useThreadScrolling } from '@/hooks/useThreadScrolling'
 import { memo } from 'react'
 import { GenerateResponseButton } from './GenerateResponseButton'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -17,7 +17,7 @@ const ScrollToBottom = ({
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
 }) => {
   const { t } = useTranslation()
-  const appMainViewBgColor = useAppearance((state) => state.appMainViewBgColor)
+  const appMainViewBgColor = useInterfaceSettings((state) => state.appMainViewBgColor)
   const { showScrollToBottomBtn, scrollToBottom } =
     useThreadScrolling(threadId, scrollContainerRef)
   const { messages } = useMessages(

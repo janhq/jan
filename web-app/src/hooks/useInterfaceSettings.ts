@@ -7,11 +7,17 @@ import { useTheme } from './useTheme'
 import { useEffect, useState } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { supportsBlurEffects } from '@/utils/blurSupport'
+import {
+  DEFAULT_THREAD_SCROLL_BEHAVIOR,
+  THREAD_SCROLL_BEHAVIOR,
+  ThreadScrollBehavior,
+  isThreadScrollBehavior,
+} from '@/constants/threadScroll'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px'
 export type ChatWidth = 'full' | 'compact'
 
-interface AppearanceState {
+interface InterfaceSettingsState {
   chatWidth: ChatWidth
   fontSize: FontSize
   appBgColor: RgbaColor
@@ -24,6 +30,7 @@ interface AppearanceState {
   appAccentTextColor: string
   appDestructiveTextColor: string
   appLeftPanelTextColor: string
+  threadScrollBehavior: ThreadScrollBehavior
   setChatWidth: (size: ChatWidth) => void
   setFontSize: (size: FontSize) => void
   setAppBgColor: (color: RgbaColor) => void
@@ -31,8 +38,25 @@ interface AppearanceState {
   setAppPrimaryBgColor: (color: RgbaColor) => void
   setAppAccentBgColor: (color: RgbaColor) => void
   setAppDestructiveBgColor: (color: RgbaColor) => void
-  resetAppearance: () => void
+  setThreadScrollBehavior: (value: ThreadScrollBehavior) => void
+  resetInterface: () => void
 }
+
+const LEGACY_INTERFACE_STORAGE_KEY = 'setting-appearance' as const
+const GENERAL_SETTINGS_STORAGE_KEY = localStorageKey.settingGeneral
+
+type InterfaceSettingsPersistedSlice = Omit<
+  InterfaceSettingsState,
+  | 'resetInterface'
+  | 'setChatWidth'
+  | 'setFontSize'
+  | 'setAppBgColor'
+  | 'setAppMainViewBgColor'
+  | 'setAppPrimaryBgColor'
+  | 'setAppAccentBgColor'
+  | 'setAppDestructiveBgColor'
+  | 'setThreadScrollBehavior'
+>
 
 const getBrightness = ({ r, g, b }: RgbaColor) =>
   (r * 299 + g * 587 + b * 114) / 1000
@@ -62,7 +86,7 @@ const getAlphaValue = () => {
   return 0.4
 }
 
-// Default appearance settings
+// Default interface settings
 const defaultFontSize: FontSize = '15px'
 const defaultAppBgColor: RgbaColor = {
   r: 25,
@@ -154,6 +178,162 @@ export const getDefaultTextColor = (isDark: boolean): string => {
   return isDark ? defaultDarkLeftPanelTextColor : defaultLightLeftPanelTextColor
 }
 
+const getIsDarkTheme = (): boolean => {
+  try {
+    return !!useTheme.getState().isDark
+  } catch {
+    return false
+  }
+}
+
+const copyColor = (color: RgbaColor): RgbaColor => ({
+  r: color.r,
+  g: color.g,
+  b: color.b,
+  a: color.a,
+})
+
+const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
+  const isDark = getIsDarkTheme()
+  const defaultTextColor = getDefaultTextColor(isDark)
+
+  return {
+    chatWidth: 'compact',
+    fontSize: defaultFontSize,
+    appBgColor: copyColor(defaultAppBgColor),
+    appMainViewBgColor: copyColor(defaultAppMainViewBgColor),
+    appPrimaryBgColor: copyColor(defaultAppPrimaryBgColor),
+    appAccentBgColor: copyColor(defaultAppAccentBgColor),
+    appDestructiveBgColor: copyColor(defaultAppDestructiveBgColor),
+    appLeftPanelTextColor: defaultTextColor,
+    appMainViewTextColor: defaultTextColor,
+    appPrimaryTextColor: defaultTextColor,
+    appAccentTextColor: defaultTextColor,
+    appDestructiveTextColor: '#FFF',
+    threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+  }
+}
+
+const buildDefaultPersistedSnapshot = () =>
+  JSON.stringify({ state: createDefaultInterfaceValues(), version: 0 })
+
+const validatePersistedSnapshot = (value: string): string | null => {
+  try {
+    const parsed = JSON.parse(value) as {
+      state?: Record<string, unknown>
+      version?: unknown
+    }
+
+    if (parsed && typeof parsed === 'object' && parsed.state) {
+      const draft = { ...parsed }
+      if (
+        !isThreadScrollBehavior(
+          draft.state.threadScrollBehavior as ThreadScrollBehavior
+        )
+      ) {
+        draft.state = {
+          ...draft.state,
+          threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+        }
+        return JSON.stringify(draft)
+      }
+      return value
+    }
+  } catch {
+    // ignore parse failures
+  }
+
+  return null
+}
+
+const migrateLegacySnapshot = (): string | null => {
+  const legacy = localStorage.getItem(LEGACY_INTERFACE_STORAGE_KEY)
+  if (!legacy) return null
+
+  const migrated =
+    validatePersistedSnapshot(legacy) ?? buildDefaultPersistedSnapshot()
+
+  localStorage.setItem(localStorageKey.settingInterface, migrated)
+  localStorage.removeItem(LEGACY_INTERFACE_STORAGE_KEY)
+
+  return migrated
+}
+
+const migrateFromGeneralSettings = (): string | null => {
+  const general = localStorage.getItem(GENERAL_SETTINGS_STORAGE_KEY)
+  if (!general) return null
+
+  try {
+    const parsed = JSON.parse(general) as {
+      state?: Record<string, unknown>
+      version?: unknown
+    }
+
+    const legacyBehavior = parsed?.state?.threadScrollBehavior
+
+    if (!isThreadScrollBehavior(legacyBehavior)) {
+      return null
+    }
+
+    const nextInterfaceState = {
+      ...createDefaultInterfaceValues(),
+      threadScrollBehavior: legacyBehavior,
+    }
+
+    const migrated = JSON.stringify({
+      state: nextInterfaceState,
+      version: 0,
+    })
+
+    localStorage.setItem(localStorageKey.settingInterface, migrated)
+
+    if (parsed?.state) {
+      const { threadScrollBehavior: _removed, ...rest } = parsed.state
+      const cleaned = JSON.stringify({
+        ...parsed,
+        state: rest,
+      })
+      localStorage.setItem(GENERAL_SETTINGS_STORAGE_KEY, cleaned)
+    }
+
+    return migrated
+  } catch {
+    return null
+  }
+}
+
+const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() => ({
+  getItem: (name: string) => {
+    const existing = localStorage.getItem(name)
+    if (existing !== null) {
+      const valid = validatePersistedSnapshot(existing)
+      if (valid) {
+        if (valid !== existing) {
+          localStorage.setItem(name, valid)
+        }
+        return valid
+      }
+
+      const fallback = buildDefaultPersistedSnapshot()
+      localStorage.setItem(name, fallback)
+      return fallback
+    }
+
+    if (name !== localStorageKey.settingInterface) {
+      return null
+    }
+
+    return migrateLegacySnapshot() ?? migrateFromGeneralSettings()
+  },
+  setItem: (name: string, value: string) => {
+    const valid = validatePersistedSnapshot(value)
+    localStorage.setItem(name, valid ?? buildDefaultPersistedSnapshot())
+  },
+  removeItem: (name: string) => {
+    localStorage.removeItem(name)
+  },
+}))
+
 // Hook to check if alpha slider should be shown
 export const useBlurSupport = () => {
   const [supportsBlur, setSupportsBlur] = useState(
@@ -207,24 +387,13 @@ export const useBlurSupport = () => {
   return IS_TAURI && (IS_MACOS || supportsBlur)
 }
 
-export const useAppearance = create<AppearanceState>()(
+export const useInterfaceSettings = create<InterfaceSettingsState>()(
   persist(
     (set) => {
+      const defaultState = createDefaultInterfaceValues()
       return {
-        chatWidth: 'compact',
-        fontSize: defaultFontSize,
-        appBgColor: defaultAppBgColor,
-        appMainViewBgColor: defaultAppMainViewBgColor,
-        appPrimaryBgColor: defaultAppPrimaryBgColor,
-        appAccentBgColor: defaultAppAccentBgColor,
-        appDestructiveBgColor: defaultAppDestructiveBgColor,
-        appLeftPanelTextColor: getDefaultTextColor(useTheme.getState().isDark),
-        appMainViewTextColor: getDefaultTextColor(useTheme.getState().isDark),
-        appPrimaryTextColor: getDefaultTextColor(useTheme.getState().isDark),
-        appAccentTextColor: getDefaultTextColor(useTheme.getState().isDark),
-        appDestructiveTextColor: '#FFF',
-
-        resetAppearance: () => {
+        ...defaultState,
+        resetInterface: () => {
           const { isDark } = useTheme.getState()
 
           // Reset font size
@@ -341,20 +510,28 @@ export const useAppearance = create<AppearanceState>()(
           )
 
           // Update state
-          set({
-            fontSize: defaultFontSize,
-            appBgColor: defaultBg,
-            appMainViewBgColor: defaultMainView,
-            appPrimaryBgColor: defaultPrimary,
-            appAccentBgColor: defaultAccent,
+        set({
+          fontSize: defaultFontSize,
+          appBgColor: defaultBg,
+          appMainViewBgColor: defaultMainView,
+          appPrimaryBgColor: defaultPrimary,
+          appAccentBgColor: defaultAccent,
             appLeftPanelTextColor: defaultTextColor,
-            appMainViewTextColor: defaultTextColor,
-            appPrimaryTextColor: '#FFF',
-            appAccentTextColor: '#FFF',
-            appDestructiveBgColor: defaultDestructive,
-            appDestructiveTextColor: '#FFF',
-          })
-        },
+          appMainViewTextColor: defaultTextColor,
+          appPrimaryTextColor: '#FFF',
+          appAccentTextColor: '#FFF',
+          appDestructiveBgColor: defaultDestructive,
+          appDestructiveTextColor: '#FFF',
+          threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+        })
+      },
+
+        setThreadScrollBehavior: (value: ThreadScrollBehavior) =>
+          set({
+            threadScrollBehavior: isThreadScrollBehavior(value)
+              ? value
+              : DEFAULT_THREAD_SCROLL_BEHAVIOR,
+          }),
 
         setChatWidth: (value: ChatWidth) => {
           set({ chatWidth: value })
@@ -638,8 +815,8 @@ export const useAppearance = create<AppearanceState>()(
       }
     },
     {
-      name: localStorageKey.settingAppearance,
-      storage: createJSONStorage(() => localStorage),
+      name: localStorageKey.settingInterface,
+      storage: interfaceStorage,
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -653,7 +830,7 @@ export const useAppearance = create<AppearanceState>()(
           const { isDark } = useTheme.getState()
 
           // Just use the stored color as-is during rehydration
-          // The AppearanceProvider will handle alpha normalization after blur detection
+          // The InterfaceProvider will handle alpha normalization after blur detection
           const finalColor = state.appBgColor
 
           let finalColorMainView = state.appMainViewBgColor

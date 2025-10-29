@@ -78,7 +78,7 @@
     "goToSettings": "Buka Pengaturan",
     "goToSettingsDesc": "Buka pengaturan."
   },
-  "appearance": {
+  "interface": {
     "title": "Tampilan",
     "theme": "Tema",
     "themeDesc": "Sesuaikan dengan tema OS.",
@@ -96,8 +96,8 @@
     "destructiveDesc": "Atur warna untuk tindakan yang merusak.",
     "resetToDefault": "Setel Ulang ke Default",
     "resetToDefaultDesc": "Setel ulang semua pengaturan tampilan ke default.",
-    "resetAppearanceSuccess": "Tampilan berhasil diatur ulang",
-    "resetAppearanceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
+    "resetInterfaceSuccess": "Tampilan berhasil diatur ulang",
+    "resetInterfaceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
     "chatWidth": "Lebar Obrolan",
     "chatWidthDesc": "Sesuaikan lebar tampilan obrolan.",
     "codeBlockTitle": "Blok Kode",

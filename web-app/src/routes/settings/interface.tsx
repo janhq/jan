@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+﻿import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
@@ -11,7 +11,7 @@ import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
 import { ColorPickerAppAccentColor } from '@/containers/ColorPickerAppAccentColor'
 import { ColorPickerAppDestructiveColor } from '@/containers/ColorPickerAppDestructiveColor'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useCodeblock } from '@/hooks/useCodeblock'
 import { Button } from '@/components/ui/button'
 import CodeBlockStyleSwitcher from '@/containers/CodeBlockStyleSwitcher'
@@ -20,15 +20,16 @@ import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
+import { ThreadScrollBehaviorSwitcher } from '@/containers/ThreadScrollBehaviorSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.settings.appearance as any)({
-  component: Appareances,
+export const Route = createFileRoute(route.settings.interface as any)({
+  component: InterfaceSettings,
 })
 
-function Appareances() {
+function InterfaceSettings() {
   const { t } = useTranslation()
-  const { resetAppearance } = useAppearance()
+  const { resetInterface } = useInterfaceSettings()
   const { resetCodeBlockStyle } = useCodeblock()
 
   return (
@@ -40,64 +41,64 @@ function Appareances() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Appearance */}
-            <Card title={t('settings:appearance.title')}>
+            {/* Interface */}
+            <Card title={t('settings:interface.title')}>
               <CardItem
-                title={t('settings:appearance.theme')}
-                description={t('settings:appearance.themeDesc')}
+                title={t('settings:interface.theme')}
+                description={t('settings:interface.themeDesc')}
                 actions={<ThemeSwitcher />}
               />
               <CardItem
-                title={t('settings:appearance.fontSize')}
-                description={t('settings:appearance.fontSizeDesc')}
+                title={t('settings:interface.fontSize')}
+                description={t('settings:interface.fontSizeDesc')}
                 actions={<FontSizeSwitcher />}
               />
 
               <CardItem
-                title={t('settings:appearance.windowBackground')}
-                description={t('settings:appearance.windowBackgroundDesc')}
+                title={t('settings:interface.windowBackground')}
+                description={t('settings:interface.windowBackgroundDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppBgColor />}
               />
               <CardItem
-                title={t('settings:appearance.appMainView')}
-                description={t('settings:appearance.appMainViewDesc')}
+                title={t('settings:interface.appMainView')}
+                description={t('settings:interface.appMainViewDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppMainView />}
               />
               <CardItem
-                title={t('settings:appearance.primary')}
-                description={t('settings:appearance.primaryDesc')}
+                title={t('settings:interface.primary')}
+                description={t('settings:interface.primaryDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppPrimaryColor />}
               />
               <CardItem
-                title={t('settings:appearance.accent')}
-                description={t('settings:appearance.accentDesc')}
+                title={t('settings:interface.accent')}
+                description={t('settings:interface.accentDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppAccentColor />}
               />
               <CardItem
-                title={t('settings:appearance.destructive')}
-                description={t('settings:appearance.destructiveDesc')}
+                title={t('settings:interface.destructive')}
+                description={t('settings:interface.destructiveDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppDestructiveColor />}
               />
               <CardItem
-                title={t('settings:appearance.resetToDefault')}
-                description={t('settings:appearance.resetToDefaultDesc')}
+                title={t('settings:interface.resetToDefault')}
+                description={t('settings:interface.resetToDefaultDesc')}
                 actions={
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
-                      resetAppearance()
+                      resetInterface()
                       toast.success(
-                        t('settings:appearance.resetAppearanceSuccess'),
+                        t('settings:interface.resetInterfaceSuccess'),
                         {
-                          id: 'reset-appearance',
+                          id: 'reset-interface',
                           description: t(
-                            'settings:appearance.resetAppearanceSuccessDesc'
+                            'settings:interface.resetInterfaceSuccessDesc'
                           ),
                         }
                       )
@@ -112,33 +113,42 @@ function Appareances() {
             {/* Chat Message */}
             <Card>
               <CardItem
-                title={t('settings:appearance.chatWidth')}
-                description={t('settings:appearance.chatWidthDesc')}
+                title={t('settings:interface.chatWidth')}
+                description={t('settings:interface.chatWidthDesc')}
               />
               <ChatWidthSwitcher />
               <CardItem
-                title={t('settings:appearance.tokenCounterCompact')}
-                description={t('settings:appearance.tokenCounterCompactDesc')}
+                title={t('settings:interface.tokenCounterCompact')}
+                description={t('settings:interface.tokenCounterCompactDesc')}
                 actions={<TokenCounterCompactSwitcher />}
               />
+            </Card>
+
+            {/* Scroll Behavior */}
+            <Card>
+              <CardItem
+                title={t('settings:interface.threadScrollTitle')}
+                description={t('settings:interface.threadScrollDesc')}
+              />
+              <ThreadScrollBehaviorSwitcher />
             </Card>
 
             {/* Codeblock */}
             <Card>
               <CardItem
-                title={t('settings:appearance.codeBlockTitle')}
-                description={t('settings:appearance.codeBlockDesc')}
+                title={t('settings:interface.codeBlockTitle')}
+                description={t('settings:interface.codeBlockDesc')}
                 actions={<CodeBlockStyleSwitcher />}
               />
               <CodeBlockExample />
               <CardItem
-                title={t('settings:appearance.showLineNumbers')}
-                description={t('settings:appearance.showLineNumbersDesc')}
+                title={t('settings:interface.showLineNumbers')}
+                description={t('settings:interface.showLineNumbersDesc')}
                 actions={<LineNumbersSwitcher />}
               />
               <CardItem
-                title={t('settings:appearance.resetCodeBlockStyle')}
-                description={t('settings:appearance.resetCodeBlockStyleDesc')}
+                title={t('settings:interface.resetCodeBlockStyle')}
+                description={t('settings:interface.resetCodeBlockStyleDesc')}
                 actions={
                   <Button
                     variant="destructive"
@@ -146,11 +156,11 @@ function Appareances() {
                     onClick={() => {
                       resetCodeBlockStyle()
                       toast.success(
-                        t('settings:appearance.resetCodeBlockSuccess'),
+                        t('settings:interface.resetCodeBlockSuccess'),
                         {
                           id: 'code-block-style',
                           description: t(
-                            'settings:appearance.resetCodeBlockSuccessDesc'
+                            'settings:interface.resetCodeBlockSuccessDesc'
                           ),
                         }
                       )
