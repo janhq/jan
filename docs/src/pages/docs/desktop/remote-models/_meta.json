@@ -2,6 +2,9 @@
   "anthropic": {
     "title": "Anthropic"
   },
+  "cerebras": {
+    "title": "Cerebras"
+  },
   "cohere": {
     "title": "Cohere"
   },

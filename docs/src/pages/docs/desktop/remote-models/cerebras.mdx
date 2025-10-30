@@ -1,0 +1,133 @@
+---
+title: Cerebras
+description: Learn how to integrate Cerebras with Jan for ultra-fast AI inference.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cerebras,
+    ultra-fast inference,
+    OpenAI compatible,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# Cerebras
+
+## Overview
+
+Jan supports Cerebras Inference, enabling you to leverage ultra-fast AI inference with speeds up to 3,000 tokens per second. Cerebras offers OpenAI-compatible endpoints, making integration seamless.
+
+## Supported Models
+
+### Production Models
+- **Llama 4 Scout** (`llama-4-scout-17b-16e-instruct`) - 109B parameters, ~2600 tokens/s
+- **Llama 3.1 8B** (`llama3.1-8b`) - 8B parameters, ~2200 tokens/s
+- **Llama 3.3 70B** (`llama-3.3-70b`) - 70B parameters, ~2100 tokens/s, supports tool calling
+- **OpenAI GPT OSS** (`gpt-oss-120b`) - 120B parameters, ~3000 tokens/s, supports tool calling
+- **Qwen 3 32B** (`qwen-3-32b`) - 32B parameters, ~2600 tokens/s
+
+### Preview Models (Evaluation Only)
+- **Qwen 3 235B Instruct** - 235B parameters, ~1400 tokens/s
+- **Qwen 3 235B Thinking** - 235B parameters, ~1700 tokens/s
+- **Qwen 3 Coder 480B** - 480B parameters, ~2000 tokens/s
+
+<Callout type="warning">
+  Preview models are for evaluation only and may be discontinued with short notice.
+
+  The following models are scheduled for deprecation:
+  - Llama 4 Scout - November 3, 2025
+  - Qwen 3 Coder 480B - November 5, 2025
+  - Qwen 3 235B Thinking - November 14, 2025
+</Callout>
+
+## How to Integrate Cerebras with Jan
+
+<Steps>
+
+### Step 1: Configure Cerebras
+
+1. Obtain a Cerebras API key from [Cerebras Cloud](https://cloud.cerebras.ai/api-keys)
+2. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) → **Providers**
+3. Find **Cerebras** in the provider list and toggle it **On**
+4. Click the settings icon next to Cerebras
+
+### Step 2: Enter API Credentials
+
+1. In the **API Key** field, paste your Cerebras API key
+2. The **Base URL** should be pre-filled with `https://api.cerebras.ai/v1`
+3. Click **Save** or the changes will auto-save
+
+### Step 3: Select Models
+
+1. Click **Fetch Models** to retrieve available Cerebras models
+2. Navigate to **Settings** → **Models** or start a new conversation
+3. Select a Cerebras model from the model dropdown
+4. Start chatting with ultra-fast inference!
+
+</Steps>
+
+## Features
+
+### Tool Calling
+Cerebras supports tool calling (function calling) for:
+- `gpt-oss-120b`
+- `llama-3.3-70b`
+
+### Streaming
+All Cerebras models support streaming responses for real-time output.
+
+<Callout type="info">
+  Streaming is not supported for reasoning models when using JSON mode or tool calling together.
+</Callout>
+
+### Developer-Level Instructions (gpt-oss-120b)
+The `gpt-oss-120b` model treats system messages as developer-level instructions, giving them stronger influence than standard OpenAI behavior.
+
+## Limitations
+
+The following OpenAI parameters are **not supported** by Cerebras and will return a 400 error:
+- `frequency_penalty`
+- `logit_bias`
+- `presence_penalty`
+- `parallel_tool_calls`
+- `service_tier`
+
+## Troubleshooting
+
+### Authentication Failed
+- Verify your API key is correct
+- Ensure you have credits in your Cerebras account
+- Check that the API key hasn't expired
+
+### Models Not Loading
+- Click the **Fetch Models** button in provider settings
+- Check your internet connection
+- Verify the base URL is `https://api.cerebras.ai/v1`
+
+### Slow Performance
+- Cerebras offers extremely fast inference (~2000-3000 tokens/s)
+- If experiencing slowness, check your network connection
+- Verify you're using production models, not preview models
+
+## Additional Resources
+
+- [Cerebras Inference Documentation](https://inference-docs.cerebras.ai/)
+- [Cerebras API Reference](https://inference-docs.cerebras.ai/api-reference/chat-completions)
+- [Supported Models](https://inference-docs.cerebras.ai/supported-models)
+- [Cerebras Pricing](https://www.cerebras.ai/pricing)
+
+## Support
+
+For Cerebras-specific issues, contact [Cerebras Support](https://www.cerebras.ai/support).
+
+For Jan integration issues, visit [Jan GitHub](https://github.com/janhq/jan/issues).

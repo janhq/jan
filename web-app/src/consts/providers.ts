@@ -293,6 +293,97 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.cerebras.ai/v1',
+    explore_models_url: 'https://inference-docs.cerebras.ai/supported-models',
+    provider: 'cerebras',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Cerebras API uses API keys for authentication. Visit your [API Keys](https://cloud.cerebras.ai/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Cerebras API documentation](https://inference-docs.cerebras.ai/api-reference/chat-completions) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.cerebras.ai/v1',
+          value: 'https://api.cerebras.ai/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'llama-4-scout-17b-16e-instruct',
+        name: 'Llama 4 Scout (109B params)',
+        version: '1.0',
+        description: 'Fast inference with ~2600 tokens/s. Scheduled for deprecation Nov 3, 2025.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'llama3.1-8b',
+        name: 'Llama 3.1 8B',
+        version: '1.0',
+        description: 'Compact model with ~2200 tokens/s.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'llama-3.3-70b',
+        name: 'Llama 3.3 70B',
+        version: '1.0',
+        description: 'Powerful model with ~2100 tokens/s.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-oss-120b',
+        name: 'OpenAI GPT OSS (120B params)',
+        version: '1.0',
+        description: 'Ultra-fast with ~3000 tokens/s. Supports developer-level system instructions.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'qwen-3-32b',
+        name: 'Qwen 3 32B',
+        version: '1.0',
+        description: 'Fast Qwen model with ~2600 tokens/s.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'qwen-3-235b-a22b-instruct-2507',
+        name: 'Qwen 3 235B Instruct (Preview)',
+        version: '1.0',
+        description: 'Preview model - evaluation only. ~1400 tokens/s. Deprecates Nov 14, 2025.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'qwen-3-235b-a22b-thinking-2507',
+        name: 'Qwen 3 235B Thinking (Preview)',
+        version: '1.0',
+        description: 'Preview reasoning model - evaluation only. ~1700 tokens/s. Deprecates Nov 14, 2025.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'qwen-3-coder-480b',
+        name: 'Qwen 3 Coder 480B (Preview)',
+        version: '1.0',
+        description: 'Preview coding model - evaluation only. ~2000 tokens/s. Deprecates Nov 5, 2025.',
+        capabilities: ['completion'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
     explore_models_url: 'https://ai.google.dev/gemini-api/docs/models/gemini',
     provider: 'gemini',

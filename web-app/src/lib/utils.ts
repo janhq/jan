@@ -46,6 +46,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/open-router.svg'
     case 'groq':
       return '/images/model-provider/groq.svg'
+    case 'cerebras':
+      return '/images/model-provider/cerebras.png'
     case 'cohere':
       return '/images/model-provider/cohere.svg'
     case 'gemini':
