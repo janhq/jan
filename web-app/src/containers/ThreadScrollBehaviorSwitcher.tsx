@@ -100,6 +100,9 @@ const FLOW_HISTORY_FRAMES = [
   { id: 'history-3', widths: ['70%', '52%'] },
 ] as const
 
+const createFlowHistoryFrames = () =>
+  Array.from(FLOW_HISTORY_FRAMES, (frame) => ({ ...frame }))
+
 const FLOW_TYPING_TEXT = 'Jan, help me summarize this'
 // Mirror Flow's history reveal timing so the typing cadence stays aligned.
 const STICKY_USER_MESSAGE_DELAY =
@@ -114,7 +117,7 @@ function FlowScrollPreview({ placeholder }: { placeholder: string }) {
   const [streamProgress, setStreamProgress] = useState(0)
   const [historyMessages, setHistoryMessages] = useState<
     Array<{ id: string; widths: readonly string[] }>
-  >(FLOW_HISTORY_FRAMES)
+  >(createFlowHistoryFrames)
   const [exitingHistoryIds, setExitingHistoryIds] = useState<string[]>([])
   const [userMessageVisible, setUserMessageVisible] = useState(false)
   const [streamStage, setStreamStage] = useState<'idle' | 'streaming' | 'complete'>('idle')
@@ -138,7 +141,7 @@ function FlowScrollPreview({ placeholder }: { placeholder: string }) {
     timersRef.current = []
 
     if (step === 0) {
-      setHistoryMessages(FLOW_HISTORY_FRAMES)
+      setHistoryMessages(createFlowHistoryFrames())
       setExitingHistoryIds([])
       setTypedText('')
       setSentMessage('')
@@ -305,7 +308,13 @@ function StickyScrollPreview({ placeholder }: { placeholder: string }) {
   const [typedText, setTypedText] = useState('')
   const [messages, setMessages] = useState<
     Array<{ id: string; type: 'assistant' | 'user'; widths: readonly string[] }>
-  >(FLOW_HISTORY_FRAMES.map((frame) => ({ ...frame, type: 'assistant' })))
+  >(
+    () =>
+      createFlowHistoryFrames().map((frame) => ({
+        ...frame,
+        type: 'assistant' as const,
+      }))
+  )
   const [exitingIds, setExitingIds] = useState<string[]>([])
   const exitingIdsRef = useRef(exitingIds)
   const timersRef = useRef<number[]>([])
@@ -321,7 +330,7 @@ function StickyScrollPreview({ placeholder }: { placeholder: string }) {
 
     if (step === 0) {
       setMessages(
-        FLOW_HISTORY_FRAMES.map((frame) => ({
+        createFlowHistoryFrames().map((frame) => ({
           ...frame,
           type: 'assistant' as const,
         }))

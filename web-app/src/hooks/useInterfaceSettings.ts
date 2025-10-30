@@ -224,16 +224,21 @@ const validatePersistedSnapshot = (value: string): string | null => {
     }
 
     if (parsed && typeof parsed === 'object' && parsed.state) {
-      const draft = { ...parsed }
+      const state = parsed.state
+
       if (
         !isThreadScrollBehavior(
-          draft.state.threadScrollBehavior as ThreadScrollBehavior
+          state.threadScrollBehavior as ThreadScrollBehavior
         )
       ) {
-        draft.state = {
-          ...draft.state,
-          threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+        const draft = {
+          ...parsed,
+          state: {
+            ...state,
+            threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+          },
         }
+
         return JSON.stringify(draft)
       }
       return value
