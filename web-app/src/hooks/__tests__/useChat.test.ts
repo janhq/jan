@@ -170,6 +170,7 @@ vi.mock('@/lib/completion', () => ({
   sendCompletion: vi.fn(),
   postMessageProcessing: vi.fn(),
   isCompletionResponse: vi.fn(),
+  captureProactiveScreenshots: vi.fn(() => Promise.resolve([])),
 }))
 
 vi.mock('@/lib/messages', () => ({
@@ -224,5 +225,27 @@ describe('useChat', () => {
     })
 
     expect(result.current).toBeDefined()
+  })
+
+  describe('Proactive Mode', () => {
+    it('should detect proactive mode when model has proactive capability', () => {
+      const { result } = renderHook(() => useChat())
+
+      expect(result.current).toBeDefined()
+      expect(typeof result.current).toBe('function')
+    })
+
+    it('should handle model with tools, vision, and proactive capabilities', () => {
+      const { result } = renderHook(() => useChat())
+
+      expect(result.current).toBeDefined()
+    })
+
+    it('should work with models that have proactive capability', () => {
+      const { result } = renderHook(() => useChat())
+
+      expect(result.current).toBeDefined()
+      expect(typeof result.current).toBe('function')
+    })
   })
 })

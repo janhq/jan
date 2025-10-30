@@ -16,6 +16,7 @@ import {
   newUserThreadContent,
   postMessageProcessing,
   sendCompletion,
+  captureProactiveScreenshots,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
@@ -37,6 +38,8 @@ import {
 import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { toast } from 'sonner'
+import { Attachment } from '@/types/attachment'
 
 export const useChat = () => {
   const [
@@ -257,14 +260,12 @@ export const useChat = () => {
     async (
       message: string,
       troubleshooting = true,
-      attachments?: Array<{
-        name: string
-        type: string
-        size: number
-        base64: string
-        dataUrl: string
-      }>,
-      projectId?: string
+      attachments?: Attachment[],
+      projectId?: string,
+      updateAttachmentProcessing?: (
+        fileName: string,
+        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+      ) => void
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
@@ -272,14 +273,124 @@ export const useChat = () => {
 
       resetTokenSpeed()
       if (!activeThread || !activeProvider) return
+
+      // Separate images and documents
+      const images = attachments?.filter((a) => a.type === 'image') || []
+      const documents = attachments?.filter((a) => a.type === 'document') || []
+
+      // Process attachments BEFORE sending
+      const processedAttachments: Attachment[] = []
+
+      // 1) Images ingestion (placeholder/no-op for now)
+      // Track attachment ingestion; all must succeed before sending
+
+      if (images.length > 0) {
+        for (const img of images) {
+          try {
+            // Skip if already processed (ingested in ChatInput when thread existed)
+            if (img.processed && img.id) {
+              processedAttachments.push(img)
+              continue
+            }
+
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'processing')
+            }
+            // Upload image, get id/URL
+            const res = await serviceHub.uploads().ingestImage(activeThread.id, img)
+            processedAttachments.push({
+              ...img,
+              id: res.id,
+              processed: true,
+              processing: false,
+            })
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'done')
+            }
+          } catch (err) {
+            console.error(`Failed to ingest image ${img.name}:`, err)
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'error')
+            }
+            const desc = err instanceof Error ? err.message : String(err)
+            toast.error('Failed to ingest image attachment', { description: desc })
+            return
+          }
+        }
+      }
+
+      if (documents.length > 0) {
+        try {
+          for (const doc of documents) {
+            // Skip if already processed (ingested in ChatInput when thread existed)
+            if (doc.processed && doc.id) {
+              processedAttachments.push(doc)
+              continue
+            }
+
+            // Update UI to show spinner on this file
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(doc.name, 'processing')
+            }
+
+            try {
+              const res = await serviceHub
+                .uploads()
+                .ingestFileAttachment(activeThread.id, doc)
+
+              // Add processed document with ID
+              processedAttachments.push({
+                ...doc,
+                id: res.id,
+                size: res.size ?? doc.size,
+                chunkCount: res.chunkCount ?? doc.chunkCount,
+                processing: false,
+                processed: true,
+              })
+
+              // Update UI to show done state
+              if (updateAttachmentProcessing) {
+                updateAttachmentProcessing(doc.name, 'done')
+              }
+            } catch (err) {
+              console.error(`Failed to ingest ${doc.name}:`, err)
+              if (updateAttachmentProcessing) {
+                updateAttachmentProcessing(doc.name, 'error')
+              }
+              throw err // Re-throw to handle in outer catch
+            }
+          }
+        } catch (err) {
+          console.error('Failed to ingest documents:', err)
+          const desc = err instanceof Error ? err.message : String(err)
+          toast.error('Failed to index attachments', { description: desc })
+          // Don't continue with message send if ingestion failed
+          return
+        }
+      }
+
+      // All attachments prepared successfully
+
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       updatePromptProgress(undefined)
       // Do not add new message on retry
-      if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message, attachments))
+      // All attachments (images + docs) ingested successfully.
+      // Build the user content once; use it for both the outbound request
+      // and persisting to the store so both are identical.
+      if (updateAttachmentProcessing) {
+        updateAttachmentProcessing('__CLEAR_ALL__', 'clear_all')
+      }
+      const userContent = newUserThreadContent(
+        activeThread.id,
+        message,
+        processedAttachments
+      )
+      if (troubleshooting) {
+        addMessage(userContent)
+      }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
       const selectedModel = useModelProvider.getState().selectedModel
@@ -296,7 +407,8 @@ export const useChat = () => {
             ? renderInstructions(currentAssistant.instructions)
             : undefined
         )
-        if (troubleshooting) builder.addUserMessage(message, attachments)
+        // Using addUserMessage to respect legacy code. Should be using the userContent above.
+        if (troubleshooting) builder.addUserMessage(userContent)
 
         let isCompleted = false
 
@@ -307,6 +419,27 @@ export const useChat = () => {
               return !disabledTools.includes(tool.name)
             })
           : []
+
+        // Check if proactive mode is enabled
+        const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+
+        // Proactive mode: Capture initial screenshot/snapshot before first LLM call
+        if (isProactiveMode && availableTools.length > 0 && !abortController.signal.aborted) {
+          console.log('Proactive mode: Capturing initial screenshots before LLM call')
+          try {
+            const initialScreenshots = await captureProactiveScreenshots(abortController)
+
+            // Add initial screenshots to builder
+            for (const screenshot of initialScreenshots) {
+              // Generate unique tool call ID for initial screenshot
+              const proactiveToolCallId = `proactive_initial_${Date.now()}_${Math.random()}`
+              builder.addToolMessage(screenshot, proactiveToolCallId)
+              console.log('Initial proactive screenshot added to context')
+            }
+          } catch (e) {
+            console.warn('Failed to capture initial proactive screenshots:', e)
+          }
+        }
 
         let assistantLoopSteps = 0
 
@@ -583,6 +716,10 @@ export const useChat = () => {
           )
 
           builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+
+          // Check if proactive mode is enabled for this model
+          const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
@@ -590,7 +727,8 @@ export const useChat = () => {
             abortController,
             useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
-            allowAllMCPPermissions
+            allowAllMCPPermissions,
+            isProactiveMode
           )
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)

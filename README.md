@@ -4,10 +4,10 @@
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/menloresearch/jan"/>
-  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/menloresearch/jan"/>
-  <img alt="Github Contributors" src="https://img.shields.io/github/contributors/menloresearch/jan"/>
-  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/menloresearch/jan"/>
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/janhq/jan"/>
+  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/janhq/jan"/>
+  <img alt="Github Contributors" src="https://img.shields.io/github/contributors/janhq/jan"/>
+  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/janhq/jan"/>
   <img alt="Discord" src="https://img.shields.io/discord/1107178041848909847?label=discord"/>
 </p>
 
@@ -15,7 +15,7 @@
   <a href="https://www.jan.ai/docs/desktop">Getting Started</a>
   - <a href="https://discord.gg/Exe46xPMbK">Community</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
-  - <a href="https://github.com/menloresearch/jan/issues">Bug reports</a>
+  - <a href="https://github.com/janhq/jan/issues">Bug reports</a>
 </p>
 
 Jan is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
@@ -48,7 +48,7 @@ The easiest way to get started is by downloading one of the following versions f
 </table>
 
 
-Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/menloresearch/jan/releases).
+Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/janhq/jan/releases).
 
 ## Features
 
@@ -73,7 +73,7 @@ For those who enjoy the scenic route:
 ### Run with Make
 
 ```bash
-git clone https://github.com/menloresearch/jan
+git clone https://github.com/janhq/jan
 cd jan
 make dev
 ```
@@ -128,7 +128,7 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel
 
 ## Contact
 
-- **Bugs**: [GitHub Issues](https://github.com/menloresearch/jan/issues)
+- **Bugs**: [GitHub Issues](https://github.com/janhq/jan/issues)
 - **Business**: hello@jan.ai
 - **Jobs**: hr@jan.ai
 - **General Discussion**: [Discord](https://discord.gg/FTk2MvZwJH)

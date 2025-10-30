@@ -256,6 +256,30 @@
   "extensions": {
     "title": "Extensions"
   },
+  "attachments": {
+    "subtitle": "Configure document attachments, size limits, and retrieval behavior.",
+    "featureTitle": "Feature",
+    "enable": "Enable Attachments",
+    "enableDesc": "Allow uploading and indexing documents for retrieval.",
+    "limitsTitle": "Limits",
+    "maxFile": "Max File Size (MB)",
+    "maxFileDesc": "Maximum size per file. Enforced at upload and processing time.",
+    "retrievalTitle": "Retrieval",
+    "topK": "Top-K",
+    "topKDesc": "Maximum citations to return.",
+    "threshold": "Affinity Threshold",
+    "thresholdDesc": "Minimum similarity score (0-1). Only used for linear cosine search, not ANN.",
+    "searchMode": "Vector Search Mode",
+    "searchModeDesc": "Choose between sqlite-vec ANN, linear cosine, or auto.",
+    "searchModeAuto": "Auto (recommended)",
+    "searchModeAnn": "ANN (sqlite-vec)",
+    "searchModeLinear": "Linear",
+    "chunkingTitle": "Chunking",
+    "chunkSize": "Chunk Size (tokens)",
+    "chunkSizeDesc": "Approximate max tokens per chunk for embeddings.",
+    "chunkOverlap": "Overlap (tokens)",
+    "chunkOverlapDesc": "Token overlap between consecutive chunks."
+  },
   "dialogs": {
     "changeDataFolder": {
       "title": "Change Data Folder Location",

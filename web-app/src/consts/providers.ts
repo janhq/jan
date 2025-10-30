@@ -96,7 +96,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.anthropic.com',
+    base_url: 'https://api.anthropic.com/v1',
     provider: 'anthropic',
     explore_models_url:
       'https://docs.anthropic.com/en/docs/about-claude/models',
@@ -127,11 +127,21 @@ export const predefinedProviders = [
       },
     ],
     models: [],
+    custom_header: [
+      {
+        header: 'anthropic-version',
+        value: '2023-06-01'
+      },
+      {
+        header: 'anthropic-dangerous-direct-browser-access',
+        value: 'true'
+      }
+    ]
   },
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.cohere.ai/compatibility/v1',
+    base_url: 'https://api.cohere.ai/v1',
     explore_models_url: 'https://docs.cohere.com/v2/docs/models',
     provider: 'cohere',
     settings: [

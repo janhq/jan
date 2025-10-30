@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-chunks"
+description = "Enables the get_chunks command without any pre-configured scope."
+commands.allow = ["get_chunks"]
+
+[[permission]]
+identifier = "deny-get-chunks"
+description = "Denies the get_chunks command without any pre-configured scope."
+commands.deny = ["get_chunks"]

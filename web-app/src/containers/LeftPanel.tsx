@@ -56,7 +56,8 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: true,
+    isEnabled:
+      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
   },
 ]
 
@@ -88,6 +89,7 @@ const LeftPanel = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
+  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -402,7 +404,9 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {filteredProjects.length > 0 && (
+          {projectsEnabled &&
+            filteredProjects.length > 0 &&
+            !(IS_IOS || IS_ANDROID) && (
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
@@ -670,23 +674,29 @@ const LeftPanel = () => {
       </aside>
 
       {/* Project Dialogs */}
-      <AddProjectDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        editingKey={editingProjectKey}
-        initialData={
-          editingProjectKey ? getFolderById(editingProjectKey) : undefined
-        }
-        onSave={handleProjectSave}
-      />
-      <DeleteProjectDialog
-        open={deleteProjectConfirmOpen}
-        onOpenChange={handleProjectDeleteClose}
-        projectId={deletingProjectId ?? undefined}
-        projectName={
-          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
-        }
-      />
+      {projectsEnabled && (
+        <>
+          <AddProjectDialog
+            open={projectDialogOpen}
+            onOpenChange={setProjectDialogOpen}
+            editingKey={editingProjectKey}
+            initialData={
+              editingProjectKey ? getFolderById(editingProjectKey) : undefined
+            }
+            onSave={handleProjectSave}
+          />
+          <DeleteProjectDialog
+            open={deleteProjectConfirmOpen}
+            onOpenChange={handleProjectDeleteClose}
+            projectId={deletingProjectId ?? undefined}
+            projectName={
+              deletingProjectId
+                ? getFolderById(deletingProjectId)?.name
+                : undefined
+            }
+          />
+        </>
+      )}
     </>
   )
 }

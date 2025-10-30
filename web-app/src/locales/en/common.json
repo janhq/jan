@@ -5,6 +5,7 @@
   "local_api_server": "Local API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
+  "attachments": "Attachments",
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
@@ -80,6 +81,7 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
@@ -372,4 +374,3 @@
     }
   }
 }
-

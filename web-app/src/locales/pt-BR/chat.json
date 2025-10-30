@@ -1,0 +1,12 @@
+{
+  "welcome": "Olá, como você está?",
+  "description": "Como posso ajudá-lo hoje?",
+  "temporaryChat": "Chat Temporário",
+  "temporaryChatDescription": "Inicie uma conversa temporária que não será salva no seu histórico de chat.",
+  "status": {
+    "empty": "Nenhum Chat Encontrado"
+  },
+  "sendMessage": "Enviar Mensagem",
+  "newConversation": "Nova Conversa",
+  "clearHistory": "Limpar Histórico"
+}

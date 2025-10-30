@@ -12,7 +12,7 @@ jobs:
   build-and-preview:
     runs-on: [ubuntu-24-04-docker]
     env:
-      JAN_API_BASE: "https://api-stag.jan.ai/v1"
+      MENLO_PLATFORM_BASE_URL: "https://api-stag.jan.ai/v1"
     permissions:
       pull-requests: write
       contents: write
@@ -52,7 +52,7 @@ jobs:
 
       - name: Build docker image
         run: |
-          docker build --build-arg JAN_API_BASE=${{ env.JAN_API_BASE }} -t ${{ steps.vars.outputs.FULL_IMAGE }} .
+          docker build --build-arg MENLO_PLATFORM_BASE_URL=${{ env.MENLO_PLATFORM_BASE_URL }} -t ${{ steps.vars.outputs.FULL_IMAGE }} .
 
       - name: Push docker image
         if: github.event_name == 'push'
