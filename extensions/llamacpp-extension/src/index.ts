@@ -1646,10 +1646,15 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.device.length > 0) args.push('--device', cfg.device)
     if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
       args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
+    if (cfg.main_gpu !== undefined && cfg.main_gpu !== 0)
       args.push('--main-gpu', String(cfg.main_gpu))
     // Note: Older llama.cpp versions are no longer supported
-    if (cfg.flash_attn !== undefined || !cfg.flash_attn || cfg.flash_attn !== '') args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
+    if (
+      cfg.flash_attn !== undefined ||
+      !cfg.flash_attn ||
+      cfg.flash_attn !== ''
+    )
+      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
@@ -1666,7 +1671,7 @@ export default class llamacpp_extension extends AIEngine {
       if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
         args.push('--cache-type-k', cfg.cache_type_k)
       if (
-        cfg.flash_attn &&
+        cfg.flash_attn !== 'on' &&
         cfg.cache_type_v != 'f16' &&
         cfg.cache_type_v != 'f32'
       ) {
