@@ -38,6 +38,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Default model providers (OpenAI, Anthropic, etc.) - disabled for web-only Jan builds
   [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
 
+  // Projects management
+  [PlatformFeature.PROJECTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
   // Analytics and telemetry - disabled for web
   [PlatformFeature.ANALYTICS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),

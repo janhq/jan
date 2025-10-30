@@ -14,6 +14,6 @@ export default defineConfig({
     emptyOutDir: false // Don't clean the output directory
   },
   define: {
-    JAN_API_BASE: JSON.stringify(process.env.JAN_API_BASE || 'https://api-dev.jan.ai/v1'),
+    MENLO_PLATFORM_BASE_URL: JSON.stringify(process.env.MENLO_PLATFORM_BASE_URL || 'https://api-dev.menlo.ai/v1'),
   }
 })

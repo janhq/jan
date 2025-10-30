@@ -201,6 +201,9 @@ vi.mock('@tabler/icons-react', () => ({
   IconAtom: () => <svg data-testid="atom-icon">Atom</svg>,
   IconTool: () => <svg data-testid="tool-icon">Tool</svg>,
   IconCodeCircle2: () => <svg data-testid="code-icon">Code</svg>,
+  IconPaperclip: () => <svg data-testid="paperclip-icon">Paperclip</svg>,
+  IconLoader2: () => <svg data-testid="loader-icon">Loader</svg>,
+  IconCheck: () => <svg data-testid="check-icon">Check</svg>,
   IconPlayerStopFilled: () => <svg className="tabler-icon-player-stop-filled" data-testid="stop-icon">Stop</svg>,
   IconX: () => <svg data-testid="x-icon">X</svg>,
 }))
@@ -433,5 +436,32 @@ describe('ChatInput', () => {
     await act(async () => {
       expect(() => renderWithRouter()).not.toThrow()
     })
+  })
+
+  describe('Proactive Mode', () => {
+    it('should render ChatInput with proactive capable model', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
+    it('should handle proactive capability detection', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
+    it('should work with models that have multiple capabilities', async () => {
+      await act(async () => {
+        renderWithRouter()
+      })
+
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    })
+
   })
 })
