@@ -62,38 +62,43 @@ jobs:
 
       - name: Download OLD and NEW installers
         shell: powershell
+      - name: Create Pull Request
+        id: create-pr
+        if: steps.check_files.outputs.files_exists == 'true'
         run: |
-          # Download OLD installer using existing script
-          .\autoqa\scripts\windows_download.ps1 `
-            -WorkflowInputUrl "${{ inputs.old_windows_installer }}" `
-            -WorkflowInputIsNightly "false" `
-            -RepoVariableUrl "" `
-            -RepoVariableIsNightly "" `
-            -DefaultUrl "" `
-            -DefaultIsNightly ""
+          # Configure Git
+          git config --global user.name "Jan AutoQA"
+          git config --global user.email "team@jan.ai"
 
-          $oldSrc = Join-Path $env:TEMP 'jan-installer.exe'
-          $oldOut = Join-Path $env:TEMP 'jan-old.exe'
-          Copy-Item -Path $oldSrc -Destination $oldOut -Force
+          # Create a new branch
+          BRANCH_NAME="autoqa/migration-`date +%Y%m%d%H%M%S`"
+          git checkout -b $BRANCH_NAME
 
-          # Download NEW installer using existing script
-          .\autoqa\scripts\windows_download.ps1 `
-            -WorkflowInputUrl "${{ inputs.new_windows_installer }}" `
-            -WorkflowInputIsNightly "false" `
-            -RepoVariableUrl "" `
-            -RepoVariableIsNightly "" `
-            -DefaultUrl "" `
-            -DefaultIsNightly ""
+          # Commit and push changes
+          git add .
+          git commit -m "AutoQA Migration"
+          git push origin "$BRANCH_NAME"
 
-          $newSrc = Join-Path $env:TEMP 'jan-installer.exe'
-          $newOut = Join-Path $env:TEMP 'jan-new.exe'
-          Copy-Item -Path $newSrc -Destination $newOut -Force
-
-          Write-Host "OLD installer: $oldOut"
-          Write-Host "NEW installer: $newOut"
-          echo "OLD_VERSION=$oldOut" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "NEW_VERSION=$newOut" | Out-File -FilePath $env:GITHUB_ENV -Append
-
+          # Create a pull request
+          BODY_CONTENT=$(cat <<EOM
+This PR is auto-generated to migrate AutoQA files.
+Original PR: #${PR_NUMBER}
+Original PR title: ${PR_TITLE}
+Original PR body: ${PR_BODY}
+Original PR branch: ${PR_BRANCH}
+EOM
+          )
+          gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "AutoQA Migration: $PR_TITLE" \
+            --body "$BODY_CONTENT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
       - name: Install Python dependencies
         working-directory: autoqa
         run: |
