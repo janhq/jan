@@ -3,6 +3,8 @@ import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { ExtensionManager } from '@/lib/extension'
+import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -31,6 +33,18 @@ type ThreadState = {
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
   searchIndex: Fzf<Thread[]> | null
+}
+
+// Helper function to clean up vector DB collection for a thread
+const cleanupVectorDB = async (threadId: string) => {
+  try {
+    const vec = ExtensionManager.getInstance().get<VectorDBExtension>(ExtensionTypeEnum.VectorDB)
+    if (vec?.deleteCollection) {
+      await vec.deleteCollection(`attachments_${threadId}`)
+    }
+  } catch (e) {
+    console.warn(`[Threads] Failed to delete vector DB collection for thread ${threadId}:`, e)
+  }
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -130,7 +144,11 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
+
+      // Clean up vector DB collection
+      cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
+
       return {
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
@@ -157,8 +175,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           !state.threads[threadId].metadata?.project
       )
 
-      // Delete threads that are not favorites and not in projects
+      // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
+        cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -183,8 +202,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Delete all threads from server
+      // Delete all threads and clean up their vector DB collections
       allThreadIds.forEach((threadId) => {
+        cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 

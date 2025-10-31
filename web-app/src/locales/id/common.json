@@ -80,6 +80,7 @@
   "tools": "Alat",
   "webSearch": "Pencarian Web",
   "reasoning": "Penalaran",
+  "proactive": "Proaktif",
   "selectAModel": "Pilih model",
   "noToolsAvailable": "Tidak ada alat yang tersedia",
   "noModelsFoundFor": "Tidak ada model yang ditemukan untuk \"{{searchValue}}\"",

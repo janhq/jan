@@ -152,12 +152,19 @@ export const ModelInfoHoverCard = ({
           </div>
 
           {/* Features Section */}
-          {(model.num_mmproj > 0 || model.tools) && (
+          {(model.num_mmproj > 0 || model.tools || (model.num_mmproj > 0 && model.tools)) && (
             <div className="border-t border-main-view-fg/10 pt-3">
               <h5 className="text-xs font-medium text-main-view-fg/70 mb-2">
                 Features
               </h5>
               <div className="flex flex-wrap gap-2">
+                {model.tools && (
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-main-view-fg/10 rounded-md">
+                    <span className="text-xs text-main-view-fg font-medium">
+                      Tools
+                    </span>
+                  </div>
+                )}
                 {model.num_mmproj > 0 && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-main-view-fg/10 rounded-md">
                     <span className="text-xs text-main-view-fg font-medium">
@@ -165,10 +172,10 @@ export const ModelInfoHoverCard = ({
                     </span>
                   </div>
                 )}
-                {model.tools && (
+                {model.num_mmproj > 0 && model.tools && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-main-view-fg/10 rounded-md">
                     <span className="text-xs text-main-view-fg font-medium">
-                      Tools
+                      Proactive
                     </span>
                   </div>
                 )}

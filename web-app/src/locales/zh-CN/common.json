@@ -80,6 +80,7 @@
   "tools": "工具",
   "webSearch": "网页搜索",
   "reasoning": "推理",
+  "proactive": "主动模式",
   "selectAModel": "选择一个模型",
   "noToolsAvailable": "无可用工具",
   "noModelsFoundFor": "未找到“{{searchValue}}”的模型",

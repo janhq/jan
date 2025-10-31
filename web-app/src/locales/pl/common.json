@@ -80,6 +80,7 @@
   "tools": "Narzędzia",
   "webSearch": "Szukanie w Sieci",
   "reasoning": "Rozumowanie",
+  "proactive": "Proaktywny",
   "selectAModel": "Wybierz Model",
   "noToolsAvailable": "Brak narzędzi",
   "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",

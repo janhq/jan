@@ -62,6 +62,10 @@ const normalizeLatex = (input: string): string => {
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
+      // --- Escape $<number> to prevent Markdown from treating it as LaTeX
+      // Example: "$1" → "\$1"
+      s = s.replace(/\$(\d+)/g, '\\$$1')
+
       return s
     })
     .join('')

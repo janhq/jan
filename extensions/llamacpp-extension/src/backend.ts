@@ -56,7 +56,7 @@ async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
 ): Promise<{ version: string; backend: string }[]> {
   // Pull the latest releases from the repo
-  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  const { releases } = await _fetchGithubReleases('janhq', 'llama.cpp')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
   releases.splice(10) // keep only the latest 10 releases
 
@@ -98,7 +98,7 @@ export async function listSupportedBackends(): Promise<
   const sysType = `${os_type}-${arch}`
   let supportedBackends = []
 
-  // NOTE: menloresearch's tags for llama.cpp builds are a bit different
+  // NOTE: janhq's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
   if (sysType == 'windows-x86_64') {
@@ -247,7 +247,7 @@ export async function downloadBackend(
   // Build URLs per source
   const backendUrl =
     source === 'github'
-      ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
+      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
       : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
 
   const downloadItems = [
@@ -263,7 +263,7 @@ export async function downloadBackend(
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda11.tar.gz']),
       proxy: proxyConfig,
@@ -272,7 +272,7 @@ export async function downloadBackend(
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
       save_path: await joinPath([libDir, 'cuda12.tar.gz']),
       proxy: proxyConfig,
