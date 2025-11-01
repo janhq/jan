@@ -62,7 +62,6 @@ pub async fn estimate_kv_cache_internal(
     ctx_size: Option<u64>,
 ) -> Result<KVCacheEstimate, KVCacheError> {
     log::info!("Received ctx_size parameter: {:?}", ctx_size);
-    log::info!("Received model metadata:\n{:?}", &meta);
     let arch = meta
         .get("general.architecture")
         .ok_or(KVCacheError::ArchitectureNotFound)?;
