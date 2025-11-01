@@ -1,4 +1,4 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+﻿import { createFileRoute, useParams } from '@tanstack/react-router'
 import { useMemo } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -15,7 +15,7 @@ import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform/types'
 import { IconMessage } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 export const Route = createFileRoute('/project/$projectId')({
@@ -36,7 +36,7 @@ function ProjectPageContent() {
   const { getFolderById } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
 
-  const chatWidth = useAppearance((state) => state.chatWidth)
+  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
 
   // Find the project

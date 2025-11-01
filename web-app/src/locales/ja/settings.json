@@ -78,7 +78,7 @@
     "goToSettings": "設定に移動",
     "goToSettingsDesc": "設定を開きます。"
   },
-  "appearance": {
+  "interface": {
     "title": "外観",
     "theme": "テーマ",
     "themeDesc": "OSのテーマに合わせます。",
@@ -96,8 +96,8 @@
     "destructiveDesc": "破壊的なアクションの色を設定します。",
     "resetToDefault": "デフォルトにリセット",
     "resetToDefaultDesc": "すべての外観設定をデフォルトにリセットします。",
-    "resetAppearanceSuccess": "外観が正常にリセットされました",
-    "resetAppearanceSuccessDesc": "すべての外観設定がデフォルトに復元されました。",
+    "resetInterfaceSuccess": "外観が正常にリセットされました",
+    "resetInterfaceSuccessDesc": "すべての外観設定がデフォルトに復元されました。",
     "chatWidth": "チャットの幅",
     "chatWidthDesc": "チャットビューの幅をカスタマイズします。",
     "tokenCounterCompact": "コンパクトなトークンカウンター",
