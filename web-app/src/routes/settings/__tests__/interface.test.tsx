@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+﻿import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { Route as AppearanceRoute } from '../appearance'
+import { Route as InterfaceRoute } from '../interface'
 
 // Mock all the dependencies
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -61,6 +61,12 @@ vi.mock('@/containers/ChatWidthSwitcher', () => ({
   ChatWidthSwitcher: () => <div data-testid="chat-width-switcher">Chat Width Switcher</div>,
 }))
 
+vi.mock('@/containers/ThreadScrollBehaviorSwitcher', () => ({
+  ThreadScrollBehaviorSwitcher: () => (
+    <div data-testid="thread-scroll-switcher">Thread Scroll Switcher</div>
+  ),
+}))
+
 vi.mock('@/containers/CodeBlockStyleSwitcher', () => ({
   default: () => <div data-testid="code-block-style-switcher">Code Block Style Switcher</div>,
 }))
@@ -73,9 +79,9 @@ vi.mock('@/containers/CodeBlockExample', () => ({
   CodeBlockExample: () => <div data-testid="code-block-example">Code Block Example</div>,
 }))
 
-vi.mock('@/hooks/useAppearance', () => ({
-  useAppearance: () => ({
-    resetAppearance: vi.fn(),
+vi.mock('@/hooks/useInterfaceSettings', () => ({
+  useInterfaceSettings: () => ({
+    resetInterface: vi.fn(),
   }),
 }))
 
@@ -108,7 +114,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/constants/routes', () => ({
   route: {
     settings: {
-      appearance: '/settings/appearance',
+      interface: '/settings/interface',
     },
   },
 }))
@@ -120,13 +126,13 @@ vi.mock('@tanstack/react-router', () => ({
   }),
 }))
 
-describe('Appearance Settings Route', () => {
+describe('Interface Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('should render the appearance settings page', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+  it('should render the interface settings page', () => {
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
@@ -134,8 +140,8 @@ describe('Appearance Settings Route', () => {
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('should render appearance controls', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+  it('should render interface controls', () => {
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getByTestId('theme-switcher')).toBeInTheDocument()
@@ -148,14 +154,15 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should render chat width controls', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getByTestId('chat-width-switcher')).toBeInTheDocument()
+    expect(screen.getByTestId('thread-scroll-switcher')).toBeInTheDocument()
   })
 
   it('should render code block controls', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getByTestId('code-block-style-switcher')).toBeInTheDocument()
@@ -163,8 +170,8 @@ describe('Appearance Settings Route', () => {
     expect(screen.getByTestId('line-numbers-switcher')).toBeInTheDocument()
   })
 
-  it('should render reset appearance button', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+  it('should render reset interface button', () => {
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const resetButtons = screen.getAllByTestId('button')
@@ -172,7 +179,7 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should render reset buttons', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const resetButtons = screen.getAllByTestId('button')
@@ -185,7 +192,7 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should render reset functionality', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const resetButtons = screen.getAllByTestId('button')
@@ -199,7 +206,7 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should render all card items with proper structure', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const cardItems = screen.getAllByTestId('card-item')
@@ -211,7 +218,7 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should have proper responsive layout classes', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const cardItems = screen.getAllByTestId('card-item')
@@ -226,7 +233,7 @@ describe('Appearance Settings Route', () => {
   })
 
   it('should render main layout structure', () => {
-    const Component = AppearanceRoute.component as React.ComponentType
+    const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
     const headerPage = screen.getByTestId('header-page')
