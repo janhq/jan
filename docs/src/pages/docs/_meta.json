@@ -1,8 +1,4 @@
 {
-  "-- Switcher": {
-    "type": "separator",
-    "title": "Switcher"
-  },
   "index": {
     "type": "page",
     "title": "Jan Overview"
@@ -10,9 +6,5 @@
   "desktop": {
     "type": "page",
     "title": "Jan Desktop"
-  },
-  "server": {
-    "type": "page",
-    "title": "Jan Server"
   }
 }
