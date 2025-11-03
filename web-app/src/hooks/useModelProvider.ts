@@ -424,7 +424,7 @@ export const useModelProvider = create<ModelProviderState>()(
         }
         if (version <= 5 && state?.providers) {
           state.providers.forEach((provider) => {
-            // Update cont_batching description for llamacpp provider
+            // Migrate flash_attn setting to dropdown for llamacpp provider
             if (provider.provider === 'llamacpp' && provider.settings) {
               const flashAttentionSetting = provider.settings.find(
                 (s) => s.key === 'flash_attn'
