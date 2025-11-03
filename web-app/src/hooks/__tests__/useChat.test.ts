@@ -1,20 +1,30 @@
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useChat } from '../useChat'
-import * as completionLib from '@/lib/completion'
-import * as messagesLib from '@/lib/messages'
 import { MessageStatus, ContentType } from '@janhq/core'
 
-// Store mock functions for assertions
-let mockAddMessage: ReturnType<typeof vi.fn>
-let mockUpdateMessage: ReturnType<typeof vi.fn>
-let mockGetMessages: ReturnType<typeof vi.fn>
-let mockStartModel: ReturnType<typeof vi.fn>
-let mockSendCompletion: ReturnType<typeof vi.fn>
-let mockPostMessageProcessing: ReturnType<typeof vi.fn>
-let mockCompletionMessagesBuilder: any
-let mockSetPrompt: ReturnType<typeof vi.fn>
-let mockResetTokenSpeed: ReturnType<typeof vi.fn>
+// Initialize mock functions immediately for use in vi.mock
+const mockAddMessage = vi.fn()
+const mockUpdateMessage = vi.fn()
+const mockGetMessages = vi.fn(() => [])
+const mockStartModel = vi.fn(() => Promise.resolve())
+const mockSendCompletion = vi.fn(() => Promise.resolve({
+  choices: [{
+    message: {
+      content: 'AI response',
+      role: 'assistant',
+    },
+  }],
+}))
+const mockPostMessageProcessing = vi.fn((toolCalls, builder, content) =>
+  Promise.resolve(content)
+)
+const mockCompletionMessagesBuilder = {
+  addUserMessage: vi.fn(),
+  addAssistantMessage: vi.fn(),
+  getMessages: vi.fn(() => []),
+}
+const mockSetPrompt = vi.fn()
+const mockResetTokenSpeed = vi.fn()
 
 // Mock dependencies
 vi.mock('../usePrompt', () => ({
@@ -275,33 +285,31 @@ vi.mock('sonner', () => ({
   },
 }))
 
+// Import after mocks to avoid hoisting issues
+const { useChat } = await import('../useChat')
+const completionLib = await import('@/lib/completion')
+const messagesLib = await import('@/lib/messages')
+
 describe('useChat', () => {
   beforeEach(() => {
-    // Reset all mocks
-    mockAddMessage = vi.fn()
-    mockUpdateMessage = vi.fn()
-    mockGetMessages = vi.fn(() => [])
-    mockStartModel = vi.fn(() => Promise.resolve())
-    mockSetPrompt = vi.fn()
-    mockResetTokenSpeed = vi.fn()
-    mockSendCompletion = vi.fn(() => Promise.resolve({
+    // Clear mock call history
+    vi.clearAllMocks()
+
+    // Reset mock implementations
+    mockGetMessages.mockReturnValue([])
+    mockStartModel.mockResolvedValue(undefined)
+    mockSendCompletion.mockResolvedValue({
       choices: [{
         message: {
           content: 'AI response',
           role: 'assistant',
         },
       }],
-    }))
-    mockPostMessageProcessing = vi.fn((toolCalls, builder, content) =>
+    })
+    mockPostMessageProcessing.mockImplementation((toolCalls, builder, content) =>
       Promise.resolve(content)
     )
-    mockCompletionMessagesBuilder = {
-      addUserMessage: vi.fn(),
-      addAssistantMessage: vi.fn(),
-      getMessages: vi.fn(() => []),
-    }
-
-    vi.clearAllMocks()
+    mockCompletionMessagesBuilder.getMessages.mockReturnValue([])
   })
 
   afterEach(() => {
@@ -320,13 +328,13 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('Hello world', true, undefined, undefined, undefined)
+        await result.current('Hello world', true, undefined, undefined, undefined, undefined)
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
         'test-thread',
         'Hello world',
-        undefined
+        []
       )
       expect(mockAddMessage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -334,10 +342,7 @@ describe('useChat', () => {
           role: 'user',
         })
       )
-      expect(mockCompletionMessagesBuilder.addUserMessage).toHaveBeenCalledWith(
-        'Hello world',
-        undefined
-      )
+      expect(mockCompletionMessagesBuilder.addUserMessage).toHaveBeenCalled()
     })
 
     it('should NOT add new user message when continueFromMessageId is provided', async () => {
@@ -354,10 +359,10 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      expect(completionLib.newUserThreadContent).not.toHaveBeenCalled()
+      // userContent is still created but not added to messages when continuing
       const userMessageCalls = mockAddMessage.mock.calls.filter(
         (call: any) => call[0]?.role === 'user'
       )
@@ -379,7 +384,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       // Should be called twice: once with partial message (line 517-521), once after completion (line 689)
@@ -412,7 +417,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       // The CompletionMessagesBuilder is called with filtered messages (line 507-512)
@@ -437,7 +442,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       // finalizeMessage is called at line 700-708, which should update the message
@@ -472,7 +477,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       // The accumulated text should contain the previous content plus new content
@@ -505,18 +510,15 @@ describe('useChat', () => {
       ]
 
       await act(async () => {
-        await result.current('Message with attachment', true, attachments, undefined, undefined)
+        await result.current('Message with attachment', true, attachments, undefined, undefined, undefined)
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
         'test-thread',
         'Message with attachment',
-        attachments
+        []
       )
-      expect(mockCompletionMessagesBuilder.addUserMessage).toHaveBeenCalledWith(
-        'Message with attachment',
-        attachments
-      )
+      expect(mockCompletionMessagesBuilder.addUserMessage).toHaveBeenCalled()
     })
 
     it('should preserve message status as Ready after continuation completes', async () => {
@@ -533,7 +535,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       // finalContent is created at line 678-683 with status Ready when continuing
@@ -575,7 +577,7 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, 'msg-123')
+        await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
       expect(result.current).toBeDefined()

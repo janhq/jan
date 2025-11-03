@@ -709,7 +709,12 @@ export const useChat = () => {
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
-              accumulatedTextRef.value = (message?.content as string) || ''
+              const newContent = (message?.content as string) || ''
+              if (continueFromMessageId && accumulatedTextRef.value) {
+                accumulatedTextRef.value += newContent
+              } else {
+                accumulatedTextRef.value = newContent
+              }
 
               // Handle reasoning field if there is one
               const reasoning = extractReasoningFromMessage(message)
@@ -794,6 +799,7 @@ export const useChat = () => {
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
               assistant: currentAssistant,
+              modelId: selectedModel?.id,
             }
           )
 
@@ -872,6 +878,7 @@ export const useChat = () => {
                 ...continueFromMessage.metadata,
                 tokenSpeed: useAppState.getState().tokenSpeed,
                 assistant: currentAssistant,
+                modelId: selectedModel?.id,
               },
             })
           } else {
@@ -883,6 +890,7 @@ export const useChat = () => {
                 {
                   tokenSpeed: useAppState.getState().tokenSpeed,
                   assistant: currentAssistant,
+                  modelId: selectedModel?.id,
                 }
               ),
               status: MessageStatus.Stopped,
@@ -926,6 +934,7 @@ export const useChat = () => {
                 ...continueFromMessage.metadata,
                 tokenSpeed: useAppState.getState().tokenSpeed,
                 assistant: currentAssistant,
+                modelId: selectedModel?.id,
               },
             })
           } else {
@@ -936,6 +945,7 @@ export const useChat = () => {
                 {
                   tokenSpeed: useAppState.getState().tokenSpeed,
                   assistant: currentAssistant,
+                  modelId: selectedModel?.id,
                 }
               ),
               status: MessageStatus.Stopped,
