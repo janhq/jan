@@ -17,12 +17,12 @@ Object.assign(navigator, {
 
 describe('RenderMarkdown', () => {
   it('preverses line breaks in model responses (when isUser == undefined)', () => {
-    const modelREsponseWithNewLines = `This is line 1
+    const modelResponseWithNewLines = `This is line 1
     This is line 2
     This is line 3`
     render (
       <RenderMarkdown
-        content={modelREsponseWithNewLines}
+        content={modelResponseWithNewLines}
       />
     )
     const markdownContainer = document.querySelector('.markdown')
