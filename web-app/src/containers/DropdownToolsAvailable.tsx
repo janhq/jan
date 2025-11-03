@@ -233,15 +233,14 @@ export default function DropdownToolsAvailable({
                               />
                             }
                           >
-                            <div className="overflow-hidden flex flex-col items-start ">
-                              <div className="truncate">
-                                <span
-                                  className="text-sm font-medium text-main-view-fg"
-                                  title={tool.name}
-                                >
-                                  {tool.name}
-                                </span>
-                              </div>
+                            <div className="overflow-hidden flex flex-col items-start w-full">
+                              <span
+                                className="text-sm font-medium text-main-view-fg truncate block w-full"
+                                title={tool.name}
+                              >
+                                {tool.name}
+                              </span>
+
                               {tool.description && (
                                 <p
                                   className="text-xs text-main-view-fg/70 mt-1 line-clamp-1"
