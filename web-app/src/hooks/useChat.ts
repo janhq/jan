@@ -421,7 +421,10 @@ export const useChat = () => {
           : []
 
         // Check if proactive mode is enabled
-        const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+        const isProactiveMode =
+          (selectedModel?.capabilities?.includes('tools') ?? false) &&
+          (selectedModel?.capabilities?.includes('vision') ?? false) &&
+          (selectedModel?.capabilities?.includes('proactive') ?? false)
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
         if (isProactiveMode && availableTools.length > 0 && !abortController.signal.aborted) {
@@ -718,7 +721,10 @@ export const useChat = () => {
           builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
 
           // Check if proactive mode is enabled for this model
-          const isProactiveMode = selectedModel?.capabilities?.includes('proactive') ?? false
+          const isProactiveMode =
+            (selectedModel?.capabilities?.includes('tools') ?? false) &&
+            (selectedModel?.capabilities?.includes('vision') ?? false) &&
+            (selectedModel?.capabilities?.includes('proactive') ?? false)
 
           const updatedMessage = await postMessageProcessing(
             toolCalls,
