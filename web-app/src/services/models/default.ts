@@ -267,14 +267,17 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    return this.getEngine()
-      ?.abortImport(id)
-      .finally(() =>
-        events.emit(DownloadEvent.onFileDownloadStopped, {
-          modelId: id,
-          downloadType: 'Model',
-        })
-      )
+    const engine = this.getEngine()
+    try {
+      if (engine) {
+        await engine.abortImport(id)
+      }
+    } finally {
+      events.emit(DownloadEvent.onFileDownloadStopped, {
+        modelId: id,
+        downloadType: 'Model',
+      })
+    }
   }
 
   async deleteModel(id: string): Promise<void> {
