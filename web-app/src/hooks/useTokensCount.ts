@@ -31,7 +31,7 @@ export const useTokensCount = (
   })
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
-  const latestCalculationRef = useRef<() => Promise<void>>()
+  const latestCalculationRef = useRef<(() => Promise<void>) | null>(null)
   const requestIdRef = useRef(0)
   const isIncreasingContextSize = useRef<boolean>(false)
   const serviceHub = useServiceHub()
