@@ -1,0 +1,367 @@
+{
+  "assistants": "アシスタント",
+  "hardware": "ハードウェア",
+  "mcp-servers": "MCPサーバー",
+  "local_api_server": "ローカルAPIサーバー",
+  "https_proxy": "HTTPSプロキシ",
+  "extensions": "拡張機能",
+  "general": "全般",
+  "settings": "設定",
+  "modelProviders": "モデルプロバイダー",
+  "interface": "外観",
+  "privacy": "プライバシー",
+  "keyboardShortcuts": "ショートカット",
+  "newChat": "新しいチャット",
+  "favorites": "お気に入り",
+  "recents": "最近の項目",
+  "hub": "ハブ",
+  "helpSupport": "ヘルプとサポート",
+  "helpUsImproveJan": "Janの改善にご協力ください",
+  "unstarAll": "すべてのスターを解除",
+  "unstar": "スターを解除",
+  "deleteAll": "すべて削除",
+  "star": "スターを付ける",
+  "rename": "名前を変更",
+  "delete": "削除",
+  "copied": "コピーしました！",
+  "dataFolder": "データフォルダ",
+  "others": "その他",
+  "language": "言語",
+  "login": "ログイン",
+  "loginWith": "{{provider}}でログイン",
+  "loginFailed": "ログインに失敗しました",
+  "logout": "ログアウト",
+  "loggingOut": "ログアウト中...",
+  "loggedOut": "正常にログアウトしました",
+  "logoutFailed": "ログアウトに失敗しました",
+  "profile": "プロフィール",
+  "reset": "リセット",
+  "search": "検索",
+  "name": "名前",
+  "cancel": "キャンセル",
+  "create": "作成",
+  "save": "保存",
+  "edit": "編集",
+  "copy": "コピー",
+  "back": "戻る",
+  "close": "閉じる",
+  "next": "次へ",
+  "finish": "完了",
+  "skip": "スキップ",
+  "allow": "許可",
+  "deny": "拒否",
+  "start": "開始",
+  "stop": "停止",
+  "preview": "プレビュー",
+  "compactWidth": "コンパクト幅",
+  "fullWidth": "全幅",
+  "dark": "ダーク",
+  "light": "ライト",
+  "system": "システム",
+  "auto": "自動",
+  "english": "英語",
+  "medium": "中",
+  "newThread": "新しいスレッド",
+  "noResultsFound": "結果が見つかりません",
+  "noThreadsYet": "スレッドはまだありません",
+  "noThreadsYetDesc": "新しい会話を始めると、ここにスレッドの履歴が表示されます。",
+  "downloads": "ダウンロード",
+  "downloading": "ダウンロード中",
+  "cancelDownload": "ダウンロードをキャンセル",
+  "downloadCancelled": "ダウンロードがキャンセルされました",
+  "downloadComplete": "ダウンロード完了",
+  "thinking": "考え中...",
+  "thought": "思考",
+  "callingTool": "ツールを呼び出し中",
+  "completed": "完了",
+  "image": "画像",
+  "vision": "画像認識",
+  "embeddings": "埋め込み",
+  "tools": "ツール",
+  "webSearch": "ウェブ検索",
+  "reasoning": "推論",
+  "selectAModel": "モデルを選択",
+  "noToolsAvailable": "利用可能なツールはありません",
+  "noModelsFoundFor": "\"{{searchValue}}\"に一致するモデルが見つかりません",
+  "failedToLoadModels": "モデルの読み込みに失敗しました",
+  "noModels": "モデルが見つかりません",
+  "customAvatar": "カスタムアバター",
+  "editAssistant": "アシスタントを編集",
+  "jan": "Jan",
+  "metadata": "メタデータ",
+  "regenerate": "再生成",
+  "threadImage": "スレッド画像",
+  "editMessage": "メッセージを編集",
+  "deleteMessage": "メッセージを削除",
+  "deleteThread": "スレッドを削除",
+  "renameThread": "スレッド名を変更",
+  "threadTitle": "スレッドのタイトル",
+  "deleteAllThreads": "すべてのスレッドを削除",
+  "allThreadsUnfavorited": "すべてのスレッドのお気に入りを解除しました",
+  "deleteAllThreadsConfirm": "本当にすべてのスレッドを削除しますか？この操作は元に戻せません。",
+  "addProvider": "プロバイダーを追加",
+  "addOpenAIProvider": "OpenAIプロバイダーを追加",
+  "enterNameForProvider": "プロバイダーの名前を入力してください",
+  "providerAlreadyExists": "プロバイダー名「{{name}}」はすでに存在します。別の名前を選択してください。",
+  "adjustFontSize": "フォントサイズを調整",
+  "changeLanguage": "言語を変更",
+  "editTheme": "テーマを編集",
+  "editCodeBlockStyle": "コードブロックのスタイルを編集",
+  "editServerHost": "サーバーホストを編集",
+  "pickColorWindowBackground": "ウィンドウの背景色を選択",
+  "pickColorAppMainView": "アプリのメインビューの色を選択",
+  "pickColorAppPrimary": "アプリのプライマリカラーを選択",
+  "pickColorAppAccent": "アプリのアクセントカラーを選択",
+  "pickColorAppDestructive": "アプリの破壊的アクションの色を選択",
+  "apiKeyRequired": "APIキーが必要です",
+  "enterTrustedHosts": "信頼できるホストを入力してください",
+  "placeholder": {
+    "chatInput": "何でも聞いてください..."
+  },
+  "confirm": "確認",
+  "continue": "続ける",
+  "loading": "読み込み中...",
+  "error": "エラー",
+  "success": "成功",
+  "warning": "警告",
+  "conversationNotAvailable": "会話を利用できません",
+  "conversationNotAvailableDescription": "アクセスしようとしている会話は利用できないか、削除されています。",
+  "temporaryChat": "一時的なチャット",
+  "temporaryChatTooltip": "一時的なチャットは履歴に表示されません",
+  "noResultsFoundDesc": "検索に一致するチャットが見つかりませんでした。別のキーワードをお試しください。",
+  "searchModels": "モデルを検索...",
+  "searchStyles": "スタイルを検索...",
+  "createAssistant": "アシスタントを作成",
+  "enterApiKey": "APIキーを入力",
+  "scrollToBottom": "一番下までスクロール",
+  "generateAiResponse": "AIの応答を生成",
+  "addModel": {
+    "title": "モデルを追加",
+    "modelId": "モデルID",
+    "enterModelId": "モデルIDを入力",
+    "addModel": "モデルを追加",
+    "description": "プロバイダーに新しいモデルを追加します",
+    "exploreModels": "プロバイダーのモデルリストを見る"
+  },
+  "mcpServers": {
+    "editServer": "サーバーを編集",
+    "addServer": "サーバーを追加",
+    "serverName": "サーバー名",
+    "enterServerName": "サーバー名を入力",
+    "command": "コマンド",
+    "enterCommand": "コマンドを入力",
+    "arguments": "引数",
+    "argument": "引数 {{index}}",
+    "envVars": "環境変数",
+    "key": "キー",
+    "value": "値",
+    "save": "保存"
+  },
+  "deleteServer": {
+    "title": "サーバーを削除",
+    "delete": "削除"
+  },
+  "editJson": {
+    "errorParse": "JSONの解析に失敗しました",
+    "errorPaste": "JSONの貼り付けに失敗しました",
+    "errorFormat": "無効なJSON形式です",
+    "titleAll": "すべてのサーバー構成を編集",
+    "placeholder": "JSON構成を入力...",
+    "save": "保存"
+  },
+  "editModel": {
+    "title": "モデルを編集: {{modelId}}",
+    "description": "以下のオプションを切り替えて、モデルの機能を設定します。",
+    "capabilities": "機能",
+    "tools": "ツール",
+    "vision": "画像認識",
+    "embeddings": "埋め込み",
+    "notAvailable": "まだ利用できません"
+  },
+  "outOfContextError": {
+    "truncateInput": "入力を切り詰める",
+    "title": "コンテキストエラー",
+    "description": "このチャットはAIのメモリ制限に近づいています。ホワイトボードがいっぱいになるようなものです。メモリウィンドウ（コンテキストサイズ）を拡張して記憶容量を増やすことができますが、コンピュータのメモリ使用量が増える可能性があります。また、入力を切り詰めることもできます。これは、新しいメッセージのためのスペースを確保するために、チャット履歴の一部を忘れることを意味します。",
+    "increaseContextSizeDescription": "コンテキストサイズを増やしますか？",
+    "increaseContextSize": "コンテキストサイズを増やす"
+  },
+  "toolApproval": {
+    "title": "ツール権限のリクエスト",
+    "description": "アシスタントは<strong>{{toolName}}</strong>を使用しようとしています",
+    "securityNotice": "信頼できるツールのみを許可してください。ツールはあなたのシステムやデータにアクセスする可能性があります。",
+    "deny": "拒否",
+    "allowOnce": "一度だけ許可",
+    "alwaysAllow": "常に許可"
+  },
+  "deleteModel": {
+    "title": "モデルを削除: {{modelId}}",
+    "description": "本当にこのモデルを削除しますか？この操作は元に戻せません。",
+    "success": "モデル {{modelId}} は完全に削除されました。",
+    "cancel": "キャンセル",
+    "delete": "削除"
+  },
+  "deleteProvider": {
+    "title": "プロバイダーを削除",
+    "description": "このプロバイダーとすべてのモデルを削除します。この操作は元に戻せません。",
+    "success": "プロバイダー {{provider}} は完全に削除されました。",
+    "confirmTitle": "プロバイダーを削除: {{provider}}",
+    "confirmDescription": "本当にこのプロバイダーを削除しますか？この操作は元に戻せません。",
+    "cancel": "キャンセル",
+    "delete": "削除"
+  },
+  "modelSettings": {
+    "title": "モデル設定 - {{modelId}}",
+    "description": "パフォーマンスと動作を最適化するためにモデル設定を構成します。"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "データフォルダの場所を変更",
+      "description": "本当にデータフォルダの場所を変更しますか？これにより、すべてのデータが新しい場所に移動し、アプリケーションが再起動します。",
+      "currentLocation": "現在の場所:",
+      "newLocation": "新しい場所:",
+      "cancel": "キャンセル",
+      "changeLocation": "場所を変更"
+    },
+    "deleteAllThreads": {
+      "title": "すべてのスレッドを削除",
+      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
+    },
+    "deleteThread": {
+      "description": "本当にこのスレッドを削除しますか？この操作は元に戻せません。"
+    },
+    "editMessage": {
+      "title": "メッセージを編集"
+    },
+    "messageMetadata": {
+      "title": "メッセージメタデータ"
+    }
+  },
+  "projects": {
+    "title": "プロジェクト",
+    "addProject": "プロジェクトを追加",
+    "addToProject": "プロジェクトに追加",
+    "removeFromProject": "プロジェクトから削除",
+    "createNewProject": "新しいプロジェクトを作成",
+    "editProject": "プロジェクトを編集",
+    "deleteProject": "プロジェクトを削除",
+    "projectName": "プロジェクト名",
+    "enterProjectName": "プロジェクト名を入力...",
+    "noProjectsAvailable": "利用可能なプロジェクトはありません",
+    "noProjectsYet": "プロジェクトはまだありません",
+    "noProjectsYetDesc": "「プロジェクトを追加」ボタンをクリックして、新しいプロジェクトを開始してください。",
+    "projectNotFound": "プロジェクトが見つかりません",
+    "projectNotFoundDesc": "お探しのプロジェクトは存在しないか、削除されています。",
+    "deleteProjectDialog": {
+      "title": "プロジェクトを削除",
+      "description": "本当にこのプロジェクトを削除しますか？この操作は元に戻せません。",
+      "deleteButton": "削除",
+      "successWithName": "プロジェクト「{{projectName}}」を正常に削除しました",
+      "successWithoutName": "プロジェクトを正常に削除しました",
+      "error": "プロジェクトの削除に失敗しました。もう一度お試しください。",
+      "ariaLabel": "{{projectName}}を削除"
+    },
+    "addProjectDialog": {
+      "createTitle": "新しいプロジェクトを作成",
+      "editTitle": "プロジェクトを編集",
+      "nameLabel": "プロジェクト名",
+      "namePlaceholder": "プロジェクト名を入力...",
+      "createButton": "作成",
+      "updateButton": "更新",
+      "alreadyExists": "プロジェクト「{{projectName}}」はすでに存在します",
+      "createSuccess": "プロジェクト「{{projectName}}」を正常に作成しました",
+      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました"
+    },
+    "noConversationsIn": "{{projectName}}には会話がありません",
+    "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
+    "conversationsIn": "{{projectName}}での会話",
+    "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
+    "thread": "スレッド",
+    "threads": "スレッド",
+    "updated": "更新日時:",
+    "collapseThreads": "スレッドを折りたたむ",
+    "expandThreads": "スレッドを展開する",
+    "update": "更新"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "すべてのスレッドのお気に入りを解除しました",
+      "description": "すべてのスレッドがお気に入りから削除されました。"
+    },
+    "deleteAllThreads": {
+      "title": "すべてのスレッドを削除",
+      "description": "すべてのスレッドが完全に削除されました。"
+    },
+    "renameThread": {
+      "title": "スレッド名を変更",
+      "description": "スレッドのタイトルが「{{title}}」に変更されました"
+    },
+    "deleteThread": {
+      "title": "スレッドを削除",
+      "description": "このスレッドは完全に削除されました。"
+    },
+    "editMessage": {
+      "title": "メッセージを編集",
+      "description": "メッセージは正常に編集されました。モデルの応答をお待ちください。"
+    },
+    "appUpdateDownloaded": {
+      "title": "アプリの更新をダウンロードしました",
+      "description": "アプリの更新は正常にダウンロードされました。"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "アプリの更新のダウンロードに失敗しました",
+      "description": "アプリの更新のダウンロードに失敗しました。もう一度お試しください。"
+    },
+    "downloadComplete": {
+      "title": "ダウンロード完了",
+      "description": "{{item}}がダウンロードされました"
+    },
+    "downloadCancelled": {
+      "title": "ダウンロードがキャンセルされました",
+      "description": "ダウンロード処理はキャンセルされました"
+    },
+    "downloadFailed": {
+      "title": "ダウンロードに失敗しました",
+      "description": "{{item}}のダウンロードに失敗しました"
+    },
+    "modelValidationStarted": {
+      "title": "モデルを検証中",
+      "description": "ダウンロードしたモデル「{{modelId}}」を正常に完了しました。整合性を検証しています..."
+    },
+    "modelValidationFailed": {
+      "title": "モデルの検証に失敗しました",
+      "description": "ダウンロードしたモデル「{{modelId}}」は整合性検証に失敗し、削除されました。ファイルが破損または改ざんされている可能性があります。"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ダウンロード完了",
+      "description": "モデル「{{item}}」は正常にダウンロードおよび検証されました"
+    },
+    "projectCreated": {
+      "title": "プロジェクトが作成されました",
+      "description": "プロジェクト「{{projectName}}」は正常に作成されました"
+    },
+    "projectRenamed": {
+      "title": "プロジェクト名が変更されました",
+      "description": "プロジェクト名は「{{oldName}}」から「{{newName}}」に正常に変更されました"
+    },
+    "projectDeleted": {
+      "title": "プロジェクトが削除されました",
+      "description": "プロジェクト「{{projectName}}」は正常に削除されました"
+    },
+    "projectAlreadyExists": {
+      "title": "プロジェクトはすでに存在します",
+      "description": "プロジェクト「{{projectName}}」はすでに存在します"
+    },
+    "projectDeleteFailed": {
+      "title": "削除に失敗しました",
+      "description": "プロジェクトの削除に失敗しました。もう一度お試しください。"
+    },
+    "threadAssignedToProject": {
+      "title": "スレッドが割り当てられました",
+      "description": "スレッドは「{{projectName}}」に正常に割り当てられました"
+    },
+    "threadRemovedFromProject": {
+      "title": "スレッドが削除されました",
+      "description": "スレッドは「{{projectName}}」から正常に削除されました"
+    }
+  }
+}

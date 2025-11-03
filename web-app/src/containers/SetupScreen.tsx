@@ -34,42 +34,40 @@ function SetupScreen() {
           </div>
           <div className="flex gap-4 flex-col">
             {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-              <Card
-                header={
-                  <Link
-                    to={route.hub.index}
-                    search={{
-                      ...(!isProd ? { step: 'setup_local_provider' } : {}),
-                    }}
-                  >
+              <Link
+                to={route.hub.index}
+                search={{
+                  ...(!isProd ? { step: 'setup_local_provider' } : {}),
+                }}
+              >
+                <Card
+                  header={
                     <div>
                       <h1 className="text-main-view-fg font-medium text-base">
                         {t('setup:localModel')}
                       </h1>
                     </div>
-                  </Link>
-                }
-              />
+                  }
+                />
+              </Link>
             )}
-            <Card
-              header={
-                <Link
-                  to={route.settings.providers}
-                  params={{
-                    providerName: firstItemRemoteProvider,
-                  }}
-                  search={{
-                    ...(!isSetupCompleted
-                      ? { step: 'setup_remote_provider' }
-                      : {}),
-                  }}
-                >
+            <Link
+              to={route.settings.providers}
+              params={{
+                providerName: firstItemRemoteProvider,
+              }}
+              search={{
+                ...(!isSetupCompleted ? { step: 'setup_remote_provider' } : {}),
+              }}
+            >
+              <Card
+                header={
                   <h1 className="text-main-view-fg font-medium text-base">
                     {t('setup:remoteProvider')}
                   </h1>
-                </Link>
-              }
-            />
+                }
+              />
+            </Link>
           </div>
         </div>
       </div>

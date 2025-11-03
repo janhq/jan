@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+﻿import { useEffect, useMemo, useRef } from 'react'
 import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
@@ -16,7 +16,7 @@ import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { ContentType, ThreadMessage } from '@janhq/core'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
@@ -86,7 +86,7 @@ function ThreadDetail() {
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
 
-  const chatWidth = useAppearance((state) => state.chatWidth)
+  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()

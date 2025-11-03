@@ -1,5 +1,5 @@
 export {}
 
 declare global {
-  declare const MENLO_PLATFORM_BASE_URL: string
+  declare const JAN_BASE_URL: string
 }

@@ -38,10 +38,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
+  loadLlamaModel,
   readGgufMetadata,
   getModelSize,
   isModelSupported,
   planModelLoadInternal,
+  unloadLlamaModel,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -69,7 +71,7 @@ type LlamacppConfig = {
   device: string
   split_mode: string
   main_gpu: number
-  flash_attn: boolean
+  flash_attn: string
   cont_batching: boolean
   no_mmap: boolean
   mlock: boolean
@@ -549,9 +551,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
-      if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) return 'vulkan'
+      if (backendString.includes('cuda-12-common_cpus')) return 'cuda-cu12.0'
+      if (backendString.includes('cuda-11-common_cpus')) return 'cuda-cu11.7'
+      if (backendString.includes('vulkan-common_cpus')) return 'vulkan'
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -1644,18 +1646,20 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.device.length > 0) args.push('--device', cfg.device)
     if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
       args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
+    if (cfg.main_gpu !== undefined && cfg.main_gpu !== 0)
       args.push('--main-gpu', String(cfg.main_gpu))
+    // Note: Older llama.cpp versions are no longer supported
+    if (
+      cfg.flash_attn !== undefined ||
+      !cfg.flash_attn ||
+      cfg.flash_attn !== ''
+    )
+      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
-    if (Number(version.replace(/^b/, '')) >= 6325) {
-      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
-    } else {
-      if (cfg.flash_attn) args.push('--flash-attn')
-    }
     if (cfg.cont_batching) args.push('--cont-batching')
-    args.push('--no-mmap')
+    if (cfg.no_mmap) args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
@@ -1667,7 +1671,7 @@ export default class llamacpp_extension extends AIEngine {
       if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
         args.push('--cache-type-k', cfg.cache_type_k)
       if (
-        cfg.flash_attn &&
+        cfg.flash_attn !== 'on' &&
         cfg.cache_type_v != 'f16' &&
         cfg.cache_type_v != 'f32'
       ) {
@@ -1688,20 +1692,9 @@ export default class llamacpp_extension extends AIEngine {
 
     logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
-    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
 
     try {
-      // TODO: add LIBRARY_PATH
-      const sInfo = await invoke<SessionInfo>(
-        'plugin:llamacpp|load_llama_model',
-        {
-          backendPath,
-          libraryPath,
-          args,
-          envs,
-          isEmbedding,
-        }
-      )
+      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding)
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1717,12 +1710,7 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await invoke<UnloadResult>(
-        'plugin:llamacpp|unload_llama_model',
-        {
-          pid: pid,
-        }
-      )
+      const result = await unloadLlamaModel(pid)
 
       // If successful, remove from active sessions
       if (result.success) {
@@ -2042,7 +2030,10 @@ export default class llamacpp_extension extends AIEngine {
         if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
           const usage = await getSystemUsage()
           if (usage && Array.isArray(usage.gpus)) {
-            const uuidToUsage: Record<string, { total_memory: number; used_memory: number }> = {}
+            const uuidToUsage: Record<
+              string,
+              { total_memory: number; used_memory: number }
+            > = {}
             for (const u of usage.gpus as any[]) {
               if (u && typeof u.uuid === 'string') {
                 uuidToUsage[u.uuid] = u
@@ -2082,7 +2073,10 @@ export default class llamacpp_extension extends AIEngine {
                         typeof u.used_memory === 'number'
                       ) {
                         const total = Math.max(0, Math.floor(u.total_memory))
-                        const free = Math.max(0, Math.floor(u.total_memory - u.used_memory))
+                        const free = Math.max(
+                          0,
+                          Math.floor(u.total_memory - u.used_memory)
+                        )
                         return { ...dev, mem: total, free }
                       }
                     }
