@@ -12,7 +12,7 @@ import { JanMCPOAuthProvider } from './oauth-provider'
 import { WebSearchButton } from './components'
 import type { ComponentType } from 'react'
 
-// JAN_BASE_URL is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
+// JAN_BASE_URL is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/v1')
 declare const JAN_BASE_URL: string
 
 export default class MCPExtensionWeb extends MCPExtension {
