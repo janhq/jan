@@ -135,7 +135,7 @@ export abstract class BaseExtension implements ExtensionType {
             setting.controllerProps.options = setting.controllerProps.options?.length
               ? setting.controllerProps.options
               : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
-            if(!setting.controllerProps.options?.some(e => e.name === setting.controllerProps.value)) {
+            if(!setting.controllerProps.options?.some(e => e.value === setting.controllerProps.value)) {
               setting.controllerProps.value = setting.controllerProps.options?.[0]?.value ?? setting.controllerProps.value
             }
           }
