@@ -21,9 +21,20 @@ interface CapabilitiesProps {
 const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   if (!capabilities.length) return null
 
+  const filteredCapabilities = capabilities.filter((capability) => {
+    if (capability === 'proactive') {
+      return (
+        capabilities.includes('tools') &&
+        capabilities.includes('vision') &&
+        capabilities.includes('proactive')
+      )
+    }
+    return true
+  })
+
   return (
     <div className="flex gap-1">
-      {capabilities.map((capability: string, capIndex: number) => {
+      {filteredCapabilities.map((capability: string, capIndex: number) => {
         let icon = null
 
         if (capability === 'vision') {
