@@ -11,6 +11,8 @@ import {
   modelInfo,
   ThreadMessage,
   ContentType,
+  events,
+  DownloadEvent,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -265,7 +267,14 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    return this.getEngine()?.abortImport(id)
+    return this.getEngine()
+      ?.abortImport(id)
+      .finally(() =>
+        events.emit(DownloadEvent.onFileDownloadStopped, {
+          modelId: id,
+          downloadType: 'Model',
+        })
+      )
   }
 
   async deleteModel(id: string): Promise<void> {
