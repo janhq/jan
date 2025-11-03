@@ -3,7 +3,7 @@
  * Handles authentication flows for any OAuth provider
  */
 
-declare const MENLO_PLATFORM_BASE_URL: string
+declare const JAN_BASE_URL: string
 
 import { User, AuthState, AuthBroadcastMessage, AuthTokens } from './types'
 import {
@@ -429,7 +429,7 @@ export class JanAuthService {
   private async fetchUserProfile(): Promise<User | null> {
     try {
       return await this.makeAuthenticatedRequest<User>(
-        `${MENLO_PLATFORM_BASE_URL}${AUTH_ENDPOINTS.ME}`
+        `${JAN_BASE_URL}${AUTH_ENDPOINTS.ME}`
       )
     } catch (error) {
       console.error('Failed to fetch user profile:', error)
