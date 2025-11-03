@@ -1,11 +1,11 @@
-import { Skeleton } from '@/components/ui/skeleton'
-import { useAppearance } from '@/hooks/useAppearance'
+﻿import { Skeleton } from '@/components/ui/skeleton'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { IconCircleCheckFilled } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function ChatWidthSwitcher() {
-  const { chatWidth, setChatWidth } = useAppearance()
+  const { chatWidth, setChatWidth } = useInterfaceSettings()
   const { t } = useTranslation()
 
   return (

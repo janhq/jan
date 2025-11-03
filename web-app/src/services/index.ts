@@ -27,6 +27,10 @@ import { DefaultPathService } from './path/default'
 import { DefaultCoreService } from './core/default'
 import { DefaultDeepLinkService } from './deeplink/default'
 import { DefaultProjectsService } from './projects/default'
+import { DefaultRAGService } from './rag/default'
+import type { RAGService } from './rag/types'
+import { DefaultUploadsService } from './uploads/default'
+import type { UploadsService } from './uploads/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -70,6 +74,8 @@ export interface ServiceHub {
   core(): CoreService
   deeplink(): DeepLinkService
   projects(): ProjectsService
+  rag(): RAGService
+  uploads(): UploadsService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -92,6 +98,8 @@ class PlatformServiceHub implements ServiceHub {
   private coreService: CoreService = new DefaultCoreService()
   private deepLinkService: DeepLinkService = new DefaultDeepLinkService()
   private projectsService: ProjectsService = new DefaultProjectsService()
+  private ragService: RAGService = new DefaultRAGService()
+  private uploadsService: UploadsService = new DefaultUploadsService()
   private initialized = false
 
   /**
@@ -342,6 +350,16 @@ class PlatformServiceHub implements ServiceHub {
   projects(): ProjectsService {
     this.ensureInitialized()
     return this.projectsService
+  }
+
+  rag(): RAGService {
+    this.ensureInitialized()
+    return this.ragService
+  }
+
+  uploads(): UploadsService {
+    this.ensureInitialized()
+    return this.uploadsService
   }
 }
 

@@ -19,20 +19,19 @@ pub struct DeviceInfo {
 
 pub async fn get_devices_from_backend(
     backend_path: &str,
-    library_path: Option<&str>,
     envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
     log::info!("Getting devices from server at path: {:?}", backend_path);
 
-    validate_binary_path(backend_path)?;
+    let bin_path = validate_binary_path(backend_path)?;
 
     // Configure the command to run the server with --list-devices
-    let mut command = Command::new(backend_path);
+    let mut command = Command::new(&bin_path);
     command.arg("--list-devices");
     command.envs(envs);
 
     // Set up library path
-    setup_library_path(library_path, &mut command);
+    setup_library_path(bin_path.parent().and_then(|p| p.to_str()), &mut command);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());

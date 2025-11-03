@@ -40,6 +40,7 @@ describe('useGeneralSetting', () => {
     useGeneralSetting.setState({
       currentLanguage: 'en',
       spellCheckChatInput: true,
+      tokenCounterCompact: true,
       huggingfaceToken: undefined,
     })
 

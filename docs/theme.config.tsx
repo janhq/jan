@@ -31,7 +31,7 @@ const config: DocsThemeConfig = {
       </div>
     </span>
   ),
-  docsRepositoryBase: 'https://github.com/menloresearch/jan/tree/dev/docs',
+  docsRepositoryBase: 'https://github.com/janhq/jan/tree/dev/docs',
   feedback: {
     content: 'Question? Give us feedback →',
     labels: 'feedback',

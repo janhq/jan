@@ -41,9 +41,9 @@ pub struct UnloadResult {
 pub async fn load_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     backend_path: &str,
-    library_path: Option<&str>,
     mut args: Vec<String>,
     envs: HashMap<String, String>,
+    is_embedding: bool,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -51,7 +51,7 @@ pub async fn load_llama_model<R: Runtime>(
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using arguments: {:?}", args);
 
-    validate_binary_path(backend_path)?;
+    let bin_path = validate_binary_path(backend_path)?;
 
     let port = parse_port_from_args(&args);
     let model_path_pb = validate_model_path(&mut args)?;
@@ -82,11 +82,11 @@ pub async fn load_llama_model<R: Runtime>(
     let model_id = extract_arg_value(&args, "-a");
 
     // Configure the command to run the server
-    let mut command = Command::new(backend_path);
+    let mut command = Command::new(&bin_path);
     command.args(args);
     command.envs(envs);
 
-    setup_library_path(library_path, &mut command);
+    setup_library_path(bin_path.parent().and_then(|p| p.to_str()), &mut command);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
@@ -223,6 +223,7 @@ pub async fn load_llama_model<R: Runtime>(
         port: port,
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
+        is_embedding: is_embedding,
         api_key: api_key,
         mmproj_path: mmproj_path_string,
     };
@@ -278,10 +279,9 @@ pub async fn unload_llama_model<R: Runtime>(
 #[tauri::command]
 pub async fn get_devices(
     backend_path: &str,
-    library_path: Option<&str>,
     envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
-    get_devices_from_backend(backend_path, library_path, envs).await
+    get_devices_from_backend(backend_path, envs).await
 }
 
 /// Generate API key using HMAC-SHA256

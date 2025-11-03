@@ -78,7 +78,7 @@
     "goToSettings": "前往設定",
     "goToSettingsDesc": "開啟設定。"
   },
-  "appearance": {
+  "interface": {
     "title": "外觀",
     "theme": "主題",
     "themeDesc": "符合作業系統主題。",
@@ -96,8 +96,8 @@
     "destructiveDesc": "設定毀滅性操作的顏色。",
     "resetToDefault": "重設為預設值",
     "resetToDefaultDesc": "將所有外觀設定重設為預設值。",
-    "resetAppearanceSuccess": "外觀重設成功",
-    "resetAppearanceSuccessDesc": "所有外觀設定已還原為預設值。",
+    "resetInterfaceSuccess": "外觀重設成功",
+    "resetInterfaceSuccessDesc": "所有外觀設定已還原為預設值。",
     "chatWidth": "聊天寬度",
     "chatWidthDesc": "自訂聊天檢視的寬度。",
     "codeBlockTitle": "程式碼區塊",

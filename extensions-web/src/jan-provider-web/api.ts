@@ -4,10 +4,11 @@
  */
 
 import { getSharedAuthService, JanAuthService } from '../shared'
-import { JanModel, janProviderStore } from './store'
 import { ApiError } from '../shared/types/errors'
+import { JAN_API_ROUTES } from './const'
+import { JanModel, janProviderStore } from './store'
 
-// JAN_API_BASE is defined in vite.config.ts
+// MENLO_PLATFORM_BASE_URL is defined in vite.config.ts
 
 // Constants
 const TEMPORARY_CHAT_ID = 'temporary-chat'
@@ -19,12 +20,7 @@ const TEMPORARY_CHAT_ID = 'temporary-chat'
  */
 function getChatCompletionConfig(request: JanChatCompletionRequest, stream: boolean = false) {
   const isTemporaryChat = request.conversation_id === TEMPORARY_CHAT_ID
-
-  // For temporary chats, use the stateless /chat/completions endpoint
-  // For regular conversations, use the stateful /conv/chat/completions endpoint
-  const endpoint = isTemporaryChat
-    ? `${JAN_API_BASE}/chat/completions`
-    : `${JAN_API_BASE}/conv/chat/completions`
+  const endpoint = `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.CHAT_COMPLETIONS}`
 
   const payload = {
     ...request,
@@ -44,9 +40,30 @@ function getChatCompletionConfig(request: JanChatCompletionRequest, stream: bool
   return { endpoint, payload, isTemporaryChat }
 }
 
-export interface JanModelsResponse {
+interface JanModelSummary {
+  id: string
   object: string
-  data: JanModel[]
+  owned_by: string
+  created?: number
+}
+
+interface JanModelsResponse {
+  object: string
+  data: JanModelSummary[]
+}
+
+interface JanModelCatalogResponse {
+  id: string
+  supported_parameters?: {
+    names?: string[]
+    default?: Record<string, unknown>
+  }
+  extras?: {
+    supported_parameters?: string[]
+    default_parameters?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  [key: string]: unknown
 }
 
 export interface JanChatMessage {
@@ -112,6 +129,8 @@ export interface JanChatCompletionChunk {
 export class JanApiClient {
   private static instance: JanApiClient
   private authService: JanAuthService
+  private modelsCache: JanModel[] | null = null
+  private modelsFetchPromise: Promise<JanModel[]> | null = null
 
   private constructor() {
     this.authService = getSharedAuthService()
@@ -124,25 +143,64 @@ export class JanApiClient {
     return JanApiClient.instance
   }
 
-  async getModels(): Promise<JanModel[]> {
+  async getModels(options?: { forceRefresh?: boolean }): Promise<JanModel[]> {
     try {
+      const forceRefresh = options?.forceRefresh ?? false
+
+      if (forceRefresh) {
+        this.modelsCache = null
+      } else if (this.modelsCache) {
+        return this.modelsCache
+      }
+
+      if (this.modelsFetchPromise) {
+        return this.modelsFetchPromise
+      }
+
       janProviderStore.setLoadingModels(true)
       janProviderStore.clearError()
 
-      const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
-        `${JAN_API_BASE}/conv/models`
-      )
+      this.modelsFetchPromise = (async () => {
+        const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
+          `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.MODELS}`
+        )
 
-      const models = response.data || []
-      janProviderStore.setModels(models)
-      
-      return models
+        const summaries = response.data || []
+
+        const models: JanModel[] = await Promise.all(
+          summaries.map(async (summary) => {
+            const supportedParameters = await this.fetchSupportedParameters(summary.id)
+            const capabilities = this.deriveCapabilitiesFromParameters(supportedParameters)
+
+            return {
+              id: summary.id,
+              object: summary.object,
+              owned_by: summary.owned_by,
+              created: summary.created,
+              capabilities,
+              supportedParameters,
+            }
+          })
+        )
+
+        this.modelsCache = models
+        janProviderStore.setModels(models)
+
+        return models
+      })()
+
+      return await this.modelsFetchPromise
     } catch (error) {
+      this.modelsCache = null
+      this.modelsFetchPromise = null
+
       const errorMessage = error instanceof ApiError ? error.message :
                           error instanceof Error ? error.message : 'Failed to fetch models'
       janProviderStore.setError(errorMessage)
       janProviderStore.setLoadingModels(false)
       throw error
+    } finally {
+      this.modelsFetchPromise = null
     }
   }
 
@@ -254,7 +312,7 @@ export class JanApiClient {
   async initialize(): Promise<void> {
     try {
       janProviderStore.setAuthenticated(true)
-      // Fetch initial models
+      // Fetch initial models (cached for subsequent calls)
       await this.getModels()
       console.log('Jan API client initialized successfully')
     } catch (error) {
@@ -265,6 +323,52 @@ export class JanApiClient {
     } finally {
       janProviderStore.setInitializing(false)
     }
+  }
+
+  private async fetchSupportedParameters(modelId: string): Promise<string[]> {
+    try {
+      const endpoint = `${MENLO_PLATFORM_BASE_URL}${JAN_API_ROUTES.MODEL_CATALOGS}/${this.encodeModelIdForCatalog(modelId)}`
+      const catalog = await this.authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
+      return this.extractSupportedParameters(catalog)
+    } catch (error) {
+      console.warn(`Failed to fetch catalog metadata for model "${modelId}":`, error)
+      return []
+    }
+  }
+
+  private encodeModelIdForCatalog(modelId: string): string {
+    return modelId
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+  }
+
+  private extractSupportedParameters(catalog: JanModelCatalogResponse | null | undefined): string[] {
+    if (!catalog) {
+      return []
+    }
+
+    const primaryNames = catalog.supported_parameters?.names
+    if (Array.isArray(primaryNames) && primaryNames.length > 0) {
+      return [...new Set(primaryNames)]
+    }
+
+    const extraNames = catalog.extras?.supported_parameters
+    if (Array.isArray(extraNames) && extraNames.length > 0) {
+      return [...new Set(extraNames)]
+    }
+
+    return []
+  }
+
+  private deriveCapabilitiesFromParameters(parameters: string[]): string[] {
+    const capabilities = new Set<string>()
+
+    if (parameters.includes('tools')) {
+      capabilities.add('tools')
+    }
+
+    return Array.from(capabilities)
   }
 }
 

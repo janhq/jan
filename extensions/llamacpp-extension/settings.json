@@ -149,9 +149,14 @@
     "key": "flash_attn",
     "title": "Flash Attention",
     "description": "Enable Flash Attention for optimized performance.",
-    "controllerType": "checkbox",
+    "controllerType": "dropdown",
     "controllerProps": {
-      "value": false
+      "value": "auto",
+      "options": [
+        { "value": "auto", "name": "Auto" },
+        { "value": "on", "name": "ON" },
+        { "value": "off", "name": "OFF" }
+      ]
     }
   },
   {
