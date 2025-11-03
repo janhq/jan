@@ -32,7 +32,7 @@ describe('RenderMarkdown', () => {
     expect(brCount).toBe(2)
   })
   
-  it('preserves line breaks in user message (when isUser == true', () => {
+  it('preserves line breaks in user message (when isUser == true)', () => {
     const userMessageWithNewlines = `User question line 1
     User question line 2
     User question line 3`
