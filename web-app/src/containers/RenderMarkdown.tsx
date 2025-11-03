@@ -229,12 +229,8 @@ function RenderMarkdownComponent({
 
   // Stable remarkPlugins reference
   const remarkPlugins = useMemo(() => {
-    const basePlugins = [remarkGfm, remarkMath, remarkEmoji]
-    if (isUser) {
-      basePlugins.push(remarkBreaks)
-    }
-    return basePlugins
-  }, [isUser])
+    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks]
+  }, [])
 
   // Stable rehypePlugins reference
   const rehypePlugins = useMemo(() => {
