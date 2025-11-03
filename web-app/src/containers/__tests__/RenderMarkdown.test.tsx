@@ -59,7 +59,6 @@ describe('RenderMarkdown', () => {
     const markdownContainer = document.querySelector('.markdown')
     expect(markdownContainer?.innerHTML).toContain('<br>')
     const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || []).length
-    console.log({ brCount })
     expect(brCount).toBe(3)
   })
 
