@@ -1,0 +1,31 @@
+[package]
+name = "tauri-plugin-rag"
+version = "0.1.0"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin for RAG utilities (document parsing, types)"
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-rag"
+
+[dependencies]
+tauri = { version = "2.8.5", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+pdf-extract = "0.7"
+zip = "0.6"
+quick-xml = { version = "0.31", features = ["serialize"] }
+csv = "1.3"
+calamine = "0.23"
+html2text = "0.11"
+chardetng = "0.1"
+encoding_rs = "0.8"
+infer = "0.15"
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

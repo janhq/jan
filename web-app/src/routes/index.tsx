@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
+import { predefinedProviders } from '@/consts/providers'
 
 type SearchParams = {
-  model?: {
+  'model'?: {
     id: string
     provider: string
   }
@@ -33,7 +34,10 @@ export const Route = createFileRoute(route.home as any)({
     }
 
     // Only include temporary-chat if it's explicitly true
-    if (search[TEMPORARY_CHAT_QUERY_ID] === 'true' || search[TEMPORARY_CHAT_QUERY_ID] === true) {
+    if (
+      search[TEMPORARY_CHAT_QUERY_ID] === 'true' ||
+      search[TEMPORARY_CHAT_QUERY_ID] === true
+    ) {
       result['temporary-chat'] = true
     }
 
@@ -53,12 +57,24 @@ function Index() {
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
-  const hasValidProviders = providers.some(
-    (provider) =>
+  // Custom providers (not in predefinedProviders) don't require api_key but need models
+  const hasValidProviders = providers.some((provider) => {
+    const isPredefinedProvider = predefinedProviders.some(
+      (p) => p.provider === provider.provider
+    )
+
+    // Custom providers don't need API key validation but must have models
+    if (!isPredefinedProvider) {
+      return provider.models.length > 0
+    }
+
+    // Predefined providers need either API key or models (for llamacpp/jan)
+    return (
       provider.api_key?.length ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
-  )
+    )
+  })
 
   useEffect(() => {
     setCurrentThreadId(undefined)
@@ -72,12 +88,14 @@ function Index() {
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
+            <DropdownAssistant />
+          )}
         </div>
       </HeaderPage>
       <div
         className={cn(
-          'h-full overflow-y-auto flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
+          'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
         )}
       >
         <div
@@ -110,7 +128,9 @@ function Index() {
                 isMobile ? 'text-base' : 'text-lg'
               )}
             >
-              {isTemporaryChat ? t('chat:temporaryChatDescription') : t('chat:description')}
+              {isTemporaryChat
+                ? t('chat:temporaryChatDescription')
+                : t('chat:description')}
             </p>
           </div>
           <div className="flex-1 shrink-0">

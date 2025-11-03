@@ -34,6 +34,7 @@ vi.mock('@/lib/platform/const', () => ({
     alternateShortcutBindings: false,
     firstMessagePersistedThread: false,
     temporaryChat: false,
+    projects: true,
   },
 }))
 
@@ -109,7 +110,7 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     expect(screen.getByText('common:general')).toBeInTheDocument()
-    expect(screen.getByText('common:appearance')).toBeInTheDocument()
+    expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
     expect(screen.getByText('common:modelProviders')).toBeInTheDocument()
     // Platform-specific features tested separately

@@ -56,7 +56,6 @@
 @layer base {
   body {
     @apply overflow-hidden;
-    background-color: white;
     min-height: 100vh;
     min-height: -webkit-fill-available;
     padding-top: env(safe-area-inset-top, 0px);

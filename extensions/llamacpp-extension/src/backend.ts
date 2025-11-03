@@ -56,7 +56,7 @@ async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
 ): Promise<{ version: string; backend: string }[]> {
   // Pull the latest releases from the repo
-  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  const { releases } = await _fetchGithubReleases('janhq', 'llama.cpp')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
   releases.splice(10) // keep only the latest 10 releases
 
@@ -98,54 +98,31 @@ export async function listSupportedBackends(): Promise<
   const sysType = `${os_type}-${arch}`
   let supportedBackends = []
 
-  // NOTE: menloresearch's tags for llama.cpp builds are a bit different
+  // NOTE: janhq's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
   if (sysType == 'windows-x86_64') {
-    // NOTE: if a machine supports AVX2, should we include noavx and avx?
-    supportedBackends.push('win-noavx-x64')
-    if (features.avx) supportedBackends.push('win-avx-x64')
-    if (features.avx2) supportedBackends.push('win-avx2-x64')
-    if (features.avx512) supportedBackends.push('win-avx512-x64')
+    supportedBackends.push('win-common_cpus-x64')
     if (features.cuda11) {
-      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu11.7-x64')
-      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu11.7-x64')
-      else if (features.avx) supportedBackends.push('win-avx-cuda-cu11.7-x64')
-      else supportedBackends.push('win-noavx-cuda-cu11.7-x64')
+      supportedBackends.push('win-cuda-11-common_cpus-x64')
     }
     if (features.cuda12) {
-      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu12.0-x64')
-      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu12.0-x64')
-      else if (features.avx) supportedBackends.push('win-avx-cuda-cu12.0-x64')
-      else supportedBackends.push('win-noavx-cuda-cu12.0-x64')
+      supportedBackends.push('win-cuda-12-common_cpus-x64')
     }
-    if (features.vulkan) supportedBackends.push('win-vulkan-x64')
+    if (features.vulkan) supportedBackends.push('win-vulkan-common_cpus-x64')
   }
   // not available yet, placeholder for future
   else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
     supportedBackends.push('win-arm64')
   } else if (sysType === 'linux-x86_64' || sysType === 'linux-x86') {
-    supportedBackends.push('linux-noavx-x64')
-    if (features.avx) supportedBackends.push('linux-avx-x64')
-    if (features.avx2) supportedBackends.push('linux-avx2-x64')
-    if (features.avx512) supportedBackends.push('linux-avx512-x64')
+    supportedBackends.push('linux-common_cpus-x64')
     if (features.cuda11) {
-      if (features.avx512)
-        supportedBackends.push('linux-avx512-cuda-cu11.7-x64')
-      else if (features.avx2)
-        supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
-      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu11.7-x64')
-      else supportedBackends.push('linux-noavx-cuda-cu11.7-x64')
+       supportedBackends.push('linux-cuda-11-common_cpus-x64')
     }
     if (features.cuda12) {
-      if (features.avx512)
-        supportedBackends.push('linux-avx512-cuda-cu12.0-x64')
-      else if (features.avx2)
-        supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
-      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu12.0-x64')
-      else supportedBackends.push('linux-noavx-cuda-cu12.0-x64')
+       supportedBackends.push('linux-cuda-12-common_cpus-x64')
     }
-    if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
+    if (features.vulkan) supportedBackends.push('linux-vulkan-common_cpus-x64')
   }
   // not available yet, placeholder for future
   else if (sysType === 'linux-aarch64' || sysType === 'linux-arm64') {
@@ -156,8 +133,13 @@ export async function listSupportedBackends(): Promise<
     supportedBackends.push('macos-arm64')
   }
   // get latest backends from Github
-  const remoteBackendVersions =
+  let remoteBackendVersions = []
+  try {
+    remoteBackendVersions =
     await fetchRemoteSupportedBackends(supportedBackends)
+  } catch (e) {
+      console.debug(`Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`)
+  }
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()
@@ -225,10 +207,7 @@ export async function downloadBackend(
   version: string,
   source: 'github' | 'cdn' = 'github'
 ): Promise<void> {
-  const janDataFolderPath = await getJanDataFolderPath()
-  const llamacppPath = await joinPath([janDataFolderPath, 'llamacpp'])
   const backendDir = await getBackendDir(backend, version)
-  const libDir = await joinPath([llamacppPath, 'lib'])
 
   const downloadManager = window.core.extensionManager.getByName(
     '@janhq/download-extension'
@@ -242,7 +221,7 @@ export async function downloadBackend(
   // Build URLs per source
   const backendUrl =
     source === 'github'
-      ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
+      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
       : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
 
   const downloadItems = [
@@ -258,18 +237,18 @@ export async function downloadBackend(
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([libDir, 'cuda11.tar.gz']),
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
       proxy: proxyConfig,
     })
   } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([libDir, 'cuda12.tar.gz']),
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
     })
   }
@@ -339,8 +318,8 @@ async function _getSupportedFeatures() {
   }
 
   // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
-  let minCuda11DriverVersion
-  let minCuda12DriverVersion
+  let minCuda11DriverVersion: string
+  let minCuda12DriverVersion: string
   if (sysInfo.os_type === 'linux') {
     minCuda11DriverVersion = '450.80.02'
     minCuda12DriverVersion = '525.60.13'

@@ -78,7 +78,7 @@
     "goToSettings": "转到设置",
     "goToSettingsDesc": "打开设置。"
   },
-  "appearance": {
+  "interface": {
     "title": "外观",
     "theme": "主题",
     "themeDesc": "匹配操作系统主题。",
@@ -96,8 +96,8 @@
     "destructiveDesc": "设置警示操作的颜色。",
     "resetToDefault": "重置为默认值",
     "resetToDefaultDesc": "将所有外观设置重置为默认值。",
-    "resetAppearanceSuccess": "外观重置成功",
-    "resetAppearanceSuccessDesc": "所有外观设置已恢复为默认值。",
+    "resetInterfaceSuccess": "外观重置成功",
+    "resetInterfaceSuccessDesc": "所有外观设置已恢复为默认值。",
     "chatWidth": "聊天宽度",
     "chatWidthDesc": "自定义聊天视图的宽度。",
     "tokenCounterCompact": "紧凑令牌计数器",
@@ -169,6 +169,12 @@
     "serverLogs": "服务器日志",
     "serverLogsDesc": "查看本地 API 服务器的详细日志。",
     "openLogs": "打开日志",
+    "swaggerDocs": "API 文档",
+    "swaggerDocsDesc": "查看交互式 API 文档（Swagger UI）。",
+    "openDocs": "打开文档",
+    "startupConfiguration": "启动配置",
+    "runOnStartup": "Auto start",
+    "runOnStartupDesc": "应用程序启动时自动启动本地 API 服务器。使用上次使用的模型，如果不可用则选择第一个可用模型。",
     "serverConfiguration": "服务器配置",
     "serverHost": "服务器主机",
     "serverHostDesc": "服务器的网络地址。",

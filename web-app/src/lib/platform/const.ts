@@ -38,6 +38,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Default model providers (OpenAI, Anthropic, etc.) - disabled for web-only Jan builds
   [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
 
+  // Projects management
+  [PlatformFeature.PROJECTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
   // Analytics and telemetry - disabled for web
   [PlatformFeature.ANALYTICS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
@@ -57,7 +61,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Extensions settings page - disabled for web
   [PlatformFeature.EXTENSIONS_SETTINGS]:
-    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+    isPlatformTauri(),
 
   // Assistant functionality - disabled for web
   [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
@@ -74,10 +78,14 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
 
   // Shortcut
   [PlatformFeature.SHORTCUT]: !isPlatformIOS() && !isPlatformAndroid(),
-  
-  // First message persisted thread - enabled for web only
-  [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri(),
 
-    // Temporary chat mode - enabled for web only
+  // First message persisted thread - enabled for web and mobile platforms
+  [PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD]: !isPlatformTauri() || isPlatformIOS() || isPlatformAndroid(),
+
+  // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
+
+  // Attachments/RAG UI and tooling - desktop only for now
+  [PlatformFeature.ATTACHMENTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

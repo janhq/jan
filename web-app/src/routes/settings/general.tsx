@@ -450,7 +450,7 @@ function General() {
                 description={t('settings:general.releaseNotesDesc')}
                 actions={
                   <a
-                    href="https://github.com/menloresearch/jan/releases"
+                    href="https://github.com/janhq/jan/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -470,7 +470,7 @@ function General() {
                 description={t('settings:general.githubDesc')}
                 actions={
                   <a
-                    href="https://github.com/menloresearch/jan"
+                    href="https://github.com/janhq/jan"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -510,7 +510,7 @@ function General() {
                 description={t('settings:general.reportAnIssueDesc')}
                 actions={
                   <a
-                    href="https://github.com/menloresearch/jan/issues/new"
+                    href="https://github.com/janhq/jan/issues/new"
                     target="_blank"
                   >
                     <div className="flex items-center gap-1">

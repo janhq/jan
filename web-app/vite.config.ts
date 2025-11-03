@@ -64,6 +64,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
       },
     },
     optimizeDeps: {
@@ -101,7 +102,7 @@ export default defineConfig(({ mode }) => {
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
       GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
       MODEL_CATALOG_URL: JSON.stringify(
-        'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
+        'https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog.json'
       ),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'

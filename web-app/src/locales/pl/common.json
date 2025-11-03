@@ -8,7 +8,7 @@
   "general": "Ogólne",
   "settings": "Ustawienia",
   "modelProviders": "Dostawcy Modeli",
-  "appearance": "Wygląd",
+  "interface": "Wygląd",
   "privacy": "Prywatność",
   "keyboardShortcuts": "Skróty",
   "newChat": "Nowy Czat",
@@ -80,6 +80,7 @@
   "tools": "Narzędzia",
   "webSearch": "Szukanie w Sieci",
   "reasoning": "Rozumowanie",
+  "proactive": "Proaktywny",
   "selectAModel": "Wybierz Model",
   "noToolsAvailable": "Brak narzędzi",
   "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",
@@ -272,9 +273,12 @@
     "thread": "wątek",
     "threads": "wątki",
     "updated": "Zaktualizowano:",
-    "collapseThreads": "Zwiń wątki",
-    "expandThreads": "Rozwiń wątki",
-    "update": "Aktualizuj"
+    "collapseProject": "Zwiń projekt",
+    "expandProject": "Rozwiń projekt",
+    "update": "Aktualizuj",
+    "searchProjects": "Szukaj projektów...",
+    "noProjectsFound": "Nie znaleziono projektów",
+    "tryDifferentSearch": "Spróbuj innego wyszukiwania"
   },
   "toast": {
     "allThreadsUnfavorited": {

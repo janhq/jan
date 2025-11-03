@@ -5,10 +5,11 @@
   "local_api_server": "Local API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
+  "attachments": "Attachments",
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
-  "appearance": "Appearance",
+  "interface": "Interface",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "newChat": "New Chat",
@@ -80,6 +81,7 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
@@ -282,9 +284,12 @@
     "thread": "thread",
     "threads": "threads",
     "updated": "Updated:",
-    "collapseThreads": "Collapse threads",
-    "expandThreads": "Expand threads",
-    "update": "Update"
+    "collapseProject": "Collapse project",
+    "expandProject": "Expand project",
+    "update": "Update",
+    "searchProjects": "Search projects...",
+    "noProjectsFound": "No projects found",
+    "tryDifferentSearch": "Try a different search term"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -369,4 +374,3 @@
     }
   }
 }
-

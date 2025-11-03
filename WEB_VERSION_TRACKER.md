@@ -2,7 +2,17 @@
 
 Internal tracker for web component changes and features.
 
-## v0.0.12 (Current)
+## v0.0.13 (current)
+**Release Date**: 2025-10-24
+**Commit SHA**: 22645549cea48b1ae24b5b9dc70411fd3bfc9935
+
+**Main Features**:
+- Migrate auth to platform menlo
+- Remove conv prefix
+- Disable Project for web
+- Model capabilites are fetched correctly from model catalog
+
+## v0.0.12
 **Release Date**: 2025-10-02
 **Commit SHA**: df145d63a93bd27336b5b539ce0719fe9c7719e3
 
