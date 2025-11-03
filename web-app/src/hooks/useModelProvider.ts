@@ -422,10 +422,31 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
-
+        if (version <= 5 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Update cont_batching description for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const flashAttentionSetting = provider.settings.find(
+                (s) => s.key === 'flash_attn'
+              )
+              if (flashAttentionSetting) {
+                flashAttentionSetting.controller_type = 'dropdown'
+                flashAttentionSetting.controller_props = {
+                  ...flashAttentionSetting.controller_props,
+                  options: [
+                    { name: 'Auto', value: 'auto' },
+                    { name: 'On', value: 'on' },
+                    { name: 'Off', value: 'off' },
+                  ],
+                  value: 'auto',
+                }
+              }
+            }
+          })
+        }
         return state
       },
-      version: 5,
+      version: 6,
     }
   )
 )
