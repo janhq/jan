@@ -1,8 +1,8 @@
 # Stage 1: Build stage with Node.js and Yarn v4
 FROM node:20-alpine AS builder
 
-ARG MENLO_PLATFORM_BASE_URL=https://api-dev.menlo.ai/v1
-ENV MENLO_PLATFORM_BASE_URL=$MENLO_PLATFORM_BASE_URL
+ARG JAN_BASE_URL=https://api-dev.jan.ai/v1
+ENV JAN_BASE_URL=$JAN_BASE_URL
 
 # Install build dependencies
 RUN apk add --no-cache \

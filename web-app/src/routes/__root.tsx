@@ -1,11 +1,11 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+﻿import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import LeftPanel from '@/containers/LeftPanel'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
-import { AppearanceProvider } from '@/providers/AppearanceProvider'
+import { InterfaceProvider } from '@/providers/InterfaceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
@@ -212,7 +212,7 @@ function RootLayout() {
     <Fragment>
       <ServiceHubProvider>
         <ThemeProvider />
-        <AppearanceProvider />
+        <InterfaceProvider />
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>

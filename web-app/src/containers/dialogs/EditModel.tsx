@@ -17,6 +17,7 @@ import {
   IconTool,
   IconAlertTriangle,
   IconLoader2,
+  IconSparkles,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -45,6 +46,7 @@ export const DialogEditModel = ({
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     vision: false,
     tools: false,
+    proactive: false,
   })
 
   // Initialize with the provided model ID or the first model if available
@@ -67,6 +69,7 @@ export const DialogEditModel = ({
   const capabilitiesToObject = (capabilitiesList: string[]) => ({
     vision: capabilitiesList.includes('vision'),
     tools: capabilitiesList.includes('tools'),
+    proactive: capabilitiesList.includes('proactive'),
   })
 
   // Initialize capabilities and display name from selected model
@@ -266,6 +269,23 @@ export const DialogEditModel = ({
                   handleCapabilityChange('vision', checked)
                 }
                 disabled={isLoading}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconSparkles className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">
+                  {t('providers:editModel.proactive')}
+                </span>
+              </div>
+              <Switch
+                id="proactive-capability"
+                checked={capabilities.proactive}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('proactive', checked)
+                }
+                disabled={isLoading || !(capabilities.tools && capabilities.vision)}
               />
             </div>
           </div>

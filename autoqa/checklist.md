@@ -3,7 +3,7 @@
 ## A. Initial update / migration Data check
 
 Before testing, set-up the following in the old version to make sure that we can see the data is properly migrated:
-- [ ] Changing appearance / theme to something that is obviously different from default set-up 
+- [ ] Changing Interface / theme to something that is obviously different from default set-up 
 - [ ] Ensure there are a few chat threads
 - [ ] Ensure there are a few favourites / star threads 
 - [ ] Ensure there are 2 model downloaded 
@@ -23,7 +23,7 @@ Before testing, set-up the following in the old version to make sure that we can
 	- [ ] Can resume chat in threads with the previous context 
 - [ ] Assistants
 - Settings:
-	- [ ] Appearance 
+	- [ ] Interface 
 	- [ ] MCP Servers 
 	- [ ] Local API Server 
 	- [ ] HTTPS Proxy
@@ -56,7 +56,7 @@ Before testing, set-up the following in the old version to make sure that we can
 - [ ] Ensure `Community` links work and point to the correct website 
 - [ ] Ensure the `Check for Updates` function detect the correct latest version 
 - [ ] [ENG] Create a folder with un-standard character as title (e.g. Chinese character) => change the `App data` location to that folder => test that model is still able to load and run properly.
-#### In `Appearance`:
+#### In `Interface`:
 - [ ] Toggle between different `Theme` options to check that they change accordingly and that all elements of the UI are legible with the right contrast:
 	- [ ] Light 
 	- [ ] Dark 
@@ -73,7 +73,7 @@ Before testing, set-up the following in the old version to make sure that we can
 		- [ ] Ensure that when this value is changed, there is no broken UI caused by it
 	- [ ] Code Block
 	- [ ] Show Line Numbers
-- [ENG] Ensure that when click on `Reset` in the `Appearance` section, it reset back to the default values
+- [ENG] Ensure that when click on `Reset` in the `Interface` section, it reset back to the default values
 - [ENG] Ensure that when click on `Reset` in the `Code Block` section, it reset back to the default values
 
 #### In `Model Providers`:
@@ -205,7 +205,7 @@ Ensure that the following section information show up for hardware
 	- [ ] Model option (except if the model / model provider has been deleted or disabled)
 - [ ] User can send message with different type of text content (e.g text, emoji, ...)
 - [ ] When request model to generate a markdown table, the table is correctly formatted as returned from the model.
-- [ ] When model generate code, ensure that the code snippets is properly formatted according to the `Appearance -> Code Block` setting.
+- [ ] When model generate code, ensure that the code snippets is properly formatted according to the `Interface -> Code Block` setting.
 - [ ] Users can edit their old message and and user can regenerate the answer based on the new message
 - [ ] User can click `Copy` to copy the model response
 - [ ] User can click `Delete` to delete either the user message or the model response.
@@ -231,7 +231,7 @@ In `Settings -> General`:
 	- [ ] All threads deleted
 	- [ ] All Assistant deleted except for default Jan Assistant
 	- [ ] `App Data` location is reset back to default path
-	- [ ] Appearance reset
+	- [ ] Interface reset
 	- [ ] Model Providers information all reset
 		- [ ] Llama.cpp setting reset
 		- [ ] API keys cleared

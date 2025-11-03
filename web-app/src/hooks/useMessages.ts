@@ -40,14 +40,25 @@ export const useMessages = create<MessageState>()((set, get) => ({
         assistant: selectedAssistant,
       },
     }
+
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [message.thread_id]: [
+          ...(state.messages[message.thread_id] || []),
+          newMessage,
+        ],
+      },
+    }))
+
     getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
       set((state) => ({
         messages: {
           ...state.messages,
-          [message.thread_id]: [
-            ...(state.messages[message.thread_id] || []),
-            createdMessage,
-          ],
+          [message.thread_id]:
+            state.messages[message.thread_id]?.map((existing) =>
+              existing.id === newMessage.id ? createdMessage : existing
+            ) ?? [createdMessage],
         },
       }))
     })
