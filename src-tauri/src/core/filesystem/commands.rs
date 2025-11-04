@@ -3,7 +3,6 @@
 use super::helpers::resolve_path;
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
-use serde_json;
 use std::fs;
 use tauri::Runtime;
 
