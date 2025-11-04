@@ -59,6 +59,26 @@ export function DownloadButtonPlaceholder({
     [downloads]
   )
 
+  useEffect(() => {
+    const isDownloaded = llamaProvider?.models.some(
+      (m: { id: string }) =>
+        m.id === modelId ||
+        m.id === `${model.developer}/${sanitizeModelId(modelId)}`
+    )
+    if (isDownloaded) {
+      setDownloaded(true)
+    }
+  }, [llamaProvider])
+
+  useEffect(() => {
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      (state: DownloadState) => {
+        if (state.modelId === modelId) setDownloaded(true)
+      }
+    )
+  }, [])
+
   const isRecommendedModel = useCallback((modelId: string) => {
     return (extractModelName(modelId)?.toLowerCase() ===
       'jan-nano-gguf') as boolean
@@ -101,25 +121,6 @@ export function DownloadButtonPlaceholder({
       .models()
       .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
   }
-  useEffect(() => {
-    const isDownloaded = llamaProvider?.models.some(
-      (m: { id: string }) =>
-        m.id === modelId ||
-        m.id === `${model.developer}/${sanitizeModelId(modelId)}`
-    )
-    if (isDownloaded) {
-      setDownloaded(true)
-    }
-  }, [llamaProvider])
-
-  useEffect(() => {
-    events.on(
-      DownloadEvent.onFileDownloadAndVerificationSuccess,
-      (state: DownloadState) => {
-        if (state.modelId === modelId) setDownloaded(true)
-      }
-    )
-  }, [])
 
   return (
     <div
