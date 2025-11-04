@@ -530,8 +530,8 @@ function DropDrawerItem({
       {...props}
     >
       <div className="flex w-full items-start justify-between gap-4">
-        <div>{children}</div>
-        {icon && <div>{icon}</div>}
+        <div className="min-w-0 flex-1">{children}</div>
+        {icon && <div className="flex-shrink-0">{icon}</div>}
       </div>
     </DropdownMenuItem>
   )

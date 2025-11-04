@@ -154,8 +154,8 @@
       "value": "auto",
       "options": [
         { "value": "auto", "name": "Auto" },
-        { "value": "on", "name": "ON" },
-        { "value": "off", "name": "OFF" }
+        { "value": "on", "name": "On" },
+        { "value": "off", "name": "Off" }
       ]
     }
   },
