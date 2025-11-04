@@ -207,7 +207,33 @@ function RootLayout() {
     )
   }
 
+  useEffect(() => {
+    // Wait for the UI to be fully rendered before hiding the loader
+    const hideLoader = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // Hide the HTML loader
+          document.body.classList.add('loaded')
+
+          // Remove the HTML loader element after transition
+          const loader = document.getElementById('initial-loader')
+          if (loader) {
+            setTimeout(() => {
+              loader.remove()
+            }, 300)
+          }
+        })
+      })
+    }
+
+    // Give providers time to initialize
+    const timer = setTimeout(hideLoader, 100)
+
+    return () => clearTimeout(timer)
+  }, [])
+
   const IS_LOGS_ROUTE = getInitialLayoutType()
+
   return (
     <Fragment>
       <ServiceHubProvider>
