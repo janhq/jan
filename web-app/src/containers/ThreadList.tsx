@@ -18,6 +18,7 @@ import {
   IconStar,
   IconFolder,
   IconX,
+  IconTrash,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -81,6 +82,7 @@ const SortableItem = memo(
     const getMessages = useMessages((state) => state.getMessages)
     const { t } = useTranslation()
     const [openDropdown, setOpenDropdown] = useState(false)
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
     const navigate = useNavigate()
     // Check if current route matches this thread's detail page
     const matches = useMatches()
@@ -306,14 +308,28 @@ const SortableItem = memo(
                 </>
               )}
               <DropdownMenuSeparator />
-              <DeleteThreadDialog
-                thread={thread}
-                onDelete={deleteThread}
-                onDropdownClose={() => setOpenDropdown(false)}
-                variant={variant}
-              />
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setDeleteConfirmOpen(true)
+                  setOpenDropdown(false)
+                }}
+              >
+                <IconTrash />
+                <span>{t('common:delete')}</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <DeleteThreadDialog
+            thread={thread}
+            onDelete={deleteThread}
+            onDropdownClose={() => setOpenDropdown(false)}
+            variant={variant}
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            withoutTrigger
+          />
         </div>
       </div>
     )

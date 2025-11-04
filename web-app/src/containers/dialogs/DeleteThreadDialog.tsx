@@ -20,8 +20,11 @@ import { route } from '@/constants/routes'
 interface DeleteThreadDialogProps {
   thread: Thread
   onDelete: (threadId: string) => void
-  onDropdownClose: () => void
+  onDropdownClose?: () => void
   variant?: 'default' | 'project'
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  withoutTrigger?: boolean
 }
 
 export function DeleteThreadDialog({
@@ -29,23 +32,36 @@ export function DeleteThreadDialog({
   onDelete,
   onDropdownClose,
   variant = 'default',
+  open,
+  onOpenChange,
+  withoutTrigger,
 }: DeleteThreadDialogProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [isOpen, setIsOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
 
+  const isControlled = open !== undefined
+  const isOpen = isControlled ? !!open : internalOpen
+  const setOpenSafe = (next: boolean) => {
+    if (isControlled) {
+      onOpenChange?.(next)
+    } else {
+      setInternalOpen(next)
+    }
+  }
+
   const handleOpenChange = (open: boolean) => {
-    setIsOpen(open)
+    setOpenSafe(open)
     if (!open) {
-      onDropdownClose()
+      onDropdownClose?.()
     }
   }
 
   const handleDelete = () => {
     onDelete(thread.id)
-    setIsOpen(false)
-    onDropdownClose()
+    setOpenSafe(false)
+    onDropdownClose?.()
     toast.success(t('common:toast.deleteThread.title'), {
       id: 'delete-thread',
       description: t('common:toast.deleteThread.description'),
@@ -65,12 +81,14 @@ export function DeleteThreadDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-          <IconTrash />
-          <span>{t('common:delete')}</span>
-        </DropdownMenuItem>
-      </DialogTrigger>
+      {!withoutTrigger && (
+        <DialogTrigger asChild>
+          <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+            <IconTrash />
+            <span>{t('common:delete')}</span>
+          </DropdownMenuItem>
+        </DialogTrigger>
+      )}
       <DialogContent
         onOpenAutoFocus={(e) => {
           e.preventDefault()
