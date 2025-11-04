@@ -924,7 +924,7 @@ export default class llamacpp_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'memory_util') {
       this.memoryMode = value as string
-    } else if (key == 'timeout') {
+    } else if (key === 'timeout') {
       this.timeout = value as number
     }
   }
