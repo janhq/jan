@@ -2,7 +2,7 @@
   "joyride": {
     "chooseProviderTitle": "Выберите поставщика",
     "chooseProviderContent": "Выберите поставщика, которого хотите использовать, убедитесь, что у вас есть доступ к ключу API для него.",
-    "getApiKeyTitle": "Получить ключ API\n",
+    "getApiKeyTitle": "Получить ключ API",
     "getApiKeyContent": "Войдите на панель управления поставщика, чтобы найти или сгенерировать свой ключ API.",
     "insertApiKeyTitle": "Вставить ваш ключ API",
     "insertApiKeyContent": "Вставьте сюда свой API-ключ, чтобы подключиться и активировать провайдера.",
@@ -19,7 +19,7 @@
   "models": "Модели",
   "refreshing": "Обновление…",
   "refresh": "Обновить",
-  "import": "Импортировать\n",
+  "import": "Импортировать",
   "importModelSuccess": "Модель {{provider}} успешно импортирована.",
   "importModelError": "Не удалось импортировать модель:",
   "stop": "Остановить",
@@ -31,7 +31,7 @@
   "testConnection": "Проверить подключение",
   "addModel": {
     "title": "Добавить новую модель",
-    "description": "Добавить новую модель для поставщика {{provider}}.\n",
+    "description": "Добавить новую модель для поставщика {{provider}}.",
     "modelId": "ID модели",
     "enterModelId": "Введите ID модели",
     "exploreModels": "Список моделей от {{provider}}",
