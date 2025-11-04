@@ -78,7 +78,7 @@
     "goToSettings": "转到设置",
     "goToSettingsDesc": "打开设置。"
   },
-  "appearance": {
+  "interface": {
     "title": "外观",
     "theme": "主题",
     "themeDesc": "匹配操作系统主题。",
@@ -96,8 +96,8 @@
     "destructiveDesc": "设置警示操作的颜色。",
     "resetToDefault": "重置为默认值",
     "resetToDefaultDesc": "将所有外观设置重置为默认值。",
-    "resetAppearanceSuccess": "外观重置成功",
-    "resetAppearanceSuccessDesc": "所有外观设置已恢复为默认值。",
+    "resetInterfaceSuccess": "外观重置成功",
+    "resetInterfaceSuccessDesc": "所有外观设置已恢复为默认值。",
     "chatWidth": "聊天宽度",
     "chatWidthDesc": "自定义聊天视图的宽度。",
     "tokenCounterCompact": "紧凑令牌计数器",

@@ -1,4 +1,4 @@
-import { useAppearance, isDefaultColorAccent } from '@/hooks/useAppearance'
+﻿import { useInterfaceSettings, isDefaultColorAccent } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export function ColorPickerAppAccentColor() {
-  const { appAccentBgColor, setAppAccentBgColor } = useAppearance()
+  const { appAccentBgColor, setAppAccentBgColor } = useInterfaceSettings()
 
   const predefineAppAccentBgColor: RgbaColor[] = [
     {

@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useAppearance, useBlurSupport } from '@/hooks/useAppearance'
+﻿import { useEffect } from 'react'
+import { useInterfaceSettings, useBlurSupport } from '@/hooks/useInterfaceSettings'
 import { useTheme } from '@/hooks/useTheme'
 import {
   isDefaultColor,
@@ -8,13 +8,13 @@ import {
   isDefaultColorPrimary,
   isDefaultColorAccent,
   isDefaultColorDestructive,
-} from '@/hooks/useAppearance'
+} from '@/hooks/useInterfaceSettings'
 
 /**
- * AppearanceProvider ensures appearance settings are applied on every page load
+ * InterfaceProvider ensures interface settings are applied on every page load
  * This component should be mounted at the root level of the application
  */
-export function AppearanceProvider() {
+export function InterfaceProvider() {
   const {
     fontSize,
     appBgColor,
@@ -27,11 +27,11 @@ export function AppearanceProvider() {
     appAccentTextColor,
     appDestructiveBgColor,
     appDestructiveTextColor,
-  } = useAppearance()
+  } = useInterfaceSettings()
   const { isDark } = useTheme()
   const showAlphaSlider = useBlurSupport()
 
-  // Force re-apply appearance on mount to fix theme desync issues on Windows
+  // Force re-apply interface settings on mount to fix theme desync issues on Windows
   // This ensures that when navigating to routes (like logs), the theme is properly applied
   useEffect(() => {
     const {
@@ -39,7 +39,7 @@ export function AppearanceProvider() {
       setAppMainViewBgColor,
       appBgColor,
       appMainViewBgColor,
-    } = useAppearance.getState()
+    } = useInterfaceSettings.getState()
 
     // Re-trigger setters to ensure CSS variables are applied with correct theme
     setAppBgColor(appBgColor)
@@ -48,12 +48,12 @@ export function AppearanceProvider() {
 
   // Update colors when blur support changes (important for Windows/Linux)
   useEffect(() => {
-    const { setAppBgColor, appBgColor } = useAppearance.getState()
+    const { setAppBgColor, appBgColor } = useInterfaceSettings.getState()
     // Re-apply color to update alpha based on blur support
     setAppBgColor(appBgColor)
   }, [showAlphaSlider])
 
-  // Apply appearance settings on mount and when they change
+  // Apply interface settings on mount and when they change
   useEffect(() => {
     // Apply font size
     document.documentElement.style.setProperty('--font-size-base', fontSize)
@@ -203,9 +203,9 @@ export function AppearanceProvider() {
     showAlphaSlider,
   ])
 
-  // Update appearance when theme changes
+  // Update interface styling when theme changes
   useEffect(() => {
-    // Get the current appearance state
+    // Get the current interface state
     const {
       appBgColor,
       appMainViewBgColor,
@@ -217,7 +217,7 @@ export function AppearanceProvider() {
       setAppPrimaryBgColor,
       setAppAccentBgColor,
       setAppDestructiveBgColor,
-    } = useAppearance.getState()
+    } = useInterfaceSettings.getState()
 
     // Force re-apply all colors when theme changes to ensure correct dark/light defaults
     // This is especially important on Windows where the theme might not be properly

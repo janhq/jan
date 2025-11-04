@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useAppearance } from '../useAppearance'
+import { useInterfaceSettings } from '../useInterfaceSettings'
+import { THREAD_SCROLL_BEHAVIOR } from '@/constants/threadScroll'
 
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
   localStorageKey: {
-    appearance: 'appearance',
+    settingInterface: 'setting-interface',
   },
 }))
 
@@ -35,13 +36,13 @@ Object.defineProperty(global, 'IS_MACOS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_TAURI', { value: false, writable: true })
 Object.defineProperty(global, 'IS_WEB_APP', { value: false, writable: true })
 
-describe('useAppearance', () => {
+describe('useInterfaceSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('should initialize with default values', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
 
     expect(result.current.fontSize).toBe('15px')
     expect(result.current.chatWidth).toBe('compact')
@@ -51,10 +52,12 @@ describe('useAppearance', () => {
       b: 25,
       a: 1,
     })
+    expect(result.current.threadScrollBehavior).toBe(THREAD_SCROLL_BEHAVIOR.FLOW)
+    expect(typeof result.current.setThreadScrollBehavior).toBe('function')
   })
 
   it('should update font size', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
 
     act(() => {
       result.current.setFontSize('18px')
@@ -64,7 +67,7 @@ describe('useAppearance', () => {
   })
 
   it('should update chat width', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
 
     act(() => {
       result.current.setChatWidth('full')
@@ -73,8 +76,34 @@ describe('useAppearance', () => {
     expect(result.current.chatWidth).toBe('full')
   })
 
+  describe('thread scroll behavior', () => {
+    it('should update to sticky mode', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      act(() => {
+        result.current.setThreadScrollBehavior(THREAD_SCROLL_BEHAVIOR.STICKY)
+      })
+
+      expect(result.current.threadScrollBehavior).toBe(
+        THREAD_SCROLL_BEHAVIOR.STICKY
+      )
+    })
+
+    it('should fall back to default for invalid values', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      act(() => {
+        result.current.setThreadScrollBehavior('invalid' as any)
+      })
+
+      expect(result.current.threadScrollBehavior).toBe(
+        THREAD_SCROLL_BEHAVIOR.FLOW
+      )
+    })
+  })
+
   it('should update app background color', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
     const newColor = { r: 100, g: 100, b: 100, a: 1 }
 
     act(() => {
@@ -85,7 +114,7 @@ describe('useAppearance', () => {
   })
 
   it('should update main view background color', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
     const newColor = { r: 200, g: 200, b: 200, a: 1 }
 
     act(() => {
@@ -96,7 +125,7 @@ describe('useAppearance', () => {
   })
 
   it('should update primary background color', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
     const newColor = { r: 50, g: 100, b: 150, a: 1 }
 
     act(() => {
@@ -107,7 +136,7 @@ describe('useAppearance', () => {
   })
 
   it('should update accent background color', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
     const newColor = { r: 255, g: 100, b: 50, a: 1 }
 
     act(() => {
@@ -118,7 +147,7 @@ describe('useAppearance', () => {
   })
 
   it('should update destructive background color', () => {
-    const { result } = renderHook(() => useAppearance())
+    const { result } = renderHook(() => useInterfaceSettings())
     const newColor = { r: 255, g: 0, b: 0, a: 1 }
 
     act(() => {
@@ -128,8 +157,8 @@ describe('useAppearance', () => {
     expect(result.current.appDestructiveBgColor).toEqual(newColor)
   })
 
-  it('should reset appearance to defaults', () => {
-    const { result } = renderHook(() => useAppearance())
+  it('should reset interface settings to defaults', () => {
+    const { result } = renderHook(() => useInterfaceSettings())
 
     // Change some values first
     act(() => {
@@ -140,11 +169,11 @@ describe('useAppearance', () => {
 
     // Reset
     act(() => {
-      result.current.resetAppearance()
+      result.current.resetInterface()
     })
 
     expect(result.current.fontSize).toBe('15px')
-    // Note: resetAppearance doesn't reset chatWidth, only visual properties
+    // Note: resetInterface doesn't reset chatWidth, only visual properties
     expect(result.current.chatWidth).toBe('full')
     expect(result.current.appBgColor).toEqual({
       r: 255,
@@ -160,14 +189,14 @@ describe('useAppearance', () => {
       Object.defineProperty(global, 'IS_WEB_APP', { value: false })
       Object.defineProperty(global, 'IS_WINDOWS', { value: true })
       
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       
       expect(result.current.appBgColor.a).toBe(1)
     })
   })
 
 
-  describe('Reset appearance functionality', () => {
+  describe('Reset interface functionality', () => {
     beforeEach(() => {
       // Mock document.documentElement.style.setProperty
       Object.defineProperty(document.documentElement, 'style', {
@@ -178,11 +207,11 @@ describe('useAppearance', () => {
       })
     })
 
-    it('should reset CSS variables when resetAppearance is called', () => {
-      const { result } = renderHook(() => useAppearance())
+    it('should reset CSS variables when resetInterface is called', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
       
       act(() => {
-        result.current.resetAppearance()
+        result.current.resetInterface()
       })
       
       expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
@@ -212,7 +241,7 @@ describe('useAppearance', () => {
         writable: true,
       })
 
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       const testColor = { r: 128, g: 64, b: 192, a: 0.8 }
 
       act(() => {
@@ -224,7 +253,7 @@ describe('useAppearance', () => {
     })
 
     it('should handle transparent colors', () => {
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       const transparentColor = { r: 100, g: 100, b: 100, a: 0 }
 
       act(() => {
@@ -249,7 +278,7 @@ describe('useAppearance', () => {
         writable: true,
       })
 
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       const testColor = { r: 128, g: 64, b: 192, a: 0.5 }
 
       act(() => {
@@ -267,7 +296,7 @@ describe('useAppearance', () => {
 
   describe('Edge cases', () => {
     it('should handle invalid color values gracefully', () => {
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       const invalidColor = { r: -10, g: 300, b: 128, a: 2 }
       
       act(() => {
@@ -280,7 +309,7 @@ describe('useAppearance', () => {
 
   describe('Type checking', () => {
     it('should only accept valid font sizes', () => {
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       
       // These should work
       act(() => {
@@ -305,7 +334,7 @@ describe('useAppearance', () => {
     })
 
     it('should only accept valid chat widths', () => {
-      const { result } = renderHook(() => useAppearance())
+      const { result } = renderHook(() => useInterfaceSettings())
       
       act(() => {
         result.current.setChatWidth('full')
