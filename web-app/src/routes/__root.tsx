@@ -211,23 +211,21 @@ function RootLayout() {
     // Wait for the UI to be fully rendered before hiding the loader
     const hideLoader = () => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Hide the HTML loader
-          document.body.classList.add('loaded')
+        // Hide the HTML loader
+        document.body.classList.add('loaded')
 
-          // Remove the HTML loader element after transition
-          const loader = document.getElementById('initial-loader')
-          if (loader) {
-            setTimeout(() => {
-              loader.remove()
-            }, 300)
-          }
-        })
+        // Remove the HTML loader element after transition
+        const loader = document.getElementById('initial-loader')
+        if (loader) {
+          setTimeout(() => {
+            loader.remove()
+          }, 300)
+        }
       })
     }
 
-    // Give providers time to initialize
-    const timer = setTimeout(hideLoader, 100)
+    // Give providers time to initialize and paint
+    const timer = setTimeout(hideLoader, 200)
 
     return () => clearTimeout(timer)
   }, [])
