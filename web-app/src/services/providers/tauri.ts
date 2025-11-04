@@ -22,6 +22,7 @@ export class TauriProvidersService extends DefaultProvidersService {
     try {
       const builtinProviders = predefinedProviders.map((provider) => {
         let models = provider.models as Model[]
+        if(!models.length) return undefined
         if (Object.keys(providerModels).includes(provider.provider)) {
           const builtInModels = providerModels[
             provider.provider as unknown as keyof typeof providerModels
@@ -43,7 +44,7 @@ export class TauriProvidersService extends DefaultProvidersService {
           ...provider,
           models,
         }
-      })
+      }).filter(Boolean)
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
