@@ -54,6 +54,7 @@ type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
+  timeout: number
   llamacpp_env: string
   memory_util: string
   chat_template: string
@@ -185,6 +186,7 @@ const logger = {
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
+  timeout: number = 600
   llamacpp_env: string = ''
   memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
@@ -217,6 +219,7 @@ export default class llamacpp_extension extends AIEngine {
     this.config = loadedConfig as LlamacppConfig
 
     this.autoUnload = this.config.auto_unload
+    this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
     this.memoryMode = this.config.memory_util || 'high'
 
@@ -921,6 +924,8 @@ export default class llamacpp_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'memory_util') {
       this.memoryMode = value as string
+    } else if (key == 'timeout') {
+      this.timeout = value as number
     }
   }
 
@@ -1552,8 +1557,6 @@ export default class llamacpp_extension extends AIEngine {
           })
         )
 
-        logger.info(JSON.stringify(sessionInfos))
-
         const nonEmbeddingModels: string[] = sessionInfos
           .filter(
             (s): s is SessionInfo => s !== null && s.is_embedding === false
@@ -1596,6 +1599,7 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
 
     // set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
@@ -1694,7 +1698,7 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding)
+      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding, Number(this.timeout))
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1779,9 +1783,9 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      connectTimeout: 600000, // 10 minutes
+      connectTimeout: this.timeout * 100, // default 10 minutes
       signal: AbortSignal.any([
-        AbortSignal.timeout(600000),
+        AbortSignal.timeout(this.timeout * 100),
         abortController?.signal,
       ]),
     })
