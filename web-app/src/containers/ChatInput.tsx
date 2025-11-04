@@ -323,10 +323,6 @@ const ChatInput = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleAttachmentClick = () => {
-    void handleImagePickerClick()
-  }
-
   const handleAttachDocsIngest = async () => {
     try {
       if (!attachmentsEnabled) {
@@ -1087,7 +1083,7 @@ const ChatInput = ({
                       <TooltipTrigger asChild>
                         <div
                           className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                          onClick={handleAttachmentClick}
+                          onClick={handleImagePickerClick}
                         >
                           <IconPhoto
                             size={18}
