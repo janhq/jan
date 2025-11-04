@@ -30,6 +30,6 @@
   "createNew": "Создать нового ассистента",
   "personality": "Личность",
   "capabilities": "Возможности",
-  "instructionsDateHint": "Совет: Использовать {{current_date}} для вставки сегодняшней даты.",
+  "instructionsDateHint": "Совет: Используйте {{current_date}} для вставки сегодняшней даты.",
   "maxToolSteps": "Макс. количество шагов инструмента"
 }

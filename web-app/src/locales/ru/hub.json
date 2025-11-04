@@ -1,9 +1,9 @@
 {
-  "sortNewest": "Новейший",
+  "sortNewest": "Самые новые",
   "sortMostDownloaded": "Наиболее загружаемые",
   "use": "Использовать",
   "download": "Загрузить",
-  "downloaded": "Загружаемый",
+  "downloaded": "Загруженные",
   "loadingModels": "Загрузка моделей…",
   "noModels": "Модели не найдены",
   "by": "От",
