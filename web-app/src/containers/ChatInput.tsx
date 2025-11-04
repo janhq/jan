@@ -508,22 +508,26 @@ const ChatInput = ({
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     const newFiles: Attachment[] = []
     const duplicates: string[] = []
+    const oversizedFiles: string[] = []
+    const invalidTypeFiles: string[] = []
     const existingImageNames = new Set(
       attachments.filter((a) => a.type === 'image').map((a) => a.name)
     )
 
     const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
-    const validFiles = files.filter((file) => {
+    const validFiles: File[] = []
+
+    Array.from(files).forEach((file) => {
       // Check for duplicate image names
       if (existingImageNames.has(file.name)) {
         duplicates.push(file.name)
-        return false
+        return
       }
 
       // Check file size
       if (file.size > maxSize) {
-        setMessage(`File is too large. Maximum size is 10MB.`)
-        return false
+        oversizedFiles.push(file.name)
+        return
       }
 
       // Get file type - use extension as fallback if MIME type is incorrect
@@ -532,13 +536,11 @@ const ChatInput = ({
 
       // Check file type - images only
       if (!allowedTypes.includes(actualType)) {
-        setMessage(
-          `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
-        )
-        return false
+        invalidTypeFiles.push(file.name)
+        return
       }
 
-      return true
+      validFiles.push(file)
     })
 
     // Process valid files
@@ -625,13 +627,36 @@ const ChatInput = ({
       }
     }
 
+    // Display validation errors
+    const errors: string[] = []
+
     if (duplicates.length > 0) {
       toast.warning('Some images already attached', {
         description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
       })
     }
 
-    setMessage('')
+    if (oversizedFiles.length > 0) {
+      errors.push(
+        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+      )
+    }
+
+    if (invalidTypeFiles.length > 0) {
+      errors.push(
+        `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
+      )
+    }
+
+    if (errors.length > 0) {
+      setMessage(errors.join(' | '))
+      // Reset file input to allow re-uploading
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } else {
+      setMessage('')
+    }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -682,7 +707,7 @@ const ChatInput = ({
 
               const blob = await response.blob()
               const fileName =
-                path.split('/').pop() || path.split('\\').pop() || 'image'
+                path.split(/[\\/]/).filter(Boolean).pop() || 'image'
               const ext = fileName.toLowerCase().split('.').pop()
               const mimeType =
                 ext === 'png'
