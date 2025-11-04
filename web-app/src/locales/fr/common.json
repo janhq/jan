@@ -30,7 +30,7 @@
   "language": "Langage",
   "login": "Connexion",
   "loginWith": "Connexion avec {{provider}}",
-  "loginFailed": "Echec de se connexion",
+  "loginFailed": "Échec de la connexion",
   "logout": "Déconnexion",
   "loggingOut": "Déconnexion en cours...",
   "loggedOut": "Déconnexion réussie",
