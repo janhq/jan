@@ -237,7 +237,7 @@ Common issues:
 ## Getting Help
 
 - [Documentation](https://jan.ai/docs) - The manual you should read
-- [Discord Community](https://discord.gg/jan) - Where the community lives
+- [Discord Community](https://discord.gg/FTk2MvZwJH) - Where the community lives
 - [GitHub Issues](https://github.com/janhq/jan/issues) - Report bugs here
 - [GitHub Discussions](https://github.com/janhq/jan/discussions) - Ask questions
 
