@@ -1783,9 +1783,9 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      connectTimeout: this.timeout * 100, // default 10 minutes
+      connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
       signal: AbortSignal.any([
-        AbortSignal.timeout(this.timeout * 100),
+        AbortSignal.timeout(this.timeout * 1000),
         abortController?.signal,
       ]),
     })

@@ -39,7 +39,7 @@
   {
     "key": "timeout",
     "title": "Timeout for llamacpp",
-    "description": "read/write timeout in seconds",
+    "description": "Llamacpp connection and load timeout in seconds",
     "controllerType": "input",
     "controllerProps": {
       "value": "600",
