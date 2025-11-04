@@ -47,6 +47,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 import {
   Attachment,
@@ -323,7 +324,7 @@ const ChatInput = ({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleAttachmentClick = () => {
-    fileInputRef.current?.click()
+    void handleImagePickerClick()
   }
 
   const handleAttachDocsIngest = async () => {
@@ -507,53 +508,50 @@ const ChatInput = ({
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
+  const processImageFiles = async (files: File[]) => {
+    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+    const newFiles: Attachment[] = []
+    const duplicates: string[] = []
+    const existingImageNames = new Set(
+      attachments.filter((a) => a.type === 'image').map((a) => a.name)
+    )
 
-    if (files && files.length > 0) {
-      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-      const newFiles: Attachment[] = []
-      const duplicates: string[] = []
-      const existingImageNames = new Set(
-        attachments.filter((a) => a.type === 'image').map((a) => a.name)
-      )
+    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+    const validFiles = files.filter((file) => {
+      // Check for duplicate image names
+      if (existingImageNames.has(file.name)) {
+        duplicates.push(file.name)
+        return false
+      }
 
-      Array.from(files).forEach((file) => {
-        // Check for duplicate image names
-        if (existingImageNames.has(file.name)) {
-          duplicates.push(file.name)
-          return
-        }
+      // Check file size
+      if (file.size > maxSize) {
+        setMessage(`File is too large. Maximum size is 10MB.`)
+        return false
+      }
 
-        // Check file size
-        if (file.size > maxSize) {
-          setMessage(`File is too large. Maximum size is 10MB.`)
-          // Reset file input to allow re-uploading
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-          return
-        }
+      // Get file type - use extension as fallback if MIME type is incorrect
+      const detectedType = file.type || getFileTypeFromExtension(file.name)
+      const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        // Get file type - use extension as fallback if MIME type is incorrect
-        const detectedType = file.type || getFileTypeFromExtension(file.name)
-        const actualType = getFileTypeFromExtension(file.name) || detectedType
+      // Check file type - images only
+      if (!allowedTypes.includes(actualType)) {
+        setMessage(
+          `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
+        )
+        return false
+      }
 
-        // Check file type - images only
-        const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+      return true
+    })
 
-        if (!allowedTypes.includes(actualType)) {
-          setMessage(
-            `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
-          )
-          // Reset file input to allow re-uploading
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-          return
-        }
+    // Process valid files
+    for (const file of validFiles) {
+      const detectedType = file.type || getFileTypeFromExtension(file.name)
+      const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-        const reader = new FileReader()
+      const reader = new FileReader()
+      await new Promise<void>((resolve) => {
         reader.onload = () => {
           const result = reader.result
           if (typeof result === 'string') {
@@ -566,99 +564,162 @@ const ChatInput = ({
               dataUrl: result,
             })
             newFiles.push(att)
-            // Update state
-            if (
-              newFiles.length ===
-              Array.from(files).filter((f) => {
-                const fType = getFileTypeFromExtension(f.name) || f.type
-                return (
-                  f.size <= maxSize &&
-                  allowedTypes.includes(fType) &&
-                  !existingImageNames.has(f.name)
-                )
-              }).length
-            ) {
-              if (newFiles.length > 0) {
-                setAttachments((prev) => {
-                  const updated = [...prev, ...newFiles]
-                  return updated
-                })
-
-                // If thread exists, ingest images immediately
-                if (currentThreadId) {
-                  void (async () => {
-                    for (const img of newFiles) {
-                      try {
-                        // Mark as processing
-                        setAttachments((prev) =>
-                          prev.map((a) =>
-                            a.name === img.name && a.type === 'image'
-                              ? { ...a, processing: true }
-                              : a
-                          )
-                        )
-
-                        const result = await serviceHub
-                          .uploads()
-                          .ingestImage(currentThreadId, img)
-
-                        if (result?.id) {
-                          // Mark as processed with ID
-                          setAttachments((prev) =>
-                            prev.map((a) =>
-                              a.name === img.name && a.type === 'image'
-                                ? {
-                                    ...a,
-                                    processing: false,
-                                    processed: true,
-                                    id: result.id,
-                                  }
-                                : a
-                            )
-                          )
-                        } else {
-                          throw new Error('No ID returned from image ingestion')
-                        }
-                      } catch (error) {
-                        console.error('Failed to ingest image:', error)
-                        // Remove failed image
-                        setAttachments((prev) =>
-                          prev.filter(
-                            (a) => !(a.name === img.name && a.type === 'image')
-                          )
-                        )
-                        toast.error(`Failed to ingest ${img.name}`, {
-                          description:
-                            error instanceof Error
-                              ? error.message
-                              : String(error),
-                        })
-                      }
-                    }
-                  })()
-                }
-              }
-
-              if (duplicates.length > 0) {
-                toast.warning('Some images already attached', {
-                  description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-                })
-              }
-
-              // Reset the file input value to allow re-uploading the same file
-              if (fileInputRef.current) {
-                fileInputRef.current.value = ''
-                setMessage('')
-              }
-            }
           }
+          resolve()
         }
         reader.readAsDataURL(file)
       })
     }
 
+    // Update state and ingest
+    if (newFiles.length > 0) {
+      setAttachments((prev) => {
+        const updated = [...prev, ...newFiles]
+        return updated
+      })
+
+      // If thread exists, ingest images immediately
+      if (currentThreadId) {
+        void (async () => {
+          for (const img of newFiles) {
+            try {
+              // Mark as processing
+              setAttachments((prev) =>
+                prev.map((a) =>
+                  a.name === img.name && a.type === 'image'
+                    ? { ...a, processing: true }
+                    : a
+                )
+              )
+
+              const result = await serviceHub
+                .uploads()
+                .ingestImage(currentThreadId, img)
+
+              if (result?.id) {
+                // Mark as processed with ID
+                setAttachments((prev) =>
+                  prev.map((a) =>
+                    a.name === img.name && a.type === 'image'
+                      ? {
+                          ...a,
+                          processing: false,
+                          processed: true,
+                          id: result.id,
+                        }
+                      : a
+                  )
+                )
+              } else {
+                throw new Error('No ID returned from image ingestion')
+              }
+            } catch (error) {
+              console.error('Failed to ingest image:', error)
+              // Remove failed image
+              setAttachments((prev) =>
+                prev.filter((a) => !(a.name === img.name && a.type === 'image'))
+              )
+              toast.error(`Failed to ingest ${img.name}`, {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+        })()
+      }
+    }
+
+    if (duplicates.length > 0) {
+      toast.warning('Some images already attached', {
+        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+      })
+    }
+
+    setMessage('')
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+
+    if (files && files.length > 0) {
+      void processImageFiles(Array.from(files))
+
+      // Reset the file input value to allow re-uploading the same file
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+
     if (textareaRef.current) {
       textareaRef.current.focus()
+    }
+  }
+
+  const handleImagePickerClick = async () => {
+    if (isPlatformTauri()) {
+      try {
+        const selected = await serviceHub.dialog().open({
+          multiple: true,
+          filters: [
+            {
+              name: 'Images',
+              extensions: ['jpg', 'jpeg', 'png'],
+            },
+          ],
+        })
+
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected]
+          const files: File[] = []
+
+          for (const path of paths) {
+            try {
+              // Use Tauri's convertFileSrc to create a valid URL for the file
+              const { convertFileSrc } = await import('@tauri-apps/api/core')
+              const fileUrl = convertFileSrc(path)
+
+              // Fetch the file as blob
+              const response = await fetch(fileUrl)
+              if (!response.ok) {
+                throw new Error(`Failed to fetch file: ${response.statusText}`)
+              }
+
+              const blob = await response.blob()
+              const fileName =
+                path.split('/').pop() || path.split('\\').pop() || 'image'
+              const ext = fileName.toLowerCase().split('.').pop()
+              const mimeType =
+                ext === 'png'
+                  ? 'image/png'
+                  : ext === 'jpg' || ext === 'jpeg'
+                    ? 'image/jpeg'
+                    : 'image/jpeg'
+
+              const file = new File([blob], fileName, { type: mimeType })
+              files.push(file)
+            } catch (error) {
+              console.error('Failed to read file:', error)
+              toast.error('Failed to read file', {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+
+          if (files.length > 0) {
+            await processImageFiles(files)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to open file dialog:', error)
+      }
+
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+      }
+    } else {
+      // Fallback to input click for web
+      fileInputRef.current?.click()
     }
   }
 
