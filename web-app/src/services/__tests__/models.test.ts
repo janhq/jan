@@ -1,13 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DefaultModelsService } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
-import { EngineManager } from '@janhq/core'
+import { EngineManager, events, DownloadEvent } from '@janhq/core'
 
-// Mock EngineManager
+const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
+  mockEvents: {
+    emit: vi.fn(),
+  },
+  mockDownloadEvent: {
+    onFileDownloadStopped: 'onFileDownloadStopped',
+  } as Record<string, string>,
+}))
+
+// Mock EngineManager and events
 vi.mock('@janhq/core', () => ({
   EngineManager: {
     instance: vi.fn(),
   },
+  events: mockEvents,
+  DownloadEvent: mockDownloadEvent,
 }))
 
 // Mock fetch
@@ -46,6 +57,7 @@ describe('DefaultModelsService', () => {
     modelsService = new DefaultModelsService()
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
+    mockEvents.emit.mockClear()
   })
 
   describe('fetchModels', () => {
@@ -165,6 +177,13 @@ describe('DefaultModelsService', () => {
       await modelsService.abortDownload(id)
 
       expect(mockEngine.abortImport).toHaveBeenCalledWith(id)
+      expect(events.emit).toHaveBeenCalledWith(
+        DownloadEvent.onFileDownloadStopped,
+        expect.objectContaining({
+          modelId: id,
+          downloadType: 'Model',
+        })
+      )
     })
   })
 

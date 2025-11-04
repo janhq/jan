@@ -38,13 +38,15 @@ export async function loadLlamaModel(
   backendPath: string,
   args: string[],
   envs: Record<string, string>,
-  isEmbedding: boolean
+  isEmbedding: boolean = false,
+  timeout: number = 600
 ): Promise<SessionInfo> {
   return await invoke('plugin:llamacpp|load_llama_model', {
     backendPath,
     args,
     envs,
-    isEmbedding
+    isEmbedding,
+    timeout
   })
 }
 

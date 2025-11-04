@@ -3,10 +3,8 @@ import { useEffect } from 'react'
 
 export default function DocsIndex() {
   const router = useRouter()
-  
   useEffect(() => {
     router.replace('/docs/desktop')
   }, [router])
-  
   return null
 }
