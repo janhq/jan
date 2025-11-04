@@ -44,7 +44,7 @@
     "@tauri-apps/plugin-deep-link": "2.4.3",
     "@tauri-apps/plugin-dialog": "2.2.2",
     "@tauri-apps/plugin-http": "2.5.0",
-    "@tauri-apps/plugin-opener": "2.3.0",
+    "@tauri-apps/plugin-opener": "2.5.2",
     "@tauri-apps/plugin-os": "2.2.1",
     "@tauri-apps/plugin-updater": "2.8.1",
     "@types/react-syntax-highlighter": "15.5.13",
