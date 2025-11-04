@@ -44,6 +44,7 @@ pub async fn load_llama_model<R: Runtime>(
     mut args: Vec<String>,
     envs: HashMap<String, String>,
     is_embedding: bool,
+    timeout: u64
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -175,7 +176,7 @@ pub async fn load_llama_model<R: Runtime>(
     }
 
     // Wait for server to be ready or timeout
-    let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+    let timeout_duration = Duration::from_secs(timeout);
     let start_time = Instant::now();
     log::info!("Waiting for model session to be ready...");
     loop {
