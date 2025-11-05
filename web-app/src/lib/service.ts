@@ -53,16 +53,41 @@ export const APIs = {
               return getServiceHub().core().invoke(command, args)
             }
 
-            const raw = (args || {}) as Record<string, unknown>
+            const raw: Record<string, unknown> = (args || {}) as Record<string, unknown>
+
+            const pickString = (obj: Record<string, unknown>, keys: string[]): string | undefined => {
+              for (const key of keys) {
+                const value = obj[key]
+                if (typeof value === 'string') return value
+              }
+              return undefined
+            }
+
+            const pickNumber = (obj: Record<string, unknown>, keys: string[]): number | undefined => {
+              for (const key of keys) {
+                const value = obj[key]
+                if (typeof value === 'number') return value
+              }
+              return undefined
+            }
+
+            const pickStringArray = (obj: Record<string, unknown>, keys: string[]): string[] | undefined => {
+              for (const key of keys) {
+                const value = obj[key]
+                if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+                  return value as string[]
+                }
+              }
+              return undefined
+            }
+
             const config = {
-              host: raw.host,
-              port: raw.port,
-              prefix: raw.prefix,
-              api_key: (raw as any).api_key ?? (raw as any).apiKey,
-              trusted_hosts:
-                (raw as any).trusted_hosts ?? (raw as any).trustedHosts,
-              proxy_timeout:
-                (raw as any).proxy_timeout ?? (raw as any).proxyTimeout,
+              host: pickString(raw, ['host']),
+              port: pickNumber(raw, ['port']),
+              prefix: pickString(raw, ['prefix']),
+              api_key: pickString(raw, ['api_key', 'apiKey']),
+              trusted_hosts: pickStringArray(raw, ['trusted_hosts', 'trustedHosts']),
+              proxy_timeout: pickNumber(raw, ['proxy_timeout', 'proxyTimeout']),
             }
             return getServiceHub().core().invoke(command, { config })
           }
