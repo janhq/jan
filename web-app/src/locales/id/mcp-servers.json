@@ -35,6 +35,7 @@
   "checkParams": "Silakan periksa parameter sesuai dengan tutorial.",
   "title": "Server MCP",
   "experimental": "Eksperimental",
+  "importFromAPI": "Impor API MCP",
   "editAllJson": "Edit Semua JSON Server",
   "findMore": "Temukan lebih banyak server MCP di",
   "allowPermissions": "Izinkan Semua Izin Alat MCP",
@@ -44,4 +45,12 @@
   "env": "Lingkungan",
   "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
   "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan"
+
+  ,"searchAria": "Cari MCP"
+  ,"searchPlaceholder": "Cari server MCP..."
+  ,"noResults": "Tidak ada hasil"
+  ,"repository": "Repository"
+  ,"install": "Instal"
+  ,"reinstall": "Instal ulang"
+  ,"installing": "Menginstal..."
 }

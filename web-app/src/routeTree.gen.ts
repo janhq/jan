@@ -20,7 +20,6 @@ import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
-import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
 import { Route as SettingsInterfaceImport } from './routes/settings/interface'
 import { Route as SettingsHttpsProxyImport } from './routes/settings/https-proxy'
@@ -32,7 +31,9 @@ import { Route as ProjectProjectIdImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
+import { Route as SettingsMcpServersIndexImport } from './routes/settings/mcp-servers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
+import { Route as SettingsMcpServersHubImport } from './routes/settings/mcp-servers/hub'
 import { Route as AuthGoogleCallbackImport } from './routes/auth.google.callback'
 
 // Create/Update Routes
@@ -88,12 +89,6 @@ const SettingsShortcutsRoute = SettingsShortcutsImport.update({
 const SettingsPrivacyRoute = SettingsPrivacyImport.update({
   id: '/settings/privacy',
   path: '/settings/privacy',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const SettingsMcpServersRoute = SettingsMcpServersImport.update({
-  id: '/settings/mcp-servers',
-  path: '/settings/mcp-servers',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -163,12 +158,24 @@ const SettingsProvidersIndexRoute = SettingsProvidersIndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsMcpServersIndexRoute = SettingsMcpServersIndexImport.update({
+  id: '/settings/mcp-servers/',
+  path: '/settings/mcp-servers/',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsProvidersProviderNameRoute =
   SettingsProvidersProviderNameImport.update({
     id: '/settings/providers/$providerName',
     path: '/settings/providers/$providerName',
     getParentRoute: () => rootRoute,
   } as any)
+
+const SettingsMcpServersHubRoute = SettingsMcpServersHubImport.update({
+  id: '/settings/mcp-servers/hub',
+  path: '/settings/mcp-servers/hub',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const AuthGoogleCallbackRoute = AuthGoogleCallbackImport.update({
   id: '/auth/google/callback',
@@ -278,13 +285,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsLocalApiServerImport
       parentRoute: typeof rootRoute
     }
-    '/settings/mcp-servers': {
-      id: '/settings/mcp-servers'
-      path: '/settings/mcp-servers'
-      fullPath: '/settings/mcp-servers'
-      preLoaderRoute: typeof SettingsMcpServersImport
-      parentRoute: typeof rootRoute
-    }
     '/settings/privacy': {
       id: '/settings/privacy'
       path: '/settings/privacy'
@@ -327,11 +327,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGoogleCallbackImport
       parentRoute: typeof rootRoute
     }
+    '/settings/mcp-servers/hub': {
+      id: '/settings/mcp-servers/hub'
+      path: '/settings/mcp-servers/hub'
+      fullPath: '/settings/mcp-servers/hub'
+      preLoaderRoute: typeof SettingsMcpServersHubImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
       fullPath: '/settings/providers/$providerName'
       preLoaderRoute: typeof SettingsProvidersProviderNameImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/mcp-servers/': {
+      id: '/settings/mcp-servers/'
+      path: '/settings/mcp-servers'
+      fullPath: '/settings/mcp-servers'
+      preLoaderRoute: typeof SettingsMcpServersIndexImport
       parentRoute: typeof rootRoute
     }
     '/settings/providers/': {
@@ -361,14 +375,15 @@ export interface FileRoutesByFullPath {
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
-  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/settings/mcp-servers/hub': typeof SettingsMcpServersHubRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/mcp-servers': typeof SettingsMcpServersIndexRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
 
@@ -387,14 +402,15 @@ export interface FileRoutesByTo {
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
-  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/settings/mcp-servers/hub': typeof SettingsMcpServersHubRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/mcp-servers': typeof SettingsMcpServersIndexRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
 
@@ -414,14 +430,15 @@ export interface FileRoutesById {
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
-  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/settings/mcp-servers/hub': typeof SettingsMcpServersHubRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/mcp-servers/': typeof SettingsMcpServersIndexRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
 
@@ -442,14 +459,15 @@ export interface FileRouteTypes {
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
-    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+    | '/settings/mcp-servers/hub'
     | '/settings/providers/$providerName'
+    | '/settings/mcp-servers'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -467,14 +485,15 @@ export interface FileRouteTypes {
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
-    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+    | '/settings/mcp-servers/hub'
     | '/settings/providers/$providerName'
+    | '/settings/mcp-servers'
     | '/settings/providers'
   id:
     | '__root__'
@@ -492,14 +511,15 @@ export interface FileRouteTypes {
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
-    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
     | '/project/'
     | '/auth/google/callback'
+    | '/settings/mcp-servers/hub'
     | '/settings/providers/$providerName'
+    | '/settings/mcp-servers/'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
 }
@@ -519,14 +539,15 @@ export interface RootRouteChildren {
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
   SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
-  SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
   AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
+  SettingsMcpServersHubRoute: typeof SettingsMcpServersHubRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
+  SettingsMcpServersIndexRoute: typeof SettingsMcpServersIndexRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
 
@@ -545,14 +566,15 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
   SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
-  SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
   AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
+  SettingsMcpServersHubRoute: SettingsMcpServersHubRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
+  SettingsMcpServersIndexRoute: SettingsMcpServersIndexRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
 
@@ -580,14 +602,15 @@ export const routeTree = rootRoute
         "/settings/https-proxy",
         "/settings/interface",
         "/settings/local-api-server",
-        "/settings/mcp-servers",
         "/settings/privacy",
         "/settings/shortcuts",
         "/threads/$threadId",
         "/hub/",
         "/project/",
         "/auth/google/callback",
+        "/settings/mcp-servers/hub",
         "/settings/providers/$providerName",
+        "/settings/mcp-servers/",
         "/settings/providers/"
       ]
     },
@@ -633,9 +656,6 @@ export const routeTree = rootRoute
     "/settings/local-api-server": {
       "filePath": "settings/local-api-server.tsx"
     },
-    "/settings/mcp-servers": {
-      "filePath": "settings/mcp-servers.tsx"
-    },
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
     },
@@ -654,8 +674,14 @@ export const routeTree = rootRoute
     "/auth/google/callback": {
       "filePath": "auth.google.callback.tsx"
     },
+    "/settings/mcp-servers/hub": {
+      "filePath": "settings/mcp-servers/hub.tsx"
+    },
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"
+    },
+    "/settings/mcp-servers/": {
+      "filePath": "settings/mcp-servers/index.tsx"
     },
     "/settings/providers/": {
       "filePath": "settings/providers/index.tsx"
