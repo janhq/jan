@@ -545,6 +545,11 @@ export const useChat = () => {
               if (updateAttachmentProcessing) {
                 updateAttachmentProcessing(doc.name, 'done')
               }
+              // Update thread since documents attached
+              useThreads.getState().updateThread(activeThread.id, {
+                metadata: { hasDocuments: true },
+              })
+
             } catch (err) {
               console.error(`Failed to ingest ${doc.name}:`, err)
               if (updateAttachmentProcessing) {
@@ -645,8 +650,9 @@ export const useChat = () => {
         const ragFeatureAvailable =
           useAttachments.getState().enabled &&
           PlatformFeatures[PlatformFeature.ATTACHMENTS]
-        // Check if documents were attached
-        if (documents.length > 0 && ragFeatureAvailable) {
+        // Check if documents were attached in the current thread
+        const hasDocuments = useThreads.getState().getThreadById(activeThread.id)?.metadata?.hasDocuments
+        if (hasDocuments && ragFeatureAvailable) {
           try {
             const ragTools = await serviceHub
               .rag()
