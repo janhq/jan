@@ -545,11 +545,6 @@ export const useChat = () => {
               if (updateAttachmentProcessing) {
                 updateAttachmentProcessing(doc.name, 'done')
               }
-              // Update thread since documents attached
-              useThreads.getState().updateThread(activeThread.id, {
-                metadata: { hasDocuments: true },
-              })
-
             } catch (err) {
               console.error(`Failed to ingest ${doc.name}:`, err)
               if (updateAttachmentProcessing) {
@@ -558,6 +553,11 @@ export const useChat = () => {
               throw err // Re-throw to handle in outer catch
             }
           }
+          // Update thread since documents attached
+          useThreads.getState().updateThread(activeThread.id, {
+            metadata: { hasDocuments: true },
+          })
+
         } catch (err) {
           console.error('Failed to ingest documents:', err)
           const desc = err instanceof Error ? err.message : String(err)
