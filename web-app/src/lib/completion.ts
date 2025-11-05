@@ -73,11 +73,14 @@ export const newUserThreadContent = (
       name: doc.name,
       type: doc.fileType,
       size: typeof doc.size === 'number' ? doc.size : undefined,
-      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+      chunkCount:
+        typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
     }))
 
   const textWithFiles =
-    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
+    docMetadata.length > 0
+      ? injectFilesIntoPrompt(content, docMetadata)
+      : content
 
   const contentParts = [
     {
@@ -234,36 +237,19 @@ export const sendCompletion = async (
     }
   }
 
-  // Inject RAG tools on-demand (not in global tools list)
   const providerModelConfig = provider.models?.find(
     (model) => model.id === thread.model?.id || model.model === thread.model?.id
   )
-  const effectiveCapabilities = Array.isArray(
-    providerModelConfig?.capabilities
-  )
-    ? providerModelConfig?.capabilities ?? []
+  const effectiveCapabilities = Array.isArray(providerModelConfig?.capabilities)
+    ? (providerModelConfig?.capabilities ?? [])
     : getModelCapabilities(provider.provider, thread.model.id)
   const modelSupportsTools = effectiveCapabilities.includes(
     ModelCapabilities.TOOLS
   )
   let usableTools = tools
-  try {
-    const attachmentsEnabled = useAttachments.getState().enabled
-    if (
-      attachmentsEnabled &&
-      PlatformFeatures[PlatformFeature.ATTACHMENTS] &&
-      modelSupportsTools
-    ) {
-      const ragTools = await getServiceHub().rag().getTools().catch(() => [])
-      if (Array.isArray(ragTools) && ragTools.length) {
-        usableTools = [...tools, ...ragTools]
-      }
-    }
-  } catch (e) {
-    // Ignore RAG tool injection errors during completion setup
-    console.debug('Skipping RAG tools injection:', e)
+  if (modelSupportsTools) {
+    usableTools = [...tools]
   }
-
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
@@ -546,7 +532,8 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled &&
+      PlatformFeatures[PlatformFeature.ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
@@ -607,7 +594,13 @@ export const postMessageProcessing = async (
       const { promise, cancel } = isRagTool
         ? ragFeatureAvailable
           ? {
-              promise: getServiceHub().rag().callTool({ toolName, arguments: toolArgs, threadId: message.thread_id }),
+              promise: getServiceHub()
+                .rag()
+                .callTool({
+                  toolName,
+                  arguments: toolArgs,
+                  threadId: message.thread_id,
+                }),
               cancel: async () => {},
             }
           : {
@@ -682,13 +675,16 @@ export const postMessageProcessing = async (
 
       // Proactive mode: Capture screenshot/snapshot after browser tool execution
       if (isProactiveMode && isBrowserTool && !abortController.signal.aborted) {
-        console.log('Proactive mode: Capturing screenshots after browser tool call')
+        console.log(
+          'Proactive mode: Capturing screenshots after browser tool call'
+        )
 
         // Filter out old screenshots before adding new ones
         filterOldProactiveScreenshots(builder)
 
         // Capture new screenshots
-        const proactiveScreenshots = await captureProactiveScreenshots(abortController)
+        const proactiveScreenshots =
+          await captureProactiveScreenshots(abortController)
 
         // Add proactive screenshots to builder
         for (const screenshot of proactiveScreenshots) {
