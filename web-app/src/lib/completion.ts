@@ -73,14 +73,11 @@ export const newUserThreadContent = (
       name: doc.name,
       type: doc.fileType,
       size: typeof doc.size === 'number' ? doc.size : undefined,
-      chunkCount:
-        typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
     }))
 
   const textWithFiles =
-    docMetadata.length > 0
-      ? injectFilesIntoPrompt(content, docMetadata)
-      : content
+    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
 
   const contentParts = [
     {
@@ -532,8 +529,7 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled &&
-      PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
@@ -594,13 +590,7 @@ export const postMessageProcessing = async (
       const { promise, cancel } = isRagTool
         ? ragFeatureAvailable
           ? {
-              promise: getServiceHub()
-                .rag()
-                .callTool({
-                  toolName,
-                  arguments: toolArgs,
-                  threadId: message.thread_id,
-                }),
+              promise: getServiceHub().rag().callTool({ toolName, arguments: toolArgs, threadId: message.thread_id }),
               cancel: async () => {},
             }
           : {
@@ -675,16 +665,13 @@ export const postMessageProcessing = async (
 
       // Proactive mode: Capture screenshot/snapshot after browser tool execution
       if (isProactiveMode && isBrowserTool && !abortController.signal.aborted) {
-        console.log(
-          'Proactive mode: Capturing screenshots after browser tool call'
-        )
+        console.log('Proactive mode: Capturing screenshots after browser tool call')
 
         // Filter out old screenshots before adding new ones
         filterOldProactiveScreenshots(builder)
 
         // Capture new screenshots
-        const proactiveScreenshots =
-          await captureProactiveScreenshots(abortController)
+        const proactiveScreenshots = await captureProactiveScreenshots(abortController)
 
         // Add proactive screenshots to builder
         for (const screenshot of proactiveScreenshots) {
