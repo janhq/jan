@@ -44,10 +44,30 @@ export const APIs = {
       [proxy.route]: (args?: InvokeArgs) => {
         if (isPlatformTauri()) {
           // For Tauri platform, use the service hub to invoke commands
-          return getServiceHub().core().invoke(
-            proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase(),
-            args
-          )
+          const command = proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase()
+
+          // Backward-compatible shim for start_server: wrap args into { config }
+          if (command === 'start_server') {
+            // If already using new shape, pass through
+            if (args && 'config' in args) {
+              return getServiceHub().core().invoke(command, args)
+            }
+
+            const raw = (args || {}) as Record<string, unknown>
+            const config = {
+              host: raw.host,
+              port: raw.port,
+              prefix: raw.prefix,
+              api_key: (raw as any).api_key ?? (raw as any).apiKey,
+              trusted_hosts:
+                (raw as any).trusted_hosts ?? (raw as any).trustedHosts,
+              proxy_timeout:
+                (raw as any).proxy_timeout ?? (raw as any).proxyTimeout,
+            }
+            return getServiceHub().core().invoke(command, { config })
+          }
+
+          return getServiceHub().core().invoke(command, args)
         } else {
           // For Web platform, provide fallback implementations
           console.warn(`API call '${proxy.route}' not supported in web environment`, args)
