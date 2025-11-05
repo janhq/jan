@@ -1,4 +1,4 @@
-import { renderHook, act, waitFor } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MessageStatus, ContentType } from '@janhq/core'
 
@@ -387,7 +387,8 @@ describe('useChat', () => {
         await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      // Should be called twice: once with partial message (line 517-521), once after completion (line 689)
+      // When continuing, should call addAssistantMessage with the partial message content,
+      // and then again after completion
       const assistantCalls = mockCompletionMessagesBuilder.addAssistantMessage.mock.calls
       expect(assistantCalls.length).toBeGreaterThanOrEqual(1)
       // First call should be with the partial response content
@@ -420,8 +421,8 @@ describe('useChat', () => {
         await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      // The CompletionMessagesBuilder is called with filtered messages (line 507-512)
-      // The stopped message should be filtered out from the context
+      // When continuing, the CompletionMessagesBuilder should be called with messages
+      // that exclude the stopped message from the context
       expect(messagesLib.CompletionMessagesBuilder).toHaveBeenCalled()
       const builderCall = (messagesLib.CompletionMessagesBuilder as any).mock.calls[0]
       expect(builderCall[0]).toEqual([userMsg]) // stopped message filtered out
@@ -445,7 +446,7 @@ describe('useChat', () => {
         await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      // finalizeMessage is called at line 700-708, which should update the message
+      // When continuing, finalizeMessage should update the existing message
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',
@@ -480,9 +481,8 @@ describe('useChat', () => {
         await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      // The accumulated text should contain the previous content plus new content
-      // accumulatedTextRef starts with 'Partial response' (line 490)
-      // Then gets ' continued' appended (line 585)
+      // When continuing, the accumulated text should start with the previous partial content
+      // and append new content from the completion
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',
@@ -538,7 +538,7 @@ describe('useChat', () => {
         await result.current('', true, undefined, undefined, undefined, 'msg-123')
       })
 
-      // finalContent is created at line 678-683 with status Ready when continuing
+      // After continuation completes, the message status should be set to Ready
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',

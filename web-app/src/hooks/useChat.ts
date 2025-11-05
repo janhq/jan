@@ -99,7 +99,7 @@ const processStreamingCompletion = async (
   completion: AsyncIterable<any>,
   abortController: AbortController,
   activeThread: Thread,
-  accumulatedText: { value: string },
+  accumulatedTextRef: { value: string },
   toolCalls: ChatCompletionMessageToolCall[],
   currentCall: ChatCompletionMessageToolCall | null,
   updateStreamingContent: (content: ThreadMessage | undefined) => void,
@@ -121,7 +121,7 @@ const processStreamingCompletion = async (
   const flushStreamingContent = () => {
     const currentContent = createThreadContent(
       activeThread.id,
-      accumulatedText.value,
+      accumulatedTextRef.value,
       toolCalls,
       continueFromMessageId
     )
@@ -206,14 +206,14 @@ const processStreamingCompletion = async (
       }
       const deltaReasoning = reasoningProcessor.processReasoningChunk(part)
       if (deltaReasoning) {
-        accumulatedText.value += deltaReasoning
+        accumulatedTextRef.value += deltaReasoning
         pendingDeltaCount += 1
         // Schedule flush for reasoning updates
         scheduleFlush()
       }
       const deltaContent = part.choices[0]?.delta?.content || ''
       if (deltaContent) {
-        accumulatedText.value += deltaContent
+        accumulatedTextRef.value += deltaContent
         pendingDeltaCount += 1
         // Batch UI update on next animation frame
         scheduleFlush()
@@ -226,7 +226,7 @@ const processStreamingCompletion = async (
     rafScheduled = false
 
     // Finalize reasoning (close any open think tags)
-    accumulatedText.value += reasoningProcessor.finalize()
+    accumulatedTextRef.value += reasoningProcessor.finalize()
   }
 }
 
@@ -713,7 +713,7 @@ export const useChat = () => {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
               const newContent = (message?.content as string) || ''
-              if (continueFromMessageId && accumulatedTextRef.value) {
+              if (continueFromMessageId && accumulatedTextRef.value.length > 0) {
                 accumulatedTextRef.value += newContent
               } else {
                 accumulatedTextRef.value = newContent

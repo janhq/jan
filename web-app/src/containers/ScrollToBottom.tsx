@@ -1,5 +1,5 @@
 ﻿import { useThreadScrolling } from '@/hooks/useThreadScrolling'
-import { memo } from 'react'
+import { memo, useEffect } from 'react'
 import { GenerateResponseButton } from './GenerateResponseButton'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
@@ -51,15 +51,17 @@ const ScrollToBottom = ({
 
   const isModelMismatch = isPartialResponse && (currentModelMismatch || hasModelSwitchedFlag)
 
-  if (currentModelMismatch && !hasModelSwitchedFlag && partialMessage) {
-    updateMessage({
-      ...partialMessage,
-      metadata: {
-        ...partialMessage.metadata,
-        modelSwitched: true,
-      },
-    })
-  }
+  useEffect(() => {
+    if (currentModelMismatch && !hasModelSwitchedFlag && partialMessage) {
+      updateMessage({
+        ...partialMessage,
+        metadata: {
+          ...partialMessage.metadata,
+          modelSwitched: true,
+        },
+      })
+    }
+  }, [currentModelMismatch, hasModelSwitchedFlag, partialMessage, updateMessage])
 
   const showGenerateAIResponseBtn =
     ((messages[messages.length - 1]?.role === 'user' ||
