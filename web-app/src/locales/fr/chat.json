@@ -1,0 +1,12 @@
+{
+  "welcome": "Bonjour, comment allez-vous ?",
+  "description": "Comment puis-je vous aider aujourd'hui ?",
+  "temporaryChat": "Discussion temporaire",
+  "temporaryChatDescription": "Commencez une conversation temporaire qui ne sera pas sauvegardée dans votre historique de discussion.",
+  "status": {
+    "empty": "Aucune discussion trouvée"
+  },
+  "sendMessage": "Envoyer un message",
+  "newConversation": "Nouvelle conversation",
+  "clearHistory": "Effacer l'historique"
+}
