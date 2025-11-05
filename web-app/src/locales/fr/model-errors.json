@@ -1,0 +1,7 @@
+{
+  "title": "Erreur de contexte dépassé",
+  "description": "Cette discussion atteint la limite de mémoire de l'IA, comme un tableau blanc qui se remplit. Nous pouvons étendre la fenêtre de mémoire (appelée taille de contexte) pour qu'elle se souvienne de plus, mais cela peut utiliser plus de mémoire de votre ordinateur. Nous pouvons également tronquer l'entrée, ce qui signifie qu'elle oubliera une partie de l'historique de la discussion pour faire de la place aux nouveaux messages.",
+  "increaseContextSizeDescription": "Voulez-vous augmenter la taille du contexte ?",
+  "truncateInput": "Tronquer l'entrée",
+  "increaseContextSize": "Augmenter la taille du contexte"
+}
