@@ -285,74 +285,66 @@ export const useChat = () => {
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
-  const getCurrentThread = useCallback(
-    async (projectId?: string) => {
-      let currentThread = retrieveThread()
+  const getCurrentThread = useCallback(async (projectId?: string) => {
+    let currentThread = retrieveThread()
 
-      // Check if we're in temporary chat mode
-      const isTemporaryMode = window.location.search.includes(
-        `${TEMPORARY_CHAT_QUERY_ID}=true`
+    // Check if we're in temporary chat mode
+    const isTemporaryMode = window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
+
+    // Clear messages for existing temporary thread on reload to ensure fresh start
+    if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+      setMessages(TEMPORARY_CHAT_ID, [])
+    }
+
+    if (!currentThread) {
+      // Get prompt directly from store when needed
+      const currentPrompt = usePrompt.getState().prompt
+      const currentAssistant = useAssistant.getState().currentAssistant
+      const assistants = useAssistant.getState().assistants
+      const selectedModel = useModelProvider.getState().selectedModel
+      const selectedProvider = useModelProvider.getState().selectedProvider
+
+      // Get project metadata if projectId is provided
+      let projectMetadata: { id: string; name: string; updated_at: number } | undefined
+      if (projectId) {
+        const project = await serviceHub.projects().getProjectById(projectId)
+        if (project) {
+          projectMetadata = {
+            id: project.id,
+            name: project.name,
+            updated_at: project.updated_at,
+          }
+        }
+      }
+
+      currentThread = await createThread(
+        {
+          id: selectedModel?.id ?? defaultModel(selectedProvider),
+          provider: selectedProvider,
+        },
+        isTemporaryMode ? 'Temporary Chat' : currentPrompt,
+        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
+        projectMetadata,
+        isTemporaryMode // pass temporary flag
       )
 
-      // Clear messages for existing temporary thread on reload to ensure fresh start
+      // Clear messages for temporary chat to ensure fresh start on reload
       if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
         setMessages(TEMPORARY_CHAT_ID, [])
       }
 
-      if (!currentThread) {
-        // Get prompt directly from store when needed
-        const currentPrompt = usePrompt.getState().prompt
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const assistants = useAssistant.getState().assistants
-        const selectedModel = useModelProvider.getState().selectedModel
-        const selectedProvider = useModelProvider.getState().selectedProvider
-
-        // Get project metadata if projectId is provided
-        let projectMetadata:
-          | { id: string; name: string; updated_at: number }
-          | undefined
-        if (projectId) {
-          const project = await serviceHub.projects().getProjectById(projectId)
-          if (project) {
-            projectMetadata = {
-              id: project.id,
-              name: project.name,
-              updated_at: project.updated_at,
-            }
-          }
-        }
-
-        currentThread = await createThread(
-          {
-            id: selectedModel?.id ?? defaultModel(selectedProvider),
-            provider: selectedProvider,
-          },
-          isTemporaryMode ? 'Temporary Chat' : currentPrompt,
-          assistants.find((a) => a.id === currentAssistant?.id) ||
-            assistants[0],
-          projectMetadata,
-          isTemporaryMode // pass temporary flag
-        )
-
-        // Clear messages for temporary chat to ensure fresh start on reload
-        if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
-          setMessages(TEMPORARY_CHAT_ID, [])
-        }
-
-        // Set flag for temporary chat navigation
-        if (currentThread.id === TEMPORARY_CHAT_ID) {
-          sessionStorage.setItem('temp-chat-nav', 'true')
-        }
-
-        router.navigate({
-          to: route.threadsDetail,
-          params: { threadId: currentThread.id },
-        })
+      // Set flag for temporary chat navigation
+      if (currentThread.id === TEMPORARY_CHAT_ID) {
+        sessionStorage.setItem('temp-chat-nav', 'true')
       }
-      return currentThread
-    },
-    [createThread, retrieveThread, router, setMessages, serviceHub]
-  )
+
+      router.navigate({
+        to: route.threadsDetail,
+        params: { threadId: currentThread.id },
+      })
+    }
+    return currentThread
+  }, [createThread, retrieveThread, router, setMessages, serviceHub])
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
@@ -498,9 +490,7 @@ export const useChat = () => {
               updateAttachmentProcessing(img.name, 'processing')
             }
             // Upload image, get id/URL
-            const res = await serviceHub
-              .uploads()
-              .ingestImage(activeThread.id, img)
+            const res = await serviceHub.uploads().ingestImage(activeThread.id, img)
             processedAttachments.push({
               ...img,
               id: res.id,
@@ -516,9 +506,7 @@ export const useChat = () => {
               updateAttachmentProcessing(img.name, 'error')
             }
             const desc = err instanceof Error ? err.message : String(err)
-            toast.error('Failed to ingest image attachment', {
-              description: desc,
-            })
+            toast.error('Failed to ingest image attachment', { description: desc })
             return
           }
         }
@@ -680,17 +668,10 @@ export const useChat = () => {
           (selectedModel?.capabilities?.includes('proactive') ?? false)
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
-        if (
-          isProactiveMode &&
-          availableTools.length > 0 &&
-          !abortController.signal.aborted
-        ) {
-          console.log(
-            'Proactive mode: Capturing initial screenshots before LLM call'
-          )
+        if (isProactiveMode && availableTools.length > 0 && !abortController.signal.aborted) {
+          console.log('Proactive mode: Capturing initial screenshots before LLM call')
           try {
-            const initialScreenshots =
-              await captureProactiveScreenshots(abortController)
+            const initialScreenshots = await captureProactiveScreenshots(abortController)
 
             // Add initial screenshots to builder
             for (const screenshot of initialScreenshots) {
