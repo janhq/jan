@@ -200,9 +200,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
   }),
 }))
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn(),
-}))
+// Add tests for rfd dialog
+// vi.mock('@tauri-apps/plugin-dialog', () => ({
+//   open: vi.fn(),
+// }))
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: vi.fn(),
