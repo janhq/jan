@@ -21,7 +21,6 @@
     "os:default",
     "opener:default",
     "log:default",
-    "dialog:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
     "store:default",
@@ -30,7 +29,6 @@
     "llamacpp:default",
     "deep-link:default",
     "hardware:default",
-
     {
       "identifier": "http:default",
       "allow": [
