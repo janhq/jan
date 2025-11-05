@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
+import { predefinedProviders } from '@/consts/providers'
 
 type SearchParams = {
   'model'?: {
@@ -56,12 +57,24 @@ function Index() {
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
-  const hasValidProviders = providers.some(
-    (provider) =>
+  // Custom providers (not in predefinedProviders) don't require api_key but need models
+  const hasValidProviders = providers.some((provider) => {
+    const isPredefinedProvider = predefinedProviders.some(
+      (p) => p.provider === provider.provider
+    )
+
+    // Custom providers don't need API key validation but must have models
+    if (!isPredefinedProvider) {
+      return provider.models.length > 0
+    }
+
+    // Predefined providers need either API key or models (for llamacpp/jan)
+    return (
       provider.api_key?.length ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
-  )
+    )
+  })
 
   useEffect(() => {
     setCurrentThreadId(undefined)
@@ -75,7 +88,9 @@ function Index() {
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && <DropdownAssistant />}
+          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
+            <DropdownAssistant />
+          )}
         </div>
       </HeaderPage>
       <div
