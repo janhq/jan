@@ -78,6 +78,8 @@
   "image": "Image",
   "vision": "Vision",
   "embeddings": "Embeddings",
+  "playTTS": "Play TTS",
+  "stopTTS": "Stop TTS",
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",

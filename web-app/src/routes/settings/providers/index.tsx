@@ -93,7 +93,7 @@ function ModelProviders() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Model Providers */}
+            
             <Card
               header={
                 <div className="flex items-center justify-between w-full mb-6">

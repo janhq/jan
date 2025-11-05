@@ -5,6 +5,7 @@ import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
+import { TTSButton } from '@/containers/TTSButton'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
@@ -26,8 +27,6 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { extractFilesFromPrompt } from '@/lib/fileMetadata'
-import { createImageAttachment } from '@/types/attachment'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -104,14 +103,6 @@ export const ThreadContent = memo(
       [item.content]
     )
 
-    // Extract file metadata from user message text
-    const { files: attachedFiles, cleanPrompt } = useMemo(() => {
-      if (item.role === 'user') {
-        return extractFilesFromPrompt(text)
-      }
-      return { files: [], cleanPrompt: text }
-    }, [text, item.role])
-
     const { reasoningSegment, textSegment } = useMemo(() => {
       // Check for thinking formats
       const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
@@ -163,9 +154,9 @@ export const ThreadContent = memo(
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         // Extract text content and any attachments
-        const rawText =
-          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value || ''
-        const { cleanPrompt: textContent } = extractFilesFromPrompt(rawText)
+        const textContent =
+          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
+          ''
         const attachments = toSendMessage.content
           ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
           .map((c) => {
@@ -174,18 +165,23 @@ export const ThreadContent = memo(
               const [mimeType, base64] = url
                 .replace('data:', '')
                 .split(';base64,')
-              return createImageAttachment({
-                name: 'image', // Original filename unavailable
-                mimeType,
-                size: 0,
+              return {
+                name: 'image', // We don't have the original filename
+                type: mimeType,
+                size: 0, // We don't have the original size
                 base64: base64,
                 dataUrl: url,
-              })
+              }
             }
             return null
           })
-          .filter((v) => v !== null)
-        // Keep embedded document metadata in the message for regenerate
+          .filter(Boolean) as Array<{
+          name: string
+          type: string
+          size: number
+          base64: string
+          dataUrl: string
+        }>
         sendMessage(textContent, true, attachments)
       }
     }, [deleteMessage, getMessages, item, sendMessage])
@@ -230,56 +226,7 @@ export const ThreadContent = memo(
       <Fragment>
         {item.role === 'user' && (
           <div className="w-full">
-            {/* Render text content in the message bubble */}
-            {cleanPrompt && (
-              <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
-                <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
-                  <div className="select-text">
-                    <RenderMarkdown
-                      content={cleanPrompt}
-                      components={linkComponents}
-                      isUser
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Render document file attachments (extracted from message text) - below text */}
-            {attachedFiles.length > 0 && (
-              <div className="flex justify-end w-full mt-2 mb-2">
-                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                  {attachedFiles.map((file, index) => (
-                    <div
-                      key={file.id || index}
-                      className="flex items-center gap-2 px-3 py-2 bg-main-view-fg/5 rounded-md border border-main-view-fg/10 text-xs"
-                    >
-                      <svg
-                        className="w-4 h-4 text-main-view-fg/50"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <span className="text-main-view-fg">{file.name}</span>
-                      {file.type && (
-                        <span className="text-main-view-fg/40 text-[10px]">
-                          .{file.type}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Render image attachments - below files */}
+            {/* Render attachments above the message bubble */}
             {item.content?.some(
               (c) => (c.type === 'image_url' && c.image_url?.url) || false
             ) && (
@@ -312,9 +259,33 @@ export const ThreadContent = memo(
               </div>
             )}
 
+            {/* Render text content in the message bubble */}
+            {item.content?.some((c) => c.type === 'text' && c.text?.value) && (
+              <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
+                <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
+                  <div className="select-text">
+                    {item.content
+                      ?.filter((c) => c.type === 'text' && c.text?.value)
+                      .map((contentPart, index) => (
+                        <div key={index}>
+                          <RenderMarkdown
+                            content={contentPart.text!.value}
+                            components={linkComponents}
+                            isUser
+                          />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditMessageDialog
-                message={cleanPrompt || ''}
+                message={
+                  item.content?.find((c) => c.type === 'text')?.text?.value ||
+                  ''
+                }
                 imageUrls={
                   item.content
                     ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
@@ -417,6 +388,7 @@ export const ThreadContent = memo(
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <DeleteMessageDialog onDelete={removeMessage} />
                     <MessageMetadataDialog metadata={item.metadata} />
+                    <TTSButton text={item.content?.[0]?.text.value || ''} />
 
                     {item.isLastMessage && selectedModel && (
                       <Tooltip>
