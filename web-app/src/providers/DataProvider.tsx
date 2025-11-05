@@ -3,7 +3,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
-import { useMCPServers } from '@/hooks/useMCPServers'
+import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -19,7 +19,7 @@ export function DataProvider() {
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
-  const { setServers } = useMCPServers()
+  const { setServers, setSettings } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
@@ -46,7 +46,10 @@ export function DataProvider() {
     serviceHub
       .mcp()
       .getMCPConfig()
-      .then((data) => setServers(data.mcpServers ?? {}))
+      .then((data) => {
+        setServers(data.mcpServers ?? {})
+        setSettings(data.mcpSettings ?? DEFAULT_MCP_SETTINGS)
+      })
     serviceHub
       .assistants()
       .getAssistants()

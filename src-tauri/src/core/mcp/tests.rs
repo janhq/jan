@@ -1,17 +1,24 @@
 use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
 use crate::core::app::commands::get_jan_data_folder_path;
-use crate::core::state::SharedMcpServers;
+use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::test::mock_app;
+use tauri::{test::mock_app, Manager};
 use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn test_run_mcp_commands() {
     let app = mock_app();
+
+    // Register AppState so state::<AppState>() calls succeed
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
 
     // Get the app path where the config should be created
     let app_path = get_jan_data_folder_path(app.handle().clone());
@@ -28,7 +35,6 @@ async fn test_run_mcp_commands() {
         .expect("Failed to write to config file");
 
     // Call the run_mcp_commands function
-    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
     let result = run_mcp_commands(app.handle(), servers_state).await;
 
     // Assert that the function returns Ok(())

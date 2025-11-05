@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::core::downloads::models::DownloadManagerState;
+use crate::core::{downloads::models::DownloadManagerState, mcp::models::McpSettings};
 use rmcp::{
     model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
     service::RunningService,
@@ -28,6 +28,7 @@ pub struct AppState {
     pub mcp_successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    pub mcp_settings: Arc<Mutex<McpSettings>>,
 }
 
 impl RunningServiceEnum {
