@@ -137,6 +137,7 @@
   "enterApiKey": "Enter API Key",
   "scrollToBottom": "Scroll to bottom",
   "generateAiResponse": "Generate AI Response",
+  "continueAiResponse": "Continue with AI Response",
   "addModel": {
     "title": "Add Model",
     "modelId": "Model ID",
