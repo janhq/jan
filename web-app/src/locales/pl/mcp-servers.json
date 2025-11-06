@@ -43,5 +43,11 @@
   "args": "Argumenty",
   "env": "Zmienne Środowiskowe",
   "serverStatusActive": "Pomyślnie aktywowano serwer {{serverKey}}",
-  "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}"
+  "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}",
+  "runtimeSettings": {
+    "title": "Ustawienia środowiska uruchomieniowego",
+    "description": "Skonfiguruj, jak Jan zarządza i ponawia próby połączenia z serwerami MCP.",
+    "toolCallTimeout": "Limit czasu wywołania narzędzia (sekundy)",
+    "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu."
+  }
 }

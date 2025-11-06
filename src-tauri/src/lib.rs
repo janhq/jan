@@ -2,7 +2,7 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
-    mcp::helpers::clean_up_mcp_servers,
+    mcp::{helpers::clean_up_mcp_servers, models::McpSettings},
     setup::{self, setup_mcp},
     state::AppState,
 };
@@ -124,6 +124,7 @@ pub fn run() {
             mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
         })
         .setup(|app| {
             app.handle().plugin(

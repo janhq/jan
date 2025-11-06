@@ -1,19 +1,31 @@
 use rmcp::model::{CallToolRequestParam, CallToolResult};
-use serde_json::{Map, Value};
-use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::time::timeout;
+use serde_json::{json, Map, Value};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio::sync::oneshot;
+use tokio::time::timeout;
 
 use super::{
-    constants::{DEFAULT_MCP_CONFIG, MCP_TOOL_CALL_TIMEOUT},
+    constants::DEFAULT_MCP_CONFIG,
     helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
 };
-use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
+use crate::core::{
+    app::commands::get_jan_data_folder_path,
+    mcp::models::McpSettings,
+    state::AppState,
+};
 use crate::core::{
     mcp::models::ToolWithServer,
     state::{RunningServiceEnum, SharedMcpServers},
 };
-use std::fs;
+use std::{fs, time::Duration};
+
+async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
+    state
+        .mcp_settings
+        .lock()
+        .await
+        .tool_call_timeout_duration()
+}
 
 #[tauri::command]
 pub async fn activate_mcp_server<R: Runtime>(
@@ -142,18 +154,19 @@ pub async fn get_connected_servers(
 /// 6. Returns the combined list of all available tools with server information
 #[tauri::command]
 pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>, String> {
+    let timeout_duration = tool_call_timeout(&state).await;
     let servers = state.mcp_servers.lock().await;
     let mut all_tools: Vec<ToolWithServer> = Vec::new();
 
     for (server_name, service) in servers.iter() {
         // List tools with timeout
         let tools_future = service.list_all_tools();
-        let tools = match timeout(MCP_TOOL_CALL_TIMEOUT, tools_future).await {
+        let tools = match timeout(timeout_duration, tools_future).await {
             Ok(result) => result.map_err(|e| e.to_string())?,
             Err(_) => {
                 log::warn!(
                     "Listing tools timed out after {} seconds",
-                    MCP_TOOL_CALL_TIMEOUT.as_secs()
+                    timeout_duration.as_secs()
                 );
                 continue; // Skip this server and continue with others
             }
@@ -196,6 +209,7 @@ pub async fn call_tool(
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
+    let timeout_duration = tool_call_timeout(&state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
     
@@ -228,12 +242,12 @@ pub async fn call_tool(
         // Race between timeout, tool call, and cancellation
         let result = if cancellation_token.is_some() {
             tokio::select! {
-                result = timeout(MCP_TOOL_CALL_TIMEOUT, tool_call) => {
+                result = timeout(timeout_duration, tool_call) => {
                     match result {
                         Ok(call_result) => call_result.map_err(|e| e.to_string()),
                         Err(_) => Err(format!(
                             "Tool call '{tool_name}' timed out after {} seconds",
-                            MCP_TOOL_CALL_TIMEOUT.as_secs()
+                            timeout_duration.as_secs()
                         )),
                     }
                 }
@@ -242,11 +256,11 @@ pub async fn call_tool(
                 }
             }
         } else {
-            match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
+            match timeout(timeout_duration, tool_call).await {
                 Ok(call_result) => call_result.map_err(|e| e.to_string()),
                 Err(_) => Err(format!(
                     "Tool call '{tool_name}' timed out after {} seconds",
-                    MCP_TOOL_CALL_TIMEOUT.as_secs()
+                    timeout_duration.as_secs()
                 )),
             }
         };
@@ -288,9 +302,15 @@ pub async fn cancel_tool_call(
     }
 }
 
+fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
+    value
+        .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    let mut path = get_jan_data_folder_path(app);
+    let mut path = get_jan_data_folder_path(app.clone());
     path.push("mcp_config.json");
 
     // Create default empty config if file doesn't exist
@@ -300,14 +320,99 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
             .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
     }
 
-    fs::read_to_string(path).map_err(|e| e.to_string())
+    let config_string = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    let mut config_value: Value = if config_string.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&config_string).unwrap_or_else(|error| {
+            log::error!("Failed to parse existing MCP config, regenerating defaults: {error}");
+            json!({})
+        })
+    };
+
+    if !config_value.is_object() {
+        config_value = json!({});
+    }
+
+    let mut mutated = false;
+    let config_object = config_value.as_object_mut().unwrap();
+
+    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
+    if !config_object.contains_key("mcpSettings") {
+        config_object.insert(
+            "mcpSettings".to_string(),
+            serde_json::to_value(&settings)
+                .map_err(|e| format!("Failed to serialize MCP settings: {e}"))?,
+        );
+        mutated = true;
+    }
+
+    if !config_object.contains_key("mcpServers") {
+        config_object.insert("mcpServers".to_string(), json!({}));
+        mutated = true;
+    }
+
+    // Persist any mutations back to disk
+    if mutated {
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&config_value)
+                .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+        )
+        .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+    }
+
+    // Update in-memory state with latest settings
+    {
+        let state = app.state::<AppState>();
+        let mut settings_guard = state.mcp_settings.lock().await;
+        *settings_guard = settings.clone();
+    }
+
+    serde_json::to_string_pretty(&config_value)
+        .map_err(|e| format!("Failed to serialize MCP config: {e}"))
 }
 
 #[tauri::command]
 pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
-    let mut path = get_jan_data_folder_path(app);
+    let mut path = get_jan_data_folder_path(app.clone());
     path.push("mcp_config.json");
     log::info!("save mcp configs, path: {path:?}");
 
-    fs::write(path, configs).map_err(|e| e.to_string())
+    let mut config_value: Value = serde_json::from_str(&configs)
+        .map_err(|e| format!("Invalid MCP config payload: {e}"))?;
+
+    if !config_value.is_object() {
+        return Err("MCP config must be a JSON object".to_string());
+    }
+
+    let config_object = config_value.as_object_mut().unwrap();
+    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
+
+    if !config_object.contains_key("mcpSettings") {
+        config_object.insert(
+            "mcpSettings".to_string(),
+            serde_json::to_value(&settings).expect("Failed to serialize MCP settings"),
+        );
+    }
+
+    if !config_object.contains_key("mcpServers") {
+        config_object.insert("mcpServers".to_string(), json!({}));
+    }
+
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&config_value)
+            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    {
+        let state = app.state::<AppState>();
+        let mut settings_guard = state.mcp_settings.lock().await;
+        *settings_guard = settings;
+    }
+
+    Ok(())
 }
