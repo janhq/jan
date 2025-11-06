@@ -40,6 +40,8 @@ import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { Attachment } from '@/types/attachment'
 
 // Helper to create thread content with consistent structure
@@ -466,8 +468,14 @@ export const useChat = () => {
       if (!activeThread || !activeProvider) return
 
       // Separate images and documents
-      const images = attachments?.filter((a) => a.type === 'image') || []
-      const documents = attachments?.filter((a) => a.type === 'document') || []
+      const fileAttachmentsFeatureEnabled =
+        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+      const allAttachments = attachments ?? []
+
+      const images = allAttachments.filter((a) => a.type === 'image')
+      const documents = fileAttachmentsFeatureEnabled
+        ? allAttachments.filter((a) => a.type === 'document')
+        : []
 
       // Process attachments BEFORE sending
       const processedAttachments: Attachment[] = []

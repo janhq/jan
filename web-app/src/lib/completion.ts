@@ -251,7 +251,7 @@ export const sendCompletion = async (
     const attachmentsEnabled = useAttachments.getState().enabled
     if (
       attachmentsEnabled &&
-      PlatformFeatures[PlatformFeature.ATTACHMENTS] &&
+      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS] &&
       modelSupportsTools
     ) {
       const ragTools = await getServiceHub().rag().getTools().catch(() => [])
@@ -546,7 +546,8 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled &&
+      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
