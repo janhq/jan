@@ -468,8 +468,14 @@ export const useChat = () => {
       if (!activeThread || !activeProvider) return
 
       // Separate images and documents
-      const images = attachments?.filter((a) => a.type === 'image') || []
-      const documents = attachments?.filter((a) => a.type === 'document') || []
+      const fileAttachmentsFeatureEnabled =
+        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+      const allAttachments = attachments ?? []
+
+      const images = allAttachments.filter((a) => a.type === 'image')
+      const documents = fileAttachmentsFeatureEnabled
+        ? allAttachments.filter((a) => a.type === 'document')
+        : []
 
       // Process attachments BEFORE sending
       const processedAttachments: Attachment[] = []
@@ -649,7 +655,7 @@ export const useChat = () => {
         // Conditionally inject RAG if tools are supported and documents are attached
         const ragFeatureAvailable =
           useAttachments.getState().enabled &&
-          PlatformFeatures[PlatformFeature.ATTACHMENTS]
+          PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
         // Check if documents were attached in the current thread
         const hasDocuments = useThreads.getState().getThreadById(activeThread.id)?.metadata?.hasDocuments
         if (hasDocuments && ragFeatureAvailable) {

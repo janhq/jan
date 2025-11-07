@@ -529,7 +529,8 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled &&
+      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
