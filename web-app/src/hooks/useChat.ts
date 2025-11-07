@@ -25,7 +25,9 @@ import {
   CompletionUsage,
 } from 'openai/resources'
 import { MessageStatus, ContentType, ThreadMessage } from '@janhq/core'
-
+import { useAttachments } from '@/hooks/useAttachments'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -551,6 +553,11 @@ export const useChat = () => {
               throw err // Re-throw to handle in outer catch
             }
           }
+          // Update thread since documents attached
+          useThreads.getState().updateThread(activeThread.id, {
+            metadata: { hasDocuments: true },
+          })
+
         } catch (err) {
           console.error('Failed to ingest documents:', err)
           const desc = err instanceof Error ? err.message : String(err)
@@ -638,6 +645,27 @@ export const useChat = () => {
               return !disabledTools.includes(tool.name)
             })
           : []
+
+        // Conditionally inject RAG if tools are supported and documents are attached
+        const ragFeatureAvailable =
+          useAttachments.getState().enabled &&
+          PlatformFeatures[PlatformFeature.ATTACHMENTS]
+        // Check if documents were attached in the current thread
+        const hasDocuments = useThreads.getState().getThreadById(activeThread.id)?.metadata?.hasDocuments
+        if (hasDocuments && ragFeatureAvailable) {
+          try {
+            const ragTools = await serviceHub
+              .rag()
+              .getTools()
+              .catch(() => [])
+            if (Array.isArray(ragTools) && ragTools.length) {
+              availableTools = [...availableTools, ...ragTools]
+              console.log('RAG tools injected for completion.')
+            }
+          } catch (e) {
+            console.warn('Failed to inject RAG tools:', e)
+          }
+        }
 
         // Check if proactive mode is enabled
         const isProactiveMode =
