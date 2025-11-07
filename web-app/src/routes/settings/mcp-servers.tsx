@@ -30,6 +30,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
