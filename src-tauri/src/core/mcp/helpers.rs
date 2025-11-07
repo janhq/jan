@@ -754,7 +754,7 @@ fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
             "server": name
         }),
     ) {
-        log::error!("Failed to emit mcp_server_started event: {e}");
+        log::error!("Failed to emit mcp-update event: {e}");
     }
 }
 
