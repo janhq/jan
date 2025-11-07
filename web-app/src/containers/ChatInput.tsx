@@ -113,7 +113,7 @@ const ChatInput = ({
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
-    attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+    attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
   // Derived: any document currently processing (ingestion in progress)
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
@@ -327,6 +327,10 @@ const ChatInput = ({
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
+        return
+      }
+      if (!PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]) {
+        toast.info('File attachments are unavailable on this platform')
         return
       }
       const selection = await serviceHub.dialog().open({

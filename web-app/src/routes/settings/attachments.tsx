@@ -147,7 +147,7 @@ function AttachmentsSettings() {
   }, [sel])
 
   return (
-    <PlatformGuard feature={PlatformFeature.ATTACHMENTS}>
+    <PlatformGuard feature={PlatformFeature.FILE_ATTACHMENTS}>
       <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
         <HeaderPage>
           <h1 className="font-medium">{t('common:settings')}</h1>
