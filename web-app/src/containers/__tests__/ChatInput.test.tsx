@@ -111,6 +111,7 @@ const mockGetConnectedServers = vi.fn(() => Promise.resolve(['server1']))
 const mockGetTools = vi.fn(() => Promise.resolve([]))
 const mockStopAllModels = vi.fn()
 const mockCheckMmprojExists = vi.fn(() => Promise.resolve(true))
+const mockGetActiveModels = vi.fn(() => Promise.resolve([]))
 
 const mockListen = vi.fn(() => Promise.resolve(() => {}))
 
@@ -122,6 +123,7 @@ const mockServiceHub = {
   models: () => ({
     stopAllModels: mockStopAllModels,
     checkMmprojExists: mockCheckMmprojExists,
+    getActiveModels: mockGetActiveModels,
   }),
   events: () => ({
     listen: mockListen,

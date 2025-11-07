@@ -4,7 +4,7 @@ import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
-type PromptProgress = {
+export type PromptProgress = {
   cache: number
   processed: number
   time_ms: number

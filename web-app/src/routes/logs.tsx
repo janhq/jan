@@ -83,7 +83,13 @@ function LogsViewer() {
   // Format timestamp to be more readable
   const formatTimestamp = (timestamp: string | number) => {
     const date = new Date(timestamp)
-    return date.toLocaleTimeString()
+    return date.toLocaleTimeString('en-US', {
+      hour12: false,
+      timeZone: 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
   }
 
   return (

@@ -43,5 +43,11 @@
   "args": "Args",
   "env": "Env",
   "serverStatusActive": "Server {{serverKey}} activated successfully",
-  "serverStatusInactive": "Server {{serverKey}} deactivated successfully"
+  "serverStatusInactive": "Server {{serverKey}} deactivated successfully",
+  "runtimeSettings": {
+    "title": "Runtime Settings",
+    "description": "Configure how Jan manages and retries MCP servers.",
+    "toolCallTimeout": "Tool call timeout (seconds)",
+    "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out."
+  }
 }

@@ -43,5 +43,11 @@
   "args": "引数",
   "env": "環境変数",
   "serverStatusActive": "サーバー {{serverKey}} が正常にアクティブ化されました",
-  "serverStatusInactive": "サーバー {{serverKey}} が正常に非アクティブ化されました"
+  "serverStatusInactive": "サーバー {{serverKey}} が正常に非アクティブ化されました",
+  "runtimeSettings": {
+    "title": "ランタイム設定",
+    "description": "JanがMCPサーバーを管理し再試行する方法を設定します。",
+    "toolCallTimeout": "ツール呼び出しタイムアウト（秒）",
+    "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。"
+  }
 }
