@@ -116,7 +116,7 @@ jobs:
         build-linux-x64,
         build-macos,
       ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Getting the repo
