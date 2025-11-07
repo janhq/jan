@@ -357,12 +357,12 @@ function MCPServersDesktop() {
     serviceHub.mcp().getConnectedServers().then(setConnectedServers)
 
     let unlisten: (() => void) | undefined
-    const setupListenner = async () => {
+    const setupListener = async () => {
       unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
         serviceHub.mcp().getConnectedServers().then(setConnectedServers)
       })
     }
-    setupListenner()
+    setupListener()
 
     return () => {
       unlisten?.()
