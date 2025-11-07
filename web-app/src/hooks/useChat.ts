@@ -42,8 +42,6 @@ import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { Attachment } from '@/types/attachment'
 
 // Helper to create thread content with consistent structure
@@ -657,7 +655,7 @@ export const useChat = () => {
         // Conditionally inject RAG if tools are supported and documents are attached
         const ragFeatureAvailable =
           useAttachments.getState().enabled &&
-          PlatformFeatures[PlatformFeature.ATTACHMENTS]
+          PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
         // Check if documents were attached in the current thread
         const hasDocuments = useThreads.getState().getThreadById(activeThread.id)?.metadata?.hasDocuments
         if (hasDocuments && ragFeatureAvailable) {
