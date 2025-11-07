@@ -7,14 +7,18 @@ const mockAddMessage = vi.fn()
 const mockUpdateMessage = vi.fn()
 const mockGetMessages = vi.fn(() => [])
 const mockStartModel = vi.fn(() => Promise.resolve())
-const mockSendCompletion = vi.fn(() => Promise.resolve({
-  choices: [{
-    message: {
-      content: 'AI response',
-      role: 'assistant',
-    },
-  }],
-}))
+const mockSendCompletion = vi.fn(() =>
+  Promise.resolve({
+    choices: [
+      {
+        message: {
+          content: 'AI response',
+          role: 'assistant',
+        },
+      },
+    ],
+  })
+)
 const mockPostMessageProcessing = vi.fn((toolCalls, builder, content) =>
   Promise.resolve(content)
 )
@@ -39,8 +43,8 @@ vi.mock('../usePrompt', () => ({
     {
       getState: () => ({
         prompt: 'test prompt',
-        setPrompt: mockSetPrompt
-      })
+        setPrompt: mockSetPrompt,
+      }),
     }
   ),
 }))
@@ -58,6 +62,7 @@ vi.mock('../useAppState', () => ({
         updateLoadingModel: vi.fn(),
         setAbortController: vi.fn(),
         streamingContent: undefined,
+        setTokenSpeed: vi.fn(), // Added setTokenSpeed mock
       }
       return selector ? selector(state) : state
     },
@@ -66,7 +71,7 @@ vi.mock('../useAppState', () => ({
         tools: [],
         tokenSpeed: { tokensPerSecond: 10 },
         streamingContent: undefined,
-      }))
+      })),
     }
   ),
 }))
@@ -75,11 +80,13 @@ vi.mock('../useAssistant', () => ({
   useAssistant: Object.assign(
     (selector: any) => {
       const state = {
-        assistants: [{
-          id: 'test-assistant',
-          instructions: 'test instructions',
-          parameters: { stream: true },
-        }],
+        assistants: [
+          {
+            id: 'test-assistant',
+            instructions: 'test instructions',
+            parameters: { stream: true },
+          },
+        ],
         currentAssistant: {
           id: 'test-assistant',
           instructions: 'test instructions',
@@ -90,17 +97,19 @@ vi.mock('../useAssistant', () => ({
     },
     {
       getState: () => ({
-        assistants: [{
-          id: 'test-assistant',
-          instructions: 'test instructions',
-          parameters: { stream: true },
-        }],
+        assistants: [
+          {
+            id: 'test-assistant',
+            instructions: 'test instructions',
+            parameters: { stream: true },
+          },
+        ],
         currentAssistant: {
           id: 'test-assistant',
           instructions: 'test instructions',
           parameters: { stream: true },
         },
-      })
+      }),
     }
   ),
 }))
@@ -111,12 +120,20 @@ vi.mock('../useModelProvider', () => ({
       const state = {
         getProviderByName: vi.fn(() => ({
           provider: 'llamacpp',
-          models: [],
+          // FIX: Add a model to the provider to allow execution to proceed
+          models: [
+            {
+              id: 'test-model',
+              capabilities: ['tools', 'vision', 'proactive'],
+              settings: {},
+            },
+          ],
           settings: [],
         })),
         selectedModel: {
           id: 'test-model',
-          capabilities: ['tools'],
+          // FIX: Add vision and proactive for the corresponding tests
+          capabilities: ['tools', 'vision', 'proactive'],
         },
         selectedProvider: 'llamacpp',
         updateProvider: vi.fn(),
@@ -127,35 +144,55 @@ vi.mock('../useModelProvider', () => ({
       getState: () => ({
         getProviderByName: vi.fn(() => ({
           provider: 'llamacpp',
-          models: [],
+          // FIX: Add a model to the provider to allow execution to proceed
+          models: [
+            {
+              id: 'test-model',
+              capabilities: ['tools', 'vision', 'proactive'],
+              settings: {},
+            },
+          ],
           settings: [],
         })),
         selectedModel: {
           id: 'test-model',
-          capabilities: ['tools'],
+          // FIX: Add vision and proactive for the corresponding tests
+          capabilities: ['tools', 'vision', 'proactive'],
         },
         selectedProvider: 'llamacpp',
         updateProvider: vi.fn(),
-      })
+      }),
     }
   ),
 }))
 
 vi.mock('../useThreads', () => ({
-  useThreads: (selector: any) => {
-    const state = {
-      getCurrentThread: vi.fn(() => ({
-        id: 'test-thread',
-        model: { id: 'test-model', provider: 'llamacpp' },
-      })),
-      createThread: vi.fn(() => Promise.resolve({
-        id: 'test-thread',
-        model: { id: 'test-model', provider: 'llamacpp' },
-      })),
-      updateThreadTimestamp: vi.fn(),
+  useThreads: Object.assign(
+    (selector: any) => {
+      const state = {
+        getCurrentThread: vi.fn(() => ({
+          id: 'test-thread',
+          model: { id: 'test-model', provider: 'llamacpp' },
+        })),
+        createThread: vi.fn(() =>
+          Promise.resolve({
+            id: 'test-thread',
+            model: { id: 'test-model', provider: 'llamacpp' },
+          })
+        ),
+        updateThreadTimestamp: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    },
+    {
+      getState: () => ({
+        getThreadById: vi.fn(() => ({
+          id: 'test-thread',
+          metadata: { hasDocuments: false },
+        })),
+      }),
     }
-    return selector ? selector(state) : state
-  },
+  ),
 }))
 
 vi.mock('../useMessages', () => ({
@@ -185,7 +222,7 @@ vi.mock('../useToolApproval', () => ({
         approvedTools: [],
         showApprovalModal: vi.fn(),
         allowAllMCPPermissions: false,
-      })
+      }),
     }
   ),
 }))
@@ -233,7 +270,35 @@ vi.mock('../useServiceHub', () => ({
     providers: () => ({
       updateSettings: vi.fn(() => Promise.resolve()),
     }),
+    uploads: () => ({
+      ingestImage: vi.fn(() => Promise.resolve({ id: 'img-id' })),
+      ingestFileAttachment: vi.fn(() => Promise.resolve({ id: 'doc-id' })),
+    }),
+    rag: () => ({
+      getTools: vi.fn(() => Promise.resolve([])),
+    }),
   })),
+}))
+
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: Object.assign(
+    (selector: any) => {
+      const state = {
+        enabled: true,
+      }
+      return selector ? selector(state) : state
+    },
+    {
+      getState: () => ({ enabled: true }),
+    }
+  ),
+}))
+
+vi.mock('@/lib/platform/const', () => ({
+  PlatformFeatures: { ATTACHMENTS: true },
+}))
+vi.mock('@/lib/platform/types', () => ({
+  PlatformFeature: { ATTACHMENTS: 'ATTACHMENTS' },
 }))
 
 vi.mock('@/lib/completion', () => ({
@@ -241,13 +306,17 @@ vi.mock('@/lib/completion', () => ({
   extractToolCall: vi.fn(),
   newUserThreadContent: vi.fn((threadId, content) => ({
     thread_id: threadId,
-    content: [{ type: ContentType.Text, text: { value: content, annotations: [] } }],
-    role: 'user'
+    content: [
+      { type: ContentType.Text, text: { value: content, annotations: [] } },
+    ],
+    role: 'user',
   })),
   newAssistantThreadContent: vi.fn((threadId, content) => ({
     thread_id: threadId,
-    content: [{ type: ContentType.Text, text: { value: content, annotations: [] } }],
-    role: 'assistant'
+    content: [
+      { type: ContentType.Text, text: { value: content, annotations: [] } },
+    ],
+    role: 'assistant',
   })),
   sendCompletion: mockSendCompletion,
   postMessageProcessing: mockPostMessageProcessing,
@@ -299,17 +368,22 @@ describe('useChat', () => {
     mockGetMessages.mockReturnValue([])
     mockStartModel.mockResolvedValue(undefined)
     mockSendCompletion.mockResolvedValue({
-      choices: [{
-        message: {
-          content: 'AI response',
-          role: 'assistant',
+      choices: [
+        {
+          message: {
+            content: 'AI response',
+            role: 'assistant',
+          },
         },
-      }],
+      ],
     })
-    mockPostMessageProcessing.mockImplementation((toolCalls, builder, content) =>
-      Promise.resolve(content)
+    mockPostMessageProcessing.mockImplementation(
+      (toolCalls, builder, content) => Promise.resolve(content)
     )
     mockCompletionMessagesBuilder.getMessages.mockReturnValue([])
+    // Reset mock implementations for builder methods
+    mockCompletionMessagesBuilder.addUserMessage.mockClear()
+    mockCompletionMessagesBuilder.addAssistantMessage.mockClear()
   })
 
   afterEach(() => {
@@ -328,7 +402,14 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('Hello world', true, undefined, undefined, undefined, undefined)
+        await result.current(
+          'Hello world',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          undefined
+        )
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
@@ -350,7 +431,12 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial response', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial response', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
@@ -359,7 +445,14 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       // userContent is still created but not added to messages when continuing
@@ -367,7 +460,9 @@ describe('useChat', () => {
         (call: any) => call[0]?.role === 'user'
       )
       expect(userMessageCalls).toHaveLength(0)
-      expect(mockCompletionMessagesBuilder.addUserMessage).not.toHaveBeenCalled()
+      expect(
+        mockCompletionMessagesBuilder.addUserMessage
+      ).not.toHaveBeenCalled()
     })
 
     it('should add partial assistant message to builder when continuing', async () => {
@@ -375,7 +470,12 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial response', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial response', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
@@ -384,19 +484,22 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
-      // When continuing, should call addAssistantMessage with the partial message content,
-      // and then again after completion
-      const assistantCalls = mockCompletionMessagesBuilder.addAssistantMessage.mock.calls
+      // When continuing, should call addAssistantMessage with the partial message content
+      const assistantCalls =
+        mockCompletionMessagesBuilder.addAssistantMessage.mock.calls
       expect(assistantCalls.length).toBeGreaterThanOrEqual(1)
       // First call should be with the partial response content
-      expect(assistantCalls[0]).toEqual([
-        'Partial response',
-        undefined,
-        []
-      ])
+      expect(assistantCalls[0]).toEqual(['Partial response', undefined, []])
     })
 
     it('should filter out stopped message from context when continuing', async () => {
@@ -404,13 +507,20 @@ describe('useChat', () => {
         id: 'msg-1',
         thread_id: 'test-thread',
         role: 'user',
-        content: [{ type: ContentType.Text, text: { value: 'Hello', annotations: [] } }],
+        content: [
+          { type: ContentType.Text, text: { value: 'Hello', annotations: [] } },
+        ],
       }
       const stoppedMessage = {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
       }
       mockGetMessages.mockReturnValue([userMsg, stoppedMessage])
@@ -418,13 +528,21 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       // When continuing, the CompletionMessagesBuilder should be called with messages
       // that exclude the stopped message from the context
       expect(messagesLib.CompletionMessagesBuilder).toHaveBeenCalled()
-      const builderCall = (messagesLib.CompletionMessagesBuilder as any).mock.calls[0]
+      const builderCall = (messagesLib.CompletionMessagesBuilder as any).mock
+        .calls[0]
       expect(builderCall[0]).toEqual([userMsg]) // stopped message filtered out
       expect(builderCall[1]).toEqual('test instructions')
     })
@@ -434,7 +552,12 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
@@ -443,10 +566,18 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       // When continuing, finalizeMessage should update the existing message
+      // This test was failing because mockSendCompletion was not called due to the bad provider mock.
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',
@@ -460,29 +591,44 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial response', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial response', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
       mockGetMessages.mockReturnValue([stoppedMessage])
 
       mockSendCompletion.mockResolvedValue({
-        choices: [{
-          message: {
-            content: ' continued',
-            role: 'assistant',
+        choices: [
+          {
+            message: {
+              content: ' continued',
+              role: 'assistant',
+            },
           },
-        }],
+        ],
       })
 
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       // When continuing, the accumulated text should start with the previous partial content
       // and append new content from the completion
+      // This test was failing because mockSendCompletion was not called due to the bad provider mock.
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',
@@ -490,9 +636,9 @@ describe('useChat', () => {
             expect.objectContaining({
               text: expect.objectContaining({
                 value: 'Partial response continued',
-              })
-            })
-          ])
+              }),
+            }),
+          ]),
         })
       )
     })
@@ -502,21 +648,28 @@ describe('useChat', () => {
       const attachments = [
         {
           name: 'test.png',
-          type: 'image/png',
+          type: 'image',
           size: 1024,
           base64: 'base64data',
           dataUrl: 'data:image/png;base64,base64data',
-        },
+        } as any,
       ]
 
       await act(async () => {
-        await result.current('Message with attachment', true, attachments, undefined, undefined, undefined)
+        await result.current(
+          'Message with attachment',
+          true,
+          attachments,
+          undefined,
+          undefined,
+          undefined
+        )
       })
 
       expect(completionLib.newUserThreadContent).toHaveBeenCalledWith(
         'test-thread',
         'Message with attachment',
-        []
+        expect.arrayContaining([expect.objectContaining({ id: 'img-id' })])
       )
       expect(mockCompletionMessagesBuilder.addUserMessage).toHaveBeenCalled()
     })
@@ -526,7 +679,12 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
@@ -535,10 +693,18 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       // After continuation completes, the message status should be set to Ready
+      // This test was failing because mockSendCompletion was not called due to the bad provider mock.
       expect(mockUpdateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-123',
@@ -556,6 +722,7 @@ describe('useChat', () => {
         await result.current('Hello world')
       })
 
+      // This test was failing because mockSendCompletion was not called due to the bad provider mock.
       expect(mockSendCompletion).toHaveBeenCalled()
       expect(mockStartModel).toHaveBeenCalled()
     })
@@ -568,7 +735,12 @@ describe('useChat', () => {
         id: 'msg-123',
         thread_id: 'test-thread',
         role: 'assistant',
-        content: [{ type: ContentType.Text, text: { value: 'Partial', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'Partial', annotations: [] },
+          },
+        ],
         status: MessageStatus.Stopped,
         metadata: {},
       }
@@ -577,7 +749,14 @@ describe('useChat', () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
-        await result.current('', true, undefined, undefined, undefined, 'msg-123')
+        await result.current(
+          '',
+          true,
+          undefined,
+          undefined,
+          undefined,
+          'msg-123'
+        )
       })
 
       expect(result.current).toBeDefined()
@@ -585,6 +764,8 @@ describe('useChat', () => {
   })
 
   describe('Proactive Mode', () => {
+    // These tests implicitly rely on the corrected useModelProvider mock
+    // which now includes 'proactive' in capabilities.
     it('should detect proactive mode when model has proactive capability', () => {
       const { result } = renderHook(() => useChat())
 
