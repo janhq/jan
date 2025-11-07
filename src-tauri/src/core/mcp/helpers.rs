@@ -548,6 +548,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     connected.insert(name.clone(), true);
                     log::info!("Marked MCP server {name} as successfully connected");
                 }
+                emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
                 log::error!("Failed to connect to server: {e}");
@@ -623,6 +624,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     connected.insert(name.clone(), true);
                     log::info!("Marked MCP server {name} as successfully connected");
                 }
+                emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
                 log::error!("Failed to connect to server: {e}");
@@ -740,8 +742,20 @@ async fn schedule_mcp_start_task<R: Runtime>(
             connected.insert(name.clone(), true);
             log::info!("Marked MCP server {name} as successfully connected");
         }
+        emit_mcp_update_event(&app, &name);
     }
     Ok(())
+}
+
+fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
+    if let Err(e) = app.emit(
+        "mcp-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp_server_started event: {e}");
+    }
 }
 
 pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
