@@ -129,7 +129,7 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Build
+# Build - With or without signing
 build: install-and-build install-rust-targets
 	yarn build
 ifeq ($(NO_SIGN),true)
