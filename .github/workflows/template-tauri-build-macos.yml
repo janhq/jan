@@ -187,13 +187,13 @@ jobs:
           if [ "${{ inputs.no_sign }}" = "true" ] || [ "${{ inputs.no_sign }}" = "1" ]; then
             echo ">>> Building with --no-sign (skipping code signing)"
             NO_SIGN=true make build
-
           else
             echo ">>> Building using 'make build' (signing enabled if configured)"
             make build
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
