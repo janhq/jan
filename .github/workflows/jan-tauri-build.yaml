@@ -44,6 +44,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      no_sign: 'true'
 
   build-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
@@ -55,6 +56,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      no_sign: 'true'
 
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -66,6 +68,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      no_sign: 'true'
 
   sync-temp-to-latest:
     needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]

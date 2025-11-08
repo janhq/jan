@@ -33,6 +33,12 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      # NEW: allow caller to disable code signing
+      no_sign:
+        required: false
+        type: string
+        default: 'false'
+        description: 'Set to "true" to pass --no-sign to the tauri build (skip code signing)'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -43,6 +49,10 @@ on:
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      POSTHOG_KEY:
+        required: false
+      POSTHOG_HOST:
         required: false
     outputs:
       DEB_SIG:
@@ -117,7 +127,6 @@ jobs:
           mv /tmp/package.json web-app/package.json
 
           # Update tauri plugin versions
-
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
@@ -166,16 +175,29 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
           fi
+
       - name: Build app
         run: |
-          make build
+          set -e
+          # If inputs.no_sign == 'true', run an explicit build with --no-sign.
+          if [ "${{ inputs.no_sign }}" = "true" ] || [ "${{ inputs.no_sign }}" = "1" ]; then
+            echo ">>> Building with --no-sign (skipping code signing and signing step)"
+            NO_SIGN=true make build
+          else
+            echo ">>> Building using 'make build' (signing path)"
+            make build
 
-          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-          yarn tauri signer sign \
-          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-          "$APP_IMAGE"
-
+            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
+            if [ -n "$APP_IMAGE" ]; then
+              echo "Signing AppImage: $APP_IMAGE"
+              yarn tauri signer sign \
+                --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+                --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+                "$APP_IMAGE"
+            else
+              echo "No AppImage found to sign"
+            fi
+          fi
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -184,6 +206,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+
       # Publish app
 
       ## Artifacts, for dev and test
@@ -210,13 +233,22 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
             APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
-            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
           else
             DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
             APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
-            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
+          fi
+
+          # Read signature files if they exist, otherwise set empty string
+          if [ -f "deb/${DEB_FILE_NAME}.sig" ]; then
+            DEB_SIG=$(cat "deb/${DEB_FILE_NAME}.sig")
+          else
+            DEB_SIG=""
+          fi
+
+          if [ -f "appimage/${APPIMAGE_FILE_NAME}.sig" ]; then
+            APPIMAGE_SIG=$(cat "appimage/${APPIMAGE_FILE_NAME}.sig")
+          else
+            APPIMAGE_SIG=""
           fi
 
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
@@ -231,10 +263,16 @@ jobs:
           cd ./src-tauri/target/release/bundle
 
           # Upload for tauri updater
-          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
-          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig
+          aws s3 cp ./appimage/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
+          aws s3 cp ./deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
+
+          if [ -f "./appimage/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}.sig" ]; then
+            aws s3 cp ./appimage/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}.sig
+          fi
+
+          if [ -f "./deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig" ]; then
+            aws s3 cp ./deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig
+          fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}

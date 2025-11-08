@@ -6,6 +6,9 @@ REPORT_PORTAL_PROJECT_NAME ?= ""
 REPORT_PORTAL_LAUNCH_NAME ?= "Jan App"
 REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 
+# NEW: allow callers to set NO_SIGN=true to skip signing steps inside make
+NO_SIGN ?= false
+
 # Default target, does nothing
 all:
 	@echo "Specify a target to run"
@@ -129,6 +132,11 @@ endif
 # Build
 build: install-and-build install-rust-targets
 	yarn build
+ifeq ($(NO_SIGN),true)
+	yarn tauri build -- --no-sign
+else
+	yarn tauri build
+endif
 
 clean:
 ifeq ($(OS),Windows_NT)
