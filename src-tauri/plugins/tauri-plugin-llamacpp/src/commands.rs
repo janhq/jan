@@ -102,6 +102,7 @@ pub async fn load_llama_model<R: Runtime>(
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
 
     // Spawn task to monitor stdout for readiness
+    let stdout_ready_tx = ready_tx.clone();
     let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
@@ -113,8 +114,21 @@ pub async fn load_llama_model<R: Runtime>(
                 Ok(_) => {
                     let line = String::from_utf8_lossy(&byte_buffer);
                     let line = line.trim_end();
+
                     if !line.is_empty() {
                         log::info!("[llamacpp stdout] {}", line);
+
+                        // Check for readiness indicators
+                        let line_lower = line.to_lowercase();
+                        if line_lower.contains("http server listening")
+                            || line_lower.contains("server listening on")
+                            || line_lower.contains("server is listening on")
+                            || line_lower.contains("all slots are idle")
+                            || line_lower.contains("starting the main loop")
+                        {
+                            log::info!("Server is ready (detected from stdout): '{}'", line);
+                            let _ = stdout_ready_tx.send(true).await;
+                        }
                     }
                 }
                 Err(e) => {
@@ -124,6 +138,7 @@ pub async fn load_llama_model<R: Runtime>(
             }
         }
     });
+
 
     // Spawn task to capture stderr and monitor for errors
     let stderr_task = tokio::spawn(async move {

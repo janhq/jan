@@ -1120,7 +1120,7 @@ export default class llamacpp_extension extends AIEngine {
    */
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
-    const re = /^llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
+    const re = /(?:^|.*[\\/])[^\\/]*llama[^\\/]*-(b\d+)(?:-[0-9a-fA-F]+)?-bin-([^\\/]+?)\.(?:tar\.gz|zip)$/i;
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
@@ -1698,9 +1698,23 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding, Number(this.timeout))
-      return sInfo
+      return await loadLlamaModel(backendPath, args, envs, isEmbedding, Number(this.timeout))
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+
+      if (errorMsg.includes('unknown argument')) {
+        logger.info('Retrying without unsupported flags...')
+
+        const filteredArgs = []
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '--no-webui' || args[i] === '--no-flash-attn') continue
+          if (args[i] === '--flash-attn') { i++; continue }
+          filteredArgs.push(args[i])
+        }
+
+        return await loadLlamaModel(backendPath, filteredArgs, envs, isEmbedding, Number(this.timeout))
+      }
+
       logger.error('Error in load command:\n', error)
       throw error
     }
