@@ -28,12 +28,6 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
-      # NEW: allow caller to disable code signing
-      no_sign:
-        required: false
-        type: string
-        default: 'false'
-        description: 'Set to "true" to pass --no-sign to the tauri build (skip code signing)'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -54,16 +48,6 @@ on:
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        required: false
-      NOTARIZE_P8_BASE64:
-        required: false
-      NOTARY_ISSUER:
-        required: false
-      NOTARY_KEY_ID:
-        required: false
-      POSTHOG_KEY:
-        required: false
-      POSTHOG_HOST:
         required: false
     outputs:
       MAC_UNIVERSAL_SIG:
@@ -118,6 +102,7 @@ jobs:
           mv /tmp/package.json web-app/package.json
 
           # Update tauri plugin versions
+
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
           
@@ -166,7 +151,6 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
           fi
-
       - name: Get key for notarize
         run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
         shell: bash
@@ -180,49 +164,11 @@ jobs:
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
       - name: Build app
-        # If inputs.no_sign == 'true', run the explicit build with --no-sign.
-        # Otherwise fall back to existing make build.
         run: |
-          set -e
-          if [ "${{ inputs.no_sign }}" = "true" ] || [ "${{ inputs.no_sign }}" = "1" ]; then
-            echo ">>> Building with --no-sign (skipping code signing)"
-            # Build frontend
-            if [ -f web-app/package.json ]; then
-              echo "Building web-app..."
-              npm ci --prefix web-app
-              npm run build --prefix web-app
-            fi
-
-            # run tauri build explicitly with --no-sign so we skip codesigning & notarize
-            cd src-tauri || exit 1
-
-            # export the same envs make build used to receive (so build scripts can still use them)
-            export GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-            export APP_PATH='.'
-            export POSTHOG_KEY=${{ secrets.POSTHOG_KEY }}
-            export POSTHOG_HOST=${{ secrets.POSTHOG_HOST }}
-            export APPLE_CERTIFICATE=${{ secrets.CODE_SIGN_P12_BASE64 }}
-            export APPLE_CERTIFICATE_PASSWORD=${{ secrets.CODE_SIGN_P12_PASSWORD }}
-            export APPLE_API_ISSUER=${{ secrets.NOTARY_ISSUER }}
-            export APPLE_API_KEY=${{ secrets.NOTARY_KEY_ID }}
-            export APPLE_API_KEY_PATH=/tmp/notary-key.p8
-            export TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-            # Attempt to use cargo tauri build directly; fallback to `npm run tauri build` if cargo not present.
-            if command -v cargo >/dev/null 2>&1; then
-              cargo tauri build --release --no-sign
-            else
-              echo "cargo not found; falling back to npm run tauri build"
-              npm ci --prefix ../web-app
-              npm run tauri build --prefix ../web-app -- --release --no-sign
-            fi
-          else
-            echo ">>> Building using 'make build' (signing enabled if configured)"
-            make build
-          fi
+          make build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
@@ -248,29 +194,16 @@ jobs:
       - name: Set output filename for mac
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
-
           if [ "${{ inputs.channel }}" != "stable" ]; then
             zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
             FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
             DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
-
-            if [ -f "Jan-${{ inputs.channel }}.app.tar.gz.sig" ]; then
-              MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
-            else
-              MAC_UNIVERSAL_SIG=""
-            fi
-
+            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
-
-            if [ -f "Jan.app.tar.gz.sig" ]; then
-              MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
-            else
-              MAC_UNIVERSAL_SIG=""
-            fi
-
+            MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
             DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
             TAR_NAME=Jan.app.tar.gz
           fi

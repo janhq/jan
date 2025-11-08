@@ -28,12 +28,6 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
-      # NEW: allow caller to disable code signing
-      no_sign:
-        required: false
-        type: string
-        default: 'false'
-        description: 'Set to "true" to pass --no-sign to the tauri build (skip code signing)'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -54,10 +48,6 @@ on:
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        required: false
-      POSTHOG_KEY:
-        required: false
-      POSTHOG_HOST:
         required: false
     outputs:
       WIN_SIG:
@@ -118,6 +108,7 @@ jobs:
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
 
           # Update tauri plugin versions
+
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
           
@@ -220,48 +211,7 @@ jobs:
       - name: Build app
         shell: bash
         run: |
-          set -e
-          # If inputs.no_sign == 'true', run an explicit build with --no-sign.
-          if [ "${{ inputs.no_sign }}" = "true" ] || [ "${{ inputs.no_sign }}" = "1" ]; then
-            echo ">>> Building with --no-sign (skipping code signing)"
-            # Build frontend if present
-            if [ -f web-app/package.json ]; then
-              echo "Building web-app..."
-              npm ci --prefix web-app
-              npm run build --prefix web-app
-            fi
-
-            # run tauri build explicitly with --no-sign so we skip codesigning & sign steps
-            cd src-tauri || exit 1
-
-            # export same envs make build used to receive (so build scripts can still use them)
-            export AZURE_KEY_VAULT_URI=${{ secrets.AZURE_KEY_VAULT_URI }}
-            export AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-            export AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
-            export AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
-            export AZURE_CERT_NAME=${{ secrets.AZURE_CERT_NAME }}
-            export AWS_ACCESS_KEY_ID=${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
-            export AWS_SECRET_ACCESS_KEY=${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-            export AWS_DEFAULT_REGION=auto
-            export AWS_EC2_METADATA_DISABLED='true'
-            export AWS_MAX_ATTEMPTS='5'
-            export POSTHOG_KEY=${{ secrets.POSTHOG_KEY }}
-            export POSTHOG_HOST=${{ secrets.POSTHOG_HOST }}
-            export TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-            # Attempt to use cargo tauri build directly; fallback to npm run tauri build if cargo not present.
-            if command -v cargo >/dev/null 2>&1; then
-              cargo tauri build --release --no-sign
-            else
-              echo "cargo not found; falling back to npm run tauri build"
-              npm ci --prefix ../web-app
-              npm run tauri build --prefix ../web-app -- --release --no-sign
-            fi
-          else
-            echo ">>> Building using 'make build' (signing enabled if configured)"
-            make build
-          fi
+          make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -298,21 +248,13 @@ jobs:
           cd ./src-tauri/target/release/bundle/nsis
           if [ "${{ inputs.channel }}" != "stable" ]; then
             FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
-            if [ -f "Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
-              WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
-            else
-              WIN_SIG=""
-            fi
+            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
 
             MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
-            if [ -f "Jan_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
-              WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
-            else
-              WIN_SIG=""
-            fi
-
+            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+            
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
           fi
 
@@ -330,9 +272,7 @@ jobs:
 
           # Upload for tauri updater
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
-          if [ -f ./${{ steps.metadata.outputs.FILE_NAME }}.sig ]; then
-            aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
-          fi
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
