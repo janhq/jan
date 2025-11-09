@@ -421,6 +421,7 @@ describe('ChatInput', () => {
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
+    mockAppState.tools = [{ name: 'test-tool' } as any]
 
     await act(async () => {
       renderWithRouter()

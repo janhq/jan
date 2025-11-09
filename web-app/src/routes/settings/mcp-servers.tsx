@@ -9,7 +9,12 @@ import {
   IconTrash,
   IconCodeCircle,
 } from '@tabler/icons-react'
-import { useMCPServers, MCPServerConfig, MCPSettings, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
+import {
+  useMCPServers,
+  MCPServerConfig,
+  MCPSettings,
+  DEFAULT_MCP_SETTINGS,
+} from '@/hooks/useMCPServers'
 import { useEffect, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
@@ -24,6 +29,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -350,11 +357,18 @@ function MCPServersDesktop() {
   useEffect(() => {
     serviceHub.mcp().getConnectedServers().then(setConnectedServers)
 
-    const intervalId = setInterval(() => {
-      serviceHub.mcp().getConnectedServers().then(setConnectedServers)
-    }, 3000)
+    let unlisten: (() => void) | undefined
+    const setupListener = async () => {
+      unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
+        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+      })
+    }
+    setupListener()
 
-    return () => clearInterval(intervalId)
+    return () => {
+      unlisten?.()
+    }
+
   }, [serviceHub, setConnectedServers])
 
   return (
