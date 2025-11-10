@@ -26,6 +26,8 @@ build-jan-browser-mcp:
 		mkdir -p resources/mcp-servers/jan-browser; \
 		cp -r $(HOME)/code/jan-browser/mcp-server/dist resources/mcp-servers/jan-browser/; \
 		cp $(HOME)/code/jan-browser/mcp-server/package.json resources/mcp-servers/jan-browser/; \
+		echo "📦 Installing dependencies..."; \
+		cd resources/mcp-servers/jan-browser && npm install --production; \
 		echo "✅ Jan Browser MCP server built and copied to resources/"; \
 	else \
 		echo "⚠️ Jan Browser MCP not found at ~/code/jan-browser, skipping..."; \
