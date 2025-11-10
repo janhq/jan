@@ -24,11 +24,8 @@ export function KeyboardShortcutsProvider() {
   // New Chat
   useKeyboardShortcut({
     ...newChatShortcut,
-    excludeRoutes: [route.home],
     callback: () => {
-      requestAnimationFrame(() => {
-        router.navigate({ to: route.home })
-      })
+      router.navigate({ to: route.home })
     },
   })
 
