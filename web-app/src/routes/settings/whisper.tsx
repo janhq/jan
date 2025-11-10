@@ -166,7 +166,6 @@ function WhisperSettings() {
               <Card>
                 <CardItem
                   title={t('apiConfiguration.title')}
-                  separator={false}
                   descriptionOutside={
                     <div className="space-y-4 mt-4">
                     {/* API URL */}
@@ -325,7 +324,6 @@ function WhisperSettings() {
               <Card>
                 <CardItem
                   title={t('howToUse.title')}
-                  separator={false}
                   descriptionOutside={
                     <div className="space-y-3 mt-4 text-sm text-main-view-fg/70">
                       <div className="flex items-start space-x-3">
@@ -367,7 +365,6 @@ function WhisperSettings() {
               <Card>
                 <CardItem
                   title={t('apiInfo.title')}
-                  separator={false}
                   descriptionOutside={
                     <div className="space-y-2 mt-4 text-sm text-main-view-fg/70">
                       <p>
