@@ -17,6 +17,7 @@ import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+import { useAppState } from '@/hooks/useAppState'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -42,6 +43,7 @@ function HardwareContent() {
     updateSystemUsage,
     pollingPaused,
   } = useHardware()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   const { providers } = useModelProvider()
   const llamacpp = providers.find((p) => p.provider === 'llamacpp')
@@ -75,14 +77,18 @@ function HardwareContent() {
   useEffect(() => {
     setIsLoading(true)
     Promise.all([
-      serviceHub.hardware().getHardwareInfo()
+      serviceHub
+        .hardware()
+        .getHardwareInfo()
         .then((data: HardwareData | null) => {
           if (data) setHardwareData(data)
         })
         .catch((error) => {
           console.error('Failed to get hardware info:', error)
         }),
-      serviceHub.hardware().getSystemUsage()
+      serviceHub
+        .hardware()
+        .getSystemUsage()
         .then((data: SystemUsage | null) => {
           if (data) updateSystemUsage(data)
         })
@@ -94,14 +100,14 @@ function HardwareContent() {
     })
   }, [serviceHub, setHardwareData, updateSystemUsage])
 
-
-
   useEffect(() => {
     if (pollingPaused) {
       return
     }
     const intervalId = setInterval(() => {
-      serviceHub.hardware().getSystemUsage()
+      serviceHub
+        .hardware()
+        .getSystemUsage()
         .then((data: SystemUsage | null) => {
           if (data) updateSystemUsage(data)
         })
@@ -309,6 +315,14 @@ function HardwareContent() {
                                 onCheckedChange={() => {
                                   toggleDevice(device.id)
                                   serviceHub.models().stopAllModels()
+
+                                  // Refresh active models after stopping
+                                  serviceHub
+                                    .models()
+                                    .getActiveModels()
+                                    .then((models) =>
+                                      setActiveModels(models || [])
+                                    )
                                 }}
                               />
                             </div>

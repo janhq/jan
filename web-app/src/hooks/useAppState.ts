@@ -28,6 +28,7 @@ type AppState = {
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
+  activeModels: string[]
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -49,6 +50,7 @@ type AppState = {
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
+  setActiveModels: (models: string[]) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -61,6 +63,7 @@ export const useAppState = create<AppState>()((set) => ({
   currentToolCall: undefined,
   promptProgress: undefined,
   cancelToolCall: undefined,
+  activeModels: [],
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
@@ -175,4 +178,9 @@ export const useAppState = create<AppState>()((set) => ({
       promptProgress: progress,
     }))
   },
+  setActiveModels: (models: string[]) => {
+    set(() => ({
+      activeModels: models,
+    }))
+  }
 }))
