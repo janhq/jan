@@ -3,6 +3,8 @@
  * Compatible with ahmetoner/whisper-asr-webservice
  */
 
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+
 export interface WhisperConfig {
   apiUrl: string
   apiKey?: string
@@ -36,6 +38,11 @@ export async function transcribeAudio(
   config: WhisperConfig
 ): Promise<TranscriptionResponse> {
   try {
+    // Use Tauri's native HTTP when available to bypass browser CORS
+    const doFetch: typeof fetch =
+      typeof (window as any).__TAURI__ !== 'undefined'
+        ? (fetchTauri as unknown as typeof fetch)
+        : fetch
     // Create FormData with audio file
     const formData = new FormData()
 
@@ -83,7 +90,7 @@ export async function transcribeAudio(
     const url = `${config.apiUrl}?${params.toString()}`
 
     // Make API request (no authentication headers required)
-    const response = await fetch(url, {
+    const response = await doFetch(url, {
       method: 'POST',
       body: formData,
     })
