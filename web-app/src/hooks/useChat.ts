@@ -704,7 +704,9 @@ export const useChat = () => {
           !abortController.signal.aborted &&
           activeProvider
         ) {
-          accumulatedTextRef.value = ''
+          if (!continueFromMessageId) {
+            accumulatedTextRef.value = ''
+          }
           const modelConfig = activeProvider.models.find(
             (m) => m.id === selectedModel?.id
           )
