@@ -12,6 +12,16 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
       "active": false
     },
+    "Jan Browser Extension (Experimental)": {
+      "command": "node",
+      "args": ["{{JAN_BROWSER_MCP_PATH}}"],
+      "env": {
+        "BRIDGE_HOST": "127.0.0.1",
+        "BRIDGE_PORT": "17389"
+      },
+      "active": false,
+      "type": "stdio"
+    },
     "browsermcp": {
       "command": "npx",
       "args": ["@browsermcp/mcp"],

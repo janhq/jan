@@ -17,7 +17,66 @@ use crate::core::{
     mcp::models::ToolWithServer,
     state::{RunningServiceEnum, SharedMcpServers},
 };
-use std::{fs, time::Duration};
+use std::{env, fs, path::PathBuf, time::Duration};
+
+/// Resolves the path to Jan Browser MCP server for both dev and production modes
+///
+/// # Arguments
+/// * `app` - Application handle to get resource directory
+///
+/// # Returns
+/// * `Option<PathBuf>` - Path to the MCP server index.js if it exists, None otherwise
+///
+/// This function checks:
+/// 1. In dev mode: project_root/resources/mcp-servers/jan-browser/dist/src/index.js
+/// 2. In prod mode: resource_dir/resources/mcp-servers/jan-browser/dist/src/index.js
+pub fn resolve_jan_browser_mcp_path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    // Try dev mode path first (project root)
+    if let Ok(current_exe) = env::current_exe() {
+        // In dev mode, the executable is in target/debug/
+        // We need to go up to the project root
+        if let Some(project_root) = current_exe
+            .parent() // target/debug/
+            .and_then(|p| p.parent()) // target/
+            .and_then(|p| p.parent()) // src-tauri/
+            .and_then(|p| p.parent()) // project root
+        {
+            let dev_path = project_root
+                .join("resources")
+                .join("mcp-servers")
+                .join("jan-browser")
+                .join("dist")
+                .join("src")
+                .join("index.js");
+
+            log::info!("Checking dev mode path: {:?}", dev_path);
+            if dev_path.exists() {
+                log::info!("Found Jan Browser MCP in dev mode path");
+                return Some(dev_path);
+            }
+        }
+    }
+
+    // Try production mode path (bundled resources)
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let prod_path = resource_dir
+            .join("resources")
+            .join("mcp-servers")
+            .join("jan-browser")
+            .join("dist")
+            .join("src")
+            .join("index.js");
+
+        log::info!("Checking production mode path: {:?}", prod_path);
+        if prod_path.exists() {
+            log::info!("Found Jan Browser MCP in production mode path");
+            return Some(prod_path);
+        }
+    }
+
+    log::warn!("Jan Browser MCP server not found in any expected location");
+    None
+}
 
 async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
     state
@@ -315,8 +374,20 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
 
     // Create default empty config if file doesn't exist
     if !path.exists() {
-        log::info!("mcp_config.json not found, creating default empty config");
-        fs::write(&path, DEFAULT_MCP_CONFIG)
+        log::info!("mcp_config.json not found, creating default config with Jan Browser MCP");
+
+        // Get the resource path for Jan Browser MCP using the resolver
+        let jan_browser_path = resolve_jan_browser_mcp_path(&app)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| {
+                log::warn!("Jan Browser MCP not found, using placeholder path");
+                "/path/to/jan-browser/index.js".to_string()
+            });
+
+        // Replace the placeholder with the actual path
+        let config_with_path = DEFAULT_MCP_CONFIG.replace("{{JAN_BROWSER_MCP_PATH}}", &jan_browser_path);
+
+        fs::write(&path, config_with_path)
             .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
     }
 

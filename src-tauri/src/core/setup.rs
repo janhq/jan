@@ -180,44 +180,31 @@ pub fn migrate_mcp_servers(
     }
     if mcp_version < 2 {
         log::info!("Migrating MCP schema version 2 - Adding Jan Browser MCP");
-        // Get the resource path for the bundled Jan Browser MCP server
-        if let Ok(resource_dir) = app_handle.path().resource_dir() {
-            let mcp_server_path = resource_dir
-                .join("resources")
-                .join("mcp-servers")
-                .join("jan-browser")
-                .join("dist")
-                .join("src")
-                .join("index.js");
-
+        // Get the resource path for the bundled Jan Browser MCP server using the resolver
+        if let Some(mcp_server_path) = crate::core::mcp::commands::resolve_jan_browser_mcp_path(&app_handle) {
             log::info!("Jan Browser MCP path: {:?}", mcp_server_path);
 
-            // Only add if the file exists
-            if mcp_server_path.exists() {
-                let result = add_server_config(
-                    app_handle.clone(),
-                    "Jan Browser Extension (Experimental)".to_string(),
-                    serde_json::json!({
-                        "command": "node",
-                        "args": [mcp_server_path.to_string_lossy().to_string()],
-                        "env": {
-                            "BRIDGE_HOST": "127.0.0.1",
-                            "BRIDGE_PORT": "17389"
-                        },
-                        "active": false,
-                        "type": "stdio"
-                    }),
-                );
-                if let Err(e) = result {
-                    log::error!("Failed to add Jan Browser MCP server config: {e}");
-                } else {
-                    log::info!("Successfully added Jan Browser MCP server");
-                }
+            let result = add_server_config(
+                app_handle.clone(),
+                "Jan Browser Extension (Experimental)".to_string(),
+                serde_json::json!({
+                    "command": "node",
+                    "args": [mcp_server_path.to_string_lossy().to_string()],
+                    "env": {
+                        "BRIDGE_HOST": "127.0.0.1",
+                        "BRIDGE_PORT": "17389"
+                    },
+                    "active": false,
+                    "type": "stdio"
+                }),
+            );
+            if let Err(e) = result {
+                log::error!("Failed to add Jan Browser MCP server config: {e}");
             } else {
-                log::warn!("Jan Browser MCP server not found at {:?}, skipping...", mcp_server_path);
+                log::info!("Successfully added Jan Browser MCP server");
             }
         } else {
-            log::error!("Failed to get resource directory path");
+            log::warn!("Jan Browser MCP server not found in any expected location, skipping migration");
         }
     }
     store.set("mcp_version", 2);
