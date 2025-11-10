@@ -17,6 +17,7 @@ import {
 } from '@/services/whisper/whisper'
 import { IconCheck, IconLoader2, IconMicrophone } from '@tabler/icons-react'
 import { useAudioRecorder } from '@/hooks/useAudioRecorder'
+import { useTranslation } from 'react-i18next'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.whisper as any)({
@@ -24,6 +25,7 @@ export const Route = createFileRoute(route.settings.whisper as any)({
 })
 
 function WhisperSettings() {
+  const { t } = useTranslation('whisper')
   const [config, setConfig] = useState<WhisperConfig>({
     apiUrl: '',
     task: 'transcribe',
@@ -56,17 +58,17 @@ function WhisperSettings() {
 
       // Validate required fields
       if (!config.apiUrl) {
-        toast.error('API URL is required')
+        toast.error(t('apiConfiguration.apiUrl.required'))
         return
       }
 
       // Save to localStorage
       saveWhisperConfig(config)
 
-      toast.success('Whisper configuration saved successfully!')
+      toast.success(t('messages.configSaved'))
     } catch (error) {
       console.error('Failed to save configuration:', error)
-      toast.error('Failed to save configuration')
+      toast.error(t('messages.configSaveFailed'))
     } finally {
       setIsSaving(false)
     }
@@ -78,20 +80,20 @@ function WhisperSettings() {
       setIsTesting(true)
 
       if (!config.apiUrl) {
-        toast.error('Please configure API URL first')
+        toast.error(t('messages.configureFirst'))
         return
       }
 
       // Start recording
-      toast.info('Recording audio... Click again to stop', { id: 'test-recording' })
+      toast.info(t('messages.recordingInfo'), { id: 'test-recording' })
       await startRecording()
 
       // Wait for user to stop
       // Note: This is a simplified test flow
     } catch (error) {
       console.error('Test failed:', error)
-      toast.error('Test failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+      toast.error(t('messages.testFailed'), {
+        description: error instanceof Error ? error.message : t('messages.unknownError'),
       })
     } finally {
       setIsTesting(false)
@@ -103,34 +105,34 @@ function WhisperSettings() {
     const handleTestTranscription = async () => {
       if (isTesting && !recorderState.isRecording && recorderState.audioBlob) {
         try {
-          toast.loading('Testing transcription...', { id: 'test-transcription' })
+          toast.loading(t('messages.testingTranscription'), { id: 'test-transcription' })
 
           const result = await transcribeAudio(recorderState.audioBlob, config)
 
-          toast.success('Test successful!', {
+          toast.success(t('messages.testSuccess'), {
             id: 'test-transcription',
-            description: `Transcribed: "${result.text.substring(0, 100)}..."`,
+            description: `${t('messages.transcribedPrefix')}${result.text.substring(0, 100)}..."`,
           })
         } catch (error) {
-          toast.error('Test failed', {
+          toast.error(t('messages.testFailed'), {
             id: 'test-transcription',
-            description: error instanceof Error ? error.message : 'Unknown error',
+            description: error instanceof Error ? error.message : t('messages.unknownError'),
           })
         }
       }
     }
 
     handleTestTranscription()
-  }, [recorderState.isRecording, recorderState.audioBlob, isTesting, config])
+  }, [recorderState.isRecording, recorderState.audioBlob, isTesting, config, t])
 
   return (
     <div className="h-full flex flex-col w-full overflow-hidden">
       <div className="flex flex-col h-full overflow-hidden">
         <HeaderPage>
           <div className="flex items-center gap-2">
-            <h1 className="font-medium">Whisper Settings</h1>
+            <h1 className="font-medium">{t('title')}</h1>
             <span className="text-sm text-main-view-fg/70">
-              Configure your Whisper API for voice input transcription
+              {t('subtitle')}
             </span>
           </div>
         </HeaderPage>
@@ -147,14 +149,13 @@ function WhisperSettings() {
                     <IconMicrophone size={20} className="text-accent mt-0.5" />
                     <div className="flex-1">
                       <h4 className="font-semibold text-main-view-fg mb-1">
-                        Voice Input with Whisper
+                        {t('infoCard.title')}
                       </h4>
                       <p className="text-sm text-main-view-fg/70">
-                        Connect your Whisper API to enable voice input in Jan. Record audio
-                        and get instant transcriptions directly in your chat.
+                        {t('infoCard.description')}
                       </p>
                       <p className="text-sm text-accent mt-2">
-                        ℹ️ No API key required for local Whisper servers
+                        {t('infoCard.noApiKeyRequired')}
                       </p>
                     </div>
                   </div>
@@ -164,76 +165,76 @@ function WhisperSettings() {
               {/* API Configuration */}
               <Card>
                 <CardItem
-                  title="API Configuration"
+                  title={t('apiConfiguration.title')}
                   separator={false}
                   descriptionOutside={
                     <div className="space-y-4 mt-4">
                     {/* API URL */}
                     <div className="space-y-2">
                       <Label htmlFor="apiUrl">
-                        API URL <span className="text-destructive">*</span>
+                        {t('apiConfiguration.apiUrl.label')} <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="apiUrl"
                         type="url"
-                        placeholder="https://whisper.contextcompany.com.co/asr"
+                        placeholder={t('apiConfiguration.apiUrl.placeholder')}
                         value={config.apiUrl}
                         onChange={(e) => handleChange('apiUrl', e.target.value)}
                       />
                       <p className="text-xs text-main-view-fg/50">
-                        The endpoint URL for your Whisper ASR Webservice API
+                        {t('apiConfiguration.apiUrl.description')}
                       </p>
                     </div>
 
                     {/* Task */}
                     <div className="space-y-2">
-                      <Label htmlFor="task">Task</Label>
+                      <Label htmlFor="task">{t('apiConfiguration.task.label')}</Label>
                       <select
                         id="task"
                         className="h-9 px-3 py-1 rounded-md border border-main-view-fg/10 bg-transparent text-sm"
                         value={config.task || 'transcribe'}
                         onChange={(e) => handleChange('task', e.target.value)}
                       >
-                        <option value="transcribe">Transcribe</option>
-                        <option value="translate">Translate to English</option>
+                        <option value="transcribe">{t('apiConfiguration.task.transcribe')}</option>
+                        <option value="translate">{t('apiConfiguration.task.translate')}</option>
                       </select>
                       <p className="text-xs text-main-view-fg/50">
-                        Choose whether to transcribe or translate to English
+                        {t('apiConfiguration.task.description')}
                       </p>
                     </div>
 
                     {/* Language */}
                     <div className="space-y-2">
-                      <Label htmlFor="language">Language</Label>
+                      <Label htmlFor="language">{t('apiConfiguration.language.label')}</Label>
                       <Input
                         id="language"
                         type="text"
-                        placeholder="auto"
+                        placeholder={t('apiConfiguration.language.placeholder')}
                         value={config.language || 'auto'}
                         onChange={(e) => handleChange('language', e.target.value)}
                       />
                       <p className="text-xs text-main-view-fg/50">
-                        Language code (e.g., en, es, fr) or 'auto' for automatic detection
+                        {t('apiConfiguration.language.description')}
                       </p>
                     </div>
 
                     {/* Output Format */}
                     <div className="space-y-2">
-                      <Label htmlFor="output">Output Format</Label>
+                      <Label htmlFor="output">{t('apiConfiguration.output.label')}</Label>
                       <select
                         id="output"
                         className="h-9 px-3 py-1 rounded-md border border-main-view-fg/10 bg-transparent text-sm"
                         value={config.output || 'txt'}
                         onChange={(e) => handleChange('output', e.target.value)}
                       >
-                        <option value="txt">Plain Text</option>
-                        <option value="json">JSON</option>
-                        <option value="vtt">WebVTT</option>
-                        <option value="srt">SRT Subtitles</option>
-                        <option value="tsv">TSV</option>
+                        <option value="txt">{t('apiConfiguration.output.txt')}</option>
+                        <option value="json">{t('apiConfiguration.output.json')}</option>
+                        <option value="vtt">{t('apiConfiguration.output.vtt')}</option>
+                        <option value="srt">{t('apiConfiguration.output.srt')}</option>
+                        <option value="tsv">{t('apiConfiguration.output.tsv')}</option>
                       </select>
                       <p className="text-xs text-main-view-fg/50">
-                        The format for transcription output
+                        {t('apiConfiguration.output.description')}
                       </p>
                     </div>
 
@@ -248,10 +249,10 @@ function WhisperSettings() {
                       />
                       <div className="space-y-0.5">
                         <Label htmlFor="vadFilter" className="cursor-pointer">
-                          Voice Activity Detection (VAD) Filter
+                          {t('apiConfiguration.vadFilter.label')}
                         </Label>
                         <p className="text-xs text-main-view-fg/50">
-                          Filter out non-speech audio segments
+                          {t('apiConfiguration.vadFilter.description')}
                         </p>
                       </div>
                     </div>
@@ -267,10 +268,10 @@ function WhisperSettings() {
                       />
                       <div className="space-y-0.5">
                         <Label htmlFor="wordTimestamps" className="cursor-pointer">
-                          Word-level Timestamps
+                          {t('apiConfiguration.wordTimestamps.label')}
                         </Label>
                         <p className="text-xs text-main-view-fg/50">
-                          Include timestamps for individual words
+                          {t('apiConfiguration.wordTimestamps.description')}
                         </p>
                       </div>
                     </div>
@@ -290,12 +291,12 @@ function WhisperSettings() {
                   {isSaving ? (
                     <>
                       <IconLoader2 size={16} className="animate-spin mr-2" />
-                      Saving...
+                      {t('actions.saving')}
                     </>
                   ) : (
                     <>
                       <IconCheck size={16} className="mr-2" />
-                      Save
+                      {t('actions.save')}
                     </>
                   )}
                 </Button>
@@ -309,12 +310,12 @@ function WhisperSettings() {
                   {isTesting ? (
                     <>
                       <IconLoader2 size={16} className="animate-spin mr-2" />
-                      {recorderState.isRecording ? 'Recording...' : 'Testing...'}
+                      {recorderState.isRecording ? t('actions.recording') : t('actions.testing')}
                     </>
                   ) : (
                     <>
                       <IconMicrophone size={16} className="mr-2" />
-                      Test Connection
+                      {t('actions.test')}
                     </>
                   )}
                 </Button>
@@ -323,7 +324,7 @@ function WhisperSettings() {
               {/* Usage Instructions */}
               <Card>
                 <CardItem
-                  title="How to Use"
+                  title={t('howToUse.title')}
                   separator={false}
                   descriptionOutside={
                     <div className="space-y-3 mt-4 text-sm text-main-view-fg/70">
@@ -332,21 +333,21 @@ function WhisperSettings() {
                           1
                         </span>
                         <p>
-                          Click the microphone button in the chat input to start recording
+                          {t('howToUse.step1')}
                         </p>
                       </div>
                       <div className="flex items-start space-x-3">
                         <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
                           2
                         </span>
-                        <p>Speak your message clearly</p>
+                        <p>{t('howToUse.step2')}</p>
                       </div>
                       <div className="flex items-start space-x-3">
                         <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
                           3
                         </span>
                         <p>
-                          Click the check button to stop and transcribe, or X to cancel
+                          {t('howToUse.step3')}
                         </p>
                       </div>
                       <div className="flex items-start space-x-3">
@@ -354,7 +355,7 @@ function WhisperSettings() {
                           4
                         </span>
                         <p>
-                          The transcribed text will be added to your message automatically
+                          {t('howToUse.step4')}
                         </p>
                       </div>
                     </div>
@@ -365,12 +366,12 @@ function WhisperSettings() {
               {/* API Information */}
               <Card>
                 <CardItem
-                  title="API Information"
+                  title={t('apiInfo.title')}
                   separator={false}
                   descriptionOutside={
                     <div className="space-y-2 mt-4 text-sm text-main-view-fg/70">
                       <p>
-                        <strong>Your Whisper API:</strong>{' '}
+                        <strong>{t('apiInfo.yourApi')}</strong>{' '}
                         <a
                           href="https://whisper.contextcompany.com.co/docs"
                           target="_blank"
@@ -381,13 +382,13 @@ function WhisperSettings() {
                         </a>
                       </p>
                       <p>
-                        <strong>Implementation:</strong> ahmetoner/whisper-asr-webservice
+                        <strong>{t('apiInfo.implementation')}</strong> ahmetoner/whisper-asr-webservice
                       </p>
                       <p>
-                        <strong>Endpoint:</strong> /asr with query parameters
+                        <strong>{t('apiInfo.endpoint')}</strong> {t('apiInfo.endpointValue')}
                       </p>
                       <p>
-                        <strong>Supported formats:</strong> WebM, MP3, WAV, M4A, and more
+                        <strong>{t('apiInfo.supportedFormats')}</strong> {t('apiInfo.formatsValue')}
                       </p>
                     </div>
                   }

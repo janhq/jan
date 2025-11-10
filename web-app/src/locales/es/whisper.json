@@ -1,0 +1,80 @@
+{
+  "title": "Configuración de Whisper",
+  "subtitle": "Configura tu API de Whisper para transcripción de entrada de voz",
+  "infoCard": {
+    "title": "Entrada de Voz con Whisper",
+    "description": "Conecta tu API de Whisper para habilitar la entrada de voz en Jan. Graba audio y obtén transcripciones instantáneas directamente en tu chat.",
+    "noApiKeyRequired": "ℹ️ No se requiere clave API para servidores Whisper locales"
+  },
+  "apiConfiguration": {
+    "title": "Configuración de API",
+    "apiUrl": {
+      "label": "URL de API",
+      "placeholder": "https://whisper.contextcompany.com.co/asr",
+      "description": "La URL del endpoint para tu API de Whisper ASR Webservice",
+      "required": "La URL de API es requerida"
+    },
+    "task": {
+      "label": "Tarea",
+      "transcribe": "Transcribir",
+      "translate": "Traducir a Inglés",
+      "description": "Elige si deseas transcribir o traducir a inglés"
+    },
+    "language": {
+      "label": "Idioma",
+      "placeholder": "auto",
+      "description": "Código de idioma (ej., en, es, fr) o 'auto' para detección automática"
+    },
+    "output": {
+      "label": "Formato de Salida",
+      "txt": "Texto Plano",
+      "json": "JSON",
+      "vtt": "WebVTT",
+      "srt": "Subtítulos SRT",
+      "tsv": "TSV",
+      "description": "El formato para la salida de transcripción"
+    },
+    "vadFilter": {
+      "label": "Filtro de Detección de Actividad de Voz (VAD)",
+      "description": "Filtrar segmentos de audio que no sean habla"
+    },
+    "wordTimestamps": {
+      "label": "Marcas de Tiempo por Palabra",
+      "description": "Incluir marcas de tiempo para palabras individuales"
+    }
+  },
+  "actions": {
+    "save": "Guardar",
+    "saving": "Guardando...",
+    "test": "Probar Conexión",
+    "testing": "Probando...",
+    "recording": "Grabando..."
+  },
+  "messages": {
+    "configSaved": "¡Configuración de Whisper guardada exitosamente!",
+    "configSaveFailed": "Error al guardar la configuración",
+    "configureFirst": "Por favor configura la URL de API primero",
+    "recordingInfo": "Grabando audio... Haz clic nuevamente para detener",
+    "testFailed": "Prueba fallida",
+    "unknownError": "Error desconocido",
+    "testingTranscription": "Probando transcripción...",
+    "testSuccess": "¡Prueba exitosa!",
+    "transcribedPrefix": "Transcrito: \""
+  },
+  "howToUse": {
+    "title": "Cómo Usar",
+    "step1": "Haz clic en el botón del micrófono en el campo de chat para comenzar a grabar",
+    "step2": "Habla tu mensaje claramente",
+    "step3": "Haz clic en el botón de verificación para detener y transcribir, o X para cancelar",
+    "step4": "El texto transcrito se agregará a tu mensaje automáticamente"
+  },
+  "apiInfo": {
+    "title": "Información de API",
+    "yourApi": "Tu API de Whisper:",
+    "implementation": "Implementación:",
+    "endpoint": "Endpoint:",
+    "endpointValue": "/asr con parámetros de consulta",
+    "supportedFormats": "Formatos soportados:",
+    "formatsValue": "WebM, MP3, WAV, M4A, y más"
+  }
+}

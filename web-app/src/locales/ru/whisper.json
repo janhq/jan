@@ -1,0 +1,80 @@
+{
+  "title": "Настройки Whisper",
+  "subtitle": "Настройте ваш API Whisper для транскрипции голосового ввода",
+  "infoCard": {
+    "title": "Голосовой Ввод с Whisper",
+    "description": "Подключите ваш API Whisper для включения голосового ввода в Jan. Записывайте аудио и получайте мгновенные транскрипции прямо в вашем чате.",
+    "noApiKeyRequired": "ℹ️ API ключ не требуется для локальных серверов Whisper"
+  },
+  "apiConfiguration": {
+    "title": "Конфигурация API",
+    "apiUrl": {
+      "label": "URL API",
+      "placeholder": "https://whisper.contextcompany.com.co/asr",
+      "description": "URL конечной точки для вашего API Whisper ASR Webservice",
+      "required": "URL API обязателен"
+    },
+    "task": {
+      "label": "Задача",
+      "transcribe": "Транскрибировать",
+      "translate": "Перевести на Английский",
+      "description": "Выберите транскрипцию или перевод на английский"
+    },
+    "language": {
+      "label": "Язык",
+      "placeholder": "auto",
+      "description": "Код языка (напр., en, es, fr, ru) или 'auto' для автоматического определения"
+    },
+    "output": {
+      "label": "Формат Вывода",
+      "txt": "Простой Текст",
+      "json": "JSON",
+      "vtt": "WebVTT",
+      "srt": "Субтитры SRT",
+      "tsv": "TSV",
+      "description": "Формат для вывода транскрипции"
+    },
+    "vadFilter": {
+      "label": "Фильтр Обнаружения Голосовой Активности (VAD)",
+      "description": "Фильтровать неречевые сегменты аудио"
+    },
+    "wordTimestamps": {
+      "label": "Временные Метки Слов",
+      "description": "Включить временные метки для отдельных слов"
+    }
+  },
+  "actions": {
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "test": "Тест Соединения",
+    "testing": "Тестирование...",
+    "recording": "Запись..."
+  },
+  "messages": {
+    "configSaved": "Конфигурация Whisper успешно сохранена!",
+    "configSaveFailed": "Не удалось сохранить конфигурацию",
+    "configureFirst": "Пожалуйста, сначала настройте URL API",
+    "recordingInfo": "Запись аудио... Нажмите снова, чтобы остановить",
+    "testFailed": "Тест не пройден",
+    "unknownError": "Неизвестная ошибка",
+    "testingTranscription": "Тестирование транскрипции...",
+    "testSuccess": "Тест успешен!",
+    "transcribedPrefix": "Транскрибировано: \""
+  },
+  "howToUse": {
+    "title": "Как Использовать",
+    "step1": "Нажмите кнопку микрофона в поле ввода чата, чтобы начать запись",
+    "step2": "Произнесите ваше сообщение четко",
+    "step3": "Нажмите кнопку галочки, чтобы остановить и транскрибировать, или X для отмены",
+    "step4": "Транскрибированный текст будет автоматически добавлен к вашему сообщению"
+  },
+  "apiInfo": {
+    "title": "Информация об API",
+    "yourApi": "Ваш API Whisper:",
+    "implementation": "Реализация:",
+    "endpoint": "Конечная точка:",
+    "endpointValue": "/asr с параметрами запроса",
+    "supportedFormats": "Поддерживаемые форматы:",
+    "formatsValue": "WebM, MP3, WAV, M4A и другие"
+  }
+}
