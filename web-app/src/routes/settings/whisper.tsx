@@ -26,7 +26,6 @@ export const Route = createFileRoute(route.settings.whisper as any)({
 function WhisperSettings() {
   const [config, setConfig] = useState<WhisperConfig>({
     apiUrl: '',
-    apiKey: '',
     task: 'transcribe',
     language: 'auto',
     output: 'txt',
@@ -36,7 +35,6 @@ function WhisperSettings() {
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
-  const [showApiKey, setShowApiKey] = useState(false)
 
   const { startRecording, state: recorderState } = useAudioRecorder()
 
@@ -181,31 +179,6 @@ function WhisperSettings() {
                       />
                       <p className="text-xs text-main-view-fg/50">
                         The endpoint URL for your Whisper ASR Webservice API
-                      </p>
-                    </div>
-
-                    {/* API Key */}
-                    <div className="space-y-2">
-                      <Label htmlFor="apiKey">API Key (Optional)</Label>
-                      <div className="relative">
-                        <Input
-                          id="apiKey"
-                          type={showApiKey ? 'text' : 'password'}
-                          placeholder="Enter your API key if required"
-                          value={config.apiKey || ''}
-                          onChange={(e) => handleChange('apiKey', e.target.value)}
-                          className="pr-20"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-main-view-fg/50 hover:text-main-view-fg"
-                        >
-                          {showApiKey ? 'Hide' : 'Show'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-main-view-fg/50">
-                        Authentication key for the Whisper API (if your server requires it)
                       </p>
                     </div>
 

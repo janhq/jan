@@ -31,7 +31,6 @@ Esta guía explica cómo usar la integración de Whisper para entrada de voz en 
 - ✅ Navegador moderno con soporte de MediaRecorder API
 - ✅ Permisos de micrófono
 - ✅ API de Whisper configurada (tu servidor: https://whisper.contextcompany.com.co)
-- ✅ Clave de API válida
 
 ### Navegadores Soportados:
 - Chrome/Edge 49+
@@ -60,12 +59,7 @@ Ingresa la siguiente información:
 https://whisper.contextcompany.com.co/asr
 ```
 
-#### **API Key** (Opcional)
-Tu clave de autenticación personal (si tu servidor lo requiere):
-```
-your-api-key-here
-```
-> ⚠️ **Seguridad**: Tu API key se guarda localmente en tu navegador y nunca se comparte.
+> ℹ️ **Nota**: Este servidor no requiere autenticación. No es necesario proporcionar una API Key.
 
 #### **Task** (Requerido)
 Selecciona la tarea a realizar:
@@ -282,9 +276,10 @@ graph TD
 
 ### Seguridad
 
-- La API key se guarda en `localStorage`
+- No se requiere autenticación para tu servidor Whisper
 - No se envían datos a terceros
 - Todo el audio se procesa por tu API privada
+- La configuración se guarda localmente en `localStorage`
 
 ### Limitaciones
 

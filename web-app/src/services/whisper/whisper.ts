@@ -5,7 +5,6 @@
 
 export interface WhisperConfig {
   apiUrl: string
-  apiKey?: string
   task?: 'transcribe' | 'translate'
   language?: string
   output?: 'txt' | 'vtt' | 'srt' | 'tsv' | 'json'
@@ -82,16 +81,9 @@ export async function transcribeAudio(
     // Build full URL with query parameters
     const url = `${config.apiUrl}?${params.toString()}`
 
-    // Configure headers
-    const headers: HeadersInit = {}
-    if (config.apiKey) {
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-    }
-
-    // Make API request
+    // Make API request (no authentication headers required)
     const response = await fetch(url, {
       method: 'POST',
-      headers,
       body: formData,
     })
 
@@ -147,7 +139,6 @@ export function getDefaultWhisperConfig(): WhisperConfig {
   // Default configuration - users should update this
   return {
     apiUrl: 'https://whisper.contextcompany.com.co/asr',
-    apiKey: '', // Users can set their API key if required
     task: 'transcribe', // Default to transcription
     language: 'auto', // Auto-detect language
     output: 'txt', // Default to plain text
