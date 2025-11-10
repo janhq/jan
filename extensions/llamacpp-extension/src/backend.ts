@@ -3,6 +3,53 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig, basenameNoExt } from './util'
 import { dirname, basename } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+
+/*
+ * Helper function to map an old backend type string to its new, common equivalent.
+ * This is used for migrating stored user preferences.
+ */
+export function mapOldBackendToNew(oldBackend: string): string {
+    const isWindows = oldBackend.startsWith('win-')
+    const isLinux = oldBackend.startsWith('linux-')
+    const osPrefix = isWindows ? 'win-' : isLinux ? 'linux-' : ''
+
+    // Determine architecture suffix, defaulting to x64
+    const archSuffix = oldBackend.includes('-arm64') ? 'arm64' : 'x64'
+    const isX64 = archSuffix === 'x64'
+
+    // Handle GPU backends
+    if (oldBackend.includes('cuda-cu12.0')) {
+        // Migration from e.g., 'linux-avx2-cuda-cu12.0-x64' to 'linux-cuda-12-common_cpus-x64'
+        return `${osPrefix}cuda-12-common_cpus-${isX64 ? 'x64' : archSuffix}`
+    } else if (oldBackend.includes('cuda-cu11.7')) {
+        // Migration from e.g., 'win-noavx-cuda-cu11.7-x64' to 'win-cuda-11-common_cpus-x64'
+        return `${osPrefix}cuda-11-common_cpus-${isX64 ? 'x64' : archSuffix}`
+    } else if (oldBackend.includes('vulkan')) {
+        // If it's already the new name, return it
+        if (oldBackend.includes('vulkan-common_cpus')) return oldBackend
+
+        // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
+        return `${osPrefix}vulkan-common_cpus-${isX64 ? 'x64' : archSuffix}`
+    }
+
+    // Handle CPU-only backends (avx, avx2, avx512, noavx)
+    const isOldCpuBackend =
+        oldBackend.includes('avx512') ||
+        oldBackend.includes('avx2') ||
+        oldBackend.includes('avx-x64') || // Check for 'avx' but not as part of 'avx2' or 'avx512'
+        oldBackend.includes('noavx-x64')
+
+    if (isOldCpuBackend) {
+        // Migration from e.g., 'win-avx512-x64' to 'win-common_cpus-x64'
+        return `${osPrefix}common_cpus-${isX64 ? 'x64' : archSuffix}`
+    }
+
+    // Return original if it doesn't match a pattern that needs migration (e.g., macos/arm64 which are already 'common')
+    return oldBackend
+}
+
+
+
 /*
  * Reads currently installed backends in janDataFolderPath
  *
@@ -76,6 +123,12 @@ async function fetchRemoteSupportedBackends(
 
       if (supportedBackends.includes(backend)) {
         remote.push({ version, backend })
+        continue
+      }
+      const mappedNew = mapOldBackendToNew(backend)
+      if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
+          // Push the ORIGINAL backend name here, as this is the name of the file on the server.
+          remote.push({ version, backend })
       }
     }
   }
