@@ -2,7 +2,16 @@ import type { UploadsService, UploadResult } from './types'
 import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
+import { ExtensionTypeEnum, type RAGExtension } from '@janhq/core'
+
+// Temporary type definition for IngestAttachmentsResult
+interface IngestAttachmentsResult {
+  files: Array<{
+    id: string
+    size?: number
+    chunk_count?: number
+  }>
+}
 
 export class DefaultUploadsService implements UploadsService {
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {

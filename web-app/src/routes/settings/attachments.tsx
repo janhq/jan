@@ -205,8 +205,8 @@ function AttachmentsSettings() {
                     recommended: 'recommended' in baseProps ? baseProps.recommended : undefined,
                   }
 
-                  const title = d.titleKey ? t(d.titleKey) : d.title
-                  const description = d.descriptionKey ? t(d.descriptionKey) : d.description
+                  const title = (d as any).titleKey ? t((d as any).titleKey) : d.title
+                  const description = (d as any).descriptionKey ? t((d as any).descriptionKey) : d.description
 
                   return (
                     <CardItem

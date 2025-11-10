@@ -8,7 +8,8 @@
 
 import { TauriCoreService } from './tauri'
 import type { ExtensionManifest } from '@/lib/extension'
-import JanConversationalExtension from '@janhq/conversational-extension'
+// TODO: Re-enable when @janhq/conversational-extension is available
+// import JanConversationalExtension from '@janhq/conversational-extension'
 
 export class MobileCoreService extends TauriCoreService {
   /**
@@ -45,25 +46,27 @@ export class MobileCoreService extends TauriCoreService {
    * Private method to return pre-bundled mobile extensions
    */
   private getBundledExtensions(): ExtensionManifest[] {
-    const conversationalExt = new JanConversationalExtension(
-      'built-in',
-      '@janhq/conversational-extension',
-      'Conversational Extension',
-      true,
-      'Manages conversation threads and messages',
-      '1.0.0'
-    )
+    // TODO: Re-enable when @janhq/conversational-extension is available
+    // const conversationalExt = new JanConversationalExtension(
+    //   'built-in',
+    //   '@janhq/conversational-extension',
+    //   'Conversational Extension',
+    //   true,
+    //   'Manages conversation threads and messages',
+    //   '1.0.0'
+    // )
 
     return [
-      {
-        name: '@janhq/conversational-extension',
-        productName: 'Conversational Extension',
-        url: 'built-in',
-        active: true,
-        description: 'Manages conversation threads and messages',
-        version: '1.0.0',
-        extensionInstance: conversationalExt,
-      },
+      // TODO: Re-enable when @janhq/conversational-extension is available
+      // {
+      //   name: '@janhq/conversational-extension',
+      //   productName: 'Conversational Extension',
+      //   url: 'built-in',
+      //   active: true,
+      //   description: 'Manages conversation threads and messages',
+      //   version: '1.0.0',
+      //   extensionInstance: conversationalExt,
+      // },
     ]
   }
 }

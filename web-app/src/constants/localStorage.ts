@@ -8,6 +8,7 @@ export const localStorageKey = {
   settingAppearance: 'setting-appearance',
   settingGeneral: 'setting-general',
   settingCodeBlock: 'setting-code-block',
+  settingInterface: 'setting-interface',
   settingLocalApiServer: 'setting-local-api-server',
   settingProxyConfig: 'setting-proxy-config',
   settingHardware: 'setting-hardware',

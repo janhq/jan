@@ -11,6 +11,7 @@ export const route = {
     providers: '/settings/providers/$providerName',
     general: '/settings/general',
     appearance: '/settings/appearance',
+    interface: '/settings/interface',
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',
     extensions: '/settings/extensions',
