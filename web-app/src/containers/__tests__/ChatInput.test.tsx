@@ -40,6 +40,8 @@ let mockAppState = {
   loadingModel: false,
   tools: [],
   updateTools: vi.fn(),
+  activeModels: [] as string[],
+  cancelToolCall: vi.fn(),
 }
 
 vi.mock('@/hooks/useAppState', () => ({
@@ -245,6 +247,8 @@ describe('ChatInput', () => {
     mockAppState.abortControllers = {}
     mockAppState.loadingModel = false
     mockAppState.tools = []
+    mockAppState.activeModels = []
+    mockAppState.cancelToolCall = vi.fn()
   })
 
   it('renders chat input textarea', async () => {

@@ -42,6 +42,8 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
+import { useAppState } from '@/hooks/useAppState'
+import { useShallow } from 'zustand/shallow'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -79,7 +81,9 @@ function ProviderDetail() {
     },
   ]
   const { step } = useSearch({ from: Route.id })
-  const [activeModels, setActiveModels] = useState<string[]>([])
+  const [activeModels, setActiveModels] = useAppState(
+    useShallow((state) => [state.activeModels, state.setActiveModels])
+  )
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
@@ -173,16 +177,6 @@ function ProviderDetail() {
       .models()
       .getActiveModels()
       .then((models) => setActiveModels(models || []))
-
-    // Set up interval for real-time updates
-    const intervalId = setInterval(() => {
-      serviceHub
-        .models()
-        .getActiveModels()
-        .then((models) => setActiveModels(models || []))
-    }, 5000)
-
-    return () => clearInterval(intervalId)
   }, [serviceHub, setActiveModels])
 
   // Clear importing state when model appears in the provider's model list
@@ -385,7 +379,7 @@ function ProviderDetail() {
         await installBackend(selectedFile)
 
         // Extract filename from the selected file path and replace spaces with dashes
-        const fileName = basenameNoExt(selectedFile).replace(/\s+/g, "-")
+        const fileName = basenameNoExt(selectedFile).replace(/\s+/g, '-')
 
         toast.success(t('settings:backendInstallSuccess'), {
           description: `Llamacpp ${fileName} installed`,
@@ -565,6 +559,14 @@ function ProviderDetail() {
                                 })
 
                                 serviceHub.models().stopAllModels()
+
+                                // Refresh active models after stopping
+                                serviceHub
+                                  .models()
+                                  .getActiveModels()
+                                  .then((models) =>
+                                    setActiveModels(models || [])
+                                  )
                               }
                             }}
                           />

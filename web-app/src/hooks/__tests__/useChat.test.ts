@@ -63,6 +63,7 @@ vi.mock('../useAppState', () => ({
         setAbortController: vi.fn(),
         streamingContent: undefined,
         setTokenSpeed: vi.fn(), // Added setTokenSpeed mock
+        setActiveModels: vi.fn(),
       }
       return selector ? selector(state) : state
     },
@@ -266,6 +267,7 @@ vi.mock('../useServiceHub', () => ({
       startModel: mockStartModel,
       stopModel: vi.fn(() => Promise.resolve()),
       stopAllModels: vi.fn(() => Promise.resolve()),
+      getActiveModels: vi.fn(() => Promise.resolve([])),
     }),
     providers: () => ({
       updateSettings: vi.fn(() => Promise.resolve()),
