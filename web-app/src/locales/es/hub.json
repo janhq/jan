@@ -1,0 +1,31 @@
+{
+  "sortNewest": "Más recientes",
+  "sortMostDownloaded": "Más descargados",
+  "use": "Usar",
+  "download": "Descargar",
+  "downloaded": "Descargado",
+  "loadingModels": "Cargando modelos...",
+  "noModels": "No se encontraron modelos",
+  "by": "Por",
+  "downloads": "Descargas",
+  "variants": "Variantes",
+  "showVariants": "Mostrar variantes",
+  "useModel": "Usar este modelo",
+  "downloadModel": "Descargar modelo",
+  "tools": "Herramientas",
+  "searchPlaceholder": "Buscar modelos en Hugging Face...",
+  "joyride": {
+    "recommendedModelTitle": "Modelo Recomendado",
+    "recommendedModelContent": "Explora y descarga potentes modelos de IA de varios proveedores, todo en un solo lugar. Sugerimos comenzar con Jan-Nano: un modelo optimizado para llamadas de función, integración de herramientas y capacidades de investigación. Es ideal para construir agentes de IA interactivos.",
+    "downloadInProgressTitle": "Descarga en Progreso",
+    "downloadInProgressContent": "Tu modelo se está descargando. Rastrea el progreso aquí: una vez terminado, estará listo para usar.",
+    "downloadModelTitle": "Descargar Modelo",
+    "downloadModelContent": "Haz clic en el botón Descargar para comenzar a descargar el modelo.",
+    "back": "Volver",
+    "close": "Cerrar",
+    "lastWithDownload": "Descargar",
+    "last": "Finalizar",
+    "next": "Siguiente",
+    "skip": "Omitir"
+  }
+}

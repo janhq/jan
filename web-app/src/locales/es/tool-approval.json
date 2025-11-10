@@ -1,0 +1,12 @@
+{
+  "title": "Solicitud de Llamada de Herramienta",
+  "description": "El asistente quiere usar la herramienta: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Aviso de Seguridad:</strong> Herramientas maliciosas o contenido de conversación podrían potencialmente engañar al asistente para intentar acciones dañinas. Revisa cada llamada de herramienta cuidadosamente antes de aprobar.",
+  "deny": "Denegar",
+  "allowOnce": "Permitir Una Vez",
+  "alwaysAllow": "Permitir en hilo",
+  "permissions": "Permisos",
+  "approve": "Aprobar",
+  "reject": "Rechazar",
+  "parameters": "Parámetros de la Herramienta"
+}
