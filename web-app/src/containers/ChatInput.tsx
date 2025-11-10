@@ -48,6 +48,7 @@ import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { MicrophoneButton } from '@/containers/MicrophoneButton'
 
 import {
   Attachment,
@@ -1162,10 +1163,19 @@ const ChatInput = ({
                       </Tooltip>
                     </TooltipProvider>
                   )}
-                {/* Microphone - always available - Temp Hide */}
-                {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                <IconMicrophone size={18} className="text-main-view-fg/50" />
-              </div> */}
+                {/* Microphone - Voice Input */}
+                <MicrophoneButton
+                  onTranscriptionComplete={(text) => {
+                    // Append transcribed text to current message
+                    const currentText = message || prompt
+                    const newText = currentText
+                      ? `${currentText}\n${text}`
+                      : text
+                    setMessage(newText)
+                    setPrompt(newText)
+                  }}
+                  disabled={loadingModel || streamingContent}
+                />
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>
                     <Tooltip>

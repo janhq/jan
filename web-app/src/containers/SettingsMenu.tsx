@@ -116,6 +116,12 @@ const SettingsMenu = () => {
       isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS_SETTINGS],
     },
     {
+      title: 'Whisper',
+      route: route.settings.whisper,
+      hasSubMenu: false,
+      isEnabled: true, // Always enabled - voice input is available on all platforms
+    },
+    {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
       hasSubMenu: false,
