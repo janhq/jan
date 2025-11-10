@@ -59,9 +59,7 @@ function LocalAPIServerContent() {
   const { selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
-    !apiKey || apiKey.toString().trim().length === 0
-  )
+  const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(false)
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -91,10 +89,7 @@ function LocalAPIServerContent() {
         description: `Attempting to start server on port ${serverPort}`,
       })
 
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        setShowApiKeyError(true)
-        return
-      }
+      // API key is optional; proceed even if not provided
       setShowApiKeyError(false)
 
       setServerStatus('pending')
@@ -267,10 +262,6 @@ function LocalAPIServerContent() {
                   <Switch
                     checked={enableOnStartup}
                     onCheckedChange={(checked) => {
-                      if (!apiKey || apiKey.toString().trim().length === 0) {
-                        setShowApiKeyError(true)
-                        return
-                      }
                       setEnableOnStartup(checked)
                     }}
                   />
@@ -350,7 +341,7 @@ function LocalAPIServerContent() {
                 description={t('settings:localApiServer.apiKeyDesc')}
                 className={cn(
                   'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isApiKeyEmpty && showApiKeyError && 'pb-6'
+                  showApiKeyError && 'pb-6'
                 )}
                 classNameWrapperAction="w-full sm:w-auto"
                 actions={

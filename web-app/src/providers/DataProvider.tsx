@@ -107,12 +107,6 @@ export function DataProvider() {
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
-      // Validate API key before starting
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        console.warn('Cannot start Local API Server: API key is required')
-        return
-      }
-
       const modelToStart = getModelToStart({
         selectedModel,
         selectedProvider,

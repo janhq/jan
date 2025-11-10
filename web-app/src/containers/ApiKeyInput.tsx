@@ -24,10 +24,11 @@ export function ApiKeyInput({
 
   const validateApiKey = useCallback(
     (value: string) => {
+      // API key is optional for local server; no hard validation
       if (!value || value.trim().length === 0) {
-        setError(t('common:apiKeyRequired'))
-        onValidationChange?.(false)
-        return false
+        setError('')
+        onValidationChange?.(true)
+        return true
       }
       setError('')
       onValidationChange?.(true)
