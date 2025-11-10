@@ -42,6 +42,14 @@ export async function transcribeAudio(
     const arrayBuffer = await audioBlob.arrayBuffer()
     const audioData = Array.from(new Uint8Array(arrayBuffer))
 
+    // Debug: Log audio information
+    console.log('[Whisper Debug] Audio Blob info:', {
+      size: audioBlob.size,
+      type: audioBlob.type,
+      arrayBufferSize: arrayBuffer.byteLength,
+      audioDataLength: audioData.length,
+    })
+
     // Build query parameters object for /asr endpoint
     const queryParams: Record<string, string> = {}
 
@@ -77,6 +85,7 @@ export async function transcribeAudio(
 
     console.log('[Whisper] Using Tauri backend to bypass CORS')
     console.log('[Whisper] Making request to:', config.apiUrl)
+    console.log('[Whisper] Query params:', queryParams)
 
     // Use Tauri backend command to bypass CORS
     const response = await invoke<{
@@ -90,6 +99,13 @@ export async function transcribeAudio(
       audioFilename: 'recording.webm',
       fieldName: 'audio_file',
       headers: null,
+    })
+
+    console.log('[Whisper Debug] Response received:', {
+      status: response.status,
+      bodyLength: response.body.length,
+      body: response.body,
+      headers: response.headers,
     })
 
     if (response.status !== 200) {
