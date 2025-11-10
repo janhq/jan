@@ -2,7 +2,6 @@ pub mod app;
 pub mod downloads;
 pub mod extensions;
 pub mod filesystem;
-pub mod http;
 pub mod mcp;
 pub mod server;
 pub mod setup;

@@ -3,7 +3,7 @@
  * Compatible with ahmetoner/whisper-asr-webservice
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
 export interface WhisperConfig {
   apiUrl: string
@@ -28,7 +28,7 @@ export interface TranscriptionError {
 
 /**
  * Transcribe audio using Whisper ASR Webservice API
- * Uses Tauri backend to bypass CORS restrictions
+ * Uses Tauri's native HTTP when available to bypass browser CORS
  * @param audioBlob - Audio file to transcribe
  * @param config - Whisper API configuration
  * @returns Transcribed text
@@ -38,74 +38,77 @@ export async function transcribeAudio(
   config: WhisperConfig
 ): Promise<TranscriptionResponse> {
   try {
-    // Convert Blob to ArrayBuffer then to Array
-    const arrayBuffer = await audioBlob.arrayBuffer()
-    const audioData = Array.from(new Uint8Array(arrayBuffer))
+    // Use Tauri's native HTTP when available to bypass browser CORS
+    const doFetch: typeof fetch =
+      typeof (window as any).__TAURI__ !== 'undefined'
+        ? (fetchTauri as unknown as typeof fetch)
+        : fetch
+    // Create FormData with audio file
+    const formData = new FormData()
+
+    // Create a File object from Blob - use 'audio_file' as the field name
+    const audioFile = new File([audioBlob], 'recording.webm', {
+      type: audioBlob.type || 'audio/webm',
+    })
+
+    formData.append('audio_file', audioFile)
 
     // Build query parameters for /asr endpoint
-    const queryParams: Record<string, string> = {}
+    const params = new URLSearchParams()
 
     // Add optional parameters
     if (config.task) {
-      queryParams.task = config.task
+      params.append('task', config.task)
     } else {
-      queryParams.task = 'transcribe' // Default to transcribe
+      params.append('task', 'transcribe') // Default to transcribe
     }
 
     if (config.language && config.language !== 'auto') {
-      queryParams.language = config.language
+      params.append('language', config.language)
     }
 
     if (config.output) {
-      queryParams.output = config.output
+      params.append('output', config.output)
     } else {
-      queryParams.output = 'txt' // Default to plain text
+      params.append('output', 'txt') // Default to plain text
     }
 
     // Enable encoding by default (recommended)
-    queryParams.encode = String(config.encode ?? true)
+    params.append('encode', String(config.encode ?? true))
 
     // Add VAD filter if specified
     if (config.vadFilter) {
-      queryParams.vad_filter = 'true'
+      params.append('vad_filter', 'true')
     }
 
     // Add word timestamps if specified
     if (config.wordTimestamps) {
-      queryParams.word_timestamps = 'true'
+      params.append('word_timestamps', 'true')
     }
 
-    // Call Tauri backend command to make HTTP request (bypasses CORS)
-    const response = await invoke<{
-      status: number
-      body: string
-      headers: Record<string, string>
-    }>('http_post_multipart', {
-      url: config.apiUrl,
-      queryParams,
-      audioData,
-      audioFilename: 'recording.webm',
-      fieldName: 'audio_file',
-      headers: null, // No authentication needed for this Whisper server
+    // Build full URL with query parameters
+    const url = `${config.apiUrl}?${params.toString()}`
+
+    // Make API request (no authentication headers required)
+    const response = await doFetch(url, {
+      method: 'POST',
+      body: formData,
     })
 
-    if (response.status !== 200) {
-      let errorMessage = `API request failed with status ${response.status}`
-      try {
-        const errorData = JSON.parse(response.body)
-        errorMessage =
-          errorData.detail?.[0]?.msg || errorData.message || errorMessage
-      } catch {
-        // Couldn't parse error, use generic message
-      }
-      throw new Error(errorMessage)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(
+        errorData.detail?.[0]?.msg ||
+        errorData.message ||
+        `API request failed with status ${response.status}`
+      )
     }
 
     // Handle response based on output format
-    const contentType = response.headers['content-type'] || ''
+    const contentType = response.headers.get('content-type')
 
-    if (contentType.includes('application/json')) {
-      const data = JSON.parse(response.body)
+    if (contentType?.includes('application/json')) {
+      const data = await response.json()
       // JSON format includes detailed information
       return {
         text: data.text || '',
@@ -114,8 +117,9 @@ export async function transcribeAudio(
       }
     } else {
       // Plain text format (default)
+      const text = await response.text()
       return {
-        text: response.body.trim(),
+        text: text.trim(),
         language: config.language,
       }
     }
