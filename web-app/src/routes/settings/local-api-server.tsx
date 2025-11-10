@@ -17,7 +17,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
@@ -50,7 +49,6 @@ function LocalAPIServerContent() {
     serverHost,
     serverPort,
     apiPrefix,
-    apiKey,
     trustedHosts,
     proxyTimeout,
   } = useLocalApiServer()
@@ -58,8 +56,6 @@ function LocalAPIServerContent() {
   const { serverStatus, setServerStatus } = useAppState()
   const { selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
-  const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(false)
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -75,22 +71,14 @@ function LocalAPIServerContent() {
     checkServerStatus()
   }, [serviceHub, setServerStatus])
 
-  const handleApiKeyValidation = (isValid: boolean) => {
-    setIsApiKeyEmpty(!isValid)
-  }
-
   const [isModelLoading, setIsModelLoading] = useState(false)
 
   const toggleAPIServer = async () => {
-    // Validate API key before starting server
     if (serverStatus === 'stopped') {
       console.log('Starting server with port:', serverPort)
       toast.info('Starting server...', {
         description: `Attempting to start server on port ${serverPort}`,
       })
-
-      // API key is optional; proceed even if not provided
-      setShowApiKeyError(false)
 
       setServerStatus('pending')
 
@@ -140,7 +128,7 @@ function LocalAPIServerContent() {
             host: serverHost,
             port: serverPort,
             prefix: apiPrefix,
-            apiKey,
+            apiKey: '', // No API key required for local server
             trustedHosts,
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
@@ -335,22 +323,6 @@ function LocalAPIServerContent() {
                 title={t('settings:localApiServer.apiPrefix')}
                 description={t('settings:localApiServer.apiPrefixDesc')}
                 actions={<ApiPrefixInput isServerRunning={isServerRunning} />}
-              />
-              <CardItem
-                title={t('settings:localApiServer.apiKey')}
-                description={t('settings:localApiServer.apiKeyDesc')}
-                className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  showApiKeyError && 'pb-6'
-                )}
-                classNameWrapperAction="w-full sm:w-auto"
-                actions={
-                  <ApiKeyInput
-                    isServerRunning={isServerRunning}
-                    showError={showApiKeyError}
-                    onValidationChange={handleApiKeyValidation}
-                  />
-                }
               />
               <CardItem
                 title={t('settings:localApiServer.trustedHosts')}
