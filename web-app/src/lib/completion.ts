@@ -234,36 +234,19 @@ export const sendCompletion = async (
     }
   }
 
-  // Inject RAG tools on-demand (not in global tools list)
   const providerModelConfig = provider.models?.find(
     (model) => model.id === thread.model?.id || model.model === thread.model?.id
   )
-  const effectiveCapabilities = Array.isArray(
-    providerModelConfig?.capabilities
-  )
-    ? providerModelConfig?.capabilities ?? []
+  const effectiveCapabilities = Array.isArray(providerModelConfig?.capabilities)
+    ? (providerModelConfig?.capabilities ?? [])
     : getModelCapabilities(provider.provider, thread.model.id)
   const modelSupportsTools = effectiveCapabilities.includes(
     ModelCapabilities.TOOLS
   )
   let usableTools = tools
-  try {
-    const attachmentsEnabled = useAttachments.getState().enabled
-    if (
-      attachmentsEnabled &&
-      PlatformFeatures[PlatformFeature.ATTACHMENTS] &&
-      modelSupportsTools
-    ) {
-      const ragTools = await getServiceHub().rag().getTools().catch(() => [])
-      if (Array.isArray(ragTools) && ragTools.length) {
-        usableTools = [...tools, ...ragTools]
-      }
-    }
-  } catch (e) {
-    // Ignore RAG tool injection errors during completion setup
-    console.debug('Skipping RAG tools injection:', e)
+  if (modelSupportsTools) {
+    usableTools = [...tools]
   }
-
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
@@ -546,7 +529,8 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled &&
+      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()

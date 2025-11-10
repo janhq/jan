@@ -43,5 +43,11 @@
   "args": "Args",
   "env": "Env",
   "serverStatusActive": "Servidor {{serverKey}} ativado com sucesso",
-  "serverStatusInactive": "Servidor {{serverKey}} desativado com sucesso"
+  "serverStatusInactive": "Servidor {{serverKey}} desativado com sucesso",
+  "runtimeSettings": {
+    "title": "Configurações de Execução",
+    "description": "Configure como o Jan gerencia e tenta novamente os servidores MCP.",
+    "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
+    "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite."
+  }
 }

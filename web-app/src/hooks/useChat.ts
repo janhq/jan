@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
-import { useAppState } from './useAppState'
+import { useAppState, type PromptProgress } from './useAppState'
 import { useMessages } from './useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { defaultModel } from '@/lib/models'
@@ -24,7 +24,10 @@ import {
   ChatCompletionMessageToolCall,
   CompletionUsage,
 } from 'openai/resources'
-
+import { MessageStatus, ContentType, ThreadMessage } from '@janhq/core'
+import { useAttachments } from '@/hooks/useAttachments'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -40,6 +43,194 @@ import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
+
+// Helper to create thread content with consistent structure
+const createThreadContent = (
+  threadId: string,
+  text: string,
+  toolCalls: ChatCompletionMessageToolCall[],
+  messageId?: string
+) => {
+  const content = newAssistantThreadContent(threadId, text, {
+    tool_calls: toolCalls.map((e) => ({
+      ...e,
+      state: 'pending',
+    })),
+  })
+  // If continuing from a message, preserve the message ID
+  if (messageId) {
+    return { ...content, id: messageId }
+  }
+  return content
+}
+
+// Helper to cancel animation frame cross-platform
+const cancelFrame = (handle: number | undefined) => {
+  if (handle === undefined) return
+  if (typeof cancelAnimationFrame !== 'undefined') {
+    cancelAnimationFrame(handle)
+  } else {
+    clearTimeout(handle)
+  }
+}
+
+// Helper to finalize and save a message
+const finalizeMessage = (
+  finalContent: ThreadMessage,
+  addMessage: (message: ThreadMessage) => void,
+  updateStreamingContent: (content: ThreadMessage | undefined) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
+  updateThreadTimestamp: (threadId: string) => void,
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessageId?: string
+) => {
+  // If continuing from a message, update it; otherwise add new message
+  if (continueFromMessageId && updateMessage) {
+    updateMessage({ ...finalContent, id: continueFromMessageId })
+  } else {
+    addMessage(finalContent)
+  }
+  updateStreamingContent(emptyThreadContent)
+  updatePromptProgress(undefined)
+  updateThreadTimestamp(finalContent.thread_id)
+}
+
+// Helper to process streaming completion
+const processStreamingCompletion = async (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  completion: AsyncIterable<any>,
+  abortController: AbortController,
+  activeThread: Thread,
+  accumulatedTextRef: { value: string },
+  toolCalls: ChatCompletionMessageToolCall[],
+  currentCall: ChatCompletionMessageToolCall | null,
+  updateStreamingContent: (content: ThreadMessage | undefined) => void,
+  updateTokenSpeed: (message: ThreadMessage, increment?: number) => void,
+  setTokenSpeed: (message: ThreadMessage, tokensPerSecond: number, totalTokens: number) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
+  timeToFirstToken: number,
+  tokenUsageRef: { current: CompletionUsage | undefined },
+  continueFromMessageId?: string,
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessage?: ThreadMessage
+) => {
+  // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
+  let rafScheduled = false
+  let rafHandle: number | undefined
+  let pendingDeltaCount = 0
+  const reasoningProcessor = new ReasoningProcessor()
+
+  const flushStreamingContent = () => {
+    const currentContent = createThreadContent(
+      activeThread.id,
+      accumulatedTextRef.value,
+      toolCalls,
+      continueFromMessageId
+    )
+
+    // When continuing, update the message directly instead of using streamingContent
+    if (continueFromMessageId && updateMessage && continueFromMessage) {
+      updateMessage({
+        ...continueFromMessage, // Preserve original message metadata
+        content: currentContent.content, // Update content
+        status: MessageStatus.Stopped, // Keep as Stopped while streaming
+      })
+    } else {
+      updateStreamingContent(currentContent)
+    }
+
+    if (tokenUsageRef.current) {
+      setTokenSpeed(
+        currentContent,
+        tokenUsageRef.current.completion_tokens /
+          Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+        tokenUsageRef.current.completion_tokens
+      )
+    } else if (pendingDeltaCount > 0) {
+      updateTokenSpeed(currentContent, pendingDeltaCount)
+    }
+    pendingDeltaCount = 0
+    rafScheduled = false
+  }
+
+  const scheduleFlush = () => {
+    if (rafScheduled || abortController.signal.aborted) return
+    rafScheduled = true
+    const doSchedule = (cb: () => void) => {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        rafHandle = requestAnimationFrame(() => cb())
+      } else {
+        // Fallback for non-browser test environments
+        const t = setTimeout(() => cb(), 0) as unknown as number
+        rafHandle = t
+      }
+    }
+    doSchedule(() => {
+      // Check abort status before executing the scheduled callback
+      if (abortController.signal.aborted) {
+        rafScheduled = false
+        return
+      }
+      flushStreamingContent()
+    })
+  }
+
+  try {
+    for await (const part of completion) {
+      // Check if aborted before processing each part
+      if (abortController.signal.aborted) {
+        break
+      }
+
+      // Handle prompt progress if available
+      if ('prompt_progress' in part && part.prompt_progress) {
+        // Force immediate state update to ensure we see intermediate values
+        flushSync(() => {
+          updatePromptProgress(part.prompt_progress)
+        })
+        // Add a small delay to make progress visible
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      // Error message
+      if (!part.choices) {
+        throw new Error(
+          'message' in part
+            ? (part.message as string)
+            : (JSON.stringify(part) ?? '')
+        )
+      }
+
+      if (part.choices[0]?.delta?.tool_calls) {
+        extractToolCall(part, currentCall, toolCalls)
+        // Schedule a flush to reflect tool update
+        scheduleFlush()
+      }
+      const deltaReasoning = reasoningProcessor.processReasoningChunk(part)
+      if (deltaReasoning) {
+        accumulatedTextRef.value += deltaReasoning
+        pendingDeltaCount += 1
+        // Schedule flush for reasoning updates
+        scheduleFlush()
+      }
+      const deltaContent = part.choices[0]?.delta?.content || ''
+      if (deltaContent) {
+        accumulatedTextRef.value += deltaContent
+        pendingDeltaCount += 1
+        // Batch UI update on next animation frame
+        scheduleFlush()
+      }
+    }
+  } finally {
+    // Always clean up scheduled RAF when stream ends (either normally or via abort)
+    cancelFrame(rafHandle)
+    rafHandle = undefined
+    rafScheduled = false
+
+    // Finalize reasoning (close any open think tags)
+    accumulatedTextRef.value += reasoningProcessor.finalize()
+  }
+}
 
 export const useChat = () => {
   const [
@@ -89,6 +280,7 @@ export const useChat = () => {
 
   const getMessages = useMessages((state) => state.getMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const updateMessage = useMessages((state) => state.updateMessage)
   const setMessages = useMessages((state) => state.setMessages)
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
@@ -265,7 +457,8 @@ export const useChat = () => {
       updateAttachmentProcessing?: (
         fileName: string,
         status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
-      ) => void
+      ) => void,
+      continueFromMessageId?: string
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
@@ -275,8 +468,14 @@ export const useChat = () => {
       if (!activeThread || !activeProvider) return
 
       // Separate images and documents
-      const images = attachments?.filter((a) => a.type === 'image') || []
-      const documents = attachments?.filter((a) => a.type === 'document') || []
+      const fileAttachmentsFeatureEnabled =
+        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+      const allAttachments = attachments ?? []
+
+      const images = allAttachments.filter((a) => a.type === 'image')
+      const documents = fileAttachmentsFeatureEnabled
+        ? allAttachments.filter((a) => a.type === 'document')
+        : []
 
       // Process attachments BEFORE sending
       const processedAttachments: Attachment[] = []
@@ -360,6 +559,11 @@ export const useChat = () => {
               throw err // Re-throw to handle in outer catch
             }
           }
+          // Update thread since documents attached
+          useThreads.getState().updateThread(activeThread.id, {
+            metadata: { hasDocuments: true },
+          })
+
         } catch (err) {
           console.error('Failed to ingest documents:', err)
           const desc = err instanceof Error ? err.message : String(err)
@@ -376,7 +580,13 @@ export const useChat = () => {
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       updatePromptProgress(undefined)
-      // Do not add new message on retry
+
+      // Find the message to continue from if provided
+      const continueFromMessage = continueFromMessageId
+        ? messages.find((m) => m.id === continueFromMessageId)
+        : undefined
+
+      // Do not add new message on retry or when continuing
       // All attachments (images + docs) ingested successfully.
       // Build the user content once; use it for both the outbound request
       // and persisting to the store so both are identical.
@@ -388,27 +598,49 @@ export const useChat = () => {
         message,
         processedAttachments
       )
-      if (troubleshooting) {
+      if (troubleshooting && !continueFromMessageId) {
         addMessage(userContent)
       }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
       const selectedModel = useModelProvider.getState().selectedModel
+
+      // If continuing, start with the previous content
+      const accumulatedTextRef = {
+        value: continueFromMessage?.content?.[0]?.text?.value || ''
+      }
+      let currentAssistant: Assistant | undefined | null
+
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
           await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
         }
-        const currentAssistant = useAssistant.getState().currentAssistant
+        currentAssistant = useAssistant.getState().currentAssistant
+
+        // Filter out the stopped message from context if continuing
+        const contextMessages = continueFromMessageId
+          ? messages.filter((m) => m.id !== continueFromMessageId)
+          : messages
+
         const builder = new CompletionMessagesBuilder(
-          messages,
+          contextMessages,
           currentAssistant
             ? renderInstructions(currentAssistant.instructions)
             : undefined
         )
         // Using addUserMessage to respect legacy code. Should be using the userContent above.
-        if (troubleshooting) builder.addUserMessage(userContent)
+        if (troubleshooting && !continueFromMessageId) {
+          builder.addUserMessage(userContent)
+        } else if (continueFromMessage) {
+          // When continuing, add the partial assistant response to the context
+          builder.addAssistantMessage(
+            continueFromMessage.content?.[0]?.text?.value || '',
+            undefined,
+            []
+          )
+        }
 
         let isCompleted = false
 
@@ -419,6 +651,27 @@ export const useChat = () => {
               return !disabledTools.includes(tool.name)
             })
           : []
+
+        // Conditionally inject RAG if tools are supported and documents are attached
+        const ragFeatureAvailable =
+          useAttachments.getState().enabled &&
+          PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+        // Check if documents were attached in the current thread
+        const hasDocuments = useThreads.getState().getThreadById(activeThread.id)?.metadata?.hasDocuments
+        if (hasDocuments && ragFeatureAvailable) {
+          try {
+            const ragTools = await serviceHub
+              .rag()
+              .getTools()
+              .catch(() => [])
+            if (Array.isArray(ragTools) && ragTools.length) {
+              availableTools = [...availableTools, ...ragTools]
+              console.log('RAG tools injected for completion.')
+            }
+          } catch (e) {
+            console.warn('Failed to inject RAG tools:', e)
+          }
+        }
 
         // Check if proactive mode is enabled
         const isProactiveMode =
@@ -485,21 +738,26 @@ export const useChat = () => {
           )
 
           if (!completion) throw new Error('No completion received')
-          let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
           const timeToFirstToken = Date.now()
           let tokenUsage: CompletionUsage | undefined = undefined
+          const tokenUsageRef = { current: tokenUsage }
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
-              accumulatedText = (message?.content as string) || ''
+              const newContent = (message?.content as string) || ''
+              if (continueFromMessageId && accumulatedTextRef.value.length > 0) {
+                accumulatedTextRef.value += newContent
+              } else {
+                accumulatedTextRef.value = newContent
+              }
 
               // Handle reasoning field if there is one
               const reasoning = extractReasoningFromMessage(message)
               if (reasoning) {
-                accumulatedText =
-                  `<think>${reasoning}</think>` + accumulatedText
+                accumulatedTextRef.value =
+                  `<think>${reasoning}</think>` + accumulatedTextRef.value
               }
 
               if (message?.tool_calls) {
@@ -509,161 +767,24 @@ export const useChat = () => {
                 tokenUsage = completion.usage
               }
             } else {
-              // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
-              let rafScheduled = false
-              let rafHandle: number | undefined
-              let pendingDeltaCount = 0
-              const reasoningProcessor = new ReasoningProcessor()
-              const scheduleFlush = () => {
-                if (rafScheduled || abortController.signal.aborted) return
-                rafScheduled = true
-                const doSchedule = (cb: () => void) => {
-                  if (typeof requestAnimationFrame !== 'undefined') {
-                    rafHandle = requestAnimationFrame(() => cb())
-                  } else {
-                    // Fallback for non-browser test environments
-                    const t = setTimeout(() => cb(), 0) as unknown as number
-                    rafHandle = t
-                  }
-                }
-                doSchedule(() => {
-                  // Check abort status before executing the scheduled callback
-                  if (abortController.signal.aborted) {
-                    rafScheduled = false
-                    return
-                  }
-
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: toolCalls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  if (tokenUsage) {
-                    setTokenSpeed(
-                      currentContent,
-                      tokenUsage.completion_tokens /
-                        Math.max((Date.now() - timeToFirstToken) / 1000, 1),
-                      tokenUsage.completion_tokens
-                    )
-                  } else if (pendingDeltaCount > 0) {
-                    updateTokenSpeed(currentContent, pendingDeltaCount)
-                  }
-                  pendingDeltaCount = 0
-                  rafScheduled = false
-                })
-              }
-              const flushIfPending = () => {
-                if (!rafScheduled) return
-                if (
-                  typeof cancelAnimationFrame !== 'undefined' &&
-                  rafHandle !== undefined
-                ) {
-                  cancelAnimationFrame(rafHandle)
-                } else if (rafHandle !== undefined) {
-                  clearTimeout(rafHandle)
-                }
-                // Do an immediate flush
-                const currentContent = newAssistantThreadContent(
-                  activeThread.id,
-                  accumulatedText,
-                  {
-                    tool_calls: toolCalls.map((e) => ({
-                      ...e,
-                      state: 'pending',
-                    })),
-                  }
-                )
-                updateStreamingContent(currentContent)
-                if (tokenUsage) {
-                  setTokenSpeed(
-                    currentContent,
-                    tokenUsage.completion_tokens /
-                      Math.max((Date.now() - timeToFirstToken) / 1000, 1),
-                    tokenUsage.completion_tokens
-                  )
-                } else if (pendingDeltaCount > 0) {
-                  updateTokenSpeed(currentContent, pendingDeltaCount)
-                }
-                pendingDeltaCount = 0
-                rafScheduled = false
-              }
-              try {
-                for await (const part of completion) {
-                  // Check if aborted before processing each part
-                  if (abortController.signal.aborted) {
-                    break
-                  }
-
-                  // Handle prompt progress if available
-                  if ('prompt_progress' in part && part.prompt_progress) {
-                    // Force immediate state update to ensure we see intermediate values
-                    flushSync(() => {
-                      updatePromptProgress(part.prompt_progress)
-                    })
-                    // Add a small delay to make progress visible
-                    await new Promise((resolve) => setTimeout(resolve, 100))
-                  }
-
-                  // Error message
-                  if (!part.choices) {
-                    throw new Error(
-                      'message' in part
-                        ? (part.message as string)
-                        : (JSON.stringify(part) ?? '')
-                    )
-                  }
-
-                  if ('usage' in part && part.usage) {
-                    tokenUsage = part.usage
-                  }
-
-                  if (part.choices[0]?.delta?.tool_calls) {
-                    extractToolCall(part, currentCall, toolCalls)
-                    // Schedule a flush to reflect tool update
-                    scheduleFlush()
-                  }
-                  const deltaReasoning =
-                    reasoningProcessor.processReasoningChunk(part)
-                  if (deltaReasoning) {
-                    accumulatedText += deltaReasoning
-                    pendingDeltaCount += 1
-                    // Schedule flush for reasoning updates
-                    scheduleFlush()
-                  }
-                  const deltaContent = part.choices[0]?.delta?.content || ''
-                  if (deltaContent) {
-                    accumulatedText += deltaContent
-                    pendingDeltaCount += 1
-                    // Batch UI update on next animation frame
-                    scheduleFlush()
-                  }
-                }
-              } finally {
-                // Always clean up scheduled RAF when stream ends (either normally or via abort)
-                if (rafHandle !== undefined) {
-                  if (typeof cancelAnimationFrame !== 'undefined') {
-                    cancelAnimationFrame(rafHandle)
-                  } else {
-                    clearTimeout(rafHandle)
-                  }
-                  rafHandle = undefined
-                  rafScheduled = false
-                }
-
-                // Only finalize and flush if not aborted
-                if (!abortController.signal.aborted) {
-                  // Finalize reasoning (close any open think tags)
-                  accumulatedText += reasoningProcessor.finalize()
-                  // Ensure any pending buffered content is rendered at the end
-                  flushIfPending()
-                }
-              }
+              await processStreamingCompletion(
+                completion,
+                abortController,
+                activeThread,
+                accumulatedTextRef,
+                toolCalls,
+                currentCall,
+                updateStreamingContent,
+                updateTokenSpeed,
+                setTokenSpeed,
+                updatePromptProgress,
+                timeToFirstToken,
+                tokenUsageRef,
+                continueFromMessageId,
+                updateMessage,
+                continueFromMessage
+              )
+              tokenUsage = tokenUsageRef.current
             }
           } catch (error) {
             const errorMessage =
@@ -697,7 +818,7 @@ export const useChat = () => {
           }
           // TODO: Remove this check when integrating new llama.cpp extension
           if (
-            accumulatedText.length === 0 &&
+            accumulatedTextRef.value.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
             activeProvider?.provider === 'llamacpp'
@@ -709,16 +830,30 @@ export const useChat = () => {
           }
 
           // Create a final content object for adding to the thread
-          const finalContent = newAssistantThreadContent(
+          let finalContent = newAssistantThreadContent(
             activeThread.id,
-            accumulatedText,
+            accumulatedTextRef.value,
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
               assistant: currentAssistant,
+              modelId: selectedModel?.id,
             }
           )
 
-          builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+          // If continuing from a message, preserve the ID and set status to Ready
+          if (continueFromMessageId) {
+            finalContent = {
+              ...finalContent,
+              id: continueFromMessageId,
+              status: MessageStatus.Ready,
+            }
+          }
+
+          // Normal completion flow (abort is handled after loop exits)
+          // Don't add assistant message to builder if continuing - it's already there
+          if (!continueFromMessageId) {
+            builder.addAssistantMessage(accumulatedTextRef.value, undefined, toolCalls)
+          }
 
           // Check if proactive mode is enabled for this model
           const isProactiveMode =
@@ -736,10 +871,15 @@ export const useChat = () => {
             allowAllMCPPermissions,
             isProactiveMode
           )
-          addMessage(updatedMessage ?? finalContent)
-          updateStreamingContent(emptyThreadContent)
-          updatePromptProgress(undefined)
-          updateThreadTimestamp(activeThread.id)
+          finalizeMessage(
+            updatedMessage ?? finalContent,
+            addMessage,
+            updateStreamingContent,
+            updatePromptProgress,
+            updateThreadTimestamp,
+            updateMessage,
+            continueFromMessageId
+          )
 
           isCompleted = !toolCalls.length
           // Do not create agent loop if there is no need for it
@@ -749,8 +889,113 @@ export const useChat = () => {
             availableTools = []
           }
         }
+
+        // IMPORTANT: Check if aborted AFTER the while loop exits
+        // The while loop exits when abort is true, so we handle it here
+        // Only save interrupted messages for llamacpp provider
+        // Other providers (OpenAI, Claude, etc.) handle streaming differently
+        if (
+          abortController.signal.aborted &&
+          accumulatedTextRef.value.length > 0 &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: accumulatedTextRef.value,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+                modelId: selectedModel?.id,
+              },
+            })
+          } else {
+            // Create final content for the partial message with Stopped status
+            const partialContent = {
+              ...newAssistantThreadContent(
+                activeThread.id,
+                accumulatedTextRef.value,
+                {
+                  tokenSpeed: useAppState.getState().tokenSpeed,
+                  assistant: currentAssistant,
+                  modelId: selectedModel?.id,
+                }
+              ),
+              status: MessageStatus.Stopped,
+            }
+            addMessage(partialContent)
+          }
+          updatePromptProgress(undefined)
+          updateThreadTimestamp(activeThread.id)
+        }
       } catch (error) {
-        if (!abortController.signal.aborted) {
+        // If aborted, save the partial message even though an error occurred
+        // Only save for llamacpp provider - other providers handle streaming differently
+        const streamingContent = useAppState.getState().streamingContent
+        const hasPartialContent = accumulatedTextRef.value.length > 0 ||
+          (streamingContent && streamingContent.content?.[0]?.text?.value)
+
+        if (
+          abortController.signal.aborted &&
+          hasPartialContent &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          // Use streaming content if available, otherwise use accumulatedTextRef
+          const contentText = streamingContent?.content?.[0]?.text?.value || accumulatedTextRef.value
+
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: contentText,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+                modelId: selectedModel?.id,
+              },
+            })
+          } else {
+            const partialContent = {
+              ...newAssistantThreadContent(
+                activeThread.id,
+                contentText,
+                {
+                  tokenSpeed: useAppState.getState().tokenSpeed,
+                  assistant: currentAssistant,
+                  modelId: selectedModel?.id,
+                }
+              ),
+              status: MessageStatus.Stopped,
+            }
+            addMessage(partialContent)
+          }
+          updatePromptProgress(undefined)
+          updateThreadTimestamp(activeThread.id)
+        } else if (!abortController.signal.aborted) {
+          // Only show error if not aborted
           if (error && typeof error === 'object' && 'message' in error) {
             setModelLoadError(error as ErrorObject)
           } else {
@@ -772,6 +1017,7 @@ export const useChat = () => {
       updateStreamingContent,
       updatePromptProgress,
       addMessage,
+      updateMessage,
       updateThreadTimestamp,
       updateLoadingModel,
       getDisabledToolsForThread,
