@@ -6,7 +6,7 @@ Integración rápida de entrada de voz usando tu API de Whisper personalizada.
 
 ### 1️⃣ Configurar
 ```
-Settings → Whisper → Ingresa tu API URL y API Key → Save
+Settings → Whisper → Ingresa tu API URL → Save
 ```
 
 ### 2️⃣ Grabar
@@ -26,10 +26,11 @@ El texto aparece automáticamente en el input
 | Campo | Valor |
 |-------|-------|
 | **API URL** | `https://whisper.contextcompany.com.co/asr` |
-| **API Key** | Tu clave personal (opcional) |
 | **Task** | `transcribe` (o `translate`) |
 | **Language** | `auto` (detección automática) |
 | **Output** | `txt` (texto plano) |
+
+> **Nota**: Este servidor no requiere autenticación (API Key).
 
 ---
 
@@ -91,7 +92,7 @@ const url = `${config.apiUrl}?${params.toString()}`
 | Problema | Solución |
 |----------|----------|
 | Micrófono no detectado | Verifica permisos del navegador |
-| Error de API | Confirma URL y API key |
+| Error de API | Confirma URL del servidor |
 | Sin transcripción | Verifica volumen y duración (>1 seg) |
 | Texto incorrecto | Especifica idioma en config |
 
