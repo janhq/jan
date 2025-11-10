@@ -46,7 +46,7 @@ hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
-reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
+reqwest = { version = "0.11", features = ["json", "blocking", "stream", "multipart"] }
 rmcp = { version = "0.6.0", features = [
     "client",
     "transport-sse-client",
