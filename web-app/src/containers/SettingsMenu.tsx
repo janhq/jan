@@ -124,6 +124,12 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: PlatformFeatures[PlatformFeature.EXTENSIONS_SETTINGS],
     },
+    {
+      title: 'Whisper',
+      route: route.settings.whisper,
+      hasSubMenu: false,
+      isEnabled: true, // Always enabled - voice input available on all platforms
+    },
   ]
 
   const toggleProvidersExpansion = () => {

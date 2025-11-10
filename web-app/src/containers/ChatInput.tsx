@@ -32,6 +32,7 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { MicrophoneButton } from '@/containers/MicrophoneButton'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -804,6 +805,15 @@ const ChatInput = ({
                     />
                   </div>
                 )}
+
+              <MicrophoneButton
+                onTranscriptionComplete={(text) => {
+                  const currentText = prompt
+                  const newText = currentText ? `${currentText}\n${text}` : text
+                  setPrompt(newText)
+                }}
+                disabled={loadingModel || !!streamingContent}
+              />
 
               {streamingContent ? (
                 <Button
