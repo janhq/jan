@@ -1,7 +1,14 @@
 import { ComponentType } from 'react'
-import { MCPTool, MCPToolComponentProps } from '@janhq/core'
+import { MCPTool } from '@janhq/core'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { useThreads } from '@/hooks/useThreads'
+
+// Temporary type definition for MCPToolComponent props
+interface MCPToolComponentProps {
+  tools: MCPTool[]
+  isToolEnabled: (toolName: string) => boolean
+  onToolToggle: (toolName: string, enabled: boolean) => void
+}
 
 interface McpExtensionToolLoaderProps {
   tools: MCPTool[]
