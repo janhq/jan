@@ -4,6 +4,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
+import i18n from '@/i18n/setup'
 
 export interface WhisperConfig {
   apiUrl: string
@@ -161,11 +162,14 @@ export function getDefaultWhisperConfig(): WhisperConfig {
     }
   }
 
-  // Default configuration - users should update this
+  // Default configuration - uses current Jan language setting
+  // Get current language from Jan's i18n settings
+  const currentLanguage = i18n.language || 'en'
+
   return {
     apiUrl: 'https://whisper.contextcompany.com.co/asr',
     task: 'transcribe', // Default to transcription
-    language: 'es', // Spanish language (cambiar a 'auto' para detección automática)
+    language: currentLanguage, // Use Jan's current language (es, en, fr, ru, etc.)
     output: 'txt', // Default to plain text
     encode: true, // Enable encoding (recommended)
     vadFilter: false, // Voice activity detection filter
