@@ -57,29 +57,36 @@ Ingresa la siguiente información:
 
 #### **API URL** (Requerido)
 ```
-https://whisper.contextcompany.com.co/v1/audio/transcriptions
+https://whisper.contextcompany.com.co/asr
 ```
 
-#### **API Key** (Requerido)
-Tu clave de autenticación personal. Por ejemplo:
+#### **API Key** (Opcional)
+Tu clave de autenticación personal (si tu servidor lo requiere):
 ```
 your-api-key-here
 ```
 > ⚠️ **Seguridad**: Tu API key se guarda localmente en tu navegador y nunca se comparte.
 
-#### **Model Name** (Opcional)
-El modelo de Whisper a usar:
-```
-whisper-1
-```
-o
-```
-whisper-large-v3
-```
+#### **Task** (Requerido)
+Selecciona la tarea a realizar:
+- `transcribe` - Transcribir el audio en su idioma original
+- `translate` - Traducir el audio al inglés
 
 #### **Language** (Opcional)
 - Deja como `auto` para detección automática
 - O especifica: `es` (Español), `en` (Inglés), `fr` (Francés), etc.
+
+#### **Output Format** (Requerido)
+Formato de salida de la transcripción:
+- `txt` - Texto plano (recomendado)
+- `json` - JSON con información detallada
+- `vtt` - WebVTT (subtítulos)
+- `srt` - SRT (subtítulos)
+- `tsv` - TSV (valores separados por tabulación)
+
+#### **Opciones Avanzadas**
+- **VAD Filter**: Filtrar segmentos de audio sin voz
+- **Word Timestamps**: Incluir marcas de tiempo por palabra
 
 ### Paso 3: Guardar y Probar
 
@@ -180,7 +187,7 @@ whisper-large-v3
 
 ### Ajustar según tu API
 
-Si tu API de Whisper usa un formato diferente al estándar de OpenAI, puedes modificar:
+Esta integración usa el formato de **ahmetoner/whisper-asr-webservice**. Si tu API usa un formato diferente, puedes modificar:
 
 **Archivo**: `web-app/src/services/whisper/whisper.ts`
 
@@ -190,23 +197,22 @@ export async function transcribeAudio(
   audioBlob: Blob,
   config: WhisperConfig
 ): Promise<TranscriptionResponse> {
-  // Ajusta los headers
-  const headers: HeadersInit = {
-    'Authorization': `Bearer ${config.apiKey}`,
-    // Agrega headers personalizados aquí
-    'X-Custom-Header': 'value',
-  }
+  // La API actual usa query parameters con el endpoint /asr
+  const params = new URLSearchParams()
+  params.append('task', config.task || 'transcribe')
+  params.append('output', config.output || 'txt')
+  params.append('encode', String(config.encode ?? true))
 
-  // Ajusta los parámetros del FormData
-  formData.append('file', audioFile)
-  formData.append('custom_param', 'value')
+  // El campo del formulario es 'audio_file'
+  formData.append('audio_file', audioFile)
+
+  // La URL incluye los parámetros de consulta
+  const url = `${config.apiUrl}?${params.toString()}`
 
   // Ajusta el manejo de la respuesta
-  const data = await response.json()
-  return {
-    text: data.your_text_field, // Cambia según tu respuesta
-    language: data.your_language_field,
-  }
+  const data = await response.json() // Para output=json
+  // o
+  const text = await response.text() // Para output=txt
 }
 ```
 

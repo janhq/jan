@@ -7,6 +7,14 @@ import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
   getDefaultWhisperConfig,
@@ -26,8 +34,12 @@ function WhisperSettings() {
   const [config, setConfig] = useState<WhisperConfig>({
     apiUrl: '',
     apiKey: '',
-    model: '',
-    language: '',
+    task: 'transcribe',
+    language: 'auto',
+    output: 'txt',
+    encode: true,
+    vadFilter: false,
+    wordTimestamps: false,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -57,11 +69,6 @@ function WhisperSettings() {
         return
       }
 
-      if (!config.apiKey) {
-        toast.error('API Key is required')
-        return
-      }
-
       // Save to localStorage
       saveWhisperConfig(config)
 
@@ -79,8 +86,8 @@ function WhisperSettings() {
     try {
       setIsTesting(true)
 
-      if (!config.apiUrl || !config.apiKey) {
-        toast.error('Please configure API URL and API Key first')
+      if (!config.apiUrl) {
+        toast.error('Please configure API URL first')
         return
       }
 
@@ -168,26 +175,24 @@ function WhisperSettings() {
                       <Input
                         id="apiUrl"
                         type="url"
-                        placeholder="https://whisper.contextcompany.com.co/v1/audio/transcriptions"
+                        placeholder="https://whisper.contextcompany.com.co/asr"
                         value={config.apiUrl}
                         onChange={(e) => handleChange('apiUrl', e.target.value)}
                       />
                       <p className="text-xs text-main-view-fg/50">
-                        The endpoint URL for your Whisper API
+                        The endpoint URL for your Whisper ASR Webservice API
                       </p>
                     </div>
 
                     {/* API Key */}
                     <div className="space-y-2">
-                      <Label htmlFor="apiKey">
-                        API Key <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="apiKey">API Key (Optional)</Label>
                       <div className="relative">
                         <Input
                           id="apiKey"
                           type={showApiKey ? 'text' : 'password'}
-                          placeholder="Enter your API key"
-                          value={config.apiKey}
+                          placeholder="Enter your API key if required"
+                          value={config.apiKey || ''}
                           onChange={(e) => handleChange('apiKey', e.target.value)}
                           className="pr-20"
                         />
@@ -200,39 +205,104 @@ function WhisperSettings() {
                         </button>
                       </div>
                       <p className="text-xs text-main-view-fg/50">
-                        Your authentication key for the Whisper API
+                        Authentication key for the Whisper API (if your server requires it)
                       </p>
                     </div>
 
-                    {/* Model Name */}
+                    {/* Task */}
                     <div className="space-y-2">
-                      <Label htmlFor="model">Model Name (Optional)</Label>
-                      <Input
-                        id="model"
-                        type="text"
-                        placeholder="whisper-1"
-                        value={config.model}
-                        onChange={(e) => handleChange('model', e.target.value)}
-                      />
+                      <Label htmlFor="task">Task</Label>
+                      <Select
+                        value={config.task || 'transcribe'}
+                        onValueChange={(value) => handleChange('task', value)}
+                      >
+                        <SelectTrigger id="task">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="transcribe">Transcribe</SelectItem>
+                          <SelectItem value="translate">Translate to English</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <p className="text-xs text-main-view-fg/50">
-                        The Whisper model to use (e.g., whisper-1, whisper-large-v3)
+                        Choose whether to transcribe or translate to English
                       </p>
                     </div>
 
                     {/* Language */}
                     <div className="space-y-2">
-                      <Label htmlFor="language">Language (Optional)</Label>
+                      <Label htmlFor="language">Language</Label>
                       <Input
                         id="language"
                         type="text"
                         placeholder="auto"
-                        value={config.language}
+                        value={config.language || 'auto'}
                         onChange={(e) => handleChange('language', e.target.value)}
                       />
                       <p className="text-xs text-main-view-fg/50">
-                        The language of the audio (e.g., en, es, fr). Leave as 'auto' for
-                        automatic detection
+                        Language code (e.g., en, es, fr) or 'auto' for automatic detection
                       </p>
+                    </div>
+
+                    {/* Output Format */}
+                    <div className="space-y-2">
+                      <Label htmlFor="output">Output Format</Label>
+                      <Select
+                        value={config.output || 'txt'}
+                        onValueChange={(value) => handleChange('output', value)}
+                      >
+                        <SelectTrigger id="output">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="txt">Plain Text</SelectItem>
+                          <SelectItem value="json">JSON</SelectItem>
+                          <SelectItem value="vtt">WebVTT</SelectItem>
+                          <SelectItem value="srt">SRT Subtitles</SelectItem>
+                          <SelectItem value="tsv">TSV</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-main-view-fg/50">
+                        The format for transcription output
+                      </p>
+                    </div>
+
+                    {/* VAD Filter */}
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="vadFilter"
+                        checked={config.vadFilter || false}
+                        onCheckedChange={(checked) =>
+                          setConfig((prev) => ({ ...prev, vadFilter: Boolean(checked) }))
+                        }
+                      />
+                      <div className="space-y-0.5">
+                        <Label htmlFor="vadFilter" className="cursor-pointer">
+                          Voice Activity Detection (VAD) Filter
+                        </Label>
+                        <p className="text-xs text-main-view-fg/50">
+                          Filter out non-speech audio segments
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Word Timestamps */}
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="wordTimestamps"
+                        checked={config.wordTimestamps || false}
+                        onCheckedChange={(checked) =>
+                          setConfig((prev) => ({ ...prev, wordTimestamps: Boolean(checked) }))
+                        }
+                      />
+                      <div className="space-y-0.5">
+                        <Label htmlFor="wordTimestamps" className="cursor-pointer">
+                          Word-level Timestamps
+                        </Label>
+                        <p className="text-xs text-main-view-fg/50">
+                          Include timestamps for individual words
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </CardItem>
@@ -242,7 +312,7 @@ function WhisperSettings() {
               <div className="flex items-center gap-3">
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || !config.apiUrl || !config.apiKey}
+                  disabled={isSaving || !config.apiUrl}
                   className="min-w-[120px]"
                 >
                   {isSaving ? (
@@ -261,7 +331,7 @@ function WhisperSettings() {
                 <Button
                   onClick={handleTest}
                   variant="outline"
-                  disabled={isTesting || !config.apiUrl || !config.apiKey}
+                  disabled={isTesting || !config.apiUrl}
                   className="min-w-[120px]"
                 >
                   {isTesting ? (
@@ -332,11 +402,13 @@ function WhisperSettings() {
                       </a>
                     </p>
                     <p>
-                      <strong>Standard format:</strong> Compatible with OpenAI Whisper API
+                      <strong>Implementation:</strong> ahmetoner/whisper-asr-webservice
                     </p>
                     <p>
-                      <strong>Supported formats:</strong> WebM, MP3, WAV, M4A (check your
-                      API documentation)
+                      <strong>Endpoint:</strong> /asr with query parameters
+                    </p>
+                    <p>
+                      <strong>Supported formats:</strong> WebM, MP3, WAV, M4A, and more
                     </p>
                   </div>
                 </CardItem>

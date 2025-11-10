@@ -1,13 +1,17 @@
 /**
- * Service to interact with Whisper API for audio transcription
- * Configurable to work with custom Whisper endpoints
+ * Service to interact with Whisper ASR Webservice API for audio transcription
+ * Compatible with ahmetoner/whisper-asr-webservice
  */
 
 export interface WhisperConfig {
   apiUrl: string
   apiKey?: string
-  model?: string
+  task?: 'transcribe' | 'translate'
   language?: string
+  output?: 'txt' | 'vtt' | 'srt' | 'tsv' | 'json'
+  encode?: boolean
+  vadFilter?: boolean
+  wordTimestamps?: boolean
 }
 
 export interface TranscriptionResponse {
@@ -22,7 +26,7 @@ export interface TranscriptionError {
 }
 
 /**
- * Transcribe audio using Whisper API
+ * Transcribe audio using Whisper ASR Webservice API
  * @param audioBlob - Audio file to transcribe
  * @param config - Whisper API configuration
  * @returns Transcribed text
@@ -32,24 +36,51 @@ export async function transcribeAudio(
   config: WhisperConfig
 ): Promise<TranscriptionResponse> {
   try {
-    // Convert WebM to format suitable for Whisper if needed
+    // Create FormData with audio file
     const formData = new FormData()
 
-    // Create a File object from Blob with proper extension
+    // Create a File object from Blob - use 'audio_file' as the field name
     const audioFile = new File([audioBlob], 'recording.webm', {
       type: audioBlob.type || 'audio/webm',
     })
 
-    formData.append('file', audioFile)
+    formData.append('audio_file', audioFile)
+
+    // Build query parameters for /asr endpoint
+    const params = new URLSearchParams()
 
     // Add optional parameters
-    if (config.model) {
-      formData.append('model', config.model)
+    if (config.task) {
+      params.append('task', config.task)
+    } else {
+      params.append('task', 'transcribe') // Default to transcribe
     }
 
-    if (config.language) {
-      formData.append('language', config.language)
+    if (config.language && config.language !== 'auto') {
+      params.append('language', config.language)
     }
+
+    if (config.output) {
+      params.append('output', config.output)
+    } else {
+      params.append('output', 'txt') // Default to plain text
+    }
+
+    // Enable encoding by default (recommended)
+    params.append('encode', String(config.encode ?? true))
+
+    // Add VAD filter if specified
+    if (config.vadFilter) {
+      params.append('vad_filter', 'true')
+    }
+
+    // Add word timestamps if specified
+    if (config.wordTimestamps) {
+      params.append('word_timestamps', 'true')
+    }
+
+    // Build full URL with query parameters
+    const url = `${config.apiUrl}?${params.toString()}`
 
     // Configure headers
     const headers: HeadersInit = {}
@@ -58,7 +89,7 @@ export async function transcribeAudio(
     }
 
     // Make API request
-    const response = await fetch(config.apiUrl, {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: formData,
@@ -67,19 +98,30 @@ export async function transcribeAudio(
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       throw new Error(
-        errorData.message || `API request failed with status ${response.status}`
+        errorData.detail?.[0]?.msg ||
+        errorData.message ||
+        `API request failed with status ${response.status}`
       )
     }
 
-    const data = await response.json()
+    // Handle response based on output format
+    const contentType = response.headers.get('content-type')
 
-    // Handle different response formats
-    // Standard Whisper API format: { text: "transcription" }
-    // Custom format might be different - adjust as needed
-    return {
-      text: data.text || data.transcription || '',
-      language: data.language,
-      duration: data.duration,
+    if (contentType?.includes('application/json')) {
+      const data = await response.json()
+      // JSON format includes detailed information
+      return {
+        text: data.text || '',
+        language: data.language,
+        duration: data.duration,
+      }
+    } else {
+      // Plain text format (default)
+      const text = await response.text()
+      return {
+        text: text.trim(),
+        language: config.language,
+      }
     }
   } catch (error) {
     console.error('Transcription error:', error)
@@ -104,10 +146,14 @@ export function getDefaultWhisperConfig(): WhisperConfig {
 
   // Default configuration - users should update this
   return {
-    apiUrl: 'https://whisper.contextcompany.com.co/v1/audio/transcriptions',
-    apiKey: '', // Users need to set their API key
-    model: 'whisper-1', // Default model
+    apiUrl: 'https://whisper.contextcompany.com.co/asr',
+    apiKey: '', // Users can set their API key if required
+    task: 'transcribe', // Default to transcription
     language: 'auto', // Auto-detect language
+    output: 'txt', // Default to plain text
+    encode: true, // Enable encoding (recommended)
+    vadFilter: false, // Voice activity detection filter
+    wordTimestamps: false, // Word-level timestamps
   }
 }
 

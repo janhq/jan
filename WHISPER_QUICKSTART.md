@@ -25,10 +25,11 @@ El texto aparece automáticamente en el input
 
 | Campo | Valor |
 |-------|-------|
-| **API URL** | `https://whisper.contextcompany.com.co/v1/audio/transcriptions` |
-| **API Key** | Tu clave personal |
-| **Model** | `whisper-1` (opcional) |
-| **Language** | `auto` (opcional) |
+| **API URL** | `https://whisper.contextcompany.com.co/asr` |
+| **API Key** | Tu clave personal (opcional) |
+| **Task** | `transcribe` (o `translate`) |
+| **Language** | `auto` (detección automática) |
+| **Output** | `txt` (texto plano) |
 
 ---
 
@@ -66,20 +67,21 @@ web-app/src/
 
 ## ⚙️ Personalizar tu API
 
-Si tu API usa formato diferente, edita:
+Esta integración usa **ahmetoner/whisper-asr-webservice**. Si tu API usa formato diferente, edita:
 
 **`web-app/src/services/whisper/whisper.ts`**
 
 ```typescript
-// Cambia según tu endpoint
-formData.append('file', audioFile)
-formData.append('your_custom_param', 'value')
+// Endpoint /asr con query parameters
+const params = new URLSearchParams()
+params.append('task', config.task || 'transcribe')
+params.append('output', config.output || 'txt')
 
-// Ajusta respuesta
-return {
-  text: data.your_text_field,
-  language: data.your_language_field,
-}
+// Campo del formulario es 'audio_file'
+formData.append('audio_file', audioFile)
+
+// URL con parámetros
+const url = `${config.apiUrl}?${params.toString()}`
 ```
 
 ---
