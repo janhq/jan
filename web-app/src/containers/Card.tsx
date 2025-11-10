@@ -16,6 +16,7 @@ type CardItemProps = {
   column?: boolean
   className?: string
   classNameWrapperAction?: string
+  separator?: boolean
 }
 
 export function CardItem({
@@ -27,12 +28,14 @@ export function CardItem({
   align = 'center',
   column,
   actions,
+  separator = true,
 }: CardItemProps) {
   return (
     <>
       <div
         className={cn(
-          'flex justify-between mt-2 first:mt-0 border-b border-main-view-fg/5 pb-3 last:border-none last:pb-0 gap-8',
+          'flex justify-between mt-2 first:mt-0 gap-8',
+          separator && 'border-b border-main-view-fg/5 pb-3 last:border-none last:pb-0',
           descriptionOutside && 'border-0',
           align === 'start' && 'items-start',
           align === 'center' && 'items-center',

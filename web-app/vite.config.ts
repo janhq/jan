@@ -65,6 +65,8 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
         '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
+        // Ensure local workspace package resolves correctly during dev/build
+        '@jan/extensions-web': path.resolve(__dirname, '../extensions-web/src/index.ts'),
       },
     },
     optimizeDeps: {

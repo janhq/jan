@@ -1174,7 +1174,7 @@ const ChatInput = ({
                     setMessage(newText)
                     setPrompt(newText)
                   }}
-                  disabled={loadingModel || streamingContent}
+                  disabled={loadingModel || Boolean(streamingContent)}
                 />
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>

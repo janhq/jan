@@ -170,7 +170,7 @@ export function saveWhisperConfig(config: WhisperConfig): void {
  */
 export async function convertAudioFormat(
   blob: Blob,
-  targetFormat: string
+  _targetFormat: string
 ): Promise<Blob> {
   // For now, return the blob as-is
   // In production, you might want to use a library like ffmpeg.js

@@ -8,13 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
   getDefaultWhisperConfig,
@@ -45,7 +38,7 @@ function WhisperSettings() {
   const [isTesting, setIsTesting] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
 
-  const { startRecording, stopRecording, state: recorderState } = useAudioRecorder()
+  const { startRecording, state: recorderState } = useAudioRecorder()
 
   // Load saved configuration
   useEffect(() => {
@@ -135,10 +128,14 @@ function WhisperSettings() {
   return (
     <div className="h-full flex flex-col w-full overflow-hidden">
       <div className="flex flex-col h-full overflow-hidden">
-        <HeaderPage
-          title="Whisper Settings"
-          description="Configure your Whisper API for voice input transcription"
-        />
+        <HeaderPage>
+          <div className="flex items-center gap-2">
+            <h1 className="font-medium">Whisper Settings</h1>
+            <span className="text-sm text-main-view-fg/70">
+              Configure your Whisper API for voice input transcription
+            </span>
+          </div>
+        </HeaderPage>
 
         <div className="flex flex-row h-full w-full overflow-hidden">
           <SettingsMenu />
@@ -165,8 +162,11 @@ function WhisperSettings() {
 
               {/* API Configuration */}
               <Card>
-                <CardItem title="API Configuration" separator={false}>
-                  <div className="space-y-4 mt-4">
+                <CardItem
+                  title="API Configuration"
+                  separator={false}
+                  descriptionOutside={
+                    <div className="space-y-4 mt-4">
                     {/* API URL */}
                     <div className="space-y-2">
                       <Label htmlFor="apiUrl">
@@ -212,18 +212,15 @@ function WhisperSettings() {
                     {/* Task */}
                     <div className="space-y-2">
                       <Label htmlFor="task">Task</Label>
-                      <Select
+                      <select
+                        id="task"
+                        className="h-9 px-3 py-1 rounded-md border border-main-view-fg/10 bg-transparent text-sm"
                         value={config.task || 'transcribe'}
-                        onValueChange={(value) => handleChange('task', value)}
+                        onChange={(e) => handleChange('task', e.target.value)}
                       >
-                        <SelectTrigger id="task">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="transcribe">Transcribe</SelectItem>
-                          <SelectItem value="translate">Translate to English</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <option value="transcribe">Transcribe</option>
+                        <option value="translate">Translate to English</option>
+                      </select>
                       <p className="text-xs text-main-view-fg/50">
                         Choose whether to transcribe or translate to English
                       </p>
@@ -247,21 +244,18 @@ function WhisperSettings() {
                     {/* Output Format */}
                     <div className="space-y-2">
                       <Label htmlFor="output">Output Format</Label>
-                      <Select
+                      <select
+                        id="output"
+                        className="h-9 px-3 py-1 rounded-md border border-main-view-fg/10 bg-transparent text-sm"
                         value={config.output || 'txt'}
-                        onValueChange={(value) => handleChange('output', value)}
+                        onChange={(e) => handleChange('output', e.target.value)}
                       >
-                        <SelectTrigger id="output">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="txt">Plain Text</SelectItem>
-                          <SelectItem value="json">JSON</SelectItem>
-                          <SelectItem value="vtt">WebVTT</SelectItem>
-                          <SelectItem value="srt">SRT Subtitles</SelectItem>
-                          <SelectItem value="tsv">TSV</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <option value="txt">Plain Text</option>
+                        <option value="json">JSON</option>
+                        <option value="vtt">WebVTT</option>
+                        <option value="srt">SRT Subtitles</option>
+                        <option value="tsv">TSV</option>
+                      </select>
                       <p className="text-xs text-main-view-fg/50">
                         The format for transcription output
                       </p>
@@ -272,8 +266,8 @@ function WhisperSettings() {
                       <Checkbox
                         id="vadFilter"
                         checked={config.vadFilter || false}
-                        onCheckedChange={(checked) =>
-                          setConfig((prev) => ({ ...prev, vadFilter: Boolean(checked) }))
+                        onChange={(e) =>
+                          setConfig((prev) => ({ ...prev, vadFilter: e.currentTarget.checked }))
                         }
                       />
                       <div className="space-y-0.5">
@@ -291,8 +285,8 @@ function WhisperSettings() {
                       <Checkbox
                         id="wordTimestamps"
                         checked={config.wordTimestamps || false}
-                        onCheckedChange={(checked) =>
-                          setConfig((prev) => ({ ...prev, wordTimestamps: Boolean(checked) }))
+                        onChange={(e) =>
+                          setConfig((prev) => ({ ...prev, wordTimestamps: e.currentTarget.checked }))
                         }
                       />
                       <div className="space-y-0.5">
@@ -304,8 +298,10 @@ function WhisperSettings() {
                         </p>
                       </div>
                     </div>
-                  </div>
-                </CardItem>
+                    {/* Close wrapper for descriptionOutside */}
+                    </div>
+                  }
+                />
               </Card>
 
               {/* Actions */}
@@ -330,7 +326,7 @@ function WhisperSettings() {
 
                 <Button
                   onClick={handleTest}
-                  variant="outline"
+                  variant="default"
                   disabled={isTesting || !config.apiUrl}
                   className="min-w-[120px]"
                 >
@@ -350,68 +346,76 @@ function WhisperSettings() {
 
               {/* Usage Instructions */}
               <Card>
-                <CardItem title="How to Use" separator={false}>
-                  <div className="space-y-3 mt-4 text-sm text-main-view-fg/70">
-                    <div className="flex items-start space-x-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
-                        1
-                      </span>
-                      <p>
-                        Click the microphone button in the chat input to start recording
-                      </p>
+                <CardItem
+                  title="How to Use"
+                  separator={false}
+                  descriptionOutside={
+                    <div className="space-y-3 mt-4 text-sm text-main-view-fg/70">
+                      <div className="flex items-start space-x-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
+                          1
+                        </span>
+                        <p>
+                          Click the microphone button in the chat input to start recording
+                        </p>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
+                          2
+                        </span>
+                        <p>Speak your message clearly</p>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
+                          3
+                        </span>
+                        <p>
+                          Click the check button to stop and transcribe, or X to cancel
+                        </p>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
+                          4
+                        </span>
+                        <p>
+                          The transcribed text will be added to your message automatically
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-start space-x-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
-                        2
-                      </span>
-                      <p>Speak your message clearly</p>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
-                        3
-                      </span>
-                      <p>
-                        Click the check button to stop and transcribe, or X to cancel
-                      </p>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold">
-                        4
-                      </span>
-                      <p>
-                        The transcribed text will be added to your message automatically
-                      </p>
-                    </div>
-                  </div>
-                </CardItem>
+                  }
+                />
               </Card>
 
               {/* API Information */}
               <Card>
-                <CardItem title="API Information" separator={false}>
-                  <div className="space-y-2 mt-4 text-sm text-main-view-fg/70">
-                    <p>
-                      <strong>Your Whisper API:</strong>{' '}
-                      <a
-                        href="https://whisper.contextcompany.com.co/docs"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent hover:underline"
-                      >
-                        https://whisper.contextcompany.com.co/docs
-                      </a>
-                    </p>
-                    <p>
-                      <strong>Implementation:</strong> ahmetoner/whisper-asr-webservice
-                    </p>
-                    <p>
-                      <strong>Endpoint:</strong> /asr with query parameters
-                    </p>
-                    <p>
-                      <strong>Supported formats:</strong> WebM, MP3, WAV, M4A, and more
-                    </p>
-                  </div>
-                </CardItem>
+                <CardItem
+                  title="API Information"
+                  separator={false}
+                  descriptionOutside={
+                    <div className="space-y-2 mt-4 text-sm text-main-view-fg/70">
+                      <p>
+                        <strong>Your Whisper API:</strong>{' '}
+                        <a
+                          href="https://whisper.contextcompany.com.co/docs"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          https://whisper.contextcompany.com.co/docs
+                        </a>
+                      </p>
+                      <p>
+                        <strong>Implementation:</strong> ahmetoner/whisper-asr-webservice
+                      </p>
+                      <p>
+                        <strong>Endpoint:</strong> /asr with query parameters
+                      </p>
+                      <p>
+                        <strong>Supported formats:</strong> WebM, MP3, WAV, M4A, and more
+                      </p>
+                    </div>
+                  }
+                />
               </Card>
             </div>
           </div>

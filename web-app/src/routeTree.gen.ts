@@ -18,6 +18,7 @@ import { Route as IndexImport } from './routes/index'
 import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
+import { Route as SettingsWhisperImport } from './routes/settings/whisper'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
@@ -76,6 +77,12 @@ const HubIndexRoute = HubIndexImport.update({
 const ThreadsThreadIdRoute = ThreadsThreadIdImport.update({
   id: '/threads/$threadId',
   path: '/threads/$threadId',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsWhisperRoute = SettingsWhisperImport.update({
+  id: '/settings/whisper',
+  path: '/settings/whisper',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -299,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsShortcutsImport
       parentRoute: typeof rootRoute
     }
+    '/settings/whisper': {
+      id: '/settings/whisper'
+      path: '/settings/whisper'
+      fullPath: '/settings/whisper'
+      preLoaderRoute: typeof SettingsWhisperImport
+      parentRoute: typeof rootRoute
+    }
     '/threads/$threadId': {
       id: '/threads/$threadId'
       path: '/threads/$threadId'
@@ -364,6 +378,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
@@ -390,6 +405,7 @@ export interface FileRoutesByTo {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
@@ -417,6 +433,7 @@ export interface FileRoutesById {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
@@ -445,6 +462,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
@@ -470,6 +488,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
@@ -495,6 +514,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub/'
     | '/project/'
@@ -522,6 +542,7 @@ export interface RootRouteChildren {
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsWhisperRoute: typeof SettingsWhisperRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
@@ -548,6 +569,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsWhisperRoute: SettingsWhisperRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
@@ -583,6 +605,7 @@ export const routeTree = rootRoute
         "/settings/mcp-servers",
         "/settings/privacy",
         "/settings/shortcuts",
+        "/settings/whisper",
         "/threads/$threadId",
         "/hub/",
         "/project/",
@@ -641,6 +664,9 @@ export const routeTree = rootRoute
     },
     "/settings/shortcuts": {
       "filePath": "settings/shortcuts.tsx"
+    },
+    "/settings/whisper": {
+      "filePath": "settings/whisper.tsx"
     },
     "/threads/$threadId": {
       "filePath": "threads/$threadId.tsx"
