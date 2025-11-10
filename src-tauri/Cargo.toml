@@ -70,6 +70,8 @@ tauri-plugin-opener = "2.2.7"
 tauri-plugin-os = "2.2.1"
 tauri-plugin-shell = "2.2.0"
 tauri-plugin-store = "2"
+tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
+tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"

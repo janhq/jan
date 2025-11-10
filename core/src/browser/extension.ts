@@ -11,6 +11,8 @@ export enum ExtensionTypeEnum {
   HuggingFace = 'huggingFace',
   Engine = 'engine',
   Hardware = 'hardware',
+  RAG = 'rag',
+  VectorDB = 'vectorDb',
 }
 
 export interface ExtensionType {

@@ -18,14 +18,17 @@ import { Route as IndexImport } from './routes/index'
 import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
+import { Route as SettingsWhisperImport } from './routes/settings/whisper'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
+import { Route as SettingsInterfaceImport } from './routes/settings/interface'
 import { Route as SettingsHttpsProxyImport } from './routes/settings/https-proxy'
 import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
+import { Route as SettingsAttachmentsImport } from './routes/settings/attachments'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
 import { Route as ProjectProjectIdImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
@@ -78,6 +81,12 @@ const ThreadsThreadIdRoute = ThreadsThreadIdImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsWhisperRoute = SettingsWhisperImport.update({
+  id: '/settings/whisper',
+  path: '/settings/whisper',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsShortcutsRoute = SettingsShortcutsImport.update({
   id: '/settings/shortcuts',
   path: '/settings/shortcuts',
@@ -102,6 +111,12 @@ const SettingsLocalApiServerRoute = SettingsLocalApiServerImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsInterfaceRoute = SettingsInterfaceImport.update({
+  id: '/settings/interface',
+  path: '/settings/interface',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsHttpsProxyRoute = SettingsHttpsProxyImport.update({
   id: '/settings/https-proxy',
   path: '/settings/https-proxy',
@@ -123,6 +138,12 @@ const SettingsGeneralRoute = SettingsGeneralImport.update({
 const SettingsExtensionsRoute = SettingsExtensionsImport.update({
   id: '/settings/extensions',
   path: '/settings/extensions',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsAttachmentsRoute = SettingsAttachmentsImport.update({
+  id: '/settings/attachments',
+  path: '/settings/attachments',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -229,6 +250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceImport
       parentRoute: typeof rootRoute
     }
+    '/settings/attachments': {
+      id: '/settings/attachments'
+      path: '/settings/attachments'
+      fullPath: '/settings/attachments'
+      preLoaderRoute: typeof SettingsAttachmentsImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/extensions': {
       id: '/settings/extensions'
       path: '/settings/extensions'
@@ -257,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsHttpsProxyImport
       parentRoute: typeof rootRoute
     }
+    '/settings/interface': {
+      id: '/settings/interface'
+      path: '/settings/interface'
+      fullPath: '/settings/interface'
+      preLoaderRoute: typeof SettingsInterfaceImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/local-api-server': {
       id: '/settings/local-api-server'
       path: '/settings/local-api-server'
@@ -283,6 +318,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/shortcuts'
       fullPath: '/settings/shortcuts'
       preLoaderRoute: typeof SettingsShortcutsImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/whisper': {
+      id: '/settings/whisper'
+      path: '/settings/whisper'
+      fullPath: '/settings/whisper'
+      preLoaderRoute: typeof SettingsWhisperImport
       parentRoute: typeof rootRoute
     }
     '/threads/$threadId': {
@@ -341,14 +383,17 @@ export interface FileRoutesByFullPath {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
@@ -366,14 +411,17 @@ export interface FileRoutesByTo {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
@@ -383,7 +431,7 @@ export interface FileRoutesByTo {
 }
 
 export interface FileRoutesById {
-  '__root__': typeof rootRoute
+  __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
@@ -392,14 +440,17 @@ export interface FileRoutesById {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/whisper': typeof SettingsWhisperRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
@@ -419,14 +470,17 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
@@ -443,14 +497,17 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub'
     | '/project'
@@ -467,14 +524,17 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/appearance'
+    | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/whisper'
     | '/threads/$threadId'
     | '/hub/'
     | '/project/'
@@ -493,14 +553,17 @@ export interface RootRouteChildren {
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
+  SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsWhisperRoute: typeof SettingsWhisperRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
@@ -518,14 +581,17 @@ const rootRouteChildren: RootRouteChildren = {
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
+  SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsWhisperRoute: SettingsWhisperRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
@@ -552,14 +618,17 @@ export const routeTree = rootRoute
         "/local-api-server/logs",
         "/project/$projectId",
         "/settings/appearance",
+        "/settings/attachments",
         "/settings/extensions",
         "/settings/general",
         "/settings/hardware",
         "/settings/https-proxy",
+        "/settings/interface",
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
         "/settings/shortcuts",
+        "/settings/whisper",
         "/threads/$threadId",
         "/hub/",
         "/project/",
@@ -592,6 +661,9 @@ export const routeTree = rootRoute
     "/settings/appearance": {
       "filePath": "settings/appearance.tsx"
     },
+    "/settings/attachments": {
+      "filePath": "settings/attachments.tsx"
+    },
     "/settings/extensions": {
       "filePath": "settings/extensions.tsx"
     },
@@ -604,6 +676,9 @@ export const routeTree = rootRoute
     "/settings/https-proxy": {
       "filePath": "settings/https-proxy.tsx"
     },
+    "/settings/interface": {
+      "filePath": "settings/interface.tsx"
+    },
     "/settings/local-api-server": {
       "filePath": "settings/local-api-server.tsx"
     },
@@ -615,6 +690,9 @@ export const routeTree = rootRoute
     },
     "/settings/shortcuts": {
       "filePath": "settings/shortcuts.tsx"
+    },
+    "/settings/whisper": {
+      "filePath": "settings/whisper.tsx"
     },
     "/threads/$threadId": {
       "filePath": "threads/$threadId.tsx"
