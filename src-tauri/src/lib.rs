@@ -112,6 +112,8 @@ pub fn run() {
             // Download
             core::downloads::commands::download_files,
             core::downloads::commands::cancel_download_task,
+            // HTTP
+            core::http::commands::http_post_multipart,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
