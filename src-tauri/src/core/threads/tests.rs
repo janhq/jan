@@ -432,7 +432,7 @@ async fn test_concurrent_message_operations() {
             let app_h = app_handle.clone();
             let tid = thread_id.clone();
             tokio::spawn(async move {
-                create_message(app_h, create_test_message(&tid, &format!("Message {}", i))).await
+                create_message(app_h, create_test_message(&tid, &format!("Message {i}"))).await
             })
         })
         .collect();
