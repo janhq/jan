@@ -1,4 +1,4 @@
-﻿import { useInterfaceSettings, isDefaultColorPrimary } from '@/hooks/useInterfaceSettings'
+import { useAppearance, isDefaultColorPrimary } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export function ColorPickerAppPrimaryColor() {
-  const { appPrimaryBgColor, setAppPrimaryBgColor } = useInterfaceSettings()
+  const { appPrimaryBgColor, setAppPrimaryBgColor } = useAppearance()
 
   const predefineappPrimaryBgColor: RgbaColor[] = [
     {

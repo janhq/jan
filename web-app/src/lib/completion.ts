@@ -12,9 +12,6 @@ import {
   Tool,
 } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { useAttachments } from '@/hooks/useAttachments'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -26,21 +23,16 @@ import {
   ConfigOptions,
 } from 'token.js'
 
-import { getModelCapabilities } from '@/lib/models'
-
 // Extended config options to include custom fetch function
 type ExtendedConfigOptions = ConfigOptions & {
   fetch?: typeof fetch
 }
 import { ulid } from 'ulidx'
 import { MCPTool } from '@/types/completion'
-import { CompletionMessagesBuilder, ToolResult } from './messages'
+import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { ExtensionManager } from './extension'
 import { useAppState } from '@/hooks/useAppState'
-import { injectFilesIntoPrompt } from './fileMetadata'
-import { Attachment } from '@/types/attachment'
-import { ModelCapabilities } from '@/types/models'
 
 export type ChatCompletionResponse =
   | chatCompletion
@@ -59,48 +51,38 @@ export type ChatCompletionResponse =
 export const newUserThreadContent = (
   threadId: string,
   content: string,
-  attachments?: Attachment[]
+  attachments?: Array<{
+    name: string
+    type: string
+    size: number
+    base64: string
+    dataUrl: string
+  }>
 ): ThreadMessage => {
-  // Separate images and documents
-  const images = attachments?.filter((a) => a.type === 'image') || []
-  const documents = attachments?.filter((a) => a.type === 'document') || []
-
-  // Inject document metadata into the text content (id, name, fileType only - no path)
-  const docMetadata = documents
-    .filter((doc) => doc.id) // Only include processed documents
-    .map((doc) => ({
-      id: doc.id!,
-      name: doc.name,
-      type: doc.fileType,
-      size: typeof doc.size === 'number' ? doc.size : undefined,
-      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
-    }))
-
-  const textWithFiles =
-    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
-
   const contentParts = [
     {
       type: ContentType.Text,
       text: {
-        value: textWithFiles,
+        value: content,
         annotations: [],
       },
     },
   ]
 
-  // Add image attachments to content array
-  images.forEach((img) => {
-    if (img.base64 && img.mimeType) {
-      contentParts.push({
-        type: ContentType.Image,
-        image_url: {
-          url: `data:${img.mimeType};base64,${img.base64}`,
-          detail: 'auto',
-        },
-      } as any)
-    }
-  })
+  // Add attachments to content array
+  if (attachments) {
+    attachments.forEach((attachment) => {
+      if (attachment.type.startsWith('image/')) {
+        contentParts.push({
+          type: ContentType.Image,
+          image_url: {
+            url: `data:${attachment.type};base64,${attachment.base64}`,
+            detail: 'auto',
+          },
+        } as any)
+      }
+    })
+  }
 
   return {
     type: 'text',
@@ -234,19 +216,6 @@ export const sendCompletion = async (
     }
   }
 
-  const providerModelConfig = provider.models?.find(
-    (model) => model.id === thread.model?.id || model.model === thread.model?.id
-  )
-  const effectiveCapabilities = Array.isArray(providerModelConfig?.capabilities)
-    ? (providerModelConfig?.capabilities ?? [])
-    : getModelCapabilities(provider.provider, thread.model.id)
-  const modelSupportsTools = effectiveCapabilities.includes(
-    ModelCapabilities.TOOLS
-  )
-  let usableTools = tools
-  if (modelSupportsTools) {
-    usableTools = [...tools]
-  }
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
@@ -255,8 +224,8 @@ export const sendCompletion = async (
           messages: messages as chatCompletionRequestMessage[],
           model: thread.model?.id,
           thread_id: thread.id,
-          tools: normalizeTools(usableTools),
-          tool_choice: usableTools.length ? 'auto' : undefined,
+          tools: normalizeTools(tools),
+          tool_choice: tools.length ? 'auto' : undefined,
           stream: true,
           ...params,
         },
@@ -270,8 +239,8 @@ export const sendCompletion = async (
             provider: providerName as any,
             model: thread.model?.id,
             messages,
-            tools: normalizeTools(usableTools),
-            tool_choice: usableTools.length ? 'auto' : undefined,
+            tools: normalizeTools(tools),
+            tool_choice: tools.length ? 'auto' : undefined,
             ...params,
           },
           {
@@ -283,8 +252,8 @@ export const sendCompletion = async (
           provider: providerName,
           model: thread.model?.id,
           messages,
-          tools: normalizeTools(usableTools),
-          tool_choice: usableTools.length ? 'auto' : undefined,
+          tools: normalizeTools(tools),
+          tool_choice: tools.length ? 'auto' : undefined,
           ...params,
         })
   return completion
@@ -380,120 +349,6 @@ export const extractToolCall = (
 }
 
 /**
- * Helper function to check if a tool call is a browser MCP tool
- * @param toolName - The name of the tool
- * @returns true if the tool is a browser-related MCP tool
- */
-const isBrowserMCPTool = (toolName: string): boolean => {
-  const browserToolPrefixes = [
-    'browser',
-    'browserbase',
-    'browsermcp',
-    'multi_browserbase',
-  ]
-  return browserToolPrefixes.some((prefix) =>
-    toolName.toLowerCase().startsWith(prefix)
-  )
-}
-
-/**
- * Helper function to capture screenshot and snapshot proactively
- * @param abortController - The abort controller for cancellation
- * @returns Promise with screenshot and snapshot results
- */
-export const captureProactiveScreenshots = async (
-  abortController: AbortController
-): Promise<ToolResult[]> => {
-  const results: ToolResult[] = []
-
-  try {
-    // Get available tools
-    const allTools = await getServiceHub().mcp().getTools()
-
-    // Find screenshot and snapshot tools
-    const screenshotTool = allTools.find((t) =>
-      t.name.toLowerCase().includes('screenshot')
-    )
-    const snapshotTool = allTools.find((t) =>
-      t.name.toLowerCase().includes('snapshot')
-    )
-
-    // Capture screenshot if available
-    if (screenshotTool && !abortController.signal.aborted) {
-      try {
-        const { promise } = getServiceHub().mcp().callToolWithCancellation({
-          toolName: screenshotTool.name,
-          arguments: {},
-        })
-        const screenshotResult = await promise
-        if (screenshotResult && typeof screenshotResult !== 'string') {
-          results.push(screenshotResult as ToolResult)
-        }
-      } catch (e) {
-        console.warn('Failed to capture proactive screenshot:', e)
-      }
-    }
-
-    // Capture snapshot if available
-    if (snapshotTool && !abortController.signal.aborted) {
-      try {
-        const { promise } = getServiceHub().mcp().callToolWithCancellation({
-          toolName: snapshotTool.name,
-          arguments: {},
-        })
-        const snapshotResult = await promise
-        if (snapshotResult && typeof snapshotResult !== 'string') {
-          results.push(snapshotResult as ToolResult)
-        }
-      } catch (e) {
-        console.warn('Failed to capture proactive snapshot:', e)
-      }
-    }
-  } catch (e) {
-    console.error('Failed to get MCP tools for proactive capture:', e)
-  }
-
-  return results
-}
-
-/**
- * Helper function to filter out old screenshot/snapshot images from builder messages
- * Keeps only the latest proactive screenshots
- * @param builder - The completion messages builder
- */
-const filterOldProactiveScreenshots = (builder: CompletionMessagesBuilder) => {
-  const messages = builder.getMessages()
-  const filteredMessages: any[] = []
-
-  for (const msg of messages) {
-    if (msg.role === 'tool') {
-      // If it's a tool message with array content (multimodal)
-      if (Array.isArray(msg.content)) {
-        // Filter out images, keep text only for old tool messages
-        const textOnly = msg.content.filter(
-          (part: any) => part.type !== 'image_url'
-        )
-        if (textOnly.length > 0) {
-          filteredMessages.push({ ...msg, content: textOnly })
-        }
-      } else {
-        // Keep string content as-is
-        filteredMessages.push(msg)
-      }
-    } else {
-      // Keep all non-tool messages
-      filteredMessages.push(msg)
-    }
-  }
-
-  // Reconstruct builder with filtered messages
-  // Note: This is a workaround since CompletionMessagesBuilder doesn't have a setter
-  // We'll need to access the private messages array
-  // eslint-disable-next-line no-extra-semi
-  ;(builder as any).messages = filteredMessages
-}
-
-/**
  * @fileoverview Helper function to process the completion response.
  * @param calls
  * @param builder
@@ -502,7 +357,6 @@ const filterOldProactiveScreenshots = (builder: CompletionMessagesBuilder) => {
  * @param approvedTools
  * @param showModal
  * @param allowAllMCPPermissions
- * @param isProactiveMode
  */
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],
@@ -515,22 +369,10 @@ export const postMessageProcessing = async (
     threadId: string,
     toolParameters?: object
   ) => Promise<boolean>,
-  allowAllMCPPermissions: boolean = false,
-  isProactiveMode: boolean = false
+  allowAllMCPPermissions: boolean = false
 ) => {
   // Handle completed tool calls
   if (calls.length) {
-    // Fetch RAG tool names from RAG service
-    let ragToolNames = new Set<string>()
-    try {
-      const names = await getServiceHub().rag().getToolNames()
-      ragToolNames = new Set(names)
-    } catch (e) {
-      console.error('Failed to load RAG tool names:', e)
-    }
-    const ragFeatureAvailable =
-      useAttachments.getState().enabled &&
-      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
@@ -569,47 +411,23 @@ export const postMessageProcessing = async (
           )
         }
       }
+      const approved =
+        allowAllMCPPermissions ||
+        approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
+        (showModal
+          ? await showModal(
+              toolCall.function.name,
+              message.thread_id,
+              toolParameters
+            )
+          : true)
 
-      const toolName = toolCall.function.name
-      const toolArgs = toolCall.function.arguments.length ? toolParameters : {}
-      const isRagTool = ragToolNames.has(toolName)
-      const isBrowserTool = isBrowserMCPTool(toolName)
-
-      // Auto-approve RAG tools (local/safe operations), require permission for MCP tools
-      const approved = isRagTool
-        ? true
-        : allowAllMCPPermissions ||
-          approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
-          (showModal
-            ? await showModal(
-                toolCall.function.name,
-                message.thread_id,
-                toolParameters
-              )
-            : true)
-
-      const { promise, cancel } = isRagTool
-        ? ragFeatureAvailable
-          ? {
-              promise: getServiceHub().rag().callTool({ toolName, arguments: toolArgs, threadId: message.thread_id }),
-              cancel: async () => {},
-            }
-          : {
-              promise: Promise.resolve({
-                error: 'attachments_unavailable',
-                content: [
-                  {
-                    type: 'text',
-                    text: 'Attachments feature is disabled or unavailable on this platform.',
-                  },
-                ],
-              }),
-              cancel: async () => {},
-            }
-        : getServiceHub().mcp().callToolWithCancellation({
-            toolName,
-            arguments: toolArgs,
-          })
+      const { promise, cancel } = getServiceHub()
+        .mcp()
+        .callToolWithCancellation({
+          toolName: toolCall.function.name,
+          arguments: toolCall.function.arguments.length ? toolParameters : {},
+        })
 
       useAppState.getState().setCancelToolCall(cancel)
 
@@ -623,7 +441,7 @@ export const postMessageProcessing = async (
                   text: `Error calling tool ${toolCall.function.name}: ${e.message ?? e}`,
                 },
               ],
-              error: String(e?.message ?? e ?? 'Tool call failed'),
+              error: true,
             }
           })
         : {
@@ -633,7 +451,6 @@ export const postMessageProcessing = async (
                 text: 'The user has chosen to disallow the tool call.',
               },
             ],
-            error: 'disallowed',
           }
 
       if (typeof result === 'string') {
@@ -644,7 +461,6 @@ export const postMessageProcessing = async (
               text: result,
             },
           ],
-          error: '',
         }
       }
 
@@ -662,28 +478,7 @@ export const postMessageProcessing = async (
           },
         ],
       }
-      builder.addToolMessage(result as ToolResult, toolCall.id)
-
-      // Proactive mode: Capture screenshot/snapshot after browser tool execution
-      if (isProactiveMode && isBrowserTool && !abortController.signal.aborted) {
-        console.log('Proactive mode: Capturing screenshots after browser tool call')
-
-        // Filter out old screenshots before adding new ones
-        filterOldProactiveScreenshots(builder)
-
-        // Capture new screenshots
-        const proactiveScreenshots = await captureProactiveScreenshots(abortController)
-
-        // Add proactive screenshots to builder
-        for (const screenshot of proactiveScreenshots) {
-          // Generate a unique tool call ID for the proactive screenshot
-          const proactiveToolCallId = ulid()
-          builder.addToolMessage(screenshot, proactiveToolCallId)
-
-          console.log('Proactive screenshot captured and added to context')
-        }
-      }
-
+      builder.addToolMessage(result.content[0]?.text ?? '', toolCall.id)
       // update message metadata
     }
     return message

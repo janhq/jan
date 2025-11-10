@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --version)",
+      "Bash(yarn --version)",
+      "Bash(make:*)",
+      "Bash(rustc:*)",
+      "Bash(curl:*)",
+      "Bash(sh -s -- -y)",
+      "Bash(source:*)",
+      "Bash(cargo:*)",
+      "Bash(sudo apt-get update:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(dpkg:*)",
+      "Bash(yarn install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -18,24 +18,9 @@ export type MCPServers = {
   [key: string]: MCPServerConfig
 }
 
-export type MCPSettings = {
-  toolCallTimeoutSeconds: number
-  baseRestartDelayMs: number
-  maxRestartDelayMs: number
-  backoffMultiplier: number
-}
-
-export const DEFAULT_MCP_SETTINGS: MCPSettings = {
-  toolCallTimeoutSeconds: 30,
-  baseRestartDelayMs: 1000,
-  maxRestartDelayMs: 30000,
-  backoffMultiplier: 2,
-}
-
 type MCPServerStoreState = {
   open: boolean
   mcpServers: MCPServers
-  settings: MCPSettings
   loading: boolean
   deletedServerKeys: string[]
   getServerConfig: (key: string) => MCPServerConfig | undefined
@@ -49,8 +34,6 @@ type MCPServerStoreState = {
   ) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
-  setSettings: (settings: MCPSettings) => void
-  updateSettings: (partial: Partial<MCPSettings>) => void
   syncServers: () => Promise<void>
   syncServersAndRestart: () => Promise<void>
 }
@@ -58,7 +41,6 @@ type MCPServerStoreState = {
 export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   open: true,
   mcpServers: {}, // Start with empty object
-  settings: { ...DEFAULT_MCP_SETTINGS },
   loading: false,
   deletedServerKeys: [],
   setLeftPanel: (value) => set({ open: value }),
@@ -112,20 +94,6 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
       const mcpServers = { ...state.mcpServers, ...servers }
       return { mcpServers }
     }),
-  setSettings: (settings) =>
-    set(() => ({
-      settings: {
-        ...DEFAULT_MCP_SETTINGS,
-        ...settings,
-      },
-    })),
-  updateSettings: (partial) =>
-    set((state) => ({
-      settings: {
-        ...state.settings,
-        ...partial,
-      },
-    })),
   // Delete an MCP server by key
   deleteServer: (key) =>
     set((state) => {
@@ -142,20 +110,18 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
       }
     }),
   syncServers: async () => {
-    const { mcpServers, settings } = get()
+    const mcpServers = get().mcpServers
     await getServiceHub().mcp().updateMCPConfig(
       JSON.stringify({
         mcpServers,
-        mcpSettings: settings,
       })
     )
   },
   syncServersAndRestart: async () => {
-    const { mcpServers, settings } = get()
+    const mcpServers = get().mcpServers
     await getServiceHub().mcp().updateMCPConfig(
       JSON.stringify({
         mcpServers,
-        mcpSettings: settings,
       })
     ).then(() => getServiceHub().mcp().restartMCPServers())
   },

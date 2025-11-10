@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -61,10 +62,6 @@ const normalizeLatex = (input: string): string => {
         /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
-
-      // --- Escape $<number> to prevent Markdown from treating it as LaTeX
-      // Example: "$1" → "\$1"
-      s = s.replace(/\$(\d+)/g, '\\$$1')
 
       return s
     })
@@ -229,8 +226,12 @@ function RenderMarkdownComponent({
 
   // Stable remarkPlugins reference
   const remarkPlugins = useMemo(() => {
-    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks]
-  }, [])
+    const basePlugins = [remarkGfm, remarkMath, remarkEmoji]
+    if (isUser) {
+      basePlugins.push(remarkBreaks)
+    }
+    return basePlugins
+  }, [isUser])
 
   // Stable rehypePlugins reference
   const rehypePlugins = useMemo(() => {

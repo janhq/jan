@@ -3,6 +3,7 @@ use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
 use crate::gguf::types::{KVCacheError, KVCacheEstimate, ModelSupportStatus};
 use std::collections::HashMap;
 use std::fs;
+use tauri::Runtime;
 use tauri_plugin_hardware::get_system_info;
 /// Read GGUF metadata from a model file
 #[tauri::command]
@@ -48,15 +49,16 @@ pub async fn get_model_size(path: String) -> Result<u64, String> {
 }
 
 #[tauri::command]
-pub async fn is_model_supported(
+pub async fn is_model_supported<R: Runtime>(
     path: String,
     ctx_size: Option<u32>,
+    app_handle: tauri::AppHandle<R>,
 ) -> Result<ModelSupportStatus, String> {
     // Get model size
     let model_size = get_model_size(path.clone()).await?;
 
     // Get system info
-    let system_info = get_system_info();
+    let system_info = get_system_info(app_handle.clone());
 
     log::info!("modelSize: {}", model_size);
 

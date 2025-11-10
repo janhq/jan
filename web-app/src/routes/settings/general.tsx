@@ -170,7 +170,7 @@ function General() {
   }, [t, checkForUpdate])
 
   return (
-    <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+    <div className="flex flex-col h-full">
       <HeaderPage>
         <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
@@ -190,29 +190,28 @@ function General() {
                   }
                 />
               )}
-              {!AUTO_UPDATER_DISABLED &&
-                PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-                  <CardItem
-                    title={t('settings:general.checkForUpdates')}
-                    description={t('settings:general.checkForUpdatesDesc')}
-                    className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                    actions={
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={handleCheckForUpdate}
-                        disabled={isCheckingUpdate}
-                      >
-                        <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          {isCheckingUpdate
-                            ? t('settings:general.checkingForUpdates')
-                            : t('settings:general.checkForUpdates')}
-                        </div>
-                      </Button>
-                    }
-                  />
-                )}
+              {!AUTO_UPDATER_DISABLED && PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
+                <CardItem
+                  title={t('settings:general.checkForUpdates')}
+                  description={t('settings:general.checkForUpdatesDesc')}
+                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                  actions={
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleCheckForUpdate}
+                      disabled={isCheckingUpdate}
+                    >
+                      <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        {isCheckingUpdate
+                          ? t('settings:general.checkingForUpdates')
+                          : t('settings:general.checkForUpdates')}
+                      </div>
+                    </Button>
+                  }
+                />
+              )}
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
@@ -221,173 +220,165 @@ function General() {
 
             {/* Data folder - Desktop only */}
             {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-              <Card title={t('common:dataFolder')}>
-                <CardItem
-                  title={t('settings:dataFolder.appData', {
-                    ns: 'settings',
-                  })}
-                  align="start"
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                  description={
-                    <>
-                      <span>
-                        {t('settings:dataFolder.appDataDesc', {
-                          ns: 'settings',
-                        })}
-                        &nbsp;
-                      </span>
-                      <div className="flex items-center gap-2 mt-1 ">
-                        <div className="">
-                          <span
-                            title={janDataFolder}
-                            className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
-                          >
-                            {janDataFolder}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() =>
-                            janDataFolder && copyToClipboard(janDataFolder)
-                          }
-                          className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
-                          title={
-                            isCopied
-                              ? t('settings:general.copied')
-                              : t('settings:general.copyPath')
-                          }
+            <Card title={t('common:dataFolder')}>
+              <CardItem
+                title={t('settings:dataFolder.appData', {
+                  ns: 'settings',
+                })}
+                align="start"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                description={
+                  <>
+                    <span>
+                      {t('settings:dataFolder.appDataDesc', {
+                        ns: 'settings',
+                      })}
+                      &nbsp;
+                    </span>
+                    <div className="flex items-center gap-2 mt-1 ">
+                      <div className="">
+                        <span
+                          title={janDataFolder}
+                          className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
                         >
-                          {isCopied ? (
-                            <div className="flex items-center gap-1">
-                              <IconCopyCheck
-                                size={12}
-                                className="text-accent"
-                              />
-                              <span className="text-xs leading-0">
-                                {t('settings:general.copied')}
-                              </span>
-                            </div>
-                          ) : (
-                            <IconCopy
-                              size={12}
-                              className="text-main-view-fg/50"
-                            />
-                          )}
-                        </button>
+                          {janDataFolder}
+                        </span>
                       </div>
-                    </>
-                  }
-                  actions={
-                    <>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        title={t('settings:dataFolder.appData')}
-                        onClick={handleDataFolderChange}
+                      <button
+                        onClick={() =>
+                          janDataFolder && copyToClipboard(janDataFolder)
+                        }
+                        className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
+                        title={
+                          isCopied
+                            ? t('settings:general.copied')
+                            : t('settings:general.copyPath')
+                        }
                       >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconFolder
+                        {isCopied ? (
+                          <div className="flex items-center gap-1">
+                            <IconCopyCheck size={12} className="text-accent" />
+                            <span className="text-xs leading-0">
+                              {t('settings:general.copied')}
+                            </span>
+                          </div>
+                        ) : (
+                          <IconCopy
                             size={12}
                             className="text-main-view-fg/50"
                           />
-                          <span>{t('settings:general.changeLocation')}</span>
-                        </div>
-                      </Button>
-                      {selectedNewPath && (
-                        <ChangeDataFolderLocation
-                          currentPath={janDataFolder || ''}
-                          newPath={selectedNewPath}
-                          onConfirm={confirmDataFolderChange}
-                          open={isDialogOpen}
-                          onOpenChange={(open) => {
-                            setIsDialogOpen(open)
-                            if (!open) {
-                              setSelectedNewPath(null)
-                            }
-                          }}
-                        >
-                          <div />
-                        </ChangeDataFolderLocation>
-                      )}
-                    </>
-                  }
-                />
-                <CardItem
-                  title={t('settings:dataFolder.appLogs', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:dataFolder.appLogsDesc')}
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={handleOpenLogs}
-                        title={t('settings:dataFolder.appLogs')}
-                      >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconLogs
-                            size={12}
-                            className="text-main-view-fg/50"
-                          />
-                          <span>{t('settings:general.openLogs')}</span>
-                        </div>
-                      </Button>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={async () => {
-                          if (janDataFolder) {
-                            try {
-                              const logsPath = `${janDataFolder}/logs`
-                              await serviceHub
-                                .opener()
-                                .revealItemInDir(logsPath)
-                            } catch (error) {
-                              console.error(
-                                'Failed to reveal logs folder:',
-                                error
-                              )
-                            }
+                        )}
+                      </button>
+                    </div>
+                  </>
+                }
+                actions={
+                  <>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      title={t('settings:dataFolder.appData')}
+                      onClick={handleDataFolderChange}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>{t('settings:general.changeLocation')}</span>
+                      </div>
+                    </Button>
+                    {selectedNewPath && (
+                      <ChangeDataFolderLocation
+                        currentPath={janDataFolder || ''}
+                        newPath={selectedNewPath}
+                        onConfirm={confirmDataFolderChange}
+                        open={isDialogOpen}
+                        onOpenChange={(open) => {
+                          setIsDialogOpen(open)
+                          if (!open) {
+                            setSelectedNewPath(null)
                           }
                         }}
-                        title={t('settings:general.revealLogs')}
                       >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconFolder
-                            size={12}
-                            className="text-main-view-fg/50"
-                          />
-                          <span>{openFileTitle()}</span>
-                        </div>
-                      </Button>
-                    </div>
-                  }
-                />
-              </Card>
+                        <div />
+                      </ChangeDataFolderLocation>
+                    )}
+                  </>
+                }
+              />
+              <CardItem
+                title={t('settings:dataFolder.appLogs', {
+                  ns: 'settings',
+                })}
+                description={t('settings:dataFolder.appLogsDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleOpenLogs}
+                      title={t('settings:dataFolder.appLogs')}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconLogs size={12} className="text-main-view-fg/50" />
+                        <span>{t('settings:general.openLogs')}</span>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={async () => {
+                        if (janDataFolder) {
+                          try {
+                            const logsPath = `${janDataFolder}/logs`
+                            await serviceHub.opener().revealItemInDir(logsPath)
+                          } catch (error) {
+                            console.error(
+                              'Failed to reveal logs folder:',
+                              error
+                            )
+                          }
+                        }
+                      }}
+                      title={t('settings:general.revealLogs')}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>{openFileTitle()}</span>
+                      </div>
+                    </Button>
+                  </div>
+                }
+              />
+            </Card>
             )}
             {/* Advanced - Desktop only */}
             {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-              <Card title="Advanced">
-                <CardItem
-                  title={t('settings:others.resetFactory', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:others.resetFactoryDesc', {
-                    ns: 'settings',
-                  })}
-                  actions={
-                    <FactoryResetDialog onReset={resetApp}>
-                      <Button variant="destructive" size="sm">
-                        {t('common:reset')}
-                      </Button>
-                    </FactoryResetDialog>
-                  }
-                />
-              </Card>
+            <Card title="Advanced">
+              <CardItem
+                title={t('settings:others.resetFactory', {
+                  ns: 'settings',
+                })}
+                description={t('settings:others.resetFactoryDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <FactoryResetDialog onReset={resetApp}>
+                    <Button variant="destructive" size="sm">
+                      {t('common:reset')}
+                    </Button>
+                  </FactoryResetDialog>
+                }
+              />
+            </Card>
             )}
 
             {/* Other */}
@@ -450,7 +441,7 @@ function General() {
                 description={t('settings:general.releaseNotesDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/releases"
+                    href="https://github.com/menloresearch/jan/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -470,7 +461,7 @@ function General() {
                 description={t('settings:general.githubDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan"
+                    href="https://github.com/menloresearch/jan"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -510,7 +501,7 @@ function General() {
                 description={t('settings:general.reportAnIssueDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/issues/new"
+                    href="https://github.com/menloresearch/jan/issues/new"
                     target="_blank"
                   >
                     <div className="flex items-center gap-1">

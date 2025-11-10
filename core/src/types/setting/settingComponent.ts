@@ -12,8 +12,6 @@ export type SettingComponentProps = {
   extensionName?: string
   requireModelReload?: boolean
   configType?: ConfigType
-  titleKey?: string
-  descriptionKey?: string
 }
 
 export type ConfigType = 'runtime' | 'setting'

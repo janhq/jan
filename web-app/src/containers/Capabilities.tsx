@@ -10,7 +10,6 @@ import {
   IconAtom,
   IconWorld,
   IconCodeCircle2,
-  IconSparkles,
 } from '@tabler/icons-react'
 import { Fragment } from 'react/jsx-runtime'
 
@@ -21,28 +20,15 @@ interface CapabilitiesProps {
 const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   if (!capabilities.length) return null
 
-  const filteredCapabilities = capabilities.filter((capability) => {
-    if (capability === 'proactive') {
-      return (
-        capabilities.includes('tools') &&
-        capabilities.includes('vision') &&
-        capabilities.includes('proactive')
-      )
-    }
-    return true
-  })
-
   return (
     <div className="flex gap-1">
-      {filteredCapabilities.map((capability: string, capIndex: number) => {
+      {capabilities.map((capability: string, capIndex: number) => {
         let icon = null
 
         if (capability === 'vision') {
           icon = <IconEye className="size-4" />
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
-        } else if (capability === 'proactive') {
-          icon = <IconSparkles className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
         } else if (capability === 'embeddings') {
@@ -68,11 +54,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>
-                      {capability === 'web_search'
-                        ? 'Web Search'
-                        : capability === 'proactive'
-                        ? 'Proactive'
-                        : capability}
+                      {capability === 'web_search' ? 'Web Search' : capability}
                     </p>
                   </TooltipContent>
                 </Tooltip>

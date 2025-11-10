@@ -10,7 +10,6 @@ pub struct SessionInfo {
     pub port: i32, // llama-server output port
     pub model_id: String,
     pub model_path: String, // path of the loaded model
-    pub is_embedding: bool,
     pub api_key: String,
     #[serde(default)]
     pub mmproj_path: Option<String>,

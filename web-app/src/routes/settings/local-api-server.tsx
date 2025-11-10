@@ -49,7 +49,6 @@ function LocalAPIServerContent() {
     setEnableOnStartup,
     serverHost,
     serverPort,
-    setServerPort,
     apiPrefix,
     apiKey,
     trustedHosts,
@@ -153,11 +152,7 @@ function LocalAPIServerContent() {
             proxyTimeout: proxyTimeout,
           })
         })
-        .then((actualPort: number) => {
-          // Store the actual port that was assigned (important for mobile with port 0)
-          if (actualPort && actualPort !== serverPort) {
-            setServerPort(actualPort)
-          }
+        .then(() => {
           setServerStatus('running')
         })
         .catch((error: unknown) => {
@@ -229,7 +224,7 @@ function LocalAPIServerContent() {
     }
   }
 
-  const isServerRunning = serverStatus !== 'stopped'
+  const isServerRunning = serverStatus === 'running'
 
   return (
     <div className="flex flex-col h-full">

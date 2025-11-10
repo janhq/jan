@@ -21,6 +21,11 @@
     "title": "Integrations",
     "display": "hidden"
   },
+  "api-reference": {
+    "type": "page",
+    "title": "API reference",
+    "display": "hidden"
+  },
   "handbook": {
     "type": "page",
     "title": "Handbook",

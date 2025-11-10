@@ -43,11 +43,5 @@
   "args": "參數",
   "env": "環境",
   "serverStatusActive": "伺服器 {{serverKey}} 啟用成功",
-  "serverStatusInactive": "伺服器 {{serverKey}} 停用成功",
-  "runtimeSettings": {
-    "title": "執行階段設定",
-    "description": "設定 Jan 如何管理及重試 MCP 伺服器。",
-    "toolCallTimeout": "工具呼叫逾時（秒）",
-    "toolCallTimeoutDesc": "等待 MCP 工具回應的最長時間，超過即逾時。"
-  }
+  "serverStatusInactive": "伺服器 {{serverKey}} 停用成功"
 }

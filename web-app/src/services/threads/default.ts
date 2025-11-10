@@ -6,7 +6,6 @@ import { defaultAssistant } from '@/hooks/useAssistant'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import type { ThreadsService } from './types'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export class DefaultThreadsService implements ThreadsService {
   async fetchThreads(): Promise<Thread[]> {
@@ -17,10 +16,7 @@ export class DefaultThreadsService implements ThreadsService {
         .then((threads) => {
           if (!Array.isArray(threads)) return []
 
-          // Filter out temporary threads from the list
-          const filteredThreads = threads.filter((e) => e.id !== TEMPORARY_CHAT_ID)
-
-          return filteredThreads.map((e) => {
+          return threads.map((e) => {
             return {
               ...e,
               updated:
@@ -51,11 +47,6 @@ export class DefaultThreadsService implements ThreadsService {
   }
 
   async createThread(thread: Thread): Promise<Thread> {
-    // For temporary threads, bypass the conversational extension (in-memory only)
-    if (thread.id === TEMPORARY_CHAT_ID) {
-      return thread
-    }
-
     return (
       ExtensionManager.getInstance()
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
@@ -92,11 +83,6 @@ export class DefaultThreadsService implements ThreadsService {
   }
 
   async updateThread(thread: Thread): Promise<void> {
-    // For temporary threads, skip updating via conversational extension
-    if (thread.id === TEMPORARY_CHAT_ID) {
-      return
-    }
-
     await ExtensionManager.getInstance()
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.modifyThread({
@@ -133,11 +119,6 @@ export class DefaultThreadsService implements ThreadsService {
   }
 
   async deleteThread(threadId: string): Promise<void> {
-    // For temporary threads, skip deleting via conversational extension
-    if (threadId === TEMPORARY_CHAT_ID) {
-      return
-    }
-
     await ExtensionManager.getInstance()
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.deleteThread(threadId)

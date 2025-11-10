@@ -19,7 +19,10 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     let default_data_folder = default_data_folder_path(app_handle.clone());
 
     if !configuration_file.exists() {
-        log::info!("App config not found, creating default config at {configuration_file:?}");
+        log::info!(
+            "App config not found, creating default config at {:?}",
+            configuration_file
+        );
 
         app_default_configuration.data_folder = default_data_folder;
 
@@ -27,7 +30,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             &configuration_file,
             serde_json::to_string(&app_default_configuration).unwrap(),
         ) {
-            log::error!("Failed to create default config: {err}");
+            log::error!("Failed to create default config: {}", err);
         }
 
         return app_default_configuration;
@@ -37,24 +40,33 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
         Ok(content) => match serde_json::from_str::<AppConfiguration>(&content) {
             Ok(app_configurations) => app_configurations,
             Err(err) => {
-                log::error!("Failed to parse app config, returning default config instead. Error: {err}");
+                log::error!(
+                    "Failed to parse app config, returning default config instead. Error: {}",
+                    err
+                );
                 app_default_configuration
             }
         },
         Err(err) => {
-            log::error!("Failed to read app config, returning default config instead. Error: {err}");
+            log::error!(
+                "Failed to read app config, returning default config instead. Error: {}",
+                err
+            );
             app_default_configuration
         }
     }
 }
 
 #[tauri::command]
-pub fn update_app_configuration<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+pub fn update_app_configuration(
+    app_handle: tauri::AppHandle,
     configuration: AppConfiguration,
 ) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
-    log::info!("update_app_configuration, configuration_file: {configuration_file:?}");
+    log::info!(
+        "update_app_configuration, configuration_file: {:?}",
+        configuration_file
+    );
 
     fs::write(
         configuration_file,
@@ -83,7 +95,8 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         log::error!(
-            "Failed to get app data directory: {err}. Using home directory instead."
+            "Failed to get app data directory: {}. Using home directory instead.",
+            err
         );
 
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
@@ -117,9 +130,9 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
         .join(package_name);
 
     if old_data_dir.exists() {
-        old_data_dir.join(CONFIGURATION_FILE_NAME)
+        return old_data_dir.join(CONFIGURATION_FILE_NAME);
     } else {
-        app_path.join(CONFIGURATION_FILE_NAME)
+        return app_path.join(CONFIGURATION_FILE_NAME);
     }
 }
 
@@ -142,13 +155,13 @@ pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 }
 
 #[tauri::command]
-pub fn get_user_home_path<R: Runtime>(app: AppHandle<R>) -> String {
-    get_app_configurations(app.clone()).data_folder
+pub fn get_user_home_path(app: AppHandle) -> String {
+    return get_app_configurations(app.clone()).data_folder;
 }
 
 #[tauri::command]
-pub fn change_app_data_folder<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+pub fn change_app_data_folder(
+    app_handle: tauri::AppHandle,
     new_data_folder: String,
 ) -> Result<(), String> {
     // Get current data folder path
@@ -158,12 +171,16 @@ pub fn change_app_data_folder<R: Runtime>(
     // Create the new data folder if it doesn't exist
     if !new_data_folder_path.exists() {
         fs::create_dir_all(&new_data_folder_path)
-            .map_err(|e| format!("Failed to create new data folder: {e}"))?;
+            .map_err(|e| format!("Failed to create new data folder: {}", e))?;
     }
 
     // Copy all files from the old folder to the new one
     if current_data_folder.exists() {
-        log::info!("Copying data from {current_data_folder:?} to {new_data_folder_path:?}");
+        log::info!(
+            "Copying data from {:?} to {:?}",
+            current_data_folder,
+            new_data_folder_path
+        );
 
         // Check if this is a parent directory to avoid infinite recursion
         if new_data_folder_path.starts_with(&current_data_folder) {
@@ -176,7 +193,7 @@ pub fn change_app_data_folder<R: Runtime>(
             &new_data_folder_path,
             &[".uvx", ".npx"],
         )
-        .map_err(|e| format!("Failed to copy data to new folder: {e}"))?;
+        .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
     } else {
         log::info!("Current data folder does not exist, nothing to copy");
     }

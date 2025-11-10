@@ -421,12 +421,13 @@ export default function AddEditMCPServer({
                   }}
                   onPaste={() => setError(null)}
                   style={{
+                    fontFamily: 'ui-monospace',
                     backgroundColor: 'transparent',
                     wordBreak: 'break-all',
                     overflowWrap: 'anywhere',
                     whiteSpace: 'pre-wrap',
                   }}
-                  className="w-full !text-sm min-h-[300px] !font-mono"
+                  className="w-full !text-sm min-h-[300px]"
                 />
               </div>
               {error && <div className="text-destructive text-sm">{error}</div>}

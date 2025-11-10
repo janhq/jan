@@ -31,7 +31,7 @@ export interface ConversationResponse {
   id: string
   object: 'conversation'
   title?: string
-  created_at: number | string
+  created_at: number
   metadata: ConversationMetadata
 }
 
@@ -50,7 +50,6 @@ export interface ConversationItemAnnotation {
 }
 
 export interface ConversationItemContent {
-  type?: string
   file?: {
     file_id?: string
     mime_type?: string
@@ -63,50 +62,23 @@ export interface ConversationItemContent {
     file_id?: string
     url?: string
   }
-  image_file?: {
-    file_id?: string
-    mime_type?: string
-  }
   input_text?: string
   output_text?: {
     annotations?: ConversationItemAnnotation[]
     text?: string
   }
+  reasoning_content?: string
   text?: {
     value?: string
-    text?: string
   }
-  reasoning_content?: string
-  tool_calls?: Array<{
-    id?: string
-    type?: string
-    function?: {
-      name?: string
-      arguments?: string
-    }
-  }>
-  tool_call_id?: string
-  tool_result?: {
-    content?: Array<{
-      type?: string
-      text?: string
-      output_text?: {
-        text?: string
-      }
-    }>
-    output_text?: {
-      text?: string
-    }
-  }
-  text_result?: string
+  type?: string
 }
 
 export interface ConversationItem {
   content?: ConversationItemContent[]
-  created_at: number | string
+  created_at: number
   id: string
   object: string
-  metadata?: Record<string, unknown>
   role: string
   status?: string
   type?: string

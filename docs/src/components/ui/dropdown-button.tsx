@@ -120,7 +120,7 @@ export function DropdownButton({
 
           return {
             ...option,
-            href: `https://github.com/janhq/jan/releases/download/${lastRelease.tag_name}/${fileName}`,
+            href: `https://github.com/menloresearch/jan/releases/download/${lastRelease.tag_name}/${fileName}`,
             size: asset ? formatFileSize(asset.size) : 'N/A',
           }
         })

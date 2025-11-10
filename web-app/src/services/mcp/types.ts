@@ -3,11 +3,10 @@
  */
 
 import { MCPTool, MCPToolCallResult } from '@janhq/core'
-import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
+import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
 
 export interface MCPConfig {
   mcpServers?: MCPServers
-  mcpSettings?: MCPSettings
 }
 
 export interface ToolCallWithCancellationResult {

@@ -70,6 +70,6 @@ There are a few things to keep in mind when writing your extension code:
   ```
 
   For more information about the Jan Extension Core module, see the
-  [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
+  [documentation](https://github.com/menloresearch/jan/blob/main/core/README.md).
 
 So, what are you waiting for? Go ahead and start customizing your extension!

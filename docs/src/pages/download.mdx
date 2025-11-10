@@ -19,7 +19,7 @@ keywords:
 import Download from "@/components/Download"
 
 export const getStaticProps = async() => {
-  const resRelease = await fetch('https://api.github.com/repos/janhq/jan/releases/latest')  
+  const resRelease = await fetch('https://api.github.com/repos/menloresearch/jan/releases/latest')  
   const release = await resRelease.json()
 
   return {

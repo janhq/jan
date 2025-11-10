@@ -6,7 +6,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-use tauri::{Emitter, Runtime};
+use tauri::Emitter;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -15,7 +15,7 @@ use url::Url;
 // ===== UTILITY FUNCTIONS =====
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
-    format!("Error: {e}")
+    format!("Error: {}", e)
 }
 
 
@@ -25,7 +25,7 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
 async fn validate_downloaded_file(
     item: &DownloadItem,
     save_path: &Path,
-    app: &tauri::AppHandle<impl Runtime>,
+    app: &tauri::AppHandle,
     cancel_token: &CancellationToken,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
@@ -55,7 +55,7 @@ async fn validate_downloaded_file(
     )
     .unwrap();
 
-    log::info!("Starting validation for model: {model_id}");
+    log::info!("Starting validation for model: {}", model_id);
 
     // Validate size if provided (fast check first)
     if let Some(expected_size) = &item.size {
@@ -73,7 +73,8 @@ async fn validate_downloaded_file(
                         actual_size
                     );
                     return Err(format!(
-                        "Size verification failed. Expected {expected_size} bytes but got {actual_size} bytes."
+                        "Size verification failed. Expected {} bytes but got {} bytes.",
+                        expected_size, actual_size
                     ));
                 }
 
@@ -89,7 +90,7 @@ async fn validate_downloaded_file(
                     save_path.display(),
                     e
                 );
-                return Err(format!("Failed to verify file size: {e}"));
+                return Err(format!("Failed to verify file size: {}", e));
             }
         }
     }
@@ -114,7 +115,9 @@ async fn validate_downloaded_file(
                         computed_sha256
                     );
 
-                    return Err("Hash verification failed. The downloaded file is corrupted or has been tampered with.".to_string());
+                    return Err(format!(
+                        "Hash verification failed. The downloaded file is corrupted or has been tampered with."
+                    ));
                 }
 
                 log::info!("Hash verification successful for {}", item.url);
@@ -125,7 +128,7 @@ async fn validate_downloaded_file(
                     save_path.display(),
                     e
                 );
-                return Err(format!("Failed to verify file integrity: {e}"));
+                return Err(format!("Failed to verify file integrity: {}", e));
             }
         }
     }
@@ -137,14 +140,14 @@ async fn validate_downloaded_file(
 pub fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
     // Validate proxy URL format
     if let Err(e) = Url::parse(&config.url) {
-        return Err(format!("Invalid proxy URL '{}': {e}", config.url));
+        return Err(format!("Invalid proxy URL '{}': {}", config.url, e));
     }
 
     // Check if proxy URL has valid scheme
     let url = Url::parse(&config.url).unwrap(); // Safe to unwrap as we just validated it
     match url.scheme() {
         "http" | "https" | "socks4" | "socks5" => {}
-        scheme => return Err(format!("Unsupported proxy scheme: {scheme}")),
+        scheme => return Err(format!("Unsupported proxy scheme: {}", scheme)),
     }
 
     // Validate authentication credentials
@@ -164,7 +167,7 @@ pub fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
             }
             // Basic validation for wildcard patterns
             if entry.starts_with("*.") && entry.len() < 3 {
-                return Err(format!("Invalid wildcard pattern: {entry}"));
+                return Err(format!("Invalid wildcard pattern: {}", entry));
             }
         }
     }
@@ -211,7 +214,8 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
         }
 
         // Simple wildcard matching
-        if let Some(domain) = entry.strip_prefix("*.") {
+        if entry.starts_with("*.") {
+            let domain = &entry[2..];
             if host.ends_with(domain) {
                 return true;
             }
@@ -292,25 +296,16 @@ pub async fn _get_file_size(
 
 // ===== MAIN DOWNLOAD FUNCTIONS =====
 
-// Context passed to `download_single_file` to reduce the number of arguments
-struct DownloadCtx {
-    header_map: HeaderMap,
-    resume: bool,
-    cancel_token: CancellationToken,
-    evt_name: String,
-    progress_tracker: ProgressTracker,
-}
-
 /// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
-    app: tauri::AppHandle<impl Runtime>,
+    app: tauri::AppHandle,
     items: &[DownloadItem],
     headers: &HashMap<String, String>,
     task_id: &str,
     resume: bool,
     cancel_token: CancellationToken,
 ) -> Result<(), String> {
-    log::info!("Start download task: {task_id}");
+    log::info!("Start download task: {}", task_id);
 
     let header_map = _convert_headers(headers).map_err(err_to_string)?;
 
@@ -325,9 +320,9 @@ pub async fn _download_files_internal(
     }
 
     let total_size: u64 = file_sizes.values().sum();
-    log::info!("Total download size: {total_size}");
+    log::info!("Total download size: {}", total_size);
 
-    let evt_name = format!("download-{task_id}");
+    let evt_name = format!("download-{}", task_id);
 
     // Create progress tracker
     let progress_tracker = ProgressTracker::new(items, file_sizes.clone());
@@ -353,25 +348,25 @@ pub async fn _download_files_internal(
         // Spawn download task for each file
         let item_clone = item.clone();
         let app_clone = app.clone();
-        let file_id = format!("{task_id}-{index}");
+        let header_map_clone = header_map.clone();
+        let cancel_token_clone = cancel_token.clone();
+        let evt_name_clone = evt_name.clone();
+        let progress_tracker_clone = progress_tracker.clone();
+        let file_id = format!("{}-{}", task_id, index);
         let file_size = file_sizes.get(&item.url).copied().unwrap_or(0);
-
-        let ctx = DownloadCtx {
-            header_map: header_map.clone(),
-            resume,
-            cancel_token: cancel_token.clone(),
-            evt_name: evt_name.clone(),
-            progress_tracker: progress_tracker.clone(),
-        };
 
         let task = tokio::spawn(async move {
             download_single_file(
                 app_clone,
                 &item_clone,
+                &header_map_clone,
                 &save_path,
+                resume,
+                cancel_token_clone,
+                evt_name_clone,
+                progress_tracker_clone,
                 file_id,
                 file_size,
-                ctx,
             )
             .await
         });
@@ -382,7 +377,7 @@ pub async fn _download_files_internal(
     // Wait for all downloads to complete
     let mut validation_tasks = Vec::new();
     for (task, item) in download_tasks.into_iter().zip(items.iter()) {
-        let result = task.await.map_err(|e| format!("Task join error: {e}"))?;
+        let result = task.await.map_err(|e| format!("Task join error: {}", e))?;
 
         match result {
             Ok(downloaded_path) => {
@@ -404,7 +399,7 @@ pub async fn _download_files_internal(
     for (validation_task, save_path, _item) in validation_tasks {
         let validation_result = validation_task
             .await
-            .map_err(|e| format!("Validation task join error: {e}"))?;
+            .map_err(|e| format!("Validation task join error: {}", e))?;
 
         if let Err(validation_error) = validation_result {
             // Clean up the file if validation fails
@@ -428,20 +423,17 @@ pub async fn _download_files_internal(
 
 /// Downloads a single file without blocking other downloads
 async fn download_single_file(
-    app: tauri::AppHandle<impl Runtime>,
+    app: tauri::AppHandle,
     item: &DownloadItem,
+    header_map: &HeaderMap,
     save_path: &std::path::Path,
+    resume: bool,
+    cancel_token: CancellationToken,
+    evt_name: String,
+    progress_tracker: ProgressTracker,
     file_id: String,
     _file_size: u64,
-    ctx: DownloadCtx,
 ) -> Result<std::path::PathBuf, String> {
-    let DownloadCtx {
-        header_map,
-        resume,
-        cancel_token,
-        evt_name,
-        progress_tracker,
-    } = ctx;
     // Create parent directories if they don't exist
     if let Some(parent) = save_path.parent() {
         if !parent.exists() {
@@ -456,7 +448,7 @@ async fn download_single_file(
         if current_extension.is_empty() {
             ext.to_string()
         } else {
-            format!("{current_extension}.{ext}")
+            format!("{}.{}", current_extension, ext)
         }
     };
     let tmp_save_path = save_path.with_extension(append_extension("tmp"));
@@ -477,7 +469,7 @@ async fn download_single_file(
     let decoded_url = url::Url::parse(&item.url)
         .map(|u| u.to_string())
         .unwrap_or_else(|_| item.url.clone());
-    log::info!("Started downloading: {decoded_url}");
+    log::info!("Started downloading: {}", decoded_url);
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
@@ -511,7 +503,7 @@ async fn download_single_file(
             }
             Err(e) => {
                 // fallback to normal download
-                log::warn!("Failed to resume download: {e}");
+                log::warn!("Failed to resume download: {}", e);
                 should_resume = false;
                 _get_maybe_resume(&client, &item.url, 0).await?
             }
@@ -600,7 +592,7 @@ async fn download_single_file(
     let decoded_url = url::Url::parse(&item.url)
         .map(|u| u.to_string())
         .unwrap_or_else(|_| item.url.clone());
-    log::info!("Finished downloading: {decoded_url}");
+    log::info!("Finished downloading: {}", decoded_url);
     Ok(save_path.to_path_buf())
 }
 
@@ -614,7 +606,7 @@ pub async fn _get_maybe_resume(
     if start_bytes > 0 {
         let resp = client
             .get(url)
-            .header("Range", format!("bytes={start_bytes}-"))
+            .header("Range", format!("bytes={}-", start_bytes))
             .send()
             .await
             .map_err(err_to_string)?;

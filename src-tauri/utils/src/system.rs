@@ -1,5 +1,5 @@
-/// Checks if npx can be overridden with bun binary
-pub fn can_override_npx(bun_path: String) -> bool {
+/// Checks AVX2 CPU support for npx override with bun binary
+pub fn can_override_npx() -> bool {
     // We need to check the CPU for the AVX2 instruction support if we are running under MacOS
     // with Intel CPU. We can override `npx` command with `bun` only if CPU is
     // supporting AVX2, otherwise we need to use default `npx` binary
@@ -13,29 +13,8 @@ pub fn can_override_npx(bun_path: String) -> bool {
             return false; // we cannot override npx with bun binary
         }
     }
-    // Check if bun_path exists
-    if !std::path::Path::new(bun_path.as_str()).exists() {
-        #[cfg(feature = "logging")]
-        log::warn!(
-            "bun binary not found at '{}', default npx binary will be used",
-            bun_path
-        );
-        return false;
-    }
-    true // by default, we can override npx with bun binary
-}
 
-/// Checks if uv_path exists and determines if uvx can be overridden with the uv binary
-pub fn can_override_uvx(uv_path: String) -> bool {
-    if !std::path::Path::new(uv_path.as_str()).exists() {
-        #[cfg(feature = "logging")]
-        log::warn!(
-            "uv binary not found at '{}', default uvx binary will be used",
-            uv_path
-        );
-        return false;
-    }
-    true // by default, we can override uvx with uv binary
+    true // by default, we can override npx with bun binary
 }
 
 /// Setup library paths for different operating systems
@@ -81,6 +60,7 @@ pub fn setup_library_path(library_path: Option<&str>, command: &mut tokio::proce
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
+        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);

@@ -16,8 +16,7 @@ export type AuthType = ProviderType | 'guest'
 
 export interface AuthTokens {
   access_token: string
-  expires_in?: number
-  expires_at?: string
+  expires_in: number
   object: string
 }
 

@@ -37,18 +37,6 @@
     "controllerProps": { "value": true }
   },
   {
-    "key": "timeout",
-    "title": "Timeout for llamacpp",
-    "description": "Llamacpp connection and load timeout in seconds",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "600",
-      "placeholder": "e.g 600",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
     "key": "memory_util",
     "title": "Smart Memory utilization",
     "description": "Smart memory utilization mode for running local GGUF models",
@@ -161,14 +149,9 @@
     "key": "flash_attn",
     "title": "Flash Attention",
     "description": "Enable Flash Attention for optimized performance.",
-    "controllerType": "dropdown",
+    "controllerType": "checkbox",
     "controllerProps": {
-      "value": "auto",
-      "options": [
-        { "value": "auto", "name": "Auto" },
-        { "value": "on", "name": "On" },
-        { "value": "off", "name": "Off" }
-      ]
+      "value": false
     }
   },
   {

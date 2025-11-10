@@ -21,13 +21,6 @@ export interface MessageInterface {
   listMessages(threadId: string): Promise<ThreadMessage[]>
 
   /**
-   * Updates an existing message in a thread.
-   * @param {ThreadMessage} message - The message to be updated (must have existing ID).
-   * @returns {Promise<ThreadMessage>} A promise that resolves to the updated message.
-   */
-  modifyMessage(message: ThreadMessage): Promise<ThreadMessage>
-
-  /**
    * Deletes a specific message from a thread.
    * @param {string} threadId - The ID of the thread from which the message will be deleted.
    * @param {string} messageId - The ID of the message to be deleted.

@@ -5,11 +5,10 @@
   "local_api_server": "Local API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
-  "attachments": "Attachments",
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
-  "interface": "Interface",
+  "appearance": "Appearance",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "newChat": "New Chat",
@@ -81,7 +80,6 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
-  "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
@@ -126,10 +124,6 @@
   "error": "Error",
   "success": "Success",
   "warning": "Warning",
-  "conversationNotAvailable": "Conversation not available",
-  "conversationNotAvailableDescription": "The conversation you are trying to access is not available or has been deleted.",
-  "temporaryChat": "Temporary Chat",
-  "temporaryChatTooltip": "Temporary chat won't appear in your history",
   "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
   "searchModels": "Search models...",
   "searchStyles": "Search styles...",
@@ -137,7 +131,6 @@
   "enterApiKey": "Enter API Key",
   "scrollToBottom": "Scroll to bottom",
   "generateAiResponse": "Generate AI Response",
-  "continueAiResponse": "Continue with AI Response",
   "addModel": {
     "title": "Add Model",
     "modelId": "Model ID",
@@ -285,12 +278,9 @@
     "thread": "thread",
     "threads": "threads",
     "updated": "Updated:",
-    "collapseProject": "Collapse project",
-    "expandProject": "Expand project",
-    "update": "Update",
-    "searchProjects": "Search projects...",
-    "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "collapseThreads": "Collapse threads",
+    "expandThreads": "Expand threads",
+    "update": "Update"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -375,3 +365,4 @@
     }
   }
 }
+

@@ -21,13 +21,11 @@ src-tauri/resources/lib
 src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/gen/apple
-src-tauri/gen/android
 src-tauri/resources/bin
 
 # Helper tools
 .opencode
 OpenCode.md
-Claude.md
 archive/
 .cache/
 
@@ -62,4 +60,3 @@ src-tauri/resources/
 ## test
 test-data
 llm-docs
-.claude/agents

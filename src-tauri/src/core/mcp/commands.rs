@@ -1,31 +1,19 @@
 use rmcp::model::{CallToolRequestParam, CallToolResult};
-use serde_json::{json, Map, Value};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tokio::sync::oneshot;
+use serde_json::{Map, Value};
+use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::time::timeout;
+use tokio::sync::oneshot;
 
 use super::{
-    constants::DEFAULT_MCP_CONFIG,
+    constants::{DEFAULT_MCP_CONFIG, MCP_TOOL_CALL_TIMEOUT},
     helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
 };
-use crate::core::{
-    app::commands::get_jan_data_folder_path,
-    mcp::models::McpSettings,
-    state::AppState,
-};
+use crate::core::{app::commands::get_jan_data_folder_path, state::AppState};
 use crate::core::{
     mcp::models::ToolWithServer,
     state::{RunningServiceEnum, SharedMcpServers},
 };
-use std::{fs, time::Duration};
-
-async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
-    state
-        .mcp_settings
-        .lock()
-        .await
-        .tool_call_timeout_duration()
-}
+use std::fs;
 
 #[tauri::command]
 pub async fn activate_mcp_server<R: Runtime>(
@@ -42,28 +30,28 @@ pub async fn activate_mcp_server<R: Runtime>(
 
 #[tauri::command]
 pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    log::info!("Deactivating MCP server: {name}");
+    log::info!("Deactivating MCP server: {}", name);
 
     // First, mark server as manually deactivated to prevent restart
     // Remove from active servers list to prevent restart
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.remove(&name);
-        log::info!("Removed MCP server {name} from active servers list");
+        log::info!("Removed MCP server {} from active servers list", name);
     }
 
     // Mark as not successfully connected to prevent restart logic
     {
         let mut connected = state.mcp_successfully_connected.lock().await;
         connected.insert(name.clone(), false);
-        log::info!("Marked MCP server {name} as not successfully connected");
+        log::info!("Marked MCP server {} as not successfully connected", name);
     }
 
     // Reset restart count
     {
         let mut counts = state.mcp_restart_counts.lock().await;
         counts.remove(&name);
-        log::info!("Reset restart count for MCP server {name}");
+        log::info!("Reset restart count for MCP server {}", name);
     }
 
     // Now remove and stop the server
@@ -72,7 +60,7 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
 
     let service = servers_map
         .remove(&name)
-        .ok_or_else(|| format!("Server {name} not found"))?;
+        .ok_or_else(|| format!("Server {} not found", name))?;
 
     // Release the lock before calling cancel
     drop(servers_map);
@@ -92,7 +80,7 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
 }
 
 #[tauri::command]
-pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn restart_mcp_servers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let servers = state.mcp_servers.clone();
     // Stop the servers
     stop_mcp_servers(state.mcp_servers.clone()).await?;
@@ -101,7 +89,7 @@ pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_,
     restart_active_mcp_servers(&app, servers).await?;
 
     app.emit("mcp-update", "MCP servers updated")
-        .map_err(|e| format!("Failed to emit event: {e}"))?;
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     Ok(())
 }
@@ -122,14 +110,16 @@ pub async fn reset_mcp_restart_count(
     let old_count = *count;
     *count = 0;
     log::info!(
-        "MCP server {server_name} restart count reset from {old_count} to 0."
+        "MCP server {} restart count reset from {} to 0.",
+        server_name,
+        old_count
     );
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_connected_servers(
-    _app: AppHandle<impl Runtime>,
+    _app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     let servers = state.mcp_servers.clone();
@@ -154,19 +144,18 @@ pub async fn get_connected_servers(
 /// 6. Returns the combined list of all available tools with server information
 #[tauri::command]
 pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
     let servers = state.mcp_servers.lock().await;
     let mut all_tools: Vec<ToolWithServer> = Vec::new();
 
     for (server_name, service) in servers.iter() {
         // List tools with timeout
         let tools_future = service.list_all_tools();
-        let tools = match timeout(timeout_duration, tools_future).await {
+        let tools = match timeout(MCP_TOOL_CALL_TIMEOUT, tools_future).await {
             Ok(result) => result.map_err(|e| e.to_string())?,
             Err(_) => {
                 log::warn!(
                     "Listing tools timed out after {} seconds",
-                    timeout_duration.as_secs()
+                    MCP_TOOL_CALL_TIMEOUT.as_secs()
                 );
                 continue; // Skip this server and continue with others
             }
@@ -209,7 +198,6 @@ pub async fn call_tool(
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
     
@@ -231,7 +219,7 @@ pub async fn call_tool(
             continue; // Tool not found in this server, try next
         }
 
-        println!("Found tool {tool_name} in server");
+        println!("Found tool {} in server", tool_name);
 
         // Call the tool with timeout and cancellation support
         let tool_call = service.call_tool(CallToolRequestParam {
@@ -242,25 +230,27 @@ pub async fn call_tool(
         // Race between timeout, tool call, and cancellation
         let result = if cancellation_token.is_some() {
             tokio::select! {
-                result = timeout(timeout_duration, tool_call) => {
+                result = timeout(MCP_TOOL_CALL_TIMEOUT, tool_call) => {
                     match result {
                         Ok(call_result) => call_result.map_err(|e| e.to_string()),
                         Err(_) => Err(format!(
-                            "Tool call '{tool_name}' timed out after {} seconds",
-                            timeout_duration.as_secs()
+                            "Tool call '{}' timed out after {} seconds",
+                            tool_name,
+                            MCP_TOOL_CALL_TIMEOUT.as_secs()
                         )),
                     }
                 }
                 _ = cancel_rx => {
-                    Err(format!("Tool call '{tool_name}' was cancelled"))
+                    Err(format!("Tool call '{}' was cancelled", tool_name))
                 }
             }
         } else {
-            match timeout(timeout_duration, tool_call).await {
+            match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
                 Ok(call_result) => call_result.map_err(|e| e.to_string()),
                 Err(_) => Err(format!(
-                    "Tool call '{tool_name}' timed out after {} seconds",
-                    timeout_duration.as_secs()
+                    "Tool call '{}' timed out after {} seconds",
+                    tool_name,
+                    MCP_TOOL_CALL_TIMEOUT.as_secs()
                 )),
             }
         };
@@ -274,7 +264,7 @@ pub async fn call_tool(
         return result;
     }
 
-    Err(format!("Tool {tool_name} not found"))
+    Err(format!("Tool {} not found", tool_name))
 }
 
 /// Cancels a running tool call by its cancellation token
@@ -295,124 +285,33 @@ pub async fn cancel_tool_call(
     if let Some(cancel_tx) = cancellations.remove(&cancellation_token) {
         // Send cancellation signal - ignore if receiver is already dropped
         let _ = cancel_tx.send(());
-        println!("Tool call with token {cancellation_token} cancelled");
+        println!("Tool call with token {} cancelled", cancellation_token);
         Ok(())
     } else {
-        Err(format!("Cancellation token {cancellation_token} not found"))
+        Err(format!("Cancellation token {} not found", cancellation_token))
     }
 }
 
-fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
-    value
-        .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
-        .unwrap_or_default()
-}
-
 #[tauri::command]
-pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    let mut path = get_jan_data_folder_path(app.clone());
+pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
+    let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
 
     // Create default empty config if file doesn't exist
     if !path.exists() {
         log::info!("mcp_config.json not found, creating default empty config");
         fs::write(&path, DEFAULT_MCP_CONFIG)
-            .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
+            .map_err(|e| format!("Failed to create default MCP config: {}", e))?;
     }
 
-    let config_string = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-
-    let mut config_value: Value = if config_string.trim().is_empty() {
-        json!({})
-    } else {
-        serde_json::from_str(&config_string).unwrap_or_else(|error| {
-            log::error!("Failed to parse existing MCP config, regenerating defaults: {error}");
-            json!({})
-        })
-    };
-
-    if !config_value.is_object() {
-        config_value = json!({});
-    }
-
-    let mut mutated = false;
-    let config_object = config_value.as_object_mut().unwrap();
-
-    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
-    if !config_object.contains_key("mcpSettings") {
-        config_object.insert(
-            "mcpSettings".to_string(),
-            serde_json::to_value(&settings)
-                .map_err(|e| format!("Failed to serialize MCP settings: {e}"))?,
-        );
-        mutated = true;
-    }
-
-    if !config_object.contains_key("mcpServers") {
-        config_object.insert("mcpServers".to_string(), json!({}));
-        mutated = true;
-    }
-
-    // Persist any mutations back to disk
-    if mutated {
-        fs::write(
-            &path,
-            serde_json::to_string_pretty(&config_value)
-                .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
-        )
-        .map_err(|e| format!("Failed to write MCP config: {e}"))?;
-    }
-
-    // Update in-memory state with latest settings
-    {
-        let state = app.state::<AppState>();
-        let mut settings_guard = state.mcp_settings.lock().await;
-        *settings_guard = settings.clone();
-    }
-
-    serde_json::to_string_pretty(&config_value)
-        .map_err(|e| format!("Failed to serialize MCP config: {e}"))
+    fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
-    let mut path = get_jan_data_folder_path(app.clone());
+pub async fn save_mcp_configs(app: AppHandle, configs: String) -> Result<(), String> {
+    let mut path = get_jan_data_folder_path(app);
     path.push("mcp_config.json");
-    log::info!("save mcp configs, path: {path:?}");
+    log::info!("save mcp configs, path: {:?}", path);
 
-    let mut config_value: Value = serde_json::from_str(&configs)
-        .map_err(|e| format!("Invalid MCP config payload: {e}"))?;
-
-    if !config_value.is_object() {
-        return Err("MCP config must be a JSON object".to_string());
-    }
-
-    let config_object = config_value.as_object_mut().unwrap();
-    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
-
-    if !config_object.contains_key("mcpSettings") {
-        config_object.insert(
-            "mcpSettings".to_string(),
-            serde_json::to_value(&settings).expect("Failed to serialize MCP settings"),
-        );
-    }
-
-    if !config_object.contains_key("mcpServers") {
-        config_object.insert("mcpServers".to_string(), json!({}));
-    }
-
-    fs::write(
-        &path,
-        serde_json::to_string_pretty(&config_value)
-            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
-    )
-    .map_err(|e| e.to_string())?;
-
-    {
-        let state = app.state::<AppState>();
-        let mut settings_guard = state.mcp_settings.lock().await;
-        *settings_guard = settings;
-    }
-
-    Ok(())
+    fs::write(path, configs).map_err(|e| e.to_string())
 }

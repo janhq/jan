@@ -56,8 +56,7 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled:
-      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
+    isEnabled: true,
   },
 ]
 
@@ -89,7 +88,6 @@ const LeftPanel = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
-  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -242,7 +240,7 @@ const LeftPanel = () => {
   return (
     <>
       {/* Backdrop overlay for small screens */}
-      {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
+      {isSmallScreen && open && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
@@ -265,7 +263,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
+            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&
@@ -404,9 +402,7 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {projectsEnabled &&
-            filteredProjects.length > 0 &&
-            !(IS_IOS || IS_ANDROID) && (
+          {filteredProjects.length > 0 && (
             <div className="space-y-1 py-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
@@ -584,10 +580,6 @@ const LeftPanel = () => {
 
                 {filteredThreads.length === 0 && searchTerm.length > 0 && (
                   <div className="px-1 mt-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
-                      {t('common:recents')}
-                    </span>
-
                     <div className="flex items-center gap-1 text-left-panel-fg/80">
                       <IconSearch size={18} />
                       <h6 className="font-medium text-base">
@@ -647,7 +639,7 @@ const LeftPanel = () => {
                   data-test-id={`menu-${menu.title}`}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
                     isActive && 'bg-left-panel-fg/10'
                   )}
                 >
@@ -674,29 +666,23 @@ const LeftPanel = () => {
       </aside>
 
       {/* Project Dialogs */}
-      {projectsEnabled && (
-        <>
-          <AddProjectDialog
-            open={projectDialogOpen}
-            onOpenChange={setProjectDialogOpen}
-            editingKey={editingProjectKey}
-            initialData={
-              editingProjectKey ? getFolderById(editingProjectKey) : undefined
-            }
-            onSave={handleProjectSave}
-          />
-          <DeleteProjectDialog
-            open={deleteProjectConfirmOpen}
-            onOpenChange={handleProjectDeleteClose}
-            projectId={deletingProjectId ?? undefined}
-            projectName={
-              deletingProjectId
-                ? getFolderById(deletingProjectId)?.name
-                : undefined
-            }
-          />
-        </>
-      )}
+      <AddProjectDialog
+        open={projectDialogOpen}
+        onOpenChange={setProjectDialogOpen}
+        editingKey={editingProjectKey}
+        initialData={
+          editingProjectKey ? getFolderById(editingProjectKey) : undefined
+        }
+        onSave={handleProjectSave}
+      />
+      <DeleteProjectDialog
+        open={deleteProjectConfirmOpen}
+        onOpenChange={handleProjectDeleteClose}
+        projectId={deletingProjectId ?? undefined}
+        projectName={
+          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
+        }
+      />
     </>
   )
 }

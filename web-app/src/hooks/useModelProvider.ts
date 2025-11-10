@@ -364,9 +364,7 @@ export const useModelProvider = create<ModelProviderState>()(
             }
 
             if (provider.provider === 'cohere') {
-              if (
-                provider.base_url === 'https://api.cohere.ai/compatibility/v1'
-              ) {
+              if (provider.base_url === 'https://api.cohere.ai/compatibility/v1') {
                 provider.base_url = 'https://api.cohere.ai/v1'
               }
 
@@ -391,67 +389,13 @@ export const useModelProvider = create<ModelProviderState>()(
                 }
               }
             }
+
           })
         }
 
-        if (version <= 4 && state?.providers) {
-          state.providers.forEach((provider) => {
-            // Migrate model settings
-            if (provider.models && provider.provider === 'llamacpp') {
-              provider.models.forEach((model) => {
-                if (!model.settings) model.settings = {}
-
-                if (!model.settings.cpu_moe) {
-                  model.settings.cpu_moe = {
-                    ...modelSettings.cpu_moe,
-                    controller_props: {
-                      ...modelSettings.cpu_moe.controller_props,
-                    },
-                  }
-                }
-
-                if (!model.settings.n_cpu_moe) {
-                  model.settings.n_cpu_moe = {
-                    ...modelSettings.n_cpu_moe,
-                    controller_props: {
-                      ...modelSettings.n_cpu_moe.controller_props,
-                    },
-                  }
-                }
-              })
-            }
-          })
-        }
-        if (version <= 5 && state?.providers) {
-          state.providers.forEach((provider) => {
-            // Migrate flash_attn setting to dropdown for llamacpp provider
-            if (provider.provider === 'llamacpp' && provider.settings) {
-              const flashAttentionSetting = provider.settings.find(
-                (s) => s.key === 'flash_attn'
-              )
-              if (flashAttentionSetting) {
-                flashAttentionSetting.controller_type = 'dropdown'
-                flashAttentionSetting.controller_props = {
-                  ...flashAttentionSetting.controller_props,
-                  options: [
-                    { name: 'Auto', value: 'auto' },
-                    { name: 'On', value: 'on' },
-                    { name: 'Off', value: 'off' },
-                  ],
-                  value: 'auto',
-                }
-              }
-            }
-          })
-        }
-        if (version <= 6 && state?.providers) {
-          // Most of legacy cohere models are deprecated now, remove the provider entirely
-          // TODO: Default providers should be updated automatically somehow later
-          state.providers = state.providers.filter((provider) => provider.provider !== 'cohere')
-        }
         return state
       },
-      version: 7,
+      version: 4,
     }
   )
 )

@@ -11,9 +11,6 @@ import {
 } from '@janhq/core'
 import { RemoteApi } from './api'
 import { getDefaultAssistant, ObjectParser, combineConversationItemsToMessages } from './utils'
-import { ApiError } from '../shared/types/errors'
-
-const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
 export default class ConversationalExtensionWeb extends ConversationalExtension {
   private remoteApi: RemoteApi | undefined
@@ -114,15 +111,6 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
       return messages
     } catch (error) {
       console.error('Failed to list messages:', error)
-      // Check if it's a 404 error (conversation not found)
-      if (error instanceof ApiError && error.isNotFound()) {
-        // Trigger a navigation event to redirect to home
-        // We'll use a custom event that the web app can listen to
-        window.dispatchEvent(new CustomEvent(CONVERSATION_NOT_FOUND_EVENT, {
-          detail: { threadId, error: error.message }
-        }))
-      }
-
       return []
     }
   }

@@ -10,16 +10,12 @@ import { cn } from '@/lib/utils'
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
-  { value: 'es', label: 'Español' },
   { value: 'id', label: 'Bahasa' },
   { value: 'pl', label: 'Polski' },
   { value: 'vn', label: 'Tiếng Việt' },
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'de-DE', label: 'Deutsch' },
-  { value: 'pt-BR', label: 'Português (Brasil)' },
-  { value: 'ja', label: '日本語' },
-  { value: 'ru', label: 'Русский' },
 ]
 
 export default function LanguageSwitcher() {

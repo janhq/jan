@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { TauriMCPService } from '../mcp/tauri'
 import { MCPTool } from '@/types/completion'
-import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 
 // Mock the global window.core.api
 const mockCore = {
@@ -112,11 +111,8 @@ describe('TauriMCPService', () => {
     it('should get and parse MCP config correctly', async () => {
       const mockConfigString = '{"server1": {"path": "/path/to/server"}, "server2": {"command": "node server.js"}}'
       const expectedConfig = {
-        mcpServers: {
-          server1: { path: '/path/to/server' },
-          server2: { command: 'node server.js' },
-        },
-        mcpSettings: { ...DEFAULT_MCP_SETTINGS },
+        server1: { path: '/path/to/server' },
+        server2: { command: 'node server.js' },
       }
 
       mockCore.api.getMcpConfigs.mockResolvedValue(mockConfigString)
@@ -127,37 +123,28 @@ describe('TauriMCPService', () => {
       expect(result).toEqual(expectedConfig)
     })
 
-    it('should return default config when config is null', async () => {
+    it('should return empty object when config is null', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue(null)
 
       const result = await mcpService.getMCPConfig()
 
-      expect(result).toEqual({
-        mcpServers: {},
-        mcpSettings: { ...DEFAULT_MCP_SETTINGS },
-      })
+      expect(result).toEqual({})
     })
 
-    it('should return default config when config is undefined', async () => {
+    it('should return empty object when config is undefined', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue(undefined)
 
       const result = await mcpService.getMCPConfig()
 
-      expect(result).toEqual({
-        mcpServers: {},
-        mcpSettings: { ...DEFAULT_MCP_SETTINGS },
-      })
+      expect(result).toEqual({})
     })
 
-    it('should return default config when config is empty string', async () => {
+    it('should return empty object when config is empty string', async () => {
       mockCore.api.getMcpConfigs.mockResolvedValue('')
 
       const result = await mcpService.getMCPConfig()
 
-      expect(result).toEqual({
-        mcpServers: {},
-        mcpSettings: { ...DEFAULT_MCP_SETTINGS },
-      })
+      expect(result).toEqual({})
     })
 
     it('should handle invalid JSON gracefully', async () => {

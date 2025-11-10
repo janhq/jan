@@ -21,9 +21,6 @@ import {
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
-  IconPaperclip,
-  IconLoader2,
-  IconCheck,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -40,21 +37,6 @@ import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
-import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
-import { useAttachments } from '@/hooks/useAttachments'
-import { toast } from 'sonner'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
-import { isPlatformTauri } from '@/lib/platform/utils'
-import { MicrophoneButton } from '@/containers/MicrophoneButton'
-
-import {
-  Attachment,
-  createImageAttachment,
-  createDocumentAttachment,
-} from '@/types/attachment'
 
 type ChatInputProps = {
   className?: string
@@ -106,19 +88,39 @@ const ChatInput = ({
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{
+      name: string
+      type: string
+      size: number
+      base64: string
+      dataUrl: string
+    }>
+  >([])
+  const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
-  const attachmentsEnabled = useAttachments((s) => s.enabled)
-  // Determine whether to show the Attach documents button (simple gating)
-  const showAttachmentButton =
-    attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
-  // Derived: any document currently processing (ingestion in progress)
-  const ingestingDocs = attachments.some(
-    (a) => a.type === 'document' && a.processing
-  )
-  const ingestingAny = attachments.some((a) => a.processing)
+
+  // Check for connected MCP servers
+  useEffect(() => {
+    const checkConnectedServers = async () => {
+      try {
+        const servers = await serviceHub.mcp().getConnectedServers()
+        setConnectedServers(servers)
+      } catch (error) {
+        console.error('Failed to get connected servers:', error)
+        setConnectedServers([])
+      }
+    }
+
+    checkConnectedServers()
+
+    // Poll for connected servers every 3 seconds
+    const intervalId = setInterval(checkConnectedServers, 3000)
+
+    return () => clearInterval(intervalId)
+  }, [serviceHub])
 
   // Check for active models
   useEffect(() => {
@@ -130,22 +132,10 @@ const ChatInput = ({
         const hasMatchingActiveModel = activeModels.some(
           (model) => String(model) === selectedModel?.id
         )
-        const newHasActiveModels =
-          activeModels.length > 0 && hasMatchingActiveModel
-
-        // Only update state if the value has actually changed
-        setHasActiveModels((prev) => {
-          if (prev === newHasActiveModels) {
-            return prev
-          }
-          return newHasActiveModels
-        })
+        setHasActiveModels(activeModels.length > 0 && hasMatchingActiveModel)
       } catch (error) {
         console.error('Failed to get active models:', error)
-        setHasActiveModels((prev) => {
-          if (prev === false) return prev
-          return false
-        })
+        setHasActiveModels(false)
       }
     }
 
@@ -179,57 +169,24 @@ const ChatInput = ({
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
-  const hasActiveMCPServers = tools.length > 0
+  const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
-  // Get MCP extension and its custom component
-  const extensionManager = ExtensionManager.getInstance()
-  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
-  const MCPToolComponent = mcpExtension?.getToolComponent?.()
-
-  const handleSendMessage = async (prompt: string) => {
+  const handleSendMesage = (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim()) {
+    if (!prompt.trim() && uploadedFiles.length === 0) {
       return
     }
-
     setMessage('')
-
-    // Callback to update attachment processing state
-    const updateAttachmentProcessing = (
-      fileName: string,
-      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
-    ) => {
-      if (status === 'clear_docs') {
-        setAttachments((prev) => prev.filter((a) => a.type !== 'document'))
-        return
-      }
-      if (status === 'clear_all') {
-        setAttachments([])
-        return
-      }
-      setAttachments((prev) =>
-        prev.map((att) =>
-          att.name === fileName
-            ? {
-                ...att,
-                processing: status === 'processing',
-                processed: status === 'done' ? true : att.processed,
-              }
-            : att
-        )
-      )
-    }
-
     sendMessage(
       prompt,
       true,
-      attachments.length > 0 ? attachments : undefined,
-      projectId,
-      updateAttachmentProcessing
+      uploadedFiles.length > 0 ? uploadedFiles : undefined,
+      projectId
     )
+    setUploadedFiles([])
   }
 
   useEffect(() => {
@@ -294,164 +251,14 @@ const ChatInput = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleAttachDocsIngest = async () => {
-    try {
-      if (!attachmentsEnabled) {
-        toast.info('Attachments are disabled in Settings')
-        return
-      }
-      if (!PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]) {
-        toast.info('File attachments are unavailable on this platform')
-        return
-      }
-      const selection = await serviceHub.dialog().open({
-        multiple: true,
-        filters: [
-          {
-            name: 'Documents',
-            extensions: [
-              'pdf',
-              'docx',
-              'txt',
-              'md',
-              'csv',
-              'xlsx',
-              'xls',
-              'ods',
-              'pptx',
-              'html',
-              'htm',
-            ],
-          },
-        ],
-      })
-      if (!selection) return
-      const paths = Array.isArray(selection) ? selection : [selection]
-      if (!paths.length) return
-
-      // Check for duplicates and fetch file sizes
-      const existingPaths = new Set(
-        attachments
-          .filter((a) => a.type === 'document' && a.path)
-          .map((a) => a.path)
-      )
-
-      const duplicates: string[] = []
-      const newDocAttachments: Attachment[] = []
-
-      for (const p of paths) {
-        if (existingPaths.has(p)) {
-          duplicates.push(p.split(/[\\/]/).pop() || p)
-          continue
-        }
-
-        const name = p.split(/[\\/]/).pop() || p
-        const fileType = name.split('.').pop()?.toLowerCase()
-        let size: number | undefined = undefined
-        try {
-          const stat = await fs.fileStat(p)
-          size = stat?.size ? Number(stat.size) : undefined
-        } catch (e) {
-          console.warn('Failed to read file size for', p, e)
-        }
-        newDocAttachments.push(
-          createDocumentAttachment({
-            name,
-            path: p,
-            fileType,
-            size,
-          })
-        )
-      }
-
-      if (duplicates.length > 0) {
-        toast.warning('Files already attached', {
-          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-        })
-      }
-
-      if (newDocAttachments.length > 0) {
-        // Add to state first with processing flag
-        setAttachments((prev) => [...prev, ...newDocAttachments])
-
-        // If thread exists, ingest immediately
-        if (currentThreadId) {
-          const ragExtension = ExtensionManager.getInstance().get(
-            ExtensionTypeEnum.RAG
-          ) as RAGExtension | undefined
-          if (!ragExtension) {
-            toast.error('RAG extension not available')
-            return
-          }
-
-          // Ingest each document
-          for (const doc of newDocAttachments) {
-            try {
-              // Mark as processing
-              setAttachments((prev) =>
-                prev.map((a) =>
-                  a.path === doc.path && a.type === 'document'
-                    ? { ...a, processing: true }
-                    : a
-                )
-              )
-
-              const result = await ragExtension.ingestAttachments(
-                currentThreadId,
-                [
-                  {
-                    path: doc.path!,
-                    name: doc.name,
-                    type: doc.fileType,
-                    size: doc.size,
-                  },
-                ]
-              )
-
-              const fileInfo = result.files?.[0]
-              if (fileInfo?.id) {
-                // Mark as processed with ID
-                setAttachments((prev) =>
-                  prev.map((a) =>
-                    a.path === doc.path && a.type === 'document'
-                      ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: fileInfo.id,
-                          chunkCount: fileInfo.chunk_count,
-                        }
-                      : a
-                  )
-                )
-              } else {
-                throw new Error('No file ID returned from ingestion')
-              }
-            } catch (error) {
-              console.error('Failed to ingest document:', error)
-              // Remove failed document
-              setAttachments((prev) =>
-                prev.filter(
-                  (a) => !(a.path === doc.path && a.type === 'document')
-                )
-              )
-              toast.error(`Failed to ingest ${doc.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Failed to attach documents:', e)
-      const desc = e instanceof Error ? e.message : String(e)
-      toast.error('Failed to attach documents', { description: desc })
-    }
+  const handleAttachmentClick = () => {
+    fileInputRef.current?.click()
   }
 
-  const handleRemoveAttachment = (indexToRemove: number) => {
-    setAttachments((prev) => prev.filter((_, index) => index !== indexToRemove))
+  const handleRemoveFile = (indexToRemove: number) => {
+    setUploadedFiles((prev) =>
+      prev.filter((_, index) => index !== indexToRemove)
+    )
   }
 
   const getFileTypeFromExtension = (fileName: string): string => {
@@ -467,255 +274,87 @@ const ChatInput = ({
     }
   }
 
-  const formatBytes = (bytes?: number): string => {
-    if (!bytes || bytes <= 0) return ''
-    const units = ['B', 'KB', 'MB', 'GB']
-    let i = 0
-    let val = bytes
-    while (val >= 1024 && i < units.length - 1) {
-      val /= 1024
-      i++
-    }
-    return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-  }
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
 
-  const processImageFiles = async (files: File[]) => {
-    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-    const newFiles: Attachment[] = []
-    const duplicates: string[] = []
-    const oversizedFiles: string[] = []
-    const invalidTypeFiles: string[] = []
-    const existingImageNames = new Set(
-      attachments.filter((a) => a.type === 'image').map((a) => a.name)
-    )
+    if (files && files.length > 0) {
+      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+      const newFiles: Array<{
+        name: string
+        type: string
+        size: number
+        base64: string
+        dataUrl: string
+      }> = []
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
-    const validFiles: File[] = []
+      Array.from(files).forEach((file) => {
+        // Check file size
+        if (file.size > maxSize) {
+          setMessage(`File is too large. Maximum size is 10MB.`)
+          // Reset file input to allow re-uploading
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+          return
+        }
 
-    Array.from(files).forEach((file) => {
-      // Check for duplicate image names
-      if (existingImageNames.has(file.name)) {
-        duplicates.push(file.name)
-        return
-      }
+        // Get file type - use extension as fallback if MIME type is incorrect
+        const detectedType = file.type || getFileTypeFromExtension(file.name)
+        const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-      // Check file size
-      if (file.size > maxSize) {
-        oversizedFiles.push(file.name)
-        return
-      }
+        // Check file type - images only
+        const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
 
-      // Get file type - use extension as fallback if MIME type is incorrect
-      const detectedType = file.type || getFileTypeFromExtension(file.name)
-      const actualType = getFileTypeFromExtension(file.name) || detectedType
+        if (!allowedTypes.includes(actualType)) {
+          setMessage(
+            `File attachments not supported currently. Only JPEG, JPG, and PNG files are allowed.`
+          )
+          // Reset file input to allow re-uploading
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+          return
+        }
 
-      // Check file type - images only
-      if (!allowedTypes.includes(actualType)) {
-        invalidTypeFiles.push(file.name)
-        return
-      }
-
-      validFiles.push(file)
-    })
-
-    // Process valid files
-    for (const file of validFiles) {
-      const detectedType = file.type || getFileTypeFromExtension(file.name)
-      const actualType = getFileTypeFromExtension(file.name) || detectedType
-
-      const reader = new FileReader()
-      await new Promise<void>((resolve) => {
+        const reader = new FileReader()
         reader.onload = () => {
           const result = reader.result
           if (typeof result === 'string') {
             const base64String = result.split(',')[1]
-            const att = createImageAttachment({
+            const fileData = {
               name: file.name,
               size: file.size,
-              mimeType: actualType,
+              type: actualType,
               base64: base64String,
               dataUrl: result,
-            })
-            newFiles.push(att)
+            }
+            newFiles.push(fileData)
+            // Update state
+            if (
+              newFiles.length ===
+              Array.from(files).filter((f) => {
+                const fType = getFileTypeFromExtension(f.name) || f.type
+                return f.size <= maxSize && allowedTypes.includes(fType)
+              }).length
+            ) {
+              setUploadedFiles((prev) => {
+                const updated = [...prev, ...newFiles]
+                return updated
+              })
+              // Reset the file input value to allow re-uploading the same file
+              if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+                setMessage('')
+              }
+            }
           }
-          resolve()
         }
         reader.readAsDataURL(file)
       })
     }
 
-    // Update state and ingest
-    if (newFiles.length > 0) {
-      setAttachments((prev) => {
-        const updated = [...prev, ...newFiles]
-        return updated
-      })
-
-      // If thread exists, ingest images immediately
-      if (currentThreadId) {
-        void (async () => {
-          for (const img of newFiles) {
-            try {
-              // Mark as processing
-              setAttachments((prev) =>
-                prev.map((a) =>
-                  a.name === img.name && a.type === 'image'
-                    ? { ...a, processing: true }
-                    : a
-                )
-              )
-
-              const result = await serviceHub
-                .uploads()
-                .ingestImage(currentThreadId, img)
-
-              if (result?.id) {
-                // Mark as processed with ID
-                setAttachments((prev) =>
-                  prev.map((a) =>
-                    a.name === img.name && a.type === 'image'
-                      ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: result.id,
-                        }
-                      : a
-                  )
-                )
-              } else {
-                throw new Error('No ID returned from image ingestion')
-              }
-            } catch (error) {
-              console.error('Failed to ingest image:', error)
-              // Remove failed image
-              setAttachments((prev) =>
-                prev.filter((a) => !(a.name === img.name && a.type === 'image'))
-              )
-              toast.error(`Failed to ingest ${img.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-        })()
-      }
-    }
-
-    // Display validation errors
-    const errors: string[] = []
-
-    if (duplicates.length > 0) {
-      toast.warning('Some images already attached', {
-        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-      })
-    }
-
-    if (oversizedFiles.length > 0) {
-      errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
-      )
-    }
-
-    if (invalidTypeFiles.length > 0) {
-      errors.push(
-        `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
-      )
-    }
-
-    if (errors.length > 0) {
-      setMessage(errors.join(' | '))
-      // Reset file input to allow re-uploading
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    } else {
-      setMessage('')
-    }
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-
-    if (files && files.length > 0) {
-      void processImageFiles(Array.from(files))
-
-      // Reset the file input value to allow re-uploading the same file
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
-
     if (textareaRef.current) {
       textareaRef.current.focus()
-    }
-  }
-
-  const handleImagePickerClick = async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [
-            {
-              name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png'],
-            },
-          ],
-        })
-
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          const files: File[] = []
-
-          for (const path of paths) {
-            try {
-              // Use Tauri's convertFileSrc to create a valid URL for the file
-              const { convertFileSrc } = await import('@tauri-apps/api/core')
-              const fileUrl = convertFileSrc(path)
-
-              // Fetch the file as blob
-              const response = await fetch(fileUrl)
-              if (!response.ok) {
-                throw new Error(`Failed to fetch file: ${response.statusText}`)
-              }
-
-              const blob = await response.blob()
-              const fileName =
-                path.split(/[\\/]/).filter(Boolean).pop() || 'image'
-              const ext = fileName.toLowerCase().split('.').pop()
-              const mimeType =
-                ext === 'png'
-                  ? 'image/png'
-                  : ext === 'jpg' || ext === 'jpeg'
-                    ? 'image/jpeg'
-                    : 'image/jpeg'
-
-              const file = new File([blob], fileName, { type: mimeType })
-              files.push(file)
-            } catch (error) {
-              console.error('Failed to read file:', error)
-              toast.error('Failed to read file', {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-
-          if (files.length > 0) {
-            await processImageFiles(files)
-          }
-        }
-      } catch (error) {
-        console.error('Failed to open file dialog:', error)
-      }
-
-      if (textareaRef.current) {
-        textareaRef.current.focus()
-      }
-    } else {
-      // Fallback to input click for web
-      fileInputRef.current?.click()
     }
   }
 
@@ -915,107 +554,38 @@ const ChatInput = ({
             onDragOver={hasMmproj ? handleDragOver : undefined}
             onDrop={hasMmproj ? handleDrop : undefined}
           >
-            {attachments.length > 0 && (
+            {uploadedFiles.length > 0 && (
               <div className="flex gap-3 items-center p-2 pb-0">
-                {attachments
-                  .map((att, idx) => ({ att, idx }))
-                  .map(({ att, idx }) => {
-                    const isImage = att.type === 'image'
-                    const ext = att.fileType || att.mimeType?.split('/')[1]
-                    return (
+                {uploadedFiles.map((file, index) => {
+                  return (
+                    <div
+                      key={index}
+                      className={cn(
+                        'relative border border-main-view-fg/5 rounded-lg',
+                        file.type.startsWith('image/') ? 'size-14' : 'h-14 '
+                      )}
+                    >
+                      {file.type.startsWith('image/') && (
+                        <img
+                          className="object-cover w-full h-full rounded-lg"
+                          src={file.dataUrl}
+                          alt={`${file.name} - ${index}`}
+                        />
+                      )}
                       <div
-                        key={`${att.type}-${idx}-${att.name}`}
-                        className="relative"
+                        className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                        onClick={() => handleRemoveFile(index)}
                       >
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  'relative border border-main-view-fg/5 rounded-lg size-14 overflow-hidden bg-main-view/40',
-                                  'flex items-center justify-center'
-                                )}
-                              >
-                                {/* Inner content by state */}
-                                {isImage && att.dataUrl ? (
-                                  <img
-                                    className="object-cover w-full h-full"
-                                    src={att.dataUrl}
-                                    alt={`${att.name}`}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-main-view-fg/70">
-                                    <IconPaperclip size={18} />
-                                    {ext && (
-                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                        .{ext}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Overlay spinner when processing */}
-                                {att.processing && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                    <IconLoader2
-                                      size={18}
-                                      className="text-main-view-fg/80 animate-spin"
-                                    />
-                                  </div>
-                                )}
-
-                                {/* Overlay success check when processed */}
-                                {att.processed && !att.processing && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/5">
-                                    <div className="bg-green-600/90 rounded-full p-1">
-                                      <IconCheck
-                                        size={14}
-                                        className="text-white"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
-                                <div
-                                  className="font-medium truncate max-w-52"
-                                  title={att.name}
-                                >
-                                  {att.name}
-                                </div>
-                                <div className="opacity-70">
-                                  {isImage
-                                    ? att.mimeType || 'image'
-                                    : ext
-                                      ? `.${ext}`
-                                      : 'document'}
-                                  {att.size
-                                    ? ` · ${formatBytes(att.size)}`
-                                    : ''}
-                                </div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-
-                        {/* Remove button disabled while processing - outside overflow-hidden container */}
-                        {!att.processing && (
-                          <div
-                            className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                            onClick={() => handleRemoveAttachment(idx)}
-                          >
-                            <IconX className="text-destructive-fg" size={16} />
-                          </div>
-                        )}
+                        <IconX className="text-destructive-fg" size={16} />
                       </div>
-                    )
-                  })}
+                    </div>
+                  )
+                })}
               </div>
             )}
             <TextareaAutosize
               ref={textareaRef}
+              disabled={Boolean(streamingContent)}
               minRows={2}
               rows={1}
               maxRows={10}
@@ -1031,15 +601,15 @@ const ChatInput = ({
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  prompt.trim() &&
+                  !isComposing
+                ) {
                   e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (!streamingContent && prompt.trim()) {
-                    handleSendMessage(prompt)
-                  }
+                  // Submit the message when Enter is pressed without Shift
+                  handleSendMesage(prompt)
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
@@ -1076,14 +646,14 @@ const ChatInput = ({
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* Vision image attachment - show only for models with mmproj */}
+                {/* File attachment - show only for models with mmproj */}
                 {hasMmproj && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div
                           className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                          onClick={handleImagePickerClick}
+                          onClick={handleAttachmentClick}
                         >
                           <IconPhoto
                             size={18}
@@ -1104,52 +674,10 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-                {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                {selectedModel?.capabilities?.includes('tools') &&
-                  showAttachmentButton && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            onClick={handleAttachDocsIngest}
-                            className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer"
-                          >
-                            {ingestingDocs ? (
-                              <IconLoader2
-                                size={18}
-                                className="text-main-view-fg/50 animate-spin"
-                              />
-                            ) : (
-                              <IconPaperclip
-                                size={18}
-                                className="text-main-view-fg/50"
-                              />
-                            )}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            {ingestingDocs
-                              ? 'Indexing documents…'
-                              : 'Attach documents'}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                {/* Microphone - Voice Input */}
-                <MicrophoneButton
-                  onTranscriptionComplete={(text) => {
-                    // Append transcribed text to current message
-                    const currentText = message || prompt
-                    const newText = currentText
-                      ? `${currentText}\n${text}`
-                      : text
-                    setMessage(newText)
-                    setPrompt(newText)
-                  }}
-                  disabled={loadingModel || Boolean(streamingContent)}
-                />
+                {/* Microphone - always available - Temp Hide */}
+                {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconMicrophone size={18} className="text-main-view-fg/50" />
+              </div> */}
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -1169,20 +697,7 @@ const ChatInput = ({
                 )}
 
                 {selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers &&
-                  (MCPToolComponent ? (
-                    // Use custom MCP component
-                    <McpExtensionToolLoader
-                      tools={tools}
-                      hasActiveMCPServers={hasActiveMCPServers}
-                      selectedModelHasTools={
-                        selectedModel?.capabilities?.includes('tools') ?? false
-                      }
-                      initialMessage={initialMessage}
-                      MCPToolComponent={MCPToolComponent}
-                    />
-                  ) : (
-                    // Use default tools dropdown
+                  hasActiveMCPServers && (
                     <TooltipProvider>
                       <Tooltip
                         open={tooltipToolsAvailable}
@@ -1237,7 +752,7 @@ const ChatInput = ({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  ))}
+                  )}
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -1285,15 +800,7 @@ const ChatInput = ({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
+                      uploadedFiles={uploadedFiles}
                     />
                   </div>
                 )}
@@ -1310,13 +817,17 @@ const ChatInput = ({
                 </Button>
               ) : (
                 <Button
-                  variant={!prompt.trim() ? null : 'default'}
+                  variant={
+                    !prompt.trim() && uploadedFiles.length === 0
+                      ? null
+                      : 'default'
+                  }
                   size="icon"
-                  disabled={!prompt.trim() || ingestingAny}
+                  disabled={!prompt.trim() && uploadedFiles.length === 0}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
+                  onClick={() => handleSendMesage(prompt)}
                 >
-                  {streamingContent || ingestingAny ? (
+                  {streamingContent ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
                     <ArrowRight className="text-primary-fg" />
@@ -1355,15 +866,7 @@ const ChatInput = ({
             <TokenCounter
               messages={threadMessages || []}
               compact={false}
-              uploadedFiles={attachments
-                .filter((a) => a.type === 'image' && a.dataUrl)
-                .map((a) => ({
-                  name: a.name,
-                  type: a.mimeType || getFileTypeFromExtension(a.name),
-                  size: a.size || 0,
-                  base64: a.base64 || '',
-                  dataUrl: a.dataUrl!,
-                }))}
+              uploadedFiles={uploadedFiles}
             />
           </div>
         )}

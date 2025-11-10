@@ -30,15 +30,12 @@ const SettingsMenu = () => {
   // On web: exclude llamacpp provider as it's not available
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
-
+    
     // On web version, hide llamacpp provider
-    if (
-      !PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
-      provider.provider === 'llama.cpp'
-    ) {
+    if (!PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && provider.provider === 'llama.cpp') {
       return false
     }
-
+    
     return true
   })
 
@@ -74,14 +71,8 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
-      title: 'common:attachments',
-      route: route.settings.attachments,
-      hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS],
-    },
-    {
-      title: 'common:interface',
-      route: route.settings.interface,
+      title: 'common:appearance',
+      route: route.settings.appearance,
       hasSubMenu: false,
       isEnabled: true,
     },
@@ -101,7 +92,7 @@ const SettingsMenu = () => {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.SHORTCUT],
+      isEnabled: true,
     },
     {
       title: 'common:hardware',
@@ -114,12 +105,6 @@ const SettingsMenu = () => {
       route: route.settings.mcp_servers,
       hasSubMenu: false,
       isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS_SETTINGS],
-    },
-    {
-      title: 'Whisper',
-      route: route.settings.whisper,
-      hasSubMenu: false,
-      isEnabled: true, // Always enabled - voice input is available on all platforms
     },
     {
       title: 'common:local_api_server',
@@ -152,7 +137,7 @@ const SettingsMenu = () => {
   return (
     <>
       <button
-        className="fixed top-[calc(10px+env(safe-area-inset-top))] right-4 sm:hidden size-5 cursor-pointer items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10 z-20"
+        className="fixed top-4 right-4 sm:hidden size-5 cursor-pointer items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10 z-20"
         onClick={toggleMenu}
         aria-label="Toggle settings menu"
       >
@@ -167,7 +152,7 @@ const SettingsMenu = () => {
           'h-full w-44 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5 bg-main-view',
           'sm:flex',
           isMenuOpen
-            ? 'flex fixed sm:hidden top-[calc(10px+env(safe-area-inset-top))] z-10 m-1 h-[calc(100%-8px)] border-r-0 border-l bg-main-view right-0 py-8 rounded-tr-lg rounded-br-lg'
+            ? 'flex fixed sm:hidden top-0 z-10 m-1 h-[calc(100%-8px)] border-r-0 border-l bg-main-view right-0 py-8 rounded-tr-lg rounded-br-lg'
             : 'hidden'
         )}
       >
@@ -177,82 +162,77 @@ const SettingsMenu = () => {
               return null
             }
             return (
-              <div key={menu.title}>
-                <Link
-                  to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-main-view-fg/80">
-                      {t(menu.title)}
-                    </span>
-                    {menu.hasSubMenu && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          toggleProvidersExpansion()
-                        }}
-                        className="text-main-view-fg/60 hover:text-main-view-fg/80"
-                      >
-                        {expandedProviders ? (
-                          <IconChevronDown size={16} />
-                        ) : (
-                          <IconChevronRight size={16} />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </Link>
+            <div key={menu.title}>
+              <Link
+                to={menu.route}
+                className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-main-view-fg/80">{t(menu.title)}</span>
+                  {menu.hasSubMenu && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        toggleProvidersExpansion()
+                      }}
+                      className="text-main-view-fg/60 hover:text-main-view-fg/80"
+                    >
+                      {expandedProviders ? (
+                        <IconChevronDown size={16} />
+                      ) : (
+                        <IconChevronRight size={16} />
+                      )}
+                    </button>
+                  )}
+                </div>
+              </Link>
 
-                {/* Sub-menu for model providers */}
-                {menu.hasSubMenu && expandedProviders && (
-                  <div className="ml-2 mt-1 space-y-1 first-step-setup-remote-provider">
-                    {activeProviders.map((provider) => {
-                      const isActive = matches.some(
-                        (match) =>
-                          match.routeId ===
-                            '/settings/providers/$providerName' &&
-                          'providerName' in match.params &&
-                          match.params.providerName === provider.provider
-                      )
+              {/* Sub-menu for model providers */}
+              {menu.hasSubMenu && expandedProviders && (
+                <div className="ml-2 mt-1 space-y-1 first-step-setup-remote-provider">
+                  {activeProviders.map((provider) => {
+                    const isActive = matches.some(
+                      (match) =>
+                        match.routeId === '/settings/providers/$providerName' &&
+                        'providerName' in match.params &&
+                        match.params.providerName === provider.provider
+                    )
 
-                      return (
-                        <div key={provider.provider}>
-                          <div
-                            className={cn(
-                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
-                              isActive && 'bg-main-view-fg/5',
-                              // hidden for llama.cpp provider for setup remote provider
-                              provider.provider === 'llama.cpp' &&
-                                stepSetupRemoteProvider &&
-                                'hidden'
-                            )}
-                            onClick={() =>
-                              navigate({
-                                to: route.settings.providers,
-                                params: {
-                                  providerName: provider.provider,
-                                },
-                                ...(stepSetupRemoteProvider
-                                  ? {
-                                      search: { step: 'setup_remote_provider' },
-                                    }
-                                  : {}),
-                              })
-                            }
-                          >
-                            <ProvidersAvatar provider={provider} />
-                            <div className="truncate">
-                              <span>{getProviderTitle(provider.provider)}</span>
-                            </div>
+                    return (
+                      <div key={provider.provider}>
+                        <div
+                          className={cn(
+                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
+                            isActive && 'bg-main-view-fg/5',
+                            // hidden for llama.cpp provider for setup remote provider
+                            provider.provider === 'llama.cpp' &&
+                              stepSetupRemoteProvider &&
+                              'hidden'
+                          )}
+                          onClick={() =>
+                            navigate({
+                              to: route.settings.providers,
+                              params: {
+                                providerName: provider.provider,
+                              },
+                              ...(stepSetupRemoteProvider
+                                ? { search: { step: 'setup_remote_provider' } }
+                                : {}),
+                            })
+                          }
+                        >
+                          <ProvidersAvatar provider={provider} />
+                          <div className="truncate">
+                            <span>{getProviderTitle(provider.provider)}</span>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
             )
           })}
         </div>

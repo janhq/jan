@@ -6,13 +6,13 @@
 import { AuthTokens } from './types'
 import { AUTH_ENDPOINTS } from './const'
 
-declare const JAN_BASE_URL: string
+declare const JAN_API_BASE: string
 
 /**
  * Logout user on server
  */
 export async function logoutUser(): Promise<void> {
-  const response = await fetch(`${JAN_BASE_URL}${AUTH_ENDPOINTS.LOGOUT}`, {
+  const response = await fetch(`${JAN_API_BASE}${AUTH_ENDPOINTS.LOGOUT}`, {
     method: 'GET',
     credentials: 'include',
     headers: {
@@ -29,7 +29,7 @@ export async function logoutUser(): Promise<void> {
  * Guest login
  */
 export async function guestLogin(): Promise<AuthTokens> {
-  const response = await fetch(`${JAN_BASE_URL}${AUTH_ENDPOINTS.GUEST_LOGIN}`, {
+  const response = await fetch(`${JAN_API_BASE}${AUTH_ENDPOINTS.GUEST_LOGIN}`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -51,7 +51,7 @@ export async function guestLogin(): Promise<AuthTokens> {
  */
 export async function refreshToken(): Promise<AuthTokens> {
   const response = await fetch(
-    `${JAN_BASE_URL}${AUTH_ENDPOINTS.REFRESH_TOKEN}`,
+    `${JAN_API_BASE}${AUTH_ENDPOINTS.REFRESH_TOKEN}`,
     {
       method: 'GET',
       credentials: 'include',

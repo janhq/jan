@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
-type GeneralSettingState = {
+
+type LeftPanelStoreState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
@@ -13,7 +14,7 @@ type GeneralSettingState = {
   setCurrentLanguage: (value: Language) => void
 }
 
-export const useGeneralSetting = create<GeneralSettingState>()(
+export const useGeneralSetting = create<LeftPanelStoreState>()(
   persist(
     (set) => ({
       currentLanguage: 'en',
@@ -49,5 +50,3 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     }
   )
 )
-
-

@@ -5,10 +5,10 @@
 
 import { AuthTokens, LoginUrlResponse } from './types'
 
-declare const JAN_BASE_URL: string
+declare const JAN_API_BASE: string
 
 export async function getLoginUrl(endpoint: string): Promise<LoginUrlResponse> {
-  const response: Response = await fetch(`${JAN_BASE_URL}${endpoint}`, {
+  const response: Response = await fetch(`${JAN_API_BASE}${endpoint}`, {
     method: 'GET',
     credentials: 'include',
     headers: {
@@ -30,7 +30,7 @@ export async function handleOAuthCallback(
   code: string,
   state?: string
 ): Promise<AuthTokens> {
-  const response: Response = await fetch(`${JAN_BASE_URL}${endpoint}`, {
+  const response: Response = await fetch(`${JAN_API_BASE}${endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -1,12 +1,14 @@
 use crate::{
+    helpers::get_jan_libvulkan_path,
     types::{CpuStaticInfo, SystemInfo, SystemUsage},
     vendor::{nvidia, vulkan},
     SYSTEM_INFO,
 };
 use sysinfo::System;
+use tauri::Runtime;
 
 #[tauri::command]
-pub fn get_system_info() -> SystemInfo {
+pub fn get_system_info<R: Runtime>(app: tauri::AppHandle<R>) -> SystemInfo {
     SYSTEM_INFO
         .get_or_init(|| {
             let mut system = System::new();
@@ -17,7 +19,15 @@ pub fn get_system_info() -> SystemInfo {
                 gpu_map.insert(gpu.uuid.clone(), gpu);
             }
 
-            let vulkan_gpus = vulkan::get_vulkan_gpus();
+            // try system vulkan first
+            let paths = vec!["".to_string(), get_jan_libvulkan_path(app.clone())];
+            let mut vulkan_gpus = vec![];
+            for path in paths {
+                vulkan_gpus = vulkan::get_vulkan_gpus(&path);
+                if !vulkan_gpus.is_empty() {
+                    break;
+                }
+            }
 
             for gpu in vulkan_gpus {
                 match gpu_map.get_mut(&gpu.uuid) {
@@ -54,7 +64,7 @@ pub fn get_system_info() -> SystemInfo {
 }
 
 #[tauri::command]
-pub fn get_system_usage() -> SystemUsage {
+pub fn get_system_usage<R: Runtime>(app: tauri::AppHandle<R>) -> SystemUsage {
     let mut system = System::new();
     system.refresh_memory();
 
@@ -71,7 +81,7 @@ pub fn get_system_usage() -> SystemUsage {
         cpu: cpu_usage,
         used_memory: system.used_memory() / 1024 / 1024, // bytes to MiB,
         total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB,
-        gpus: get_system_info()
+        gpus: get_system_info(app.clone())
             .gpus
             .iter()
             .map(|gpu| gpu.get_usage())

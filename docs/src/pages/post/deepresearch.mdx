@@ -4,13 +4,13 @@ description: "A simple guide to replicating Deep Research results for free, with
 tags: AI, local models, Jan, GGUF, Deep Research, local AI
 categories: guides
 date: 2025-08-04
-ogImage: assets/images/general/research-result-local.png
+ogImage: _assets/research-result-local.png
 twitter:
   card: summary_large_image
   site: "@jandotai"
   title: "Replicating Deep Research with Jan"
   description: "Learn how to replicate Deep Research results with Jan."
-  image: assets/images/general/research-result-local.png
+  image: _assets/research-result-local.jpg
 ---
 
 import { Callout } from 'nextra/components'
@@ -70,34 +70,34 @@ brief survey of how other players approach deep research:
 | Kimi | Interactive synthesis | 50–100 | 30–60+ | PDF, Interactive website | Free |
 
 In our testing, we used the following prompt to assess the quality of the generated report by
-the providers above. You can refer to the reports generated [here](https://github.com/janhq/prompt-experiments).
+the providers above. You can refer to the reports generated [here](https://github.com/menloresearch/prompt-experiments).
 
 ```
 Generate a comprehensive report about the state of AI in the past week. Include all
 new model releases and notable architectural improvements from a variety of sources.
 ```
 
-[Google's generated report](https://github.com/janhq/prompt-experiments/blob/main/Gemini%202.5%20Flash%20Report.pdf) was the most verbose, with a whopping 23 pages that reads
+[Google's generated report](https://github.com/menloresearch/prompt-experiments/blob/main/Gemini%202.5%20Flash%20Report.pdf) was the most verbose, with a whopping 23 pages that reads
 like a professional intelligence briefing. It opens with an executive summary,
 systematically categorizes developments, and provides forward-looking strategic
 insights—connecting OpenAI's open-weight release to broader democratization trends
 and linking infrastructure investments to competitive positioning.
 
-[OpenAI](https://github.com/janhq/prompt-experiments/blob/main/OpenAI%20Deep%20Research.pdf) produced the most citation-heavy output with 134 references throughout 10 pages
+[OpenAI](https://github.com/menloresearch/prompt-experiments/blob/main/OpenAI%20Deep%20Research.pdf) produced the most citation-heavy output with 134 references throughout 10 pages
 (albeit most of them being from the same source).
 
-[Perplexity](https://github.com/janhq/prompt-experiments/blob/main/Perplexity%20Deep%20Research.pdf) delivered the most actionable 6-page report that maximizes information
+[Perplexity](https://github.com/menloresearch/prompt-experiments/blob/main/Perplexity%20Deep%20Research.pdf) delivered the most actionable 6-page report that maximizes information
 density while maintaining scannability. Despite being the shortest, it captures all
 major developments with sufficient context for decision-making.
 
-[Claude](https://github.com/janhq/prompt-experiments/blob/main/Claude%20Deep%20Research.pdf) produced a comprehensive analysis that interestingly ignored the time constraint,
+[Claude](https://github.com/menloresearch/prompt-experiments/blob/main/Claude%20Deep%20Research.pdf) produced a comprehensive analysis that interestingly ignored the time constraint,
 covering an 8-month period from January-August 2025 instead of the requested week (Jul 31-Aug
 7th 2025). Rather than cataloging recent events, Claude traced the evolution of trends over months.
 
-[Grok](https://github.com/janhq/prompt-experiments/blob/main/Grok%203%20Deep%20Research.pdf) produced a well-structured but relatively shallow 5-page academic-style report that
+[Grok](https://github.com/menloresearch/prompt-experiments/blob/main/Grok%203%20Deep%20Research.pdf) produced a well-structured but relatively shallow 5-page academic-style report that
 read more like an event catalog than strategic analysis.
 
-[Kimi](https://github.com/janhq/prompt-experiments/blob/main/Kimi%20AI%20Deep%20Research.pdf) produced a comprehensive 13-page report with systematic organization covering industry developments, research breakthroughs, and policy changes, but notably lacks proper citations throughout most of the content despite claiming to use 50-100 sources.
+[Kimi](https://github.com/menloresearch/prompt-experiments/blob/main/Kimi%20AI%20Deep%20Research.pdf) produced a comprehensive 13-page report with systematic organization covering industry developments, research breakthroughs, and policy changes, but notably lacks proper citations throughout most of the content despite claiming to use 50-100 sources.
 
 ### Understanding Search Strategies
 
@@ -125,8 +125,8 @@ any version with Model Context Protocol in it (>`v0.6.3`).
 
 **The Key: Assistants + Tools**
 
-Running deep research in Jan can be accomplished by combining [custom assistants](https://jan.ai/docs/desktop/assistants)
-with [MCP search tools](https://jan.ai/docs/mcp-examples/search/exa). This pairing allows any model—local or
+Running deep research in Jan can be accomplished by combining [custom assistants](https://jan.ai/docs/assistants)
+with [MCP search tools](https://jan.ai/docs/desktop/mcp-examples/search/exa). This pairing allows any model—local or
 cloud—to follow a systematic research workflow, to create a report similar to that of other providers, with some
 visible limitations (for now).
 

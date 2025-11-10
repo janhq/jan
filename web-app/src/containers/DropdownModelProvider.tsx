@@ -190,18 +190,7 @@ const DropdownModelProvider = ({
               return
             }
           }
-
-          // Fallback: auto-select first llamacpp model if available
-          const llamacppProvider = providers.find(
-            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
-          )
-          if (llamacppProvider && llamacppProvider.models.length > 0) {
-            const firstModel = llamacppProvider.models[0]
-            selectModelProvider('llamacpp', firstModel.id)
-            setLastUsedModel('llamacpp', firstModel.id)
-          } else {
-            selectModelProvider('', '')
-          }
+          selectModelProvider('', '')
         }
       } else {
         // Get current state for web auto-selection check
@@ -230,11 +219,12 @@ const DropdownModelProvider = ({
     selectModelProvider,
     updateCurrentThreadModel,
     providers,
+    useLastUsedModel,
     checkModelExists,
     updateProvider,
     getProviderByName,
     checkAndUpdateModelVisionCapability,
-
+    serviceHub,
     // selectedModel and selectedProvider intentionally excluded to prevent race conditions
   ])
 
@@ -327,8 +317,7 @@ const DropdownModelProvider = ({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) =>
-        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+      selector: (item) => `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
 
@@ -406,10 +395,12 @@ const DropdownModelProvider = ({
       })
 
       // Store the selected model as last used
-      setLastUsedModel(
-        searchableModel.provider.provider,
-        searchableModel.model.id
-      )
+      if (useLastUsedModel) {
+        setLastUsedModel(
+          searchableModel.provider.provider,
+          searchableModel.model.id
+        )
+      }
 
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
@@ -443,6 +434,7 @@ const DropdownModelProvider = ({
     [
       selectModelProvider,
       updateCurrentThreadModel,
+      useLastUsedModel,
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
@@ -460,7 +452,7 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm mr-2">
+      <div className="flex items-center gap-1.5 mr-2">
         <PopoverTrigger asChild>
           <button
             type="button"

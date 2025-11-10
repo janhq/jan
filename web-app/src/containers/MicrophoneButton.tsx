@@ -81,12 +81,7 @@ export const MicrophoneButton = ({
       // Get Whisper configuration
       const config = getDefaultWhisperConfig()
 
-      if (!config.apiKey) {
-        toast.error('Whisper API key not configured', {
-          description: 'Please configure your Whisper API key in settings.',
-        })
-        return
-      }
+      // API key is optional for your Whisper server; proceed without it
 
       // Transcribe audio
       toast.loading('Transcribing audio...', { id: 'transcription' })

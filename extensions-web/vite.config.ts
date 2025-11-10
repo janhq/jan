@@ -9,11 +9,11 @@ export default defineConfig({
       fileName: 'index'
     },
     rollupOptions: {
-      external: ['@janhq/core', 'zustand', 'react', 'react-dom', 'react/jsx-runtime', '@tabler/icons-react']
+      external: ['@janhq/core', 'zustand']
     },
     emptyOutDir: false // Don't clean the output directory
   },
   define: {
-    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'https://api-dev.jan.ai/v1'),
+    JAN_API_BASE: JSON.stringify(process.env.JAN_API_BASE || 'https://api-dev.jan.ai/v1'),
   }
 })

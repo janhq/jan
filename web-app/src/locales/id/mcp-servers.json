@@ -43,11 +43,5 @@
   "args": "Argumen",
   "env": "Lingkungan",
   "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
-  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan",
-  "runtimeSettings": {
-    "title": "Pengaturan Runtime",
-    "description": "Atur bagaimana Jan mengelola dan mencoba ulang server MCP.",
-    "toolCallTimeout": "Batas waktu pemanggilan alat (detik)",
-    "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis."
-  }
+  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan"
 }

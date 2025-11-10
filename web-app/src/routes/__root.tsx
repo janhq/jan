@@ -1,11 +1,11 @@
-﻿import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import LeftPanel from '@/containers/LeftPanel'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
-import { InterfaceProvider } from '@/providers/InterfaceProvider'
+import { AppearanceProvider } from '@/providers/AppearanceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
@@ -111,17 +111,13 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
-      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && (
-        <GoogleAnalyticsProvider />
-      )}
+      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && <GoogleAnalyticsProvider />}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
-        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-          <BackendUpdater />
-        )}
+        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && <BackendUpdater />}
 
         {/* Use ResizablePanelGroup only on larger screens */}
         {!isSmallScreen && isLeftPanelOpen ? (
@@ -162,11 +158,11 @@ const AppLayout = () => {
             {/* Main content panel */}
             <div
               className={cn(
-                'h-svh flex w-full md:p-1',
+                'h-full flex w-full p-1 ',
                 isLeftPanelOpen && 'w-full md:w-[calc(100%-198px)]'
               )}
             >
-              <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full md:rounded-lg overflow-hidden">
+              <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
                 <Outlet />
               </div>
             </div>
@@ -207,36 +203,12 @@ function RootLayout() {
     )
   }
 
-  useEffect(() => {
-    // Wait for the UI to be fully rendered before hiding the loader
-    const hideLoader = () => {
-      requestAnimationFrame(() => {
-        // Hide the HTML loader
-        document.body.classList.add('loaded')
-
-        // Remove the HTML loader element after transition
-        const loader = document.getElementById('initial-loader')
-        if (loader) {
-          setTimeout(() => {
-            loader.remove()
-          }, 300)
-        }
-      })
-    }
-
-    // Give providers time to initialize and paint
-    const timer = setTimeout(hideLoader, 200)
-
-    return () => clearTimeout(timer)
-  }, [])
-
   const IS_LOGS_ROUTE = getInitialLayoutType()
-
   return (
     <Fragment>
       <ServiceHubProvider>
         <ThemeProvider />
-        <InterfaceProvider />
+        <AppearanceProvider />
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>

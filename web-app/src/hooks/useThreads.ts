@@ -2,9 +2,6 @@ import { create } from 'zustand'
 import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -24,8 +21,7 @@ type ThreadState = {
     model: ThreadModel,
     title?: string,
     assistant?: Assistant,
-    projectMetadata?: { id: string; name: string; updated_at: number },
-    isTemporary?: boolean
+    projectMetadata?: { id: string; name: string; updated_at: number }
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
@@ -33,18 +29,6 @@ type ThreadState = {
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
   searchIndex: Fzf<Thread[]> | null
-}
-
-// Helper function to clean up vector DB collection for a thread
-const cleanupVectorDB = async (threadId: string) => {
-  try {
-    const vec = ExtensionManager.getInstance().get<VectorDBExtension>(ExtensionTypeEnum.VectorDB)
-    if (vec?.deleteCollection) {
-      await vec.deleteCollection(`attachments_${threadId}`)
-    }
-  } catch (e) {
-    console.warn(`[Threads] Failed to delete vector DB collection for thread ${threadId}:`, e)
-  }
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -77,12 +61,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       },
       {} as Record<string, Thread>
     )
-    // Filter out temporary chat for search index
-    const filteredForSearch = Object.values(threadMap).filter(t => t.id !== TEMPORARY_CHAT_ID)
-
     set({
       threads: threadMap,
-      searchIndex: new Fzf<Thread[]>(filteredForSearch, {
+      searchIndex: new Fzf<Thread[]>(Object.values(threadMap), {
         selector: (item: Thread) => item.title,
       }),
     })
@@ -90,18 +71,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   getFilteredThreads: (searchTerm: string) => {
     const { threads, searchIndex } = get()
 
-    // Filter out temporary chat from all operations
-    const filteredThreadsValues = Object.values(threads).filter(t => t.id !== TEMPORARY_CHAT_ID)
-
     // If no search term, return all threads
     if (!searchTerm) {
       // return all threads
-      return filteredThreadsValues
+      return Object.values(threads)
     }
 
     let currentIndex = searchIndex
     if (!currentIndex?.find) {
-      currentIndex = new Fzf<Thread[]>(filteredThreadsValues, {
+      currentIndex = new Fzf<Thread[]>(Object.values(threads), {
         selector: (item: Thread) => item.title,
       })
       set({ searchIndex: currentIndex })
@@ -144,14 +122,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
-
-      // Clean up vector DB collection
-      cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
-
       return {
         threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
           selector: (item: Thread) => item.title,
         }),
       }
@@ -175,9 +149,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           !state.threads[threadId].metadata?.project
       )
 
-      // Delete threads and clean up their vector DB collections
+      // Delete threads that are not favorites and not in projects
       threadsToDeleteIds.forEach((threadId) => {
-        cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -192,7 +165,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       return {
         threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
           selector: (item: Thread) => item.title,
         }),
       }
@@ -202,9 +175,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Delete all threads and clean up their vector DB collections
+      // Delete all threads from server
       allThreadIds.forEach((threadId) => {
-        cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -246,22 +218,16 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   setCurrentThreadId: (threadId) => {
     if (threadId !== get().currentThreadId) set({ currentThreadId: threadId })
   },
-  createThread: async (model, title, assistant, projectMetadata, isTemporary) => {
+  createThread: async (model, title, assistant, projectMetadata) => {
     const newThread: Thread = {
-      id: isTemporary ? TEMPORARY_CHAT_ID : ulid(),
-      title: title ?? (isTemporary ? 'Temporary Chat' : 'New Thread'),
+      id: ulid(),
+      title: title ?? 'New Thread',
       model,
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
-      ...(projectMetadata && !isTemporary && {
+      ...(projectMetadata && {
         metadata: {
           project: projectMetadata,
-        },
-      }),
-      ...(isTemporary && {
-        metadata: {
-          isTemporary: true,
-          ...(projectMetadata && { project: projectMetadata }),
         },
       }),
     }
@@ -341,7 +307,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const newThreads = { ...state.threads, [threadId]: updatedThread }
       return {
         threads: newThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(newThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
+        searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
           selector: (item: Thread) => item.title,
         }),
       }
@@ -371,7 +337,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       return {
         threads: updatedThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
+        searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads), {
           selector: (item: Thread) => item.title,
         }),
       }
@@ -393,7 +359,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const newThreads = { ...state.threads, [threadId]: updatedThread }
       return {
         threads: newThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(newThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
+        searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
           selector: (item: Thread) => item.title,
         }),
       }

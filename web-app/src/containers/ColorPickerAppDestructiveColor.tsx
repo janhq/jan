@@ -1,4 +1,4 @@
-﻿import { useInterfaceSettings, isDefaultColorDestructive } from '@/hooks/useInterfaceSettings'
+import { useAppearance, isDefaultColorDestructive } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -10,7 +10,7 @@ import {
 import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppDestructiveColor() {
-  const { appDestructiveBgColor, setAppDestructiveBgColor } = useInterfaceSettings()
+  const { appDestructiveBgColor, setAppDestructiveBgColor } = useAppearance()
   const { isDark } = useTheme()
 
   const predefineAppDestructiveBgColor: RgbaColor[] = [

@@ -3,6 +3,7 @@ use crate::gguf::utils::estimate_kv_cache_internal;
 use crate::gguf::utils::read_gguf_metadata_internal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::Runtime;
 use tauri_plugin_hardware::get_system_info;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -26,14 +27,15 @@ pub enum ModelMode {
 }
 
 #[tauri::command]
-pub async fn plan_model_load(
+pub async fn plan_model_load<R: Runtime>(
     path: String,
     memory_mode: String,
     mmproj_path: Option<String>,
     requested_ctx: Option<u64>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ModelPlan, String> {
     let model_size = get_model_size(path.clone()).await?;
-    let sys_info = get_system_info();
+    let sys_info = get_system_info(app.clone());
     let gguf = read_gguf_metadata_internal(path.clone()).await?;
 
     let mut mmproj_size: u64 = 0;

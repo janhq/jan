@@ -328,14 +328,14 @@ This command ensures that the necessary permissions are granted for Jan's instal
 When you start a chat with a model and encounter a **Failed to Fetch** or **Something's Amiss** error, here are some possible solutions to resolve it:
 
 **1. Check System & Hardware Requirements**
-- Hardware dependencies: Ensure your device meets all [hardware requirements](troubleshooting)
-- OS: Ensure your operating system meets the minimum requirements ([Mac](https://www.jan.ai/docs/desktop/install/mac#minimum-requirements), [Windows](/windows#compatibility), [Linux](https://www.jan.ai/docs/desktop/install/linux#compatibility)
+- Hardware dependencies: Ensure your device meets all [hardware requirements](docs/desktop/troubleshooting#step-1-verify-hardware-and-system-requirements)
+- OS: Ensure your operating system meets the minimum requirements ([Mac](/docs/desktop/install/mac#minimum-requirements), [Windows](/docs/desktop/install/windows#compatibility), [Linux](/docs/desktop/install/linux#compatibility))
 - RAM: Choose models that use less than 80% of your available RAM
   - For 8GB systems: Use models under 6GB
   - For 16GB systems: Use models under 13GB
 
 **2. Check Model Parameters**
-- In **Engine Settings** in right sidebar, check your `ngl` ([number of GPU layers](/docs/desktop/model-parameters)) setting to see if it's too high
+- In **Engine Settings** in right sidebar, check your `ngl` ([number of GPU layers](/docs/desktop/models/model-parameters#engine-parameters)) setting to see if it's too high
 - Start with a lower NGL value and increase gradually based on your GPU memory
 
 **3. Port Conflicts**

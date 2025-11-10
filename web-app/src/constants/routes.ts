@@ -10,8 +10,7 @@ export const route = {
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',
-    attachments: '/settings/attachments',
-    interface: '/settings/interface',
+    appearance: '/settings/appearance',
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',
     extensions: '/settings/extensions',
@@ -19,7 +18,6 @@ export const route = {
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
-    whisper: '/settings/whisper',
   },
   hub: {
     index: '/hub/',

@@ -143,7 +143,7 @@ jan/
 
 **Option 1: The Easy Way (Make)**
 ```bash
-git clone https://github.com/janhq/jan
+git clone https://github.com/menloresearch/jan
 cd jan
 make dev
 ```
@@ -152,8 +152,8 @@ make dev
 
 ### Reporting Bugs
 
-- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/janhq/jan/issues)
-- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/janhq/jan/issues/new)
+- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/menloresearch/jan/issues)
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/menloresearch/jan/issues/new)
 - Include your system specs and error logs - it helps a ton
 
 ### Suggesting Enhancements
@@ -237,7 +237,7 @@ Common issues:
 ## Getting Help
 
 - [Documentation](https://jan.ai/docs) - The manual you should read
-- [Discord Community](https://discord.gg/FTk2MvZwJH) - Where the community lives
+- [Discord Community](https://discord.gg/jan) - Where the community lives
 - [GitHub Issues](https://github.com/janhq/jan/issues) - Report bugs here
 - [GitHub Discussions](https://github.com/janhq/jan/discussions) - Ask questions
 

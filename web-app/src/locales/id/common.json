@@ -8,7 +8,7 @@
   "general": "Umum",
   "settings": "Pengaturan",
   "modelProviders": "Penyedia Model",
-  "interface": "Tampilan",
+  "appearance": "Tampilan",
   "privacy": "Privasi",
   "keyboardShortcuts": "Pintasan",
   "newChat": "Obrolan Baru",
@@ -80,7 +80,6 @@
   "tools": "Alat",
   "webSearch": "Pencarian Web",
   "reasoning": "Penalaran",
-  "proactive": "Proaktif",
   "selectAModel": "Pilih model",
   "noToolsAvailable": "Tidak ada alat yang tersedia",
   "noModelsFoundFor": "Tidak ada model yang ditemukan untuk \"{{searchValue}}\"",
@@ -355,11 +354,8 @@
     "thread": "utas",
     "threads": "utas",
     "updated": "Diperbarui:",
-    "collapseProject": "Tutup proyek",
-    "expandProject": "Buka proyek",
-    "update": "Perbarui",
-    "searchProjects": "Cari proyek...",
-    "noProjectsFound": "Tidak ada proyek ditemukan",
-    "tryDifferentSearch": "Coba kata kunci pencarian lain"
+    "collapseThreads": "Tutup utas",
+    "expandThreads": "Buka utas",
+    "update": "Perbarui"
   }
 }

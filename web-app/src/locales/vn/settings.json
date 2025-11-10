@@ -78,7 +78,7 @@
     "goToSettings": "Đi tới Cài đặt",
     "goToSettingsDesc": "Mở cài đặt."
   },
-  "interface": {
+  "appearance": {
     "title": "Giao diện",
     "theme": "Chủ đề",
     "themeDesc": "Khớp với chủ đề hệ điều hành.",
@@ -96,8 +96,8 @@
     "destructiveDesc": "Đặt màu cho các hành động hủy.",
     "resetToDefault": "Đặt lại về mặc định",
     "resetToDefaultDesc": "Đặt lại tất cả cài đặt giao diện về mặc định.",
-    "resetInterfaceSuccess": "Giao diện đã được đặt lại thành công",
-    "resetInterfaceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
+    "resetAppearanceSuccess": "Giao diện đã được đặt lại thành công",
+    "resetAppearanceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
     "chatWidth": "Chiều rộng trò chuyện",
     "chatWidthDesc": "Tùy chỉnh chiều rộng của chế độ xem trò chuyện.",
     "tokenCounterCompact": "Bộ đếm token nhỏ gọn",

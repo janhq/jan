@@ -4,7 +4,7 @@ import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
-export type PromptProgress = {
+type PromptProgress = {
   cache: number
   processed: number
   time_ms: number
@@ -38,11 +38,6 @@ type AppState = {
   updateTools: (tools: MCPTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
-  setTokenSpeed: (
-    message: ThreadMessage,
-    speed: number,
-    completionTokens: number
-  ) => void
   resetTokenSpeed: () => void
   clearAppState: () => void
   setOutOfContextDialog: (show: boolean) => void
@@ -98,17 +93,6 @@ export const useAppState = create<AppState>()((set) => ({
       abortControllers: {
         ...state.abortControllers,
         [threadId]: controller,
-      },
-    }))
-  },
-  setTokenSpeed: (message, speed, completionTokens) => {
-    set((state) => ({
-      tokenSpeed: {
-        ...state.tokenSpeed,
-        lastTimestamp: new Date().getTime(),
-        tokenSpeed: speed,
-        tokenCount: completionTokens,
-        message: message.id,
       },
     }))
   },

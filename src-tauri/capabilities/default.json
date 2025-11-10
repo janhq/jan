@@ -18,11 +18,11 @@
     "os:default",
     "opener:default",
     "log:default",
+    "updater:default",
+    "dialog:default",
+    "deep-link:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
-    "store:default",
-    "vector-db:default",
-    "rag:default",
     {
       "identifier": "http:default",
       "allow": [
@@ -54,6 +54,9 @@
           "url": "http://0.0.0.0:*"
         }
       ]
-    }
+    },
+    "store:default",
+    "llamacpp:default",
+    "hardware:default"
   ]
 }

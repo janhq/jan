@@ -95,7 +95,7 @@ const Home = () => {
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
-                href={`https://github.com/janhq/jan/releases/tag/${lastVersion}`}
+                href={`https://github.com/menloresearch/jan/releases/tag/${lastVersion}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-black/40 px-3 lg:px-4 rounded-full h-10 inline-flex items-center max-w-full animate-fade-in delay-100"
@@ -270,7 +270,7 @@ const Home = () => {
                   data-delay="600"
                 >
                   <a
-                    href="https://github.com/janhq/jan"
+                    href="https://github.com/menloresearch/jan"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -387,7 +387,7 @@ const Home = () => {
                       </div>
                       <a
                         className="hidden md:block"
-                        href="https://github.com/janhq/jan"
+                        href="https://github.com/menloresearch/jan"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -413,7 +413,7 @@ const Home = () => {
                       </p>
                       <a
                         className="md:hidden mt-4 block w-full"
-                        href="https://github.com/janhq/jan"
+                        href="https://github.com/menloresearch/jan"
                         target="_blank"
                         rel="noopener noreferrer"
                       >

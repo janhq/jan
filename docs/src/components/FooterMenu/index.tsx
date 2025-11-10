@@ -16,10 +16,7 @@ const FOOTER_MENUS: FooterMenu[] = [
   {
     title: 'Company',
     links: [
-      {
-        name: 'Open Superintelligence',
-        href: '/handbook/why/open-superintelligence',
-      },
+      { name: 'Vision', href: '/', comingSoon: true },
       { name: 'Handbook', href: '/handbook' },
       { name: 'Community', href: 'https://discord.com/invite/FTk2MvZwJH' },
       { name: 'Careers', href: 'https://menlo.bamboohr.com/careers' },

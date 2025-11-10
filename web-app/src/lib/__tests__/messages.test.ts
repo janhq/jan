@@ -137,9 +137,7 @@ describe('CompletionMessagesBuilder', () => {
     it('should add user message to messages array', () => {
       const builder = new CompletionMessagesBuilder([])
 
-      builder.addUserMessage(
-        createMockThreadMessage('user', 'Hello, how are you?')
-      )
+      builder.addUserMessage('Hello, how are you?')
 
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
@@ -152,8 +150,8 @@ describe('CompletionMessagesBuilder', () => {
     it('should not add consecutive user messages', () => {
       const builder = new CompletionMessagesBuilder([])
 
-      builder.addUserMessage(createMockThreadMessage('user', 'First message'))
-      builder.addUserMessage(createMockThreadMessage('user', 'Second message'))
+      builder.addUserMessage('First message')
+      builder.addUserMessage('Second message')
 
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
@@ -163,7 +161,7 @@ describe('CompletionMessagesBuilder', () => {
     it('should handle empty user message', () => {
       const builder = new CompletionMessagesBuilder([])
 
-      builder.addUserMessage(createMockThreadMessage('user', ''))
+      builder.addUserMessage('')
 
       const result = builder.getMessages()
       expect(result).toHaveLength(1)
@@ -340,7 +338,7 @@ describe('CompletionMessagesBuilder', () => {
         'You are helpful'
       )
 
-      builder.addUserMessage(createMockThreadMessage('user', 'How are you?'))
+      builder.addUserMessage('How are you?')
       builder.addAssistantMessage('I am well, thank you!')
       builder.addToolMessage('Tool response', 'call_123')
 
@@ -355,7 +353,7 @@ describe('CompletionMessagesBuilder', () => {
     it('should return the same array reference (not immutable)', () => {
       const builder = new CompletionMessagesBuilder([])
 
-      builder.addUserMessage(createMockThreadMessage('user', 'Test message'))
+      builder.addUserMessage('Test message')
       const result1 = builder.getMessages()
 
       builder.addAssistantMessage('Response')

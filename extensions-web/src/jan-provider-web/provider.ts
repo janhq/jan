@@ -14,9 +14,10 @@ import {
   ImportOptions,
 } from '@janhq/core' // cspell: disable-line
 import { janApiClient, JanChatMessage } from './api'
-import { syncJanModelsLocalStorage } from './helpers'
 import { janProviderStore } from './store'
-import { ApiError } from '../shared/types/errors'
+
+// Jan models support tools via MCP
+const JAN_MODEL_CAPABILITIES = ['tools'] as const
 
 export default class JanProviderWeb extends AIEngine {
   readonly provider = 'jan'
@@ -26,11 +27,11 @@ export default class JanProviderWeb extends AIEngine {
     console.log('Loading Jan Provider Extension...')
 
     try {
-      // Initialize authentication
-      await janApiClient.initialize()
-      // Check and sync stored Jan models against latest catalog data
-      await this.validateJanModelsLocalStorage()
+      // Check and clear invalid Jan models (capabilities mismatch)
+      this.validateJanModelsLocalStorage()
 
+      // Initialize authentication and fetch models
+      await janApiClient.initialize()
       console.log('Jan Provider Extension loaded successfully')
     } catch (error) {
       console.error('Failed to load Jan Provider Extension:', error)
@@ -41,17 +42,46 @@ export default class JanProviderWeb extends AIEngine {
   }
 
   // Verify Jan models capabilities in localStorage
-  private async validateJanModelsLocalStorage(): Promise<void> {
+  private validateJanModelsLocalStorage() {
     try {
-      console.log('Validating Jan models in localStorage...')
+      console.log("Validating Jan models in localStorage...")
+      const storageKey = 'model-provider'
+      const data = localStorage.getItem(storageKey)
+      if (!data) return
 
-      const remoteModels = await janApiClient.getModels()
-      const storageUpdated = syncJanModelsLocalStorage(remoteModels)
+      const parsed = JSON.parse(data)
+      if (!parsed?.state?.providers) return
 
-      if (storageUpdated) {
-        console.log(
-          'Synchronized Jan models in localStorage with server capabilities; reloading...'
-        )
+      // Check if any Jan model has incorrect capabilities
+      let hasInvalidModel = false
+
+      for (const provider of parsed.state.providers) {
+        if (provider.provider === 'jan' && provider.models) {
+          for (const model of provider.models) {
+            console.log(`Checking Jan model: ${model.id}`, model.capabilities)
+            if (JSON.stringify(model.capabilities) !== JSON.stringify(JAN_MODEL_CAPABILITIES)) {
+              hasInvalidModel = true
+              console.log(`Found invalid Jan model: ${model.id}, clearing localStorage`)
+              break
+            }
+          }
+        }
+        if (hasInvalidModel) break
+      }
+
+      // If any invalid model found, just clear the storage
+      if (hasInvalidModel) {
+        // Force clear the storage
+        localStorage.removeItem(storageKey)
+        // Verify it's actually removed
+        const afterRemoval = localStorage.getItem(storageKey)
+        // If still present, try setting to empty state
+        if (afterRemoval) {
+          // Try alternative clearing method
+          localStorage.setItem(storageKey, JSON.stringify({ state: { providers: [] }, version: parsed.version || 3 }))
+        }
+        console.log('Cleared model-provider from localStorage due to invalid Jan capabilities')
+        // Force a page reload to ensure clean state
         window.location.reload()
       }
     } catch (error) {
@@ -88,7 +118,7 @@ export default class JanProviderWeb extends AIEngine {
               path: undefined, // Remote model, no local path
               owned_by: model.owned_by,
               object: model.object,
-              capabilities: [...model.capabilities],
+              capabilities: [...JAN_MODEL_CAPABILITIES],
             }
           : undefined
       )
@@ -109,7 +139,7 @@ export default class JanProviderWeb extends AIEngine {
         path: undefined, // Remote model, no local path
         owned_by: model.owned_by,
         object: model.object,
-        capabilities: [...model.capabilities],
+        capabilities: [...JAN_MODEL_CAPABILITIES],
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)
@@ -128,7 +158,6 @@ export default class JanProviderWeb extends AIEngine {
         port: 443, // HTTPS port
         model_id: modelId,
         model_path: `remote:${modelId}`, // Indicate this is a remote model
-        is_embedding: false, // assume false here, TODO: might need further implementation
         api_key: '', // API key handled by auth service
       }
 
@@ -163,12 +192,7 @@ export default class JanProviderWeb extends AIEngine {
       console.error(`Failed to unload Jan session ${sessionId}:`, error)
       return {
         success: false,
-        error:
-          error instanceof ApiError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Unknown error',
       }
     }
   }

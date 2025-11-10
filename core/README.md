@@ -13,7 +13,7 @@ import * as core from '@janhq/core'
 
 ## Build an Extension
 
-1. Download an extension template, for example, [https://github.com/janhq/extension-template](https://github.com/janhq/extension-template).
+1. Download an extension template, for example, [https://github.com/menloresearch/extension-template](https://github.com/menloresearch/extension-template).
 
 2. Update the source code:
 

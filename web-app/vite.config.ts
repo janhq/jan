@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv, Plugin } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
@@ -6,41 +6,6 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import packageJson from './package.json'
 const host = process.env.TAURI_DEV_HOST
-
-// Plugin to inject GA scripts in HTML
-function injectGoogleAnalytics(gaMeasurementId?: string): Plugin {
-  return {
-    name: 'inject-google-analytics',
-    transformIndexHtml(html) {
-      // Only inject GA scripts if GA_MEASUREMENT_ID is set
-      if (!gaMeasurementId) {
-        // Remove placeholder if no GA ID
-        return html.replace(/\s*<!-- INJECT_GOOGLE_ANALYTICS -->\n?/g, '')
-      }
-
-      const gaScripts = `<!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-      gtag('consent','default',{
-        ad_storage:'denied',
-        analytics_storage:'denied',
-        ad_user_data:'denied',
-        ad_personalization:'denied',
-        wait_for_update:500
-      });
-      gtag('js', new Date());
-      gtag('config', '${gaMeasurementId}', {
-        debug_mode: (location.hostname === 'localhost'),
-        send_page_view: false
-      });
-    </script>`
-
-      return html.replace('<!-- INJECT_GOOGLE_ANALYTICS -->', gaScripts)
-    },
-  }
-}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -59,14 +24,10 @@ export default defineConfig(({ mode }) => {
       nodePolyfills({
         include: ['path'],
       }),
-      injectGoogleAnalytics(env.GA_MEASUREMENT_ID),
     ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
-        // Ensure local workspace package resolves correctly during dev/build
-        '@jan/extensions-web': path.resolve(__dirname, '../extensions-web/src/index.ts'),
       },
     },
     optimizeDeps: {
@@ -104,7 +65,7 @@ export default defineConfig(({ mode }) => {
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
       GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
       MODEL_CATALOG_URL: JSON.stringify(
-        'https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog.json'
+        'https://raw.githubusercontent.com/menloresearch/model-catalog/main/model_catalog.json'
       ),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
@@ -130,7 +91,6 @@ export default defineConfig(({ mode }) => {
       watch: {
         // 3. tell vite to ignore watching `src-tauri`
         ignored: ['**/src-tauri/**'],
-        usePolling: true
       },
     },
   }

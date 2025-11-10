@@ -5,6 +5,7 @@
 
 export interface WhisperConfig {
   apiUrl: string
+  apiKey?: string
   task?: 'transcribe' | 'translate'
   language?: string
   output?: 'txt' | 'vtt' | 'srt' | 'tsv' | 'json'
@@ -139,6 +140,7 @@ export function getDefaultWhisperConfig(): WhisperConfig {
   // Default configuration - users should update this
   return {
     apiUrl: 'https://whisper.contextcompany.com.co/asr',
+    apiKey: undefined,
     task: 'transcribe', // Default to transcription
     language: 'auto', // Auto-detect language
     output: 'txt', // Default to plain text

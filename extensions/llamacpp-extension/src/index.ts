@@ -38,12 +38,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
-  loadLlamaModel,
   readGgufMetadata,
+  estimateKVCacheSize,
   getModelSize,
   isModelSupported,
   planModelLoadInternal,
-  unloadLlamaModel,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -54,14 +53,11 @@ type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
-  timeout: number
   llamacpp_env: string
   memory_util: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
-  cpu_moe: boolean
-  n_cpu_moe: number
   override_tensor_buffer_t: string
   ctx_size: number
   threads: number
@@ -72,7 +68,7 @@ type LlamacppConfig = {
   device: string
   split_mode: string
   main_gpu: number
-  flash_attn: string
+  flash_attn: boolean
   cont_batching: boolean
   no_mmap: boolean
   mlock: boolean
@@ -186,7 +182,6 @@ const logger = {
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
-  timeout: number = 600
   llamacpp_env: string = ''
   memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
@@ -219,7 +214,6 @@ export default class llamacpp_extension extends AIEngine {
     this.config = loadedConfig as LlamacppConfig
 
     this.autoUnload = this.config.auto_unload
-    this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
     this.memoryMode = this.config.memory_util || 'high'
 
@@ -338,12 +332,14 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          bestAvailableBackendString = await this.determineBestBackend(
+            version_backends
+          )
         }
       } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
+        bestAvailableBackendString = await this.determineBestBackend(
+          version_backends
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -554,9 +550,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cuda-12-common_cpus')) return 'cuda-cu12.0'
-      if (backendString.includes('cuda-11-common_cpus')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan-common_cpus')) return 'vulkan'
+      if (backendString.includes('cu12.0')) return 'cuda-cu12.0'
+      if (backendString.includes('cu11.7')) return 'cuda-cu11.7'
+      if (backendString.includes('vulkan')) return 'vulkan'
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -924,8 +920,6 @@ export default class llamacpp_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'memory_util') {
       this.memoryMode = value as string
-    } else if (key === 'timeout') {
-      this.timeout = value as number
     }
   }
 
@@ -1535,7 +1529,6 @@ export default class llamacpp_extension extends AIEngine {
 
     if (
       this.autoUnload &&
-      !isEmbedding &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       // Wait for OTHER loading models to finish, then unload everything
@@ -1543,31 +1536,10 @@ export default class llamacpp_extension extends AIEngine {
         await Promise.all(otherLoadingPromises)
       }
 
-      // Now unload all loaded Text models excluding embedding models
+      // Now unload all loaded models
       const allLoadedModels = await this.getLoadedModels()
       if (allLoadedModels.length > 0) {
-        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
-          allLoadedModels.map(async (modelId) => {
-            try {
-              return await this.findSessionByModel(modelId)
-            } catch (e) {
-              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null // treat as “not‑eligible for unload”
-            }
-          })
-        )
-
-        const nonEmbeddingModels: string[] = sessionInfos
-          .filter(
-            (s): s is SessionInfo => s !== null && s.is_embedding === false
-          )
-          .map((s) => s.model_id)
-
-        if (nonEmbeddingModels.length > 0) {
-          await Promise.all(
-            nonEmbeddingModels.map((modelId) => this.unload(modelId))
-          )
-        }
+        await Promise.all(allLoadedModels.map((model) => this.unload(model)))
       }
     }
     const args: string[] = []
@@ -1599,7 +1571,6 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
 
     // set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
@@ -1612,10 +1583,6 @@ export default class llamacpp_extension extends AIEngine {
     ])
     args.push('--jinja')
     args.push('-m', modelPath)
-    if (cfg.cpu_moe) args.push('--cpu-moe')
-    if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
-      args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
-    }
     // For overriding tensor buffer type, useful where
     // massive MOE models can be made faster by keeping attention on the GPU
     // and offloading the expert FFNs to the CPU.
@@ -1650,32 +1617,30 @@ export default class llamacpp_extension extends AIEngine {
     if (cfg.device.length > 0) args.push('--device', cfg.device)
     if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
       args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined && cfg.main_gpu !== 0)
+    if (cfg.main_gpu !== undefined && cfg.main_gpu != 0)
       args.push('--main-gpu', String(cfg.main_gpu))
-    // Note: Older llama.cpp versions are no longer supported
-    if (
-      cfg.flash_attn !== undefined ||
-      !cfg.flash_attn ||
-      cfg.flash_attn !== ''
-    )
-      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
+    if (Number(version.replace(/^b/, '')) >= 6325) {
+      if (!cfg.flash_attn) args.push('--flash-attn', 'off') //default: auto = ON when supported
+    } else {
+      if (cfg.flash_attn) args.push('--flash-attn')
+    }
     if (cfg.cont_batching) args.push('--cont-batching')
-    if (cfg.no_mmap) args.push('--no-mmap')
+    args.push('--no-mmap')
     if (cfg.mlock) args.push('--mlock')
     if (cfg.no_kv_offload) args.push('--no-kv-offload')
     if (isEmbedding) {
       args.push('--embedding')
-      args.push('--pooling', 'mean')
+      args.push('--pooling mean')
     } else {
       if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
       if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
       if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
         args.push('--cache-type-k', cfg.cache_type_k)
       if (
-        cfg.flash_attn !== 'on' &&
+        cfg.flash_attn &&
         cfg.cache_type_v != 'f16' &&
         cfg.cache_type_v != 'f32'
       ) {
@@ -1696,9 +1661,19 @@ export default class llamacpp_extension extends AIEngine {
 
     logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
+    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
 
     try {
-      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding, Number(this.timeout))
+      // TODO: add LIBRARY_PATH
+      const sInfo = await invoke<SessionInfo>(
+        'plugin:llamacpp|load_llama_model',
+        {
+          backendPath,
+          libraryPath,
+          args,
+          envs,
+        }
+      )
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1714,7 +1689,12 @@ export default class llamacpp_extension extends AIEngine {
     const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
-      const result = await unloadLlamaModel(pid)
+      const result = await invoke<UnloadResult>(
+        'plugin:llamacpp|unload_llama_model',
+        {
+          pid: pid,
+        }
+      )
 
       // If successful, remove from active sessions
       if (result.success) {
@@ -1783,9 +1763,9 @@ export default class llamacpp_extension extends AIEngine {
       method: 'POST',
       headers,
       body,
-      connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
+      connectTimeout: 600000, // 10 minutes
       signal: AbortSignal.any([
-        AbortSignal.timeout(this.timeout * 1000),
+        AbortSignal.timeout(600000),
         abortController?.signal,
       ]),
     })
@@ -2027,75 +2007,6 @@ export default class llamacpp_extension extends AIEngine {
         libraryPath,
         envs,
       })
-      // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
-      // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
-      try {
-        const sysInfo = await getSystemInfo()
-        if (sysInfo?.os_type === 'linux' && Array.isArray(sysInfo.gpus)) {
-          const usage = await getSystemUsage()
-          if (usage && Array.isArray(usage.gpus)) {
-            const uuidToUsage: Record<
-              string,
-              { total_memory: number; used_memory: number }
-            > = {}
-            for (const u of usage.gpus as any[]) {
-              if (u && typeof u.uuid === 'string') {
-                uuidToUsage[u.uuid] = u
-              }
-            }
-
-            const indexToAmdUuid = new Map<number, string>()
-            for (const gpu of sysInfo.gpus as any[]) {
-              const vendorStr =
-                typeof gpu?.vendor === 'string'
-                  ? gpu.vendor
-                  : typeof gpu?.vendor === 'object' && gpu.vendor !== null
-                    ? String(gpu.vendor)
-                    : ''
-              if (
-                vendorStr.toUpperCase().includes('AMD') &&
-                gpu?.vulkan_info &&
-                typeof gpu.vulkan_info.index === 'number' &&
-                typeof gpu.uuid === 'string'
-              ) {
-                indexToAmdUuid.set(gpu.vulkan_info.index, gpu.uuid)
-              }
-            }
-
-            if (indexToAmdUuid.size > 0) {
-              const adjusted = dList.map((dev) => {
-                if (dev.id?.startsWith('Vulkan')) {
-                  const match = /^Vulkan(\d+)/.exec(dev.id)
-                  if (match) {
-                    const vIdx = Number(match[1])
-                    const uuid = indexToAmdUuid.get(vIdx)
-                    if (uuid) {
-                      const u = uuidToUsage[uuid]
-                      if (
-                        u &&
-                        typeof u.total_memory === 'number' &&
-                        typeof u.used_memory === 'number'
-                      ) {
-                        const total = Math.max(0, Math.floor(u.total_memory))
-                        const free = Math.max(
-                          0,
-                          Math.floor(u.total_memory - u.used_memory)
-                        )
-                        return { ...dev, mem: total, free }
-                      }
-                    }
-                  }
-                }
-                return dev
-              })
-              return adjusted
-            }
-          }
-        }
-      } catch (e) {
-        logger.warn('Device memory override (AMD/Linux) failed:', e)
-      }
-
       return dList
     } catch (error) {
       logger.error('Failed to query devices:\n', error)
@@ -2104,7 +2015,6 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    // Ensure the sentence-transformer model is present
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
       const downloadedModelList = await this.list()
@@ -2118,45 +2028,30 @@ export default class llamacpp_extension extends AIEngine {
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
         })
       }
-      // Load specifically in embedding mode
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      sInfo = await this.load('sentence-transformer-mini')
     }
-
-    const attemptRequest = async (session: SessionInfo) => {
-      const baseUrl = `http://localhost:${session.port}/v1/embeddings`
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.api_key}`,
-      }
-      const body = JSON.stringify({
-        input: text,
-        model: session.model_id,
-        encoding_format: 'float',
-      })
-      const response = await fetch(baseUrl, {
-        method: 'POST',
-        headers,
-        body,
-      })
-      return response
+    const baseUrl = `http://localhost:${sInfo.port}/v1/embeddings`
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${sInfo.api_key}`,
     }
-
-    // First try with the existing session (may have been started without --embedding previously)
-    let response = await attemptRequest(sInfo)
-
-    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-    if (response.status === 501) {
-      try {
-        await this.unload('sentence-transformer-mini')
-      } catch {}
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
-      response = await attemptRequest(sInfo)
-    }
+    const body = JSON.stringify({
+      input: text,
+      model: sInfo.model_id,
+      encoding_format: 'float',
+    })
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers,
+      body,
+    })
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        `API request failed with status ${response.status}: ${JSON.stringify(
+          errorData
+        )}`
       )
     }
     const responseData = await response.json()

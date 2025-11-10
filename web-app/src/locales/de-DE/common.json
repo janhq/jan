@@ -8,7 +8,7 @@
   "general": "Allgemein",
   "settings": "Einstellungen",
   "modelProviders": "Modell Anbieter",
-  "interface": "Erscheinung",
+  "appearance": "Erscheinung",
   "privacy": "Privatsphäre",
   "keyboardShortcuts": "Shortcuts",
   "newChat": "Neuer Chat",
@@ -80,7 +80,6 @@
   "tools": "Werkzeuge",
   "webSearch": "Web Suche",
   "reasoning": "Argumentation",
-  "proactive": "Proaktiv",
   "selectAModel": "Wähle ein Modell",
   "noToolsAvailable": "Keine Werkzeuge verfügbar",
   "noModelsFoundFor": "Keine Modelle gefunden zu \"{{searchValue}}\"",
@@ -273,12 +272,9 @@
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
-    "collapseProject": "Projekt einklappen",
-    "expandProject": "Projekt ausklappen",
-    "update": "Aktualisieren",
-    "searchProjects": "Projekte durchsuchen...",
-    "noProjectsFound": "Keine Projekte gefunden",
-    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff"
+    "collapseThreads": "Threads einklappen",
+    "expandThreads": "Threads ausklappen",
+    "update": "Aktualisieren"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -360,6 +356,80 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "projectCreated": {
+      "title": "Projekt erstellt",
+      "description": "Projekt \"{{projectName}}\" erfolgreich erstellt"
+    },
+    "projectRenamed": {
+      "title": "Projekt umbenannt",
+      "description": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+    },
+    "projectDeleted": {
+      "title": "Projekt gelöscht",
+      "description": "Projekt \"{{projectName}}\" erfolgreich gelöscht"
+    },
+    "projectAlreadyExists": {
+      "title": "Projekt existiert bereits",
+      "description": "Projekt \"{{projectName}}\" existiert bereits"
+    },
+    "projectDeleteFailed": {
+      "title": "Löschen fehlgeschlagen",
+      "description": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread zugewiesen",
+      "description": "Thread erfolgreich zu \"{{projectName}}\" hinzugefügt"
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread entfernt",
+      "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
     }
+  },
+  "projects": {
+    "title": "Projekte",
+    "addProject": "Projekt hinzufügen",
+    "addToProject": "Zu Projekt hinzufügen",
+    "removeFromProject": "Von Projekt entfernen",
+    "createNewProject": "Neues Projekt erstellen",
+    "editProject": "Projekt bearbeiten",
+    "deleteProject": "Projekt löschen",
+    "projectName": "Projektname",
+    "enterProjectName": "Projektname eingeben...",
+    "noProjectsAvailable": "Keine Projekte verfügbar",
+    "noProjectsYet": "Noch keine Projekte",
+    "noProjectsYetDesc": "Starten Sie ein neues Projekt, indem Sie auf die Schaltfläche Projekt hinzufügen klicken.",
+    "projectNotFound": "Projekt nicht gefunden",
+    "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
+    "deleteProjectDialog": {
+      "title": "Projekt löschen",
+      "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteButton": "Löschen",
+      "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
+      "successWithoutName": "Projekt erfolgreich gelöscht",
+      "error": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+      "ariaLabel": "{{projectName}} löschen"
+    },
+    "addProjectDialog": {
+      "createTitle": "Neues Projekt erstellen",
+      "editTitle": "Projekt bearbeiten",
+      "nameLabel": "Projektname",
+      "namePlaceholder": "Projektname eingeben...",
+      "createButton": "Erstellen",
+      "updateButton": "Aktualisieren",
+      "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
+      "createSuccess": "Projekt \"{{projectName}}\" erfolgreich erstellt",
+      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+    },
+    "noConversationsIn": "Keine Gespräche in {{projectName}}",
+    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
+    "conversationsIn": "Gespräche in {{projectName}}",
+    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
+    "thread": "Thread",
+    "threads": "Threads",
+    "updated": "Aktualisiert:",
+    "collapseThreads": "Threads einklappen",
+    "expandThreads": "Threads ausklappen",
+    "update": "Aktualisieren"
   }
 }

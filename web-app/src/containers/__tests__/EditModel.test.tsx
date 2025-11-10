@@ -82,7 +82,6 @@ vi.mock('@tabler/icons-react', () => ({
   IconEye: () => <div data-testid="eye-icon" />,
   IconTool: () => <div data-testid="tool-icon" />,
   IconLoader2: () => <div data-testid="loader-icon" />,
-  IconSparkles: () => <div data-testid="sparkles-icon" />,
 }))
 
 describe('DialogEditModel - Basic Component Tests', () => {
@@ -190,7 +189,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
         {
           id: 'test-model.gguf',
           displayName: 'Test Model',
-          capabilities: ['vision', 'tools', 'proactive'],
+          capabilities: ['vision', 'tools'],
         },
       ],
       settings: [],
@@ -227,7 +226,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
         {
           id: 'test-model.gguf',
           displayName: 'Test Model',
-          capabilities: ['vision', 'tools', 'proactive', 'completion', 'embeddings', 'web_search', 'reasoning'],
+          capabilities: ['vision', 'tools', 'completion', 'embeddings', 'web_search', 'reasoning'],
         },
       ],
       settings: [],
@@ -241,7 +240,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
     )
 
     // Component should render without errors even with extra capabilities
-    // The capabilities helper should only extract vision, tools, and proactive
+    // The capabilities helper should only extract vision and tools
     expect(container).toBeInTheDocument()
   })
 })

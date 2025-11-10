@@ -52,28 +52,6 @@ vi.mock('@/hooks/useThreads', () => ({
   },
 }))
 
-vi.mock('@/hooks/useThreadManagement', () => {
-  const mockStore = {
-    folders: [],
-    addFolder: vi.fn(async (name: string) => ({
-      id: 'project-id',
-      name,
-      updated_at: Date.now(),
-      created_at: Date.now(),
-    })),
-    updateFolder: vi.fn(),
-    deleteFolder: vi.fn(),
-    deleteFolderWithThreads: vi.fn(),
-    setFolders: vi.fn(),
-    getFolderById: vi.fn(),
-    getProjectById: vi.fn(),
-  }
-
-  return {
-    useThreadManagement: () => mockStore,
-  }
-})
-
 vi.mock('@/hooks/useMediaQuery', () => ({
   useSmallScreen: vi.fn(() => false),
 }))
@@ -144,7 +122,6 @@ vi.mock('@/lib/platform/const', () => ({
     ASSISTANTS: true,
     MODEL_HUB: true,
     AUTHENTICATION: false,
-    projects: true,
   },
 }))
 

@@ -82,11 +82,11 @@ jobs:
           VERSION=${{ needs.get-update-version.outputs.new_version }}
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
           LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
-          LINUX_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          LINUX_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
-          WINDOWS_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          WINDOWS_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
           DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
-          DARWIN_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-macos.outputs.TAR_NAME }}"
+          DARWIN_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-macos.outputs.TAR_NAME }}"
 
           jq --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \

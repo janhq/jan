@@ -3,9 +3,9 @@
  * Handles authentication flows for any OAuth provider
  */
 
-declare const JAN_BASE_URL: string
+declare const JAN_API_BASE: string
 
-import { User, AuthState, AuthBroadcastMessage, AuthTokens } from './types'
+import { User, AuthState, AuthBroadcastMessage } from './types'
 import {
   AUTH_STORAGE_KEYS,
   AUTH_ENDPOINTS,
@@ -16,7 +16,6 @@ import { logoutUser, refreshToken, guestLogin } from './api'
 import { AuthProviderRegistry } from './registry'
 import { AuthBroadcast } from './broadcast'
 import type { ProviderType } from './providers'
-import { ApiError } from '../types/errors'
 
 const authProviderRegistry = new AuthProviderRegistry()
 
@@ -115,7 +114,7 @@ export class JanAuthService {
 
       // Store tokens and set authenticated state
       this.accessToken = tokens.access_token
-      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+      this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
       this.setAuthProvider(providerId)
 
       this.authBroadcast.broadcastLogin()
@@ -158,10 +157,10 @@ export class JanAuthService {
       const tokens = await refreshToken()
 
       this.accessToken = tokens.access_token
-      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+      this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
     } catch (error) {
       console.error('Failed to refresh access token:', error)
-      if (error instanceof ApiError && error.isStatus(401)) {
+      if (error instanceof Error && error.message.includes('401')) {
         await this.handleSessionExpired()
       }
       throw error
@@ -306,7 +305,9 @@ export class JanAuthService {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new ApiError(response.status, response.statusText, errorText)
+        throw new Error(
+          `API request failed: ${response.status} ${response.statusText} - ${errorText}`
+        )
       }
 
       return response.json()
@@ -343,23 +344,6 @@ export class JanAuthService {
     localStorage.removeItem(AUTH_STORAGE_KEYS.AUTH_PROVIDER)
   }
 
-  private computeTokenExpiry(tokens: AuthTokens): number {
-    if (tokens.expires_at) {
-      const expiresAt = new Date(tokens.expires_at).getTime()
-      if (!Number.isNaN(expiresAt)) {
-        return expiresAt
-      }
-      console.warn('Invalid expires_at format in auth tokens:', tokens.expires_at)
-    }
-
-    if (typeof tokens.expires_in === 'number') {
-      return Date.now() + tokens.expires_in * 1000
-    }
-
-    console.warn('Auth tokens missing expiry information; defaulting to immediate expiry')
-    return Date.now()
-  }
-
   /**
    * Ensure guest access is available
    */
@@ -369,7 +353,7 @@ export class JanAuthService {
       if (!this.accessToken || Date.now() > this.tokenExpiryTime) {
         const tokens = await guestLogin()
         this.accessToken = tokens.access_token
-        this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+        this.tokenExpiryTime = Date.now() + tokens.expires_in * 1000
       }
     } catch (error) {
       console.error('Failed to ensure guest access:', error)
@@ -404,6 +388,7 @@ export class JanAuthService {
         case AUTH_EVENTS.LOGOUT:
           // Another tab logged out, clear our state
           this.clearAuthState()
+          this.ensureGuestAccess().catch(console.error)
           break
       }
     })
@@ -429,11 +414,11 @@ export class JanAuthService {
   private async fetchUserProfile(): Promise<User | null> {
     try {
       return await this.makeAuthenticatedRequest<User>(
-        `${JAN_BASE_URL}${AUTH_ENDPOINTS.ME}`
+        `${JAN_API_BASE}${AUTH_ENDPOINTS.ME}`
       )
     } catch (error) {
       console.error('Failed to fetch user profile:', error)
-      if (error instanceof ApiError && error.isStatus(401)) {
+      if (error instanceof Error && error.message.includes('401')) {
         // Authentication failed - handle session expiry
         await this.handleSessionExpired()
         return null

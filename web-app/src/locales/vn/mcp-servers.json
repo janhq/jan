@@ -43,11 +43,5 @@
   "args": "Đối số",
   "env": "Môi trường",
   "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
-  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công",
-  "runtimeSettings": {
-    "title": "Cài đặt thời gian chạy",
-    "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
-    "toolCallTimeout": "Thời gian chờ lệnh (giây)",
-    "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
-  }
+  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công"
 }

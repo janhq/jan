@@ -197,19 +197,12 @@ vi.mock('@/hooks/useServiceHub', () => ({
     events: () => ({
       emit: vi.fn(),
     }),
-    window: () => ({
-      openLogsWindow: vi.fn(),
-    }),
-    opener: () => ({
-      revealItemInDir: vi.fn(),
-    }),
   }),
 }))
 
-// Add tests for rfd dialog
-// vi.mock('@tauri-apps/plugin-dialog', () => ({
-//   open: vi.fn(),
-// }))
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: vi.fn(),
+}))
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: vi.fn(),

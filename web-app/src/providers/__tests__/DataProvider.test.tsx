@@ -45,15 +45,7 @@ vi.mock('@/hooks/useAppUpdater', () => ({
 vi.mock('@/hooks/useMCPServers', () => ({
   useMCPServers: vi.fn(() => ({
     setServers: vi.fn(),
-    setSettings: vi.fn(),
   })),
-}))
-
-// Mock the DataProvider to render children properly
-vi.mock('../DataProvider', () => ({
-  DataProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="data-provider">{children}</div>
-  ),
 }))
 
 describe('DataProvider', () => {
@@ -64,13 +56,14 @@ describe('DataProvider', () => {
   const renderWithRouter = (children: React.ReactNode) => {
     const rootRoute = createRootRoute({
       component: () => (
-        <DataProvider>
+        <>
+          <DataProvider />
           {children}
-        </DataProvider>
+        </>
       ),
     })
 
-    const router = createRouter({
+    const router = createRouter({ 
       routeTree: rootRoute,
       history: createMemoryHistory({
         initialEntries: ['/'],
@@ -79,7 +72,13 @@ describe('DataProvider', () => {
     return render(<RouterProvider router={router} />)
   }
 
-  it('initializes data on mount and renders without crashing', async () => {
+  it('renders without crashing', () => {
+    renderWithRouter(<div>Test Child</div>)
+    
+    expect(screen.getByText('Test Child')).toBeInTheDocument()
+  })
+
+  it('initializes data on mount', async () => {
     // DataProvider initializes and renders children without errors
     renderWithRouter(<div>Test Child</div>)
     
@@ -91,14 +90,14 @@ describe('DataProvider', () => {
   it('handles multiple children correctly', () => {
     const TestComponent1 = () => <div>Test Child 1</div>
     const TestComponent2 = () => <div>Test Child 2</div>
-
-    render(
-      <DataProvider>
+    
+    renderWithRouter(
+      <>
         <TestComponent1 />
         <TestComponent2 />
-      </DataProvider>
+      </>
     )
-
+    
     expect(screen.getByText('Test Child 1')).toBeInTheDocument()
     expect(screen.getByText('Test Child 2')).toBeInTheDocument()
   })

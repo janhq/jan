@@ -25,7 +25,7 @@ export const useReleaseNotes = create<ReleaseState>((set) => ({
     set({ loading: true, error: null })
     try {
       const res = await fetch(
-        'https://api.github.com/repos/janhq/jan/releases'
+        'https://api.github.com/repos/menloresearch/jan/releases'
       )
       if (!res.ok) throw new Error('Failed to fetch releases')
       const releases = await res.json()

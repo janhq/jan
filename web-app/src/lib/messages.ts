@@ -1,53 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
-import { ThreadMessage, ContentType } from '@janhq/core'
+import { ThreadMessage } from '@janhq/core'
 import { removeReasoningContent } from '@/utils/reasoning'
-// Attachments are now handled upstream in newUserThreadContent
-
-type ThreadContent = NonNullable<ThreadMessage['content']>[number]
-
-// Define a temporary type for the expected tool result shape (ToolResult as before)
-export type ToolResult = {
-  content: Array<{
-    type?: string
-    text?: string
-    data?: string
-    image_url?: { url: string; detail?: string }
-  }>
-  error?: string
-}
-
-// Helper function to convert the tool's output part into an API content part
-const convertToolPartToApiContentPart = (part: ToolResult['content'][0]) => {
-  if (part.text) {
-    return { type: 'text', text: part.text }
-  }
-
-  // Handle base64 image data
-  if (part.data) {
-    // Assume default image type, though a proper tool should return the mime type
-    const mimeType =
-      part.type === 'image' ? 'image/png' : part.type || 'image/png'
-    const dataUrl = `data:${mimeType};base64,${part.data}`
-
-    return {
-      type: 'image_url',
-      image_url: {
-        url: dataUrl,
-        detail: 'auto',
-      },
-    }
-  }
-
-  // Handle pre-formatted image URL
-  if (part.image_url) {
-    return { type: 'image_url', image_url: part.image_url }
-  }
-
-  // Fallback to text stringification for structured but unhandled data
-  return { type: 'text', text: JSON.stringify(part) }
-}
 
 /**
  * @fileoverview Helper functions for creating chat completion request.
@@ -67,78 +22,105 @@ export class CompletionMessagesBuilder {
       ...messages
         .filter((e) => !e.metadata?.error)
         .map<ChatCompletionMessageParam>((msg) => {
-          const param = this.toCompletionParamFromThread(msg)
-          // In constructor context, normalize empty user text to a placeholder
-          if (
-            param.role === 'user' &&
-            typeof param.content === 'string' &&
-            param.content === ''
-          ) {
-            return { ...param, content: '.' }
+          if (msg.role === 'assistant') {
+            return {
+              role: msg.role,
+              content: removeReasoningContent(
+                msg.content[0]?.text?.value || '.'
+              ),
+            } as ChatCompletionMessageParam
+          } else {
+            // For user messages, handle multimodal content
+            if (msg.content.length > 1) {
+              // Multiple content parts (text + images + files)
+
+              const content = msg.content.map((contentPart) => {
+                if (contentPart.type === 'text') {
+                  return {
+                    type: 'text',
+                    text: contentPart.text?.value || '',
+                  }
+                } else if (contentPart.type === 'image_url') {
+                  return {
+                    type: 'image_url',
+                    image_url: {
+                      url: contentPart.image_url?.url || '',
+                      detail: contentPart.image_url?.detail || 'auto',
+                    },
+                  }
+                } else {
+                  return contentPart
+                }
+              })
+              return {
+                role: msg.role,
+                content,
+              } as ChatCompletionMessageParam
+            } else {
+              // Single text content
+              return {
+                role: msg.role,
+                content: msg.content[0]?.text?.value || '.',
+              } as ChatCompletionMessageParam
+            }
           }
-          return param
         })
     )
   }
 
-  // Normalize a ThreadMessage into a ChatCompletionMessageParam for Token.js
-  private toCompletionParamFromThread(
-    msg: ThreadMessage
-  ): ChatCompletionMessageParam {
-    if (msg.role === 'assistant') {
-      return {
-        role: 'assistant',
-        content: removeReasoningContent(msg.content?.[0]?.text?.value || '.'),
-      } as ChatCompletionMessageParam
-    }
-
-    // System messages are uncommon here; normalize to plain text
-    if (msg.role === 'system') {
-      return {
-        role: 'system',
-        content: msg.content?.[0]?.text?.value || '.',
-      } as ChatCompletionMessageParam
-    }
-
-    // User messages: handle multimodal content
-    if (Array.isArray(msg.content) && msg.content.length > 1) {
-      const content = msg.content.map((part: ThreadContent) => {
-        if (part.type === ContentType.Text) {
-          return { type: 'text' as const, text: part.text?.value ?? '' }
-        }
-        if (part.type === ContentType.Image) {
-          return {
-            type: 'image_url' as const,
-            image_url: {
-              url: part.image_url?.url || '',
-              detail: part.image_url?.detail || 'auto',
-            },
-          }
-        }
-        // Fallback for unknown content types
-        return { type: 'text' as const, text: '' }
-      })
-      return { role: 'user', content } as ChatCompletionMessageParam
-    }
-    // Single text part
-    const text = msg?.content?.[0]?.text?.value ?? '.'
-    return { role: 'user', content: text }
-  }
-
   /**
-   * Add a user message to the messages array from a parsed ThreadMessage.
-   * Upstream code should construct the message via newUserThreadContent
-   * and pass it here to avoid duplicated logic.
+   * Add a user message to the messages array.
+   * @param content - The content of the user message.
+   * @param attachments - Optional attachments for the message.
    */
-  addUserMessage(message: ThreadMessage) {
-    if (message.role !== 'user') {
-      throw new Error('addUserMessage expects a user ThreadMessage')
-    }
+  addUserMessage(
+    content: string,
+    attachments?: Array<{
+      name: string
+      type: string
+      size: number
+      base64: string
+      dataUrl: string
+    }>
+  ) {
     // Ensure no consecutive user messages
     if (this.messages[this.messages.length - 1]?.role === 'user') {
       this.messages.pop()
     }
-    this.messages.push(this.toCompletionParamFromThread(message))
+
+    // Handle multimodal content with attachments
+    if (attachments && attachments.length > 0) {
+      const messageContent: any[] = [
+        {
+          type: 'text',
+          text: content,
+        },
+      ]
+
+      // Add attachments (images and PDFs)
+      attachments.forEach((attachment) => {
+        if (attachment.type.startsWith('image/')) {
+          messageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${attachment.type};base64,${attachment.base64}`,
+              detail: 'auto',
+            },
+          })
+        }
+      })
+
+      this.messages.push({
+        role: 'user',
+        content: messageContent,
+      } as any)
+    } else {
+      // Text-only message
+      this.messages.push({
+        role: 'user',
+        content: content,
+      })
+    }
   }
 
   /**
@@ -162,43 +144,13 @@ export class CompletionMessagesBuilder {
 
   /**
    * Add a tool message to the messages array.
-   * @param content - The content of the tool message (string or ToolResult object).
+   * @param content - The content of the tool message.
    * @param toolCallId - The ID of the tool call associated with the message.
    */
-  addToolMessage(result: string | ToolResult, toolCallId: string) {
-    let content: string | any[] = ''
-
-    // Handle simple string case
-    if (typeof result === 'string') {
-      content = result
-    } else {
-      // Check for multimodal content (more than just a simple text string)
-      const hasMultimodalContent = result.content?.some(
-        (p) => p.data || p.image_url
-      )
-
-      if (hasMultimodalContent) {
-        // Build the structured content array
-        content = result.content.map(convertToolPartToApiContentPart)
-      } else if (result.content?.[0]?.text) {
-        // Standard text case
-        content = result.content[0].text
-      } else if (result.error) {
-        // Error case
-        content = `Tool execution failed: ${result.error}`
-      } else {
-        // Fallback: serialize the whole result structure if content is unexpected
-        try {
-          content = JSON.stringify(result)
-        } catch {
-          content = 'Tool call completed, unexpected output format.'
-        }
-      }
-    }
+  addToolMessage(content: string, toolCallId: string) {
     this.messages.push({
       role: 'tool',
-      // for role 'tool',  need to use 'as ChatCompletionMessageParam'
-      content: content as any,
+      content: content,
       tool_call_id: toolCallId,
     })
   }

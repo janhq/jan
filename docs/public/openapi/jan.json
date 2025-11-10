@@ -1581,7 +1581,7 @@
           },
           "cover": {
             "type": "string",
-            "example": "https://raw.githubusercontent.com/janhq/jan/main/models/trinity-v1.2-7b/cover.png"
+            "example": "https://raw.githubusercontent.com/menloresearch/jan/main/models/trinity-v1.2-7b/cover.png"
           },
           "engine": {
             "type": "string",

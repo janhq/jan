@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.6.600",
+  "version": "0.6.599",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
@@ -13,6 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "zoomHotkeysEnabled": true,
         "label": "main",
         "title": "Jan",
         "width": 1024,
@@ -39,12 +40,6 @@
       }
     ],
     "security": {
-      "capabilities": [
-        "default",
-        "logs-app-window",
-        "logs-window",
-        "system-monitor-window"
-      ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
         "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
@@ -72,15 +67,15 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
       "endpoints": [
-        "https://github.com/janhq/jan/releases/latest/download/latest.json"
+        "https://github.com/menloresearch/jan/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
       }
-    }
+    },
+    "deep-link": { "schemes": ["jan"] }
   },
   "bundle": {
-    "licenseFile": "../LICENSE",
     "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,

@@ -171,9 +171,7 @@ export function ModelSetting({
           key === 'ngl' ||
           key === 'chat_template' ||
           key === 'offload_mmproj' ||
-          key === 'batch_size' ||
-          key === 'cpu_moe' ||
-          key === 'n_cpu_moe'
+          key === 'batch_size'
       )
 
       if (requiresRestart) {
@@ -233,9 +231,7 @@ export function ModelSetting({
         key === 'ngl' ||
         key === 'chat_template' ||
         key === 'offload_mmproj' ||
-        key === 'batch_size' ||
-        key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
+        key === 'batch_size'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -265,9 +261,7 @@ export function ModelSetting({
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
-            {t('common:modelSettings.title', {
-              modelId: getModelDisplayName(model),
-            })}
+            {t('common:modelSettings.title', { modelId: getModelDisplayName(model) })}
           </SheetTitle>
           <SheetDescription>
             {t('common:modelSettings.description')}

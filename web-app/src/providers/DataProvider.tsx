@@ -3,7 +3,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
-import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -19,7 +19,7 @@ export function DataProvider() {
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
-  const { setServers, setSettings } = useMCPServers()
+  const { setServers } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
@@ -30,7 +30,6 @@ export function DataProvider() {
     enableOnStartup,
     serverHost,
     serverPort,
-    setServerPort,
     apiPrefix,
     apiKey,
     trustedHosts,
@@ -46,10 +45,7 @@ export function DataProvider() {
     serviceHub
       .mcp()
       .getMCPConfig()
-      .then((data) => {
-        setServers(data.mcpServers ?? {})
-        setSettings(data.mcpSettings ?? DEFAULT_MCP_SETTINGS)
-      })
+      .then((data) => setServers(data.mcpServers ?? {}))
     serviceHub
       .assistants()
       .getAssistants()
@@ -152,11 +148,7 @@ export function DataProvider() {
             proxyTimeout: proxyTimeout,
           })
         })
-        .then((actualPort: number) => {
-          // Store the actual port that was assigned (important for mobile with port 0)
-          if (actualPort && actualPort !== serverPort) {
-            setServerPort(actualPort)
-          }
+        .then(() => {
           setServerStatus('running')
         })
         .catch((error: unknown) => {

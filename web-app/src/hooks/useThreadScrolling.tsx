@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppState } from './useAppState'
 import { useMessages } from './useMessages'
-import { useInterfaceSettings } from './useInterfaceSettings'
-import { THREAD_SCROLL_BEHAVIOR } from '@/constants/threadScroll'
 
 const VIEWPORT_PADDING = 40 // Offset from viewport bottom for user message positioning
 const MAX_DOM_RETRY_ATTEMPTS = 5 // Maximum attempts to find DOM elements before giving up
@@ -20,16 +18,6 @@ export const useThreadScrolling = (
   const [hasScrollbar, setHasScrollbar] = useState(false)
   const lastScrollTopRef = useRef(0)
   const lastAssistantMessageRef = useRef<HTMLElement | null>(null)
-  const userForcedUnfollowRef = useRef(false)
-  const stickyStreamingActiveRef = useRef(false)
-  const stickyReleaseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const wasAtBottomRef = useRef(true)
-  const threadScrollBehavior = useInterfaceSettings(
-    (state) => state.threadScrollBehavior
-  )
-  const isFlowScroll = threadScrollBehavior === THREAD_SCROLL_BEHAVIOR.FLOW
-  const isStickyScroll = threadScrollBehavior === THREAD_SCROLL_BEHAVIOR.STICKY
-  const [isStickyScrollFollowing, setIsStickyScrollFollowing] = useState(true)
 
   const messageCount = useMessages((state) => state.messages[threadId]?.length ?? 0)
   const lastMessageRole = useMessages((state) => {
@@ -55,92 +43,33 @@ export const useThreadScrolling = (
   }, [scrollContainerRef])
 
 
-  const showScrollToBottomBtn =
-    !isAtBottom && hasScrollbar && (!isStickyScroll || !isStickyScrollFollowing)
+  const showScrollToBottomBtn = !isAtBottom && hasScrollbar
 
-  const clearStickyReleaseTimeout = useCallback(() => {
-    if (stickyReleaseTimeoutRef.current) {
-      clearTimeout(stickyReleaseTimeoutRef.current)
-      stickyReleaseTimeoutRef.current = null
+  const scrollToBottom = useCallback((smooth = false) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        ...(smooth ? { behavior: 'smooth' } : {}),
+      })
     }
-  }, [])
+  }, [scrollContainerRef])
 
-  const scrollToBottom = useCallback(
-    (smooth = false) => {
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTo({
-          top: scrollContainerRef.current.scrollHeight,
-          ...(smooth ? { behavior: 'smooth' } : {}),
-        })
 
-        if (isStickyScroll) {
-          clearStickyReleaseTimeout()
-          userForcedUnfollowRef.current = false
-          setIsStickyScrollFollowing(true)
-        }
+  const handleScroll = useCallback((e: Event) => {
+    const target = e.target as HTMLDivElement
+    const { scrollTop, scrollHeight, clientHeight } = target
+    const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
+    const hasScroll = scrollHeight > clientHeight
+
+    if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
+      if (streamingContent && !isBottom) {
+        userIntendedPositionRef.current = scrollTop
       }
-    },
-    [clearStickyReleaseTimeout, isStickyScroll, scrollContainerRef]
-  )
-
-
-  const handleScroll = useCallback(
-    (e: Event) => {
-      const target = e.target as HTMLDivElement
-      const { scrollTop, scrollHeight, clientHeight } = target
-      const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
-      const hasScroll = scrollHeight > clientHeight
-      const previousScrollTop = lastScrollTopRef.current
-      const delta = scrollTop - previousScrollTop
-      const wasAtBottom = wasAtBottomRef.current
-
-      if (Math.abs(delta) > 10) {
-        if (streamingContent && !isBottom) {
-          userIntendedPositionRef.current = scrollTop
-        }
-
-        if (isStickyScroll) {
-          if (!isBottom && delta < 0) {
-            clearStickyReleaseTimeout()
-            userForcedUnfollowRef.current = true
-            setIsStickyScrollFollowing((prev) => {
-              if (!prev) return prev
-              return false
-            })
-          }
-        }
-      }
-
-      if (isStickyScroll) {
-        if (!isBottom && delta < -1) {
-          clearStickyReleaseTimeout()
-          userForcedUnfollowRef.current = true
-          setIsStickyScrollFollowing((prev) => {
-            if (!prev) return prev
-            return false
-          })
-        } else if (isBottom && (!wasAtBottom || !isStickyScrollFollowing)) {
-          clearStickyReleaseTimeout()
-          userForcedUnfollowRef.current = false
-          setIsStickyScrollFollowing((prev) => {
-            if (prev) return prev
-            return true
-          })
-        }
-      }
-
-      setIsAtBottom(isBottom)
-      setHasScrollbar(hasScroll)
-      lastScrollTopRef.current = scrollTop
-      wasAtBottomRef.current = isBottom
-    },
-    [
-      clearStickyReleaseTimeout,
-      isStickyScroll,
-      isStickyScrollFollowing,
-      streamingContent,
-    ]
-  )
+    }
+    setIsAtBottom(isBottom)
+    setHasScrollbar(hasScroll)
+    lastScrollTopRef.current = scrollTop
+  }, [streamingContent])
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
@@ -174,12 +103,9 @@ export const useThreadScrolling = (
     }
   }, [checkScrollState, scrollToBottom])
 
+
   const prevCountRef = useRef(messageCount)
   useEffect(() => {
-    if (!isFlowScroll) {
-      prevCountRef.current = messageCount
-      return
-    }
     const prevCount = prevCountRef.current
     const becameLonger = messageCount > prevCount
     const isUserMessage = lastMessageRole === 'user'
@@ -220,16 +146,11 @@ export const useThreadScrolling = (
     }
 
     prevCountRef.current = messageCount
-  }, [isFlowScroll, lastMessageRole, messageCount])
+  }, [messageCount, lastMessageRole])
 
   useEffect(() => {
     const previouslyStreaming = wasStreamingRef.current
     const currentlyStreaming = !!streamingContent && streamingContent.thread_id === threadId
-
-    if (!isFlowScroll) {
-      wasStreamingRef.current = currentlyStreaming
-      return
-    }
 
     const streamingStarted = !previouslyStreaming && currentlyStreaming
     const streamingEnded = previouslyStreaming && !currentlyStreaming
@@ -276,75 +197,7 @@ export const useThreadScrolling = (
     }
 
     wasStreamingRef.current = currentlyStreaming
-  }, [getDOMElements, isFlowScroll, streamingContent, threadId])
-
-  useEffect(() => {
-    if (isFlowScroll) return
-    setPaddingHeight(0)
-    originalPaddingRef.current = 0
-  }, [isFlowScroll])
-
-  useEffect(() => {
-    if (!isStickyScroll) {
-      stickyStreamingActiveRef.current = false
-      clearStickyReleaseTimeout()
-      return
-    }
-
-    const isCurrentThreadStreaming =
-      !!streamingContent && streamingContent.thread_id === threadId
-
-    if (isCurrentThreadStreaming) {
-      if (!stickyStreamingActiveRef.current) {
-        stickyStreamingActiveRef.current = true
-      }
-      clearStickyReleaseTimeout()
-      if (!userForcedUnfollowRef.current) {
-        setIsStickyScrollFollowing((prev) => {
-          if (prev) return prev
-          return true
-        })
-      }
-    } else if (stickyStreamingActiveRef.current) {
-      stickyStreamingActiveRef.current = false
-      clearStickyReleaseTimeout()
-      if (isStickyScrollFollowing) {
-        stickyReleaseTimeoutRef.current = setTimeout(() => {
-          stickyReleaseTimeoutRef.current = null
-          setIsStickyScrollFollowing((prev) => {
-            if (!prev) return prev
-            return false
-          })
-        }, 1000)
-      }
-    }
-  }, [
-    clearStickyReleaseTimeout,
-    isStickyScroll,
-    isStickyScrollFollowing,
-    streamingContent,
-    threadId,
-  ])
-
-  useEffect(() => {
-    if (!isStickyScroll) return
-    setIsStickyScrollFollowing(true)
-    scrollToBottom(false)
-  }, [isStickyScroll, scrollToBottom, threadId])
-
-  useEffect(() => {
-    if (!isStickyScroll) return
-    if (!isStickyScrollFollowing) return
-    if (messageCount === 0) return
-    scrollToBottom(true)
-  }, [isStickyScroll, isStickyScrollFollowing, messageCount, scrollToBottom])
-
-  useEffect(() => {
-    if (!isStickyScroll) return
-    if (!isStickyScrollFollowing) return
-    if (streamingContent?.thread_id !== threadId) return
-    scrollToBottom(false)
-  }, [isStickyScroll, isStickyScrollFollowing, scrollToBottom, streamingContent, threadId])
+  }, [streamingContent, threadId])
 
   useEffect(() => {
     userIntendedPositionRef.current = null
@@ -354,28 +207,14 @@ export const useThreadScrolling = (
     prevCountRef.current = messageCount
     scrollToBottom(false)
     checkScrollState()
-    setIsStickyScrollFollowing(true)
-    clearStickyReleaseTimeout()
-    stickyStreamingActiveRef.current = false
-    userForcedUnfollowRef.current = false
-    wasAtBottomRef.current = true
-    // Only reset when switching threads; keep deps limited intentionally.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
-
-  useEffect(
-    () => () => {
-      clearStickyReleaseTimeout()
-    },
-    [clearStickyReleaseTimeout]
-  )
 
   return useMemo(
     () => ({
       showScrollToBottomBtn,
       scrollToBottom,
-      paddingHeight,
+      paddingHeight
     }),
-    [paddingHeight, scrollToBottom, showScrollToBottomBtn]
+    [showScrollToBottomBtn, scrollToBottom, paddingHeight]
   )
 }

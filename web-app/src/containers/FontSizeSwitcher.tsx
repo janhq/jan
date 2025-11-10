@@ -1,15 +1,15 @@
-﻿import {
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { fontSizeOptions, useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { fontSizeOptions, useAppearance } from '@/hooks/useAppearance'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function FontSizeSwitcher() {
-  const { fontSize, setFontSize } = useInterfaceSettings()
+  const { fontSize, setFontSize } = useAppearance()
   const { t } = useTranslation()
 
   return (

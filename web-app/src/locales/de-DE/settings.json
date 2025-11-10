@@ -78,7 +78,7 @@
     "goToSettings": "Gehe zu den Einstellungen",
     "goToSettingsDesc": "Einstellungen öffnen."
   },
-  "interface": {
+  "appearance": {
     "title": "Erscheinungsbild",
     "theme": "Theme",
     "themeDesc": "Dem Betriebssystem anpassen.",
@@ -96,8 +96,8 @@
     "destructiveDesc": "Lege die Farbe für destruktive Aktionen fest.",
     "resetToDefault": "Auf Werkseinstellungen zurücksetzen",
     "resetToDefaultDesc": "Setzt alle Darstellungseinstellungen auf die Standardeinstellungen zurück.",
-    "resetInterfaceSuccess": "Erscheinungsbild erfolgreich zurückgesetzt",
-    "resetInterfaceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
+    "resetAppearanceSuccess": "Erscheinungsbild erfolgreich zurückgesetzt",
+    "resetAppearanceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
     "chatWidth": "Chat Breite",
     "chatWidthDesc": "Passe die Breite der Chatansicht an.",
     "tokenCounterCompact": "Kompakter Token-Zähler",

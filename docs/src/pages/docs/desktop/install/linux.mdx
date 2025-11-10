@@ -1,12 +1,11 @@
 ---
 title: Linux
-description: Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline.
+description: Get started quickly with Jan, an AI chat application that runs 100% offline on your desktop & mobile (*coming soon*).
 keywords:
   [
     Jan,
     Customizable Intelligence, LLM,
     local AI,
-    Jan on Linux,
     privacy focus,
     free and open source,
     private and offline,
@@ -19,16 +18,14 @@ keywords:
     installation,
     "desktop"
   ]
-twitter:
-  card: summary_large_image
-  site: "@jandotai"
-  title: "Jan on Linux"
-  description: "Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
 ---
+
 
 import FAQBox from '@/components/FaqBox'
 import { Tabs, Callout, Steps } from 'nextra/components'
 import { Settings } from 'lucide-react'
+
+
 
 # Linux Installation
 Instructions for installing Jan on Linux.
@@ -247,7 +244,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 ### Step 2: Enable GPU Acceleration
 
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
-2. Select appropriate backend in **llama-cpp Backend**. Details in our [llama.cpp guide](/docs/desktop/llama-cpp).
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
 
 <Callout type="info">
 CUDA offers better performance than Vulkan.

@@ -9,9 +9,6 @@ export interface JanModel {
   id: string
   object: string
   owned_by: string
-  created?: number
-  capabilities: string[]
-  supportedParameters?: string[]
 }
 
 export interface JanProviderState {
