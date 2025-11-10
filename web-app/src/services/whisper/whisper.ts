@@ -165,7 +165,7 @@ export function getDefaultWhisperConfig(): WhisperConfig {
   return {
     apiUrl: 'https://whisper.contextcompany.com.co/asr',
     task: 'transcribe', // Default to transcription
-    language: 'auto', // Auto-detect language
+    language: 'es', // Spanish language (cambiar a 'auto' para detección automática)
     output: 'txt', // Default to plain text
     encode: true, // Enable encoding (recommended)
     vadFilter: false, // Voice activity detection filter
