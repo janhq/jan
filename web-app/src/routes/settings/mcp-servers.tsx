@@ -480,6 +480,11 @@ function MCPServersDesktop() {
                         <h1 className="text-main-view-fg text-base capitalize">
                           {key}
                         </h1>
+                        {key === 'Jan Browser Extension (Experimental)' && (
+                          <span className="px-2 py-0.5 text-xs bg-blue-500/10 text-blue-500 rounded">
+                            Bundled
+                          </span>
+                        )}
                       </div>
                     }
                     descriptionOutside={
@@ -512,6 +517,24 @@ function MCPServersDesktop() {
                                     .join(', ')}
                                 </div>
                               )}
+                            {key === 'Jan Browser Extension (Experimental)' && (
+                              <div className="mt-2 text-xs text-main-view-fg/60 border-t border-main-view-fg/10 pt-2">
+                                <p className="mb-1">
+                                  Requires Jan Browser Extension to be installed
+                                  in your Chrome-based browser.
+                                </p>
+                                {!connectedServers.includes(key) && (
+                                  <a
+                                    href="https://github.com/menloresearch/jan-browser-extension"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    Install Extension →
+                                  </a>
+                                )}
+                              </div>
+                            )}
                           </>
                         ) : (
                           <>

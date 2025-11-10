@@ -18,8 +18,21 @@ config-yarn:
 	yarn --version
 	yarn config set -H enableImmutableInstalls false
 
+# Build Jan Browser MCP Server
+build-jan-browser-mcp:
+	@echo "Building Jan Browser MCP server..."
+	@if [ -d "$(HOME)/code/jan-browser" ]; then \
+		cd $(HOME)/code/jan-browser && npm run build:mcp; \
+		mkdir -p resources/mcp-servers/jan-browser; \
+		cp -r $(HOME)/code/jan-browser/mcp-server/dist resources/mcp-servers/jan-browser/; \
+		cp $(HOME)/code/jan-browser/mcp-server/package.json resources/mcp-servers/jan-browser/; \
+		echo "✅ Jan Browser MCP server built and copied to resources/"; \
+	else \
+		echo "⚠️ Jan Browser MCP not found at ~/code/jan-browser, skipping..."; \
+	fi
+
 # Installs yarn dependencies and builds core and extensions
-install-and-build: config-yarn
+install-and-build: config-yarn build-jan-browser-mcp
 ifeq ($(OS),Windows_NT)
 	echo "skip"
 else ifeq ($(shell uname -s),Linux)

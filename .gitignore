@@ -63,3 +63,4 @@ src-tauri/resources/
 test-data
 llm-docs
 .claude/agents
+.claude/plan

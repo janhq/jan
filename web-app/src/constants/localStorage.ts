@@ -22,4 +22,6 @@ export const localStorageKey = {
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   threadManagement: 'thread-management',
+  janBrowserPromptShown: 'jan-browser-prompt-shown',
+  janBrowserExtensionInstalled: 'jan-browser-extension-installed',
 }

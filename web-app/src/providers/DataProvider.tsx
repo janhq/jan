@@ -13,8 +13,11 @@ import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { getModelToStart } from '@/utils/getModelToStart'
+import { useJanBrowserPrompt } from '@/hooks/useJanBrowserPrompt'
 
 export function DataProvider() {
+  // Add Jan Browser prompt hook
+  useJanBrowserPrompt()
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
 

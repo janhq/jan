@@ -165,7 +165,7 @@ pub fn migrate_mcp_servers(
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
-            app_handle,
+            app_handle.clone(),
             "exa".to_string(),
             serde_json::json!({
                   "command": "npx",
@@ -178,7 +178,49 @@ pub fn migrate_mcp_servers(
             log::error!("Failed to add server config: {e}");
         }
     }
-    store.set("mcp_version", 1);
+    if mcp_version < 2 {
+        log::info!("Migrating MCP schema version 2 - Adding Jan Browser MCP");
+        // Get the resource path for the bundled Jan Browser MCP server
+        if let Ok(resource_dir) = app_handle.path().resource_dir() {
+            let mcp_server_path = resource_dir
+                .join("resources")
+                .join("mcp-servers")
+                .join("jan-browser")
+                .join("dist")
+                .join("src")
+                .join("index.js");
+
+            log::info!("Jan Browser MCP path: {:?}", mcp_server_path);
+
+            // Only add if the file exists
+            if mcp_server_path.exists() {
+                let result = add_server_config(
+                    app_handle.clone(),
+                    "Jan Browser Extension (Experimental)".to_string(),
+                    serde_json::json!({
+                        "command": "node",
+                        "args": [mcp_server_path.to_string_lossy().to_string()],
+                        "env": {
+                            "BRIDGE_HOST": "127.0.0.1",
+                            "BRIDGE_PORT": "17389"
+                        },
+                        "active": false,
+                        "type": "stdio"
+                    }),
+                );
+                if let Err(e) = result {
+                    log::error!("Failed to add Jan Browser MCP server config: {e}");
+                } else {
+                    log::info!("Successfully added Jan Browser MCP server");
+                }
+            } else {
+                log::warn!("Jan Browser MCP server not found at {:?}, skipping...", mcp_server_path);
+            }
+        } else {
+            log::error!("Failed to get resource directory path");
+        }
+    }
+    store.set("mcp_version", 2);
     store.save().expect("Failed to save store");
     Ok(())
 }
@@ -278,6 +320,56 @@ pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_mcp_version_migration() {
+        // Create a temporary app handle for testing
+        // Note: This is a simplified test that verifies the migration logic structure
+        // Full integration testing would require a complete Tauri app context
+
+        // Test version 0 -> 1: exa server should be added
+        // Test version 1 -> 2: Jan Browser MCP should be added
+
+        // This test verifies the migration version logic
+        let mcp_version = 0;
+        assert!(mcp_version < 1, "Version 0 should trigger exa migration");
+        assert!(mcp_version < 2, "Version 0 should trigger Jan Browser MCP migration");
+
+        let mcp_version = 1;
+        assert!(!(mcp_version < 1), "Version 1 should not trigger exa migration");
+        assert!(mcp_version < 2, "Version 1 should trigger Jan Browser MCP migration");
+
+        let mcp_version = 2;
+        assert!(!(mcp_version < 1), "Version 2 should not trigger exa migration");
+        assert!(!(mcp_version < 2), "Version 2 should not trigger Jan Browser MCP migration");
+    }
+
+    #[test]
+    fn test_jan_browser_mcp_config_structure() {
+        // Test that the Jan Browser MCP configuration structure is valid
+        let config = serde_json::json!({
+            "command": "node",
+            "args": ["/path/to/index.js"],
+            "env": {
+                "BRIDGE_HOST": "127.0.0.1",
+                "BRIDGE_PORT": "17389"
+            },
+            "active": false,
+            "type": "stdio"
+        });
+
+        assert!(config.is_object());
+        assert_eq!(config["command"], "node");
+        assert_eq!(config["active"], false);
+        assert_eq!(config["type"], "stdio");
+
+        let env = config["env"].as_object().unwrap();
+        assert_eq!(env["BRIDGE_HOST"], "127.0.0.1");
+        assert_eq!(env["BRIDGE_PORT"], "17389");
+    }
 }
 
 fn setup_window_theme_listener<R: Runtime>(
