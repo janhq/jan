@@ -153,6 +153,9 @@ function WhisperSettings() {
                         Connect your Whisper API to enable voice input in Jan. Record audio
                         and get instant transcriptions directly in your chat.
                       </p>
+                      <p className="text-sm text-accent mt-2">
+                        ℹ️ No API key required for local Whisper servers
+                      </p>
                     </div>
                   </div>
                 </div>
