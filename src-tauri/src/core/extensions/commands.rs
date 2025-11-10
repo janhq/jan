@@ -58,6 +58,6 @@ pub fn get_active_extensions<R: Runtime>(app: AppHandle<R>) -> Vec<serde_json::V
                 vec![]
             }
         };
-        return contents;
+        contents
     }
 }

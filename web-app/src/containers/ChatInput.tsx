@@ -106,7 +106,6 @@ const ChatInput = ({
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
@@ -119,35 +118,6 @@ const ChatInput = ({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
-
-  // Check for connected MCP servers
-  useEffect(() => {
-    const checkConnectedServers = async () => {
-      try {
-        const servers = await serviceHub.mcp().getConnectedServers()
-        // Only update state if the servers list has actually changed
-        setConnectedServers((prev) => {
-          if (JSON.stringify(prev) === JSON.stringify(servers)) {
-            return prev
-          }
-          return servers
-        })
-      } catch (error) {
-        console.error('Failed to get connected servers:', error)
-        setConnectedServers((prev) => {
-          if (prev.length === 0) return prev
-          return []
-        })
-      }
-    }
-
-    checkConnectedServers()
-
-    // Poll for connected servers every 3 seconds
-    const intervalId = setInterval(checkConnectedServers, 3000)
-
-    return () => clearInterval(intervalId)
-  }, [serviceHub])
 
   // Check for active models
   useEffect(() => {
@@ -208,7 +178,7 @@ const ChatInput = ({
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
-  const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
+  const hasActiveMCPServers = tools.length > 0
 
   // Get MCP extension and its custom component
   const extensionManager = ExtensionManager.getInstance()
