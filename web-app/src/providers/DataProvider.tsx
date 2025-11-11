@@ -24,6 +24,7 @@ export function DataProvider() {
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
@@ -139,6 +140,11 @@ export function DataProvider() {
         .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
+          // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
 
           // Then start the server
           return window.core?.api?.startServer({
