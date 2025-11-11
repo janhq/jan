@@ -117,21 +117,22 @@ const server = new Server({
 // Collect all tools
 const allTools = [
     // Automation tools
-    automation.click,
-    automation.type,
-    automation.hover,
-    automation.selectOption,
-    automation.fillForm,
-    automation.executeScript,
+    automation.browserClick,
+    automation.browserType,
+    automation.browserHover,
+    automation.browserSelectOption,
+    automation.browserPressKey,
+    automation.browserDrag,
+    automation.browserFillForm,
     // Navigation tools
-    navigation.navigate,
-    navigation.goBack,
-    navigation.goForward,
+    navigation.browserNavigate,
+    navigation.browserGoBack,
+    navigation.browserGoForward,
     navigation.scroll,
-    navigation.wait,
+    navigation.browserWait,
     // Observation tools
-    observation.snapshot,
-    observation.screenshot,
+    observation.browserSnapshot,
+    observation.browserScreenshot,
     observation.webSearch,
     observation.bridgeStatus,
 ];

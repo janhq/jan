@@ -8,13 +8,15 @@ import { callExtension, waitForBridgeConnection, hasExtensionConnection, setActi
 import { captureAriaSnapshot } from "../utils/aria-snapshot.js";
 /**
  * Capture a comprehensive snapshot of the CURRENTLY ACTIVE TAB
- * Operates on whatever tab was opened with navigate_browser(closeTab=false)
+ * Operates on whatever tab was opened with browser_navigate
  */
-const SnapshotSchema = z.object({});
-export const snapshot = {
+const SnapshotSchema = z.object({
+    fullPage: z.boolean().optional().describe("Capture full page (true) or only viewport-visible content (false). Default: true"),
+});
+export const browserSnapshot = {
     schema: {
-        name: "snapshot",
-        description: "Capture a comprehensive snapshot of the CURRENTLY ACTIVE TAB including: ARIA accessibility tree (roles, labels, interactive elements, landmarks), metadata, links, images, forms, headings, and viewport info. NO parameters needed - operates on the tab you opened with navigate_browser(closeTab=false). Perfect for understanding page structure before clicking/filling forms. Returns formatted YAML snapshot optimized for LLM context.",
+        name: "browser_snapshot",
+        description: "Capture accessibility snapshot of the current page. Use this for getting references to elements to interact with. By default captures the entire page, but you can set fullPage=false to capture only viewport-visible content.",
         inputSchema: zodToJsonSchema(SnapshotSchema),
     },
     handle: async (params) => {
@@ -22,9 +24,8 @@ export const snapshot = {
             await waitForBridgeConnection(4000);
         }
         try {
-            // Use the same captureAriaSnapshot helper that automation tools use
-            // This provides a compact YAML format instead of large JSON
-            return await captureAriaSnapshot(undefined, "Snapshot captured");
+            const fullPage = params?.fullPage !== false; // Default to true
+            return await captureAriaSnapshot(undefined, "", fullPage);
         }
         catch (err) {
             return {
@@ -41,13 +42,13 @@ export const snapshot = {
 };
 /**
  * Capture a screenshot of the CURRENTLY ACTIVE TAB
- * Operates on whatever tab was opened with navigate_browser(closeTab=false)
+ * Operates on whatever tab was opened with browser_navigate
  */
 const ScreenshotSchema = z.object({});
-export const screenshot = {
+export const browserScreenshot = {
     schema: {
-        name: "screenshot",
-        description: "Capture a screenshot of the CURRENTLY ACTIVE TAB. NO parameters needed - captures whatever page you navigated to with navigate_browser(closeTab=false). Returns a base64-encoded PNG image. Use this to see what the page looks like visually.",
+        name: "browser_screenshot",
+        description: "Take a screenshot of the current page",
         inputSchema: zodToJsonSchema(ScreenshotSchema),
     },
     handle: async (params) => {
@@ -56,6 +57,10 @@ export const screenshot = {
         }
         try {
             const data = await callExtension("screenshot", {});
+            const direct = useExtensionResult(data);
+            if (direct) {
+                return direct;
+            }
             // Validate screenshot data exists and is not empty
             const screenshot = data?.data?.screenshot;
             if (!screenshot || typeof screenshot !== 'string' || screenshot.trim().length === 0) {
@@ -119,7 +124,7 @@ const WebSearchSchema = z.object({
 export const webSearch = {
     schema: {
         name: "web_search",
-        description: "Search the web via Google by asking the installed browser extension to perform the search and scrape the SERP. Returns search results with titles, URLs, snippets, and optionally knowledge graph and People Also Ask sections.",
+        description: "Search the web and return SERP results (titles, URLs, snippets, optional knowledge graph and People Also Ask).",
         inputSchema: zodToJsonSchema(WebSearchSchema),
     },
     handle: async (params) => {
@@ -128,7 +133,10 @@ export const webSearch = {
         }
         try {
             const data = await callExtension("search", params);
-            // Format the search results
+            const direct = useExtensionResult(data);
+            if (direct) {
+                return direct;
+            }
             const result = data.data;
             const format = params.format || "serper";
             if (format === "text") {
@@ -158,17 +166,15 @@ export const webSearch = {
                     _meta: { urls: result.urls || [] },
                 };
             }
-            else {
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text: JSON.stringify(result, null, 2),
-                        },
-                    ],
-                    _meta: { urls: result.urls || [] },
-                };
-            }
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify(result, null, 2),
+                    },
+                ],
+                _meta: { urls: result.urls || [] },
+            };
         }
         catch (err) {
             return {
@@ -183,6 +189,27 @@ export const webSearch = {
         }
     },
 };
+function useExtensionResult(data) {
+    if (Array.isArray(data?.content)) {
+        if (typeof data?._meta?.tabId === "number") {
+            setActiveTabId(data._meta.tabId);
+        }
+        else if (typeof data?.data?.tabId === "number") {
+            setActiveTabId(data.data.tabId);
+        }
+        const result = {
+            content: data.content,
+        };
+        if (data._meta) {
+            result._meta = data._meta;
+        }
+        if (data.isError) {
+            result.isError = data.isError;
+        }
+        return result;
+    }
+    return null;
+}
 /**
  * Get current browser status
  */
@@ -190,7 +217,7 @@ const BridgeStatusSchema = z.object({});
 export const bridgeStatus = {
     schema: {
         name: "bridge_status",
-        description: "Check if the browser extension is connected to the MCP bridge.",
+        description: "Check whether the browser extension is connected to the MCP bridge.",
         inputSchema: zodToJsonSchema(BridgeStatusSchema),
     },
     handle: async () => {
