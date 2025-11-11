@@ -33,6 +33,7 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
+  mapOldBackendToNew,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
@@ -276,7 +277,7 @@ export default class llamacpp_extension extends AIEngine {
     backendType: string
   ): string | null {
     const matchingBackends = version_backends.filter(
-      (vb) => vb.backend === backendType
+      (vb) => mapOldBackendToNew(vb.backend) === backendType
     )
     if (matchingBackends.length === 0) {
       return null
@@ -284,6 +285,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Sort by version (newest first) and get the latest
     matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
+    // Return the full string including the original asset name, as this is used for download/path
     return `${matchingBackends[0].version}/${matchingBackends[0].backend}`
   }
 
@@ -320,12 +322,35 @@ export default class llamacpp_extension extends AIEngine {
       // Get stored backend preference
       const storedBackendType = this.getStoredBackendType()
       let bestAvailableBackendString = ''
+      let effectiveStoredBackendType = storedBackendType
 
       if (storedBackendType) {
+        // migration part
+        const mappedNewBackendType = mapOldBackendToNew(storedBackendType)
+        const isMigrationNeeded = mappedNewBackendType !== storedBackendType
+
+        if (isMigrationNeeded) {
+          // Check if the new, mapped backend is available in the current version list (by its effective type)
+          const isNewTypeAvailable = version_backends.some(
+            (vb) => mapOldBackendToNew(vb.backend) === mappedNewBackendType
+          )
+
+          if (isNewTypeAvailable) {
+            logger.info(
+              `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${mappedNewBackendType}'`
+            )
+            this.setStoredBackendType(mappedNewBackendType) // Update localStorage immediately
+            effectiveStoredBackendType = mappedNewBackendType
+          } else {
+            logger.warn(
+              `Migration from '${storedBackendType}' to '${mappedNewBackendType}' skipped: New type not available in supported backends. Using old preference for now.`
+            )
+          }
+        }
         // Find the latest version of the stored backend type
         const preferredBackendString = this.findLatestVersionForBackend(
           version_backends,
-          storedBackendType
+          effectiveStoredBackendType
         )
         if (preferredBackendString) {
           bestAvailableBackendString = preferredBackendString
@@ -388,10 +413,11 @@ export default class llamacpp_extension extends AIEngine {
           const [, backendType] = savedBackendSetting.split('/')
           if (backendType) {
             const currentStoredBackend = this.getStoredBackendType()
-            if (currentStoredBackend !== backendType) {
-              this.setStoredBackendType(backendType)
+            const effectiveBackendType = mapOldBackendToNew(backendType)
+            if (currentStoredBackend !== effectiveBackendType) {
+              this.setStoredBackendType(effectiveBackendType)
               logger.info(
-                `Stored backend type preference from saved setting: ${backendType}`
+                `Stored backend type preference from saved setting: ${effectiveBackendType}`
               )
             }
           }
@@ -401,10 +427,11 @@ export default class llamacpp_extension extends AIEngine {
           const [, backendType] = bestAvailableBackendString.split('/')
           if (backendType) {
             const currentStoredBackend = this.getStoredBackendType()
-            if (currentStoredBackend !== backendType) {
-              this.setStoredBackendType(backendType)
+            const effectiveBackendType = mapOldBackendToNew(backendType)
+            if (currentStoredBackend !== effectiveBackendType) {
+              this.setStoredBackendType(effectiveBackendType)
               logger.info(
-                `Stored backend type preference from best available: ${backendType}`
+                `Stored backend type preference from best available: ${effectiveBackendType}`
               )
             }
           }
@@ -532,31 +559,42 @@ export default class llamacpp_extension extends AIEngine {
       ? [
           'cuda-cu12.0',
           'cuda-cu11.7',
-          'vulkan', // Include vulkan if we have enough GPU memory
-          'avx512',
-          'avx2',
-          'avx',
-          'noavx',
+          'vulkan',
+          'common_cpus', // NEW: Unified CPU backend
+          'avx512', // Old, for transition/local installed detection
+          'avx2', // Old, for transition
+          'avx', // Old, for transition
+          'noavx', // Old, for transition
           'arm64',
           'x64',
         ]
       : [
           'cuda-cu12.0',
           'cuda-cu11.7',
-          'avx512',
-          'avx2',
-          'avx',
-          'noavx',
+          'common_cpus', // NEW: Unified CPU backend
+          'avx512', // Old, for transition
+          'avx2', // Old, for transition
+          'avx', // Old, for transition
+          'noavx', // Old, for transition
           'arm64',
           'x64',
-          'vulkan', // demote to last if we don't have enough memory
+          'vulkan',
         ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cuda-12-common_cpus')) return 'cuda-cu12.0'
-      if (backendString.includes('cuda-11-common_cpus')) return 'cuda-cu11.7'
-      if (backendString.includes('vulkan-common_cpus')) return 'vulkan'
+      if (
+        backendString.includes('cuda-12-common_cpus') ||
+        backendString.includes('cu12.0')
+      )
+        return 'cuda-cu12.0'
+      if (
+        backendString.includes('cuda-11-common_cpus') ||
+        backendString.includes('cu11.7')
+      )
+        return 'cuda-cu11.7'
+      if (backendString.includes('vulkan')) return 'vulkan'
+      if (backendString.includes('common_cpus')) return 'common_cpus'
       if (backendString.includes('avx512')) return 'avx512'
       if (backendString.includes('avx2')) return 'avx2'
       if (
@@ -625,10 +663,13 @@ export default class llamacpp_extension extends AIEngine {
       this.config.version_backend = targetBackendString
 
       // Store the backend type preference only if it changed
+      const effectiveBackendType = mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
-      if (currentStoredBackend !== backend) {
-        this.setStoredBackendType(backend)
-        logger.info(`Updated stored backend type preference: ${backend}`)
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
+        logger.info(
+          `Updated stored backend type preference: ${effectiveBackendType}`
+        )
       }
 
       // Update settings
@@ -700,6 +741,8 @@ export default class llamacpp_extension extends AIEngine {
     const [currentVersion, currentBackend] = (
       this.config.version_backend || ''
     ).split('/')
+    // Get the effective/migrated backend type
+    const currentEffectiveBackendType = mapOldBackendToNew(currentBackend)
 
     if (!currentVersion || !currentBackend) {
       logger.warn(
@@ -712,31 +755,42 @@ export default class llamacpp_extension extends AIEngine {
     const version_backends = await listSupportedBackends()
     const targetBackendString = this.findLatestVersionForBackend(
       version_backends,
-      currentBackend
+      currentEffectiveBackendType
     )
 
     if (!targetBackendString) {
       logger.warn(
         `No available versions found for current backend type: ${currentBackend}`
       )
+      // Attempt to fall back to the absolute best available if the preferred type is gone.
+      if (
+        currentBackend !==
+        mapOldBackendToNew(bestAvailableBackendString.split('/')[1])
+      ) {
+        logger.info(
+          `Falling back to best available backend: ${bestAvailableBackendString}`
+        )
+        return await this.updateBackend(bestAvailableBackendString)
+      }
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
-    const [latestVersion] = targetBackendString.split('/')
+    const [latestVersion, latestBackendName] = targetBackendString.split('/')
 
     // Check if update is needed (only version comparison for same backend type)
-    if (currentVersion === latestVersion) {
+    if (
+      currentVersion === latestVersion &&
+      currentBackend === latestBackendName
+    ) {
       logger.info(
         'Auto-update: Already using the latest version of the selected backend'
       )
       return { wasUpdated: false, newBackend: this.config.version_backend }
     }
-
     // Perform version update for the same backend type
     logger.info(
-      `Auto-updating from ${this.config.version_backend} to ${targetBackendString} (preserving backend type)`
+      `Auto-updating/Migrating from ${this.config.version_backend} to ${targetBackendString} (preserving effective backend type: ${currentEffectiveBackendType})`
     )
-
     return await this.updateBackend(targetBackendString)
   }
 
@@ -1120,7 +1174,13 @@ export default class llamacpp_extension extends AIEngine {
    */
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
-    const re = /^llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
+
+    // Match any prefix before 'llama', then version and backend
+    // Examples:
+    // - llama-b6929-bin-<os>-<backend>-x64.tar.gz or zip
+    // - custom-prefix-llama-b6929-bin-<os>-<backend>-x64.tar.gz or zip
+    const re = /^(.+?-)?llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
+
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
@@ -1131,18 +1191,37 @@ export default class llamacpp_extension extends AIEngine {
       logger.error(`Invalid path or file ${path}`)
       throw new Error(`Invalid path or file ${path}`)
     }
+
     const match = re.exec(archiveName)
-    if (!match) throw new Error('Failed to parse archive name')
-    const [, version, backend] = match
-    if (!version && !backend) {
+
+    if (!match) {
+      throw new Error(
+        `Failed to parse archive name: ${archiveName}. Expected format: [Optional prefix-]llama-<version>-bin-<backend>.(tar.gz|zip)`
+      )
+    }
+
+    const [, prefix, version, backend] = match
+
+    if (!version || !backend) {
       throw new Error(`Invalid backend archive name: ${archiveName}`)
     }
-    const backendDir = await getBackendDir(backend, version)
+
+    // Include prefix in the backend identifier if present
+    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
+
+    logger.info(
+      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
+    )
+
+    const backendDir = await getBackendDir(backendIdentifier, version)
+
     try {
       await invoke('decompress', { path: path, outputDir: backendDir })
     } catch (e) {
       logger.error(`Failed to install: ${String(e)}`)
+      throw new Error(`Failed to decompress archive: ${String(e)}`)
     }
+
     const binPath =
       platformName === 'win'
         ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
@@ -1150,11 +1229,16 @@ export default class llamacpp_extension extends AIEngine {
 
     if (!fs.existsSync(binPath)) {
       await fs.rm(backendDir)
-      throw new Error('Not a supported backend archive!')
+      throw new Error(
+        'Not a supported backend archive! Missing llama-server binary.'
+      )
     }
+
     try {
       await this.configureBackends()
-      logger.info(`Backend ${backend}/${version} installed and UI refreshed`)
+      logger.info(
+        `Backend ${backendIdentifier}/${version} installed and UI refreshed`
+      )
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)
       throw new Error(
@@ -1596,7 +1680,11 @@ export default class llamacpp_extension extends AIEngine {
     const port = await this.getRandomPort()
 
     // disable llama-server webui
-    args.push('--no-webui')
+    // TODO: Determine what's the best course of action here.
+    // Hopefully, we would want all the fork to have same set of arguments
+    // Otherwise it would become impossible to maintain
+    // Keeping this for now
+    if (!backend.startsWith('ik')) args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
@@ -1655,10 +1743,13 @@ export default class llamacpp_extension extends AIEngine {
     // Note: Older llama.cpp versions are no longer supported
     if (
       cfg.flash_attn !== undefined ||
-      !cfg.flash_attn ||
-      cfg.flash_attn !== ''
-    )
+      (cfg.flash_attn !== 'auto' && // set argument only when the setting value is not auto
+        !backend.startsWith('ik')) // ik fork of llama.cpp doesn't support --flash-attn
+    ) {
       args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
+    } else if (backend.startsWith('ik') && cfg.flash_attn == 'on') {
+      args.push('-fa') // hoping the ik fork is still using the old fa arguments
+    }
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
@@ -1698,7 +1789,13 @@ export default class llamacpp_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(backendPath, args, envs, isEmbedding, Number(this.timeout))
+      const sInfo = await loadLlamaModel(
+        backendPath,
+        args,
+        envs,
+        isEmbedding,
+        Number(this.timeout)
+      )
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
