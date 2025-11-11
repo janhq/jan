@@ -20,17 +20,13 @@ config-yarn:
 
 # Build Jan Browser MCP Server
 build-jan-browser-mcp:
-	@echo "Building Jan Browser MCP server..."
-	@if [ -d "$(HOME)/code/jan-browser" ]; then \
-		cd $(HOME)/code/jan-browser && npm run build:mcp; \
-		mkdir -p resources/mcp-servers/jan-browser; \
-		cp -r $(HOME)/code/jan-browser/mcp-server/dist resources/mcp-servers/jan-browser/; \
-		cp $(HOME)/code/jan-browser/mcp-server/package.json resources/mcp-servers/jan-browser/; \
+	@echo "Installing Jan Browser MCP dependencies..."
+	@if [ -d "resources/mcp-servers/jan-browser" ]; then \
 		echo "📦 Installing dependencies..."; \
-		cd resources/mcp-servers/jan-browser && npm install --production; \
-		echo "✅ Jan Browser MCP server built and copied to resources/"; \
+		cd resources/mcp-servers/jan-browser && npm install; \
+		echo "✅ Jan Browser MCP dependencies installed"; \
 	else \
-		echo "⚠️ Jan Browser MCP not found at ~/code/jan-browser, skipping..."; \
+		echo "⚠️ Jan Browser MCP not found at resources/mcp-servers/jan-browser, skipping..."; \
 	fi
 
 # Installs yarn dependencies and builds core and extensions
