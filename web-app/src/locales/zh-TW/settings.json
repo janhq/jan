@@ -107,7 +107,9 @@
     "resetCodeBlockStyle": "重設程式碼區塊樣式",
     "resetCodeBlockStyleDesc": "將程式碼區塊樣式重設為預設值。",
     "resetCodeBlockSuccess": "程式碼區塊樣式重設成功",
-    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。"
+    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。",
+    "tokenCounterCompact": "緊湊型代幣計數器",
+    "tokenCounterCompactDesc": "在聊天輸入框內顯示代幣計數器。停用時，代幣計數器會顯示在輸入框下方。"
   },
   "hardware": {
     "os": "作業系統",
@@ -247,7 +249,9 @@
     "reportIssue": "報告問題",
     "credits": "致謝",
     "creditsDesc1": "Jan 由 Menlo 團隊用 ❤️ 構建。",
-    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。"
+    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。",
+    "huggingfaceToken": "HuggingFace 代幣",
+    "huggingfaceTokenDesc": "您的 HuggingFace API 代幣，用於存取模型。"
   },
   "extensions": {
     "title": "擴充功能"
@@ -270,5 +274,7 @@
     "updateNow": "立即更新",
     "updateSuccess": "Llamacpp 更新成功",
     "updateError": "更新 Llamacpp 失敗"
-  }
+  },
+  "backendInstallSuccess": "後端安裝成功",
+  "backendInstallError": "後端安裝失敗"
 }
