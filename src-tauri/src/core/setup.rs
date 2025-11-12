@@ -165,7 +165,7 @@ pub fn migrate_mcp_servers(
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
-            app_handle,
+            app_handle.clone(),
             "exa".to_string(),
             serde_json::json!({
                   "command": "npx",
@@ -178,7 +178,27 @@ pub fn migrate_mcp_servers(
             log::error!("Failed to add server config: {e}");
         }
     }
-    store.set("mcp_version", 1);
+    if mcp_version < 2 {
+        log::info!("Migrating MCP schema version 2: Adding Jan Browser MCP");
+        let result = add_server_config(
+            app_handle,
+            "Jan Browser MCP".to_string(),
+            serde_json::json!({
+                "command": "npx",
+                "args": ["-y", "search-mcp-server@0.13.1"],
+                "env": {
+                    "BRIDGE_HOST": "127.0.0.1",
+                    "BRIDGE_PORT": "17389"
+                },
+                "active": false,
+                "official": true
+            }),
+        );
+        if let Err(e) = result {
+            log::error!("Failed to add Jan Browser MCP server config: {e}");
+        }
+    }
+    store.set("mcp_version", 2);
     store.save().expect("Failed to save store");
     Ok(())
 }
