@@ -7,8 +7,13 @@ import { AuthTokens, LoginUrlResponse } from './types'
 
 declare const JAN_BASE_URL: string
 
-export async function getLoginUrl(endpoint: string): Promise<LoginUrlResponse> {
-  const response: Response = await fetch(`${JAN_BASE_URL}${endpoint}`, {
+export async function getLoginUrl(endpoint: string, redirectUrl?: string): Promise<LoginUrlResponse> {
+  const url = new URL(`${JAN_BASE_URL}${endpoint}`)
+  if (redirectUrl) {
+    url.searchParams.set('redirect_url', redirectUrl)
+  }
+
+  const response: Response = await fetch(url.toString(), {
     method: 'GET',
     credentials: 'include',
     headers: {

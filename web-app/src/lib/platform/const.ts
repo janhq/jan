@@ -39,8 +39,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
 
   // Projects management
-  [PlatformFeature.PROJECTS]:
-    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+  [PlatformFeature.PROJECTS]: !isPlatformIOS() && !isPlatformAndroid(),
 
   // Analytics and telemetry - disabled for web
   [PlatformFeature.ANALYTICS]:

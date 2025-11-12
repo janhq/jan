@@ -368,6 +368,10 @@ export class JanApiClient {
       capabilities.add('tools')
     }
 
+     if (parameters.includes('vision')) {
+      capabilities.add('vision')
+    }
+
     return Array.from(capabilities)
   }
 }

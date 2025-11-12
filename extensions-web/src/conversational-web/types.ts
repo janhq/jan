@@ -119,3 +119,62 @@ export interface ListConversationItemsParams extends PaginationParams {
 export interface ListConversationItemsResponse extends PaginatedResponse<ConversationItem> {
   total?: number
 }
+
+// Project Management types
+export interface Project {
+  id: string
+  object: 'project'
+  name: string
+  instruction?: string
+  is_favorite: boolean
+  is_archived: boolean
+  archived_at?: number
+  created_at: number
+  updated_at: number
+}
+
+export interface CreateProjectRequest {
+  name: string
+  instruction?: string
+}
+
+export interface UpdateProjectRequest {
+  name?: string
+  instruction?: string
+  is_favorite?: boolean
+  is_archived?: boolean
+}
+
+export interface ListProjectsParams {
+  limit?: number
+  cursor?: string
+}
+
+export interface ListProjectsResponse {
+  object: 'list'
+  data: Project[]
+  first_id?: string
+  last_id?: string
+  next_cursor?: string
+  has_more: boolean
+  total: number
+}
+
+export interface DeleteProjectResponse {
+  id: string
+  object: 'project'
+  deleted: boolean
+}
+
+// Enhanced Conversation types with project support
+export interface ConversationWithProject extends Conversation {
+  project_id?: string
+}
+
+export interface ConversationResponseWithProject extends ConversationResponse {
+  project_id?: string
+}
+
+export interface ListConversationsWithProjectParams extends ListConversationsParams {
+  project_id?: string
+}

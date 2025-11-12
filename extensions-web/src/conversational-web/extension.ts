@@ -93,8 +93,38 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
 
   // Message Management
   async createMessage(message: ThreadMessage): Promise<ThreadMessage> {
-    console.log('!!!Created message:', message)
-    return message
+    try {
+      if (!this.remoteApi) {
+        throw new Error('RemoteApi not initialized')
+      }
+      console.log('!!!Creating message:', message)
+      
+      // Extract the text content from the message
+      const content = message.content?.[0]?.text?.value || ''
+      
+      // Create the conversation item in the backend
+      const item = await this.remoteApi.createConversationItem(
+        message.thread_id,
+        {
+          role: message.role as 'user' | 'assistant',
+          content,
+          status: message.status || 'ready',
+          metadata: message.metadata,
+        }
+      )
+      
+      console.log('!!!Created conversation item:', item)
+      
+      // Return the message with the server-generated ID
+      return {
+        ...message,
+        id: item.id,
+      }
+    } catch (error) {
+      console.error('Failed to create message:', error)
+      // Return the message as-is if creation fails (fallback)
+      return message
+    }
   }
 
   async listMessages(threadId: string): Promise<ThreadMessage[]> {

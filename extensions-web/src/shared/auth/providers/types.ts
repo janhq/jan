@@ -7,9 +7,15 @@ import { AuthTokens } from '../types'
 
 export { AuthTokens } from '../types'
 // Login URL response from API
+// Supports multiple formats for different OAuth providers
 export interface LoginUrlResponse {
-  object: string
-  url: string
+  // Standard format (used by most providers)
+  object?: string
+  url?: string
+  
+  // Keycloak format
+  authorization_url?: string
+  state?: string
 }
 
 // Provider interface - all providers must implement this

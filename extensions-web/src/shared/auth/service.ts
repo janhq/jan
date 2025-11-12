@@ -12,7 +12,20 @@ import {
   TOKEN_EXPIRY_BUFFER,
   AUTH_EVENTS,
 } from './const'
-import { logoutUser, refreshToken, guestLogin } from './api'
+import {
+  logoutUser,
+  refreshToken,
+  guestLogin,
+  createApiKey,
+  listApiKeys,
+  deleteApiKey,
+  upgradeAccount,
+  type CreateApiKeyRequest,
+  type CreateApiKeyResponse,
+  type ListApiKeysResponse,
+  type UpgradeAccountRequest,
+  type UpgradeAccountResponse,
+} from './api'
 import { AuthProviderRegistry } from './registry'
 import { AuthBroadcast } from './broadcast'
 import type { ProviderType } from './providers'
@@ -49,29 +62,92 @@ export class JanAuthService {
    * Called on app load to check existing session
    */
   async initialize(): Promise<void> {
-    // Ensure refreshtoken is valid (in case of expired session or secret change)
     try {
-      await refreshToken()
-    } catch (error) {
-      console.log('Failed to refresh token on init:', error)
-      // If refresh fails, logout to clear any invalid state
-      console.log('Logging out and clearing auth state to clear invalid session...')
-      await logoutUser()
-      this.clearAuthState()
-      this.authBroadcast.broadcastLogout()
-    }
-    // Authentication state check
-    try {
-      if (!this.isAuthenticated()) {
-        // Not authenticated - ensure guest access
-        await this.ensureGuestAccess()
-        return
+      // Try to refresh token first (uses refresh token from cookie if available)
+      // This handles the case where localStorage was cleared but session cookie exists
+      let tokenRefreshSucceeded = false
+      try {
+        const tokens = await refreshToken()
+        // Successfully refreshed - user has a valid session
+        this.accessToken = tokens.access_token
+        this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+        tokenRefreshSucceeded = true
+        
+        // If we don't have auth provider in localStorage, we need to restore it
+        // This happens when localStorage is cleared but the session cookie still exists
+        if (!this.getAuthProvider()) {
+          console.log('Session restored from cookie, but provider info was lost. Attempting to recover...')
+          // Try to fetch user profile to confirm authentication
+          try {
+            const userProfile = await this.fetchUserProfile()
+            if (userProfile) {
+              // User is authenticated - we recovered the session
+              // Set a marker to indicate authenticated state (provider unknown)
+              // This allows the app to function even if we don't know the exact provider
+              this.setAuthProvider('authenticated')
+              const user: User = {
+                id: userProfile.id,
+                email: userProfile.email,
+                name: userProfile.name,
+                picture: userProfile.picture,
+                object: userProfile.object || 'user',
+              }
+              this.currentUser = user
+              console.log('Session recovered successfully')
+              return
+            }
+          } catch (error) {
+            console.warn('Failed to fetch user profile after token refresh:', error)
+            // If we can't fetch profile, clear the token and fall back to guest
+            this.accessToken = null
+            this.tokenExpiryTime = 0
+            tokenRefreshSucceeded = false
+          }
+        } else {
+          // Provider info exists in localStorage, session is fully restored
+          return
+        }
+      } catch (error) {
+        console.log('Failed to refresh token on init (expected for first-time users):', error)
+        // Token refresh failed - either no session or invalid session
+        // Fall through to guest access
+        tokenRefreshSucceeded = false
       }
 
-      // Authenticated - ensure we have a valid token
-      await this.refreshAccessToken()
+      // Only try to refresh access token if the initial refresh succeeded
+      // This prevents infinite loops when refresh token is invalid
+      if (tokenRefreshSucceeded && this.isAuthenticated()) {
+        // Token refresh succeeded but we need to ensure we have valid access token
+        // This is a fallback in case the token needs additional validation
+        try {
+          await this.refreshAccessToken()
+        } catch (error) {
+          console.error('Failed to refresh access token on init:', error)
+          if (error instanceof ApiError && error.isStatus(401)) {
+            // Token is invalid, clear auth state and ensure guest access
+            this.clearAuthState()
+            await this.ensureGuestAccess()
+          }
+          // Don't throw - we already have a valid token from the first refresh
+        }
+      } else if (!tokenRefreshSucceeded) {
+        // Token refresh failed - check localStorage and provide guest access if needed
+        if (this.isAuthenticated()) {
+          // We have provider info in localStorage but refresh failed
+          // This means the session is invalid - clear it and provide guest access
+          this.clearAuthState()
+        }
+        // Ensure guest access
+        await this.ensureGuestAccess()
+      }
     } catch (error) {
       console.error('Failed to initialize auth:', error)
+      // Ensure guest access even on error
+      try {
+        await this.ensureGuestAccess()
+      } catch (guestError) {
+        console.error('Failed to ensure guest access:', guestError)
+      }
     }
   }
 
@@ -162,7 +238,10 @@ export class JanAuthService {
     } catch (error) {
       console.error('Failed to refresh access token:', error)
       if (error instanceof ApiError && error.isStatus(401)) {
-        await this.handleSessionExpired()
+        // Session expired - clear auth state
+        // Don't call handleSessionExpired() here as it can cause infinite loops
+        // The caller should handle session expiry appropriately
+        this.clearAuthState()
       }
       throw error
     }
@@ -333,6 +412,46 @@ export class JanAuthService {
   }
 
   /**
+   * Create API key
+   */
+  async createApiKey(data: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
+    await this.ensureInitialized()
+
+    const authHeader = await this.getAuthHeader()
+    return createApiKey(data, authHeader)
+  }
+
+  /**
+   * List API keys
+   */
+  async listApiKeys(): Promise<ListApiKeysResponse> {
+    await this.ensureInitialized()
+
+    const authHeader = await this.getAuthHeader()
+    return listApiKeys(authHeader)
+  }
+
+  /**
+   * Delete API key
+   */
+  async deleteApiKey(keyId: string): Promise<void> {
+    await this.ensureInitialized()
+
+    const authHeader = await this.getAuthHeader()
+    return deleteApiKey(keyId, authHeader)
+  }
+
+  /**
+   * Upgrade guest account to registered user
+   */
+  async upgradeAccount(data: UpgradeAccountRequest): Promise<UpgradeAccountResponse> {
+    await this.ensureInitialized()
+
+    const authHeader = await this.getAuthHeader()
+    return upgradeAccount(data, authHeader)
+  }
+
+  /**
    * Clear all auth state
    */
   private clearAuthState(): void {
@@ -399,6 +518,8 @@ export class JanAuthService {
           // Clear token cache so next getValidAccessToken() call refreshes
           this.accessToken = null
           this.tokenExpiryTime = 0
+          // Note: Don't clear auth provider here - it's set by the other tab
+          // and we want to maintain consistency with the other tab's state
           break
 
         case AUTH_EVENTS.LOGOUT:
@@ -434,8 +555,9 @@ export class JanAuthService {
     } catch (error) {
       console.error('Failed to fetch user profile:', error)
       if (error instanceof ApiError && error.isStatus(401)) {
-        // Authentication failed - handle session expiry
-        await this.handleSessionExpired()
+        // Authentication failed - session is expired
+        // Don't call handleSessionExpired() here as it can cause infinite loops
+        // Just return null and let the caller handle it
         return null
       }
       return null

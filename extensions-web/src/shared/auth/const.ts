@@ -14,6 +14,9 @@ export const AUTH_ENDPOINTS = {
   LOGOUT: '/auth/logout',
   GUEST_LOGIN: '/auth/guest-login',
   REFRESH_TOKEN: '/auth/refresh-token',
+  API_KEYS: '/auth/api-keys',
+  API_KEY_BY_ID: (id: string) => `/auth/api-keys/${id}`,
+  UPGRADE: '/auth/upgrade',
 } as const
 
 // Token expiry buffer
