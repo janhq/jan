@@ -7,7 +7,7 @@ use tokio::time::timeout;
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::validate_binary_path;
-use jan_utils::{setup_windows_process_flags, setup_library_path};
+use jan_utils::{add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -33,7 +33,17 @@ pub async fn get_devices_from_backend(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
-    // setup library path
+    // Try to add CUDA paths (works on both Windows and Linux)
+    let cuda_found = add_cuda_paths(&mut command);
+
+    // Optionally check if binary needs CUDA
+    if !cuda_found && binary_requires_cuda(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
+        );
+    }
+
+    // Add the binary's directory to library path
     setup_library_path(bin_path.parent(), &mut command);
 
     // Execute the command and wait for completion
