@@ -528,16 +528,14 @@ function MCPServersDesktop() {
                                   Requires Jan Browser Extension to be installed
                                   in your Chrome-based browser.
                                 </p>
-                                {!connectedServers.includes(key) && (
-                                  <a
-                                    href="https://github.com/menloresearch/jan-browser-extension"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-500 hover:underline"
-                                  >
-                                    Install Extension →
-                                  </a>
-                                )}
+                                <a
+                                  href="https://github.com/menloresearch/jan-browser-extension"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-500 hover:underline"
+                                >
+                                  Install Extension →
+                                </a>
                               </div>
                             )}
                           </>
