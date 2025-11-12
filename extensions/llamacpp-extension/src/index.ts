@@ -26,7 +26,6 @@ import {
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
 import { listen } from '@tauri-apps/api/event'
-
 import {
   listSupportedBackends,
   downloadBackend,
@@ -47,7 +46,7 @@ import {
   unloadLlamaModel,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
-
+import { dirname } from '@tauri-apps/api/path'
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
@@ -1788,6 +1787,17 @@ export default class llamacpp_extension extends AIEngine {
     logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
 
+    const backendDir = await dirname(backendPath)
+
+    if (IS_WINDOWS) {
+      envs['PATH'] = `${backendDir};${envs['PATH'] ?? ''}`
+    } else if (IS_LINUX) {
+      envs['LD_LIBRARY_PATH'] = `${backendDir}:${envs['LD_LIBRARY_PATH'] ?? ''}`
+    } else if (IS_MAC) {
+      envs['DYLD_LIBRARY_PATH'] =
+        `${backendDir}:${envs['DYLD_LIBRARY_PATH'] ?? ''}`
+    }
+
     try {
       const sInfo = await loadLlamaModel(
         backendPath,
@@ -2117,11 +2127,20 @@ export default class llamacpp_extension extends AIEngine {
     await this.ensureBackendReady(backend, version)
     logger.info('Calling Tauri command getDevices with arg --list-devices')
     const backendPath = await getBackendExePath(backend, version)
-    const libraryPath = await joinPath([await this.getProviderPath(), 'lib'])
+    const backendDir = await dirname(backendPath)
+
+    if (IS_WINDOWS) {
+      envs['PATH'] = `${backendDir};${envs['PATH'] ?? ''}`
+    } else if (IS_LINUX) {
+      envs['LD_LIBRARY_PATH'] = `${backendDir}:${envs['LD_LIBRARY_PATH'] ?? ''}`
+    } else if (IS_MAC) {
+      envs['DYLD_LIBRARY_PATH'] =
+        `${backendDir}:${envs['DYLD_LIBRARY_PATH'] ?? ''}`
+    }
+
     try {
       const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
         backendPath,
-        libraryPath,
         envs,
       })
       // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
