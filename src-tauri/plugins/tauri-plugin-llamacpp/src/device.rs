@@ -7,7 +7,7 @@ use tokio::time::timeout;
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::validate_binary_path;
-use jan_utils::{setup_library_path, setup_windows_process_flags};
+use jan_utils::{setup_windows_process_flags, setup_library_path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -30,13 +30,11 @@ pub async fn get_devices_from_backend(
     command.arg("--list-devices");
     command.envs(envs);
 
-    // Set up library path
-    setup_library_path(bin_path.parent().and_then(|p| p.to_str()), &mut command);
-
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
-
     setup_windows_process_flags(&mut command);
+    // setup library path
+    setup_library_path(bin_path.parent(), &mut command);
 
     // Execute the command and wait for completion
     let output = timeout(Duration::from_secs(30), command.output())
@@ -275,7 +273,7 @@ mod tests {
     fn test_find_memory_pattern_no_match() {
         let text = "No memory info here";
         assert!(find_memory_pattern(text).is_none());
-        
+
         let text_with_invalid = "Some text (invalid memory info) here";
         assert!(find_memory_pattern(text_with_invalid).is_none());
     }

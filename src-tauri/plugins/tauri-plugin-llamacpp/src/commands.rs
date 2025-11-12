@@ -87,13 +87,15 @@ pub async fn load_llama_model<R: Runtime>(
 
     // Configure the command to run the server
     let mut command = Command::new(&bin_path);
+
     command.args(args);
     command.envs(envs);
 
-    setup_library_path(bin_path.parent().and_then(|p| p.to_str()), &mut command);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
+
+    setup_library_path(bin_path.parent(), &mut command);
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;

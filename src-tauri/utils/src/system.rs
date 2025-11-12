@@ -1,3 +1,5 @@
+use std::path::Path;
+
 /// Checks if npx can be overridden with bun binary
 pub fn can_override_npx(bun_path: String) -> bool {
     // We need to check the CPU for the AVX2 instruction support if we are running under MacOS
@@ -39,40 +41,48 @@ pub fn can_override_uvx(uv_path: String) -> bool {
 }
 
 /// Setup library paths for different operating systems
-pub fn setup_library_path(library_path: Option<&str>, command: &mut tokio::process::Command) {
+pub fn setup_library_path(library_path: Option<&Path>, command: &mut tokio::process::Command) {
     if let Some(lib_path) = library_path {
         if cfg!(target_os = "linux") {
+            let lib_str = lib_path.to_string_lossy();
             let new_lib_path = match std::env::var("LD_LIBRARY_PATH") {
-                Ok(path) => format!("{}:{}", path, lib_path),
-                Err(_) => lib_path.to_string(),
+                Ok(path) => format!("{}:{}", path, lib_str),
+                Err(_) => lib_str.to_string(),
             };
             command.env("LD_LIBRARY_PATH", new_lib_path);
         } else if cfg!(target_os = "windows") {
+            let lib_str = lib_path.to_string_lossy();
             let new_path = match std::env::var("PATH") {
-                Ok(path) => format!("{};{}", path, lib_path),
-                Err(_) => lib_path.to_string(),
+                Ok(path) => format!("{};{}", path, lib_str),
+                Err(_) => lib_str.to_string(),
             };
-            command.env("PATH", new_path);
+            command.env("PATH", &new_path);
 
-            // Normalize the path by removing UNC prefix if present
-            let normalized_path = lib_path.trim_start_matches(r"\\?\").to_string();
+            // Normalize UNC prefix (`\\?\C:\path\to\dir`) if present
+            let mut normalized = lib_path.as_os_str().to_owned();
+            const UNC_PREFIX: &str = r"\\?\";
+            if let Some(s) = lib_path.to_str() {
+                if s.starts_with(UNC_PREFIX) {
+                    normalized = std::ffi::OsString::from(&s[UNC_PREFIX.len()..]);
+                }
+            }
+            let normalized_path = std::path::PathBuf::from(normalized);
+
             #[cfg(feature = "logging")]
-            log::info!("Library path:\n{}", &normalized_path);
+            log::info!("Library path: {}", normalized_path.display());
 
-            // Only set current_dir if the normalized path exists and is a directory
-            let path = std::path::Path::new(&normalized_path);
-            if path.exists() && path.is_dir() {
+            if normalized_path.exists() && normalized_path.is_dir() {
                 command.current_dir(&normalized_path);
             } else {
                 #[cfg(feature = "logging")]
                 log::warn!(
                     "Library path '{}' does not exist or is not a directory",
-                    normalized_path
+                    normalized_path.display()
                 );
             }
         } else {
             #[cfg(feature = "logging")]
-            log::warn!("Library path setting is not supported on this OS");
+            log::warn!("Library path setup not supported on this OS");
         }
     }
 }

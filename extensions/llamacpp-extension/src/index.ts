@@ -1787,17 +1787,6 @@ export default class llamacpp_extension extends AIEngine {
     logger.info('Calling Tauri command llama_load with args:', args)
     const backendPath = await getBackendExePath(backend, version)
 
-    const backendDir = await dirname(backendPath)
-
-    if (IS_WINDOWS) {
-      envs['PATH'] = `${backendDir};${envs['PATH'] ?? ''}`
-    } else if (IS_LINUX) {
-      envs['LD_LIBRARY_PATH'] = `${backendDir}:${envs['LD_LIBRARY_PATH'] ?? ''}`
-    } else if (IS_MAC) {
-      envs['DYLD_LIBRARY_PATH'] =
-        `${backendDir}:${envs['DYLD_LIBRARY_PATH'] ?? ''}`
-    }
-
     try {
       const sInfo = await loadLlamaModel(
         backendPath,
@@ -2127,16 +2116,6 @@ export default class llamacpp_extension extends AIEngine {
     await this.ensureBackendReady(backend, version)
     logger.info('Calling Tauri command getDevices with arg --list-devices')
     const backendPath = await getBackendExePath(backend, version)
-    const backendDir = await dirname(backendPath)
-
-    if (IS_WINDOWS) {
-      envs['PATH'] = `${backendDir};${envs['PATH'] ?? ''}`
-    } else if (IS_LINUX) {
-      envs['LD_LIBRARY_PATH'] = `${backendDir}:${envs['LD_LIBRARY_PATH'] ?? ''}`
-    } else if (IS_MAC) {
-      envs['DYLD_LIBRARY_PATH'] =
-        `${backendDir}:${envs['DYLD_LIBRARY_PATH'] ?? ''}`
-    }
 
     try {
       const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
