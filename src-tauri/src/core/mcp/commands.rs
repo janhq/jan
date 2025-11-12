@@ -353,6 +353,30 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
         mutated = true;
     }
 
+    // Migration: Add Jan Browser MCP if not present
+    let mcp_servers = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+        .ok_or("mcpServers is not an object")?;
+
+    if !mcp_servers.contains_key("Jan Browser MCP") {
+        log::info!("Migrating config: Adding 'Jan Browser MCP' server");
+        mcp_servers.insert(
+            "Jan Browser MCP".to_string(),
+            json!({
+                "command": "npx",
+                "args": ["-y", "search-mcp-server@0.13.1"],
+                "env": {
+                    "BRIDGE_HOST": "127.0.0.1",
+                    "BRIDGE_PORT": "17389"
+                },
+                "active": false,
+                "official": true
+            }),
+        );
+        mutated = true;
+    }
+
     // Persist any mutations back to disk
     if mutated {
         fs::write(
