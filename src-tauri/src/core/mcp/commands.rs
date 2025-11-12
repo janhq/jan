@@ -365,7 +365,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
             "Jan Browser MCP".to_string(),
             json!({
                 "command": "npx",
-                "args": ["-y", "search-mcp-server@0.13.1"],
+                "args": ["-y", "search-mcp-server@latest"],
                 "env": {
                     "BRIDGE_HOST": "127.0.0.1",
                     "BRIDGE_PORT": "17389"

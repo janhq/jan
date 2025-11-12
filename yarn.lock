@@ -3538,7 +3538,6 @@ __metadata:
     "@tanstack/router-plugin": "npm:1.117.0"
     "@tauri-apps/api": "npm:2.8.0"
     "@tauri-apps/plugin-deep-link": "npm:2.4.3"
-    "@tauri-apps/plugin-dialog": "npm:2.2.2"
     "@tauri-apps/plugin-http": "npm:2.5.0"
     "@tauri-apps/plugin-opener": "npm:2.5.2"
     "@tauri-apps/plugin-os": "npm:2.2.1"
@@ -7407,15 +7406,6 @@ __metadata:
   dependencies:
     "@tauri-apps/api": "npm:^2.8.0"
   checksum: 10c0/948959e217241345edd3d866aa12ccfe97c72d96ab2844c1df156ead89a96b6a32106944a77f114e6027547c79556cd95f14c2d303a70b307222cce350c67988
-  languageName: node
-  linkType: hard
-
-"@tauri-apps/plugin-dialog@npm:2.2.2":
-  version: 2.2.2
-  resolution: "@tauri-apps/plugin-dialog@npm:2.2.2"
-  dependencies:
-    "@tauri-apps/api": "npm:^2.0.0"
-  checksum: 10c0/d08a30c35d93bb99ac9f8a33c98d8e4bab83308346b8db0ecf54ad8dffc798623fc4db16fb4c40167b905d894012e04577106b96b2fcccb53960d5a9544e8ccd
   languageName: node
   linkType: hard
 
