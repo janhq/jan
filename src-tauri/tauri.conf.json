@@ -41,7 +41,7 @@
     "security": {
       "capabilities": [
         "default",
-        "logs-app-window",
+        "log-app-window",
         "logs-window",
         "system-monitor-window"
       ],
