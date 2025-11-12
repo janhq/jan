@@ -8,7 +8,7 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {
     "Jan Browser MCP": {
       "command": "npx",
-      "args": ["-y", "search-mcp-server@0.13.1"],
+      "args": ["-y", "search-mcp-server@latest"],
       "env": {
         "BRIDGE_HOST": "127.0.0.1",
         "BRIDGE_PORT": "17389"
