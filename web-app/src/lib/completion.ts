@@ -577,16 +577,6 @@ export const postMessageProcessing = async (
       const isRagTool = ragToolNames.has(toolName)
       const isBrowserTool = isBrowserMCPTool(toolName)
 
-      // Find server name for this tool from available tools
-      let serverName: string | undefined
-      try {
-        const availableTools = await getServiceHub().mcp().getTools()
-        const matchingTool = availableTools.find(t => t.name === toolName)
-        serverName = matchingTool?.server
-      } catch (e) {
-        console.warn('Failed to lookup server for tool:', toolName, e)
-      }
-
       // Auto-approve RAG tools (local/safe operations), require permission for MCP tools
       const approved = isRagTool
         ? true
@@ -618,11 +608,23 @@ export const postMessageProcessing = async (
               }),
               cancel: async () => {},
             }
-        : getServiceHub().mcp().callToolWithCancellation({
-            toolName,
-            serverName,
-            arguments: toolArgs,
-          })
+        : await (async () => {
+            // Find server name for this MCP tool from available tools
+            let serverName: string | undefined
+            try {
+              const availableTools = await getServiceHub().mcp().getTools()
+              const matchingTool = availableTools.find(t => t.name === toolName)
+              serverName = matchingTool?.server
+            } catch (e) {
+              console.warn('Failed to lookup server for tool:', toolName, e)
+            }
+
+            return getServiceHub().mcp().callToolWithCancellation({
+              toolName,
+              serverName,
+              arguments: toolArgs,
+            })
+          })()
 
       useAppState.getState().setCancelToolCall(cancel)
 
