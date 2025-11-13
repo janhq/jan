@@ -5,7 +5,7 @@ export const localStorageKey = {
   theme: 'theme',
   modelProvider: 'model-provider',
   modelSources: 'model-sources',
-  settingInterface: 'setting-interface',
+  settingInterface: 'setting-appearance',
   settingGeneral: 'setting-general',
   settingCodeBlock: 'setting-code-block',
   settingLocalApiServer: 'setting-local-api-server',
