@@ -8,6 +8,30 @@ const createToolKey = (serverName: string, toolName: string) => {
   return `${serverName}::${toolName}`
 }
 
+const isOldFormatKey = (key: string): boolean => {
+  return !key.includes('::')
+}
+
+const migrateOldFormatIfNeeded = (
+  disabledTools: Record<string, string[]>,
+  defaultDisabledTools: string[]
+): { disabledTools: Record<string, string[]>; defaultDisabledTools: string[] } => {
+  const needsMigration =
+    Object.values(disabledTools).some(tools => tools.some(isOldFormatKey)) ||
+    defaultDisabledTools.some(isOldFormatKey)
+
+  if (!needsMigration) {
+    return { disabledTools, defaultDisabledTools }
+  }
+
+  console.log('[useToolAvailable] Migrating tool availability settings to new format (server::tool)')
+
+  return {
+    disabledTools: {},
+    defaultDisabledTools: [],
+  }
+}
+
 type ToolDisabledState = {
   // Track disabled tools per thread using server::tool composite keys
   disabledTools: Record<string, string[]> // threadId -> toolKeys[] (server::tool format)
@@ -133,6 +157,26 @@ export const useToolAvailable = create<ToolDisabledState>()(
         defaultDisabledTools: state.defaultDisabledTools,
         defaultsInitialized: state.defaultsInitialized,
       }),
+      // Migration function to handle old format data
+      migrate: (persistedState: unknown) => {
+        if (persistedState && typeof persistedState === 'object') {
+          const state = persistedState as Record<string, unknown>
+          const migrated = migrateOldFormatIfNeeded(
+            (state.disabledTools as Record<string, string[]>) || {},
+            (state.defaultDisabledTools as string[]) || []
+          )
+
+          return {
+            ...state,
+            disabledTools: migrated.disabledTools,
+            defaultDisabledTools: migrated.defaultDisabledTools,
+            defaultsInitialized: migrated.disabledTools === state.disabledTools ?
+              state.defaultsInitialized : false,
+          }
+        }
+        return persistedState
+      },
+      version: 1, // Increment version to trigger migration
     }
   )
 )
