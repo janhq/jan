@@ -89,16 +89,11 @@ export const newUserThreadContent = (
     },
   ]
 
-  // Add image attachments to content array
+  // Add image attachments to content array with smart media handling
   images.forEach((img) => {
-    if (img.base64 && img.mimeType) {
-      contentParts.push({
-        type: ContentType.Image,
-        image_url: {
-          url: `data:${img.mimeType};base64,${img.base64}`,
-          detail: 'auto',
-        },
-      } as any)
+    const imageContent = buildImageContent(img)
+    if (imageContent) {
+      contentParts.push(imageContent)
     }
   })
 
@@ -688,4 +683,205 @@ export const postMessageProcessing = async (
     }
     return message
   }
+}
+
+/**
+ * Build image content part with smart jan_id vs base64 selection
+ * Priority: jan_id > presignedUrl > base64 > dataUrl
+ */
+function buildImageContent(img: Attachment): any | null {
+  // Priority 1: Use jan_id placeholder if uploaded (most efficient)
+  // Format: data:image/jpeg;jan_abc123
+  if (img.id && img.id.startsWith('jan_') && img.mimeType) {
+    return {
+      type: ContentType.Image,
+      image_url: {
+        url: `data:${img.mimeType};${img.id}`,
+        detail: 'auto',
+      },
+    }
+  }
+
+  // Priority 2: Use presigned URL if available
+  if ((img as any).presignedUrl) {
+    return {
+      type: ContentType.Image,
+      image_url: {
+        url: (img as any).presignedUrl,
+        detail: 'auto',
+      },
+    }
+  }
+
+  // Priority 3: Use base64 (legacy support)
+  if (img.base64 && img.mimeType) {
+    return {
+      type: ContentType.Image,
+      image_url: {
+        url: `data:${img.mimeType};base64,${img.base64}`,
+        detail: 'auto',
+      },
+    }
+  }
+
+  // Priority 4: Use dataUrl directly
+  if (img.dataUrl) {
+    return {
+      type: ContentType.Image,
+      image_url: {
+        url: img.dataUrl,
+        detail: 'auto',
+      },
+    }
+  }
+
+  console.warn('No usable image data for attachment:', img.name)
+  return null
+}
+
+/**
+ * Upload pending images to media server before sending message
+ * This converts base64/dataUrl attachments to jan_id references
+ * 
+ * Usage: Call this from UI layer (e.g., useChat) before creating the message
+ * 
+ * @param attachments - Array of attachments to process
+ * @param threadId - Thread ID for upload context
+ * @returns Promise of processed attachments with jan_id references
+ */
+export async function uploadPendingImages(
+  attachments: Attachment[],
+  threadId: string
+): Promise<Attachment[]> {
+  const uploadsService = getServiceHub().uploads()
+  const processedAttachments: Attachment[] = []
+
+  for (const attachment of attachments) {
+    if (attachment.type === 'image') {
+      // Skip if already uploaded (has jan_id)
+      if (attachment.id && attachment.id.startsWith('jan_')) {
+        processedAttachments.push(attachment)
+        continue
+      }
+
+      // Skip if no data to upload
+      if (!attachment.dataUrl && !attachment.base64) {
+        processedAttachments.push(attachment)
+        continue
+      }
+
+      // Try to upload
+      try {
+        const result = await uploadsService.ingestImage(threadId, attachment)
+        
+        processedAttachments.push({
+          ...attachment,
+          id: result.id, // jan_id from server
+          size: result.size,
+          // Keep original data for fallback
+        } as Attachment)
+
+        console.log(`✅ Uploaded image: ${attachment.name} -> ${result.id}`)
+      } catch (error) {
+        console.error('Failed to upload image:', error)
+        // Keep original attachment with error state
+        processedAttachments.push({
+          ...attachment,
+          error: error instanceof Error ? error.message : 'Upload failed',
+        } as Attachment)
+      }
+    } else {
+      processedAttachments.push(attachment)
+    }
+  }
+
+  return processedAttachments
+}
+
+/**
+ * Extract all jan_id references from message content
+ * Useful for validating media availability
+ */
+export function extractJanIds(messageContent: any[]): string[] {
+  const janIds: string[] = []
+
+  for (const part of messageContent) {
+    if (part.type === ContentType.Image && part.image_url?.url) {
+      const url = part.image_url.url
+      
+      // Check for jan_id placeholder format: data:image/jpeg;jan_abc123
+      const janIdMatch = url.match(/data:[^;]+;(jan_[a-z0-9]+)/)
+      if (janIdMatch) {
+        janIds.push(janIdMatch[1])
+      }
+    }
+  }
+
+  return [...new Set(janIds)] // Remove duplicates
+}
+
+/**
+ * Optimize message content by converting base64 to jan_id placeholders
+ * This reduces message size and improves performance
+ * 
+ * @param messageContent - Message content to optimize
+ * @param threadId - Thread ID for upload context
+ * @returns Promise of optimized message content
+ */
+export async function optimizeMessageContent(
+  messageContent: any[],
+  threadId: string
+): Promise<any[]> {
+  const uploadsService = getServiceHub().uploads()
+  const optimizedContent: any[] = []
+
+  for (const part of messageContent) {
+    if (part.type === ContentType.Image && part.image_url?.url) {
+      const url = part.image_url.url
+
+      // Check if this is a base64 data URL
+      if (url.startsWith('data:') && url.includes('base64,')) {
+        try {
+          // Extract filename and mime type
+          const [header] = url.split(',')
+          const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg'
+          const filename = `image.${mimeType.split('/')[1]}`
+
+          // Create temporary attachment for upload
+          const attachment: Attachment = {
+            type: 'image',
+            name: filename,
+            dataUrl: url,
+            mimeType,
+          }
+
+          // Upload to server to get jan_id
+          const result = await uploadsService.ingestImage(threadId, attachment)
+          
+          // Replace with jan_id placeholder
+          optimizedContent.push({
+            ...part,
+            image_url: {
+              ...part.image_url,
+              url: `data:${mimeType};${result.id}`
+            }
+          })
+
+          console.log(`✅ Optimized image content -> ${result.id}`)
+        } catch (error) {
+          console.error('Failed to optimize image content:', error)
+          // Keep original content
+          optimizedContent.push(part)
+        }
+      } else {
+        // Already optimized or external URL
+        optimizedContent.push(part)
+      }
+    } else {
+      // Non-image content
+      optimizedContent.push(part)
+    }
+  }
+
+  return optimizedContent
 }

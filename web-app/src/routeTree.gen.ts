@@ -33,6 +33,7 @@ import { Route as LocalApiServerLogsImport } from './routes/local-api-server/log
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
+import { Route as AuthKeycloakCallbackImport } from './routes/auth.keycloak.callback'
 import { Route as AuthGoogleCallbackImport } from './routes/auth.google.callback'
 
 // Create/Update Routes
@@ -169,6 +170,12 @@ const SettingsProvidersProviderNameRoute =
     path: '/settings/providers/$providerName',
     getParentRoute: () => rootRoute,
   } as any)
+
+const AuthKeycloakCallbackRoute = AuthKeycloakCallbackImport.update({
+  id: '/auth/keycloak/callback',
+  path: '/auth/keycloak/callback',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const AuthGoogleCallbackRoute = AuthGoogleCallbackImport.update({
   id: '/auth/google/callback',
@@ -327,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGoogleCallbackImport
       parentRoute: typeof rootRoute
     }
+    '/auth/keycloak/callback': {
+      id: '/auth/keycloak/callback'
+      path: '/auth/keycloak/callback'
+      fullPath: '/auth/keycloak/callback'
+      preLoaderRoute: typeof AuthKeycloakCallbackImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
@@ -368,6 +382,7 @@ export interface FileRoutesByFullPath {
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/auth/keycloak/callback': typeof AuthKeycloakCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -394,6 +409,7 @@ export interface FileRoutesByTo {
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/auth/keycloak/callback': typeof AuthKeycloakCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -421,6 +437,7 @@ export interface FileRoutesById {
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/auth/keycloak/callback': typeof AuthKeycloakCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -449,6 +466,7 @@ export interface FileRouteTypes {
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+    | '/auth/keycloak/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
@@ -474,6 +492,7 @@ export interface FileRouteTypes {
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+    | '/auth/keycloak/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
@@ -499,6 +518,7 @@ export interface FileRouteTypes {
     | '/hub/'
     | '/project/'
     | '/auth/google/callback'
+    | '/auth/keycloak/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -526,6 +546,7 @@ export interface RootRouteChildren {
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
   AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
+  AuthKeycloakCallbackRoute: typeof AuthKeycloakCallbackRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -552,6 +573,7 @@ const rootRouteChildren: RootRouteChildren = {
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
   AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
+  AuthKeycloakCallbackRoute: AuthKeycloakCallbackRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
@@ -587,6 +609,7 @@ export const routeTree = rootRoute
         "/hub/",
         "/project/",
         "/auth/google/callback",
+        "/auth/keycloak/callback",
         "/settings/providers/$providerName",
         "/settings/providers/"
       ]
@@ -653,6 +676,9 @@ export const routeTree = rootRoute
     },
     "/auth/google/callback": {
       "filePath": "auth.google.callback.tsx"
+    },
+    "/auth/keycloak/callback": {
+      "filePath": "auth.keycloak.callback.tsx"
     },
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"

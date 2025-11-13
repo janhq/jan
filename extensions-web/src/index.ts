@@ -18,6 +18,9 @@ export {
   AUTH_BROADCAST_CHANNEL,
 } from './shared/auth'
 
+// Re-export uploads service instance
+export { webUploadsService } from './services/uploads/web'
+
 // Re-export types
 export type {
   WebExtensionRegistry,
@@ -37,6 +40,13 @@ export type {
   AuthProviderRegistry,
   ProviderType,
 } from './shared/auth'
+
+// Re-export uploads types
+export type {
+  UploadsService,
+  UploadResult,
+  Attachment,
+} from './services/uploads/web'
 
 // Extension registry for dynamic loading
 export const WEB_EXTENSIONS: WebExtensionRegistry = {

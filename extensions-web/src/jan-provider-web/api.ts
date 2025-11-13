@@ -3,6 +3,7 @@
  * Handles API requests to Jan backend for models and chat completions
  */
 
+import { Content } from '@janhq/core'
 import { getSharedAuthService, JanAuthService } from '../shared'
 import { ApiError } from '../shared/types/errors'
 import { JAN_API_ROUTES } from './const'
@@ -68,7 +69,7 @@ interface JanModelCatalogResponse {
 
 export interface JanChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | Content[] // Support both text-only and multimodal (text + images)
   reasoning?: string
   reasoning_content?: string
   tool_calls?: any[]

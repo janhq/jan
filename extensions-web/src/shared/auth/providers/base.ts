@@ -41,6 +41,8 @@ export abstract class BaseAuthProvider implements AuthProvider {
   async handleCallback(code: string, state?: string): Promise<AuthTokens> {
     try {
       // Handle OAuth callback and return token data
+      // The handleOAuthCallback function will first check for tokens in URL fragment (PKCE flow)
+      // If not found, it will fall back to POST request with code/state
       return await handleOAuthCallback(this.getCallbackEndpoint(), code, state)
     } catch (error) {
       console.error(`${this.name} callback handling failed:`, error)
