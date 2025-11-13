@@ -6,7 +6,7 @@ import { THREAD_SCROLL_BEHAVIOR } from '@/constants/threadScroll'
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
   localStorageKey: {
-    settingInterface: 'setting-interface',
+    settingGeneral: 'setting-general',
   },
 }))
 

@@ -41,7 +41,7 @@ interface InterfaceSettingsState {
   resetInterface: () => void
 }
 
-const LEGACY_INTERFACE_STORAGE_KEY = 'setting-appearance' as const
+const INTERFACE_STORAGE_KEY = 'setting-appearance' as const
 const GENERAL_SETTINGS_STORAGE_KEY = localStorageKey.settingGeneral
 
 type InterfaceSettingsPersistedSlice = Omit<
@@ -250,19 +250,6 @@ const validatePersistedSnapshot = (value: string): string | null => {
   return null
 }
 
-const migrateLegacySnapshot = (): string | null => {
-  const legacy = localStorage.getItem(LEGACY_INTERFACE_STORAGE_KEY)
-  if (!legacy) return null
-
-  const migrated =
-    validatePersistedSnapshot(legacy) ?? buildDefaultPersistedSnapshot()
-
-  localStorage.setItem(localStorageKey.settingInterface, migrated)
-  localStorage.removeItem(LEGACY_INTERFACE_STORAGE_KEY)
-
-  return migrated
-}
-
 const migrateFromGeneralSettings = (): string | null => {
   const general = localStorage.getItem(GENERAL_SETTINGS_STORAGE_KEY)
   if (!general) return null
@@ -289,7 +276,7 @@ const migrateFromGeneralSettings = (): string | null => {
       version: 0,
     })
 
-    localStorage.setItem(localStorageKey.settingInterface, migrated)
+    localStorage.setItem(INTERFACE_STORAGE_KEY, migrated)
 
     if (parsed?.state) {
       const rest = { ...parsed.state }
@@ -325,11 +312,12 @@ const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() => ({
       return fallback
     }
 
-    if (name !== localStorageKey.settingInterface) {
+    if (name !== INTERFACE_STORAGE_KEY) {
       return null
     }
 
-    return migrateLegacySnapshot() ?? migrateFromGeneralSettings()
+    // Try to migrate from general settings if setting-appearance doesn't exist
+    return migrateFromGeneralSettings()
   },
   setItem: (name: string, value: string) => {
     const valid = validatePersistedSnapshot(value)
@@ -516,21 +504,21 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           )
 
           // Update state
-        set({
-          fontSize: defaultFontSize,
-          appBgColor: defaultBg,
-          appMainViewBgColor: defaultMainView,
-          appPrimaryBgColor: defaultPrimary,
-          appAccentBgColor: defaultAccent,
+          set({
+            fontSize: defaultFontSize,
+            appBgColor: defaultBg,
+            appMainViewBgColor: defaultMainView,
+            appPrimaryBgColor: defaultPrimary,
+            appAccentBgColor: defaultAccent,
             appLeftPanelTextColor: defaultTextColor,
-          appMainViewTextColor: defaultTextColor,
-          appPrimaryTextColor: '#FFF',
-          appAccentTextColor: '#FFF',
-          appDestructiveBgColor: defaultDestructive,
-          appDestructiveTextColor: '#FFF',
-          threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
-        })
-      },
+            appMainViewTextColor: defaultTextColor,
+            appPrimaryTextColor: '#FFF',
+            appAccentTextColor: '#FFF',
+            appDestructiveBgColor: defaultDestructive,
+            appDestructiveTextColor: '#FFF',
+            threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+          })
+        },
 
         setThreadScrollBehavior: (value: ThreadScrollBehavior) =>
           set({
@@ -821,7 +809,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
       }
     },
     {
-      name: localStorageKey.settingInterface,
+      name: INTERFACE_STORAGE_KEY,
       storage: interfaceStorage,
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
