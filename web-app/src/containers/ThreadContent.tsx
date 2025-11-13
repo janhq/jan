@@ -28,6 +28,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
+import { UploadedAttachmentImage } from '@/components/UploadedAttachmentImage'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -298,7 +299,7 @@ export const ThreadContent = memo(
                       ) {
                         return (
                           <div key={index} className="relative">
-                            <img
+                            <UploadedAttachmentImage
                               src={contentPart.image_url.url}
                               alt="Uploaded attachment"
                               className="size-40 rounded-md object-cover border border-main-view-fg/10"

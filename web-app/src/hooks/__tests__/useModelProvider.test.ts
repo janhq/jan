@@ -180,3 +180,48 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].id).toBe('test-model.gguf')
   })
 })
+
+describe('useModelProvider migrations', () => {
+  it('migrates flash_attn setting to dropdown with default value', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'llamacpp',
+          models: [],
+          settings: [
+            {
+              key: 'flash_attn',
+              controller_type: 'toggle',
+              controller_props: {
+                value: 'ON',
+              },
+            },
+          ],
+        },
+      ],
+      selectedProvider: 'llamacpp',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 5)
+    const flashAttnSetting = migratedState.providers[0].settings.find(
+      (setting: any) => setting.key === 'flash_attn'
+    )
+
+    expect(flashAttnSetting.controller_type).toBe('dropdown')
+    expect(flashAttnSetting.controller_props.value).toBe('auto')
+    expect(flashAttnSetting.controller_props.options).toEqual([
+      { name: 'Auto', value: 'auto' },
+      { name: 'On', value: 'on' },
+      { name: 'Off', value: 'off' },
+    ])
+  })
+})

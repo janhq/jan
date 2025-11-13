@@ -111,13 +111,13 @@ vi.mock('@/hooks/useAppState', () => ({
 
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
-    ATTACHMENTS: true,
+    FILE_ATTACHMENTS: true,
   },
 }))
 
 vi.mock('@/lib/platform/types', () => ({
   PlatformFeature: {
-    ATTACHMENTS: 'ATTACHMENTS',
+    FILE_ATTACHMENTS: 'FILE_ATTACHMENTS',
   },
 }))
 

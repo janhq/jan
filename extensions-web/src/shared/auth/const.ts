@@ -6,6 +6,9 @@
 // Storage keys
 export const AUTH_STORAGE_KEYS = {
   AUTH_PROVIDER: 'jan_auth_provider',
+  ACCESS_TOKEN: 'jan_access_token',
+  REFRESH_TOKEN: 'jan_refresh_token',
+  TOKEN_EXPIRY: 'jan_token_expiry',
 } as const
 
 // Generic API endpoints (provider-agnostic)
@@ -14,6 +17,9 @@ export const AUTH_ENDPOINTS = {
   LOGOUT: '/auth/logout',
   GUEST_LOGIN: '/auth/guest-login',
   REFRESH_TOKEN: '/auth/refresh-token',
+  API_KEYS: '/auth/api-keys',
+  API_KEY_BY_ID: (id: string) => `/auth/api-keys/${id}`,
+  UPGRADE: '/auth/upgrade',
 } as const
 
 // Token expiry buffer

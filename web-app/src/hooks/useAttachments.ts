@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { ExtensionManager } from '@/lib/extension'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { ExtensionTypeEnum, type RAGExtension, type SettingComponentProps } from '@janhq/core'
 
 export type AttachmentsSettings = {
@@ -33,8 +35,11 @@ const getRagExtension = (): RAGExtension | undefined => {
   }
 }
 
+const fileAttachmentsFeatureEnabled =
+  PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+
 export const useAttachments = create<AttachmentsStore>()((set) => ({
-  enabled: true,
+  enabled: fileAttachmentsFeatureEnabled,
   maxFileSizeMB: 20,
   retrievalLimit: 3,
   retrievalThreshold: 0.3,
@@ -53,6 +58,20 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }
   },
   setEnabled: async (v) => {
+    if (!fileAttachmentsFeatureEnabled) {
+      set((s) => ({
+        enabled: false,
+        settingsDefs: s.settingsDefs.map((d) =>
+          d.key === 'enabled'
+            ? ({
+                ...d,
+                controllerProps: { ...d.controllerProps, value: false },
+              } as SettingComponentProps)
+            : d
+        ),
+      }))
+      return
+    }
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -69,6 +88,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setMaxFileSizeMB: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -85,6 +105,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setRetrievalLimit: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -101,6 +122,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setRetrievalThreshold: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -117,6 +139,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setChunkSizeTokens: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -133,6 +156,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setOverlapTokens: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -149,6 +173,7 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     }))
   },
   setSearchMode: async (v) => {
+    if (!fileAttachmentsFeatureEnabled) return
     const ext = getRagExtension()
     if (ext?.updateSettings) {
       await ext.updateSettings([
@@ -178,7 +203,9 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
     // seed defs and values
     useAttachments.setState((prev) => ({
       settingsDefs: settings,
-      enabled: (map.get('enabled') as boolean | undefined) ?? prev.enabled,
+      enabled:
+        fileAttachmentsFeatureEnabled &&
+        ((map.get('enabled') as boolean | undefined) ?? prev.enabled),
       maxFileSizeMB: (map.get('max_file_size_mb') as number | undefined) ?? prev.maxFileSizeMB,
       retrievalLimit: (map.get('retrieval_limit') as number | undefined) ?? prev.retrievalLimit,
       retrievalThreshold:

@@ -193,10 +193,9 @@ export default class JanProviderWeb extends AIEngine {
       // Convert core chat completion request to Jan API format
       const janMessages: JanChatMessage[] = opts.messages.map((msg) => ({
         role: msg.role as 'system' | 'user' | 'assistant',
-        content:
-          typeof msg.content === 'string'
-            ? msg.content
-            : JSON.stringify(msg.content),
+        // Keep content as-is: string for text-only, array for multimodal (text + images)
+        // Handle null by converting to empty string
+        content: msg.content ?? '',
       }))
 
       const janRequest = {

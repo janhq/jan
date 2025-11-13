@@ -39,8 +39,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
 
   // Projects management
-  [PlatformFeature.PROJECTS]:
-    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+  [PlatformFeature.PROJECTS]: !isPlatformIOS() && !isPlatformAndroid(),
 
   // Analytics and telemetry - disabled for web
   [PlatformFeature.ANALYTICS]:
@@ -85,7 +84,6 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
 
-  // Attachments/RAG UI and tooling - desktop only for now
-  [PlatformFeature.ATTACHMENTS]:
-    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+  // File attachments/RAG UI and tooling - disabled until feature release
+  [PlatformFeature.FILE_ATTACHMENTS]: false,
 }

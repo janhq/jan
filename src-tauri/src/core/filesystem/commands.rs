@@ -1,7 +1,8 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
 use super::helpers::resolve_path;
-use super::models::FileStat;
+use super::models::{DialogOpenOptions, FileStat};
+use rfd::AsyncFileDialog;
 use std::fs;
 use tauri::Runtime;
 
@@ -161,7 +162,10 @@ pub fn write_yaml(
 }
 
 #[tauri::command]
-pub fn read_yaml<R: Runtime>(app: tauri::AppHandle<R>, path: &str) -> Result<serde_json::Value, String> {
+pub fn read_yaml<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    path: &str,
+) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path = jan_utils::normalize_path(&jan_data_folder.join(path));
     if !path.starts_with(&jan_data_folder) {
@@ -178,7 +182,11 @@ pub fn read_yaml<R: Runtime>(app: tauri::AppHandle<R>, path: &str) -> Result<ser
 }
 
 #[tauri::command]
-pub fn decompress<R: Runtime>(app: tauri::AppHandle<R>, path: &str, output_dir: &str) -> Result<(), String> {
+pub fn decompress<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    path: &str,
+    output_dir: &str,
+) -> Result<(), String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
 
@@ -251,4 +259,74 @@ pub fn decompress<R: Runtime>(app: tauri::AppHandle<R>, path: &str, output_dir: 
     }
 
     Ok(())
+}
+
+// rfd native file dialog
+#[tauri::command]
+pub async fn open_dialog(
+    options: Option<DialogOpenOptions>,
+) -> Result<Option<serde_json::Value>, String> {
+    let mut dialog = AsyncFileDialog::new();
+
+    if let Some(opts) = options {
+        // Set default path
+        if let Some(path) = opts.default_path {
+            dialog = dialog.set_directory(&path);
+        }
+
+        // Set filters
+        if let Some(filters) = opts.filters {
+            for filter in filters {
+                let extensions: Vec<&str> = filter.extensions.iter().map(|s| s.as_str()).collect();
+                dialog = dialog.add_filter(&filter.name, &extensions);
+            }
+        }
+
+        // Handle directory vs file selection
+        if opts.directory == Some(true) {
+            let result = dialog.pick_folder().await;
+            return Ok(result.map(|folder| {
+                serde_json::Value::String(folder.path().to_string_lossy().to_string())
+            }));
+        }
+
+        // Handle multiple file selection
+        if opts.multiple == Some(true) {
+            let result = dialog.pick_files().await;
+            return Ok(result.map(|files| {
+                let paths: Vec<String> = files
+                    .iter()
+                    .map(|f| f.path().to_string_lossy().to_string())
+                    .collect();
+                serde_json::to_value(paths).unwrap()
+            }));
+        }
+    }
+
+    // Default: single file selection
+    let result = dialog.pick_file().await;
+    Ok(result.map(|file| serde_json::Value::String(file.path().to_string_lossy().to_string())))
+}
+
+#[tauri::command]
+pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
+    let mut dialog = AsyncFileDialog::new();
+
+    if let Some(opts) = options {
+        // Set default path
+        if let Some(path) = opts.default_path {
+            dialog = dialog.set_directory(&path);
+        }
+
+        // Set filters
+        if let Some(filters) = opts.filters {
+            for filter in filters {
+                let extensions: Vec<&str> = filter.extensions.iter().map(|s| s.as_str()).collect();
+                dialog = dialog.add_filter(&filter.name, &extensions);
+            }
+        }
+    }
+
+    let result = dialog.save_file().await;
+    Ok(result.map(|file| file.path().to_string_lossy().to_string()))
 }

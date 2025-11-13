@@ -20,6 +20,11 @@ export { AssistantExtension } from './assistant'
 export { MCPExtension } from './mcp'
 
 /**
+ * Project extension for managing projects/folders.
+ */
+export { ProjectExtension } from './project'
+
+/**
  * Base AI Engines.
  */
 export * from './engines'
