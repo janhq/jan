@@ -4,7 +4,11 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { ShortcutAction, PlatformShortcuts, type ShortcutSpec } from '@/lib/shortcuts'
+import {
+  ShortcutAction,
+  PlatformShortcuts,
+  type ShortcutSpec,
+} from '@/lib/shortcuts'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,7 +28,9 @@ function ShortcutLabel({ action, className = '' }: ShortcutLabelProps) {
   const spec = PlatformShortcuts[action]
 
   return (
-    <div className={`flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md ${className}`}>
+    <div
+      className={`flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md ${className}`}
+    >
       <span className="font-medium">
         <ShortcutKeys spec={spec} />
       </span>
@@ -103,17 +109,9 @@ function Shortcuts() {
               <CardItem
                 title={t('settings:shortcuts.toggleSidebar')}
                 description={t('settings:shortcuts.toggleSidebarDesc')}
-                actions={<ShortcutLabel action={ShortcutAction.TOGGLE_SIDEBAR} />}
-              />
-              <CardItem
-                title={t('settings:shortcuts.zoomIn')}
-                description={t('settings:shortcuts.zoomInDesc')}
-                actions={<ShortcutLabel action={ShortcutAction.ZOOM_IN} />}
-              />
-              <CardItem
-                title={t('settings:shortcuts.zoomOut')}
-                description={t('settings:shortcuts.zoomOutDesc')}
-                actions={<ShortcutLabel action={ShortcutAction.ZOOM_OUT} />}
+                actions={
+                  <ShortcutLabel action={ShortcutAction.TOGGLE_SIDEBAR} />
+                }
               />
             </Card>
 
@@ -148,7 +146,9 @@ function Shortcuts() {
               <CardItem
                 title={t('settings:shortcuts.goToSettings')}
                 description={t('settings:shortcuts.goToSettingsDesc')}
-                actions={<ShortcutLabel action={ShortcutAction.GO_TO_SETTINGS} />}
+                actions={
+                  <ShortcutLabel action={ShortcutAction.GO_TO_SETTINGS} />
+                }
               />
             </Card>
           </div>
