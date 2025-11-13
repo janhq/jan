@@ -12,8 +12,11 @@ export interface MCPInterface {
 
   /**
    * Call a specific MCP tool
+   * @param toolName - Name of the tool to call
+   * @param args - Arguments to pass to the tool
+   * @param serverName - Optional server name to disambiguate tools with same name
    */
-  callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult>
+  callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult>
 
   /**
    * Get list of connected MCP servers
