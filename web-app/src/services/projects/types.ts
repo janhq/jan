@@ -3,6 +3,8 @@
  * Types for project/folder management operations
  */
 
+import type { Thread } from '@janhq/core'
+
 export interface ThreadFolder {
   id: string
   name: string
@@ -39,4 +41,9 @@ export interface ProjectsService {
    * Set all projects/folders (for bulk updates)
    */
   setProjects(projects: ThreadFolder[]): Promise<void>
+
+  /**
+   * Get all threads/conversations in a project
+   */
+  getProjectThreads(projectId: string): Promise<Thread[]>
 }
