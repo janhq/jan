@@ -225,7 +225,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./deeplink/web'),
           import('./providers/web'),
           import('./mcp/web'),
-          import('./projects/web'),
+          import('./projects/server'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -238,7 +238,7 @@ class PlatformServiceHub implements ServiceHub {
         this.deepLinkService = new deepLinkModule.WebDeepLinkService()
         this.providersService = new providersModule.WebProvidersService()
         this.mcpService = new mcpModule.WebMCPService()
-        this.projectsService = new projectsModule.WebProjectsService()
+        this.projectsService = new projectsModule.ServerProjectsService()
         this.uploadsService = webUploadsService
       }
 

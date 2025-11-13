@@ -8,6 +8,7 @@ import type { WebExtensionRegistry } from './types'
 export { default as ConversationalExtensionWeb } from './conversational-web'
 export { default as JanProviderWeb } from './jan-provider-web'
 export { default as MCPExtensionWeb } from './mcp-web'
+export { default as ProjectExtensionWeb } from './project-web'
 
 // Re-export auth functionality
 export {
@@ -33,6 +34,7 @@ export type {
   ConversationalWebModule,
   JanProviderWebModule,
   MCPWebModule,
+  ProjectWebModule,
 } from './types'
 
 // Re-export auth types
@@ -73,4 +75,5 @@ export const WEB_EXTENSIONS: WebExtensionRegistry = {
   'conversational-web': () => import('./conversational-web'),
   'jan-provider-web': () => import('./jan-provider-web'),
   'mcp-web': () => import('./mcp-web'),
+  'project-web': () => import('./project-web'),
 }
