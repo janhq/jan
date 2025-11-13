@@ -61,8 +61,7 @@ export const UserProfileMenu = () => {
       setIsLoggingOut(true)
       await logout()
       toast.success(t('common:loggedOut'))
-    } catch (error) {
-      console.error('Failed to logout:', error)
+    } catch {
       toast.error(t('common:logoutFailed'))
     } finally {
       setIsLoggingOut(false)
@@ -73,12 +72,18 @@ export const UserProfileMenu = () => {
     return null
   }
 
-  const getInitials = (name: string) => {
-    const parts = name.split(' ')
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+  const getInitials = (name?: string) => {
+    try {
+      if (!name) return 'U'
+      const parts = name.split(' ')
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+      }
+      return name.slice(0, 2).toUpperCase()
+    } catch (error) {
+      console.error('Error getting initials with name :', error)
+      return 'U'
     }
-    return name.slice(0, 2).toUpperCase()
   }
 
   return (

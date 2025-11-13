@@ -81,12 +81,15 @@ export class RemoteApi {
     const queryString = queryParams.toString()
     const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}${queryString ? `?${queryString}` : ''}`
 
-    return this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
+    console.log('[RemoteApi] listConversations: GET', url, 'with params:', params)
+    const response = await this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
       url,
       {
         method: 'GET',
       }
     )
+    console.log('[RemoteApi] listConversations: Response:', { count: response.data.length, has_more: response.has_more })
+    return response
   }
 
   /**
@@ -117,9 +120,12 @@ export class RemoteApi {
   }
 
   async getAllConversations(): Promise<ConversationResponse[]> {
-    return this.fetchAllPaginated<ConversationResponse>(
+    console.log('[RemoteApi] getAllConversations: Fetching all conversations from', `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}`)
+    const conversations = await this.fetchAllPaginated<ConversationResponse>(
       (params) => this.listConversations(params)
     )
+    console.log('[RemoteApi] getAllConversations: Retrieved', conversations.length, 'conversations')
+    return conversations
   }
 
   async deleteConversation(conversationId: string): Promise<void> {

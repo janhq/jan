@@ -89,8 +89,8 @@ export class JanAuthService {
                 this.setAuthProvider('authenticated')
                 const user: User = {
                   id: userProfile.id,
-                  email: userProfile.email,
-                  name: userProfile.name,
+                  email: userProfile.email || '',
+                  name: userProfile.name || userProfile.email || 'User',
                   picture: userProfile.picture,
                   object: userProfile.object || 'user',
                 }
@@ -276,8 +276,8 @@ export class JanAuthService {
     if (userProfile) {
       const user: User = {
         id: userProfile.id,
-        email: userProfile.email,
-        name: userProfile.name,
+        email: userProfile.email || '',
+        name: userProfile.name || userProfile.email || 'User',
         picture: userProfile.picture,
         object: userProfile.object || 'user',
       }

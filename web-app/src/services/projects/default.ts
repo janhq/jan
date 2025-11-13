@@ -4,6 +4,7 @@
 
 import { ulid } from 'ulidx'
 import type { ProjectsService, ThreadFolder } from './types'
+import type { Thread } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
 
 export class DefaultProjectsService implements ProjectsService {
@@ -74,5 +75,12 @@ export class DefaultProjectsService implements ProjectsService {
 
   async setProjects(projects: ThreadFolder[]): Promise<void> {
     this.saveToStorage(projects)
+  }
+
+  async getProjectThreads(): Promise<Thread[]> {
+    // Default implementation doesn't have server-side thread filtering
+    // This would need to be implemented by reading from localStorage or similar
+    console.warn('DefaultProjectsService.getProjectThreads not fully implemented')
+    return []
   }
 }

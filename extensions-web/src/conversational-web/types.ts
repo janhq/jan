@@ -25,6 +25,7 @@ export interface ConversationMetadata {
 export interface Conversation {
   title?: string
   metadata?: ConversationMetadata
+  project_id?: string
 }
 
 export interface ConversationResponse {
@@ -33,6 +34,7 @@ export interface ConversationResponse {
   title?: string
   created_at: number | string
   metadata: ConversationMetadata
+  project_id?: string
 }
 
 export type ListConversationsParams = PaginationParams
