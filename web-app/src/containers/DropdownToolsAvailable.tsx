@@ -102,10 +102,10 @@ export default function DropdownToolsAvailable({
     })
   }
 
-  const areAllServerToolsDisabled = (serverName: string): boolean => {
+  const areAllServerToolsEnabled = (serverName: string): boolean => {
     const allToolsByServer = getToolsByServer()
     const serverTools = allToolsByServer[serverName] || []
-    return serverTools.every((tool) => !isToolChecked(tool.server, tool.name))
+    return serverTools.every((tool) => isToolChecked(tool.server, tool.name))
   }
 
   const getEnabledToolsCount = (): number => {
@@ -202,7 +202,7 @@ export default function DropdownToolsAvailable({
                           )}
                         >
                           <Switch
-                            checked={!areAllServerToolsDisabled(serverName)}
+                            checked={areAllServerToolsEnabled(serverName)}
                             onCheckedChange={(checked) =>
                               handleDisableAllServerTools(serverName, !checked)
                             }
