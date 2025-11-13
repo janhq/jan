@@ -28,7 +28,6 @@ COPY ./Makefile ./Makefile
 COPY ./.* /
 COPY ./package.json ./package.json
 COPY ./yarn.lock ./yarn.lock
-COPY ./pre-install ./pre-install
 COPY ./core ./core
 
 # Build web application
