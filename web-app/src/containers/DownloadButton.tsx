@@ -65,10 +65,8 @@ export function DownloadButtonPlaceholder({
         m.id === modelId ||
         m.id === `${model.developer}/${sanitizeModelId(modelId)}`
     )
-    if (isDownloaded) {
-      setDownloaded(true)
-    }
-  }, [llamaProvider])
+    setDownloaded(!!isDownloaded)
+  }, [llamaProvider, modelId, model.developer])
 
   useEffect(() => {
     events.on(
