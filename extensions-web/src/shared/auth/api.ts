@@ -64,7 +64,6 @@ export async function logoutUser(): Promise<void> {
 export async function guestLogin(): Promise<AuthTokens> {
   const response = await fetch(`${JAN_BASE_URL}${AUTH_ENDPOINTS.GUEST_LOGIN}`, {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -82,13 +81,17 @@ export async function guestLogin(): Promise<AuthTokens> {
 
 /**
  * Refresh token (works for both guest and authenticated users)
+ * Sends refresh_token in request body
  */
-export async function refreshToken(): Promise<AuthTokens> {
+export async function refreshToken(refreshToken: string): Promise<AuthTokens> {
   const response = await fetch(
     `${JAN_BASE_URL}${AUTH_ENDPOINTS.REFRESH_TOKEN}`,
     {
-      method: 'GET',
-      credentials: 'include',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
     }
   )
 

@@ -35,6 +35,7 @@ const authProviderRegistry = new AuthProviderRegistry()
 
 export class JanAuthService {
   private accessToken: string | null = null
+  private refreshToken: string | null = null
   private tokenExpiryTime: number = 0
   private refreshPromise: Promise<void> | null = null
   private authBroadcast: AuthBroadcast
@@ -63,55 +64,61 @@ export class JanAuthService {
    */
   async initialize(): Promise<void> {
     try {
-      // Try to refresh token first (uses refresh token from cookie if available)
-      // This handles the case where localStorage was cleared but session cookie exists
+      // Try to load tokens from localStorage first
+      const storedRefreshToken = localStorage.getItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN)
+      const storedAccessToken = localStorage.getItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN)
+      const storedExpiry = localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRY)
+      
+      // Try to refresh token if we have a stored refresh token
       let tokenRefreshSucceeded = false
-      try {
-        const tokens = await refreshToken()
-        // Successfully refreshed - user has a valid session
-        this.accessToken = tokens.access_token
-        this.tokenExpiryTime = this.computeTokenExpiry(tokens)
-        tokenRefreshSucceeded = true
-        
-        // If we don't have auth provider in localStorage, we need to restore it
-        // This happens when localStorage is cleared but the session cookie still exists
-        if (!this.getAuthProvider()) {
-          console.log('Session restored from cookie, but provider info was lost. Attempting to recover...')
-          // Try to fetch user profile to confirm authentication
-          try {
-            const userProfile = await this.fetchUserProfile()
-            if (userProfile) {
-              // User is authenticated - we recovered the session
-              // Set a marker to indicate authenticated state (provider unknown)
-              // This allows the app to function even if we don't know the exact provider
-              this.setAuthProvider('authenticated')
-              const user: User = {
-                id: userProfile.id,
-                email: userProfile.email,
-                name: userProfile.name,
-                picture: userProfile.picture,
-                object: userProfile.object || 'user',
+      if (storedRefreshToken) {
+        try {
+          const tokens = await refreshToken(storedRefreshToken)
+          // Successfully refreshed - user has a valid session
+          this.saveTokens(tokens)
+          tokenRefreshSucceeded = true
+          
+          // If we don't have auth provider in localStorage, we need to restore it
+          if (!this.getAuthProvider()) {
+            console.log('Session restored from tokens, but provider info was lost. Attempting to recover...')
+            // Try to fetch user profile to confirm authentication
+            try {
+              const userProfile = await this.fetchUserProfile()
+              if (userProfile) {
+                // User is authenticated - we recovered the session
+                this.setAuthProvider('authenticated')
+                const user: User = {
+                  id: userProfile.id,
+                  email: userProfile.email,
+                  name: userProfile.name,
+                  picture: userProfile.picture,
+                  object: userProfile.object || 'user',
+                }
+                this.currentUser = user
+                console.log('Session recovered successfully')
+                return
               }
-              this.currentUser = user
-              console.log('Session recovered successfully')
-              return
+            } catch (error) {
+              console.warn('Failed to fetch user profile after token refresh:', error)
+              // If we can't fetch profile, clear the token and fall back to guest
+              this.clearTokens()
+              tokenRefreshSucceeded = false
             }
-          } catch (error) {
-            console.warn('Failed to fetch user profile after token refresh:', error)
-            // If we can't fetch profile, clear the token and fall back to guest
-            this.accessToken = null
-            this.tokenExpiryTime = 0
-            tokenRefreshSucceeded = false
+          } else {
+            // Provider info exists in localStorage, session is fully restored
+            return
           }
-        } else {
-          // Provider info exists in localStorage, session is fully restored
-          return
+        } catch (error) {
+          console.log('Failed to refresh token on init:', error)
+          // Token refresh failed - clear stored tokens
+          this.clearTokens()
+          tokenRefreshSucceeded = false
         }
-      } catch (error) {
-        console.log('Failed to refresh token on init (expected for first-time users):', error)
-        // Token refresh failed - either no session or invalid session
-        // Fall through to guest access
-        tokenRefreshSucceeded = false
+      } else if (storedAccessToken && storedExpiry) {
+        // We have stored access token, restore it
+        this.accessToken = storedAccessToken
+        this.tokenExpiryTime = Number.parseInt(storedExpiry, 10)
+        tokenRefreshSucceeded = true
       }
 
       // Only try to refresh access token if the initial refresh succeeded
@@ -190,8 +197,7 @@ export class JanAuthService {
       const tokens = await provider.handleCallback(code, state)
 
       // Store tokens and set authenticated state
-      this.accessToken = tokens.access_token
-      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+      this.saveTokens(tokens)
       this.setAuthProvider(providerId)
 
       this.authBroadcast.broadcastLogin()
@@ -231,10 +237,13 @@ export class JanAuthService {
 
   async refreshAccessToken(): Promise<void> {
     try {
-      const tokens = await refreshToken()
+      const storedRefreshToken = this.refreshToken || localStorage.getItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN)
+      if (!storedRefreshToken) {
+        throw new Error('No refresh token available')
+      }
 
-      this.accessToken = tokens.access_token
-      this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+      const tokens = await refreshToken(storedRefreshToken)
+      this.saveTokens(tokens)
     } catch (error) {
       console.error('Failed to refresh access token:', error)
       if (error instanceof ApiError && error.isStatus(401)) {
@@ -455,10 +464,37 @@ export class JanAuthService {
    * Clear all auth state
    */
   private clearAuthState(): void {
-    this.accessToken = null
-    this.tokenExpiryTime = 0
+    this.clearTokens()
     this.currentUser = null
+  }
 
+  /**
+   * Save tokens to memory and localStorage
+   */
+  private saveTokens(tokens: AuthTokens): void {
+    this.accessToken = tokens.access_token
+    this.refreshToken = tokens.refresh_token || null
+    this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+
+    // Persist to localStorage
+    localStorage.setItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN, tokens.access_token)
+    if (tokens.refresh_token) {
+      localStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token)
+    }
+    localStorage.setItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRY, this.tokenExpiryTime.toString())
+  }
+
+  /**
+   * Clear tokens from memory and localStorage
+   */
+  private clearTokens(): void {
+    this.accessToken = null
+    this.refreshToken = null
+    this.tokenExpiryTime = 0
+
+    localStorage.removeItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN)
+    localStorage.removeItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN)
+    localStorage.removeItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRY)
     localStorage.removeItem(AUTH_STORAGE_KEYS.AUTH_PROVIDER)
   }
 
@@ -487,13 +523,12 @@ export class JanAuthService {
       this.setAuthProvider('guest')
       if (!this.accessToken || Date.now() > this.tokenExpiryTime) {
         const tokens = await guestLogin()
-        this.accessToken = tokens.access_token
-        this.tokenExpiryTime = this.computeTokenExpiry(tokens)
+        this.saveTokens(tokens)
       }
     } catch (error) {
       console.error('Failed to ensure guest access:', error)
       // Remove provider (unauthenticated state)
-      localStorage.removeItem(AUTH_STORAGE_KEYS.AUTH_PROVIDER)
+      this.clearTokens()
     }
   }
 

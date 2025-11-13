@@ -117,6 +117,56 @@ export interface MediaService {
    * @returns Upload URL and media ID
    */
   prepareUpload(mimeType: string, userId?: string): Promise<MediaPrepareUploadResponse>
+  
+  /**
+   * Extract jan_id from data URL placeholder format
+   * Supports: data:image/jpeg;jan_abc123 or data:image/png;base64,jan_abc123
+   * @param dataUrl Data URL string with potential jan_id
+   * @returns Extracted jan_id or null if not found
+   */
+  extractJanId(dataUrl: string): string | null
+  
+  /**
+   * Check if a string contains a jan_id placeholder
+   * @param src Image src string to check
+   * @returns True if contains jan_id placeholder
+   */
+  hasJanIdPlaceholder(src: string): boolean
+  
+  /**
+   * Resolve image src with jan_id placeholder to presigned URL
+   * @param imageSrc Image src attribute value (e.g., data:image/jpeg;jan_abc123)
+   * @returns Presigned URL or original src if no jan_id
+   */
+  resolveImageSrc(imageSrc: string): Promise<string>
+  
+  /**
+   * Resolve multiple image sources in batch
+   * @param imageSrcs Array of image src values
+   * @returns Array of resolved presigned URLs
+   */
+  resolveImageSrcs(imageSrcs: string[]): Promise<string[]>
+  
+  /**
+   * Process HTML content and resolve all jan_id placeholders in img tags
+   * @param html HTML content with img tags
+   * @returns HTML with resolved presigned URLs
+   */
+  resolveHtmlImages(html: string): Promise<string>
+  
+  /**
+   * Get presigned URL with caching to avoid repeated API calls
+   * @param janId Media ID
+   * @param forceRefresh Force new fetch even if cached
+   * @returns Presigned URL
+   */
+  getPresignedUrlCached(janId: string, forceRefresh?: boolean): Promise<string>
+  
+  /**
+   * Clear URL cache for specific jan_id or all
+   * @param janId Optional specific jan_id to clear, omit to clear all
+   */
+  clearUrlCache(janId?: string): void
 }
 
 export interface MediaConfig {

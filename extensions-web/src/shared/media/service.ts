@@ -313,6 +313,152 @@ export class JanMediaService implements MediaService {
       reader.readAsDataURL(file)
     })
   }
+
+  // Utility methods for jan_id extraction and resolution
+
+  /**
+   * Extract jan_id from data URL placeholder format
+   * Supports formats: 
+   * - data:image/jpeg;jan_abc123
+   * - data:image/png;base64,jan_abc123
+   */
+  extractJanId(dataUrl: string): string | null {
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return null
+    }
+
+    // Match pattern: data:image/[type];jan_[id]
+    // or data:image/[type];base64,jan_[id]
+    const janIdPattern = /data:image\/[^;]+;(?:base64,)?(jan_[a-z0-9]+)/
+    const match = dataUrl.match(janIdPattern)
+    
+    return match ? match[1] : null
+  }
+
+  /**
+   * Check if a string contains a jan_id placeholder
+   */
+  hasJanIdPlaceholder(src: string): boolean {
+    return src.includes('jan_') && src.startsWith('data:image/')
+  }
+
+  /**
+   * Resolve image src with jan_id placeholder to presigned URL
+   * Transforms: data:image/jpeg;jan_abc123 → https://s3.amazonaws.com/...
+   * 
+   * @param imageSrc Image src attribute value
+   * @returns Presigned URL or original src if no jan_id found
+   */
+  async resolveImageSrc(imageSrc: string): Promise<string> {
+    const janId = this.extractJanId(imageSrc)
+    
+    if (!janId) {
+      // No jan_id found, return original src
+      return imageSrc
+    }
+
+    try {
+      const presigned = await this.getPresignedUrl(janId)
+      return presigned.url
+    } catch (error) {
+      console.error(`Failed to resolve jan_id ${janId}:`, error)
+      // Return original src as fallback
+      return imageSrc
+    }
+  }
+
+  /**
+   * Resolve multiple image sources with jan_id placeholders
+   * Useful for batch processing multiple images
+   * 
+   * @param imageSrcs Array of image src values
+   * @returns Array of resolved URLs
+   */
+  async resolveImageSrcs(imageSrcs: string[]): Promise<string[]> {
+    return Promise.all(
+      imageSrcs.map(src => this.resolveImageSrc(src))
+    )
+  }
+
+  /**
+   * Process HTML content and resolve all jan_id placeholders in img tags
+   * 
+   * @param html HTML content with img tags
+   * @returns HTML with resolved presigned URLs
+   */
+  async resolveHtmlImages(html: string): Promise<string> {
+    // Find all img src attributes with jan_id placeholders
+    const imgPattern = /<img[^>]+src=["']([^"']*jan_[a-z0-9]+[^"']*)["'][^>]*>/gi
+    const matches = Array.from(html.matchAll(imgPattern))
+    
+    if (matches.length === 0) {
+      return html
+    }
+
+    let resolvedHtml = html
+    
+    // Resolve each image src
+    for (const match of matches) {
+      const fullImgTag = match[0]
+      const originalSrc = match[1]
+      const janId = this.extractJanId(originalSrc)
+      
+      if (janId) {
+        try {
+          const presigned = await this.getPresignedUrl(janId)
+          const updatedImgTag = fullImgTag.replace(originalSrc, presigned.url)
+          resolvedHtml = resolvedHtml.replace(fullImgTag, updatedImgTag)
+        } catch (error) {
+          console.error(`Failed to resolve jan_id ${janId} in HTML:`, error)
+          // Keep original src on error
+        }
+      }
+    }
+    
+    return resolvedHtml
+  }
+
+  /**
+   * Create a cache for presigned URLs to avoid repeated API calls
+   * URLs are cached with their expiration time
+   */
+  private urlCache = new Map<string, { url: string; expiresAt: number }>()
+
+  /**
+   * Get presigned URL with caching support
+   * Reuses cached URLs if they haven't expired
+   * 
+   * @param janId Media ID
+   * @param forceRefresh Force fetch new URL even if cached
+   * @returns Presigned URL
+   */
+  async getPresignedUrlCached(janId: string, forceRefresh = false): Promise<string> {
+    if (!forceRefresh) {
+      const cached = this.urlCache.get(janId)
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.url
+      }
+    }
+
+    const presigned = await this.getPresignedUrl(janId)
+    
+    // Cache with 50 minutes (URLs typically expire in 1 hour, cache for 50 min to be safe)
+    const expiresAt = Date.now() + (presigned.expires_in - 600) * 1000
+    this.urlCache.set(janId, { url: presigned.url, expiresAt })
+    
+    return presigned.url
+  }
+
+  /**
+   * Clear URL cache for a specific jan_id or all cached URLs
+   */
+  clearUrlCache(janId?: string): void {
+    if (janId) {
+      this.urlCache.delete(janId)
+    } else {
+      this.urlCache.clear()
+    }
+  }
 }
 
 // Singleton instance

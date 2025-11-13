@@ -12,6 +12,18 @@ export class DefaultUploadsService implements UploadsService {
     return { id: ulid() }
   }
 
+  async ingestImageWithPresignedUpload(_threadId: string, attachment: Attachment): Promise<UploadResult> {
+    // Fallback to default ingestImage for now
+    return this.ingestImage(_threadId, attachment)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async ingestImageFileWithPresignedUpload(_threadId: string, _file: File): Promise<UploadResult> {
+    // Placeholder for File-based presigned upload
+    await new Promise((r) => setTimeout(r, 100))
+    return { id: ulid() }
+  }
+
   async ingestFileAttachment(threadId: string, attachment: Attachment): Promise<UploadResult> {
     if (attachment.type !== 'document') throw new Error('ingestFileAttachment: attachment is not document')
     const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
