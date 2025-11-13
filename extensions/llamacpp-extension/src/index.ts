@@ -1204,11 +1204,13 @@ export default class llamacpp_extension extends AIEngine {
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
 
-    // Match any prefix before 'llama', then version and backend
+    // Match prefix (optional), llama, main (optional), version (b####-hash), 
+    // optional cudart-llama, bin, backend details
     // Examples:
-    // - llama-b6929-bin-<os>-<backend>-x64.tar.gz or zip
-    // - custom-prefix-llama-b6929-bin-<os>-<backend>-x64.tar.gz or zip
-    const re = /^(.+?-)?llama-(b\d+)-bin-(.+?)\.(?:tar\.gz|zip)$/
+    // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
+    // - ik_llama-main-b4314-09c61e1-cudart-llama-bin-win-cuda-12.8-x64-avx512.zip
+    // - llama-b7037-bin-win-cuda-12.4-x64.zip (legacy format)
+    const re = /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
 
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
