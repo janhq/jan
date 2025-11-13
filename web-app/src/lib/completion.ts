@@ -687,9 +687,12 @@ export const postMessageProcessing = async (
 
 /**
  * Build image content part with smart jan_id vs base64 selection
- * Priority: jan_id > presignedUrl > base64 > dataUrl
+ * Priority: jan_id > base64 > dataUrl
  */
 function buildImageContent(img: Attachment): any | null {
+  // Only handle image attachments
+  if (img.type !== 'image') return null
+  
   // Priority 1: Use jan_id placeholder if uploaded (most efficient)
   // Format: data:image/jpeg;jan_abc123
   if (img.id && img.id.startsWith('jan_') && img.mimeType) {
@@ -702,18 +705,7 @@ function buildImageContent(img: Attachment): any | null {
     }
   }
 
-  // Priority 2: Use presigned URL if available
-  if ((img as any).presignedUrl) {
-    return {
-      type: ContentType.Image,
-      image_url: {
-        url: (img as any).presignedUrl,
-        detail: 'auto',
-      },
-    }
-  }
-
-  // Priority 3: Use base64 (legacy support)
+  // Priority 2: Use base64 (legacy support)
   if (img.base64 && img.mimeType) {
     return {
       type: ContentType.Image,
@@ -724,7 +716,7 @@ function buildImageContent(img: Attachment): any | null {
     }
   }
 
-  // Priority 4: Use dataUrl directly
+  // Priority 3: Use dataUrl directly
   if (img.dataUrl) {
     return {
       type: ContentType.Image,

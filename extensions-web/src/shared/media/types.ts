@@ -34,6 +34,33 @@ export interface MediaResolveResponse {
   payload: any
 }
 
+export interface MediaPresignedUrlResponse {
+  /** Media ID (jan_abc123) */
+  id: string
+  /** Presigned URL for downloading the media */
+  url: string
+  /** Expiration time in seconds */
+  expires_in: number
+}
+
+export interface MediaPrepareUploadRequest {
+  /** MIME type of the file to be uploaded */
+  mime_type: string
+  /** User ID for context */
+  user_id?: string
+}
+
+export interface MediaPrepareUploadResponse {
+  /** Media ID (jan_abc123) pre-assigned for this upload */
+  id: string
+  /** Presigned URL for uploading directly to S3 */
+  upload_url: string
+  /** MIME type */
+  mime_type: string
+  /** Expiration time in seconds */
+  expires_in: number
+}
+
 export interface MediaService {
   /**
    * Upload image from data URL
@@ -73,6 +100,23 @@ export interface MediaService {
    * @returns Direct access URL or stream
    */
   getMediaUrl(janId: string): Promise<string>
+  
+  /**
+   * Get a presigned URL for downloading media
+   * This is the dedicated endpoint for obtaining download URLs
+   * @param janId Media ID (jan_abc123)
+   * @returns Presigned URL response with expiration
+   */
+  getPresignedUrl(janId: string): Promise<MediaPresignedUrlResponse>
+  
+  /**
+   * Prepare for direct S3 upload
+   * Gets a presigned upload URL and pre-assigned jan_id
+   * @param mimeType MIME type of the file to upload
+   * @param userId Optional user context
+   * @returns Upload URL and media ID
+   */
+  prepareUpload(mimeType: string, userId?: string): Promise<MediaPrepareUploadResponse>
 }
 
 export interface MediaConfig {

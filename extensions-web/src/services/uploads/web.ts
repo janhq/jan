@@ -4,6 +4,8 @@
  */
 
 import { getSharedAuthService } from '../../shared/auth'
+import { mediaService } from '../../shared/media/service'
+import type { MediaPrepareUploadResponse } from '../../shared/media/types'
 import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
 
 declare const JAN_BASE_URL: string
@@ -17,6 +19,9 @@ function generateId(): string {
 
 // Feature flag for media server integration
 const ENABLE_MEDIA_SERVER = true // Set to true to enable jan_id system
+
+// Feature flag for presigned upload flow (better for large files)
+const USE_PRESIGNED_UPLOAD = true // Set to true to use presigned S3 upload flow
 
 // Constants for media server API
 const MEDIA_CONFIG = {
@@ -64,6 +69,8 @@ export interface Attachment {
  */
 export interface UploadsService {
   ingestImage(threadId: string, attachment: Attachment): Promise<UploadResult>
+  ingestImageWithPresignedUpload(threadId: string, attachment: Attachment): Promise<UploadResult>
+  ingestImageFileWithPresignedUpload(threadId: string, file: File): Promise<UploadResult>
   ingestFileAttachment(threadId: string, attachment: Attachment): Promise<UploadResult>
 }
 
@@ -81,6 +88,7 @@ export class WebUploadsService implements UploadsService {
   
   /**
    * Upload image to Jan media server and return jan_id reference
+   * Intelligently chooses between direct upload and presigned upload flow
    */
   async ingestImage(threadId: string, attachment: Attachment): Promise<UploadResult> {
     console.log('🎯 ingestImage called:', {
@@ -89,7 +97,8 @@ export class WebUploadsService implements UploadsService {
       attachmentType: attachment.type,
       hasDataUrl: !!attachment.dataUrl,
       hasBase64: !!attachment.base64,
-      ENABLE_MEDIA_SERVER
+      ENABLE_MEDIA_SERVER,
+      USE_PRESIGNED_UPLOAD
     })
 
     if (attachment.type !== 'image') {
@@ -104,6 +113,18 @@ export class WebUploadsService implements UploadsService {
       return { id: generateId() }
     }
 
+    // Determine which upload flow to use
+    // Use presigned upload for potentially large files or when explicitly enabled
+    const shouldUsePresignedUpload = USE_PRESIGNED_UPLOAD && 
+      (attachment.size ? attachment.size > 1024 * 1024 : true) // Use presigned for files > 1MB or unknown size
+
+    if (shouldUsePresignedUpload) {
+      console.log('🚀 Using presigned upload flow (efficient for large files)')
+      return this.ingestImageWithPresignedUpload(threadId, attachment)
+    }
+
+    // Use direct upload flow (original implementation)
+    console.log('📤 Using direct upload flow')
     try {
       // Validate attachment has image data
       if (!attachment.dataUrl && !attachment.base64) {
@@ -125,8 +146,8 @@ export class WebUploadsService implements UploadsService {
       console.log(`📤 Uploading image to media server: ${attachment.name}`)
       console.log('📍 Upload endpoint:', `${MEDIA_CONFIG.baseUrl}/v1/media`)
       
-      // Upload to Jan media server
-      const response = await this.uploadToMediaServer(
+      // Upload using mediaService for consistency
+      const response = await mediaService.uploadImage(
         dataUrl,
         attachment.name,
         threadId
@@ -264,9 +285,178 @@ export class WebUploadsService implements UploadsService {
   getConfiguration() {
     return {
       mediaServerEnabled: ENABLE_MEDIA_SERVER,
+      usePresignedUpload: USE_PRESIGNED_UPLOAD,
       baseUrl: MEDIA_CONFIG.baseUrl,
       serviceType: ENABLE_MEDIA_SERVER ? 'media-server' : 'placeholder',
-      version: '1.0.0'
+      version: '2.0.0'
+    }
+  }
+
+  /**
+   * Convert data URL to Blob for presigned upload
+   */
+  private dataUrlToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
+    const parts = dataUrl.split(',')
+    const header = parts[0]
+    const base64Data = parts[1]
+    
+    // Extract MIME type
+    const mimeMatch = header.match(/data:([^;]+)/)
+    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'
+    
+    // Convert base64 to binary
+    const binaryString = atob(base64Data)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    
+    return {
+      blob: new Blob([bytes], { type: mimeType }),
+      mimeType
+    }
+  }
+
+  /**
+   * Upload image using presigned upload flow (NEW)
+   * This is more efficient for large files as it uploads directly to S3
+   */
+  async ingestImageWithPresignedUpload(
+    threadId: string, 
+    attachment: Attachment
+  ): Promise<UploadResult> {
+    console.log('🚀 Using presigned upload flow for:', attachment.name)
+
+    if (attachment.type !== 'image') {
+      throw new Error('ingestImageWithPresignedUpload: attachment is not image')
+    }
+
+    // Validate attachment has image data
+    if (!attachment.dataUrl && !attachment.base64) {
+      throw new Error('No image data available for upload')
+    }
+
+    // Construct data URL if needed
+    const dataUrl = attachment.dataUrl || 
+      (attachment.base64 && attachment.mimeType 
+        ? `data:${attachment.mimeType};base64,${attachment.base64}`
+        : null)
+
+    if (!dataUrl) {
+      throw new Error('Cannot construct data URL from attachment')
+    }
+
+    try {
+      // Convert data URL to Blob
+      const { blob, mimeType } = this.dataUrlToBlob(dataUrl)
+      
+      console.log('📤 Step 1: Preparing presigned upload...')
+      // Step 1: Prepare upload - get presigned URL and jan_id
+      const prepareResponse = await mediaService.prepareUpload(mimeType, threadId)
+      
+      console.log('✅ Prepared upload:', {
+        janId: prepareResponse.id,
+        mimeType: prepareResponse.mime_type,
+        expiresIn: prepareResponse.expires_in
+      })
+
+      console.log('📤 Step 2: Uploading to S3...')
+      // Step 2: Upload directly to S3
+      const uploadResponse = await fetch(prepareResponse.upload_url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': prepareResponse.mime_type,
+        },
+        body: blob
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error(`S3 upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`)
+      }
+
+      console.log('✅ S3 upload successful')
+
+      console.log('📤 Step 3: Getting download URL...')
+      // Step 3: Get presigned download URL
+      const downloadUrl = await mediaService.getPresignedUrl(prepareResponse.id)
+      
+      console.log('✅ Complete presigned upload flow:', {
+        janId: downloadUrl.id,
+        url: downloadUrl.url.substring(0, 50) + '...',
+        expiresIn: downloadUrl.expires_in
+      })
+
+      return {
+        id: downloadUrl.id,
+        url: downloadUrl.url,
+        size: blob.size,
+      }
+    } catch (error) {
+      console.error('❌ Presigned upload flow failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Upload image File directly using presigned upload flow (NEW)
+   * Optimized for browser File objects from input or drag/drop
+   */
+  async ingestImageFileWithPresignedUpload(
+    threadId: string, 
+    file: File
+  ): Promise<UploadResult> {
+    console.log('🚀 Using presigned upload flow for File:', file.name)
+
+    if (!file.type.startsWith('image/')) {
+      throw new Error('File is not an image')
+    }
+
+    try {
+      console.log('📤 Step 1: Preparing presigned upload...')
+      // Step 1: Prepare upload - get presigned URL and jan_id
+      const prepareResponse = await mediaService.prepareUpload(file.type, threadId)
+      
+      console.log('✅ Prepared upload:', {
+        janId: prepareResponse.id,
+        mimeType: prepareResponse.mime_type,
+        expiresIn: prepareResponse.expires_in,
+        fileSize: file.size
+      })
+
+      console.log('📤 Step 2: Uploading to S3...')
+      // Step 2: Upload File directly to S3
+      const uploadResponse = await fetch(prepareResponse.upload_url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': prepareResponse.mime_type,
+        },
+        body: file
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error(`S3 upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`)
+      }
+
+      console.log('✅ S3 upload successful')
+
+      console.log('📤 Step 3: Getting download URL...')
+      // Step 3: Get presigned download URL
+      const downloadUrl = await mediaService.getPresignedUrl(prepareResponse.id)
+      
+      console.log('✅ Complete presigned upload flow:', {
+        janId: downloadUrl.id,
+        url: downloadUrl.url.substring(0, 50) + '...',
+        expiresIn: downloadUrl.expires_in
+      })
+
+      return {
+        id: downloadUrl.id,
+        url: downloadUrl.url,
+        size: file.size,
+      }
+    } catch (error) {
+      console.error('❌ Presigned upload flow failed:', error)
+      throw error
     }
   }
 }

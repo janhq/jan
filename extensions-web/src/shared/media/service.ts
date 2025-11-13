@@ -188,6 +188,80 @@ export class JanMediaService implements MediaService {
     }
   }
 
+  async getPresignedUrl(janId: string): Promise<import('./types').MediaPresignedUrlResponse> {
+    this.validateJanId(janId)
+    
+    const authService = getSharedAuthService()
+    const token = await authService.getValidAccessToken()
+
+    const response = await fetch(`${this.config.baseUrl}/v1/media/${janId}/presign`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-Media-Service-Key': this.config.serviceKey,
+      }
+    })
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new MediaResolutionError(`Media not found: ${janId}`, janId)
+      }
+      throw new MediaResolutionError(`Failed to get presigned URL: ${response.status}`)
+    }
+
+    const result = await response.json()
+    
+    if (!result.id || !result.url || !result.expires_in) {
+      throw new MediaResolutionError('Invalid presigned URL response format')
+    }
+
+    return result
+  }
+
+  async prepareUpload(mimeType: string, userId?: string): Promise<import('./types').MediaPrepareUploadResponse> {
+    const authService = getSharedAuthService()
+    const token = await authService.getValidAccessToken()
+
+    const requestBody: import('./types').MediaPrepareUploadRequest = {
+      mime_type: mimeType,
+      user_id: userId || 'anonymous',
+    }
+
+    try {
+      const response = await fetch(`${this.config.baseUrl}/v1/media/prepare-upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Media-Service-Key': this.config.serviceKey,
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new MediaUploadError(
+          `Prepare upload failed: ${response.status} ${response.statusText}`,
+          response.status,
+          errorData
+        )
+      }
+
+      const result = await response.json()
+      
+      if (!result.id || !result.upload_url || !result.expires_in) {
+        throw new MediaUploadError('Invalid prepare upload response format')
+      }
+
+      return result
+    } catch (error) {
+      if (error instanceof MediaUploadError) {
+        throw error
+      }
+      throw new MediaUploadError(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   // Helper methods
   private validateDataUrl(dataUrl: string): void {
     if (!dataUrl.startsWith('data:')) {
