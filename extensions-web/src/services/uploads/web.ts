@@ -116,7 +116,7 @@ export class WebUploadsService implements UploadsService {
     // Determine which upload flow to use
     // Use presigned upload for potentially large files or when explicitly enabled
     const shouldUsePresignedUpload = USE_PRESIGNED_UPLOAD && 
-      (attachment.size ? attachment.size > 1024 * 1024 : true) // Use presigned for files > 1MB or unknown size
+      (attachment.size ? attachment.size > 5 * 1024 * 1024 : true) // Use presigned for files > 5MB or unknown size
 
     if (shouldUsePresignedUpload) {
       console.log('🚀 Using presigned upload flow (efficient for large files)')
