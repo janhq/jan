@@ -1204,7 +1204,7 @@ export default class llamacpp_extension extends AIEngine {
   async installBackend(path: string): Promise<void> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
 
-    // Match prefix (optional), llama, main (optional), version (b####-hash), 
+    // Match prefix (optional), llama, main (optional), version (b####-hash),
     // optional cudart-llama, bin, backend details
     // Examples:
     // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
