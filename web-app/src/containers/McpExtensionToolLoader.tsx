@@ -25,23 +25,33 @@ export const McpExtensionToolLoader = ({
 
   // Handle tool toggle for custom component
   const handleToolToggle = (toolName: string, enabled: boolean) => {
+    const tool = tools.find(t => t.name === toolName)
+    if (!tool) return
+
+    const toolKey = `${tool.server}::${toolName}`
+
     if (initialMessage) {
       const currentDefaults = getDefaultDisabledTools()
       if (enabled) {
-        setDefaultDisabledTools(currentDefaults.filter((name) => name !== toolName))
+        setDefaultDisabledTools(currentDefaults.filter((key) => key !== toolKey))
       } else {
-        setDefaultDisabledTools([...currentDefaults, toolName])
+        setDefaultDisabledTools([...currentDefaults, toolKey])
       }
     } else if (currentThread?.id) {
-      setToolDisabledForThread(currentThread.id, toolName, enabled)
+      setToolDisabledForThread(currentThread.id, tool.server, toolName, enabled)
     }
   }
 
   const isToolEnabled = (toolName: string): boolean => {
+    const tool = tools.find(t => t.name === toolName)
+    if (!tool) return false
+
+    const toolKey = `${tool.server}::${toolName}`
+
     if (initialMessage) {
-      return !getDefaultDisabledTools().includes(toolName)
+      return !getDefaultDisabledTools().includes(toolKey)
     } else if (currentThread?.id) {
-      return !isToolDisabled(currentThread.id, toolName)
+      return !isToolDisabled(currentThread.id, tool.server, toolName)
     }
     return false
   }

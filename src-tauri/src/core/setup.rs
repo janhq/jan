@@ -185,7 +185,7 @@ pub fn migrate_mcp_servers(
             "Jan Browser MCP".to_string(),
             serde_json::json!({
                 "command": "npx",
-                "args": ["-y", "search-mcp-server@0.13.1"],
+                "args": ["-y", "search-mcp-server@latest"],
                 "env": {
                     "BRIDGE_HOST": "127.0.0.1",
                     "BRIDGE_PORT": "17389"

@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'sonner/dist/styles.css';
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
 @custom-variant dark (&:is(.dark *));

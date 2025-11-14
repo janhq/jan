@@ -41,7 +41,7 @@
     "security": {
       "capabilities": [
         "default",
-        "logs-app-window",
+        "log-app-window",
         "logs-window",
         "system-monitor-window"
       ],
@@ -80,7 +80,6 @@
     }
   },
   "bundle": {
-    "licenseFile": "../LICENSE",
     "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,

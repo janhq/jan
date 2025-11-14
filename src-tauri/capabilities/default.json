@@ -23,6 +23,11 @@
     "store:default",
     "vector-db:default",
     "rag:default",
+    "hardware:default",
+    "deep-link:default",
+    "llamacpp:default",
+    "updater:default",
+    "updater:allow-check",
     {
       "identifier": "http:default",
       "allow": [
