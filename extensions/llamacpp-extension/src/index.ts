@@ -7,7 +7,6 @@
  */
 
 import {
-  AIEngine,
   getJanDataFolderPath,
   fs,
   joinPath,
@@ -22,6 +21,7 @@ import {
   AppEvent,
   DownloadEvent,
   chatCompletionRequestMessage,
+  LocalAIEngine,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -183,7 +183,7 @@ const logger = {
 //  - lib/
 //    - e.g. libcudart.so.12
 
-export default class llamacpp_extension extends AIEngine {
+export default class llamacpp_extension extends LocalAIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   timeout: number = 600

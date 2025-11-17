@@ -1,5 +1,6 @@
 export * from './AIEngine'
 export * from './OAIEngine'
-export * from './LocalOAIEngine'
 export * from './RemoteOAIEngine'
 export * from './EngineManager'
+export * from './LocalAIEngine'
+export * from './LocalAIEngineTypes'
