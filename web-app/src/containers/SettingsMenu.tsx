@@ -98,6 +98,12 @@ const SettingsMenu = () => {
       isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
     },
     {
+      title: 'common:assistants',
+      route: route.settings.assistant,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
+    },
+    {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       hasSubMenu: false,
