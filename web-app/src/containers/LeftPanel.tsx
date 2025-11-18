@@ -271,7 +271,12 @@ const LeftPanel = () => {
       >
         <div className="relative h-10">
           <button
-            className="absolute top-1/2 right-0 -translate-y-1/2 z-20"
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 z-20 right-0',
+              (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
+                ? 'pl-20 right-auto'
+                : ''
+            )}
             onClick={() => setLeftPanel(!open)}
           >
             <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
