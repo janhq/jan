@@ -58,7 +58,7 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
         // Mobile-first responsive padding
         isMobile ? 'px-3' : 'px-4',
         // macOS-specific padding when panel is closed
-        IS_MACOS && !open && isSmallScreen ? 'pl-20' : '',
+        (IS_MACOS && isSmallScreen) || (IS_MACOS && !open) ? 'pl-20' : '',
         children === undefined && 'border-none'
       )}
     >
