@@ -160,7 +160,8 @@ export async function listSupportedBackends(): Promise<
     if (features.cuda12) {
       supportedBackends.push('win-cuda-12-common_cpus-x64')
     }
-    if (features.vulkan) supportedBackends.push('win-vulkan-common_cpus-x64')
+    if (features.cuda13)
+      if (features.vulkan) supportedBackends.push('win-vulkan-common_cpus-x64')
   }
   // not available yet, placeholder for future
   else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
@@ -287,7 +288,7 @@ export async function downloadBackend(
 
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
   if (
-    backend.includes('cu11.7') &&
+    (backend.includes('cu11.7') || backend.includes('cuda-11')) &&
     !(await _isCudaInstalled(backendDir, '11.7'))
   ) {
     downloadItems.push({
@@ -299,7 +300,7 @@ export async function downloadBackend(
       proxy: proxyConfig,
     })
   } else if (
-    backend.includes('cu12.0') &&
+    (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
     !(await _isCudaInstalled(backendDir, '12.0'))
   ) {
     downloadItems.push({
@@ -307,6 +308,18 @@ export async function downloadBackend(
         source === 'github'
           ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
+      proxy: proxyConfig,
+    })
+  } else if (
+    backend.includes('cuda-13') &&
+    !(await _isCudaInstalled(backendDir, '13.0'))
+  ) {
+    downloadItems.push({
+      url:
+        source === 'github'
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
+          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
     })
@@ -373,18 +386,22 @@ async function _getSupportedFeatures() {
     avx512: sysInfo.cpu.extensions.includes('avx512'),
     cuda11: false,
     cuda12: false,
+    cuda13: false,
     vulkan: false,
   }
 
   // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
   let minCuda11DriverVersion: string
   let minCuda12DriverVersion: string
+  let minCuda13DriverVersion: string
   if (sysInfo.os_type === 'linux') {
     minCuda11DriverVersion = '450.80.02'
     minCuda12DriverVersion = '525.60.13'
+    minCuda13DriverVersion = '580'
   } else if (sysInfo.os_type === 'windows') {
     minCuda11DriverVersion = '452.39'
     minCuda12DriverVersion = '527.41'
+    minCuda13DriverVersion = '580'
   }
 
   // TODO: HIP and SYCL
@@ -396,6 +413,9 @@ async function _getSupportedFeatures() {
         features.cuda11 = true
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
+      if (compareVersions(driverVersion, minCuda13DriverVersion) >= 0) {
+        features.cuda13 = true
+      }
     }
     // Vulkan support check
     if (gpuInfo.vulkan_info?.api_version) {
@@ -443,8 +463,10 @@ async function _isCudaInstalled(
   const libnameLookup = {
     'windows-11.7': `cudart64_110.dll`,
     'windows-12.0': `cudart64_12.dll`,
+    'windows-13.0': `cudart64_130.dll`,
     'linux-11.7': `libcudart.so.11.0`,
     'linux-12.0': `libcudart.so.12`,
+    'linux-13.0': `libcudart.so.13`,
   }
 
   const key = `${os_type}-${version}`
