@@ -14,6 +14,7 @@ export default defineConfig({
     emptyOutDir: false // Don't clean the output directory
   },
   define: {
-    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'https://api-dev.jan.ai/v1'),
+    JAN_BASE_URL: JSON.stringify('https://api-gateway-dev.jan.ai'), // Production server
+    // JAN_BASE_URL: JSON.stringify('http://localhost:8000'), // For local dev with jan-api-gateway
   }
 })

@@ -43,5 +43,11 @@
   "args": "Argumente",
   "env": "Umgebung",
   "serverStatusActive": "Server {{serverKey}} erfolgreich aktiviert",
-  "serverStatusInactive": "Server {{serverKey}} erfolgreich deaktiviert"
+  "serverStatusInactive": "Server {{serverKey}} erfolgreich deaktiviert",
+  "runtimeSettings": {
+    "title": "Laufzeiteinstellungen",
+    "description": "Konfiguriere, wie Jan MCP-Server verwaltet und erneut versucht.",
+    "toolCallTimeout": "Zeitlimit für Tool-Aufruf (Sekunden)",
+    "toolCallTimeoutDesc": "Maximale Wartezeit auf eine Antwort eines MCP-Tools, bevor abgebrochen wird."
+  }
 }

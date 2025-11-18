@@ -9,12 +9,18 @@ import {
   IconTrash,
   IconCodeCircle,
 } from '@tabler/icons-react'
-import { useMCPServers, MCPServerConfig } from '@/hooks/useMCPServers'
+import {
+  useMCPServers,
+  MCPServerConfig,
+  MCPSettings,
+  DEFAULT_MCP_SETTINGS,
+} from '@/hooks/useMCPServers'
 import { useEffect, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 import { twMerge } from 'tailwind-merge'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -23,6 +29,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -101,6 +109,7 @@ function MCPServersDesktop() {
   const serviceHub = useServiceHub()
   const {
     mcpServers,
+    settings,
     addServer,
     editServer,
     renameServer,
@@ -108,6 +117,8 @@ function MCPServersDesktop() {
     syncServers,
     syncServersAndRestart,
     getServerConfig,
+    setSettings,
+    updateSettings,
   } = useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
@@ -126,13 +137,33 @@ function MCPServersDesktop() {
   const [jsonEditorOpen, setJsonEditorOpen] = useState(false)
   const [jsonServerName, setJsonServerName] = useState<string | null>(null)
   const [jsonEditorData, setJsonEditorData] = useState<
-    MCPServerConfig | Record<string, MCPServerConfig> | undefined
+    | MCPServerConfig
+    | Record<string, MCPServerConfig>
+    | {
+        mcpServers: Record<string, MCPServerConfig>
+        mcpSettings?: MCPSettings
+      }
+    | undefined
   >(undefined)
   const [connectedServers, setConnectedServers] = useState<string[]>([])
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
+
+  const updateToolCallTimeout = (rawValue: string) => {
+    if (rawValue === '') {
+      updateSettings({
+        toolCallTimeoutSeconds: DEFAULT_MCP_SETTINGS.toolCallTimeoutSeconds,
+      })
+      return
+    }
+
+    const numericValue = Number(rawValue)
+    if (!Number.isNaN(numericValue)) {
+      updateSettings({ toolCallTimeoutSeconds: numericValue })
+    }
+  }
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -204,13 +235,19 @@ function MCPServersDesktop() {
     } else {
       // Edit all servers JSON
       setJsonServerName(null)
-      setJsonEditorData(mcpServers)
+      setJsonEditorData({
+        mcpServers,
+        mcpSettings: settings,
+      })
     }
     setJsonEditorOpen(true)
   }
 
   const handleSaveJson = async (
-    data: MCPServerConfig | Record<string, MCPServerConfig>
+    data:
+      | MCPServerConfig
+      | Record<string, MCPServerConfig>
+      | { mcpServers?: Record<string, MCPServerConfig>; mcpSettings?: MCPSettings }
   ) => {
     if (jsonServerName) {
       try {
@@ -223,6 +260,29 @@ function MCPServersDesktop() {
       toggleServer(jsonServerName, (data as MCPServerConfig).active || false)
     } else {
       // Save all servers
+      let nextServers: Record<string, MCPServerConfig> = {}
+      let nextSettings: MCPSettings | undefined
+
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        if ('mcpServers' in data || 'mcpSettings' in data) {
+          const payload = data as {
+            mcpServers?: Record<string, MCPServerConfig>
+            mcpSettings?: MCPSettings
+          }
+          nextServers = payload.mcpServers ?? {}
+          nextSettings = payload.mcpSettings
+        } else {
+          nextServers = data as Record<string, MCPServerConfig>
+        }
+      }
+
+      if (nextSettings) {
+        setSettings({
+          ...DEFAULT_MCP_SETTINGS,
+          ...nextSettings,
+        })
+      }
+
       // Clear existing servers first
       Object.keys(mcpServers).forEach((serverKey) => {
         toggleServer(serverKey, false)
@@ -230,12 +290,12 @@ function MCPServersDesktop() {
       })
 
       // Add all servers from the JSON
-      Object.entries(data as Record<string, MCPServerConfig>).forEach(
-        ([key, config]) => {
-          addServer(key, config)
-          toggleServer(key, config.active || false)
-        }
-      )
+      Object.entries(nextServers).forEach(([key, config]) => {
+        addServer(key, config)
+        toggleServer(key, config.active || false)
+      })
+
+      await syncServers()
     }
   }
 
@@ -297,11 +357,18 @@ function MCPServersDesktop() {
   useEffect(() => {
     serviceHub.mcp().getConnectedServers().then(setConnectedServers)
 
-    const intervalId = setInterval(() => {
-      serviceHub.mcp().getConnectedServers().then(setConnectedServers)
-    }, 3000)
+    let unlisten: (() => void) | undefined
+    const setupListener = async () => {
+      unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
+        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+      })
+    }
+    setupListener()
 
-    return () => clearInterval(intervalId)
+    return () => {
+      unlisten?.()
+    }
+
   }, [serviceHub, setConnectedServers])
 
   return (
@@ -370,6 +437,23 @@ function MCPServersDesktop() {
                       onCheckedChange={setAllowAllMCPPermissions}
                     />
                   </div>
+                }
+              />
+              <CardItem
+                title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
+                description={t('mcp-servers:runtimeSettings.toolCallTimeoutDesc')}
+                actions={
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={settings.toolCallTimeoutSeconds}
+                    onChange={(event) => updateToolCallTimeout(event.target.value)}
+                    onBlur={() => {
+                      void syncServers()
+                    }}
+                    className="w-28"
+                  />
                 }
               />
             </Card>
@@ -529,7 +613,10 @@ function MCPServersDesktop() {
         onOpenChange={setJsonEditorOpen}
         serverName={jsonServerName}
         initialData={
-          jsonEditorData as MCPServerConfig | Record<string, MCPServerConfig>
+          jsonEditorData ?? {
+            mcpServers,
+            mcpSettings: settings,
+          }
         }
         onSave={handleSaveJson}
       />

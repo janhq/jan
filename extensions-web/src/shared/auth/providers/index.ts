@@ -4,13 +4,13 @@
  */
 
 export { BaseAuthProvider } from './base'
-export { GoogleAuthProvider } from './google'
+export { KeycloakAuthProvider } from './keycloak'
 
 // Registry of all available providers
-import { GoogleAuthProvider } from './google'
+import { KeycloakAuthProvider } from './keycloak'
 
 // Instantiate providers
-export const PROVIDERS = [new GoogleAuthProvider()] as const
+export const PROVIDERS = [new KeycloakAuthProvider()] as const
 
 // Generate proper types from providers
 export type ProviderType = (typeof PROVIDERS)[number]['id']

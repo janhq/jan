@@ -1,9 +1,11 @@
 ﻿import { createFileRoute, useParams } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
-import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import type { ThreadFolder } from '@/services/projects/types'
+import type { Thread } from '@janhq/core'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
@@ -33,21 +35,45 @@ function ProjectPage() {
 function ProjectPageContent() {
   const { t } = useTranslation()
   const { projectId } = useParams({ from: '/project/$projectId' })
-  const { getFolderById } = useThreadManagement()
-  const threads = useThreads((state) => state.threads)
+  const { getProjectById } = useThreadManagement()
 
   const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
 
-  // Find the project
-  const project = getFolderById(projectId)
+  // State to hold the fetched project and threads
+  const [project, setProject] = useState<ThreadFolder | undefined>(undefined)
+  const [projectThreads, setProjectThreads] = useState<Thread[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Get threads for this project
-  const projectThreads = useMemo(() => {
-    return Object.values(threads)
-      .filter((thread) => thread.metadata?.project?.id === projectId)
-      .sort((a, b) => (b.updated || 0) - (a.updated || 0))
-  }, [threads, projectId])
+  // Fetch the project and its threads from server
+  useEffect(() => {
+    const loadProjectData = async () => {
+      setIsLoading(true)
+      
+      // Fetch project details
+      const fetchedProject = await getProjectById(projectId)
+      setProject(fetchedProject)
+      
+      // Fetch project threads from server
+      const projectsService = getServiceHub().projects()
+      // Type assertion needed as getProjectThreads is not in base ProjectsService interface yet
+      const threads = await (projectsService as typeof projectsService & { getProjectThreads: (id: string) => Promise<Thread[]> }).getProjectThreads(projectId)
+      setProjectThreads(threads.sort((a: Thread, b: Thread) => (b.updated || 0) - (a.updated || 0)))
+      
+      setIsLoading(false)
+    }
+    loadProjectData()
+  }, [projectId, getProjectById])
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center">
+        <div className="text-center">
+          <p className="text-main-view-fg/70">{t('common.loading')}</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!project) {
     return (

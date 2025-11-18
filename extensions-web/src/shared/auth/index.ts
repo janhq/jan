@@ -5,6 +5,14 @@ export { AuthProviderRegistry } from './registry'
 // Type exports
 export type { AuthTokens, AuthType, User } from './types'
 export type { AuthProvider, ProviderType } from './providers'
+export type {
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
+  ListApiKeysResponse,
+  ApiKey,
+  UpgradeAccountRequest,
+  UpgradeAccountResponse,
+} from './api'
 
 // Constant exports
 export { AUTH_STORAGE_KEYS, AUTH_EVENTS, AUTH_BROADCAST_CHANNEL } from './const'

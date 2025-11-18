@@ -422,10 +422,36 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
-
+        if (version <= 5 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate flash_attn setting to dropdown for llamacpp provider
+            if (provider.provider === 'llamacpp' && provider.settings) {
+              const flashAttentionSetting = provider.settings.find(
+                (s) => s.key === 'flash_attn'
+              )
+              if (flashAttentionSetting) {
+                flashAttentionSetting.controller_type = 'dropdown'
+                flashAttentionSetting.controller_props = {
+                  ...flashAttentionSetting.controller_props,
+                  options: [
+                    { name: 'Auto', value: 'auto' },
+                    { name: 'On', value: 'on' },
+                    { name: 'Off', value: 'off' },
+                  ],
+                  value: 'auto',
+                }
+              }
+            }
+          })
+        }
+        if (version <= 6 && state?.providers) {
+          // Most of legacy cohere models are deprecated now, remove the provider entirely
+          // TODO: Default providers should be updated automatically somehow later
+          state.providers = state.providers.filter((provider) => provider.provider !== 'cohere')
+        }
         return state
       },
-      version: 5,
+      version: 7,
     }
   )
 )

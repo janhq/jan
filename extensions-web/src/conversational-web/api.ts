@@ -13,7 +13,16 @@ import {
   PaginatedResponse,
   ConversationItem,
   ListConversationItemsParams,
-  ListConversationItemsResponse
+  ListConversationItemsResponse,
+  Project,
+  CreateProjectRequest,
+  UpdateProjectRequest,
+  ListProjectsParams,
+  ListProjectsResponse,
+  DeleteProjectResponse,
+  ConversationWithProject,
+  ConversationResponseWithProject,
+  ListConversationsWithProjectParams,
 } from './types'
 
 declare const JAN_BASE_URL: string
@@ -72,12 +81,15 @@ export class RemoteApi {
     const queryString = queryParams.toString()
     const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}${queryString ? `?${queryString}` : ''}`
 
-    return this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
+    console.log('[RemoteApi] listConversations: GET', url, 'with params:', params)
+    const response = await this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
       url,
       {
         method: 'GET',
       }
     )
+    console.log('[RemoteApi] listConversations: Response:', { count: response.data.length, has_more: response.has_more })
+    return response
   }
 
   /**
@@ -108,9 +120,12 @@ export class RemoteApi {
   }
 
   async getAllConversations(): Promise<ConversationResponse[]> {
-    return this.fetchAllPaginated<ConversationResponse>(
+    console.log('[RemoteApi] getAllConversations: Fetching all conversations from', `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}`)
+    const conversations = await this.fetchAllPaginated<ConversationResponse>(
       (params) => this.listConversations(params)
     )
+    console.log('[RemoteApi] getAllConversations: Retrieved', conversations.length, 'conversations')
+    return conversations
   }
 
   async deleteConversation(conversationId: string): Promise<void> {
@@ -155,6 +170,141 @@ export class RemoteApi {
     return this.fetchAllPaginated<ConversationItem>(
       (params) => this.listConversationItems(conversationId, params),
       { limit: 100, order: 'asc' }
+    )
+  }
+
+  async createConversationItem(
+    conversationId: string,
+    data: {
+      role: 'user' | 'assistant'
+      content: string
+      status?: string
+      metadata?: Record<string, unknown>
+    }
+  ): Promise<ConversationItem> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATION_ITEMS(conversationId)}`
+
+    return this.authService.makeAuthenticatedRequest<ConversationItem>(
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    )
+  }
+
+  // Project Management methods
+  async createProject(data: CreateProjectRequest): Promise<Project> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.PROJECTS}`
+
+    return this.authService.makeAuthenticatedRequest<Project>(
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    )
+  }
+
+  async getProject(projectId: string): Promise<Project> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.PROJECT_BY_ID(projectId)}`
+
+    return this.authService.makeAuthenticatedRequest<Project>(
+      url,
+      {
+        method: 'GET',
+      }
+    )
+  }
+
+  async updateProject(
+    projectId: string,
+    data: UpdateProjectRequest
+  ): Promise<Project> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.PROJECT_BY_ID(projectId)}`
+
+    return this.authService.makeAuthenticatedRequest<Project>(
+      url,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }
+    )
+  }
+
+  async listProjects(params?: ListProjectsParams): Promise<ListProjectsResponse> {
+    const queryParams = new URLSearchParams()
+
+    if (params?.limit !== undefined) {
+      queryParams.append('limit', params.limit.toString())
+    }
+    if (params?.cursor) {
+      queryParams.append('cursor', params.cursor)
+    }
+
+    const queryString = queryParams.toString()
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.PROJECTS}${queryString ? `?${queryString}` : ''}`
+
+    return this.authService.makeAuthenticatedRequest<ListProjectsResponse>(
+      url,
+      {
+        method: 'GET',
+      }
+    )
+  }
+
+  async deleteProject(projectId: string): Promise<DeleteProjectResponse> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.PROJECT_BY_ID(projectId)}`
+
+    return this.authService.makeAuthenticatedRequest<DeleteProjectResponse>(
+      url,
+      {
+        method: 'DELETE',
+      }
+    )
+  }
+
+  // Enhanced conversation methods with project support
+  async createConversationInProject(
+    data: ConversationWithProject
+  ): Promise<ConversationResponseWithProject> {
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}`
+
+    return this.authService.makeAuthenticatedRequest<ConversationResponseWithProject>(
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    )
+  }
+
+  async listConversationsByProject(
+    params?: ListConversationsWithProjectParams
+  ): Promise<ListConversationsResponse> {
+    const queryParams = new URLSearchParams()
+
+    if (params?.limit !== undefined) {
+      queryParams.append('limit', params.limit.toString())
+    }
+    if (params?.after) {
+      queryParams.append('after', params.after)
+    }
+    if (params?.order) {
+      queryParams.append('order', params.order)
+    }
+    if (params?.project_id) {
+      queryParams.append('project_id', params.project_id)
+    }
+
+    const queryString = queryParams.toString()
+    const url = `${JAN_BASE_URL}${CONVERSATION_API_ROUTES.CONVERSATIONS}${queryString ? `?${queryString}` : ''}`
+
+    return this.authService.makeAuthenticatedRequest<ListConversationsResponse>(
+      url,
+      {
+        method: 'GET',
+      }
     )
   }
 }

@@ -292,6 +292,15 @@ pub async fn _get_file_size(
 
 // ===== MAIN DOWNLOAD FUNCTIONS =====
 
+// Context passed to `download_single_file` to reduce the number of arguments
+struct DownloadCtx {
+    header_map: HeaderMap,
+    resume: bool,
+    cancel_token: CancellationToken,
+    evt_name: String,
+    progress_tracker: ProgressTracker,
+}
+
 /// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
     app: tauri::AppHandle<impl Runtime>,
@@ -344,25 +353,25 @@ pub async fn _download_files_internal(
         // Spawn download task for each file
         let item_clone = item.clone();
         let app_clone = app.clone();
-        let header_map_clone = header_map.clone();
-        let cancel_token_clone = cancel_token.clone();
-        let evt_name_clone = evt_name.clone();
-        let progress_tracker_clone = progress_tracker.clone();
         let file_id = format!("{task_id}-{index}");
         let file_size = file_sizes.get(&item.url).copied().unwrap_or(0);
+
+        let ctx = DownloadCtx {
+            header_map: header_map.clone(),
+            resume,
+            cancel_token: cancel_token.clone(),
+            evt_name: evt_name.clone(),
+            progress_tracker: progress_tracker.clone(),
+        };
 
         let task = tokio::spawn(async move {
             download_single_file(
                 app_clone,
                 &item_clone,
-                &header_map_clone,
                 &save_path,
-                resume,
-                cancel_token_clone,
-                evt_name_clone,
-                progress_tracker_clone,
                 file_id,
                 file_size,
+                ctx,
             )
             .await
         });
@@ -421,15 +430,18 @@ pub async fn _download_files_internal(
 async fn download_single_file(
     app: tauri::AppHandle<impl Runtime>,
     item: &DownloadItem,
-    header_map: &HeaderMap,
     save_path: &std::path::Path,
-    resume: bool,
-    cancel_token: CancellationToken,
-    evt_name: String,
-    progress_tracker: ProgressTracker,
     file_id: String,
     _file_size: u64,
+    ctx: DownloadCtx,
 ) -> Result<std::path::PathBuf, String> {
+    let DownloadCtx {
+        header_map,
+        resume,
+        cancel_token,
+        evt_name,
+        progress_tracker,
+    } = ctx;
     // Create parent directories if they don't exist
     if let Some(parent) = save_path.parent() {
         if !parent.exists() {
@@ -466,7 +478,7 @@ async fn download_single_file(
         .map(|u| u.to_string())
         .unwrap_or_else(|_| item.url.clone());
     log::info!("Started downloading: {decoded_url}");
-    let client = _get_client_for_item(item, header_map).map_err(err_to_string)?;
+    let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
 

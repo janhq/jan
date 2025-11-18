@@ -93,7 +93,10 @@ export default class ConversationalExtensionWeb extends ConversationalExtension 
 
   // Message Management
   async createMessage(message: ThreadMessage): Promise<ThreadMessage> {
-    console.log('!!!Created message:', message)
+    // Skip manual message creation entirely
+    // The server automatically stores all messages when chat completions are called with store:true
+    // This prevents unnecessary API calls to /conversations/{id}/items
+    console.log('!!!Skipping manual message creation - messages are stored by chat completion API')
     return message
   }
 

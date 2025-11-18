@@ -2,7 +2,7 @@
  * Web Extension Types
  */
 
-import type { ConversationalExtension, BaseExtension, AIEngine, MCPExtension } from '@janhq/core'
+import type { ConversationalExtension, BaseExtension, AIEngine, MCPExtension, ProjectExtension } from '@janhq/core'
 
 type ExtensionConstructorParams = ConstructorParameters<typeof BaseExtension>
 
@@ -18,12 +18,17 @@ export interface MCPWebModule {
   default: new (...args: ExtensionConstructorParams) => MCPExtension
 }
 
-export type WebExtensionModule = ConversationalWebModule | JanProviderWebModule | MCPWebModule
+export interface ProjectWebModule {
+  default: new (...args: ExtensionConstructorParams) => ProjectExtension
+}
+
+export type WebExtensionModule = ConversationalWebModule | JanProviderWebModule | MCPWebModule | ProjectWebModule
 
 export interface WebExtensionRegistry {
   'conversational-web': () => Promise<ConversationalWebModule>
   'jan-provider-web': () => Promise<JanProviderWebModule>
   'mcp-web': () => Promise<MCPWebModule>
+  'project-web': () => Promise<ProjectWebModule>
 }
 
 export type WebExtensionName = keyof WebExtensionRegistry

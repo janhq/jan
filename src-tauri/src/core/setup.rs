@@ -294,7 +294,7 @@ fn setup_window_theme_listener<R: Runtime>(
                 tauri::Theme::Dark => "dark",
                 _ => "auto",
             };
-            log::info!("System theme changed to: {} for window: {}", theme_str, window_label);
+            log::info!("System theme changed to: {theme_str} for window: {window_label}");
             let _ = app_handle_clone.emit("theme-changed", theme_str);
         }
     });

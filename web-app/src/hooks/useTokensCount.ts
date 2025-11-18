@@ -31,6 +31,8 @@ export const useTokensCount = (
   })
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  const latestCalculationRef = useRef<(() => Promise<void>) | null>(null)
+  const requestIdRef = useRef(0)
   const isIncreasingContextSize = useRef<boolean>(false)
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider } = useModelProvider()
@@ -86,25 +88,22 @@ export const useTokensCount = (
   }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt
-  const debouncedCalculateTokens = useCallback(async () => {
+  const runTokenCalculation = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     const modelId = selectedModel?.id
-    if (!modelId || selectedProvider !== 'llamacpp') {
-      setTokenData({
-        tokenCount: 0,
-        loading: false,
-        isNearLimit: false,
-      })
-      return
-    }
 
-    // Use messages with current prompt for calculation
-    const messagesToCalculate = messagesWithPrompt
-    if (messagesToCalculate.length === 0) {
-      setTokenData({
-        tokenCount: 0,
-        loading: false,
-        isNearLimit: false,
-      })
+    if (
+      !modelId ||
+      selectedProvider !== 'llamacpp' ||
+      messagesWithPrompt.length === 0
+    ) {
+      if (requestId === requestIdRef.current) {
+        setTokenData({
+          tokenCount: 0,
+          loading: false,
+          isNearLimit: false,
+        })
+      }
       return
     }
 
@@ -113,7 +112,11 @@ export const useTokensCount = (
     try {
       const tokenCount = await serviceHub
         .models()
-        .getTokensCount(modelId, messagesToCalculate)
+        .getTokensCount(modelId, messagesWithPrompt)
+
+      if (requestId !== requestIdRef.current) {
+        return
+      }
 
       const maxTokensValue =
         selectedModel?.settings?.ctx_len?.controller_props?.value
@@ -137,6 +140,10 @@ export const useTokensCount = (
         loading: false,
       })
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return
+      }
+
       console.error('Failed to calculate tokens:', error)
       setTokenData((prev) => ({
         ...prev,
@@ -152,6 +159,10 @@ export const useTokensCount = (
     serviceHub,
     selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
+
+  useEffect(() => {
+    latestCalculationRef.current = runTokenCalculation
+  }, [runTokenCalculation])
 
   // Debounced effect that triggers when prompt or messages change
   useEffect(() => {
@@ -172,10 +183,11 @@ export const useTokensCount = (
       selectedModel?.id
     ) {
       debounceTimeoutRef.current = setTimeout(() => {
-        debouncedCalculateTokens()
-      }, 150) // 150ms debounce for more responsive updates
+        void latestCalculationRef.current?.()
+      }, 500) // 500ms debounce to reduce repeated token calculations
     } else {
       // Reset immediately if no content
+      requestIdRef.current += 1
       setTokenData({
         tokenCount: 0,
         loading: false,
@@ -194,7 +206,8 @@ export const useTokensCount = (
     selectedModel?.id,
     selectedProvider,
     messagesWithPrompt.length,
-    debouncedCalculateTokens,
+    messagesWithPrompt,
+    selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
 
   // Manual calculation function (for click events)
@@ -203,8 +216,8 @@ export const useTokensCount = (
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current)
     }
-    await debouncedCalculateTokens()
-  }, [debouncedCalculateTokens])
+    await latestCalculationRef.current?.()
+  }, [])
 
   return {
     ...tokenData,

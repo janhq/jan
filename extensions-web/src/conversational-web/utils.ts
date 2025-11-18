@@ -7,6 +7,7 @@ export class ObjectParser {
     const modelName = thread.assistants?.[0]?.model?.id || undefined
     const modelProvider = thread.assistants?.[0]?.model?.engine || undefined
     const isFavorite = thread.metadata?.is_favorite?.toString() || 'false'
+    const projectId = (thread.metadata?.project as { id?: string })?.id || undefined
     let metadata: ConversationMetadata = {}
     if (modelName && modelProvider) {
       metadata = {
@@ -17,6 +18,7 @@ export class ObjectParser {
     }
     return {
       title: shortenConversationTitle(thread.title),
+      project_id: projectId,
       metadata,
     }
   }
@@ -58,6 +60,7 @@ export class ObjectParser {
       },
       isFavorite,
       metadata: { is_favorite: isFavorite },
+      project_id: conversation.project_id, // Map project_id from API response
     } as unknown as Thread
   }
 

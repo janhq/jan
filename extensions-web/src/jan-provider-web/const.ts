@@ -1,7 +1,7 @@
 export const JAN_API_ROUTES = {
-  MODELS: '/models',
-  CHAT_COMPLETIONS: '/chat/completions',
-  MODEL_CATALOGS: '/models/catalogs',
+  MODELS: '/v1/models',
+  CHAT_COMPLETIONS: '/v1/chat/completions',
+  MODEL_CATALOGS: '/v1/models/catalogs',
 } as const
 
 export const MODEL_PROVIDER_STORAGE_KEY = 'model-provider'

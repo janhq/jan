@@ -44,6 +44,7 @@ pub async fn load_llama_model<R: Runtime>(
     mut args: Vec<String>,
     envs: HashMap<String, String>,
     is_embedding: bool,
+    timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -68,7 +69,10 @@ pub async fn load_llama_model<R: Runtime>(
         None
     };
 
-    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap_or(&"None".to_string()));
+    log::info!(
+        "MMPROJ Path string: {}",
+        &mmproj_path_string.as_ref().unwrap_or(&"None".to_string())
+    );
 
     let api_key: String;
 
@@ -101,6 +105,7 @@ pub async fn load_llama_model<R: Runtime>(
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
 
     // Spawn task to monitor stdout for readiness
+    let stdout_ready_tx = ready_tx.clone();
     let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
@@ -114,6 +119,16 @@ pub async fn load_llama_model<R: Runtime>(
                     let line = line.trim_end();
                     if !line.is_empty() {
                         log::info!("[llamacpp stdout] {}", line);
+                    }
+
+                    // Check for readiness indicators
+                    let line_lower = line.to_lowercase();
+                    if line_lower.contains("http server listening")
+                        || line_lower.contains("all slots are idle")
+                        || line_lower.contains("starting the main loop")
+                    {
+                        log::info!("Server appears to be ready based on stdout: '{}'", line);
+                        let _ = stdout_ready_tx.send(true).await;
                     }
                 }
                 Err(e) => {
@@ -175,7 +190,7 @@ pub async fn load_llama_model<R: Runtime>(
     }
 
     // Wait for server to be ready or timeout
-    let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+    let timeout_duration = Duration::from_secs(timeout);
     let start_time = Instant::now();
     log::info!("Waiting for model session to be ready...");
     loop {

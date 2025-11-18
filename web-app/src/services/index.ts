@@ -30,7 +30,7 @@ import { DefaultProjectsService } from './projects/default'
 import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
 import { DefaultUploadsService } from './uploads/default'
-import type { UploadsService } from './uploads/types'
+import { webUploadsService, type UploadsService } from '@jan/extensions-web'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -99,7 +99,7 @@ class PlatformServiceHub implements ServiceHub {
   private deepLinkService: DeepLinkService = new DefaultDeepLinkService()
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
-  private uploadsService: UploadsService = new DefaultUploadsService()
+  private uploadsService!: UploadsService
   private initialized = false
 
   /**
@@ -161,6 +161,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.uploadsService = new DefaultUploadsService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -199,6 +200,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.uploadsService = new DefaultUploadsService()
       } else {
         const [
           themeModule,
@@ -223,7 +225,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./deeplink/web'),
           import('./providers/web'),
           import('./mcp/web'),
-          import('./projects/web'),
+          import('./projects/server'),
         ])
 
         this.themeService = new themeModule.WebThemeService()
@@ -236,7 +238,8 @@ class PlatformServiceHub implements ServiceHub {
         this.deepLinkService = new deepLinkModule.WebDeepLinkService()
         this.providersService = new providersModule.WebProvidersService()
         this.mcpService = new mcpModule.WebMCPService()
-        this.projectsService = new projectsModule.WebProjectsService()
+        this.projectsService = new projectsModule.ServerProjectsService()
+        this.uploadsService = webUploadsService
       }
 
       this.initialized = true

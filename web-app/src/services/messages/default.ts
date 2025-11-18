@@ -40,6 +40,20 @@ export class DefaultMessagesService implements MessagesService {
     )
   }
 
+  async modifyMessage(message: ThreadMessage): Promise<ThreadMessage> {
+    // Don't modify messages on server for temporary chat - it's local only
+    if (message.thread_id === TEMPORARY_CHAT_ID) {
+      return message
+    }
+
+    return (
+      ExtensionManager.getInstance()
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.modifyMessage(message)
+        ?.catch(() => message) ?? message
+    )
+  }
+
   async deleteMessage(threadId: string, messageId: string): Promise<void> {
     // Don't delete messages on server for temporary chat - it's local only
     if (threadId === TEMPORARY_CHAT_ID) {

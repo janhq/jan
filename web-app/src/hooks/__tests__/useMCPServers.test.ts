@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMCPServers } from '../useMCPServers'
+import { useMCPServers, DEFAULT_MCP_SETTINGS } from '../useMCPServers'
 import type { MCPServerConfig } from '../useMCPServers'
 
 // Mock the ServiceHub
@@ -23,6 +23,7 @@ describe('useMCPServers', () => {
     useMCPServers.setState({
       open: true,
       mcpServers: {},
+      settings: { ...DEFAULT_MCP_SETTINGS },
       loading: false,
       deletedServerKeys: [],
     })
@@ -33,6 +34,7 @@ describe('useMCPServers', () => {
 
     expect(result.current.open).toBe(true)
     expect(result.current.mcpServers).toEqual({})
+    expect(result.current.settings).toEqual(DEFAULT_MCP_SETTINGS)
     expect(result.current.loading).toBe(false)
     expect(result.current.deletedServerKeys).toEqual([])
     expect(typeof result.current.getServerConfig).toBe('function')
@@ -41,6 +43,8 @@ describe('useMCPServers', () => {
     expect(typeof result.current.editServer).toBe('function')
     expect(typeof result.current.deleteServer).toBe('function')
     expect(typeof result.current.setServers).toBe('function')
+    expect(typeof result.current.setSettings).toBe('function')
+    expect(typeof result.current.updateSettings).toBe('function')
     expect(typeof result.current.syncServers).toBe('function')
     expect(typeof result.current.syncServersAndRestart).toBe('function')
   })
@@ -343,6 +347,36 @@ describe('useMCPServers', () => {
     })
   })
 
+  describe('setSettings', () => {
+    it('should replace runtime settings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      const newSettings = {
+        ...DEFAULT_MCP_SETTINGS,
+        toolCallTimeoutSeconds: 45,
+      }
+
+      act(() => {
+        result.current.setSettings(newSettings)
+      })
+
+      expect(result.current.settings).toEqual(newSettings)
+      expect(result.current.settings).not.toBe(DEFAULT_MCP_SETTINGS)
+    })
+  })
+
+  describe('updateSettings', () => {
+    it('should merge runtime settings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      act(() => {
+        result.current.updateSettings({ toolCallTimeoutSeconds: 45 })
+      })
+
+      expect(result.current.settings.toolCallTimeoutSeconds).toBe(45)
+    })
+  })
+
   describe('syncServers', () => {
     it('should call updateMCPConfig with current servers', async () => {
       const { result } = renderHook(() => useMCPServers())
@@ -366,6 +400,7 @@ describe('useMCPServers', () => {
           mcpServers: {
             'test-server': serverConfig,
           },
+          mcpSettings: result.current.settings,
         })
       )
     })
@@ -380,6 +415,7 @@ describe('useMCPServers', () => {
       expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
         JSON.stringify({
           mcpServers: {},
+          mcpSettings: result.current.settings,
         })
       )
     })
@@ -408,6 +444,7 @@ describe('useMCPServers', () => {
           mcpServers: {
             'python-server': serverConfig,
           },
+          mcpSettings: result.current.settings,
         })
       )
       expect(mockRestartMCPServers).toHaveBeenCalled()

@@ -186,7 +186,7 @@ export default function DropdownToolsAvailable({
                     {serverTools.length > 1 && (
                       <div className="sticky top-0 z-10 bg-main-view border-b border-main-view-fg/10 px-4 md:px-2 pr-2 py-1.5 flex items-center justify-between">
                         <span className="text-xs font-medium text-main-view-fg/70">
-                          Disable All Tools
+                          All Tools
                         </span>
                         <div
                           className={cn(
@@ -233,15 +233,14 @@ export default function DropdownToolsAvailable({
                               />
                             }
                           >
-                            <div className="overflow-hidden flex flex-col items-start ">
-                              <div className="truncate">
-                                <span
-                                  className="text-sm font-medium text-main-view-fg"
-                                  title={tool.name}
-                                >
-                                  {tool.name}
-                                </span>
-                              </div>
+                            <div className="overflow-hidden flex flex-col items-start w-full">
+                              <span
+                                className="text-sm font-medium text-main-view-fg truncate block w-full"
+                                title={tool.name}
+                              >
+                                {tool.name}
+                              </span>
+
                               {tool.description && (
                                 <p
                                   className="text-xs text-main-view-fg/70 mt-1 line-clamp-1"

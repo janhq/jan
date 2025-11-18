@@ -12,12 +12,12 @@ export function ChatWidthSwitcher() {
     <div className="flex flex-col sm:flex-row sm:gap-4">
       <button
         className={cn(
-          'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer ',
+          'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer',
           chatWidth === 'compact' && 'border-accent'
         )}
         onClick={() => setChatWidth('compact')}
       >
-        <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-main-view-fg/10 -mt-1">
           <span className="font-medium text-xs font-sans">
             {t('common:compactWidth')}
           </span>

@@ -60,7 +60,7 @@ hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
-rmcp = { version = "0.6.0", features = [
+rmcp = { version = "0.8.5", features = [
     "client",
     "transport-sse-client",
     "transport-sse-client-reqwest",
@@ -75,7 +75,6 @@ serde_json = "1.0"
 serde_yaml = "0.9.34"
 tar = "0.4"
 zip = "0.6"
-tauri-plugin-dialog = "2.2.1"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
@@ -93,6 +92,11 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"
 url = "2.5"
 uuid = { version = "1.7", features = ["v4"] }
+rfd = { version = "0.15.4", default-features = false, features = [
+  "tokio",
+  "xdg-portal",
+  "common-controls-v6",
+] }
 
 [dependencies.tauri]
 version = "2.8.5"

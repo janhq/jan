@@ -2,7 +2,7 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
-    mcp::helpers::clean_up_mcp_servers,
+    mcp::{helpers::clean_up_mcp_servers, models::McpSettings},
     setup::{self, setup_mcp},
     state::AppState,
 };
@@ -13,7 +13,10 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-#[cfg_attr(all(mobile, any(target_os = "android", target_os = "ios")), tauri::mobile_entry_point)]
+#[cfg_attr(
+    all(mobile, any(target_os = "android", target_os = "ios")),
+    tauri::mobile_entry_point
+)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
@@ -26,7 +29,6 @@ pub fn run() {
 
     let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -60,6 +62,8 @@ pub fn run() {
             core::filesystem::commands::write_yaml,
             core::filesystem::commands::read_yaml,
             core::filesystem::commands::decompress,
+            core::filesystem::commands::open_dialog,
+            core::filesystem::commands::save_dialog,
             // App configuration commands
             core::app::commands::get_app_configurations,
             core::app::commands::get_user_home_path,
@@ -120,6 +124,7 @@ pub fn run() {
             mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -136,7 +141,8 @@ pub fn run() {
                     .build(),
             )?;
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
@@ -149,11 +155,7 @@ pub fn run() {
                 .get("version")
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default();
-            let app_version = app
-                .config()
-                .version
-                .clone()
-                .unwrap_or_default();
+            let app_version = app.config().version.clone().unwrap_or_default();
             // Migrate extensions
             if let Err(e) =
                 setup::install_extensions(app.handle().clone(), stored_version != app_version)
@@ -170,7 +172,7 @@ pub fn run() {
             store.set("version", serde_json::json!(app_version));
             store.save().expect("Failed to save store");
             // Migration completed
-            
+
             #[cfg(desktop)]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
@@ -212,7 +214,9 @@ pub fn run() {
                     // Hide window immediately (not available on mobile platforms)
                     if let Some(window) = app_handle.get_webview_window("main") {
                         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                        { let _ = window.hide(); }
+                        {
+                            let _ = window.hide();
+                        }
                         let _ = window.emit("kill-mcp-servers", ());
                     }
 

@@ -225,9 +225,25 @@ describe('useMessages', () => {
         })
       )
 
-      // Wait for async operation
+      // Message should be immediately available (optimistic update)
+      expect(result.current.messages['thread1']).toContainEqual(
+        expect.objectContaining({
+          id: messageToAdd.id,
+          thread_id: messageToAdd.thread_id,
+          role: messageToAdd.role,
+          content: messageToAdd.content,
+          metadata: expect.objectContaining({
+            assistant: expect.objectContaining({
+              id: expect.any(String),
+              name: expect.any(String),
+            }),
+          }),
+        })
+      )
+
+      // Verify persistence was attempted
       await vi.waitFor(() => {
-        expect(result.current.messages['thread1']).toContainEqual(mockCreatedMessage)
+        expect(mockCreateMessage).toHaveBeenCalled()
       })
     })
 
