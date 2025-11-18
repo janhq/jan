@@ -67,6 +67,7 @@ export class TauriMCPService extends DefaultMCPService {
 
   async callTool(args: {
     toolName: string
+    serverName?: string
     arguments: object
   }): Promise<{ error: string; content: { text: string }[] }> {
     return window.core?.api?.callTool(args)
@@ -74,6 +75,7 @@ export class TauriMCPService extends DefaultMCPService {
 
   callToolWithCancellation(args: {
     toolName: string
+    serverName?: string
     arguments: object
     cancellationToken?: string
   }): {
@@ -83,18 +85,18 @@ export class TauriMCPService extends DefaultMCPService {
   } {
     // Generate a unique cancellation token if not provided
     const token = args.cancellationToken ?? `tool_call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
+
     // Create the tool call promise with cancellation token
     const promise = window.core?.api?.callTool({
       ...args,
       cancellationToken: token
     })
-    
+
     // Create cancel function
     const cancel = async () => {
       await window.core?.api?.cancelToolCall({ cancellationToken: token })
     }
-    
+
     return { promise, cancel, token }
   }
 

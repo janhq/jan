@@ -43,6 +43,7 @@ import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
+import { MCPTool } from '@/types/completion'
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -668,12 +669,21 @@ export const useChat = () => {
 
         let isCompleted = false
 
+        const disabledTools = getDisabledToolsForThread(activeThread.id)
+        const isToolDisabled = (tool: MCPTool) => {
+          const compositeKey = `${tool.server}::${tool.name}`
+          return (
+            disabledTools.includes(compositeKey) ||
+            // Backwards compatibility with pre-migration keys
+            disabledTools.includes(tool.name)
+          )
+        }
+
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? useAppState.getState().tools.filter((tool) => {
-              const disabledTools = getDisabledToolsForThread(activeThread.id)
-              return !disabledTools.includes(tool.name)
-            })
+          ? useAppState
+              .getState()
+              .tools.filter((tool) => !isToolDisabled(tool))
           : []
 
         // Conditionally inject RAG if tools are supported and documents are attached
@@ -691,7 +701,10 @@ export const useChat = () => {
               .getTools()
               .catch(() => [])
             if (Array.isArray(ragTools) && ragTools.length) {
-              availableTools = [...availableTools, ...ragTools]
+              const enabledRagTools = ragTools.filter(
+                (tool) => !isToolDisabled(tool)
+              )
+              availableTools = [...availableTools, ...enabledRagTools]
               console.log('RAG tools injected for completion.')
             }
           } catch (e) {

@@ -12,8 +12,14 @@ vi.mock('@/lib/platform/utils', () => ({
 }))
 
 // Mock @jan/extensions-web to return empty extensions for testing
+const mockWebUploadsService = vi.hoisted(() => ({
+  ingestImage: vi.fn(),
+  ingestFileAttachment: vi.fn()
+}))
+
 vi.mock('@jan/extensions-web', () => ({
-  WEB_EXTENSIONS: {}
+  WEB_EXTENSIONS: {},
+  webUploadsService: mockWebUploadsService
 }))
 
 // Mock @janhq/core EngineManager to prevent initialization issues

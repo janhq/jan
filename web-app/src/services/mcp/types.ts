@@ -22,14 +22,15 @@ export interface MCPService {
   getMCPConfig(): Promise<MCPConfig>
   getTools(): Promise<MCPTool[]>
   getConnectedServers(): Promise<string[]>
-  callTool(args: { toolName: string; arguments: object }): Promise<MCPToolCallResult>
+  callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult>
   callToolWithCancellation(args: {
     toolName: string
+    serverName?: string
     arguments: object
     cancellationToken?: string
   }): ToolCallWithCancellationResult
   cancelToolCall(cancellationToken: string): Promise<void>
-  
+
   // MCP Server lifecycle management
   activateMCPServer(name: string, config: MCPServerConfig): Promise<void>
   deactivateMCPServer(name: string): Promise<void>

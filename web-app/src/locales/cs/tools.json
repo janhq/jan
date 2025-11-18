@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Tool Approval Required",
+    "description": "The assistant wants to use",
+    "securityNotice": "Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
+    "deny": "Deny",
+    "allowOnce": "Allow Once",
+    "alwaysAllow": "Allow in thread",
+    "parameters": "Tool Parameters",
+    "permissionScope": "Permissions granted apply only to this conversation."
+  }
+}
