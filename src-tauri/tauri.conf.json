@@ -21,6 +21,7 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
