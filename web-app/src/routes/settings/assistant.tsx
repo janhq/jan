@@ -13,9 +13,10 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform/types'
 import { Button } from '@/components/ui/button'
+import SettingsMenu from '@/containers/SettingsMenu'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.assistant as any)({
+export const Route = createFileRoute(route.settings.assistant as any)({
   component: Assistant,
 })
 
@@ -77,8 +78,9 @@ function AssistantContent() {
           </Button>
         </div>
       </HeaderPage>
-      <div className="h-full p-4 w-3/4 mx-auto overflow-y-auto mt-2">
-        <div className="space-y-3">
+      <div className="flex h-full w-full">
+        <SettingsMenu />
+        <div className="space-y-3 p-4">
           {assistants
             .slice()
             .sort((a, b) => a.created_at - b.created_at)

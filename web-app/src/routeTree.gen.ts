@@ -13,7 +13,6 @@
 import { Route as rootRoute } from './routes/__root'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as LogsImport } from './routes/logs'
-import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
 import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
@@ -28,6 +27,7 @@ import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAttachmentsImport } from './routes/settings/attachments'
+import { Route as SettingsAssistantImport } from './routes/settings/assistant'
 import { Route as ProjectProjectIdImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
@@ -46,12 +46,6 @@ const SystemMonitorRoute = SystemMonitorImport.update({
 const LogsRoute = LogsImport.update({
   id: '/logs',
   path: '/logs',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const AssistantRoute = AssistantImport.update({
-  id: '/assistant',
-  path: '/assistant',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -139,6 +133,12 @@ const SettingsAttachmentsRoute = SettingsAttachmentsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsAssistantRoute = SettingsAssistantImport.update({
+  id: '/settings/assistant',
+  path: '/settings/assistant',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const ProjectProjectIdRoute = ProjectProjectIdImport.update({
   id: '/project/$projectId',
   path: '/project/$projectId',
@@ -187,13 +187,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
-    '/assistant': {
-      id: '/assistant'
-      path: '/assistant'
-      fullPath: '/assistant'
-      preLoaderRoute: typeof AssistantImport
-      parentRoute: typeof rootRoute
-    }
     '/logs': {
       id: '/logs'
       path: '/logs'
@@ -227,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/project/$projectId'
       fullPath: '/project/$projectId'
       preLoaderRoute: typeof ProjectProjectIdImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/assistant': {
+      id: '/settings/assistant'
+      path: '/settings/assistant'
+      fullPath: '/settings/assistant'
+      preLoaderRoute: typeof SettingsAssistantImport
       parentRoute: typeof rootRoute
     }
     '/settings/attachments': {
@@ -348,12 +348,12 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -374,12 +374,12 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -401,12 +401,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -429,12 +429,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
@@ -454,12 +454,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
@@ -479,12 +479,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
@@ -506,12 +506,12 @@ export interface FileRouteTypes {
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AssistantRoute: typeof AssistantRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
+  SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -532,12 +532,12 @@ export interface RootRouteChildren {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AssistantRoute: AssistantRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
+  SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
@@ -567,12 +567,12 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/assistant",
         "/logs",
         "/system-monitor",
         "/hub/$modelId",
         "/local-api-server/logs",
         "/project/$projectId",
+        "/settings/assistant",
         "/settings/attachments",
         "/settings/extensions",
         "/settings/general",
@@ -594,9 +594,6 @@ export const routeTree = rootRoute
     "/": {
       "filePath": "index.tsx"
     },
-    "/assistant": {
-      "filePath": "assistant.tsx"
-    },
     "/logs": {
       "filePath": "logs.tsx"
     },
@@ -611,6 +608,9 @@ export const routeTree = rootRoute
     },
     "/project/$projectId": {
       "filePath": "project/$projectId.tsx"
+    },
+    "/settings/assistant": {
+      "filePath": "settings/assistant.tsx"
     },
     "/settings/attachments": {
       "filePath": "settings/attachments.tsx"
