@@ -43,7 +43,6 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
-import { cx } from 'class-variance-authority'
 
 const mainMenus = [
   {
@@ -272,7 +271,7 @@ const LeftPanel = () => {
       >
         <div className="relative h-10">
           <button
-            className={cx(
+            className={cn(
               'absolute top-1/2 -translate-y-1/2 z-20 right-0',
               (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
                 ? 'pl-20 right-auto'
