@@ -49,107 +49,18 @@ import {
   isModelSupported,
   planModelLoadInternal,
   unloadLlamaModel,
+  LlamacppConfig,
+  ModelPlan,
+  DownloadItem,
+  ModelConfig,
+  EmbeddingResponse,
+  DeviceList,
+  SystemMemory,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
-
-type LlamacppConfig = {
-  version_backend: string
-  auto_update_engine: boolean
-  auto_unload: boolean
-  timeout: number
-  llamacpp_env: string
-  memory_util: string
-  chat_template: string
-  n_gpu_layers: number
-  offload_mmproj: boolean
-  cpu_moe: boolean
-  n_cpu_moe: number
-  override_tensor_buffer_t: string
-  ctx_size: number
-  threads: number
-  threads_batch: number
-  n_predict: number
-  batch_size: number
-  ubatch_size: number
-  device: string
-  split_mode: string
-  main_gpu: number
-  flash_attn: string
-  cont_batching: boolean
-  no_mmap: boolean
-  mlock: boolean
-  no_kv_offload: boolean
-  cache_type_k: string
-  cache_type_v: string
-  defrag_thold: number
-  rope_scaling: string
-  rope_scale: number
-  rope_freq_base: number
-  rope_freq_scale: number
-  ctx_shift: boolean
-}
-
-type ModelPlan = {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj?: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
-}
-
-interface DownloadItem {
-  url: string
-  save_path: string
-  proxy?: Record<string, string | string[] | boolean>
-  sha256?: string
-  size?: number
-  model_id?: string
-}
-
-interface ModelConfig {
-  model_path: string
-  mmproj_path?: string
-  name: string // user-friendly
-  // some model info that we cache upon import
-  size_bytes: number
-  sha256?: string
-  mmproj_sha256?: string
-  mmproj_size_bytes?: number
-  embedding?: boolean
-}
-
-interface EmbeddingResponse {
-  model: string
-  object: string
-  usage: {
-    prompt_tokens: number
-    total_tokens: number
-  }
-  data: EmbeddingData[]
-}
-
-interface EmbeddingData {
-  embedding: number[]
-  index: number
-  object: string
-}
-
-interface DeviceList {
-  id: string
-  name: string
-  mem: number
-  free: number
-}
-
-interface SystemMemory {
-  totalVRAM: number
-  totalRAM: number
-  totalMemory: number
-}
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -856,7 +767,7 @@ export default class llamacpp_extension extends AIEngine {
       return { updateNeeded: false, newVersion: '0' }
     }
 
-    const [latestVersion, latestBackend] = targetBackendString.split('/')
+    const [latestVersion] = targetBackendString.split('/')
 
     // Check if update is needed (version comparison)
     if (
@@ -1765,7 +1676,7 @@ export default class llamacpp_extension extends AIEngine {
               return await this.findSessionByModel(modelId)
             } catch (e) {
               logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null // treat as “not‑eligible for unload”
+              return null
             }
           })
         )
@@ -1783,10 +1694,11 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
     }
-    const args: string[] = []
+
     const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
+
     if (!version || !backend) {
       throw new Error(
         'Initial setup for the backend failed due to a network issue. Please restart the app!'
@@ -1808,120 +1720,41 @@ export default class llamacpp_extension extends AIEngine {
     })
     const port = await this.getRandomPort()
 
-    // disable llama-server webui
-    // TODO: Determine what's the best course of action here.
-    // Hopefully, we would want all the fork to have same set of arguments
-    // Otherwise it would become impossible to maintain
-    // Keeping this for now
-    if (!backend.startsWith('ik')) args.push('--no-webui')
+    // Generate API key
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
 
-    // set user envs
+    // Set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // model option is required
-    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    // Resolve model path
     const modelPath = await joinPath([
       janDataFolderPath,
       modelConfig.model_path,
     ])
-    args.push('--jinja')
-    args.push('-m', modelPath)
-    if (cfg.cpu_moe) args.push('--cpu-moe')
-    if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
-      args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
-    }
-    // For overriding tensor buffer type, useful where
-    // massive MOE models can be made faster by keeping attention on the GPU
-    // and offloading the expert FFNs to the CPU.
-    // This is an expert level settings and should only be used by people
-    // who knows what they are doing.
-    // Takes a regex with matching tensor name as input
-    if (cfg.override_tensor_buffer_t)
-      args.push('--override-tensor', cfg.override_tensor_buffer_t)
-    // offload multimodal projector model to the GPU by default. if there is not enough memory
-    // turn this setting off will keep the projector model on the CPU but the image processing can
-    // take longer
-    if (cfg.offload_mmproj === false) args.push('--no-mmproj-offload')
-    args.push('-a', modelId)
-    args.push('--port', String(port))
+
+    // Resolve mmproj path if present
+    let mmprojPath: string | undefined = undefined
     if (modelConfig.mmproj_path) {
-      const mmprojPath = await joinPath([
-        janDataFolderPath,
-        modelConfig.mmproj_path,
-      ])
-      args.push('--mmproj', mmprojPath)
-    }
-    // Add remaining options from the interface
-    if (cfg.chat_template) args.push('--chat-template', cfg.chat_template)
-    const gpu_layers =
-      parseInt(String(cfg.n_gpu_layers)) >= 0 ? cfg.n_gpu_layers : 100
-    args.push('-ngl', String(gpu_layers))
-    if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
-    if (cfg.threads_batch > 0)
-      args.push('--threads-batch', String(cfg.threads_batch))
-    if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
-    if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
-    if (cfg.device.length > 0) args.push('--device', cfg.device)
-    if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
-      args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined && cfg.main_gpu !== 0)
-      args.push('--main-gpu', String(cfg.main_gpu))
-    // Note: Older llama.cpp versions are no longer supported
-    if (
-      cfg.flash_attn !== undefined ||
-      (cfg.flash_attn !== 'auto' && // set argument only when the setting value is not auto
-        !backend.startsWith('ik')) // ik fork of llama.cpp doesn't support --flash-attn
-    ) {
-      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
-    } else if (backend.startsWith('ik') && cfg.flash_attn == 'on') {
-      args.push('-fa') // hoping the ik fork is still using the old fa arguments
+      mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
 
-    // Boolean flags
-    if (cfg.ctx_shift) args.push('--context-shift')
-    if (cfg.cont_batching) args.push('--cont-batching')
-    if (cfg.no_mmap) args.push('--no-mmap')
-    if (cfg.mlock) args.push('--mlock')
-    if (cfg.no_kv_offload) args.push('--no-kv-offload')
-    if (isEmbedding) {
-      args.push('--embedding')
-      args.push('--pooling', 'mean')
-    } else {
-      if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
-      if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
-      if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
-        args.push('--cache-type-k', cfg.cache_type_k)
-      if (
-        cfg.flash_attn !== 'on' &&
-        cfg.cache_type_v != 'f16' &&
-        cfg.cache_type_v != 'f32'
-      ) {
-        args.push('--cache-type-v', cfg.cache_type_v)
-      }
-      if (cfg.defrag_thold && cfg.defrag_thold != 0.1)
-        args.push('--defrag-thold', String(cfg.defrag_thold))
-
-      if (cfg.rope_scaling && cfg.rope_scaling != 'none')
-        args.push('--rope-scaling', cfg.rope_scaling)
-      if (cfg.rope_scale && cfg.rope_scale != 1)
-        args.push('--rope-scale', String(cfg.rope_scale))
-      if (cfg.rope_freq_base && cfg.rope_freq_base != 0)
-        args.push('--rope-freq-base', String(cfg.rope_freq_base))
-      if (cfg.rope_freq_scale && cfg.rope_freq_scale != 1)
-        args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
-    }
-
-    logger.info('Calling Tauri command llama_load with args:', args)
+    logger.info(
+      'Calling Tauri command load_llama_model with config:',
+      JSON.stringify(cfg)
+    )
     const backendPath = await getBackendExePath(backend, version)
 
     try {
       const sInfo = await loadLlamaModel(
         backendPath,
-        args,
+        modelId,
+        modelPath,
+        port,
+        cfg,
         envs,
+        mmprojPath,
         isEmbedding,
         Number(this.timeout)
       )
