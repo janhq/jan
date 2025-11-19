@@ -49,6 +49,15 @@ export function mapOldBackendToNew(oldBackend: string): string {
 }
 
 /*
+ * Interface for backend with installation status
+ */
+export interface BackendWithStatus {
+  version: string
+  backend: string
+  installed: boolean
+}
+
+/*
  * Reads currently installed backends in janDataFolderPath
  *
  */
@@ -83,6 +92,15 @@ export async function getLocalInstalledBackends(): Promise<
 
       // Verify that the backend is really installed
       for (const backendType of backendTypes) {
+        // Ensure it's a directory
+        const backendPath = await joinPath([versionPath, backendType])
+        try {
+          const stat = await fs.fileStat(backendPath)
+          if (!stat?.isDirectory) continue
+        } catch {
+          continue
+        }
+
         const backendName = await basename(backendType)
         if (await isBackendInstalled(backendType, versionName)) {
           local.push({ version: versionName, backend: backendName })
@@ -138,9 +156,7 @@ async function fetchRemoteSupportedBackends(
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
 // what should be available to the user for selection?
-export async function listSupportedBackends(): Promise<
-  { version: string; backend: string }[]
-> {
+export async function listSupportedBackends(): Promise<BackendWithStatus[]> {
   const sysInfo = await getSystemInfo()
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
@@ -197,13 +213,33 @@ export async function listSupportedBackends(): Promise<
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()
-  // Use a Map keyed by “${version}|${backend}” for O(1) deduplication.
-  const mergedMap = new Map<string, { version: string; backend: string }>()
-  for (const entry of remoteBackendVersions) {
-    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
-  }
+
+  // Create lookup map for installed backends
+  const installedMap = new Map<string, boolean>()
   for (const entry of localBackendVersions) {
-    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
+    const key = `${entry.version}|${entry.backend}`
+    installedMap.set(key, true)
+  }
+
+  // Merge with installation status
+  const mergedMap = new Map<string, BackendWithStatus>()
+
+  // Add remote backends (may not be installed)
+  for (const entry of remoteBackendVersions) {
+    const key = `${entry.version}|${entry.backend}`
+    const isInstalled = installedMap.has(key)
+    mergedMap.set(key, {
+      ...entry,
+      installed: isInstalled
+    })
+  }
+
+  // Add local-only backends (already installed)
+  for (const entry of localBackendVersions) {
+    const key = `${entry.version}|${entry.backend}`
+    if (!mergedMap.has(key)) {
+      mergedMap.set(key, { ...entry, installed: true })
+    }
   }
 
   const merged = Array.from(mergedMap.values())

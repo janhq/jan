@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardItem } from '@/containers/Card'
+import { events } from '@janhq/core'
+
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -223,6 +225,53 @@ function ProviderDetail() {
       return () => clearInterval(intervalId)
     }
   }, [provider, needsBackendConfig, refreshSettings])
+
+  // Listen for backend list updates from the watcher
+  useEffect(() => {
+    const handleBackendListUpdated = async () => {
+      console.log('Backend list updated, refreshing providers...')
+      // Small delay to ensure FS is ready
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await refreshSettings()
+    }
+
+    events.on('onBackendListUpdated', handleBackendListUpdated)
+    return () => {
+      events.off('onBackendListUpdated', handleBackendListUpdated)
+    }
+  }, [refreshSettings])
+
+  // Listen for backend download success (Engine)
+  useEffect(() => {
+    const handleDownloadSuccess = async (data: any) => {
+      if (data?.downloadType === 'Engine') {
+        console.log('Backend download success, refreshing providers...')
+        // Small delay to ensure FS is ready
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        await refreshSettings()
+      }
+    }
+
+    events.on('onFileDownloadSuccess', handleDownloadSuccess)
+    return () => {
+      events.off('onFileDownloadSuccess', handleDownloadSuccess)
+    }
+  }, [refreshSettings])
+
+  // Listen for settings changes (specifically version_backend)
+  useEffect(() => {
+    const handleSettingsChanged = async (event: any) => {
+      if (event.key === 'version_backend') {
+        console.log('Version backend changed, refreshing providers...')
+        await refreshSettings()
+      }
+    }
+
+    events.on('settingsChanged', handleSettingsChanged)
+    return () => {
+      events.off('settingsChanged', handleSettingsChanged)
+    }
+  }, [refreshSettings])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
@@ -466,8 +515,8 @@ function ProviderDetail() {
                 className={cn(
                   'flex flex-col gap-3',
                   provider &&
-                    provider.provider === 'llamacpp' &&
-                    'flex-col-reverse'
+                  provider.provider === 'llamacpp' &&
+                  'flex-col-reverse'
                 )}
               >
                 {/* Settings */}
@@ -477,7 +526,7 @@ function ProviderDetail() {
                     const actionComponent = (
                       <div className="mt-2">
                         {needsBackendConfig &&
-                        setting.key === 'version_backend' ? (
+                          setting.key === 'version_backend' ? (
                           <div className="flex items-center gap-1 text-sm text-main-view-fg/70">
                             <IconLoader size={16} className="animate-spin" />
                             <span>loading</span>
@@ -488,21 +537,21 @@ function ProviderDetail() {
                             controllerProps={setting.controller_props}
                             className={cn(
                               setting.key === 'api-key' &&
-                                'third-step-setup-remote-provider',
+                              'third-step-setup-remote-provider',
                               setting.key === 'device' && 'hidden'
                             )}
                             onChange={(newValue) => {
                               if (provider) {
                                 const newSettings = [...provider.settings]
-                                // Handle different value types by forcing the type
-                                // Use type assertion to bypass type checking
+                                  // Handle different value types by forcing the type
+                                  // Use type assertion to bypass type checking
 
-                                ;(
-                                  newSettings[settingIndex]
-                                    .controller_props as {
-                                    value: string | boolean | number
-                                  }
-                                ).value = newValue
+                                  ; (
+                                    newSettings[settingIndex]
+                                      .controller_props as {
+                                        value: string | boolean | number
+                                      }
+                                  ).value = newValue
 
                                 // Create update object with updated settings
                                 const updateObj: Partial<ModelProvider> = {
@@ -533,8 +582,8 @@ function ProviderDetail() {
                                     (
                                       newSettings[deviceSettingIndex]
                                         .controller_props as {
-                                        value: string
-                                      }
+                                          value: string
+                                        }
                                     ).value = ''
                                   }
 
@@ -581,7 +630,7 @@ function ProviderDetail() {
                         className={cn(setting.key === 'device' && 'hidden')}
                         column={
                           setting.controller_type === 'input' &&
-                          setting.controller_props.type !== 'number'
+                            setting.controller_props.type !== 'number'
                             ? true
                             : false
                         }
@@ -600,7 +649,7 @@ function ProviderDetail() {
                                       rel="noopener noreferrer"
                                       className={cn(
                                         setting.key === 'api-key' &&
-                                          'second-step-setup-remote-provider'
+                                        'second-step-setup-remote-provider'
                                       )}
                                     />
                                   )
@@ -638,17 +687,17 @@ function ProviderDetail() {
                                         className={cn(
                                           'text-main-view-fg/50',
                                           isCheckingBackendUpdate &&
-                                            'animate-spin'
+                                          'animate-spin'
                                         )}
                                       />
                                       <span>
                                         {isCheckingBackendUpdate
                                           ? t(
-                                              'settings:checkingForBackendUpdates'
-                                            )
+                                            'settings:checkingForBackendUpdates'
+                                          )
                                           : t(
-                                              'settings:checkForBackendUpdates'
-                                            )}
+                                            'settings:checkForBackendUpdates'
+                                          )}
                                       </span>
                                     </div>
                                   </Button>
@@ -699,33 +748,33 @@ function ProviderDetail() {
                             {!predefinedProviders.some(
                               (p) => p.provider === provider.provider
                             ) && (
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="hover:no-underline"
-                                onClick={handleRefreshModels}
-                                disabled={refreshingModels}
-                              >
-                                <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
-                                  {refreshingModels ? (
-                                    <IconLoader
-                                      size={18}
-                                      className="text-main-view-fg/50 animate-spin"
-                                    />
-                                  ) : (
-                                    <IconRefresh
-                                      size={18}
-                                      className="text-main-view-fg/50"
-                                    />
-                                  )}
-                                  <span className="text-main-view-fg/70">
-                                    {refreshingModels
-                                      ? t('providers:refreshing')
-                                      : t('providers:refresh')}
-                                  </span>
-                                </div>
-                              </Button>
-                            )}
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="hover:no-underline"
+                                  onClick={handleRefreshModels}
+                                  disabled={refreshingModels}
+                                >
+                                  <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                                    {refreshingModels ? (
+                                      <IconLoader
+                                        size={18}
+                                        className="text-main-view-fg/50 animate-spin"
+                                      />
+                                    ) : (
+                                      <IconRefresh
+                                        size={18}
+                                        className="text-main-view-fg/50"
+                                      />
+                                    )}
+                                    <span className="text-main-view-fg/70">
+                                      {refreshingModels
+                                        ? t('providers:refreshing')
+                                        : t('providers:refresh')}
+                                    </span>
+                                  </div>
+                                </Button>
+                              )}
                             <DialogAddModel provider={provider} />
                           </>
                         )}
@@ -795,8 +844,8 @@ function ProviderDetail() {
                                     (p) => p.provider === provider.provider
                                   ) &&
                                   Boolean(provider.api_key?.length))) && (
-                                <FavoriteModelAction model={model} />
-                              )}
+                                  <FavoriteModelAction model={model} />
+                                )}
                               <DialogDeleteModel
                                 provider={provider}
                                 modelId={model.id}

@@ -75,6 +75,7 @@ serde_json = "1.0"
 serde_yaml = "0.9.34"
 tar = "0.4"
 zip = "0.6"
+notify = "8.2.0"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }

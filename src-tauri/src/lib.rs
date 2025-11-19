@@ -2,6 +2,7 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
+    filesystem::watcher::WatcherState,
     mcp::{helpers::clean_up_mcp_servers, models::McpSettings},
     setup::{self, setup_mcp},
     state::AppState,
@@ -64,6 +65,9 @@ pub fn run() {
             core::filesystem::commands::decompress,
             core::filesystem::commands::open_dialog,
             core::filesystem::commands::save_dialog,
+            // Filesystem watcher commands
+            core::filesystem::watcher::watch_directory,
+            core::filesystem::watcher::stop_watch,
             // App configuration commands
             core::app::commands::get_app_configurations,
             core::app::commands::get_user_home_path,
@@ -115,6 +119,7 @@ pub fn run() {
             core::downloads::commands::download_files,
             core::downloads::commands::cancel_download_task,
         ])
+        .manage(WatcherState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
