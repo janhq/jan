@@ -556,6 +556,7 @@ export default class llamacpp_extension extends AIEngine {
     // Vulkan will be conditionally prioritized based on GPU memory
     const backendPriorities: string[] = hasEnoughGpuMemory
       ? [
+          'cuda-cu13.0',
           'cuda-cu12.0',
           'cuda-cu11.7',
           'vulkan',
@@ -568,6 +569,7 @@ export default class llamacpp_extension extends AIEngine {
           'x64',
         ]
       : [
+          'cuda-cu13.0',
           'cuda-cu12.0',
           'cuda-cu11.7',
           'common_cpus', // NEW: Unified CPU backend
@@ -582,6 +584,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
+      if (backendString.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
       if (
         backendString.includes('cuda-12-common_cpus') ||
         backendString.includes('cu12.0')
@@ -1210,7 +1213,8 @@ export default class llamacpp_extension extends AIEngine {
     // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
     // - ik_llama-main-b4314-09c61e1-cudart-llama-bin-win-cuda-12.8-x64-avx512.zip
     // - llama-b7037-bin-win-cuda-12.4-x64.zip (legacy format)
-    const re = /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
+    const re =
+      /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
 
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
