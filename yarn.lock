@@ -3604,7 +3604,6 @@ __metadata:
     tailwind-merge: "npm:3.3.1"
     tailwindcss: "npm:4.1.4"
     token.js: "npm:token.js-fork@0.7.31"
-    token.js-fork: "npm:0.7.31"
     tw-animate-css: "npm:1.2.8"
     typescript: "npm:5.9.2"
     typescript-eslint: "npm:8.31.0"
@@ -19473,7 +19472,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"token.js-fork@npm:0.7.31, token.js@npm:token.js-fork@0.7.31":
+"token.js@npm:token.js-fork@0.7.31":
   version: 0.7.31
   resolution: "token.js-fork@npm:0.7.31"
   dependencies:
