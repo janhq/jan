@@ -26,7 +26,7 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
     log::info!("Factory reset, removing data folder: {data_folder:?}");
 
     tauri::async_runtime::block_on(async {
-        clean_up_mcp_servers(state.clone()).await;
+        clean_up_mcp_servers(&app_handle, state.clone()).await;
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {
