@@ -147,7 +147,7 @@ impl ArgumentBuilder {
     }
 
     fn add_mmproj_args(&mut self, mmproj_path: Option<String>) {
-        if let Some(path) = mmproj_path {
+        if let Some(path) = mmproj_path.filter(|p| !p.is_empty()) {
             self.args.push("--mmproj".to_string());
             self.args.push(path);
         }
