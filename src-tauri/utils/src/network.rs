@@ -146,3 +146,185 @@ pub fn convert_headers(
     }
     Ok(header_map)
 }
+
+/// Information about a process using a specific port
+#[derive(Debug, Clone)]
+pub struct ProcessUsingPort {
+    pub pid: u32,
+    pub name: String,
+    pub cmd: Vec<String>,
+}
+
+/// Find the process ID using a specific port
+/// Returns None if port is available or process cannot be determined
+pub fn find_process_using_port(port: u16) -> Option<ProcessUsingPort> {
+    #[cfg(target_os = "macos")]
+    {
+        find_process_using_port_unix(port)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        find_process_using_port_unix(port)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        find_process_using_port_windows(port)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
+    use std::process::Command;
+
+    let output = Command::new("lsof")
+        .args(&["-i", &format!(":{}", port)])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    for line in output_str.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() > 9 {
+            let name = parts[0].to_string();
+            let pid_str = parts[1];
+            let state = parts.get(9).map(|s| s.to_uppercase());
+
+            if let Some(state_val) = state {
+                if state_val.contains("LISTEN") {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+                        return Some(ProcessUsingPort { pid, name, cmd });
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
+    use std::process::Command;
+
+    let output = Command::new("netstat")
+        .args(&["-ano"])
+        .output()
+        .ok()?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    for line in output_str.lines() {
+        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if let Some(pid_str) = parts.last() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    let name_output = Command::new("tasklist")
+                        .args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+                        .output()
+                        .ok()?;
+
+                    let name_str = String::from_utf8_lossy(&name_output.stdout);
+                    let name = name_str
+                        .split(',')
+                        .next()
+                        .unwrap_or("Unknown")
+                        .trim_matches('"')
+                        .to_string();
+
+                    let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+
+                    return Some(ProcessUsingPort { pid, name, cmd });
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
+    use std::process::Command;
+
+    let output = Command::new("ps")
+        .args(&["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let cmd_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if cmd_str.is_empty() {
+        return None;
+    }
+
+    Some(
+        cmd_str
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect(),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
+    use std::process::Command;
+
+    let output = Command::new("wmic")
+        .args(&[
+            "process",
+            "where",
+            &format!("ProcessId={}", pid),
+            "get",
+            "CommandLine",
+            "/format:list",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    for line in output_str.lines() {
+        if line.starts_with("CommandLine=") {
+            let cmd_str = line.strip_prefix("CommandLine=")?.trim().to_string();
+            if !cmd_str.is_empty() {
+                return Some(
+                    cmd_str
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect(),
+                );
+            }
+        }
+    }
+
+    None
+}
+
+pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
+    let name_lower = process_info.name.to_lowercase();
+    let cmd_str = process_info.cmd.join(" ").to_lowercase();
+
+    let is_node = name_lower.contains("node") || name_lower.contains("npx");
+    let is_mcp_server = cmd_str.contains("search-mcp-server");
+
+    is_node && is_mcp_server
+}

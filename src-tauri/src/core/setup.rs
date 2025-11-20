@@ -238,6 +238,12 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let servers = state.mcp_servers.clone();
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
+        use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        if let Err(e) = cleanup_all_stale_locks(&app_handle).await {
+            log::debug!("Lock file cleanup error: {}", e);
+        }
+
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {e}");
         }

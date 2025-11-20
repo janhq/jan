@@ -41,7 +41,11 @@ pub async fn activate_mcp_server<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn deactivate_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     log::info!("Deactivating MCP server: {name}");
 
     // First, mark server as manually deactivated to prevent restart
@@ -87,6 +91,15 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
             service.cancel().await.map_err(|e| e.to_string())?;
         }
     }
+
+    // Delete lock file if this is Jan Browser MCP
+    if name == "Jan Browser MCP" {
+        use crate::core::mcp::lockfile::delete_lock_file;
+        if let Err(e) = delete_lock_file(&app, 17389) {
+            log::warn!("Failed to delete lock file for port 17389: {}", e);
+        }
+    }
+
     log::info!("Server {name} stopped successfully and marked as deactivated.");
     Ok(())
 }
