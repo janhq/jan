@@ -1,6 +1,9 @@
 {
   "welcome": "Welcome to Jan",
-  "description": "To get started, you'll need to either download a local AI model or connect to a cloud model using an API key",
+  "description": "To get started, quickly launch with Jan Model or choose to set up your own local or remote provider",
+  "quickStart": "Quick start with Jan Model",
+  "quickStartDescription": "Start chatting instantly with our recommended model",
+  "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider"
 }

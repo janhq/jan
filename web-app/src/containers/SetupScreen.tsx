@@ -33,6 +33,58 @@ function SetupScreen() {
             </p>
           </div>
           <div className="flex gap-4 flex-col">
+            {/* Quick Start Button - Highlighted */}
+            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
+              <button
+                onClick={() => {
+                  // TODO: Phase 2 - Implement Jan Model V2 download and loading
+                  console.log('Quick start with Jan Model clicked')
+                }}
+                className="w-full text-left"
+              >
+                <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6 text-white"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h1 className="text-main-view-fg font-semibold text-lg mb-1">
+                        {t('setup:quickStart')}
+                      </h1>
+                      <p className="text-main-view-fg/70 text-sm">
+                        {t('setup:quickStartDescription')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {/* "or" divider */}
+            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-main-view-fg/10"></div>
+                <span className="text-main-view-fg/50 text-sm font-medium">
+                  {t('setup:orDivider')}
+                </span>
+                <div className="flex-1 h-px bg-main-view-fg/10"></div>
+              </div>
+            )}
+
+            {/* Set up local model */}
             {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
               <Link
                 to={route.hub.index}
@@ -51,6 +103,8 @@ function SetupScreen() {
                 />
               </Link>
             )}
+
+            {/* Set up remote provider */}
             <Link
               to={route.settings.providers}
               params={{
