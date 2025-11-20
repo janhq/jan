@@ -3,6 +3,8 @@
   "description": "To get started, quickly launch with Jan Model or choose to set up your own local or remote provider",
   "quickStart": "Quick start with Jan Model",
   "quickStartDescription": "Start chatting instantly with our recommended model",
+  "downloading": "Downloading Jan Model...",
+  "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
   "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider"

@@ -1,6 +1,6 @@
 import { Card } from './Card'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
 import { isProd } from '@/lib/version'
@@ -8,16 +8,143 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey } from '@/constants/localStorage'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform'
+import { useModelSources } from '@/hooks/useModelSources'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useEffect, useMemo, useCallback, useState } from 'react'
+import { Progress } from '@/components/ui/progress'
+
+// Jan Model V2 configuration
+const JAN_MODEL_V2_NAME = 'jan-v2-vl-med-gguf'
+const DEFAULT_QUANTIZATION = 'q4_k_m'
 
 function SetupScreen() {
   const { t } = useTranslation()
-  const { providers } = useModelProvider()
+  const navigate = useNavigate()
+  const { providers, getProviderByName } = useModelProvider()
   const firstItemRemoteProvider =
     providers.length > 0 ? providers[1]?.provider : 'openai'
 
   // Check if setup tour has been completed
   const isSetupCompleted =
     localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+
+  // Model sources and download state
+  const { sources, fetchSources } = useModelSources()
+  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
+    useDownloadStore()
+  const serviceHub = useServiceHub()
+  const { huggingfaceToken } = useGeneralSetting()
+  const llamaProvider = getProviderByName('llamacpp')
+
+  // Track if we initiated quick start download
+  const [quickStartInitiated, setQuickStartInitiated] = useState(false)
+
+  // Fetch model sources on mount
+  useEffect(() => {
+    fetchSources()
+  }, [fetchSources])
+
+  // Find Jan Model V2 in catalog
+  const janModelV2 = useMemo(() => {
+    return sources.find((model) =>
+      model.model_name.toLowerCase().includes(JAN_MODEL_V2_NAME)
+    )
+  }, [sources])
+
+  // Find the default variant (q4_k_m)
+  const defaultVariant = useMemo(() => {
+    if (!janModelV2) return null
+    return janModelV2.quants.find((quant) =>
+      quant.model_id.toLowerCase().includes(DEFAULT_QUANTIZATION)
+    )
+  }, [janModelV2])
+
+  // Check download status
+  const downloadProcesses = useMemo(
+    () =>
+      Object.values(downloads).map((download) => ({
+        id: download.name,
+        name: download.name,
+        progress: download.progress,
+        current: download.current,
+        total: download.total,
+      })),
+    [downloads]
+  )
+
+  const isDownloading = useMemo(() => {
+    if (!defaultVariant) return false
+    return (
+      localDownloadingModels.has(defaultVariant.model_id) ||
+      downloadProcesses.some((e) => e.id === defaultVariant.model_id)
+    )
+  }, [defaultVariant, localDownloadingModels, downloadProcesses])
+
+  const downloadProgress = useMemo(() => {
+    if (!defaultVariant) return 0
+    return (
+      downloadProcesses.find((e) => e.id === defaultVariant.model_id)
+        ?.progress || 0
+    )
+  }, [defaultVariant, downloadProcesses])
+
+  const isDownloaded = useMemo(() => {
+    if (!defaultVariant) return false
+    return llamaProvider?.models.some(
+      (m: { id: string }) => m.id === defaultVariant.model_id
+    )
+  }, [defaultVariant, llamaProvider])
+
+  // Handle quick start click
+  const handleQuickStart = useCallback(() => {
+    if (!defaultVariant || !janModelV2) {
+      console.error('Jan Model V2 not found in catalog')
+      return
+    }
+
+    setQuickStartInitiated(true)
+    addLocalDownloadingModel(defaultVariant.model_id)
+    serviceHub
+      .models()
+      .pullModelWithMetadata(
+        defaultVariant.model_id,
+        defaultVariant.path,
+        (
+          janModelV2.mmproj_models?.find(
+            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+          ) || janModelV2.mmproj_models?.[0]
+        )?.path,
+        huggingfaceToken
+      )
+  }, [
+    defaultVariant,
+    janModelV2,
+    addLocalDownloadingModel,
+    serviceHub,
+    huggingfaceToken,
+  ])
+
+  // Navigate to chat when download completes
+  useEffect(() => {
+    if (quickStartInitiated && isDownloaded && defaultVariant) {
+      // Mark setup as completed
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+
+      // Navigate to chat with model selected
+      navigate({
+        to: route.home,
+        params: {},
+        search: {
+          model: {
+            id: defaultVariant.model_id,
+            provider: 'llamacpp',
+          },
+        },
+      })
+    }
+  }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
   return (
     <div className="flex h-full flex-col justify-center">
@@ -36,37 +163,76 @@ function SetupScreen() {
             {/* Quick Start Button - Highlighted */}
             {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
               <button
-                onClick={() => {
-                  // TODO: Phase 2 - Implement Jan Model V2 download and loading
-                  console.log('Quick start with Jan Model clicked')
-                }}
-                className="w-full text-left"
+                onClick={handleQuickStart}
+                disabled={isDownloading || isDownloaded || !defaultVariant}
+                className="w-full text-left disabled:cursor-not-allowed"
               >
-                <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg">
+                <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-6 w-6 text-white"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                      </svg>
+                      {isDownloading ? (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-6 w-6 text-white animate-spin"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-6 w-6 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                          />
+                        </svg>
+                      )}
                     </div>
                     <div className="flex-1">
                       <h1 className="text-main-view-fg font-semibold text-lg mb-1">
-                        {t('setup:quickStart')}
+                        {isDownloading
+                          ? t('setup:downloading', {
+                              defaultValue: 'Downloading Jan Model...',
+                            })
+                          : t('setup:quickStart')}
                       </h1>
-                      <p className="text-main-view-fg/70 text-sm">
-                        {t('setup:quickStartDescription')}
-                      </p>
+                      {isDownloading ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3">
+                            <Progress
+                              value={downloadProgress * 100}
+                              className="flex-1"
+                            />
+                            <span className="text-sm text-main-view-fg/70 font-medium min-w-[3rem] text-right">
+                              {Math.round(downloadProgress * 100)}%
+                            </span>
+                          </div>
+                          <p className="text-main-view-fg/70 text-xs">
+                            {t('setup:downloadingDescription', {
+                              defaultValue:
+                                'Please wait while we download the model. This may take a few minutes.',
+                            })}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-main-view-fg/70 text-sm">
+                          {t('setup:quickStartDescription')}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
