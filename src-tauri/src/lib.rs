@@ -222,7 +222,7 @@ pub fn run() {
 
                     // Quick cleanup with shorter timeout
                     let state = app_handle.state::<AppState>();
-                    let _ = clean_up_mcp_servers(state).await;
+                    let _ = clean_up_mcp_servers(&app_handle, state).await;
                     let _ = cleanup_llama_processes(app.clone()).await;
                 });
             });
