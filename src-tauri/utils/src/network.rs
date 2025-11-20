@@ -319,6 +319,89 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
     None
 }
 
+/// Get process information by PID
+/// Returns None if process doesn't exist or cannot be determined
+pub fn get_process_info_by_pid(pid: u32) -> Option<ProcessUsingPort> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        get_process_info_by_pid_unix(pid)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        get_process_info_by_pid_windows(pid)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn get_process_info_by_pid_unix(pid: u32) -> Option<ProcessUsingPort> {
+    use std::process::Command;
+
+    // Use ps to get process info by PID
+    let output = Command::new("ps")
+        .args(&["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+
+    Some(ProcessUsingPort { pid, name, cmd })
+}
+
+#[cfg(target_os = "windows")]
+fn get_process_info_by_pid_windows(pid: u32) -> Option<ProcessUsingPort> {
+    use std::process::Command;
+
+    // Use wmic to get process info by PID
+    let output = Command::new("wmic")
+        .args(&[
+            "process",
+            "where",
+            &format!("ProcessId={}", pid),
+            "get",
+            "Name",
+            "/format:list",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let mut name = String::new();
+
+    for line in output_str.lines() {
+        if line.starts_with("Name=") {
+            name = line.strip_prefix("Name=")?.trim().to_string();
+            break;
+        }
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+
+    Some(ProcessUsingPort { pid, name, cmd })
+}
+
 pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
     let name_lower = process_info.name.to_lowercase();
     let cmd_str = process_info.cmd.join(" ").to_lowercase();
