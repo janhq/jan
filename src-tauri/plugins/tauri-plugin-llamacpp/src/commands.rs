@@ -92,7 +92,7 @@ pub async fn load_llama_model<R: Runtime>(
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             log::warn!("API key not provided");
-            "".to_string()
+            String::new()
         });
 
     // Configure the command to run the server
