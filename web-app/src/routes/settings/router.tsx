@@ -28,20 +28,58 @@ function RouterSettings() {
 
   const loadRouterSettings = useCallback(async () => {
     try {
-      const router = RouterManager.instance().get()
+      console.log('[Router Settings] Attempting to load router...')
+      const routerManager = RouterManager.instance()
+      console.log('[Router Settings] RouterManager instance:', routerManager)
+      
+      const router = routerManager.get()
+      console.log('[Router Settings] Router from manager:', router)
+      
       if (router) {
         const availableStrategies = router.listStrategies()
         setStrategies(availableStrategies)
         
         const activeStrategy = router.getStrategy()
         setCurrentStrategy(activeStrategy.name)
+        console.log('[Router Settings] Loaded successfully:', {
+          strategies: availableStrategies,
+          currentStrategy: activeStrategy.name
+        })
+      } else {
+        console.warn('[Router Settings] Router extension not yet loaded, retrying in 1000ms...')
+        // Retry after a longer delay to allow extension loading
+        setTimeout(() => {
+          console.log('[Router Settings] Retry attempt...')
+          if (!loading) {
+            console.log('[Router Settings] Already loaded, skipping retry')
+            return
+          }
+          const retryRouter = RouterManager.instance().get()
+          console.log('[Router Settings] Retry - Router from manager:', retryRouter)
+          
+          if (retryRouter) {
+            const availableStrategies = retryRouter.listStrategies()
+            setStrategies(availableStrategies)
+            
+            const activeStrategy = retryRouter.getStrategy()
+            setCurrentStrategy(activeStrategy.name)
+            console.log('[Router Settings] Loaded successfully on retry:', {
+              strategies: availableStrategies,
+              currentStrategy: activeStrategy.name
+            })
+          } else {
+            console.error('[Router Settings] Router still not available after retry')
+          }
+          setLoading(false)
+        }, 1000)
+        return // Don't set loading to false yet
       }
     } catch (error) {
-      console.error('Failed to load router settings:', error)
+      console.error('[Router Settings] Failed to load router settings:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loading])
 
   const handleStrategyChange = useCallback(
     async (strategyName: string) => {

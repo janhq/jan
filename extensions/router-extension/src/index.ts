@@ -30,8 +30,14 @@ export default class RouterExtension extends ModelRouterExtension {
   async onLoad() {
     console.log('[RouterExtension] Loading model router')
 
-    // Register with RouterManager
-    RouterManager.instance().register(this)
+    // Register with RouterManager - use window.core.routerManager if available (web/Tauri)
+    // This ensures we use the same singleton instance across the app
+    const routerManager = typeof window !== 'undefined' && window.core?.routerManager 
+      ? window.core.routerManager 
+      : RouterManager.instance()
+    
+    routerManager.register(this)
+    console.log('[RouterExtension] Registered with RouterManager:', routerManager)
 
     // Load user preferences for routing strategy
     const savedStrategy = await this.loadStrategyPreference()

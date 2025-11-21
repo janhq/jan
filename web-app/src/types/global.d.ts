@@ -2,9 +2,14 @@ export {}
 
 declare module 'react-syntax-highlighter-virtualized-renderer'
 
+import type { ExtensionManager } from '@/lib/extension'
+import type { APIs } from '@/lib/service'
+import type { RouterManager } from '@janhq/core'
+
 type AppCore = {
   api: APIs
   extensionManager: ExtensionManager | undefined
+  routerManager?: RouterManager
 }
 
 declare global {

@@ -1,7 +1,7 @@
 import { ExtensionManager } from '@/lib/extension'
 import { APIs } from '@/lib/service'
 import { EventEmitter } from '@/services/events/EventEmitter'
-import { EngineManager, ModelManager } from '@janhq/core'
+import { EngineManager, ModelManager, RouterManager } from '@janhq/core'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 export function ExtensionProvider({ children }: PropsWithChildren) {
@@ -16,6 +16,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     window.core.extensionManager = new ExtensionManager()
     window.core.engineManager = new EngineManager()
     window.core.modelManager = new ModelManager()
+    window.core.routerManager = RouterManager.instance()
 
     // Register extensions - same pattern for both platforms
     await ExtensionManager.getInstance()
