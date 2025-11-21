@@ -28,3 +28,10 @@ export { RAGExtension, RAG_INTERNAL_SERVER } from './rag'
 export type { AttachmentInput, IngestAttachmentsResult } from './rag'
 export { VectorDBExtension } from './vector-db'
 export type { SearchMode, VectorDBStatus, VectorChunkInput, VectorSearchResult, AttachmentFileInfo, VectorDBFileInput, VectorDBIngestOptions } from './vector-db'
+
+/**
+ * Router extension for intelligent model routing.
+ */
+export { ModelRouterExtension, RouterStrategy } from './router'
+export type { RouteDecision, RouteContext, AvailableModel, RoutePreferences } from './router'
+export { RouterManager } from './RouterManager'
