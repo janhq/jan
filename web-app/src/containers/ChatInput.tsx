@@ -78,6 +78,7 @@ const ChatInput = ({
   const loadingModel = useAppState((state) => state.loadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const routingEnabled = useAppState((state) => state.routingEnabled)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
@@ -156,14 +157,24 @@ const ChatInput = ({
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const handleSendMessage = async (prompt: string) => {
-    if (!selectedModel) {
+    console.log('[ChatInput] handleSendMessage called', { 
+      selectedModel: selectedModel?.id, 
+      routingEnabled,
+      hasPrompt: !!prompt.trim()
+    })
+    
+    // Allow sending if either a model is selected OR routing is enabled
+    if (!selectedModel && !routingEnabled) {
+      console.log('[ChatInput] Blocked: No model selected and routing disabled')
       setMessage('Please select a model to start chatting.')
       return
     }
     if (!prompt.trim()) {
+      console.log('[ChatInput] Blocked: Empty prompt')
       return
     }
 
+    console.log('[ChatInput] Validation passed, calling sendMessage')
     setMessage('')
 
     // Callback to update attachment processing state
@@ -1274,7 +1285,14 @@ const ChatInput = ({
                   size="icon"
                   disabled={!prompt.trim() || ingestingAny}
                   data-test-id="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
+                  onClick={() => {
+                    console.log('[ChatInput] Send button clicked', { 
+                      promptLength: prompt.trim().length,
+                      ingestingAny,
+                      disabled: !prompt.trim() || ingestingAny
+                    })
+                    handleSendMessage(prompt)
+                  }}
                 >
                   {streamingContent || ingestingAny ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

@@ -539,12 +539,29 @@ export const useChat = () => {
       ) => void,
       continueFromMessageId?: string
     ) => {
+      console.log('[useChat] sendMessage called')
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
       let activeProvider = getProviderByName(selectedProvider)
+      const isRoutingEnabled = useAppState.getState().routingEnabled
+
+      console.log('[useChat] Initial state:', { 
+        hasActiveThread: !!activeThread, 
+        selectedProvider,
+        hasActiveProvider: !!activeProvider,
+        routingEnabled: isRoutingEnabled
+      })
 
       resetTokenSpeed()
-      if (!activeThread || !activeProvider) return
+      // Allow proceeding if either we have an active provider OR routing is enabled
+      if (!activeThread) {
+        console.error('[useChat] No active thread')
+        return
+      }
+      if (!activeProvider && !isRoutingEnabled) {
+        console.error('[useChat] No active provider and routing is disabled')
+        return
+      }
 
       // Separate images and documents
       const fileAttachmentsFeatureEnabled =
@@ -701,6 +718,13 @@ export const useChat = () => {
             
             console.log('[Router] Routing query with', availableModels.length, 'available models')
             
+            // Check if there are any available models
+            if (availableModels.length === 0) {
+              console.error('[Router] No available models found for routing')
+              toast.error('No models available for routing. Please configure at least one model.')
+              return
+            }
+            
             // Build messages for routing context
             const routingMessages: ChatCompletionMessage[] = [
               ...messages.map(m => ({
@@ -743,14 +767,24 @@ export const useChat = () => {
                 console.log('[Router] Routed to model:', selectedModel.id, 'provider:', targetProvider)
                 console.log('[Router] Confidence:', routeDecision.confidence, 'Reasoning:', routeDecision.reasoning)
               } else {
-                console.warn('[Router] Could not find routed model, using selected model')
+                console.warn('[Router] Could not find routed model')
+                toast.error('Router could not find the selected model. Please try again.')
+                return
               }
+            } else {
+              console.error('[Router] No routing decision returned')
+              toast.error('Router failed to select a model. Please try again.')
+              return
             }
           } else {
             console.warn('[Router] Router enabled but no router extension loaded')
+            toast.error('Auto Router is not available. Please select a model manually.')
+            return
           }
         } catch (error) {
-          console.error('[Router] Error during routing, falling back to selected model:', error)
+          console.error('[Router] Error during routing:', error)
+          toast.error('Auto Router error: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          return
         }
       }
 

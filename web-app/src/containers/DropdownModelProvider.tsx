@@ -242,12 +242,15 @@ const DropdownModelProvider = ({
 
   // Update display model when selection changes
   useEffect(() => {
-    if (selectedProvider && selectedModel) {
+    // If routing is enabled, keep the Auto Router display
+    if (routingEnabled) {
+      setDisplayModel('🤖 Auto Router')
+    } else if (selectedProvider && selectedModel) {
       setDisplayModel(getModelDisplayName(selectedModel))
     } else {
       setDisplayModel(t('common:selectAModel'))
     }
-  }, [selectedProvider, selectedModel, t])
+  }, [selectedProvider, selectedModel, routingEnabled, t])
 
   // Check vision capabilities for all llamacpp models
   useEffect(() => {
@@ -473,7 +476,7 @@ const DropdownModelProvider = ({
       // Restore to "Select a model" text
       setDisplayModel(t('common:selectAModel'))
     }
-  }, [routingEnabled, setRoutingEnabled, selectModelProvider, t])
+  }, [routingEnabled, setRoutingEnabled, selectModelProvider, t, setOpen])
 
   const currentModel = selectedModel?.id
     ? getModelBy(selectedModel?.id)
@@ -567,7 +570,11 @@ const DropdownModelProvider = ({
                 {!searchValue && (
                   <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
                     <div
-                      onClick={handleToggleAutoRouter}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleToggleAutoRouter()
+                      }}
                       className={cn(
                         'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                         'hover:bg-main-view-fg/4',
