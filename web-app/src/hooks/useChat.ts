@@ -76,7 +76,8 @@ const inferCapabilities = (model: Model): string[] => {
 
 // Helper to build available models array from providers
 const buildAvailableModels = (
-  providers: ModelProvider[]
+  providers: ModelProvider[],
+  activeModelIds: string[] = []
 ): AvailableModel[] => {
   const availableModels: AvailableModel[] = []
 
@@ -98,7 +99,7 @@ const buildAvailableModels = (
             typeof model.settings?.ctx_len === 'number'
               ? model.settings.ctx_len
               : 4096,
-          isLoaded: false, // Will be updated by checking active models
+          isLoaded: activeModelIds.includes(model.id),
         },
       })
     }
@@ -714,9 +715,11 @@ export const useChat = () => {
           const router = RouterManager.instance().get()
           if (router) {
             const providers = useModelProvider.getState().providers
-            const availableModels = buildAvailableModels(providers)
+            const activeModelIds = useAppState.getState().activeModels
+            const availableModels = buildAvailableModels(providers, activeModelIds)
             
             console.log('[Router] Routing query with', availableModels.length, 'available models')
+            console.log('[Router] Active models:', activeModelIds)
             
             // Check if there are any available models
             if (availableModels.length === 0) {
@@ -740,7 +743,7 @@ export const useChat = () => {
               messages: routingMessages,
               threadId: activeThread.id,
               availableModels,
-              activeModels: [], // TODO: Get actual active models
+              activeModels: activeModelIds,
               attachments: {
                 images: images.length,
                 documents: documents.length,
@@ -764,8 +767,26 @@ export const useChat = () => {
                 targetProvider = routedModel.provider
                 activeProvider = getProviderByName(targetProvider)
                 
+                // CRITICAL: Update the thread's model to match the routed model
+                // This ensures sendCompletion() uses the correct model
+                activeThread.model = {
+                  id: selectedModel.id,
+                  provider: targetProvider,
+                }
+                
+                // Check if model is already loaded
+                const isModelLoaded = activeModelIds.includes(selectedModel.id)
+                
                 console.log('[Router] Routed to model:', selectedModel.id, 'provider:', targetProvider)
+                console.log('[Router] Updated thread.model to:', activeThread.model?.id)
                 console.log('[Router] Confidence:', routeDecision.confidence, 'Reasoning:', routeDecision.reasoning)
+                console.log('[Router] Model loaded:', isModelLoaded)
+                
+                if (!isModelLoaded) {
+                  toast.success(`Auto Router selected ${selectedModel.id}. Loading model...`)
+                } else {
+                  toast.success(`Auto Router selected ${selectedModel.id}`)
+                }
               } else {
                 console.warn('[Router] Could not find routed model')
                 toast.error('Router could not find the selected model. Please try again.')
@@ -797,7 +818,17 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await serviceHub.models().startModel(activeProvider!, selectedModel.id)
+          try {
+            await serviceHub.models().startModel(activeProvider!, selectedModel.id)
+            console.log('[Router] Model started successfully:', selectedModel.id)
+          } catch (modelLoadError) {
+            console.error('[Router] Failed to start model:', selectedModel.id, modelLoadError)
+            toast.error(`Failed to load model: ${selectedModel.id}`, {
+              description: modelLoadError instanceof Error ? modelLoadError.message : String(modelLoadError)
+            })
+            updateLoadingModel(false)
+            return
+          }
           updateLoadingModel(false)
           // Refresh active models after starting
           serviceHub

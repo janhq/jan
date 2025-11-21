@@ -93,7 +93,7 @@ export class HeuristicRouter extends RouterStrategy {
     } else {
       // Prefer smaller models for simple queries (faster)
       const params = this.extractParamCount(model.metadata.parameterCount)
-      if (params <= 8) score += 15
+      if (params <= 8) score += 50
       else if (params <= 15) score += 10
     }
 
@@ -103,7 +103,12 @@ export class HeuristicRouter extends RouterStrategy {
       score += 10
     }
 
-    // 4. Already loaded bonus (avoid model switching overhead)
+    // 4. Already loaded bonus (CRITICAL - avoid model switching and ensure usability)
+    if (model.metadata.isLoaded) {
+      score += 20 // Strong preference for loaded models to avoid "No active session" errors
+    }
+    
+    // Also check activeModels array for backwards compatibility
     if (activeModels.includes(model.id)) {
       score += 20
     }

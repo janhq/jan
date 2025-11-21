@@ -1,0 +1,13 @@
+[
+  {
+    "key": "allowed_models",
+    "title": "Allowed Models",
+    "description": "Comma-separated list of model IDs that the router is allowed to select. Leave empty to allow all models.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "Qwen3-VL-8B-Instruct-IQ4_XS,gemma-3n-E4B-it-IQ4_XS",
+      "placeholder": "e.g., Qwen3-VL-8B-Instruct-IQ4_XS,gemma-3n-E4B-it-IQ4_XS",
+      "type": "text"
+    }
+  }
+]

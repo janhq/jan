@@ -13,6 +13,7 @@ import { LLMRouter } from './strategies/LLMRouter'
 export default class RouterExtension extends ModelRouterExtension {
   private activeStrategy: RouterStrategy
   private availableStrategies: Map<string, RouterStrategy>
+  private allowedModels: string[] = []
 
   constructor(url: string, name: string, productName?: string) {
     super(url, name, productName, true, 'Model Router Extension', '1.0.0')
@@ -29,6 +30,18 @@ export default class RouterExtension extends ModelRouterExtension {
 
   async onLoad() {
     console.log('[RouterExtension] Loading model router')
+
+    // Register settings
+    const settings = structuredClone(SETTINGS)
+    await this.registerSettings(settings)
+
+    // Load allowed models from settings
+    const allowedModelsStr = await this.getSetting<string>(
+      'allowed_models',
+      'Qwen3-VL-8B-Instruct-IQ4_XS,gemma-3n-E4B-it-IQ4_XS'
+    )
+    this.allowedModels = this.parseAllowedModels(allowedModelsStr)
+    console.log('[RouterExtension] Allowed models:', this.allowedModels)
 
     // Register with RouterManager - use window.core.routerManager if available (web/Tauri)
     // This ensures we use the same singleton instance across the app
@@ -80,12 +93,38 @@ export default class RouterExtension extends ModelRouterExtension {
   async route(context: RouteContext): Promise<RouteDecision> {
     console.log(`[RouterExtension] Routing with strategy: ${this.activeStrategy.name}`)
 
+    // Filter by allowed models
+    const filteredModels = this.filterAllowedModels(context.availableModels)
+
+    // Check loaded vs unloaded models
+    const loadedModels = filteredModels.filter(m => m.metadata.isLoaded)
+    const unloadedModels = filteredModels.filter(m => !m.metadata.isLoaded)
+    
+    console.log(`[RouterExtension] Available: ${filteredModels.length} models (${loadedModels.length} loaded, ${unloadedModels.length} unloaded)`)
+    
+    // Note: We now allow routing to unloaded models - they will be loaded automatically
+    // The HeuristicRouter gives strong preference (+50) to loaded models to minimize loading time
+
+    const filteredContext = {
+      ...context,
+      availableModels: filteredModels,
+    }
+
+    if (filteredContext.availableModels.length === 0) {
+      console.error('[RouterExtension] No models available after filtering by allowed models')
+      throw new Error('No suitable models available for routing. Please check your allowed models configuration.')
+    }
+
     const startTime = Date.now()
-    const decision = await this.activeStrategy.route(context)
+    const decision = await this.activeStrategy.route(filteredContext)
     const elapsed = Date.now() - startTime
 
+    // Check if selected model needs loading
+    const selectedModel = filteredModels.find(m => m.id === decision.modelId)
+    const needsLoading = selectedModel && !selectedModel.metadata.isLoaded
+
     console.log(
-      `[RouterExtension] Routed to ${decision.modelId} (${elapsed}ms) - ${decision.reasoning}`
+      `[RouterExtension] Routed to ${decision.modelId} (${elapsed}ms) - ${decision.reasoning}${needsLoading ? ' [will be loaded]' : ' [already loaded]'}`
     )
 
     // Log decision for analytics
@@ -147,5 +186,32 @@ export default class RouterExtension extends ModelRouterExtension {
         .join(' ')
     }
     return ''
+  }
+
+  private parseAllowedModels(allowedModelsStr: string): string[] {
+    if (!allowedModelsStr || allowedModelsStr.trim() === '') {
+      return []
+    }
+    return allowedModelsStr
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0)
+  }
+
+  private filterAllowedModels(availableModels: any[]): any[] {
+    // If no allowed models configured, return all available models
+    if (this.allowedModels.length === 0) {
+      return availableModels
+    }
+
+    // Filter models to only include those in the allowed list
+    return availableModels.filter((model) => this.allowedModels.includes(model.id))
+  }
+
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === 'allowed_models') {
+      this.allowedModels = this.parseAllowedModels(value as string)
+      console.log('[RouterExtension] Updated allowed models:', this.allowedModels)
+    }
   }
 }

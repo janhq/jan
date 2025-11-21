@@ -1,5 +1,6 @@
 import { defineConfig } from 'rolldown'
 import pkgJson from './package.json' with { type: 'json' }
+import settingJson from './settings.json' with { type: 'json' }
 
 export default defineConfig([
   {
@@ -12,6 +13,7 @@ export default defineConfig([
     define: {
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       VERSION: JSON.stringify(pkgJson.version),
+      SETTINGS: JSON.stringify(settingJson),
     },
   }
 ])
