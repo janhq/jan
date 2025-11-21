@@ -127,6 +127,19 @@ export abstract class ModelRouterExtension extends BaseExtension {
   abstract setStrategy(strategy: RouterStrategy): void
 
   /**
+   * Set strategy by name
+   * @param name - Strategy name
+   * @returns true if strategy was found and set
+   */
+  abstract setStrategyByName(name: string): boolean
+
+  /**
+   * List available routing strategies
+   * @returns Array of strategy information
+   */
+  abstract listStrategies(): Array<{ name: string; description: string }>
+
+  /**
    * Route a request using the active strategy
    */
   abstract route(context: RouteContext): Promise<RouteDecision>

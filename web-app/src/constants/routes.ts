@@ -19,6 +19,7 @@ export const route = {
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
+    router: '/settings/router',
   },
   hub: {
     index: '/hub/',

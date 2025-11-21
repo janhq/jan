@@ -19,6 +19,7 @@ import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
+import { Route as SettingsRouterImport } from './routes/settings/router'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
@@ -82,6 +83,12 @@ const ThreadsThreadIdRoute = ThreadsThreadIdImport.update({
 const SettingsShortcutsRoute = SettingsShortcutsImport.update({
   id: '/settings/shortcuts',
   path: '/settings/shortcuts',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsRouterRoute = SettingsRouterImport.update({
+  id: '/settings/router',
+  path: '/settings/router',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -292,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPrivacyImport
       parentRoute: typeof rootRoute
     }
+    '/settings/router': {
+      id: '/settings/router'
+      path: '/settings/router'
+      fullPath: '/settings/router'
+      preLoaderRoute: typeof SettingsRouterImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/shortcuts': {
       id: '/settings/shortcuts'
       path: '/settings/shortcuts'
@@ -363,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/router': typeof SettingsRouterRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
@@ -389,6 +404,7 @@ export interface FileRoutesByTo {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/router': typeof SettingsRouterRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
@@ -416,6 +432,7 @@ export interface FileRoutesById {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/router': typeof SettingsRouterRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
@@ -444,6 +461,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/router'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
@@ -469,6 +487,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/router'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
@@ -494,6 +513,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/router'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
@@ -521,6 +541,7 @@ export interface RootRouteChildren {
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsRouterRoute: typeof SettingsRouterRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
@@ -547,6 +568,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SettingsRouterRoute: SettingsRouterRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
@@ -582,6 +604,7 @@ export const routeTree = rootRoute
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
+        "/settings/router",
         "/settings/shortcuts",
         "/threads/$threadId",
         "/hub/",
@@ -638,6 +661,9 @@ export const routeTree = rootRoute
     },
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
+    },
+    "/settings/router": {
+      "filePath": "settings/router.tsx"
     },
     "/settings/shortcuts": {
       "filePath": "settings/shortcuts.tsx"

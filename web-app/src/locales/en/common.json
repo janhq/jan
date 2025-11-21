@@ -7,6 +7,7 @@
   "extensions": "Extensions",
   "attachments": "Attachments",
   "general": "General",
+  "router": "Router",
   "settings": "Settings",
   "modelProviders": "Model Providers",
   "interface": "Interface",
