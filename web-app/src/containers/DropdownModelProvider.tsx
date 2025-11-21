@@ -9,7 +9,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { IconSettings, IconX } from '@tabler/icons-react'
+import { IconSettings, IconX, IconRouter } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
@@ -25,6 +25,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { useAppState } from '@/hooks/useAppState'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -70,6 +71,7 @@ const DropdownModelProvider = ({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
+  const { routingEnabled, setRoutingEnabled } = useAppState()
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -396,6 +398,11 @@ const DropdownModelProvider = ({
       setSearchValue('')
       setOpen(false)
 
+      // Disable auto routing when user manually selects a model
+      if (routingEnabled) {
+        setRoutingEnabled(false)
+      }
+
       selectModelProvider(
         searchableModel.provider.provider,
         searchableModel.model.id
@@ -447,8 +454,26 @@ const DropdownModelProvider = ({
       getProviderByName,
       checkAndUpdateModelVisionCapability,
       serviceHub,
+      routingEnabled,
+      setRoutingEnabled,
     ]
   )
+
+  const handleToggleAutoRouter = useCallback(() => {
+    const newRoutingEnabled = !routingEnabled
+    setRoutingEnabled(newRoutingEnabled)
+    setOpen(false)
+    
+    // Update display
+    if (newRoutingEnabled) {
+      setDisplayModel('🤖 Auto Router')
+      // Clear manual model selection when enabling auto routing
+      selectModelProvider('', '')
+    } else {
+      // Restore to "Select a model" text
+      setDisplayModel(t('common:selectAModel'))
+    }
+  }, [routingEnabled, setRoutingEnabled, selectModelProvider, t])
 
   const currentModel = selectedModel?.id
     ? getModelBy(selectedModel?.id)
@@ -538,6 +563,45 @@ const DropdownModelProvider = ({
               </div>
             ) : (
               <div className="py-1">
+                {/* Auto Router option - only show when not searching */}
+                {!searchValue && (
+                  <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
+                    <div
+                      onClick={handleToggleAutoRouter}
+                      className={cn(
+                        'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                        'hover:bg-main-view-fg/4',
+                        routingEnabled &&
+                          'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <div className="shrink-0">
+                          <IconRouter size={18} className="text-primary" />
+                        </div>
+                        <span className="text-main-view-fg/80 text-sm font-medium">
+                          Auto Router
+                        </span>
+                        {routingEnabled && (
+                          <span className="text-xs text-primary font-medium ml-auto">
+                            ✓ Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="px-3 py-1 pb-2">
+                      <p className="text-xs text-main-view-fg/60">
+                        Automatically selects the best model for each query
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Divider after Auto Router */}
+                {!searchValue && (
+                  <div className="border-b border-1 border-main-view-fg/8 mx-2 mb-1"></div>
+                )}
+
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
                   <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">

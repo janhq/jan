@@ -44,6 +44,68 @@ import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
 import { MCPTool } from '@/types/completion'
+import { RouterManager } from '@janhq/core'
+import type { AvailableModel, ChatCompletionMessage } from '@janhq/core'
+import { ChatCompletionRole } from '@janhq/core'
+
+// Helper to infer model capabilities from model metadata
+const inferCapabilities = (model: Model): string[] => {
+  const capabilities: string[] = []
+
+  // Infer vision capability
+  if (model.capabilities?.includes('vision')) {
+    capabilities.push('vision')
+  }
+
+  // Infer code generation (check for code-related model names)
+  const modelName = model.name?.toLowerCase() || model.id.toLowerCase()
+  if (/code|coder|starcoder|deepseek-coder/i.test(modelName)) {
+    capabilities.push('code')
+  }
+
+  // Infer reasoning capability (check for reasoning-related names)
+  if (/reasoning|think|o1|qwq/i.test(modelName)) {
+    capabilities.push('reasoning')
+  }
+
+  // Add chat capability for all models
+  capabilities.push('chat')
+
+  return capabilities
+}
+
+// Helper to build available models array from providers
+const buildAvailableModels = (
+  providers: ModelProvider[]
+): AvailableModel[] => {
+  const availableModels: AvailableModel[] = []
+
+  for (const provider of providers) {
+    if (!provider.active) continue
+
+    for (const model of provider.models) {
+      // Extract parameter count from model name (e.g., "7B", "13B", "70B")
+      const paramCountMatch = model.id.match(/(\d+\.?\d*)B/i)
+      const parameterCount = paramCountMatch ? paramCountMatch[1] + 'B' : undefined
+
+      availableModels.push({
+        id: model.id,
+        providerId: provider.provider,
+        capabilities: inferCapabilities(model),
+        metadata: {
+          parameterCount,
+          contextWindow: 
+            typeof model.settings?.ctx_len === 'number'
+              ? model.settings.ctx_len
+              : 4096,
+          isLoaded: false, // Will be updated by checking active models
+        },
+      })
+    }
+  }
+
+  return availableModels
+}
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -623,7 +685,74 @@ export const useChat = () => {
       }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
-      const selectedModel = useModelProvider.getState().selectedModel
+      
+      // Get routing state
+      const routingEnabled = useAppState.getState().routingEnabled
+      let selectedModel = useModelProvider.getState().selectedModel
+      let targetProvider = selectedProvider
+
+      // Apply routing if enabled
+      if (routingEnabled && !continueFromMessageId) {
+        try {
+          const router = RouterManager.instance().get()
+          if (router) {
+            const providers = useModelProvider.getState().providers
+            const availableModels = buildAvailableModels(providers)
+            
+            console.log('[Router] Routing query with', availableModels.length, 'available models')
+            
+            // Build messages for routing context
+            const routingMessages: ChatCompletionMessage[] = [
+              ...messages.map(m => ({
+                role: m.role === 'user' ? ChatCompletionRole.User : 
+                      m.role === 'assistant' ? ChatCompletionRole.Assistant :
+                      ChatCompletionRole.System,
+                content: m.content?.[0]?.text?.value || '',
+              })),
+              { role: ChatCompletionRole.User, content: message },
+            ]
+            
+            const routeDecision = await router.route({
+              messages: routingMessages,
+              threadId: activeThread.id,
+              availableModels,
+              activeModels: [], // TODO: Get actual active models
+              attachments: {
+                images: images.length,
+                documents: documents.length,
+                hasCode: false, // TODO: Detect code in message
+              },
+            })
+
+            console.log('[Router] Decision:', routeDecision)
+
+            // Update target model and provider based on routing decision
+            if (routeDecision) {
+              const routedModel = providers
+                .flatMap(p => p.models.map(m => ({ model: m, provider: p.provider })))
+                .find(item => 
+                  item.model.id === routeDecision.modelId && 
+                  item.provider === routeDecision.providerId
+                )
+
+              if (routedModel) {
+                selectedModel = routedModel.model
+                targetProvider = routedModel.provider
+                activeProvider = getProviderByName(targetProvider)
+                
+                console.log('[Router] Routed to model:', selectedModel.id, 'provider:', targetProvider)
+                console.log('[Router] Confidence:', routeDecision.confidence, 'Reasoning:', routeDecision.reasoning)
+              } else {
+                console.warn('[Router] Could not find routed model, using selected model')
+              }
+            }
+          } else {
+            console.warn('[Router] Router enabled but no router extension loaded')
+          }
+        } catch (error) {
+          console.error('[Router] Error during routing, falling back to selected model:', error)
+        }
+      }
 
       // If continuing, start with the previous content
       const accumulatedTextRef = {
@@ -634,7 +763,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await serviceHub.models().startModel(activeProvider, selectedModel.id)
+          await serviceHub.models().startModel(activeProvider!, selectedModel.id)
           updateLoadingModel(false)
           // Refresh active models after starting
           serviceHub
