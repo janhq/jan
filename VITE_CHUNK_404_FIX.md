@@ -59,7 +59,7 @@ make dev
 #### Option 1: Force Vite Rebuild
 ```bash
 cd web-app
-yarn dev --force
+yarn dev -- --force
 ```
 
 The `--force` flag tells Vite to ignore cache and rebuild everything.
