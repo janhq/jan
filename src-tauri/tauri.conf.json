@@ -21,19 +21,19 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {
           "x": 12,
-          "y": 22
+          "y": 25
         },
         "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
-          "state": "active",
-          "radius": 8
+          "state": "active"
         },
         "dragDropEnabled": false
       }

@@ -2,7 +2,6 @@ export const route = {
   // home as new chat or thread
   home: '/',
   appLogs: '/logs',
-  assistant: '/assistant',
   project: '/project',
   projectDetail: '/project/$projectId',
   settings: {
@@ -20,6 +19,7 @@ export const route = {
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
     router: '/settings/router',
+    assistant: '/settings/assistant',
   },
   hub: {
     index: '/hub/',

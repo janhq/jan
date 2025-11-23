@@ -632,6 +632,30 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         }
     } else {
+        if name == "Jan Browser MCP" {
+            if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
+                if let Some(port_str) = port_str.as_str() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        if !jan_utils::network::is_port_available(port) {
+                            log::warn!("Port {} occupied, attempting cleanup", port);
+                            match kill_orphaned_mcp_process_with_app(&app, port).await {
+                                Ok(true) => {
+                                    log::info!("Cleaned up orphaned process on port {}", port);
+                                }
+                                Ok(false) => {
+                                    return Err(format!(
+                                        "Port {} is already in use. Please close the application using this port or restart Jan.",
+                                        port
+                                    ));
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let mut cmd = Command::new(config_params.command.clone());
         let bun_x_path = if cfg!(windows) {
             bin_path.join("bun.exe")
@@ -742,6 +766,21 @@ async fn schedule_mcp_start_task<R: Runtime>(
             connected.insert(name.clone(), true);
             log::info!("Marked MCP server {name} as successfully connected");
         }
+
+        // Create lock file for Jan Browser MCP
+        if name == "Jan Browser MCP" {
+            if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
+                if let Some(port_str) = port_str.as_str() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        use crate::core::mcp::lockfile::create_lock_file;
+                        if let Err(e) = create_lock_file(&app, port, &name) {
+                            log::warn!("Failed to create lock file for port {}: {}", port, e);
+                        }
+                    }
+                }
+            }
+        }
+
         emit_mcp_update_event(&app, &name);
     }
     Ok(())
@@ -832,7 +871,144 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
     Ok(())
 }
 
-pub async fn clean_up_mcp_servers(state: State<'_, AppState>) {
+pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    port: u16,
+) -> Result<bool, String> {
+    use crate::core::mcp::lockfile::{check_and_cleanup_stale_lock, is_process_alive, read_lock_file};
+
+    // Check lock file first (fast path)
+    if let Some(lock) = read_lock_file(app, port) {
+        log::debug!("Found lock file for port {}: PID={}", port, lock.pid);
+
+        if !is_process_alive(lock.pid) {
+            log::info!("Lock file stale, process {} is dead", lock.pid);
+            check_and_cleanup_stale_lock(app, port).await?;
+            return Ok(true);
+        }
+
+        // Process from lock file is alive - verify it's still the MCP process
+        if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
+            if jan_utils::network::is_orphaned_mcp_process(&process_info) {
+                log::info!(
+                    "Lock file PID {} verified as MCP process, attempting kill",
+                    lock.pid
+                );
+                kill_process_by_pid(lock.pid).await?;
+
+                use crate::core::mcp::lockfile::delete_lock_file;
+                delete_lock_file(app, port)?;
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                if jan_utils::network::is_port_available(port) {
+                    log::info!("Cleaned up orphaned process via lock file");
+                    return Ok(true);
+                }
+            } else {
+                log::warn!(
+                    "Lock file PID {} is alive but NOT an MCP process (name: {}, cmd: {:?}). Lock file is stale.",
+                    lock.pid,
+                    process_info.name,
+                    process_info.cmd
+                );
+                // PID reused by another process, clean up stale lock file
+                check_and_cleanup_stale_lock(app, port).await?;
+            }
+        } else {
+            log::debug!(
+                "Could not get process info for PID {}, cleaning up lock file",
+                lock.pid
+            );
+            check_and_cleanup_stale_lock(app, port).await?;
+        }
+    }
+
+    // Fallback: Use lsof/netstat to find process on port
+    let process_info = match jan_utils::network::find_process_using_port(port) {
+        Some(info) => info,
+        None => return Ok(false),
+    };
+
+    log::info!(
+        "Found process on port {}: PID={}, name={}, cmd={:?}",
+        port,
+        process_info.pid,
+        process_info.name,
+        process_info.cmd
+    );
+
+    if !jan_utils::network::is_orphaned_mcp_process(&process_info) {
+        log::warn!(
+            "Port {} occupied by non-Jan process '{}' (PID {})",
+            port,
+            process_info.name,
+            process_info.pid
+        );
+        return Err(format!(
+            "Port {} is in use by another application '{}' (PID {}). Please close that application or use a different port.",
+            port, process_info.name, process_info.pid
+        ));
+    }
+
+    log::info!("Killing orphaned MCP process: PID {}", process_info.pid);
+    kill_process_by_pid(process_info.pid).await?;
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    if jan_utils::network::is_port_available(port) {
+        log::info!("Cleaned up orphaned process on port {}", port);
+        Ok(true)
+    } else {
+        Err(format!(
+            "Port {} still in use after killing process",
+            port
+        ))
+    }
+}
+
+#[cfg(unix)]
+async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+
+    let nix_pid = Pid::from_raw(pid as i32);
+
+    kill(nix_pid, Signal::SIGTERM)
+        .map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
+
+    for _ in 0..30 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        if kill(nix_pid, None).is_err() {
+            return Ok(());
+        }
+    }
+
+    log::warn!("Process {} unresponsive, sending SIGKILL", pid);
+    kill(nix_pid, Signal::SIGKILL)
+        .map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
+
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+    use std::process::Command;
+
+    let output = Command::new("taskkill")
+        .args(&["/F", "/PID", &pid.to_string()])
+        .output()
+        .map_err(|e| format!("Failed to run taskkill: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("taskkill failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
+pub async fn clean_up_mcp_servers<R: Runtime>(app: &AppHandle<R>, state: State<'_, AppState>) {
     log::info!("Cleaning up MCP servers");
 
     // Stop all running MCP servers
@@ -847,6 +1023,13 @@ pub async fn clean_up_mcp_servers(state: State<'_, AppState>) {
         let mut restart_counts = state.mcp_restart_counts.lock().await;
         restart_counts.clear();
     }
+
+    // Clean up all lock files created by this process
+    use crate::core::mcp::lockfile::cleanup_own_locks;
+    if let Err(e) = cleanup_own_locks(app) {
+        log::warn!("Failed to cleanup own lock files: {}", e);
+    }
+
     log::info!("MCP servers cleaned up successfully");
 }
 

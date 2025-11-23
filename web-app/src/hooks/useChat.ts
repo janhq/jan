@@ -107,6 +107,7 @@ const buildAvailableModels = (
 
   return availableModels
 }
+import { useMCPServers } from '@/hooks/useMCPServers'
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -335,6 +336,7 @@ export const useChat = () => {
   const getDisabledToolsForThread = useToolAvailable(
     (state) => state.getDisabledToolsForThread
   )
+  const mcpSettings = useMCPServers((state) => state.settings)
 
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
@@ -906,11 +908,11 @@ export const useChat = () => {
           }
         }
 
-        // Check if proactive mode is enabled
-        const isProactiveMode =
-          (selectedModel?.capabilities?.includes('tools') ?? false) &&
+        // Check if proactive mode is enabled in MCP settings and model has required capabilities
+        const hasRequiredCapabilities =
           (selectedModel?.capabilities?.includes('vision') ?? false) &&
-          (selectedModel?.capabilities?.includes('proactive') ?? false)
+          (selectedModel?.capabilities?.includes('tools') ?? false)
+        const isProactiveMode = mcpSettings.proactiveMode && hasRequiredCapabilities
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
         if (
@@ -1111,11 +1113,12 @@ export const useChat = () => {
             )
           }
 
-          // Check if proactive mode is enabled for this model
-          const isProactiveMode =
-            (selectedModel?.capabilities?.includes('tools') ?? false) &&
+          // Check if proactive mode is enabled in MCP settings and model has required capabilities
+          const hasRequiredCapabilitiesForPostProcessing =
             (selectedModel?.capabilities?.includes('vision') ?? false) &&
-            (selectedModel?.capabilities?.includes('proactive') ?? false)
+            (selectedModel?.capabilities?.includes('tools') ?? false)
+          const isProactiveModeForPostProcessing =
+            mcpSettings.proactiveMode && hasRequiredCapabilitiesForPostProcessing
 
           const updatedMessage = await postMessageProcessing(
             toolCalls,
@@ -1125,7 +1128,7 @@ export const useChat = () => {
             useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
             allowAllMCPPermissions,
-            isProactiveMode
+            isProactiveModeForPostProcessing
           )
           finalizeMessage(
             updatedMessage ?? finalContent,
@@ -1285,6 +1288,8 @@ export const useChat = () => {
       setModelLoadError,
       serviceHub,
       setTokenSpeed,
+      mcpSettings.proactiveMode,
+      setActiveModels,
     ]
   )
 
