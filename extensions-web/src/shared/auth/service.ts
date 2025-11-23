@@ -296,10 +296,21 @@ export class JanAuthService {
     try {
       const authType = this.getAuthState()
 
+      // Call server logout endpoint BEFORE clearing tokens
       if (authType === AuthState.AUTHENTICATED) {
-        await logoutUser()
+        try {
+          // Get auth header with current valid token
+          const authHeader = await this.getAuthHeader()
+          // Get refresh token from storage
+          const refreshToken = this.refreshToken || localStorage.getItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN)
+          await logoutUser(authHeader, refreshToken)
+        } catch (error) {
+          // If server logout fails, log but continue with local cleanup
+          console.warn('Server logout failed, continuing with local cleanup:', error)
+        }
       }
 
+      // Clear local state after server logout
       this.clearAuthState()
 
       // Ensure guest access after logout

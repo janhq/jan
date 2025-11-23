@@ -44,13 +44,20 @@ export interface ListApiKeysResponse {
 /**
  * Logout user on server
  */
-export async function logoutUser(): Promise<void> {
+export async function logoutUser(
+  authHeader: { Authorization: string },
+  refreshToken: string | null
+): Promise<void> {
   const response = await fetch(`${JAN_BASE_URL}${AUTH_ENDPOINTS.LOGOUT}`, {
-    method: 'GET',
+    method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeader,
     },
+    body: JSON.stringify({
+      refresh_token: refreshToken,
+    }),
   })
 
   if (!response.ok) {
