@@ -93,7 +93,7 @@ export class HeuristicRouter extends RouterStrategy {
     } else {
       // Prefer smaller models for simple queries (faster)
       const params = this.extractParamCount(model.metadata.parameterCount)
-      if (params <= 8) score += 50
+      if (params <= 5) score += 50
       else if (params <= 15) score += 10
     }
 
