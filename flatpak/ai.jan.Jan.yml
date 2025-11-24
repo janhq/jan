@@ -15,7 +15,6 @@ cleanup:
   - /include
   - /lib/cmake
   - /lib/pkgconfig
-  - /bin
 
 modules:
   - name: volk
@@ -23,6 +22,8 @@ modules:
     builddir: true
     config-opts:
       - -DVOLK_INSTALL=ON
+    cleanup:
+      - /bin
     sources:
       - type: archive
         url: https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.280.0.zip
