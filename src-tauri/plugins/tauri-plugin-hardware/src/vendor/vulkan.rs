@@ -1,8 +1,13 @@
-use crate::types::{GpuInfo, Vendor};
-use vulkano::device::physical::PhysicalDeviceType;
-use vulkano::instance::{Instance, InstanceCreateInfo};
-use vulkano::memory::MemoryHeapFlags;
-use vulkano::VulkanLibrary;
+use crate::types::GpuInfo;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use {
+    crate::types::Vendor,
+    vulkano::device::physical::PhysicalDeviceType,
+    vulkano::instance::{Instance, InstanceCreateInfo},
+    vulkano::memory::MemoryHeapFlags,
+    vulkano::VulkanLibrary,
+};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct VulkanInfo {
@@ -12,6 +17,7 @@ pub struct VulkanInfo {
     pub device_id: u32,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
         "{:02x}{:02x}{:02x}{:02x}-\
@@ -39,15 +45,25 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
 }
 
 pub fn get_vulkan_gpus() -> Vec<GpuInfo> {
-    match get_vulkan_gpus_internal() {
-        Ok(gpus) => gpus,
-        Err(e) => {
-            log::error!("Failed to get Vulkan GPUs: {:?}", e);
-            vec![]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        log::info!("Vulkan GPU detection is not supported on mobile platforms");
+        vec![]
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        match get_vulkan_gpus_internal() {
+            Ok(gpus) => gpus,
+            Err(e) => {
+                log::error!("Failed to get Vulkan GPUs: {:?}", e);
+                vec![]
+            }
         }
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
     let library = VulkanLibrary::new()?;
 

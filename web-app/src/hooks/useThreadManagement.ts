@@ -1,7 +1,5 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { ulid } from 'ulidx'
-import { localStorageKey } from '@/constants/localStorage'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 
 type ThreadFolder = {
@@ -18,6 +16,7 @@ type ThreadManagementState = {
   updateFolder: (id: string, name: string, systemPrompt?: string) => void
   deleteFolder: (id: string) => void
   getFolderById: (id: string) => ThreadFolder | undefined
+  getProjectById: (id: string) => Promise<ThreadFolder | undefined>
 }
 
 export const useThreadManagement = create<ThreadManagementState>()(
@@ -86,5 +85,46 @@ export const useThreadManagement = create<ThreadManagementState>()(
       name: localStorageKey.threadManagement,
       storage: createJSONStorage(() => localStorage),
     }
-  )
-)
+
+    // Delete threads from frontend state
+    for (const thread of projectThreads) {
+      threadsState.deleteThread(thread.id)
+    }
+
+    // Delete the project from storage
+    const projectsService = serviceHub.projects()
+    await projectsService.deleteProject(id)
+
+    const updatedProjects = await projectsService.getProjects()
+    set({ folders: updatedProjects })
+  },
+
+  getFolderById: (id) => {
+    return get().folders.find((folder) => folder.id === id)
+  },
+
+  getProjectById: async (id) => {
+    const projectsService = getServiceHub().projects()
+    return await projectsService.getProjectById(id)
+  },
+}))
+
+export const useThreadManagement = () => {
+  const store = useThreadManagementStore()
+
+  // Load projects from service on mount
+  useEffect(() => {
+    const syncProjects = async () => {
+      try {
+        const projectsService = getServiceHub().projects()
+        const projects = await projectsService.getProjects()
+        useThreadManagementStore.setState({ folders: projects })
+      } catch (error) {
+        console.error('Error syncing projects:', error)
+      }
+    }
+    syncProjects()
+  }, [])
+
+  return store
+}

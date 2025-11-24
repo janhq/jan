@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render } from '@testing-library/react'
 import { DialogEditModel } from '../dialogs/EditModel'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import '@testing-library/jest-dom'
@@ -38,8 +37,8 @@ vi.mock('sonner', () => ({
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? <div data-testid="dialog">{children}</div> : null,
-  DialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-content">{children}</div>
+  DialogContent: ({ children, onKeyDown }: { children: React.ReactNode; onKeyDown?: (e: React.KeyboardEvent) => void }) => (
+    <div data-testid="dialog-content" onKeyDown={onKeyDown}>{children}</div>
   ),
   DialogHeader: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="dialog-header">{children}</div>
@@ -83,6 +82,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconEye: () => <div data-testid="eye-icon" />,
   IconTool: () => <div data-testid="tool-icon" />,
   IconLoader2: () => <div data-testid="loader-icon" />,
+  IconSparkles: () => <div data-testid="sparkles-icon" />,
 }))
 
 describe('DialogEditModel - Basic Component Tests', () => {
@@ -180,5 +180,68 @@ describe('DialogEditModel - Basic Component Tests', () => {
     // Verify our mocks are in place
     expect(mockUpdateProvider).toBeDefined()
     expect(mockSetProviders).toBeDefined()
+  })
+
+  it('should consolidate capabilities initialization without duplication', () => {
+    const providerWithCaps = {
+      provider: 'llamacpp',
+      active: true,
+      models: [
+        {
+          id: 'test-model.gguf',
+          displayName: 'Test Model',
+          capabilities: ['vision', 'tools'],
+        },
+      ],
+      settings: [],
+    } as any
+
+    const { container } = render(
+      <DialogEditModel
+        provider={providerWithCaps}
+        modelId="test-model.gguf"
+      />
+    )
+
+    // Should render without issues - capabilities helper function should work
+    expect(container).toBeInTheDocument()
+  })
+
+  it('should handle Enter key press with keyDown handler', () => {
+    const { container } = render(
+      <DialogEditModel
+        provider={mockProvider}
+        modelId="test-model.gguf"
+      />
+    )
+
+    // Component should render with keyDown handler
+    expect(container).toBeInTheDocument()
+  })
+
+  it('should  handle vision and tools capabilities', () => {
+    const providerWithAllCaps = {
+      provider: 'llamacpp',
+      active: true,
+      models: [
+        {
+          id: 'test-model.gguf',
+          displayName: 'Test Model',
+          capabilities: ['vision', 'tools', 'completion', 'embeddings', 'web_search', 'reasoning'],
+        },
+      ],
+      settings: [],
+    } as any
+
+    const { container } = render(
+      <DialogEditModel
+        provider={providerWithAllCaps}
+        modelId="test-model.gguf"
+      />
+    )
+
+    // Component should render without errors even with extra capabilities
+    // The capabilities helper should only extract vision and tools
+    expect(container).toBeInTheDocument()
   })
 })

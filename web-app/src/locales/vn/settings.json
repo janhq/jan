@@ -78,7 +78,7 @@
     "goToSettings": "Đi tới Cài đặt",
     "goToSettingsDesc": "Mở cài đặt."
   },
-  "appearance": {
+  "interface": {
     "title": "Giao diện",
     "theme": "Chủ đề",
     "themeDesc": "Khớp với chủ đề hệ điều hành.",
@@ -96,8 +96,8 @@
     "destructiveDesc": "Đặt màu cho các hành động hủy.",
     "resetToDefault": "Đặt lại về mặc định",
     "resetToDefaultDesc": "Đặt lại tất cả cài đặt giao diện về mặc định.",
-    "resetAppearanceSuccess": "Giao diện đã được đặt lại thành công",
-    "resetAppearanceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
+    "resetInterfaceSuccess": "Giao diện đã được đặt lại thành công",
+    "resetInterfaceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
     "chatWidth": "Chiều rộng trò chuyện",
     "chatWidthDesc": "Tùy chỉnh chiều rộng của chế độ xem trò chuyện.",
     "tokenCounterCompact": "Bộ đếm token nhỏ gọn",
@@ -169,6 +169,12 @@
     "serverLogs": "Nhật ký máy chủ",
     "serverLogsDesc": "Xem nhật ký chi tiết của máy chủ API cục bộ.",
     "openLogs": "Mở nhật ký",
+    "swaggerDocs": "Tài liệu API",
+    "swaggerDocsDesc": "Xem tài liệu API tương tác (Swagger UI).",
+    "openDocs": "Mở tài liệu",
+    "startupConfiguration": "Cấu hình khởi động",
+    "runOnStartup": "Auto start",
+    "runOnStartupDesc": "Tự động khởi động Máy chủ API Cục bộ khi ứng dụng khởi chạy. Sử dụng mô hình đã dùng gần nhất hoặc chọn mô hình đầu tiên có sẵn nếu không khả dụng.",
     "serverConfiguration": "Cấu hình máy chủ",
     "serverHost": "Máy chủ lưu trữ",
     "serverHostDesc": "Địa chỉ mạng cho máy chủ.",
@@ -243,7 +249,9 @@
     "reportIssue": "Báo cáo Vấn đề",
     "credits": "Ghi công",
     "creditsDesc1": "Jan được xây dựng với ❤️ bởi Đội Menlo.",
-    "creditsDesc2": "Cảm ơn đặc biệt đến các phụ thuộc mã nguồn mở của chúng tôi—đặc biệt là llama.cpp và Tauri—và đến cộng đồng AI tuyệt vời của chúng tôi."
+    "creditsDesc2": "Cảm ơn đặc biệt đến các phụ thuộc mã nguồn mở của chúng tôi—đặc biệt là llama.cpp và Tauri—và đến cộng đồng AI tuyệt vời của chúng tôi.",
+    "huggingfaceToken": "Token HuggingFace",
+    "huggingfaceTokenDesc": "Token API HuggingFace của bạn để truy cập các mô hình."
   },
   "extensions": {
     "title": "Tiện ích mở rộng"
@@ -266,5 +274,7 @@
     "updateNow": "Cập nhật ngay",
     "updateSuccess": "Cập nhật Llamacpp thành công",
     "updateError": "Không thể cập nhật Llamacpp"
-  }
+  },
+  "backendInstallSuccess": "Backend đã được cài đặt thành công",
+  "backendInstallError": "Không thể cài đặt backend"
 }

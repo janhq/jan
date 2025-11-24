@@ -12,7 +12,6 @@ import {
   IconApps,
   IconX,
   IconSearch,
-  IconClipboardSmile,
   IconFolder,
   IconPencil,
   IconTrash,
@@ -56,17 +55,12 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: true,
+    isEnabled:
+      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
   },
 ]
 
 const secondaryMenus = [
-  {
-    title: 'common:assistants',
-    icon: IconClipboardSmile,
-    route: route.assistant,
-    isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
-  },
   {
     title: 'common:hub',
     icon: IconApps,
@@ -88,6 +82,7 @@ const LeftPanel = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
+  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -163,7 +158,7 @@ const LeftPanel = () => {
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
 
-  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+  const { folders, addFolder, updateFolder, getFolderById } =
     useThreadManagement()
 
   // Project dialog states
@@ -204,12 +199,9 @@ const LeftPanel = () => {
     setDeleteProjectConfirmOpen(true)
   }
 
-  const confirmProjectDelete = () => {
-    if (deletingProjectId) {
-      deleteFolder(deletingProjectId)
-      setDeleteProjectConfirmOpen(false)
-      setDeletingProjectId(null)
-    }
+  const handleProjectDeleteClose = () => {
+    setDeleteProjectConfirmOpen(false)
+    setDeletingProjectId(null)
   }
 
   const handleProjectSave = (name: string, systemPrompt?: string) => {
@@ -243,7 +235,7 @@ const LeftPanel = () => {
   return (
     <>
       {/* Backdrop overlay for small screens */}
-      {isSmallScreen && open && (
+      {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
           onClick={(e) => {
@@ -266,7 +258,7 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-[calc(100%-16px)] bg-app z-50 rounded-sm border border-left-panel-fg/10 m-2 px-1 w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
             !isSmallScreen &&
@@ -279,7 +271,12 @@ const LeftPanel = () => {
       >
         <div className="relative h-10">
           <button
-            className="absolute top-1/2 right-0 -translate-y-1/2 z-20"
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 z-20 right-0',
+              (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
+                ? 'pl-20 right-auto'
+                : ''
+            )}
             onClick={() => setLeftPanel(!open)}
           >
             <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
@@ -405,95 +402,100 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {filteredProjects.length > 0 && (
-            <div className="space-y-1 py-1">
-              <div className="flex items-center justify-between mb-2">
-                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                  {t('common:projects.title')}
-                </span>
-              </div>
-              <div className="flex flex-col max-h-[140px] overflow-y-scroll">
-                {filteredProjects
-                  .slice()
-                  .sort((a, b) => b.updated_at - a.updated_at)
-                  .map((folder) => {
-                    const ProjectItem = () => {
-                      const [openDropdown, setOpenDropdown] = useState(false)
-                      const isProjectActive =
-                        currentPath === `/project/${folder.id}`
+          {projectsEnabled &&
+            filteredProjects.length > 0 &&
+            !(IS_IOS || IS_ANDROID) && (
+              <div className="space-y-1 py-1">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
+                    {t('common:projects.title')}
+                  </span>
+                </div>
+                <div className="flex flex-col max-h-[140px] overflow-y-scroll">
+                  {filteredProjects
+                    .slice()
+                    .sort((a, b) => b.updated_at - a.updated_at)
+                    .map((folder) => {
+                      const ProjectItem = () => {
+                        const [openDropdown, setOpenDropdown] = useState(false)
+                        const isProjectActive =
+                          currentPath === `/project/${folder.id}`
 
-                      return (
-                        <div key={folder.id} className="mb-1">
-                          <div
-                            className={cn(
-                              'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
-                              isProjectActive && 'bg-left-panel-fg/10'
-                            )}
-                          >
-                            <Link
-                              to="/project/$projectId"
-                              params={{ projectId: folder.id }}
-                              onClick={() =>
-                                isSmallScreen && setLeftPanel(false)
-                              }
-                              className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
+                        return (
+                          <div key={folder.id} className="mb-1">
+                            <div
+                              className={cn(
+                                'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
+                                isProjectActive && 'bg-left-panel-fg/10'
+                              )}
                             >
-                              <IconFolder
-                                size={16}
-                                className="text-left-panel-fg/70 shrink-0"
-                              />
-                              <span className="text-sm text-left-panel-fg/90 truncate">
-                                {folder.name}
-                              </span>
-                            </Link>
-                            <div className="flex items-center">
-                              <DropdownMenu
-                                open={openDropdown}
-                                onOpenChange={(open) => setOpenDropdown(open)}
+                              <Link
+                                to="/project/$projectId"
+                                params={{ projectId: folder.id }}
+                                onClick={() =>
+                                  isSmallScreen && setLeftPanel(false)
+                                }
+                                className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
                               >
-                                <DropdownMenuTrigger asChild>
-                                  <IconDots
-                                    size={14}
-                                    className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                    }}
-                                  />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent side="bottom" align="end">
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setEditingProjectKey(folder.id)
-                                      setProjectDialogOpen(true)
-                                    }}
+                                <IconFolder
+                                  size={16}
+                                  className="text-left-panel-fg/70 shrink-0"
+                                />
+                                <span className="text-sm text-left-panel-fg/90 truncate">
+                                  {folder.name}
+                                </span>
+                              </Link>
+                              <div className="flex items-center">
+                                <DropdownMenu
+                                  open={openDropdown}
+                                  onOpenChange={(open) => setOpenDropdown(open)}
+                                >
+                                  <DropdownMenuTrigger asChild>
+                                    <IconDots
+                                      size={14}
+                                      className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                                      onClick={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                      }}
+                                    />
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    side="bottom"
+                                    align="end"
                                   >
-                                    <IconPencil size={16} />
-                                    <span>Edit</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleProjectDelete(folder.id)
-                                    }}
-                                  >
-                                    <IconTrash size={16} />
-                                    <span>Delete</span>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setEditingProjectKey(folder.id)
+                                        setProjectDialogOpen(true)
+                                      }}
+                                    >
+                                      <IconPencil size={16} />
+                                      <span>Edit</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleProjectDelete(folder.id)
+                                      }}
+                                    >
+                                      <IconTrash size={16} />
+                                      <span>Delete</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )
-                    }
+                        )
+                      }
 
-                    return <ProjectItem key={folder.id} />
-                  })}
+                      return <ProjectItem key={folder.id} />
+                    })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
             <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
@@ -583,6 +585,10 @@ const LeftPanel = () => {
 
                 {filteredThreads.length === 0 && searchTerm.length > 0 && (
                   <div className="px-1 mt-2">
+                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
+                      {t('common:recents')}
+                    </span>
+
                     <div className="flex items-center gap-1 text-left-panel-fg/80">
                       <IconSearch size={18} />
                       <h6 className="font-medium text-base">
@@ -642,7 +648,7 @@ const LeftPanel = () => {
                   data-test-id={`menu-${menu.title}`}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 my-0.5 px-1 rounded',
                     isActive && 'bg-left-panel-fg/10'
                   )}
                 >
@@ -669,23 +675,29 @@ const LeftPanel = () => {
       </aside>
 
       {/* Project Dialogs */}
-      <AddProjectDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        editingKey={editingProjectKey}
-        initialData={
-          editingProjectKey ? getFolderById(editingProjectKey) : undefined
-        }
-        onSave={handleProjectSave}
-      />
-      <DeleteProjectDialog
-        open={deleteProjectConfirmOpen}
-        onOpenChange={setDeleteProjectConfirmOpen}
-        onConfirm={confirmProjectDelete}
-        projectName={
-          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
-        }
-      />
+      {projectsEnabled && (
+        <>
+          <AddProjectDialog
+            open={projectDialogOpen}
+            onOpenChange={setProjectDialogOpen}
+            editingKey={editingProjectKey}
+            initialData={
+              editingProjectKey ? getFolderById(editingProjectKey) : undefined
+            }
+            onSave={handleProjectSave}
+          />
+          <DeleteProjectDialog
+            open={deleteProjectConfirmOpen}
+            onOpenChange={handleProjectDeleteClose}
+            projectId={deletingProjectId ?? undefined}
+            projectName={
+              deletingProjectId
+                ? getFolderById(deletingProjectId)?.name
+                : undefined
+            }
+          />
+        </>
+      )}
     </>
   )
 }

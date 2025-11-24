@@ -7,17 +7,25 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { MCPServerConfig } from '@/hooks/useMCPServers'
+import { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+
+type MCPConfigJson =
+  | MCPServerConfig
+  | MCPServers
+  | {
+      mcpServers: MCPServers
+      mcpSettings?: MCPSettings
+    }
 
 interface EditJsonMCPserverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   serverName: string | null // null means editing all servers
-  initialData: MCPServerConfig | Record<string, MCPServerConfig>
-  onSave: (data: MCPServerConfig | Record<string, MCPServerConfig>) => void
+  initialData: MCPConfigJson
+  onSave: (data: MCPConfigJson) => void
 }
 
 export default function EditJsonMCPserver({
@@ -50,7 +58,7 @@ export default function EditJsonMCPserver({
 
   const handleSave = () => {
     try {
-      const parsedData = JSON.parse(jsonContent)
+      const parsedData = JSON.parse(jsonContent) as MCPConfigJson
       onSave(parsedData)
       onOpenChange(false)
       setError(null)
@@ -93,13 +101,12 @@ export default function EditJsonMCPserver({
               onChange={(e) => setJsonContent(e.target.value)}
               onPaste={handlePaste}
               style={{
-                fontFamily: 'ui-monospace',
                 backgroundColor: 'transparent',
                 wordBreak: 'break-all',
                 overflowWrap: 'anywhere',
                 whiteSpace: 'pre-wrap',
               }}
-              className="w-full !text-sm overflow-hidden break-all"
+              className="w-full !text-sm overflow-hidden !break-all !font-mono"
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}

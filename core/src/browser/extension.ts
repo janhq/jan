@@ -11,6 +11,8 @@ export enum ExtensionTypeEnum {
   HuggingFace = 'huggingFace',
   Engine = 'engine',
   Hardware = 'hardware',
+  RAG = 'rag',
+  VectorDB = 'vectorDB',
 }
 
 export interface ExtensionType {
@@ -129,10 +131,14 @@ export abstract class BaseExtension implements ExtensionType {
             setting.controllerProps.value =
               oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.value ??
               setting.controllerProps.value
-          if ('options' in setting.controllerProps)
+          if ('options' in setting.controllerProps) {
             setting.controllerProps.options = setting.controllerProps.options?.length
               ? setting.controllerProps.options
               : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
+            if(!setting.controllerProps.options?.some(e => e.value === setting.controllerProps.value)) {
+              setting.controllerProps.value = setting.controllerProps.options?.[0]?.value ?? setting.controllerProps.value
+            }
+          }
           if ('recommended' in setting.controllerProps) {
             const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)
               ?.controllerProps?.recommended

@@ -351,6 +351,7 @@ export default function AddEditMCPServer({
     const filteredArgs = args.map((arg) => arg.trim()).filter((arg) => arg)
 
     const config: MCPServerConfig = {
+      ...(initialData || {}),
       command: transportType === 'stdio' ? command.trim() : '',
       args: transportType === 'stdio' ? filteredArgs : [],
       env: transportType === 'stdio' ? envObj : {},
@@ -421,13 +422,12 @@ export default function AddEditMCPServer({
                   }}
                   onPaste={() => setError(null)}
                   style={{
-                    fontFamily: 'ui-monospace',
                     backgroundColor: 'transparent',
                     wordBreak: 'break-all',
                     overflowWrap: 'anywhere',
                     whiteSpace: 'pre-wrap',
                   }}
-                  className="w-full !text-sm min-h-[300px]"
+                  className="w-full !text-sm min-h-[300px] !font-mono"
                 />
               </div>
               {error && <div className="text-destructive text-sm">{error}</div>}

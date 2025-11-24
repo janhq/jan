@@ -1,10 +1,9 @@
-import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
-import { useMCPServers } from '@/hooks/useMCPServers'
+import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -12,26 +11,27 @@ import { useThreads } from '@/hooks/useThreads'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
-import { localStorageKey } from '@/constants/localStorage'
 import { SystemEvent } from '@/types/events'
+import { getModelToStart } from '@/utils/getModelToStart'
 
 export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
 
-  const { setMessages } = useMessages()
   const { checkForUpdate } = useAppUpdater()
-  const { setServers } = useMCPServers()
+  const { setServers, setSettings } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
     enableOnStartup,
     serverHost,
     serverPort,
+    setServerPort,
     apiPrefix,
     apiKey,
     trustedHosts,
@@ -47,7 +47,10 @@ export function DataProvider() {
     serviceHub
       .mcp()
       .getMCPConfig()
-      .then((data) => setServers(data.mcpServers ?? {}))
+      .then((data) => {
+        setServers(data.mcpServers ?? {})
+        setSettings(data.mcpSettings ?? DEFAULT_MCP_SETTINGS)
+      })
     serviceHub
       .assistants()
       .getAssistants()
@@ -66,12 +69,15 @@ export function DataProvider() {
 
     // Listen for deep link events
     let unsubscribe = () => {}
-    serviceHub.events().listen(SystemEvent.DEEP_LINK, (event) => {
-      const deep_link  = event.payload as string
-      handleDeepLink([deep_link])
-    }).then((unsub) => {
-      unsubscribe = unsub
-    })
+    serviceHub
+      .events()
+      .listen(SystemEvent.DEEP_LINK, (event) => {
+        const deep_link = event.payload as string
+        handleDeepLink([deep_link])
+      })
+      .then((unsub) => {
+        unsubscribe = unsub
+      })
     return () => {
       unsubscribe()
     }
@@ -84,14 +90,8 @@ export function DataProvider() {
       .fetchThreads()
       .then((threads) => {
         setThreads(threads)
-        threads.forEach((thread) =>
-          serviceHub
-            .messages()
-            .fetchMessages(thread.id)
-            .then((messages) => setMessages(thread.id, messages))
-        )
       })
-  }, [serviceHub, setThreads, setMessages])
+  }, [serviceHub, setThreads])
 
   // Check for app updates
   useEffect(() => {
@@ -109,54 +109,6 @@ export function DataProvider() {
     })
   }, [serviceHub, setProviders])
 
-  const getLastUsedModel = (): { provider: string; model: string } | null => {
-    try {
-      const stored = localStorage.getItem(localStorageKey.lastUsedModel)
-      return stored ? JSON.parse(stored) : null
-    } catch (error) {
-      console.debug('Failed to get last used model from localStorage:', error)
-      return null
-    }
-  }
-
-  // Helper function to determine which model to start
-  const getModelToStart = () => {
-    // Use last used model if available
-    const lastUsedModel = getLastUsedModel()
-    if (lastUsedModel) {
-      const provider = getProviderByName(lastUsedModel.provider)
-      if (
-        provider &&
-        provider.models.some((m) => m.id === lastUsedModel.model)
-      ) {
-        return { model: lastUsedModel.model, provider }
-      }
-    }
-
-    // Use selected model if available
-    if (selectedModel && selectedProvider) {
-      const provider = getProviderByName(selectedProvider)
-      if (provider) {
-        return { model: selectedModel.id, provider }
-      }
-    }
-
-    // Use first model from llamacpp provider
-    const llamacppProvider = getProviderByName('llamacpp')
-    if (
-      llamacppProvider &&
-      llamacppProvider.models &&
-      llamacppProvider.models.length > 0
-    ) {
-      return {
-        model: llamacppProvider.models[0].id,
-        provider: llamacppProvider,
-      }
-    }
-
-    return null
-  }
-
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
@@ -166,7 +118,11 @@ export function DataProvider() {
         return
       }
 
-      const modelToStart = getModelToStart()
+      const modelToStart = getModelToStart({
+        selectedModel,
+        selectedProvider,
+        getProviderByName,
+      })
 
       // Only start server if we have a model to load
       if (!modelToStart) {
@@ -184,6 +140,11 @@ export function DataProvider() {
         .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
+          // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
 
           // Then start the server
           return window.core?.api?.startServer({
@@ -197,7 +158,11 @@ export function DataProvider() {
             proxyTimeout: proxyTimeout,
           })
         })
-        .then(() => {
+        .then((actualPort: number) => {
+          // Store the actual port that was assigned (important for mobile with port 0)
+          if (actualPort && actualPort !== serverPort) {
+            setServerPort(actualPort)
+          }
           setServerStatus('running')
         })
         .catch((error: unknown) => {

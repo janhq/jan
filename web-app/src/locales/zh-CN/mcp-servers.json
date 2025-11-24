@@ -43,5 +43,13 @@
   "args": "参数",
   "env": "环境",
   "serverStatusActive": "服务器 {{serverKey}} 激活成功",
-  "serverStatusInactive": "服务器 {{serverKey}} 停用成功"
+  "serverStatusInactive": "服务器 {{serverKey}} 停用成功",
+  "runtimeSettings": {
+    "title": "运行时设置",
+    "description": "配置 Jan 如何管理和重试 MCP 服务器。",
+    "toolCallTimeout": "工具调用超时时间（秒）",
+    "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。"
+  },
+  "proactiveMode": "浏览器使用主动模式",
+  "proactiveModeDesc": "启用后，会自动捕获浏览器截图，为浏览器自动化任务提供额外的上下文信息。需要具备视觉和工具使用模型的 Jan Browser MCP。"
 }

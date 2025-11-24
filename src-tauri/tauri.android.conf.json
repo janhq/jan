@@ -1,0 +1,26 @@
+{
+  "identifier": "jan.ai.app",
+  "build": {
+    "devUrl": null,
+    "frontendDist": "../web-app/dist",
+    "beforeDevCommand": "cross-env IS_DEV=true IS_ANDROID=true yarn build:web",
+    "beforeBuildCommand": "cross-env IS_ANDROID=true yarn build:web"
+  },
+  "app": {
+    "security": {
+      "capabilities": ["mobile"]
+    }
+  },
+  "plugins": {},
+  "bundle": {
+    "active": true,
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE"
+    ],
+    "externalBin": [],
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}

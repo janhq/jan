@@ -78,7 +78,7 @@
     "goToSettings": "Gehe zu den Einstellungen",
     "goToSettingsDesc": "Einstellungen öffnen."
   },
-  "appearance": {
+  "interface": {
     "title": "Erscheinungsbild",
     "theme": "Theme",
     "themeDesc": "Dem Betriebssystem anpassen.",
@@ -96,8 +96,8 @@
     "destructiveDesc": "Lege die Farbe für destruktive Aktionen fest.",
     "resetToDefault": "Auf Werkseinstellungen zurücksetzen",
     "resetToDefaultDesc": "Setzt alle Darstellungseinstellungen auf die Standardeinstellungen zurück.",
-    "resetAppearanceSuccess": "Erscheinungsbild erfolgreich zurückgesetzt",
-    "resetAppearanceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
+    "resetInterfaceSuccess": "Erscheinungsbild erfolgreich zurückgesetzt",
+    "resetInterfaceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
     "chatWidth": "Chat Breite",
     "chatWidthDesc": "Passe die Breite der Chatansicht an.",
     "tokenCounterCompact": "Kompakter Token-Zähler",
@@ -169,6 +169,12 @@
     "serverLogs": "Server Logs",
     "serverLogsDesc": "Zeige detaillierte Logs des lokalen API-Servers an.",
     "openLogs": "Logs öffnen",
+    "swaggerDocs": "API-Dokumentation",
+    "swaggerDocsDesc": "Zeige interaktive API-Dokumentation (Swagger UI) an.",
+    "openDocs": "Dokumentation öffnen",
+    "startupConfiguration": "Startkonfiguration",
+    "runOnStartup": "Auto start",
+    "runOnStartupDesc": "Starte den lokalen API-Server automatisch beim Anwendungsstart. Verwendet das zuletzt verwendete Modell oder wählt das erste verfügbare Modell, falls nicht verfügbar.",
     "serverConfiguration": "Server Konfiguration",
     "serverHost": "Server Host",
     "serverHostDesc": "Netzwerkadresse für den Server.",
@@ -206,6 +212,8 @@
     "showInFileExplorer": "Zeige im Datei Explorer",
     "openContainingFolder": "Enthaltenen Ordner öffnen",
     "failedToRelocateDataFolder": "Datenordner konnte nicht verschoben werden",
+    "couldNotRelocateToRoot": "Datenordner kann nicht in das Root-Verzeichnis verschoben werden. Bitte wähle einen anderen Speicherort.",
+    "couldNotResetRootDirectory": "Datenordner kann nicht zurückgesetzt werden, wenn er auf ein Root-Verzeichnis gesetzt ist. Bitte lösche den Datenordner manuell.",
     "failedToRelocateDataFolderDesc": "Der Datenordner konnte nicht verschoben werden. Bitte versuche es erneut.",
     "devVersion": "Entwicklungsversion erkannt",
     "noUpdateAvailable": "Du verwendest die neueste Version",
@@ -223,6 +231,8 @@
     "factoryResetDesc": "Dadurch werden alle App-Einstellungen auf die Standardeinstellungen zurückgesetzt. Dieser Vorgang kann nicht rückgängig gemacht werden. Wir empfehlen dies nur, wenn die App beschädigt ist.",
     "cancel": "Abbrechen",
     "reset": "Zurücksetzen",
+    "huggingfaceToken": "HuggingFace Token",
+    "huggingfaceTokenDesc": "Dein HuggingFace API-Token für den Zugriff auf Modelle.",
     "resources": "Ressourcen",
     "documentation": "Dokumentation",
     "documentationDesc": "Erfahre, wie Du Jan verwenden und seine Funktionen erkunden kannst.",
@@ -264,5 +274,7 @@
     "updateNow": "Jetzt aktualisieren",
     "updateSuccess": "Llamacpp erfolgreich aktualisiert",
     "updateError": "Fehler beim Aktualisieren von Llamacpp"
-  }
+  },
+  "backendInstallSuccess": "Backend erfolgreich installiert",
+  "backendInstallError": "Backend-Installation fehlgeschlagen"
 }

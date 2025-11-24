@@ -1,6 +1,8 @@
 {
   "welcome": "Hai, apa kabar?",
   "description": "Ada yang bisa saya bantu hari ini?",
+  "temporaryChat": "Obrolan Sementara",
+  "temporaryChatDescription": "Mulai percakapan sementara yang tidak akan disimpan ke riwayat obrolan Anda.",
   "status": {
     "empty": "Tidak Ada Obrolan Ditemukan"
   },

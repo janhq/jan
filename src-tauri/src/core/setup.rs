@@ -7,9 +7,13 @@ use std::{
 };
 use tar::Archive;
 use tauri::{
+    App, Emitter, Manager, Runtime, Wry, WindowEvent
+};
+
+#[cfg(desktop)]
+use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    App, Emitter, Manager, Wry,
 };
 use tauri_plugin_store::Store;
 
@@ -19,7 +23,14 @@ use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
 };
 
-pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
+pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
+    // Skip extension installation on mobile platforms
+    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        return Ok(());
+    }
+
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -34,7 +45,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     if std::env::var("IS_CLEAN").is_ok() {
         clean_up = true;
     }
-    log::info!("Installing extensions. Clean up: {}", clean_up);
+    log::info!("Installing extensions. Clean up: {clean_up}");
     if !clean_up && extensions_path.exists() {
         return Ok(());
     }
@@ -64,7 +75,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "tgz") {
+        if path.extension().is_some_and(|ext| ext == "tgz") {
             let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
             let gz_decoder = GzDecoder::new(tar_gz);
             let mut archive = Archive::new(gz_decoder);
@@ -130,7 +141,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
 
             extensions_list.push(new_extension);
 
-            log::info!("Installed extension to {:?}", extension_dir);
+            log::info!("Installed extension to {extension_dir:?}");
         }
     }
     fs::write(
@@ -150,11 +161,11 @@ pub fn migrate_mcp_servers(
     let mcp_version = store
         .get("mcp_version")
         .and_then(|v| v.as_i64())
-        .unwrap_or_else(|| 0);
+        .unwrap_or(0);
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
-            app_handle,
+            app_handle.clone(),
             "exa".to_string(),
             serde_json::json!({
                   "command": "npx",
@@ -164,10 +175,30 @@ pub fn migrate_mcp_servers(
             }),
         );
         if let Err(e) = result {
-            log::error!("Failed to add server config: {}", e);
+            log::error!("Failed to add server config: {e}");
         }
     }
-    store.set("mcp_version", 1);
+    if mcp_version < 2 {
+        log::info!("Migrating MCP schema version 2: Adding Jan Browser MCP");
+        let result = add_server_config(
+            app_handle,
+            "Jan Browser MCP".to_string(),
+            serde_json::json!({
+                "command": "npx",
+                "args": ["-y", "search-mcp-server@latest"],
+                "env": {
+                    "BRIDGE_HOST": "127.0.0.1",
+                    "BRIDGE_PORT": "17389"
+                },
+                "active": false,
+                "official": true
+            }),
+        );
+        if let Err(e) = result {
+            log::error!("Failed to add Jan Browser MCP server config: {e}");
+        }
+    }
+    store.set("mcp_version", 2);
     store.save().expect("Failed to save store");
     Ok(())
 }
@@ -202,13 +233,19 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-pub fn setup_mcp(app: &App) {
+pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
-    let app_handle: tauri::AppHandle = app.handle().clone();
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
+        use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        if let Err(e) = cleanup_all_stale_locks(&app_handle).await {
+            log::debug!("Lock file cleanup error: {}", e);
+        }
+
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
-            log::error!("Failed to run mcp commands: {}", e);
+            log::error!("Failed to run mcp commands: {e}");
         }
         app_handle
             .emit("mcp-update", "MCP servers updated")
@@ -216,6 +253,7 @@ pub fn setup_mcp(app: &App) {
     });
 }
 
+#[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
@@ -253,8 +291,37 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 app.exit(0);
             }
             other => {
-                println!("menu item {} not handled", other);
+                println!("menu item {other} not handled");
             }
         })
         .build(app)
+}
+
+pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
+    // Setup theme listener for main window
+    if let Some(window) = app.get_webview_window("main") {
+        setup_window_theme_listener(app.handle().clone(), window);
+    }
+
+    Ok(())
+}
+
+fn setup_window_theme_listener<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) {
+    let window_label = window.label().to_string();
+    let app_handle_clone = app_handle.clone();
+
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let theme_str = match theme {
+                tauri::Theme::Light => "light",
+                tauri::Theme::Dark => "dark",
+                _ => "auto",
+            };
+            log::info!("System theme changed to: {theme_str} for window: {window_label}");
+            let _ = app_handle_clone.emit("theme-changed", theme_str);
+        }
+    });
 }

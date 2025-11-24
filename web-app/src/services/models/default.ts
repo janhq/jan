@@ -11,6 +11,9 @@ import {
   modelInfo,
   ThreadMessage,
   ContentType,
+  events,
+  DownloadEvent,
+  UnloadResult,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -265,7 +268,17 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    return this.getEngine()?.abortImport(id)
+    const engine = this.getEngine()
+    try {
+      if (engine) {
+        await engine.abortImport(id)
+      }
+    } finally {
+      events.emit(DownloadEvent.onFileDownloadStopped, {
+        modelId: id,
+        downloadType: 'Model',
+      })
+    }
   }
 
   async deleteModel(id: string): Promise<void> {
@@ -276,8 +289,11 @@ export class DefaultModelsService implements ModelsService {
     return this.getEngine(provider)?.getLoadedModels() ?? []
   }
 
-  async stopModel(model: string, provider?: string): Promise<void> {
-    this.getEngine(provider)?.unload(model)
+  async stopModel(
+    model: string,
+    provider?: string
+  ): Promise<UnloadResult | undefined> {
+    return this.getEngine(provider)?.unload(model)
   }
 
   async stopAllModels(): Promise<void> {
@@ -578,6 +594,9 @@ export class DefaultModelsService implements ModelsService {
                   }
                 }>
           }>
+          chat_template_kwargs?: {
+            enable_thinking: boolean
+          }
         }) => Promise<number>
       }
 
@@ -654,6 +673,9 @@ export class DefaultModelsService implements ModelsService {
         return await engine.getTokensCount({
           model: modelId,
           messages: transformedMessages,
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
         })
       }
 

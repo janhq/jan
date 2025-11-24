@@ -78,7 +78,7 @@
     "goToSettings": "Buka Pengaturan",
     "goToSettingsDesc": "Buka pengaturan."
   },
-  "appearance": {
+  "interface": {
     "title": "Tampilan",
     "theme": "Tema",
     "themeDesc": "Sesuaikan dengan tema OS.",
@@ -96,10 +96,12 @@
     "destructiveDesc": "Atur warna untuk tindakan yang merusak.",
     "resetToDefault": "Setel Ulang ke Default",
     "resetToDefaultDesc": "Setel ulang semua pengaturan tampilan ke default.",
-    "resetAppearanceSuccess": "Tampilan berhasil diatur ulang",
-    "resetAppearanceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
+    "resetInterfaceSuccess": "Tampilan berhasil diatur ulang",
+    "resetInterfaceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
     "chatWidth": "Lebar Obrolan",
     "chatWidthDesc": "Sesuaikan lebar tampilan obrolan.",
+    "tokenCounterCompact": "Penghitung Token Ringkas",
+    "tokenCounterCompactDesc": "Tampilkan penghitung token di dalam input obrolan. Saat dinonaktifkan, penghitung token muncul di bawah input.",
     "codeBlockTitle": "Blok Kode",
     "codeBlockDesc": "Pilih gaya penyorotan sintaks.",
     "showLineNumbers": "Tampilkan Nomor Baris",
@@ -167,6 +169,12 @@
     "serverLogs": "Log Server",
     "serverLogsDesc": "Lihat log terperinci dari server API lokal.",
     "openLogs": "Buka Log",
+    "swaggerDocs": "Dokumentasi API",
+    "swaggerDocsDesc": "Lihat dokumentasi API interaktif (Swagger UI).",
+    "openDocs": "Buka Dokumentasi",
+    "startupConfiguration": "Konfigurasi Startup",
+    "runOnStartup": "Auto start",
+    "runOnStartupDesc": "Mulai Server API Lokal secara otomatis saat aplikasi diluncurkan. Menggunakan model terakhir yang digunakan, atau memilih model pertama yang tersedia jika tidak tersedia.",
     "serverConfiguration": "Konfigurasi Server",
     "serverHost": "Host Server",
     "serverHostDesc": "Alamat jaringan untuk server.",
@@ -223,6 +231,8 @@
     "factoryResetDesc": "Ini akan mengatur ulang semua pengaturan aplikasi ke default. Tindakan ini tidak dapat dibatalkan. Kami hanya merekomendasikan ini jika aplikasi rusak.",
     "cancel": "Batal",
     "reset": "Setel Ulang",
+    "huggingfaceToken": "Token HuggingFace",
+    "huggingfaceTokenDesc": "Token API HuggingFace Anda untuk mengakses model.",
     "resources": "Sumber Daya",
     "documentation": "Dokumentasi",
     "documentationDesc": "Pelajari cara menggunakan Jan dan jelajahi fitur-fiturnya.",
@@ -264,5 +274,7 @@
     "updateNow": "Perbarui Sekarang",
     "updateSuccess": "Llamacpp berhasil diperbarui",
     "updateError": "Gagal memperbarui Llamacpp"
-  }
+  },
+  "backendInstallSuccess": "Backend berhasil diinstal",
+  "backendInstallError": "Gagal menginstal backend"
 }

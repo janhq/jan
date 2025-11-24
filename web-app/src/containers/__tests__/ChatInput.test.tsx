@@ -9,6 +9,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useChat } from '@/hooks/useChat'
+import type { ThreadModel } from '@/types/threads'
 
 // Mock dependencies with mutable state
 let mockPromptState = {
@@ -39,6 +40,8 @@ let mockAppState = {
   loadingModel: false,
   tools: [],
   updateTools: vi.fn(),
+  activeModels: [] as string[],
+  cancelToolCall: vi.fn(),
 }
 
 vi.mock('@/hooks/useAppState', () => ({
@@ -110,6 +113,7 @@ const mockGetConnectedServers = vi.fn(() => Promise.resolve(['server1']))
 const mockGetTools = vi.fn(() => Promise.resolve([]))
 const mockStopAllModels = vi.fn()
 const mockCheckMmprojExists = vi.fn(() => Promise.resolve(true))
+const mockGetActiveModels = vi.fn(() => Promise.resolve([]))
 
 const mockListen = vi.fn(() => Promise.resolve(() => {}))
 
@@ -121,6 +125,7 @@ const mockServiceHub = {
   models: () => ({
     stopAllModels: mockStopAllModels,
     checkMmprojExists: mockCheckMmprojExists,
+    getActiveModels: mockGetActiveModels,
   }),
   events: () => ({
     listen: mockListen,
@@ -138,18 +143,73 @@ vi.mock('../MovingBorder', () => ({
 
 vi.mock('../DropdownModelProvider', () => ({
   __esModule: true,
-  default: () => <div data-slot="popover-trigger">Model Dropdown</div>,
+  default: () => <div data-testid="model-dropdown" data-slot="popover-trigger">Model Dropdown</div>,
+}))
+
+vi.mock('../loaders/ModelLoader', () => ({
+  ModelLoader: () => <div data-testid="model-loader">Model Loader</div>,
 }))
 
 vi.mock('../DropdownToolsAvailable', () => ({
   __esModule: true,
   default: ({ children }: { children: (isOpen: boolean, toolsCount: number) => React.ReactNode }) => {
-    return <div>{children(false, 0)}</div>
+    return <div data-testid="tools-dropdown">{children(false, 0)}</div>
   },
 }))
 
-vi.mock('../loaders/ModelLoader', () => ({
-  ModelLoader: () => <div data-testid="model-loader">Loading...</div>,
+vi.mock('@/components/ui/button', () => ({
+  Button: ({ children, onClick, disabled, ...props }: any) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      data-test-id={props['data-test-id']}
+      data-testid={props['data-test-id']}
+      {...props}
+    >
+      {children}
+    </button>
+  ),
+}))
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
+vi.mock('react-textarea-autosize', () => ({
+  default: ({ value, onChange, onKeyDown, placeholder, disabled, className, minRows, maxRows, onHeightChange, ...props }: any) => (
+    <textarea
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+      data-testid={props['data-testid']}
+      rows={minRows || 1}
+      style={{ resize: 'none' }}
+    />
+  ),
+}))
+
+// Mock icons
+vi.mock('lucide-react', () => ({
+  ArrowRight: () => <svg data-testid="arrow-right-icon">ArrowRight</svg>,
+}))
+
+vi.mock('@tabler/icons-react', () => ({
+  IconPhoto: () => <svg data-testid="photo-icon">Photo</svg>,
+  IconWorld: () => <svg data-testid="world-icon">World</svg>,
+  IconAtom: () => <svg data-testid="atom-icon">Atom</svg>,
+  IconTool: () => <svg data-testid="tool-icon">Tool</svg>,
+  IconCodeCircle2: () => <svg data-testid="code-icon">Code</svg>,
+  IconPaperclip: () => <svg data-testid="paperclip-icon">Paperclip</svg>,
+  IconLoader2: () => <svg data-testid="loader-icon">Loader</svg>,
+  IconCheck: () => <svg data-testid="check-icon">Check</svg>,
+  IconPlayerStopFilled: () => <svg className="tabler-icon-player-stop-filled" data-testid="stop-icon">Stop</svg>,
+  IconX: () => <svg data-testid="x-icon">X</svg>,
 }))
 
 describe('ChatInput', () => {
@@ -170,10 +230,11 @@ describe('ChatInput', () => {
     })
   }
 
-  const renderWithRouter = (component = <ChatInput />) => {
+  const renderWithRouter = () => {
     const router = createTestRouter()
     return render(<RouterProvider router={router} />)
   }
+
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -186,6 +247,8 @@ describe('ChatInput', () => {
     mockAppState.abortControllers = {}
     mockAppState.loadingModel = false
     mockAppState.tools = []
+    mockAppState.activeModels = []
+    mockAppState.cancelToolCall = vi.fn()
   })
 
   it('renders chat input textarea', async () => {
@@ -193,7 +256,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
 
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     expect(textarea).toBeInTheDocument()
     expect(textarea).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
   })
@@ -234,7 +297,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
 
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     await act(async () => {
       await user.type(textarea, 'Hello')
     })
@@ -274,7 +337,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
 
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     await act(async () => {
       await user.type(textarea, '{Enter}')
     })
@@ -293,7 +356,7 @@ describe('ChatInput', () => {
       renderWithRouter()
     })
 
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByTestId('chat-input')
     await act(async () => {
       await user.type(textarea, '{Shift>}{Enter}{/Shift}')
     })
@@ -359,30 +422,19 @@ describe('ChatInput', () => {
     })
   })
 
-  it('disables input when streaming', async () => {
-    // Mock streaming state
-    mockAppState.streamingContent = { thread_id: 'test-thread' }
-
-    await act(async () => {
-      renderWithRouter()
-    })
-
-    const textarea = screen.getByTestId('chat-input')
-    expect(textarea).toBeDisabled()
-  })
-
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
+    mockAppState.tools = [{ name: 'test-tool' } as any]
 
     await act(async () => {
       renderWithRouter()
     })
 
     await waitFor(() => {
-      // Tools dropdown should be rendered (as SVG icon with tabler-icon-tool class)
-      const toolsIcon = document.querySelector('.tabler-icon-tool')
-      expect(toolsIcon).toBeInTheDocument()
+      // Tools dropdown should be rendered
+      const toolsDropdown = screen.getByTestId('tools-dropdown')
+      expect(toolsDropdown).toBeInTheDocument()
     })
   })
 

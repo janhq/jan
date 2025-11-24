@@ -18,6 +18,7 @@ import {
   IconStar,
   IconFolder,
   IconX,
+  IconTrash,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -25,6 +26,8 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useMessages } from '@/hooks/useMessages'
 import { cn, extractThinkingContent } from '@/lib/utils'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import {
   DropdownMenu,
@@ -47,9 +50,11 @@ const SortableItem = memo(
   ({
     thread,
     variant,
+    currentProjectId,
   }: {
     thread: Thread
     variant?: 'default' | 'project'
+    currentProjectId?: string
   }) => {
     const {
       attributes,
@@ -77,6 +82,7 @@ const SortableItem = memo(
     const getMessages = useMessages((state) => state.getMessages)
     const { t } = useTranslation()
     const [openDropdown, setOpenDropdown] = useState(false)
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
     const navigate = useNavigate()
     // Check if current route matches this thread's detail page
     const matches = useMatches()
@@ -86,6 +92,7 @@ const SortableItem = memo(
         'threadId' in match.params &&
         match.params.threadId === thread.id
     )
+    const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
     const handleClick = (e: MouseEvent<HTMLDivElement>) => {
       if (openDropdown) {
@@ -108,7 +115,31 @@ const SortableItem = memo(
       return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
     }, [thread.title])
 
+    const availableProjects = useMemo(() => {
+      if (!projectsEnabled) {
+        return []
+      }
+      return folders
+        .filter((f) => {
+          // Exclude the current project page we're on
+          if (f.id === currentProjectId) return false
+          // Exclude the project this thread is already assigned to
+          if (f.id === thread.metadata?.project?.id) return false
+          return true
+        })
+        .sort((a, b) => b.updated_at - a.updated_at)
+    }, [
+      projectsEnabled,
+      folders,
+      currentProjectId,
+      thread.metadata?.project?.id,
+    ])
+
     const assignThreadToProject = (threadId: string, projectId: string) => {
+      if (!projectsEnabled) {
+        return
+      }
+
       const project = getFolderById(projectId)
       if (project && updateThread) {
         const projectMetadata = {
@@ -191,7 +222,7 @@ const SortableItem = memo(
                 }}
               />
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end" className="w-44">
+            <DropdownMenuContent side="bottom" align="end" className="min-w-44">
               {thread.isFavorite ? (
                 <DropdownMenuItem
                   onClick={(e) => {
@@ -220,22 +251,21 @@ const SortableItem = memo(
                 onDropdownClose={() => setOpenDropdown(false)}
               />
 
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2">
-                  <IconFolder size={16} />
-                  <span>Add to project</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {folders.length === 0 ? (
-                    <DropdownMenuItem disabled>
-                      <span className="text-left-panel-fg/50">
-                        No projects available
-                      </span>
-                    </DropdownMenuItem>
-                  ) : (
-                    folders
-                      .sort((a, b) => b.updated_at - a.updated_at)
-                      .map((folder) => (
+              {projectsEnabled && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2">
+                    <IconFolder size={16} />
+                    <span>{t('common:projects.addToProject')}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-60 min-w-44 overflow-y-auto">
+                    {availableProjects.length === 0 ? (
+                      <DropdownMenuItem disabled>
+                        <span className="text-left-panel-fg/50">
+                          {t('common:projects.noProjectsAvailable')}
+                        </span>
+                      </DropdownMenuItem>
+                    ) : (
+                      availableProjects.map((folder) => (
                         <DropdownMenuItem
                           key={folder.id}
                           onClick={(e) => {
@@ -249,42 +279,57 @@ const SortableItem = memo(
                           </span>
                         </DropdownMenuItem>
                       ))
-                  )}
-                  {thread.metadata?.project && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Remove project from metadata
-                          const projectName = thread.metadata?.project?.name
-                          updateThread(thread.id, {
-                            metadata: {
-                              ...thread.metadata,
-                              project: undefined,
-                            },
-                          })
-                          toast.success(
-                            `Thread removed from "${projectName}" successfully`
-                          )
-                        }}
-                      >
-                        <IconX size={16} />
-                        <span>Remove from project</span>
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+              {projectsEnabled && thread.metadata?.project && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      // Remove project from metadata
+                      const projectName = thread.metadata?.project?.name
+                      updateThread(thread.id, {
+                        metadata: {
+                          ...thread.metadata,
+                          project: undefined,
+                        },
+                      })
+                      toast.success(
+                        `Thread removed from "${projectName}" successfully`
+                      )
+                    }}
+                  >
+                    <IconX size={16} />
+                    <span>Remove from project</span>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
-              <DeleteThreadDialog
-                thread={thread}
-                onDelete={deleteThread}
-                onDropdownClose={() => setOpenDropdown(false)}
-                variant={variant}
-              />
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setDeleteConfirmOpen(true)
+                  setOpenDropdown(false)
+                }}
+              >
+                <IconTrash />
+                <span>{t('common:delete')}</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <DeleteThreadDialog
+            thread={thread}
+            onDelete={deleteThread}
+            onDropdownClose={() => setOpenDropdown(false)}
+            variant={variant}
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            withoutTrigger
+          />
         </div>
       </div>
     )
@@ -296,9 +341,14 @@ type ThreadListProps = {
   isFavoriteSection?: boolean
   variant?: 'default' | 'project'
   showDate?: boolean
+  currentProjectId?: string
 }
 
-function ThreadList({ threads, variant = 'default' }: ThreadListProps) {
+function ThreadList({
+  threads,
+  variant = 'default',
+  currentProjectId,
+}: ThreadListProps) {
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
       return (b.updated || 0) - (a.updated || 0)
@@ -322,7 +372,12 @@ function ThreadList({ threads, variant = 'default' }: ThreadListProps) {
         strategy={verticalListSortingStrategy}
       >
         {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} variant={variant} />
+          <SortableItem
+            key={index}
+            thread={thread}
+            variant={variant}
+            currentProjectId={currentProjectId}
+          />
         ))}
       </SortableContext>
     </DndContext>

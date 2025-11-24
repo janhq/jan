@@ -78,7 +78,7 @@
     "goToSettings": "前往設定",
     "goToSettingsDesc": "開啟設定。"
   },
-  "appearance": {
+  "interface": {
     "title": "外觀",
     "theme": "主題",
     "themeDesc": "符合作業系統主題。",
@@ -96,8 +96,8 @@
     "destructiveDesc": "設定毀滅性操作的顏色。",
     "resetToDefault": "重設為預設值",
     "resetToDefaultDesc": "將所有外觀設定重設為預設值。",
-    "resetAppearanceSuccess": "外觀重設成功",
-    "resetAppearanceSuccessDesc": "所有外觀設定已還原為預設值。",
+    "resetInterfaceSuccess": "外觀重設成功",
+    "resetInterfaceSuccessDesc": "所有外觀設定已還原為預設值。",
     "chatWidth": "聊天寬度",
     "chatWidthDesc": "自訂聊天檢視的寬度。",
     "codeBlockTitle": "程式碼區塊",
@@ -107,7 +107,9 @@
     "resetCodeBlockStyle": "重設程式碼區塊樣式",
     "resetCodeBlockStyleDesc": "將程式碼區塊樣式重設為預設值。",
     "resetCodeBlockSuccess": "程式碼區塊樣式重設成功",
-    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。"
+    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。",
+    "tokenCounterCompact": "緊湊型代幣計數器",
+    "tokenCounterCompactDesc": "在聊天輸入框內顯示代幣計數器。停用時，代幣計數器會顯示在輸入框下方。"
   },
   "hardware": {
     "os": "作業系統",
@@ -167,6 +169,12 @@
     "serverLogs": "伺服器日誌",
     "serverLogsDesc": "檢視本機 API 伺服器的詳細日誌。",
     "openLogs": "開啟日誌",
+    "swaggerDocs": "API 文件",
+    "swaggerDocsDesc": "查看互動式 API 文件（Swagger UI）。",
+    "openDocs": "開啟文件",
+    "startupConfiguration": "啟動設定",
+    "runOnStartup": "Auto start",
+    "runOnStartupDesc": "應用程式啟動時自動啟動本機 API 伺服器。使用上次使用的模型，如果不可用則選擇第一個可用模型。",
     "serverConfiguration": "伺服器設定",
     "serverHost": "伺服器主機",
     "serverHostDesc": "伺服器的網路位址。",
@@ -241,7 +249,9 @@
     "reportIssue": "報告問題",
     "credits": "致謝",
     "creditsDesc1": "Jan 由 Menlo 團隊用 ❤️ 構建。",
-    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。"
+    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。",
+    "huggingfaceToken": "HuggingFace 代幣",
+    "huggingfaceTokenDesc": "您的 HuggingFace API 代幣，用於存取模型。"
   },
   "extensions": {
     "title": "擴充功能"
@@ -264,5 +274,7 @@
     "updateNow": "立即更新",
     "updateSuccess": "Llamacpp 更新成功",
     "updateError": "更新 Llamacpp 失敗"
-  }
+  },
+  "backendInstallSuccess": "後端安裝成功",
+  "backendInstallError": "後端安裝失敗"
 }

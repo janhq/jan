@@ -20,9 +20,14 @@ interface CapabilitiesProps {
 const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   if (!capabilities.length) return null
 
+  // Filter out proactive capability as it's now managed in MCP settings
+  const filteredCapabilities = capabilities.filter((capability) => {
+    return capability !== 'proactive'
+  })
+
   return (
     <div className="flex gap-1">
-      {capabilities.map((capability: string, capIndex: number) => {
+      {filteredCapabilities.map((capability: string, capIndex: number) => {
         let icon = null
 
         if (capability === 'vision') {
@@ -54,7 +59,9 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>
-                      {capability === 'web_search' ? 'Web Search' : capability}
+                      {capability === 'web_search'
+                        ? 'Web Search'
+                        : capability}
                     </p>
                   </TooltipContent>
                 </Tooltip>

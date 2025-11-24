@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
-import { useAppState } from './useAppState'
+import { useAppState, type PromptProgress } from './useAppState'
 import { useMessages } from './useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { defaultModel } from '@/lib/models'
@@ -16,11 +16,18 @@ import {
   newUserThreadContent,
   postMessageProcessing,
   sendCompletion,
+  captureProactiveScreenshots,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { renderInstructions } from '@/lib/instructionTemplate'
-import { ChatCompletionMessageToolCall } from 'openai/resources'
-
+import {
+  ChatCompletionMessageToolCall,
+  CompletionUsage,
+} from 'openai/resources'
+import { MessageStatus, ContentType, ThreadMessage } from '@janhq/core'
+import { useAttachments } from '@/hooks/useAttachments'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -35,6 +42,202 @@ import { useAssistant } from './useAssistant'
 import { useThreadManagement } from './useThreadManagement'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { toast } from 'sonner'
+import { Attachment } from '@/types/attachment'
+import { MCPTool } from '@/types/completion'
+import { useMCPServers } from '@/hooks/useMCPServers'
+
+// Helper to create thread content with consistent structure
+const createThreadContent = (
+  threadId: string,
+  text: string,
+  toolCalls: ChatCompletionMessageToolCall[],
+  messageId?: string
+) => {
+  const content = newAssistantThreadContent(threadId, text, {
+    tool_calls: toolCalls.map((e) => ({
+      ...e,
+      state: 'pending',
+    })),
+  })
+  // If continuing from a message, preserve the message ID
+  if (messageId) {
+    return { ...content, id: messageId }
+  }
+  return content
+}
+
+// Helper to cancel animation frame cross-platform
+const cancelFrame = (handle: number | undefined) => {
+  if (handle === undefined) return
+  if (typeof cancelAnimationFrame !== 'undefined') {
+    cancelAnimationFrame(handle)
+  } else {
+    clearTimeout(handle)
+  }
+}
+
+// Helper to finalize and save a message
+const finalizeMessage = (
+  finalContent: ThreadMessage,
+  addMessage: (message: ThreadMessage) => void,
+  updateStreamingContent: (content: ThreadMessage | undefined) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
+  updateThreadTimestamp: (threadId: string) => void,
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessageId?: string
+) => {
+  // If continuing from a message, update it; otherwise add new message
+  if (continueFromMessageId && updateMessage) {
+    updateMessage({ ...finalContent, id: continueFromMessageId })
+  } else {
+    addMessage(finalContent)
+  }
+  updateStreamingContent(emptyThreadContent)
+  updatePromptProgress(undefined)
+  updateThreadTimestamp(finalContent.thread_id)
+}
+
+// Helper to process streaming completion
+const processStreamingCompletion = async (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  completion: AsyncIterable<any>,
+  abortController: AbortController,
+  activeThread: Thread,
+  accumulatedTextRef: { value: string },
+  toolCalls: ChatCompletionMessageToolCall[],
+  currentCall: ChatCompletionMessageToolCall | null,
+  updateStreamingContent: (content: ThreadMessage | undefined) => void,
+  updateTokenSpeed: (message: ThreadMessage, increment?: number) => void,
+  setTokenSpeed: (
+    message: ThreadMessage,
+    tokensPerSecond: number,
+    totalTokens: number
+  ) => void,
+  updatePromptProgress: (progress: PromptProgress | undefined) => void,
+  timeToFirstToken: number,
+  tokenUsageRef: { current: CompletionUsage | undefined },
+  continueFromMessageId?: string,
+  updateMessage?: (message: ThreadMessage) => void,
+  continueFromMessage?: ThreadMessage
+) => {
+  // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
+  let rafScheduled = false
+  let rafHandle: number | undefined
+  let pendingDeltaCount = 0
+  const reasoningProcessor = new ReasoningProcessor()
+
+  const flushStreamingContent = () => {
+    const currentContent = createThreadContent(
+      activeThread.id,
+      accumulatedTextRef.value,
+      toolCalls,
+      continueFromMessageId
+    )
+
+    // When continuing, update the message directly instead of using streamingContent
+    if (continueFromMessageId && updateMessage && continueFromMessage) {
+      updateMessage({
+        ...continueFromMessage, // Preserve original message metadata
+        content: currentContent.content, // Update content
+        status: MessageStatus.Stopped, // Keep as Stopped while streaming
+      })
+    } else {
+      updateStreamingContent(currentContent)
+    }
+
+    if (tokenUsageRef.current) {
+      setTokenSpeed(
+        currentContent,
+        tokenUsageRef.current.completion_tokens /
+          Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+        tokenUsageRef.current.completion_tokens
+      )
+    } else if (pendingDeltaCount > 0) {
+      updateTokenSpeed(currentContent, pendingDeltaCount)
+    }
+    pendingDeltaCount = 0
+    rafScheduled = false
+  }
+
+  const scheduleFlush = () => {
+    if (rafScheduled || abortController.signal.aborted) return
+    rafScheduled = true
+    const doSchedule = (cb: () => void) => {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        rafHandle = requestAnimationFrame(() => cb())
+      } else {
+        // Fallback for non-browser test environments
+        const t = setTimeout(() => cb(), 0) as unknown as number
+        rafHandle = t
+      }
+    }
+    doSchedule(() => {
+      // Check abort status before executing the scheduled callback
+      if (abortController.signal.aborted) {
+        rafScheduled = false
+        return
+      }
+      flushStreamingContent()
+    })
+  }
+
+  try {
+    for await (const part of completion) {
+      // Check if aborted before processing each part
+      if (abortController.signal.aborted) {
+        break
+      }
+
+      // Handle prompt progress if available
+      if ('prompt_progress' in part && part.prompt_progress) {
+        // Force immediate state update to ensure we see intermediate values
+        flushSync(() => {
+          updatePromptProgress(part.prompt_progress)
+        })
+        // Add a small delay to make progress visible
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      // Error message
+      if (!part.choices) {
+        throw new Error(
+          'message' in part
+            ? (part.message as string)
+            : (JSON.stringify(part) ?? '')
+        )
+      }
+
+      if (part.choices[0]?.delta?.tool_calls) {
+        extractToolCall(part, currentCall, toolCalls)
+        // Schedule a flush to reflect tool update
+        scheduleFlush()
+      }
+      const deltaReasoning = reasoningProcessor.processReasoningChunk(part)
+      if (deltaReasoning) {
+        accumulatedTextRef.value += deltaReasoning
+        pendingDeltaCount += 1
+        // Schedule flush for reasoning updates
+        scheduleFlush()
+      }
+      const deltaContent = part.choices[0]?.delta?.content || ''
+      if (deltaContent) {
+        accumulatedTextRef.value += deltaContent
+        pendingDeltaCount += 1
+        // Batch UI update on next animation frame
+        scheduleFlush()
+      }
+    }
+  } finally {
+    // Always clean up scheduled RAF when stream ends (either normally or via abort)
+    cancelFrame(rafHandle)
+    rafHandle = undefined
+    rafScheduled = false
+
+    // Finalize reasoning (close any open think tags)
+    accumulatedTextRef.value += reasoningProcessor.finalize()
+  }
+}
 
 export const useChat = () => {
   const [
@@ -43,6 +246,7 @@ export const useChat = () => {
     updateStreamingContent,
     updateLoadingModel,
     setAbortController,
+    setTokenSpeed,
   ] = useAppState(
     useShallow((state) => [
       state.updateTokenSpeed,
@@ -50,6 +254,7 @@ export const useChat = () => {
       state.updateStreamingContent,
       state.updateLoadingModel,
       state.setAbortController,
+      state.setTokenSpeed,
     ])
   )
   const updatePromptProgress = useAppState(
@@ -69,6 +274,7 @@ export const useChat = () => {
   const getDisabledToolsForThread = useToolAvailable(
     (state) => state.getDisabledToolsForThread
   )
+  const mcpSettings = useMCPServers((state) => state.settings)
 
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
@@ -82,49 +288,33 @@ export const useChat = () => {
 
   const getMessages = useMessages((state) => state.getMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const updateMessage = useMessages((state) => state.updateMessage)
   const setMessages = useMessages((state) => state.setMessages)
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
-  const getCurrentThread = useCallback(async () => {
-    let currentThread = retrieveThread()
+  const getCurrentThread = useCallback(
+    async (projectId?: string) => {
+      let currentThread = retrieveThread()
 
-    // Check if we're in temporary chat mode
-    const isTemporaryMode = window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
-
-    // Clear messages for existing temporary thread on reload to ensure fresh start
-    if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
-      setMessages(TEMPORARY_CHAT_ID, [])
-    }
-
-    if (!currentThread) {
-      // Get prompt directly from store when needed
-      const currentPrompt = usePrompt.getState().prompt
-      const currentAssistant = useAssistant.getState().currentAssistant
-      const assistants = useAssistant.getState().assistants
-      const selectedModel = useModelProvider.getState().selectedModel
-      const selectedProvider = useModelProvider.getState().selectedProvider
-
-      currentThread = await createThread(
-        {
-          id: selectedModel?.id ?? defaultModel(selectedProvider),
-          provider: selectedProvider,
-        },
-        isTemporaryMode ? 'Temporary Chat' : currentPrompt,
-        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
-        undefined, // no project metadata
-        isTemporaryMode // pass temporary flag
+      // Check if we're in temporary chat mode
+      const isTemporaryMode = window.location.search.includes(
+        `${TEMPORARY_CHAT_QUERY_ID}=true`
       )
 
-      // Clear messages for temporary chat to ensure fresh start on reload
+      // Clear messages for existing temporary thread on reload to ensure fresh start
       if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
         setMessages(TEMPORARY_CHAT_ID, [])
       }
 
-      // Set flag for temporary chat navigation
-      if (currentThread.id === TEMPORARY_CHAT_ID) {
-        sessionStorage.setItem('temp-chat-nav', 'true')
-      }
+      if (!currentThread) {
+        // Get prompt directly from store when needed
+        const currentPrompt = usePrompt.getState().prompt
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const assistants = useAssistant.getState().assistants
+        const selectedModel = useModelProvider.getState().selectedModel
+        const selectedProvider = useModelProvider.getState().selectedProvider
 
 
       // Check if we're in a project route and assign project metadata after thread creation
@@ -170,14 +360,17 @@ export const useChat = () => {
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
       await serviceHub.models().stopAllModels()
-      await new Promise((resolve) => setTimeout(resolve, 1000))
       updateLoadingModel(true)
       await serviceHub
         .models()
         .startModel(provider, modelId)
         .catch(console.error)
+      // Refresh active models after starting
       updateLoadingModel(false)
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      serviceHub
+        .models()
+        .getActiveModels()
+        .then((models) => setActiveModels(models || []))
     },
     [updateLoadingModel, serviceHub]
   )
@@ -273,36 +466,178 @@ export const useChat = () => {
     async (
       message: string,
       troubleshooting = true,
-      attachments?: Array<{
-        name: string
-        type: string
-        size: number
-        base64: string
-        dataUrl: string
-      }>
+      attachments?: Attachment[],
+      projectId?: string,
+      updateAttachmentProcessing?: (
+        fileName: string,
+        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+      ) => void,
+      continueFromMessageId?: string
     ) => {
-      const activeThread = await getCurrentThread()
+      const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
       let activeProvider = getProviderByName(selectedProvider)
 
       resetTokenSpeed()
       if (!activeThread || !activeProvider) return
+
+      // Separate images and documents
+      const fileAttachmentsFeatureEnabled =
+        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+      const allAttachments = attachments ?? []
+
+      const images = allAttachments.filter((a) => a.type === 'image')
+      const documents = fileAttachmentsFeatureEnabled
+        ? allAttachments.filter((a) => a.type === 'document')
+        : []
+
+      // Process attachments BEFORE sending
+      const processedAttachments: Attachment[] = []
+
+      // 1) Images ingestion (placeholder/no-op for now)
+      // Track attachment ingestion; all must succeed before sending
+
+      if (images.length > 0) {
+        for (const img of images) {
+          try {
+            // Skip if already processed (ingested in ChatInput when thread existed)
+            if (img.processed && img.id) {
+              processedAttachments.push(img)
+              continue
+            }
+
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'processing')
+            }
+            // Upload image, get id/URL
+            const res = await serviceHub
+              .uploads()
+              .ingestImage(activeThread.id, img)
+            processedAttachments.push({
+              ...img,
+              id: res.id,
+              processed: true,
+              processing: false,
+            })
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'done')
+            }
+          } catch (err) {
+            console.error(`Failed to ingest image ${img.name}:`, err)
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(img.name, 'error')
+            }
+            const desc = err instanceof Error ? err.message : String(err)
+            toast.error('Failed to ingest image attachment', {
+              description: desc,
+            })
+            return
+          }
+        }
+      }
+
+      if (documents.length > 0) {
+        try {
+          for (const doc of documents) {
+            // Skip if already processed (ingested in ChatInput when thread existed)
+            if (doc.processed && doc.id) {
+              processedAttachments.push(doc)
+              continue
+            }
+
+            // Update UI to show spinner on this file
+            if (updateAttachmentProcessing) {
+              updateAttachmentProcessing(doc.name, 'processing')
+            }
+
+            try {
+              const res = await serviceHub
+                .uploads()
+                .ingestFileAttachment(activeThread.id, doc)
+
+              // Add processed document with ID
+              processedAttachments.push({
+                ...doc,
+                id: res.id,
+                size: res.size ?? doc.size,
+                chunkCount: res.chunkCount ?? doc.chunkCount,
+                processing: false,
+                processed: true,
+              })
+
+              // Update UI to show done state
+              if (updateAttachmentProcessing) {
+                updateAttachmentProcessing(doc.name, 'done')
+              }
+            } catch (err) {
+              console.error(`Failed to ingest ${doc.name}:`, err)
+              if (updateAttachmentProcessing) {
+                updateAttachmentProcessing(doc.name, 'error')
+              }
+              throw err // Re-throw to handle in outer catch
+            }
+          }
+          // Update thread since documents attached
+          useThreads.getState().updateThread(activeThread.id, {
+            metadata: { hasDocuments: true },
+          })
+        } catch (err) {
+          console.error('Failed to ingest documents:', err)
+          const desc = err instanceof Error ? err.message : String(err)
+          toast.error('Failed to index attachments', { description: desc })
+          // Don't continue with message send if ingestion failed
+          return
+        }
+      }
+
+      // All attachments prepared successfully
+
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       updatePromptProgress(undefined)
-      // Do not add new message on retry
-      if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message, attachments))
+
+      // Find the message to continue from if provided
+      const continueFromMessage = continueFromMessageId
+        ? messages.find((m) => m.id === continueFromMessageId)
+        : undefined
+
+      // Do not add new message on retry or when continuing
+      // All attachments (images + docs) ingested successfully.
+      // Build the user content once; use it for both the outbound request
+      // and persisting to the store so both are identical.
+      if (updateAttachmentProcessing) {
+        updateAttachmentProcessing('__CLEAR_ALL__', 'clear_all')
+      }
+      const userContent = newUserThreadContent(
+        activeThread.id,
+        message,
+        processedAttachments
+      )
+      if (troubleshooting && !continueFromMessageId) {
+        addMessage(userContent)
+      }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
       const selectedModel = useModelProvider.getState().selectedModel
+
+      // If continuing, start with the previous content
+      const accumulatedTextRef = {
+        value: continueFromMessage?.content?.[0]?.text?.value || '',
+      }
+      let currentAssistant: Assistant | undefined | null
+
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
           await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
+          // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
         }
         const currentAssistant = useAssistant.getState().currentAssistant
 
@@ -321,17 +656,93 @@ export const useChat = () => {
           messages,
           combinedInstructions || undefined
         )
-        if (troubleshooting) builder.addUserMessage(message, attachments)
+        // Using addUserMessage to respect legacy code. Should be using the userContent above.
+        if (troubleshooting && !continueFromMessageId) {
+          builder.addUserMessage(userContent)
+        } else if (continueFromMessage) {
+          // When continuing, add the partial assistant response to the context
+          builder.addAssistantMessage(
+            continueFromMessage.content?.[0]?.text?.value || '',
+            undefined,
+            []
+          )
+        }
 
         let isCompleted = false
 
+        const disabledTools = getDisabledToolsForThread(activeThread.id)
+        const isToolDisabled = (tool: MCPTool) => {
+          const compositeKey = `${tool.server}::${tool.name}`
+          return (
+            disabledTools.includes(compositeKey) ||
+            // Backwards compatibility with pre-migration keys
+            disabledTools.includes(tool.name)
+          )
+        }
+
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? useAppState.getState().tools.filter((tool) => {
-              const disabledTools = getDisabledToolsForThread(activeThread.id)
-              return !disabledTools.includes(tool.name)
-            })
+          ? useAppState
+              .getState()
+              .tools.filter((tool) => !isToolDisabled(tool))
           : []
+
+        // Conditionally inject RAG if tools are supported and documents are attached
+        const ragFeatureAvailable =
+          useAttachments.getState().enabled &&
+          PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+        // Check if documents were attached in the current thread
+        const hasDocuments = useThreads
+          .getState()
+          .getThreadById(activeThread.id)?.metadata?.hasDocuments
+        if (hasDocuments && ragFeatureAvailable) {
+          try {
+            const ragTools = await serviceHub
+              .rag()
+              .getTools()
+              .catch(() => [])
+            if (Array.isArray(ragTools) && ragTools.length) {
+              const enabledRagTools = ragTools.filter(
+                (tool) => !isToolDisabled(tool)
+              )
+              availableTools = [...availableTools, ...enabledRagTools]
+              console.log('RAG tools injected for completion.')
+            }
+          } catch (e) {
+            console.warn('Failed to inject RAG tools:', e)
+          }
+        }
+
+        // Check if proactive mode is enabled in MCP settings and model has required capabilities
+        const hasRequiredCapabilities =
+          (selectedModel?.capabilities?.includes('vision') ?? false) &&
+          (selectedModel?.capabilities?.includes('tools') ?? false)
+        const isProactiveMode = mcpSettings.proactiveMode && hasRequiredCapabilities
+
+        // Proactive mode: Capture initial screenshot/snapshot before first LLM call
+        if (
+          isProactiveMode &&
+          availableTools.length > 0 &&
+          !abortController.signal.aborted
+        ) {
+          console.log(
+            'Proactive mode: Capturing initial screenshots before LLM call'
+          )
+          try {
+            const initialScreenshots =
+              await captureProactiveScreenshots(abortController)
+
+            // Add initial screenshots to builder
+            for (const screenshot of initialScreenshots) {
+              // Generate unique tool call ID for initial screenshot
+              const proactiveToolCallId = `proactive_initial_${Date.now()}_${Math.random()}`
+              builder.addToolMessage(screenshot, proactiveToolCallId)
+              console.log('Initial proactive screenshot added to context')
+            }
+          } catch (e) {
+            console.warn('Failed to capture initial proactive screenshots:', e)
+          }
+        }
 
         let assistantLoopSteps = 0
 
@@ -340,6 +751,9 @@ export const useChat = () => {
           !abortController.signal.aborted &&
           activeProvider
         ) {
+          if (!continueFromMessageId) {
+            accumulatedTextRef.value = ''
+          }
           const modelConfig = activeProvider.models.find(
             (m) => m.id === selectedModel?.id
           )
@@ -374,162 +788,56 @@ export const useChat = () => {
           )
 
           if (!completion) throw new Error('No completion received')
-          let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
+          const timeToFirstToken = Date.now()
+          let tokenUsage: CompletionUsage | undefined = undefined
+          const tokenUsageRef = { current: tokenUsage }
           try {
             if (isCompletionResponse(completion)) {
               const message = completion.choices[0]?.message
-              accumulatedText = (message?.content as string) || ''
+              const newContent = (message?.content as string) || ''
+              if (
+                continueFromMessageId &&
+                accumulatedTextRef.value.length > 0
+              ) {
+                accumulatedTextRef.value += newContent
+              } else {
+                accumulatedTextRef.value = newContent
+              }
 
               // Handle reasoning field if there is one
               const reasoning = extractReasoningFromMessage(message)
               if (reasoning) {
-                accumulatedText =
-                  `<think>${reasoning}</think>` + accumulatedText
+                accumulatedTextRef.value =
+                  `<think>${reasoning}</think>` + accumulatedTextRef.value
               }
 
               if (message?.tool_calls) {
                 toolCalls.push(...message.tool_calls)
               }
+              if ('usage' in completion) {
+                tokenUsage = completion.usage
+              }
             } else {
-              // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
-              let rafScheduled = false
-              let rafHandle: number | undefined
-              let pendingDeltaCount = 0
-              const reasoningProcessor = new ReasoningProcessor()
-              const scheduleFlush = () => {
-                if (rafScheduled || abortController.signal.aborted) return
-                rafScheduled = true
-                const doSchedule = (cb: () => void) => {
-                  if (typeof requestAnimationFrame !== 'undefined') {
-                    rafHandle = requestAnimationFrame(() => cb())
-                  } else {
-                    // Fallback for non-browser test environments
-                    const t = setTimeout(() => cb(), 0) as unknown as number
-                    rafHandle = t
-                  }
-                }
-                doSchedule(() => {
-                  // Check abort status before executing the scheduled callback
-                  if (abortController.signal.aborted) {
-                    rafScheduled = false
-                    return
-                  }
-
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: toolCalls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  if (pendingDeltaCount > 0) {
-                    updateTokenSpeed(currentContent, pendingDeltaCount)
-                  }
-                  pendingDeltaCount = 0
-                  rafScheduled = false
-                })
-              }
-              const flushIfPending = () => {
-                if (!rafScheduled) return
-                if (
-                  typeof cancelAnimationFrame !== 'undefined' &&
-                  rafHandle !== undefined
-                ) {
-                  cancelAnimationFrame(rafHandle)
-                } else if (rafHandle !== undefined) {
-                  clearTimeout(rafHandle)
-                }
-                // Do an immediate flush
-                const currentContent = newAssistantThreadContent(
-                  activeThread.id,
-                  accumulatedText,
-                  {
-                    tool_calls: toolCalls.map((e) => ({
-                      ...e,
-                      state: 'pending',
-                    })),
-                  }
-                )
-                updateStreamingContent(currentContent)
-                if (pendingDeltaCount > 0) {
-                  updateTokenSpeed(currentContent, pendingDeltaCount)
-                }
-                pendingDeltaCount = 0
-                rafScheduled = false
-              }
-              try {
-                for await (const part of completion) {
-                  // Check if aborted before processing each part
-                  if (abortController.signal.aborted) {
-                    break
-                  }
-
-                  // Handle prompt progress if available
-                  if ('prompt_progress' in part && part.prompt_progress) {
-                    // Force immediate state update to ensure we see intermediate values
-                    flushSync(() => {
-                      updatePromptProgress(part.prompt_progress)
-                    })
-                    // Add a small delay to make progress visible
-                    await new Promise((resolve) => setTimeout(resolve, 100))
-                  }
-
-                  // Error message
-                  if (!part.choices) {
-                    throw new Error(
-                      'message' in part
-                        ? (part.message as string)
-                        : (JSON.stringify(part) ?? '')
-                    )
-                  }
-
-                  if (part.choices[0]?.delta?.tool_calls) {
-                    extractToolCall(part, currentCall, toolCalls)
-                    // Schedule a flush to reflect tool update
-                    scheduleFlush()
-                  }
-                  const deltaReasoning =
-                    reasoningProcessor.processReasoningChunk(part)
-                  if (deltaReasoning) {
-                    accumulatedText += deltaReasoning
-                    pendingDeltaCount += 1
-                    // Schedule flush for reasoning updates
-                    scheduleFlush()
-                  }
-                  const deltaContent = part.choices[0]?.delta?.content || ''
-                  if (deltaContent) {
-                    accumulatedText += deltaContent
-                    pendingDeltaCount += 1
-                    // Batch UI update on next animation frame
-                    scheduleFlush()
-                  }
-                }
-              } finally {
-                // Always clean up scheduled RAF when stream ends (either normally or via abort)
-                if (rafHandle !== undefined) {
-                  if (typeof cancelAnimationFrame !== 'undefined') {
-                    cancelAnimationFrame(rafHandle)
-                  } else {
-                    clearTimeout(rafHandle)
-                  }
-                  rafHandle = undefined
-                  rafScheduled = false
-                }
-
-                // Only finalize and flush if not aborted
-                if (!abortController.signal.aborted) {
-                  // Finalize reasoning (close any open think tags)
-                  accumulatedText += reasoningProcessor.finalize()
-                  // Ensure any pending buffered content is rendered at the end
-                  flushIfPending()
-                }
-              }
+              await processStreamingCompletion(
+                completion,
+                abortController,
+                activeThread,
+                accumulatedTextRef,
+                toolCalls,
+                currentCall,
+                updateStreamingContent,
+                updateTokenSpeed,
+                setTokenSpeed,
+                updatePromptProgress,
+                timeToFirstToken,
+                tokenUsageRef,
+                continueFromMessageId,
+                updateMessage,
+                continueFromMessage
+              )
+              tokenUsage = tokenUsageRef.current
             }
           } catch (error) {
             const errorMessage =
@@ -563,7 +871,7 @@ export const useChat = () => {
           }
           // TODO: Remove this check when integrating new llama.cpp extension
           if (
-            accumulatedText.length === 0 &&
+            accumulatedTextRef.value.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
             activeProvider?.provider === 'llamacpp'
@@ -571,20 +879,52 @@ export const useChat = () => {
             await serviceHub
               .models()
               .stopModel(activeThread.model.id, 'llamacpp')
+
+            // Refresh active models after stopping
+            serviceHub
+              .models()
+              .getActiveModels()
+              .then((models) => setActiveModels(models || []))
             throw new Error('No response received from the model')
           }
 
           // Create a final content object for adding to the thread
-          const finalContent = newAssistantThreadContent(
+          let finalContent = newAssistantThreadContent(
             activeThread.id,
-            accumulatedText,
+            accumulatedTextRef.value,
             {
               tokenSpeed: useAppState.getState().tokenSpeed,
               assistant: currentAssistant,
+              modelId: selectedModel?.id,
             }
           )
 
-          builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+          // If continuing from a message, preserve the ID and set status to Ready
+          if (continueFromMessageId) {
+            finalContent = {
+              ...finalContent,
+              id: continueFromMessageId,
+              status: MessageStatus.Ready,
+            }
+          }
+
+          // Normal completion flow (abort is handled after loop exits)
+          // Don't add assistant message to builder if continuing - it's already there
+          if (!continueFromMessageId) {
+            builder.addAssistantMessage(
+              accumulatedTextRef.value,
+              undefined,
+              toolCalls
+            )
+          }
+
+          // Check if proactive mode is enabled in MCP settings and model has required capabilities
+          const hasRequiredCapabilitiesForPostProcessing =
+            (selectedModel?.capabilities?.includes('vision') ?? false) &&
+            (selectedModel?.capabilities?.includes('tools') ?? false)
+          const isProactiveModeForPostProcessing =
+            mcpSettings.proactiveMode && hasRequiredCapabilitiesForPostProcessing
+
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
@@ -592,12 +932,18 @@ export const useChat = () => {
             abortController,
             useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
-            allowAllMCPPermissions
+            allowAllMCPPermissions,
+            isProactiveModeForPostProcessing
           )
-          addMessage(updatedMessage ?? finalContent)
-          updateStreamingContent(emptyThreadContent)
-          updatePromptProgress(undefined)
-          updateThreadTimestamp(activeThread.id)
+          finalizeMessage(
+            updatedMessage ?? finalContent,
+            addMessage,
+            updateStreamingContent,
+            updatePromptProgress,
+            updateThreadTimestamp,
+            updateMessage,
+            continueFromMessageId
+          )
 
           isCompleted = !toolCalls.length
           // Do not create agent loop if there is no need for it
@@ -607,8 +953,112 @@ export const useChat = () => {
             availableTools = []
           }
         }
+
+        // IMPORTANT: Check if aborted AFTER the while loop exits
+        // The while loop exits when abort is true, so we handle it here
+        // Only save interrupted messages for llamacpp provider
+        // Other providers (OpenAI, Claude, etc.) handle streaming differently
+        if (
+          abortController.signal.aborted &&
+          accumulatedTextRef.value.length > 0 &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: accumulatedTextRef.value,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+                modelId: selectedModel?.id,
+              },
+            })
+          } else {
+            // Create final content for the partial message with Stopped status
+            const partialContent = {
+              ...newAssistantThreadContent(
+                activeThread.id,
+                accumulatedTextRef.value,
+                {
+                  tokenSpeed: useAppState.getState().tokenSpeed,
+                  assistant: currentAssistant,
+                  modelId: selectedModel?.id,
+                }
+              ),
+              status: MessageStatus.Stopped,
+            }
+            addMessage(partialContent)
+          }
+          updatePromptProgress(undefined)
+          updateThreadTimestamp(activeThread.id)
+        }
       } catch (error) {
-        if (!abortController.signal.aborted) {
+        // If aborted, save the partial message even though an error occurred
+        // Only save for llamacpp provider - other providers handle streaming differently
+        const streamingContent = useAppState.getState().streamingContent
+        const hasPartialContent =
+          accumulatedTextRef.value.length > 0 ||
+          (streamingContent && streamingContent.content?.[0]?.text?.value)
+
+        if (
+          abortController.signal.aborted &&
+          hasPartialContent &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          // Use streaming content if available, otherwise use accumulatedTextRef
+          const contentText =
+            streamingContent?.content?.[0]?.text?.value ||
+            accumulatedTextRef.value
+
+          // If continuing, update the existing message; otherwise add new
+          if (continueFromMessageId && continueFromMessage) {
+            // Preserve the original message metadata
+            updateMessage({
+              ...continueFromMessage,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: contentText,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: MessageStatus.Stopped,
+              metadata: {
+                ...continueFromMessage.metadata,
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+                modelId: selectedModel?.id,
+              },
+            })
+          } else {
+            const partialContent = {
+              ...newAssistantThreadContent(activeThread.id, contentText, {
+                tokenSpeed: useAppState.getState().tokenSpeed,
+                assistant: currentAssistant,
+                modelId: selectedModel?.id,
+              }),
+              status: MessageStatus.Stopped,
+            }
+            addMessage(partialContent)
+          }
+          updatePromptProgress(undefined)
+          updateThreadTimestamp(activeThread.id)
+        } else if (!abortController.signal.aborted) {
+          // Only show error if not aborted
           if (error && typeof error === 'object' && 'message' in error) {
             setModelLoadError(error as ErrorObject)
           } else {
@@ -630,6 +1080,7 @@ export const useChat = () => {
       updateStreamingContent,
       updatePromptProgress,
       addMessage,
+      updateMessage,
       updateThreadTimestamp,
       updateLoadingModel,
       getDisabledToolsForThread,
@@ -641,6 +1092,9 @@ export const useChat = () => {
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
+      setTokenSpeed,
+      mcpSettings.proactiveMode,
+      setActiveModels,
     ]
   )
 

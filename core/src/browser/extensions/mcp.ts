@@ -15,7 +15,7 @@ export abstract class MCPExtension extends BaseExtension implements MCPInterface
   }
 
   abstract getTools(): Promise<MCPTool[]>
-  abstract callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult>
+  abstract callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult>
   abstract getConnectedServers(): Promise<string[]>
   abstract refreshTools(): Promise<void>
   abstract isHealthy(): Promise<boolean>
@@ -25,4 +25,10 @@ export abstract class MCPExtension extends BaseExtension implements MCPInterface
    * @returns A React component or null if no custom component is provided
    */
   getToolComponent?(): ComponentType<MCPToolComponentProps> | null
+
+  /**
+   * Optional method to get the list of tool names that should be disabled by default
+   * @returns Array of tool names that should be disabled by default for new users
+   */
+  getDefaultDisabledTools?(): Promise<string[]>
 }

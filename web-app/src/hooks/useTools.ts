@@ -1,19 +1,38 @@
 import { useEffect } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { MCPTool } from '@/types/completion'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
+import { useToolAvailable } from './useToolAvailable'
+import { ExtensionManager } from '@/lib/extension'
+import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
+  const { isDefaultsInitialized, setDefaultDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
 
   useEffect(() => {
-    function setTools() {
-      getServiceHub().mcp().getTools().then((data: MCPTool[]) => {
-        updateTools(data)
-      }).catch((error) => {
+    async function setTools() {
+      try {
+        // Get MCP extension first
+        const mcpExtension = ExtensionManager.getInstance().get<MCPExtension>(
+          ExtensionTypeEnum.MCP
+        )
+
+        // Fetch tools
+        const mcpTools = await getServiceHub().mcp().getTools()
+        updateTools(mcpTools)
+
+        // Initialize default disabled tools for new users (only once)
+        if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
+          const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
+          if (defaultDisabled.length > 0) {
+            setDefaultDisabledTools(defaultDisabled)
+            markDefaultsAsInitialized()
+          }
+        }
+      } catch (error) {
         console.error('Failed to fetch MCP tools:', error)
-      })
+      }
     }
     setTools()
 

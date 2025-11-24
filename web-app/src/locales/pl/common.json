@@ -8,7 +8,7 @@
   "general": "Ogólne",
   "settings": "Ustawienia",
   "modelProviders": "Dostawcy Modeli",
-  "appearance": "Wygląd",
+  "interface": "Wygląd",
   "privacy": "Prywatność",
   "keyboardShortcuts": "Skróty",
   "newChat": "Nowy Czat",
@@ -80,6 +80,7 @@
   "tools": "Narzędzia",
   "webSearch": "Szukanie w Sieci",
   "reasoning": "Rozumowanie",
+  "proactive": "Proaktywny",
   "selectAModel": "Wybierz Model",
   "noToolsAvailable": "Brak narzędzi",
   "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",
@@ -248,6 +249,11 @@
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
+      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
+      "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
+      "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
+      "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
+      "starredWarning": "Nadal masz oznaczone gwiazdką wątki w projekcie.",
       "deleteButton": "Usuń",
       "successWithName": "Projekt \"{{projectName}}\" został pomyślnie usunięty",
       "successWithoutName": "Projekt został pomyślnie usunięty",
@@ -272,9 +278,12 @@
     "thread": "wątek",
     "threads": "wątki",
     "updated": "Zaktualizowano:",
-    "collapseThreads": "Zwiń wątki",
-    "expandThreads": "Rozwiń wątki",
-    "update": "Aktualizuj"
+    "collapseProject": "Zwiń projekt",
+    "expandProject": "Rozwiń projekt",
+    "update": "Aktualizuj",
+    "searchProjects": "Szukaj projektów...",
+    "noProjectsFound": "Nie znaleziono projektów",
+    "tryDifferentSearch": "Spróbuj innego wyszukiwania"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -327,7 +336,41 @@
     },
     "downloadAndVerificationComplete": {
       "title": "Pobieranie Ukończone",
-      "description": "Model \"{{item}}\" został pobrany i pomyślnie zweryfikowany"
+      "description": "Model \"{{item}}\" został pobrany i pomyślnie zweryfikowany"
+    },
+    "projectCreated": {
+      "title": "Projekt Utworzony",
+      "description": "Projekt \"{{projectName}}\" został pomyślnie utworzony"
+    },
+    "projectRenamed": {
+      "title": "Projekt Zmieniony",
+      "description": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projekt Usunięty",
+      "description": "Projekt \"{{projectName}}\" został pomyślnie usunięty"
+    },
+    "projectAlreadyExists": {
+      "title": "Projekt Już Istnieje",
+      "description": "Projekt \"{{projectName}}\" już istnieje"
+    },
+    "projectDeleteFailed": {
+      "title": "Błąd Usuwania",
+      "description": "Nie udało się usunąć projektu. Spróbuj ponownie."
+    },
+    "threadAssignedToProject": {
+      "title": "Wątek Przypisany",
+      "description": "Wątek został pomyślnie przypisany do \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Wątek Usunięty",
+      "description": "Wątek został pomyślnie usunięty z \"{{projectName}}\""
     }
-  }
+  },
+  "failedToLoadModels": "Nie udało się wczytać modeli",
+  "noModels": "Nie znaleziono modeli",
+  "conversationNotAvailable": "Rozmowa niedostępna",
+  "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
+  "temporaryChat": "Tymczasowy Czat",
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
 }

@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformGuard } from '@/lib/platform/PlatformGuard'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
@@ -14,6 +16,8 @@ import {
   IconFolder,
   IconChevronDown,
   IconChevronRight,
+  IconSearch,
+  IconX,
 } from '@tabler/icons-react'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
@@ -26,13 +30,17 @@ export const Route = createFileRoute('/project/')({
 })
 
 function Project() {
-  return <ProjectContent />
+  return (
+    <PlatformGuard feature={PlatformFeature.PROJECTS}>
+      <ProjectContent />
+    </PlatformGuard>
+  )
 }
 
 function ProjectContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { folders, addFolder, updateFolder, deleteFolder, getFolderById } =
+  const { folders, addFolder, updateFolder, getFolderById } =
     useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const [open, setOpen] = useState(false)
@@ -42,18 +50,16 @@ function ProjectContent() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set()
   )
+  const [searchQuery, setSearchQuery] = useState('')
 
   const handleDelete = (id: string) => {
     setDeletingId(id)
     setDeleteConfirmOpen(true)
   }
 
-  const confirmDelete = () => {
-    if (deletingId) {
-      deleteFolder(deletingId)
-      setDeleteConfirmOpen(false)
-      setDeletingId(null)
-    }
+  const handleDeleteClose = () => {
+    setDeleteConfirmOpen(false)
+    setDeletingId(null)
   }
 
   const handleSave = (name: string, systemPrompt?: string) => {
@@ -96,6 +102,16 @@ function ProjectContent() {
     })
   }
 
+  // Filter projects based on search query
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return folders
+    }
+    return folders.filter((folder) =>
+      folder.name.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [folders, searchQuery])
+
   return (
     <div className="flex h-full flex-col justify-center">
       <HeaderPage>
@@ -116,6 +132,33 @@ function ProjectContent() {
       </HeaderPage>
       <div className="h-full overflow-y-auto flex flex-col">
         <div className="p-4 w-full md:w-3/4 mx-auto mt-2">
+          {/* Search Bar */}
+          {folders.length > 0 && (
+            <div className="mb-4">
+              <div className="relative">
+                <IconSearch
+                  size={18}
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-main-view-fg/50"
+                />
+                <input
+                  type="text"
+                  placeholder={t('projects.searchProjects')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-main-view-fg/5 border border-main-view-fg/10 rounded-lg text-main-view-fg placeholder:text-main-view-fg/50 focus:outline-none focus:ring-2 focus:ring-main-view-fg/20 focus:border-main-view-fg/20 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-main-view-fg/50 hover:text-main-view-fg transition-colors"
+                  >
+                    <IconX size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {folders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <IconFolder size={48} className="text-main-view-fg/30 mb-4" />
@@ -126,9 +169,19 @@ function ProjectContent() {
                 {t('projects.noProjectsYetDesc')}
               </p>
             </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <IconSearch size={48} className="text-main-view-fg/30 mb-4" />
+              <h3 className="text-lg font-medium text-main-view-fg/60 mb-2">
+                {t('projects.noProjectsFound')}
+              </h3>
+              <p className="text-main-view-fg/50 text-sm">
+                {t('projects.tryDifferentSearch')}
+              </p>
+            </div>
           ) : (
             <div className="space-y-3">
-              {folders
+              {filteredProjects
                 .slice()
                 .sort((a, b) => b.updated_at - a.updated_at)
                 .map((folder) => {
@@ -175,8 +228,8 @@ function ProjectContent() {
                               className="size-8 cursor-pointer flex items-center justify-center rounded-md hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out mr-1"
                               title={
                                 isExpanded
-                                  ? t('projects.collapseThreads')
-                                  : t('projects.expandThreads')
+                                  ? t('projects.collapseProject')
+                                  : t('projects.expandProject')
                               }
                               onClick={() => toggleProjectExpansion(folder.id)}
                             >
@@ -221,7 +274,9 @@ function ProjectContent() {
 
                       {/* Thread List */}
                       {isExpanded && projectThreads.length > 0 && (
-                        <div className="mt-3 pl-2">
+                        <div 
+                          className="mt-3 pl-2 pr-2 max-h-[190px] overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-main-view-fg/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-main-view-fg/30"
+                        >
                           <ThreadList
                             threads={projectThreads}
                             variant="project"
@@ -244,8 +299,8 @@ function ProjectContent() {
       />
       <DeleteProjectDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        onConfirm={confirmDelete}
+        onOpenChange={handleDeleteClose}
+        projectId={deletingId ?? undefined}
         projectName={deletingId ? getFolderById(deletingId)?.name : undefined}
       />
     </div>

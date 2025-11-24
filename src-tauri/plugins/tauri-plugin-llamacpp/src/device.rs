@@ -7,7 +7,7 @@ use tokio::time::timeout;
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::validate_binary_path;
-use jan_utils::{setup_library_path, setup_windows_process_flags};
+use jan_utils::{add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -19,25 +19,32 @@ pub struct DeviceInfo {
 
 pub async fn get_devices_from_backend(
     backend_path: &str,
-    library_path: Option<&str>,
     envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
     log::info!("Getting devices from server at path: {:?}", backend_path);
 
-    validate_binary_path(backend_path)?;
+    let bin_path = validate_binary_path(backend_path)?;
 
     // Configure the command to run the server with --list-devices
-    let mut command = Command::new(backend_path);
+    let mut command = Command::new(&bin_path);
     command.arg("--list-devices");
     command.envs(envs);
 
-    // Set up library path
-    setup_library_path(library_path, &mut command);
-
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
-
     setup_windows_process_flags(&mut command);
+    // Try to add CUDA paths (works on both Windows and Linux)
+    let cuda_found = add_cuda_paths(&mut command);
+
+    // Optionally check if binary needs CUDA
+    if !cuda_found && binary_requires_cuda(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
+        );
+    }
+
+    // Add the binary's directory to library path
+    setup_library_path(bin_path.parent(), &mut command);
 
     // Execute the command and wait for completion
     let output = timeout(Duration::from_secs(30), command.output())
@@ -276,7 +283,7 @@ mod tests {
     fn test_find_memory_pattern_no_match() {
         let text = "No memory info here";
         assert!(find_memory_pattern(text).is_none());
-        
+
         let text_with_invalid = "Some text (invalid memory info) here";
         assert!(find_memory_pattern(text_with_invalid).is_none());
     }
