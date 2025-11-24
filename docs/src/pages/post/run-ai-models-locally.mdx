@@ -4,13 +4,13 @@ description: "A straightforward guide to running AI models locally on your compu
 tags: AI, local models, Jan, GGUF, privacy, local AI
 categories: guides
 date: 2025-01-31
-ogImage: assets/images/general/run-ai-locally-with-jan.jpg
+ogImage: assets/images/general/run-ai-locally-jan.jpeg
 twitter:
   card: summary_large_image
   site: "@jandotai"
   title: "How to run AI models locally as a beginner?"
   description: "Learn how to run AI models locally on your computer for enhanced privacy and control. Perfect for beginners!"
-  image: assets/run-ai-locally-with-jan.jpg
+  image: assets/images/general/run-ai-locally-jan.jpeg
 ---
 
 import { Callout } from 'nextra/components'
@@ -18,9 +18,16 @@ import CTABlog from '@/components/Blog/CTA'
 
 # How to run AI models locally as a beginner?
 
-Most people think running AI models locally is complicated. It's not. Anyone can run powerful AI models like DeepSeek, Llama, and Mistral on their own computer. This guide will show you how, even if you've never written a line of code.
+![Run AI models locally with Jan](/assets/images/general/run-ai-locally-jan.jpeg "Complete guide to running AI models locally on your computer")
 
-## Quick steps:
+Running AI locally is fastest when you take these 3 actions in order. This walkthrough gets you from zero to a working offline AI on your computer.
+
+1. Download [Jan](https://www.jan.ai/) (free, open source)
+2. Pick a model to use
+3. Start chatting
+
+The rest of this guide explains each step and answers common questions.
+
 ### 1. Download [Jan](https://jan.ai)
 
 ![Jan AI's official website showing the download options](./_assets/jan.ai.jpg "Download Jan from the official website - it's free and open source")
@@ -35,12 +42,45 @@ Most people think running AI models locally is complicated. It's not. Anyone can
 
 That's all to run your first AI model locally!
 
-![Jan's simple and clean chat interface for local AI](/assets/images/general/run-ai-locally-with-jan.jpg "Jan's easy-to-use chat interface after installation")
-*Jan's easy-to-use chat interface after installation.*
+![Running AI models locally using Jan](/assets/images/general/run-ai-models-locally-using-jan.jpeg "Jan's easy-to-use interface for running AI models locally")
+*Start chatting with local AI models using Jan.*
 
 Keep reading to learn key terms of local AI and the things you should know before running AI models locally.
 
+## Running AI Locally on Windows, Mac, and Linux
+
+[Jan](https://www.jan.ai/) works on all major operating systems with the same features:
+
+**Windows (10, 11)**  
+Download the `.exe` installer from jan.ai. Works on Windows 10 and 11 with no additional setup.
+
+**macOS (Intel and Apple Silicon)**  
+Download the `.dmg` file. Supports both Intel Macs and Apple Silicon (M1, M2, M3) natively.
+
+**Linux (Ubuntu, Debian, Fedora)**  
+Download the `.AppImage` or `.deb` package. Works on most modern Linux distributions.
+
+All platforms get the same models and features. The rest of this guide applies to all operating systems.
+
+## Common Questions for Beginners
+
+### Do I need coding skills?
+No. Jan handles installation, GGUF downloads, and updates. You point and click, then start chatting.
+
+### Is running AI locally free?
+Yes. Jan is open source, local AI models are free, and offline AI replies cost nothing to run on your computer.
+
+### Will AI on my computer slow it down?
+Only during inference. Close big apps or pause the model if you need the CPU or GPU for other work.
+
+### Do I need internet access after setup?
+You only need it to download Jan and your first model. After that, you can run AI locally offline whenever you want.
+
+### Is my data private?
+Everything stays on-device unless you choose to share it. No prompts are sent to Jan’s servers by default.
+
 ## How Local AI Works
+With the basics and beginner FAQs out of the way, here's what is happening under the hood when you run AI on your computer.
 
 Before diving into the details, let's understand how AI runs on your computer:
 
@@ -87,6 +127,8 @@ The "B" in model names (like 7B) stands for "billion" - it's just telling you th
 ![Jan Hub interface showing model sizes and types](./_assets/jan-hub-for-ai-models.jpg "Jan Hub makes it easy to understand different model sizes and versions")
 *Jan Hub makes it easy to understand different model sizes and versions*
 
+Running local AI models becomes easier once you understand how size affects speed; next you'll see what you can do after the install.
+
 **Good news:** Jan helps you pick the right model size for your computer automatically! You don't need to worry about the technical details - just choose a model that matches what Jan recommends for your computer.
 
 ## What You Can Do with Local AI
@@ -99,16 +141,17 @@ Running AI locally gives you:
 - Free to use - no subscription fees
 </Callout>
 
-## Hardware Requirements
+## Hardware Requirements: Running AI on Your Laptop or Desktop
 
-Before downloading an AI model, consider checking if your computer can run it. Here's a basic guide:
+Most modern computers can run AI locally. Here's what you need:
 
-**The basics your computer needs:**
-- A decent processor (CPU) - most computers from the last 5 years will work fine
-- At least 8GB of RAM - 16GB or more is better
-- Some free storage space - at least 5GB recommended
+**Minimum requirements (works on most laptops):**
+- CPU from the last 5 years (Intel i5/AMD Ryzen 5 or better)
+- 8GB RAM minimum - 16GB recommended for better performance
+- 5GB+ free storage per model
+- No GPU required - runs on CPU only
 
-### What Models Can Your Computer Run?
+### What AI models can run on your laptop or desktop?
 
 | | | |
 |---|---|---|
@@ -205,19 +248,19 @@ Select your quantization and start the download
 ![Downloading the model](./_assets/jan-hf-model-download.jpg "Choose your preferred model size and download")
 *Choose your preferred model size and download*
 
-### Common Questions
+## Technical FAQs
 
-**"My computer doesn't have a graphics card - can I still use AI?"**
+### Can I run AI locally without a GPU?
+Yes. CPU-only inference works fine for 3B-7B models. Expect slower responses, so keep prompts short and close other heavy apps.
 
-Yes! It will run slower but still work. Start with 7B models.
+### Which local AI model should I start with for free?
+Pick any Jan-recommended 7B GGUF model like DeepSeek-R1 7B Q4 or Llama-3.1 8B Q4. They balance accuracy, speed, and memory use for most laptops.
 
-**"Which model should I start with?"**
+### How much RAM and storage do I need to run AI locally?
+Reserve 5 GB storage per model plus 2× the model size in free RAM. Example: a 4 GB Q4 file needs roughly 8 GB of RAM to run smoothly.
 
-Try a 7B model first - it's the best balance of smart and fast.
-
-**"Will it slow down my computer?"**
-
-Only while you're using the AI. Close other big programs for better speed.
+### How do I run larger AI models on my computer?
+Move up to Q6 or Q8 quantization or 13B+ models if you have a desktop GPU. Jan shows real-time VRAM and RAM requirements before download.
 
 ## Need help?
 <Callout type="info">
