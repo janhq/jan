@@ -1,6 +1,7 @@
 {
   "welcome": "Chào mừng đến với Jan",
   "description": "Để bắt đầu, khởi chạy nhanh với Jan Model hoặc chọn nhà cung cấp cục bộ hoặc từ xa của riêng bạn",
+  "descriptionWeb": "Để bắt đầu, bạn cần kết nối với mô hình đám mây bằng khóa API",
   "quickStart": "Khởi động nhanh với Jan Model",
   "quickStartDescription": "Bắt đầu trò chuyện ngay lập tức với mô hình được đề xuất của chúng tôi",
   "downloading": "Đang tải xuống Jan Model...",

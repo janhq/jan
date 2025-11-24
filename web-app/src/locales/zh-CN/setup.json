@@ -1,6 +1,7 @@
 {
   "welcome": "欢迎来到 Jan",
   "description": "要开始使用，请使用 Jan Model 快速启动，或选择您自己的本地或远程提供商",
+  "descriptionWeb": "要开始使用，您需要使用 API 密钥连接到云模型",
   "quickStart": "使用 Jan Model 快速启动",
   "quickStartDescription": "使用我们推荐的模型立即开始聊天",
   "downloading": "正在下载 Jan Model...",

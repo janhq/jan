@@ -19,6 +19,9 @@ import { Progress } from '@/components/ui/progress'
 const JAN_MODEL_V2_NAME = 'jan-v2-vl-med-gguf'
 const DEFAULT_QUANTIZATION = 'q4_k_m'
 
+// Check if Quick Start feature is available (Desktop only)
+const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
+
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -30,7 +33,7 @@ function SetupScreen() {
   const isSetupCompleted =
     localStorage.getItem(localStorageKey.setupCompleted) === 'true'
 
-  // Model sources and download state
+  // Model sources and download state - only used on Desktop
   const { sources, fetchSources } = useModelSources()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -41,13 +44,16 @@ function SetupScreen() {
   // Track if we initiated quick start download
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
 
-  // Fetch model sources on mount
+  // Fetch model sources on mount (Desktop only)
   useEffect(() => {
-    fetchSources()
+    if (isQuickStartAvailable) {
+      fetchSources()
+    }
   }, [fetchSources])
 
-  // Find Jan Model V2 in catalog
+  // Find Jan Model V2 in catalog (Desktop only)
   const janModelV2 = useMemo(() => {
+    if (!isQuickStartAvailable) return null
     return sources.find((model) =>
       model.model_name.toLowerCase().includes(JAN_MODEL_V2_NAME)
     )
@@ -61,7 +67,7 @@ function SetupScreen() {
     )
   }, [janModelV2])
 
-  // Check download status
+  // Check download status (Desktop only)
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -97,7 +103,7 @@ function SetupScreen() {
     )
   }, [defaultVariant, llamaProvider])
 
-  // Handle quick start click
+  // Handle quick start click (Desktop only)
   const handleQuickStart = useCallback(() => {
     if (!defaultVariant || !janModelV2) {
       console.error('Jan Model V2 not found in catalog')
@@ -126,7 +132,7 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Navigate to chat when download completes
+  // Navigate to chat when download completes (Desktop only)
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
       // Mark setup as completed
@@ -146,6 +152,11 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
+  // Get appropriate description based on platform
+  const descriptionKey = isQuickStartAvailable
+    ? 'setup:description'
+    : 'setup:descriptionWeb'
+
   return (
     <div className="flex h-full flex-col justify-center">
       <HeaderPage></HeaderPage>
@@ -156,7 +167,7 @@ function SetupScreen() {
               {t('setup:welcome')}
             </h1>
             <p className="text-main-view-fg/70 text-lg mt-2">
-              {t('setup:description')}
+              {t(descriptionKey)}
             </p>
           </div>
           <div className="flex gap-4 flex-col">

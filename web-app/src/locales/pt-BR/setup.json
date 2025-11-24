@@ -1,6 +1,7 @@
 {
   "welcome": "Bem-vindo ao Jan",
   "description": "Para começar, inicie rapidamente com Jan Model ou escolha seu próprio provedor local ou remoto",
+  "descriptionWeb": "Para começar, você precisará conectar-se a um modelo em nuvem usando uma chave de API",
   "quickStart": "Início rápido com Jan Model",
   "quickStartDescription": "Comece a conversar instantaneamente com nosso modelo recomendado",
   "downloading": "Baixando Jan Model...",

@@ -1,6 +1,7 @@
 {
   "welcome": "Welcome to Jan",
   "description": "To get started, quickly launch with Jan Model or choose to set up your own local or remote provider",
+  "descriptionWeb": "To get started, you'll need to connect to a cloud model using an API key",
   "quickStart": "Quick start with Jan Model",
   "quickStartDescription": "Start chatting instantly with our recommended model",
   "downloading": "Downloading Jan Model...",
