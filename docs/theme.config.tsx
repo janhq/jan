@@ -70,8 +70,8 @@ const config: DocsThemeConfig = {
       <Fragment>
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta httpEquiv="Content-Language" content="en" />
-        <title>Jan</title>
-        <meta name="og:title" content="Jan" />
+        <title>{frontMatter?.title || title || 'Jan'}</title>
+        <meta name="og:title" content={frontMatter?.title || title || 'Jan'} />
         <meta
           name="description"
           content={
