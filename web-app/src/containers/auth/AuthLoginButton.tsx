@@ -21,6 +21,61 @@ export const AuthLoginButton = () => {
   const { t } = useTranslation()
   const { getAllProviders, loginWithProvider } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
+
+  const enabledProviders = getAllProviders()
+
+  const handleLogin = async () => {
+    try {
+      setIsLoading(true)
+      // If only one provider, login directly
+      if (enabledProviders.length === 1) {
+        await loginWithProvider(enabledProviders[0].id as ProviderType)
+      }
+    } catch (error) {
+      console.error('Failed to login:', error)
+      toast.error(t('common:loginFailed'))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (enabledProviders.length === 0) {
+    return null
+  }
+
+  // Single provider - show simple button
+  if (enabledProviders.length === 1) {
+    const provider = enabledProviders[0]
+    const getProviderIcon = (iconName: string) => {
+      switch (iconName) {
+        case 'IconBrandGoogleFilled':
+          return IconBrandGoogleFilled
+        default:
+          return IconLogin
+      }
+    }
+    const IconComponent = getProviderIcon(provider.icon)
+
+    return (
+      <button
+        onClick={handleLogin}
+        disabled={isLoading}
+        className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full"
+      >
+        <IconComponent size={18} className="text-left-panel-fg/70" />
+        <span className="font-medium text-left-panel-fg/90">{t('common:login')}</span>
+      </button>
+    )
+  }
+
+  // Multiple providers - show dropdown
+  return <AuthLoginDropdown />
+}
+
+const AuthLoginDropdown = () => {
+  const { t } = useTranslation()
+  const { getAllProviders, loginWithProvider } = useAuth()
+  const [isLoading, setIsLoading] = useState(false)
   const [panelWidth, setPanelWidth] = useState<number>(192)
   const dropdownRef = useRef<HTMLButtonElement>(null)
   const isSmallScreen = useSmallScreen()
@@ -73,10 +128,6 @@ export const AuthLoginButton = () => {
       default:
         return IconLogin
     }
-  }
-
-  if (enabledProviders.length === 0) {
-    return null
   }
 
   return (
