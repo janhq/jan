@@ -24,6 +24,31 @@ use crate::core::{
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
+#[derive(Debug, Clone, Copy)]
+pub enum ShutdownContext {
+    AppExit,      // User closing app - be fast
+    ManualRestart, // User restarting servers - be thorough
+    FactoryReset, // Deleting data - be very thorough
+}
+
+impl ShutdownContext {
+    fn per_server_timeout(&self) -> Duration {
+        match self {
+            Self::AppExit => Duration::from_millis(500),
+            Self::ManualRestart => Duration::from_secs(2),
+            Self::FactoryReset => Duration::from_secs(5),
+        }
+    }
+
+    fn overall_timeout(&self) -> Duration {
+        match self {
+            Self::AppExit => Duration::from_millis(1500),
+            Self::ManualRestart => Duration::from_secs(5),
+            Self::FactoryReset => Duration::from_secs(10),
+        }
+    }
+}
+
 /// Calculate exponential backoff delay with jitter
 ///
 /// # Arguments
@@ -132,7 +157,7 @@ pub async fn run_mcp_commands<R: Runtime>(
         let config_clone = config.clone();
 
         // Spawn task for initial startup attempt
-        let handle = tokio::spawn(async move {
+        let handle = tauri::async_runtime::spawn(async move {
             // Only wait for the initial startup attempt, not the monitoring
             let result = start_mcp_server_with_restart(
                 app_clone.clone(),
@@ -190,6 +215,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 pub async fn monitor_mcp_server_handle(
     servers_state: SharedMcpServers,
     name: String,
+    shutdown_flag: Arc<Mutex<bool>>,
 ) -> Option<rmcp::service::QuitReason> {
     log::info!("Monitoring MCP server {name} health");
 
@@ -198,7 +224,13 @@ pub async fn monitor_mcp_server_handle(
         // Small delay between health checks
         sleep(Duration::from_secs(5)).await;
 
-        // Check if server is still healthy by trying to list tools
+        {
+            let shutdown = shutdown_flag.lock().await;
+            if *shutdown {
+                return Some(rmcp::service::QuitReason::Closed);
+            }
+        }
+
         let health_check_result = {
             let servers = servers_state.lock().await;
             if let Some(service) = servers.get(&name) {
@@ -331,6 +363,7 @@ pub async fn start_restart_loop<R: Runtime>(
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     mcp_settings: Arc<Mutex<McpSettings>>,
+    shutdown_flag: Arc<Mutex<bool>>,
 ) {
     loop {
         let current_restart_count = {
@@ -413,7 +446,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
                 // Monitor the server again
                 let quit_reason =
-                    monitor_mcp_server_handle(servers_state.clone(), name.clone()).await;
+                    monitor_mcp_server_handle(servers_state.clone(), name.clone(), shutdown_flag.clone()).await;
 
                 log::info!("MCP server {name} quit with reason: {quit_reason:?}");
 
@@ -1016,11 +1049,11 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn clean_up_mcp_servers<R: Runtime>(app: &AppHandle<R>, state: State<'_, AppState>) {
-    log::info!("Cleaning up MCP servers");
-
-    // Stop all running MCP servers
-    let _ = stop_mcp_servers(state.mcp_servers.clone()).await;
+pub async fn background_cleanup_mcp_servers<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &State<'_, AppState>,
+) {
+    let _ = stop_mcp_servers_with_context(app, state, ShutdownContext::AppExit).await;
 
     // Clear active servers and restart counts
     {
@@ -1031,34 +1064,131 @@ pub async fn clean_up_mcp_servers<R: Runtime>(app: &AppHandle<R>, state: State<'
         let mut restart_counts = state.mcp_restart_counts.lock().await;
         restart_counts.clear();
     }
+    {
+        let mut connected = state.mcp_successfully_connected.lock().await;
+        connected.clear();
+    }
 
     // Clean up all lock files created by this process
     use crate::core::mcp::lockfile::cleanup_own_locks;
-    if let Err(e) = cleanup_own_locks(app) {
-        log::warn!("Failed to cleanup own lock files: {}", e);
-    }
-
-    log::info!("MCP servers cleaned up successfully");
+    let _ = cleanup_own_locks(app);
 }
 
-pub async fn stop_mcp_servers(servers_state: SharedMcpServers) -> Result<(), String> {
-    let mut servers_map = servers_state.lock().await;
-    let keys: Vec<String> = servers_map.keys().cloned().collect();
-    for key in keys {
-        if let Some(service) = servers_map.remove(&key) {
-            match service {
-                RunningServiceEnum::NoInit(service) => {
-                    log::info!("Stopping server {key}...");
-                    service.cancel().await.map_err(|e| e.to_string())?;
-                }
-                RunningServiceEnum::WithInit(service) => {
-                    log::info!("Stopping server {key} with initialization...");
-                    service.cancel().await.map_err(|e| e.to_string())?;
-                }
-            }
+struct ShutdownGuard {
+    flag: Arc<Mutex<bool>>,
+}
+
+impl Drop for ShutdownGuard {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.flag.try_lock() {
+            *guard = false;
+        } else {
+            let flag = self.flag.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut guard = flag.lock().await;
+                *guard = false;
+            });
         }
     }
-    drop(servers_map); // Release the lock after stopping
+}
+
+pub async fn stop_mcp_servers_with_context<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &State<'_, AppState>,
+    context: ShutdownContext,
+) -> Result<(), String> {
+    {
+        let mut shutdown_in_progress = state.mcp_shutdown_in_progress.lock().await;
+        if *shutdown_in_progress {
+            return Ok(());
+        }
+        *shutdown_in_progress = true;
+    }
+
+    let _guard = ShutdownGuard {
+        flag: state.mcp_shutdown_in_progress.clone(),
+    };
+
+    {
+        let mut monitoring_tasks = state.mcp_monitoring_tasks.lock().await;
+        for (_name, handle) in monitoring_tasks.drain() {
+            handle.abort();
+        }
+    }
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let servers_to_stop: Vec<(String, RunningServiceEnum, Option<u16>)> = {
+        let mut servers_map = state.mcp_servers.lock().await;
+        let keys: Vec<String> = servers_map.keys().cloned().collect();
+
+        let mut result = Vec::new();
+        for key in keys {
+            if let Some(service) = servers_map.remove(&key) {
+                let port = if key == "Jan Browser MCP" {
+                    let active_servers = state.mcp_active_servers.lock().await;
+                    active_servers.get(&key).and_then(|config| {
+                        config.get("env")
+                            .and_then(|e| e.get("BRIDGE_PORT"))
+                            .and_then(|p| p.as_str())
+                            .and_then(|s| s.parse::<u16>().ok())
+                    })
+                } else {
+                    None
+                };
+
+                result.push((key, service, port));
+            }
+        }
+        result
+    };
+
+    if servers_to_stop.is_empty() {
+        return Ok(());
+    }
+
+    let per_server_timeout = context.per_server_timeout();
+    let stop_handles: Vec<_> = servers_to_stop
+        .into_iter()
+        .map(|(name, service, port)| {
+            let app_clone = app.clone();
+
+            tauri::async_runtime::spawn(async move {
+                let cancel_future = async {
+                    match service {
+                        RunningServiceEnum::NoInit(service) => service.cancel().await,
+                        RunningServiceEnum::WithInit(service) => service.cancel().await,
+                    }
+                };
+
+                let success = tokio::time::timeout(per_server_timeout, cancel_future)
+                    .await
+                    .map(|r| r.is_ok())
+                    .unwrap_or(false);
+
+                if name == "Jan Browser MCP" {
+                    if let Some(port) = port {
+                        use crate::core::mcp::lockfile::delete_lock_file;
+                        if success {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        let _ = delete_lock_file(&app_clone, port);
+                    }
+                }
+
+                (name, success)
+            })
+        })
+        .collect();
+
+    let overall_timeout = context.overall_timeout();
+    let _ = tokio::time::timeout(
+        overall_timeout,
+        futures_util::future::join_all(stop_handles)
+    ).await;
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     Ok(())
 }
 
@@ -1089,16 +1219,19 @@ pub async fn spawn_server_monitoring_task<R: Runtime>(
     successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     mcp_settings: Arc<Mutex<McpSettings>>,
 ) {
+    let app_state = app.state::<AppState>();
+    let shutdown_flag = app_state.mcp_shutdown_in_progress.clone();
+
     let app_clone = app.clone();
     let servers_clone = servers_state.clone();
     let name_clone = name.clone();
     let config_clone = config.clone();
     let mcp_settings_clone = mcp_settings.clone();
 
-    tauri::async_runtime::spawn(async move {
+    let task_handle = tauri::async_runtime::spawn(async move {
         // Monitor the server using RunningService's JoinHandle<QuitReason>
         let quit_reason =
-            monitor_mcp_server_handle(servers_clone.clone(), name_clone.clone()).await;
+            monitor_mcp_server_handle(servers_clone.clone(), name_clone.clone(), shutdown_flag.clone()).await;
 
         log::info!(
             "MCP server {name_clone} quit with reason: {quit_reason:?}"
@@ -1116,10 +1249,17 @@ pub async fn spawn_server_monitoring_task<R: Runtime>(
                 restart_counts,
                 successfully_connected,
                 mcp_settings_clone.clone(),
+                shutdown_flag,
             )
             .await;
         }
     });
+
+    // Store task handle for later cancellation
+    {
+        let mut tasks = app_state.mcp_monitoring_tasks.lock().await;
+        tasks.insert(name.clone(), task_handle);
+    }
 }
 
 /// Determine if a server should be restarted based on its connection status and quit reason
