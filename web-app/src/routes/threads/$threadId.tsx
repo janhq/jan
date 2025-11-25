@@ -1,5 +1,10 @@
 ﻿import { useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  useParams,
+  redirect,
+  useNavigate,
+} from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -27,7 +32,14 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { ThreadPadding } from '@/containers/ThreadPadding'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { IconInfoCircle } from '@tabler/icons-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ModelLoader } from '@/containers/loaders/ModelLoader'
+import { useAppState } from '@/hooks/useAppState'
 
 const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
@@ -101,7 +113,6 @@ function ThreadDetail() {
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-
   // Listen for conversation not found events
   useEffect(() => {
     const handleConversationNotFound = (event: CustomEvent) => {
@@ -113,15 +124,21 @@ function ThreadDetail() {
         }
 
         toast.error(t('common:conversationNotAvailable'), {
-          description: t('common:conversationNotAvailableDescription')
+          description: t('common:conversationNotAvailableDescription'),
         })
         navigate({ to: '/', replace: true })
       }
     }
 
-    window.addEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    window.addEventListener(
+      CONVERSATION_NOT_FOUND_EVENT,
+      handleConversationNotFound as EventListener
+    )
     return () => {
-      window.removeEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+      window.removeEventListener(
+        CONVERSATION_NOT_FOUND_EVENT,
+        handleConversationNotFound as EventListener
+      )
     }
   }, [threadId, navigate, t])
 
@@ -141,11 +158,16 @@ function ThreadDetail() {
       .then((fetchedMessages) => {
         if (fetchedMessages) {
           // For web platform: preserve local messages if server fetch is empty but we have local messages
-          if (PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
-              fetchedMessages.length === 0 &&
-              messages &&
-              messages.length > 0) {
-            console.log('!!!Preserving local messages as server fetch is empty:', messages.length)
+          if (
+            PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
+            fetchedMessages.length === 0 &&
+            messages &&
+            messages.length > 0
+          ) {
+            console.log(
+              '!!!Preserving local messages as server fetch is empty:',
+              messages.length
+            )
             // Don't override local messages with empty server response
             return
           }
@@ -201,6 +223,7 @@ function ThreadDetail() {
     })
     setMessages(threadId, newMessages)
   }
+  const loadingModel = useAppState((state) => state.loadingModel)
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
@@ -209,12 +232,22 @@ function ThreadDetail() {
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
+        <div className="flex gap-2 items-center justify-between w-full pr-2">
           <div>
             {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
               <DropdownAssistant />
             )}
           </div>
+          {thread.model?.provider === 'llamacpp' && loadingModel ? (
+            <ModelLoader />
+          ) : (
+            <>
+              <DropdownModelProvider
+                model={thread.model}
+                useLastUsedModel={false}
+              />
+            </>
+          )}
           <div className="flex-1 flex justify-center">
             {threadId === TEMPORARY_CHAT_ID && <TemporaryChatIndicator t={t} />}
           </div>
@@ -275,7 +308,10 @@ function ThreadDetail() {
               data-test-id="thread-content-text"
             />
             {/* Persistent padding element for ChatGPT-style message positioning */}
-           <ThreadPadding threadId={threadId} scrollContainerRef={scrollContainerRef} />
+            <ThreadPadding
+              threadId={threadId}
+              scrollContainerRef={scrollContainerRef}
+            />
           </div>
         </div>
         <div

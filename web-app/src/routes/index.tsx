@@ -25,6 +25,9 @@ import { useMobileScreen } from '@/hooks/useMediaQuery'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ModelLoader } from '@/containers/loaders/ModelLoader'
+import { useAppState } from '@/hooks/useAppState'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -53,6 +56,7 @@ function Index() {
   const isTemporaryChat = search['temporary-chat']
   const { setCurrentThreadId } = useThreads()
   const isMobile = useMobileScreen()
+  const loadingModel = useAppState((state) => state.loadingModel)
   useTools()
 
   // Conditional to check if there are any valid providers
@@ -87,9 +91,19 @@ function Index() {
   return (
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
+        <div className="flex items-center gap-2 w-full pr-2">
           {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
             <DropdownAssistant />
+          )}
+          {selectedModel?.provider === 'llamacpp' && loadingModel ? (
+            <ModelLoader />
+          ) : (
+            <>
+              <DropdownModelProvider
+                model={selectedModel}
+                useLastUsedModel={true}
+              />
+            </>
           )}
         </div>
       </HeaderPage>
@@ -112,26 +126,11 @@ function Index() {
               isMobile ? 'mb-6' : 'mb-8'
             )}
           >
-            <h1
-              className={cn(
-                'font-editorialnew text-main-view-fg',
-                // Responsive title size
-                isMobile ? 'text-2xl sm:text-3xl' : 'text-4xl'
-              )}
-            >
-              {isTemporaryChat ? t('chat:temporaryChat') : t('chat:welcome')}
-            </h1>
-            <p
-              className={cn(
-                'text-main-view-fg/70 mt-2',
-                // Responsive description size
-                isMobile ? 'text-base' : 'text-lg'
-              )}
-            >
+            <h1 className={cn('text-main-view-fg text-2xl')}>
               {isTemporaryChat
-                ? t('chat:temporaryChatDescription')
+                ? t('chat:temporaryChat')
                 : t('chat:description')}
-            </p>
+            </h1>
           </div>
           <div className="flex-1 shrink-0">
             <ChatInput

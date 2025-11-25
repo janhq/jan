@@ -266,7 +266,7 @@ export function ModelSetting({
       <SheetTrigger asChild>
         <div
           className={cn(
-            'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
+            'size-6 cursor-pointer flex items-center relative z-10 justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
             smallIcon && 'size-5'
           )}
         >

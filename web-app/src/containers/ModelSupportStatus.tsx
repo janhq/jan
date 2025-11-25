@@ -47,7 +47,9 @@ export const ModelSupportStatus = ({
 
         // Check if the standard model.gguf file exists
         if (await fs.existsSync(ggufModelPath)) {
-          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
+          return await serviceHub
+            .models()
+            .isModelSupported(ggufModelPath, ctxSize)
         }
 
         // If model.gguf doesn't exist, try reading from model.yml (for imported models)
@@ -67,9 +69,9 @@ export const ModelSupportStatus = ({
         }
 
         // Read the model configuration to get the actual model path
-        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
-          `llamacpp/models/${id}/model.yml`
-        )
+        const modelConfig = await serviceHub
+          .app()
+          .readYaml<{ model_path: string }>(`llamacpp/models/${id}/model.yml`)
 
         // Handle both absolute and relative paths
         const actualModelPath =
@@ -78,7 +80,9 @@ export const ModelSupportStatus = ({
             ? modelConfig.model_path // absolute path, use as-is
             : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
 
-        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
+        return await serviceHub
+          .models()
+          .isModelSupported(actualModelPath, ctxSize)
       } catch (error) {
         console.error(
           'Error checking model support with path resolution:',
@@ -159,7 +163,7 @@ export const ModelSupportStatus = ({
         <TooltipTrigger asChild>
           <div
             className={cn(
-              'size-2 flex items-center justify-center rounded-full',
+              'size-2 flex relative z-10 items-center justify-center rounded-full',
               modelSupportStatus === 'LOADING'
                 ? 'size-2.5 border border-main-view-fg/50 border-t-transparent animate-spin'
                 : getStatusColor(),

@@ -16,15 +16,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon } from 'lucide-react'
+import { ArrowUp, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
-  IconWorld,
-  IconAtom,
-  IconTool,
-  IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
   IconPaperclip,
@@ -38,16 +35,13 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
 import { useChat } from '@/hooks/useChat'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { ModelLoader } from '@/containers/loaders/ModelLoader'
-import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
-import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
+import { ExtensionTypeEnum, fs, RAGExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
@@ -60,6 +54,7 @@ import {
   createImageAttachment,
   createDocumentAttachment,
 } from '@/types/attachment'
+import ToolsAvailable from './ToolsAvailable'
 
 type ChatInputProps = {
   className?: string
@@ -70,7 +65,6 @@ type ChatInputProps = {
 }
 
 const ChatInput = ({
-  model,
   className,
   initialMessage,
   projectId,
@@ -81,8 +75,7 @@ const ChatInput = ({
   const serviceHub = useServiceHub()
   const streamingContent = useAppState((state) => state.streamingContent)
   const abortControllers = useAppState((state) => state.abortControllers)
-  const loadingModel = useAppState((state) => state.loadingModel)
-  const tools = useAppState((state) => state.tools)
+
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
@@ -103,14 +96,13 @@ const ChatInput = ({
     )
   )
 
+  const minRows = 1
   const maxRows = 10
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const sendMessage = useChat()
   const [message, setMessage] = useState('')
-  const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
-  const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
@@ -152,14 +144,6 @@ const ChatInput = ({
 
     checkMmprojSupport()
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
-
-  // Check if there are active MCP servers
-  const hasActiveMCPServers = tools.length > 0
-
-  // Get MCP extension and its custom component
-  const extensionManager = ExtensionManager.getInstance()
-  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
-  const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
@@ -235,12 +219,6 @@ const ChatInput = ({
       textareaRef.current.focus()
     }
   }, [])
-
-  useEffect(() => {
-    if (tooltipToolsAvailable && dropdownToolsAvailable) {
-      setTooltipToolsAvailable(false)
-    }
-  }, [dropdownToolsAvailable, tooltipToolsAvailable])
 
   // Focus when thread changes
   useEffect(() => {
@@ -857,12 +835,18 @@ const ChatInput = ({
     // If hasMmproj is false or no images found, allow normal text pasting to continue
   }
 
+  const isShowingTokenCounter =
+    selectedProvider === 'llamacpp' &&
+    hasActiveModels &&
+    !initialMessage &&
+    (threadMessages?.length > 0 || prompt.trim().length > 0)
+
   return (
     <div className="relative">
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-[2px] rounded-lg',
+            'relative overflow-hidden p-[2px] rounded-3xl',
             Boolean(streamingContent) && 'opacity-70'
           )}
         >
@@ -880,7 +864,8 @@ const ChatInput = ({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
+              'relative z-20 border border-main-view-fg/5 rounded-3xl text-main-view-fg bg-main-view p-1',
+              rows > minRows && 'pb-12',
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
             )}
@@ -891,7 +876,7 @@ const ChatInput = ({
             onDrop={hasMmproj ? handleDrop : undefined}
           >
             {attachments.length > 0 && (
-              <div className="flex gap-3 items-center p-2 pb-0">
+              <div className="flex gap-3 items-center p-2 pb-1">
                 {attachments
                   .map((att, idx) => ({ att, idx }))
                   .map(({ att, idx }) => {
@@ -991,16 +976,26 @@ const ChatInput = ({
             )}
             <TextareaAutosize
               ref={textareaRef}
-              minRows={2}
-              rows={1}
-              maxRows={10}
+              minRows={minRows}
+              rows={2}
+              maxRows={maxRows}
               value={prompt}
               data-testid={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows
                 const newRows = (e.target.value.match(/\n/g) || []).length + 1
-                setRows(Math.min(newRows, maxRows))
+                if (e.target.value.match(/\n/g)) {
+                  setRows(Math.min(newRows, maxRows))
+                }
+                if (e.target.value.length === 0) {
+                  setRows(1)
+                }
+              }}
+              onHeightChange={(height) => {
+                if (height > 40) {
+                  setRows(2)
+                }
               }}
               onKeyDown={(e) => {
                 // e.keyCode 229 is for IME input with Safari
@@ -1026,7 +1021,10 @@ const ChatInput = ({
               data-gramm_editor={spellCheckChatInput}
               data-gramm_grammarly={spellCheckChatInput}
               className={cn(
-                'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+                'bg-transparent pb-2 pt-3 w-full h-full flex-shrink-0 border-none resize-none outline-0 pl-12 pr-14',
+                attachments.length > 0 && 'relative bottom-1',
+                isShowingTokenCounter && '!pr-40',
+                rows > minRows && 'px-3 !pr-4',
                 rows < maxRows && 'scrollbar-hide',
                 className
               )}
@@ -1034,251 +1032,135 @@ const ChatInput = ({
           </div>
         </div>
 
-        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
-              <div
-                className={cn(
-                  'px-1 flex items-center w-full',
-                  streamingContent && 'opacity-50 pointer-events-none'
-                )}
-              >
-                {/* Dropdown for attachments */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <div className="size-7 flex items-center justify-center rounded-full bg-main-view-fg/4 hover:bg-main-view-fg/4 transition-all duration-200 ease-in-out gap-1 mr-2 cursor-pointer">
-                      <PlusIcon size={18} className="text-main-view-fg/50" />
-                    </div>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {/* Vision image attachment - show only for models with mmproj */}
-                    <DropdownMenuItem
-                      onClick={handleImagePickerClick}
-                      disabled={!hasMmproj}
-                    >
-                      <IconPhoto size={18} className="text-main-view-fg/50" />
-                      <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={
-                        !selectedModel?.capabilities?.includes('tools') &&
-                        !showAttachmentButton
-                      }
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-main-view-fg/50 animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-main-view-fg/50"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {model?.provider === 'llamacpp' && loadingModel ? (
-                  <ModelLoader />
-                ) : (
-                  <DropdownModelProvider
-                    model={model}
-                    useLastUsedModel={initialMessage}
-                  />
-                )}
-                {/* Microphone - always available - Temp Hide */}
-                {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                <IconMicrophone size={18} className="text-main-view-fg/50" />
-              </div> */}
-                {selectedModel?.capabilities?.includes('embeddings') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconCodeCircle2
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('embeddings')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-
-                {selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers &&
-                  (MCPToolComponent ? (
-                    // Use custom MCP component
-                    <McpExtensionToolLoader
-                      tools={tools}
-                      hasActiveMCPServers={hasActiveMCPServers}
-                      selectedModelHasTools={
-                        selectedModel?.capabilities?.includes('tools') ?? false
-                      }
-                      initialMessage={initialMessage}
-                      MCPToolComponent={MCPToolComponent}
-                    />
-                  ) : (
-                    // Use default tools dropdown
-                    <TooltipProvider>
-                      <Tooltip
-                        open={tooltipToolsAvailable}
-                        onOpenChange={setTooltipToolsAvailable}
-                      >
-                        <TooltipTrigger
-                          asChild
-                          disabled={dropdownToolsAvailable}
-                        >
-                          <div
-                            onClick={(e) => {
-                              setDropdownToolsAvailable(false)
-                              e.stopPropagation()
-                            }}
-                          >
-                            <DropdownToolsAvailable
-                              initialMessage={initialMessage}
-                              onOpenChange={(isOpen) => {
-                                setDropdownToolsAvailable(isOpen)
-                                if (isOpen) {
-                                  setTooltipToolsAvailable(false)
-                                }
-                              }}
-                            >
-                              {(isOpen, toolsCount) => {
-                                return (
-                                  <div
-                                    className={cn(
-                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                      isOpen && 'bg-main-view-fg/10'
-                                    )}
-                                  >
-                                    <IconTool
-                                      size={18}
-                                      className="text-main-view-fg/50"
-                                    />
-                                    {toolsCount > 0 && (
-                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
-                                        <span className="leading-0 text-xs">
-                                          {toolsCount > 99 ? '99+' : toolsCount}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              }}
-                            </DropdownToolsAvailable>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('tools')}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ))}
-                {selectedModel?.capabilities?.includes('web_search') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconWorld
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {selectedModel?.capabilities?.includes('reasoning') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconAtom
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('reasoning')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {selectedProvider === 'llamacpp' &&
-                hasActiveModels &&
-                tokenCounterCompact &&
-                !initialMessage &&
-                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                  <div className="flex-1 flex justify-center">
-                    <TokenCounter
-                      messages={threadMessages || []}
-                      compact={true}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
-                    />
-                  </div>
-                )}
-
-              {streamingContent ? (
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={() =>
-                    stopStreaming(currentThreadId ?? streamingContent.thread_id)
-                  }
-                >
-                  <IconPlayerStopFilled />
-                </Button>
-              ) : (
-                <Button
-                  variant={!prompt.trim() ? null : 'default'}
-                  size="icon"
-                  disabled={!prompt.trim() || ingestingAny}
-                  data-test-id="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
-                >
-                  {streamingContent || ingestingAny ? (
-                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <ArrowRight className="text-primary-fg" />
-                  )}
-                </Button>
+        <div
+          className={cn(
+            'absolute z-20 bg-transparent left-2',
+            rows === minRows && !attachments.length
+              ? 'top-1/2 -translate-y-1/2'
+              : 'bottom-3'
+          )}
+        >
+          <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+            <div
+              className={cn(
+                'pl-0 pr-1 flex items-center w-full',
+                streamingContent && 'opacity-50 pointer-events-none'
               )}
+            >
+              {/* Dropdown for attachments */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <div className="size-8 flex items-center justify-center rounded-full bg-main-view-fg/4 hover:bg-main-view-fg/4 transition-all duration-200 ease-in-out gap-1 mr-2 cursor-pointer">
+                    <PlusIcon size={18} className="text-main-view-fg/50" />
+                  </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {/* Vision image attachment - show only for models with mmproj */}
+                  <DropdownMenuItem
+                    onClick={handleImagePickerClick}
+                    disabled={!hasMmproj}
+                  >
+                    <IconPhoto size={18} className="text-main-view-fg/50" />
+                    <span>Add Images</span>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      multiple
+                      onChange={handleFileChange}
+                    />
+                  </DropdownMenuItem>
+                  {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                  <DropdownMenuItem
+                    onClick={handleAttachDocsIngest}
+                    disabled={
+                      !selectedModel?.capabilities?.includes('tools') &&
+                      !showAttachmentButton
+                    }
+                  >
+                    {ingestingDocs ? (
+                      <IconLoader2
+                        size={18}
+                        className="text-main-view-fg/50 animate-spin"
+                      />
+                    ) : (
+                      <IconPaperclip
+                        size={18}
+                        className="text-main-view-fg/50"
+                      />
+                    )}
+                    <span>
+                      {ingestingDocs
+                        ? 'Indexing documents…'
+                        : 'Add documents or files'}
+                    </span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+                  {/* Tools available */}
+                  <ToolsAvailable initialMessage={initialMessage} />
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            'absolute z-20 bg-transparent right-3',
+            rows === minRows && !attachments.length
+              ? 'top-1/2 -translate-y-1/2'
+              : 'bottom-3'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {selectedProvider === 'llamacpp' &&
+              hasActiveModels &&
+              tokenCounterCompact &&
+              !initialMessage &&
+              (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+                <div className="flex-1 flex justify-center">
+                  <TokenCounter
+                    messages={threadMessages || []}
+                    compact={true}
+                    uploadedFiles={attachments
+                      .filter((a) => a.type === 'image' && a.dataUrl)
+                      .map((a) => ({
+                        name: a.name,
+                        type: a.mimeType || getFileTypeFromExtension(a.name),
+                        size: a.size || 0,
+                        base64: a.base64 || '',
+                        dataUrl: a.dataUrl!,
+                      }))}
+                  />
+                </div>
+              )}
+
+            {streamingContent ? (
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() =>
+                  stopStreaming(currentThreadId ?? streamingContent.thread_id)
+                }
+              >
+                <IconPlayerStopFilled />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                disabled={!prompt.trim() || ingestingAny}
+                data-test-id="send-message-button"
+                onClick={() => handleSendMessage(prompt)}
+                className="rounded-full"
+              >
+                {streamingContent || ingestingAny ? (
+                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                ) : (
+                  <ArrowUp className="text-primary-fg" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1301,27 +1183,23 @@ const ChatInput = ({
         </div>
       )}
 
-      {selectedProvider === 'llamacpp' &&
-        hasActiveModels &&
-        !tokenCounterCompact &&
-        !initialMessage &&
-        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-          <div className="flex-1 w-full flex justify-start px-2">
-            <TokenCounter
-              messages={threadMessages || []}
-              compact={false}
-              uploadedFiles={attachments
-                .filter((a) => a.type === 'image' && a.dataUrl)
-                .map((a) => ({
-                  name: a.name,
-                  type: a.mimeType || getFileTypeFromExtension(a.name),
-                  size: a.size || 0,
-                  base64: a.base64 || '',
-                  dataUrl: a.dataUrl!,
-                }))}
-            />
-          </div>
-        )}
+      {isShowingTokenCounter && !tokenCounterCompact && (
+        <div className="flex-1 w-full flex justify-start px-2">
+          <TokenCounter
+            messages={threadMessages || []}
+            compact={false}
+            uploadedFiles={attachments
+              .filter((a) => a.type === 'image' && a.dataUrl)
+              .map((a) => ({
+                name: a.name,
+                type: a.mimeType || getFileTypeFromExtension(a.name),
+                size: a.size || 0,
+                base64: a.base64 || '',
+                dataUrl: a.dataUrl!,
+              }))}
+          />
+        </div>
+      )}
     </div>
   )
 }
