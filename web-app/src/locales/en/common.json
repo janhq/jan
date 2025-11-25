@@ -272,6 +272,8 @@
       "editTitle": "Edit Project",
       "nameLabel": "Project Name",
       "namePlaceholder": "Enter project name...",
+      "instructionLabel": "Instruction",
+      "instructionPlaceholder": "Enter project instruction (optional)...",
       "createButton": "Create",
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",

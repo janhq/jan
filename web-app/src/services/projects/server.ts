@@ -47,6 +47,7 @@ export class ServerProjectsService implements ProjectsService {
     return {
       id: project.id,
       name: project.name,
+      instruction: project.instruction,
       updated_at: updatedAt,
     }
   }
@@ -72,11 +73,11 @@ export class ServerProjectsService implements ProjectsService {
     }
   }
 
-  async addProject(name: string): Promise<ThreadFolder> {
+  async addProject(name: string, instruction?: string): Promise<ThreadFolder> {
     try {
-      console.log('[ServerProjectsService] addProject: Creating project with name:', name)
+      console.log('[ServerProjectsService] addProject: Creating project with name:', name, 'and instruction:', instruction)
       const extension = this.getProjectExtension()
-      const project = await extension.createProject({ name })
+      const project = await extension.createProject({ name, instruction })
       console.log('[ServerProjectsService] addProject: Created project:', { id: project.id, name: project.name })
       
       return this.projectToThreadFolder(project)
@@ -86,11 +87,11 @@ export class ServerProjectsService implements ProjectsService {
     }
   }
 
-  async updateProject(id: string, name: string): Promise<void> {
+  async updateProject(id: string, name: string, instruction?: string): Promise<void> {
     try {
-      console.log('[ServerProjectsService] updateProject: Updating project:', { id, name })
+      console.log('[ServerProjectsService] updateProject: Updating project:', { id, name, instruction })
       const extension = this.getProjectExtension()
-      await extension.updateProject(id, { name })
+      await extension.updateProject(id, { name, instruction })
       console.log('[ServerProjectsService] updateProject: Successfully updated project:', id)
     } catch (error) {
       console.error('[ServerProjectsService] updateProject: Error updating project on server:', { id, name, error })
@@ -144,8 +145,8 @@ export class ServerProjectsService implements ProjectsService {
       for (const folder of projects) {
         const existing = existingProjects.find(p => p.id === folder.id)
         if (existing) {
-          console.log('[ServerProjectsService] setProjects: Updating project:', { id: folder.id, name: folder.name })
-          await extension.updateProject(folder.id, { name: folder.name })
+          console.log('[ServerProjectsService] setProjects: Updating project:', { id: folder.id, name: folder.name, instruction: folder.instruction })
+          await extension.updateProject(folder.id, { name: folder.name, instruction: folder.instruction })
         }
       }
       console.log('[ServerProjectsService] setProjects: Completed sync')

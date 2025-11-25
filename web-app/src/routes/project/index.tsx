@@ -62,11 +62,11 @@ function ProjectContent() {
     setDeletingId(null)
   }
 
-  const handleSave = async (name: string) => {
+  const handleSave = async (name: string, instruction?: string) => {
     if (editingKey) {
-      await updateFolder(editingKey, name)
+      await updateFolder(editingKey, name, instruction)
     } else {
-      const newProject = await addFolder(name)
+      const newProject = await addFolder(name, instruction)
       // Navigate to the newly created project
       navigate({
         to: '/project/$projectId',

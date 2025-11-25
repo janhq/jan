@@ -8,6 +8,7 @@ import type { Thread } from '@janhq/core'
 export interface ThreadFolder {
   id: string
   name: string
+  instruction?: string
   updated_at: number
 }
 
@@ -20,12 +21,12 @@ export interface ProjectsService {
   /**
    * Add a new project/folder
    */
-  addProject(name: string): Promise<ThreadFolder>
+  addProject(name: string, instruction?: string): Promise<ThreadFolder>
 
   /**
-   * Update a project/folder name
+   * Update a project/folder name and instruction
    */
-  updateProject(id: string, name: string): Promise<void>
+  updateProject(id: string, name: string, instruction?: string): Promise<void>
 
   /**
    * Delete a project/folder
