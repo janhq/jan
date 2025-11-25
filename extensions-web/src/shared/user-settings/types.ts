@@ -24,11 +24,11 @@ export interface MemoryConfig {
  * User profile information
  */
 export interface ProfileSettings {
+  base_style: 'Concise' | 'Friendly' | 'Professional' // Conversation style preference
   custom_instructions: string // Additional behavior, style, and tone preferences for the AI
-  nickname: string // What should Jan call you?
+  nick_name: string // What should Jan call you? (API accepts nickname as alias)
   occupation: string // Your occupation or role
   more_about_you: string // Additional information about yourself
-  base_style?: string // Base style and tone (e.g., Default, Concise, etc.)
 }
 
 /**
@@ -103,8 +103,9 @@ export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
 }
 
 export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = {
+  base_style: 'Friendly',
   custom_instructions: '',
-  nickname: '',
+  nick_name: '',
   occupation: '',
   more_about_you: '',
 }
@@ -116,10 +117,7 @@ export const DEFAULT_ADVANCED_SETTINGS: AdvancedSettings = {
 
 export const DEFAULT_USER_SETTINGS: Omit<UserSettings, 'id' | 'user_id' | 'created_at' | 'updated_at'> = {
   memory_config: DEFAULT_MEMORY_CONFIG,
-  profile_settings: {
-    ...DEFAULT_PROFILE_SETTINGS,
-    base_style: 'Default',
-  },
+  profile_settings: DEFAULT_PROFILE_SETTINGS,
   advanced_settings: DEFAULT_ADVANCED_SETTINGS,
   enable_trace: false,
   enable_tools: true,

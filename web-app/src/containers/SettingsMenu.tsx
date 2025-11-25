@@ -80,12 +80,6 @@ const SettingsMenu = () => {
       isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
     },
     {
-      title: 'common:advancedSettings',
-      route: route.settings.advancedSettings,
-      hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
-    },
-    {
       title: 'common:attachments',
       route: route.settings.attachments,
       hasSubMenu: false,
@@ -144,6 +138,12 @@ const SettingsMenu = () => {
       route: route.settings.extensions,
       hasSubMenu: false,
       isEnabled: PlatformFeatures[PlatformFeature.EXTENSIONS_SETTINGS],
+    },
+    {
+      title: 'common:advancedSettings',
+      route: route.settings.advancedSettings,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
     },
   ]
 

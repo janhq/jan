@@ -4,10 +4,16 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, ChevronDown } from 'lucide-react'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import {
@@ -34,11 +40,21 @@ function PersonalizationContent() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null)
 
   // Load settings on mount
   useEffect(() => {
     loadSettings()
   }, [])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeout) {
+        clearTimeout(saveTimeout)
+      }
+    }
+  }, [saveTimeout])
 
   const loadSettings = async () => {
     try {
@@ -72,7 +88,21 @@ function PersonalizationContent() {
   const updateProfileSettings = (updates: Partial<ProfileSettings>) => {
     if (!settings) return
     const newProfile = { ...settings.profile_settings, ...updates }
-    updateSettings({ profile_settings: newProfile })
+    
+    // Update local state immediately for responsive UI
+    setSettings({ ...settings, profile_settings: newProfile })
+    
+    // Clear existing timeout
+    if (saveTimeout) {
+      clearTimeout(saveTimeout)
+    }
+    
+    // Debounce the API call
+    const timeout = setTimeout(() => {
+      updateSettings({ profile_settings: newProfile })
+    }, 1000) // Wait 1 second after user stops typing
+    
+    setSaveTimeout(timeout)
   }
 
 
@@ -128,21 +158,36 @@ function PersonalizationContent() {
               <Card>
                 <CardItem
                   title="Base style and tone"
-                  description="Set the style and tone of how ChatGPT responds to you. This doesn't impact ChatGPT's capabilities."
+                  description="Set the style and tone of how Jan responds to you. This doesn't impact Jan's capabilities."
                   actions={
-                    <select
-                      value={settings.profile_settings.base_style || 'Default'}
-                      onChange={(e) =>
-                        updateProfileSettings({ base_style: e.target.value })
-                      }
-                      disabled={saving}
-                      className="flex h-10 w-40 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="Default">Default</option>
-                      <option value="Concise">Concise</option>
-                      <option value="Friendly">Friendly</option>
-                      <option value="Professional">Professional</option>
-                    </select>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          disabled={saving}
+                          className="flex h-10 w-40 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span>{settings.profile_settings.base_style}</span>
+                          <ChevronDown className="h-4 w-4 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          onClick={() => updateProfileSettings({ base_style: 'Concise' })}
+                        >
+                          Concise
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => updateProfileSettings({ base_style: 'Friendly' })}
+                        >
+                          Friendly
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => updateProfileSettings({ base_style: 'Professional' })}
+                        >
+                          Professional
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   }
                 />
                 <CardItem
@@ -172,15 +217,15 @@ function PersonalizationContent() {
               <Card>
                 <CardItem
                   title="Nickname"
-                  description="What should ChatGPT call you?"
+                  description="What should Jan call you?"
                   column={true}
                   actions={
                     <Input
-                      value={settings.profile_settings.nickname}
+                      value={settings.profile_settings.nick_name}
                       onChange={(e) =>
-                        updateProfileSettings({ nickname: e.target.value })
+                        updateProfileSettings({ nick_name: e.target.value })
                       }
-                      placeholder="What should ChatGPT call you?"
+                      placeholder="What should Jan call you?"
                       disabled={saving}
                       className="w-full h-10 px-4 py-3 mt-1.5"
                     />
