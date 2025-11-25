@@ -18,7 +18,6 @@ import { useEffect } from 'react'
 
 interface ToolsAvailableProps {
   initialMessage?: boolean
-  onOpenChange?: (isOpen: boolean) => void
 }
 
 const ToolsAvailable = ({ initialMessage = false }: ToolsAvailableProps) => {
@@ -121,7 +120,7 @@ const ToolsAvailable = ({ initialMessage = false }: ToolsAvailableProps) => {
       <DropdownMenuPortal>
         <DropdownMenuSubContent sideOffset={4} className="w-40">
           {Object.entries(toolsByServer).map(([serverName, serverTools]) => (
-            <DropdownMenuSub>
+            <DropdownMenuSub key={serverName}>
               <DropdownMenuSubTrigger>
                 <div className="flex gap-2">
                   <span>{serverName}</span>
@@ -170,7 +169,6 @@ const ToolsAvailable = ({ initialMessage = false }: ToolsAvailableProps) => {
                             <Switch
                               checked={isChecked}
                               onCheckedChange={(checked) => {
-                                console.log('checked', checked)
                                 handleToolToggle(
                                   tool.server,
                                   tool.name,

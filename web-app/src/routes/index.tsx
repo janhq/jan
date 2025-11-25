@@ -98,12 +98,10 @@ function Index() {
           {selectedModel?.provider === 'llamacpp' && loadingModel ? (
             <ModelLoader />
           ) : (
-            <>
-              <DropdownModelProvider
-                model={selectedModel}
-                useLastUsedModel={true}
-              />
-            </>
+            <DropdownModelProvider
+              model={selectedModel}
+              useLastUsedModel={true}
+            />
           )}
         </div>
       </HeaderPage>
