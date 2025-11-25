@@ -219,10 +219,16 @@ fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
 fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
     use std::process::Command;
 
-    let output = Command::new("netstat")
-        .args(&["-ano"])
-        .output()
-        .ok()?;
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = Command::new("netstat");
+    cmd.args(&["-ano"]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd.output().ok()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
 
@@ -231,10 +237,13 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if let Some(pid_str) = parts.last() {
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    let name_output = Command::new("tasklist")
-                        .args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-                        .output()
-                        .ok()?;
+                    let mut tasklist_cmd = Command::new("tasklist");
+                    tasklist_cmd.args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
+
+                    #[cfg(windows)]
+                    tasklist_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+                    let name_output = tasklist_cmd.output().ok()?;
 
                     let name_str = String::from_utf8_lossy(&name_output.stdout);
                     let name = name_str
@@ -285,17 +294,23 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
 fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
     use std::process::Command;
 
-    let output = Command::new("wmic")
-        .args(&[
-            "process",
-            "where",
-            &format!("ProcessId={}", pid),
-            "get",
-            "CommandLine",
-            "/format:list",
-        ])
-        .output()
-        .ok()?;
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = Command::new("wmic");
+    cmd.args(&[
+        "process",
+        "where",
+        &format!("ProcessId={}", pid),
+        "get",
+        "CommandLine",
+        "/format:list",
+    ]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd.output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -366,18 +381,24 @@ fn get_process_info_by_pid_unix(pid: u32) -> Option<ProcessUsingPort> {
 fn get_process_info_by_pid_windows(pid: u32) -> Option<ProcessUsingPort> {
     use std::process::Command;
 
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
     // Use wmic to get process info by PID
-    let output = Command::new("wmic")
-        .args(&[
-            "process",
-            "where",
-            &format!("ProcessId={}", pid),
-            "get",
-            "Name",
-            "/format:list",
-        ])
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("wmic");
+    cmd.args(&[
+        "process",
+        "where",
+        &format!("ProcessId={}", pid),
+        "get",
+        "Name",
+        "/format:list",
+    ]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd.output().ok()?;
 
     if !output.status.success() {
         return None;

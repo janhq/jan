@@ -995,8 +995,16 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
 async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     use std::process::Command;
 
-    let output = Command::new("taskkill")
-        .args(&["/F", "/PID", &pid.to_string()])
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = Command::new("taskkill");
+    cmd.args(&["/F", "/PID", &pid.to_string()]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to run taskkill: {}", e))?;
 
