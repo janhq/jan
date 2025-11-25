@@ -25,6 +25,13 @@ export { webUploadsService } from './services/uploads/web'
 // Re-export media service functionality
 export { JanMediaService, mediaService } from './shared/media/service'
 
+// Re-export user settings functionality
+export {
+  JanUserSettingsService,
+  getSharedUserSettingsService,
+  userSettingsService,
+} from './shared/user-settings'
+
 // Re-export types
 export type {
   WebExtensionRegistry,
@@ -69,6 +76,16 @@ export type {
   MediaUploadError,
   MediaResolutionError,
 } from './shared/media/types'
+
+// Re-export user settings types
+export type {
+  UserSettings,
+  UpdateUserSettingsRequest,
+  UserSettingsService,
+  MemoryConfig,
+  ProfileSettings,
+  AdvancedSettings,
+} from './shared/user-settings'
 
 // Extension registry for dynamic loading
 export const WEB_EXTENSIONS: WebExtensionRegistry = {
