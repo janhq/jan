@@ -290,7 +290,7 @@
   },
   "dialogs": {
     "changeDataFolder": {
-      "title": "Изменить расположение папки данных",
+      "title": "Изменение расположения папки с данными",
       "description": "Вы уверены, что хотите изменить расположение папки данных? Это переместит все ваши данные в новое место и перезапустит приложение.",
       "currentLocation": "Текущее расположение:",
       "newLocation": "Новое расположение:",
@@ -301,9 +301,9 @@
   "backendUpdater": {
     "newBackendVersion": "Новая версия Llamacpp {{version}}",
     "backendUpdateAvailable": "Доступно обновление Llamacpp",
-    "remindMeLater": "Напомнить позже",
+    "remindMeLater": "Отложить",
     "updating": "Обновление…",
-    "updateNow": "Обновить сейчас",
+    "updateNow": "Обновить",
     "updateSuccess": "Llamacpp успешно обновлено",
     "updateError": "Не удалось обновить Llamacpp"
   },
