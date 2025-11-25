@@ -54,6 +54,7 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
       allowSendWhenUnloaded: false,
       spellCheckChatInput: true,
       experimentalFeatures: true,
+      tokenCounterCompact: false,
     }
     return selector ? selector(state) : state
   },
@@ -108,6 +109,21 @@ vi.mock('@/hooks/useTools', () => ({
   useTools: vi.fn(),
 }))
 
+// Mock the useMessages hook
+vi.mock('@/hooks/useMessages', () => ({
+  useMessages: vi.fn(() => []),
+}))
+
+// Mock the useAttachments hook
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: vi.fn((selector: any) => {
+    const state = {
+      enabled: true,
+    }
+    return selector ? selector(state) : state
+  }),
+}))
+
 // Mock the ServiceHub
 const mockGetConnectedServers = vi.fn(() => Promise.resolve(['server1']))
 const mockGetTools = vi.fn(() => Promise.resolve([]))
@@ -130,6 +146,12 @@ const mockServiceHub = {
   events: () => ({
     listen: mockListen,
   }),
+  dialog: () => ({
+    open: vi.fn(() => Promise.resolve(null)),
+  }),
+  uploads: () => ({
+    ingestImage: vi.fn(() => Promise.resolve({ id: 'image-123' })),
+  }),
 }
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -150,10 +172,55 @@ vi.mock('../loaders/ModelLoader', () => ({
   ModelLoader: () => <div data-testid="model-loader">Model Loader</div>,
 }))
 
-vi.mock('../DropdownToolsAvailable', () => ({
+vi.mock('../ToolsAvailable', () => ({
   __esModule: true,
-  default: ({ children }: { children: (isOpen: boolean, toolsCount: number) => React.ReactNode }) => {
-    return <div data-testid="tools-dropdown">{children(false, 0)}</div>
+  default: () => <div data-testid="tools-available">Tools Available</div>,
+}))
+
+vi.mock('@/components/TokenCounter', () => ({
+  TokenCounter: () => <div data-testid="token-counter">Token Counter</div>,
+}))
+
+vi.mock('@/lib/platform/const', () => ({
+  PlatformFeatures: {
+    FILE_ATTACHMENTS: true,
+  },
+}))
+
+vi.mock('@/lib/platform/utils', () => ({
+  isPlatformTauri: vi.fn(() => false),
+}))
+
+vi.mock('@janhq/core', () => ({
+  ExtensionTypeEnum: {
+    RAG: 'RAG',
+  },
+  fs: {
+    fileStat: vi.fn(() => Promise.resolve({ size: 1024 })),
+  },
+  RAGExtension: vi.fn(),
+}))
+
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: vi.fn(() => ({
+      get: vi.fn(() => ({
+        ingestAttachments: vi.fn(() => Promise.resolve({ files: [{ id: '123', chunk_count: 10 }] })),
+      })),
+    })),
+  },
+}))
+
+vi.mock('@/types/attachment', () => ({
+  createImageAttachment: vi.fn((data) => ({ type: 'image', ...data })),
+  createDocumentAttachment: vi.fn((data) => ({ type: 'document', ...data })),
+}))
+
+vi.mock('sonner', () => ({
+  toast: {
+    info: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
   },
 }))
 
@@ -185,6 +252,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     <div onClick={onClick}>{children}</div>
   ),
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <div data-testid="dropdown-separator" />,
 }))
 
 vi.mock('react-textarea-autosize', () => ({
@@ -206,6 +274,7 @@ vi.mock('react-textarea-autosize', () => ({
 // Mock icons
 vi.mock('lucide-react', () => ({
   ArrowRight: () => <svg data-testid="arrow-right-icon">ArrowRight</svg>,
+  ArrowUp: () => <svg data-testid="arrow-up-icon">ArrowUp</svg>,
   PlusIcon: () => <svg data-testid="plus-icon">PlusIcon</svg>,
 }))
 
@@ -389,14 +458,14 @@ describe('ChatInput', () => {
   })
 
 
-  it('shows model selection dropdown', async () => {
+  it('renders attachment dropdown with plus icon', async () => {
     await act(async () => {
       renderWithRouter()
     })
 
-    // Model selection dropdown should be rendered (look for popover trigger)
-    const modelDropdown = document.querySelector('[data-slot="popover-trigger"]')
-    expect(modelDropdown).toBeInTheDocument()
+    // Plus icon should be rendered for attachments dropdown
+    const plusIcon = screen.getByTestId('plus-icon')
+    expect(plusIcon).toBeInTheDocument()
   })
 
   it('shows error message when no model is selected', async () => {
@@ -432,7 +501,7 @@ describe('ChatInput', () => {
     })
   })
 
-  it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
+  it('shows tools available component', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
     mockAppState.tools = [{ name: 'test-tool' } as any]
@@ -442,9 +511,9 @@ describe('ChatInput', () => {
     })
 
     await waitFor(() => {
-      // Tools dropdown should be rendered
-      const toolsDropdown = screen.getByTestId('tools-dropdown')
-      expect(toolsDropdown).toBeInTheDocument()
+      // Tools available component should be rendered inside the dropdown
+      const toolsAvailable = screen.getByTestId('tools-available')
+      expect(toolsAvailable).toBeInTheDocument()
     })
   })
 
