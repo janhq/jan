@@ -76,4 +76,97 @@ describe('RenderMarkdown', () => {
     const paragraphCount = (html.match(/<p>/g) || []).length
     expect(paragraphCount).toBe(3)  // Expect 3 paragraphs for 2 empty lines
   })
+
+  it('does not format indented text as code blocks', () => {
+    const contentWithIndentedText = `Please explain this code block.
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <body>
+        <header>
+            <h1>Welcome to My Website</h1>
+            <p>A sample HTML document showcasing various HTML elements</p>
+        </header>
+        
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#services">Services</a>
+            <a href="#contact">Contact</a>
+        </nav>
+        
+        <div class="container">
+            <section id="home">
+                <h2>Home</h2>
+                <div class="card">
+                    <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                    <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+                </div>
+            </section>
+            
+        </div>
+        
+        <footer>
+            <p>&copy; 2023 My Sample Website. All rights reserved.</p>
+        </footer>
+    </body>
+    </html>
+    `
+    render(
+      <RenderMarkdown
+        content={contentWithIndentedText}
+      />
+    )
+    const markdownContainer = document.querySelector('.markdown')
+    const html = markdownContainer?.innerHTML || ''
+    expect(html).not.toContain('<pre>')
+  })
+  
+  it('formats fenced code blocks correctly', () => {
+    const contentWithFencedCodeBlock = `Please explain this code block.
+
+\`\`\`html
+<!DOCTYPE html>
+<html lang="en">
+<body>
+    <header>
+        <h1>Welcome to My Website</h1>
+        <p>A sample HTML document showcasing various HTML elements</p>
+    </header>
+    
+    <nav>
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#contact">Contact</a>
+    </nav>
+    
+    <div class="container">
+        <section id="home">
+            <h2>Home</h2>
+            <div class="card">
+                <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+            </div>
+        </section>
+    </div>
+    
+    <footer>
+        <p>&copy; 2023 My Sample Website. All rights reserved.</p>
+    </footer>
+</body>
+</html>
+\`\`\`
+`
+    render(
+      <RenderMarkdown
+        content={contentWithFencedCodeBlock}
+      />
+    )
+    const markdownContainer = document.querySelector('.markdown')
+    const html = markdownContainer?.innerHTML || ''
+    console.log(html)
+    expect(1).toBe(1) // Dummy assertion to ensure test runs
+    expect(html).toContain('<pre>')
+  })
 })
