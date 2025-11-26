@@ -3,7 +3,7 @@
   <id>ai.jan.Jan</id>
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>
-  <developer_name>Menlo Research</developer_name>
+  <developer_name>Menlo Research Pte. Ltd.</developer_name>
   <name>Jan</name>
   <icon type="stock">ai.jan.Jan</icon>
   <summary>Local AI Assistant that runs 100% offline on your device</summary>
@@ -30,7 +30,8 @@
 <launchable type="desktop-id">ai.jan.Jan.desktop</launchable>
 <screenshots>
   <screenshot type="default">
-    <image>https://catalog.jan.ai/flatpak/demo.gif</image>
+    <image>https://catalog.jan.ai/docs/jan-browser-mcp.gif</image>
+    <caption>Jan desktop interface demonstrating chat workflow</caption>
   </screenshot>
 </screenshots>
 
@@ -40,7 +41,7 @@
 <content_rating type="oars-1.1" />
 
 <releases>
-  <release version="0.6.8" date="2025-08-14">
+  <release version="0.7.3" date="2025-11-13">
     <description>
       <p>Latest stable release of Jan AI</p>
     </description>

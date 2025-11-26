@@ -98,6 +98,9 @@ rfd = { version = "0.15.4", default-features = false, features = [
   "xdg-portal",
   "common-controls-v6",
 ] }
+chrono = { version = "0.4", features = ["serde"] }
+hostname = "0.4"
+glob = "0.3"
 
 [dependencies.tauri]
 version = "2.8.5"
