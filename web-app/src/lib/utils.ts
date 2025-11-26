@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
 import path from "path"
 
@@ -21,6 +22,27 @@ export function basenameNoExt(filePath: string): string {
 
   // fallback: remove only the last extension
   return base.slice(0, -path.extname(base).length);
+}
+
+export function disableIndentedCodeBlockPlugin() {
+  return (tree: any) => {
+    visit(tree, 'code', (node, index, parent) => {
+      // Filter out fenced code blocks (those with lang or meta)
+      // Check if the parent exists so we can replace the node safely
+      if (!node.lang && !node.meta && parent && typeof index === 'number') {
+        const textNode = {
+          type: 'paragraph',
+          children: [
+            {
+              type: 'text',
+              value: node.value
+            }
+          ]
+        }
+        parent.children[index] = textNode
+      }
+    })
+  }
 }
 
 /**
