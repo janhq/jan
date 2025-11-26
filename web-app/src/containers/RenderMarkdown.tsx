@@ -7,7 +7,7 @@ import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { memo, useState, useMemo, useCallback } from 'react'
-import { getReadableLanguageName } from '@/lib/utils'
+import { disableIndentedCodeBlockPlugin, getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
 import 'katex/dist/katex.min.css'
@@ -229,7 +229,7 @@ function RenderMarkdownComponent({
 
   // Stable remarkPlugins reference
   const remarkPlugins = useMemo(() => {
-    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks]
+    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks, disableIndentedCodeBlockPlugin]
   }, [])
 
   // Stable rehypePlugins reference
