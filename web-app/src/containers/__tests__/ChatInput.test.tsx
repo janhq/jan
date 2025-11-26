@@ -178,6 +178,15 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <div onClick={onClick}>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('react-textarea-autosize', () => ({
   default: ({ value, onChange, onKeyDown, placeholder, disabled, className, minRows, maxRows, onHeightChange, ...props }: any) => (
     <textarea
@@ -197,6 +206,7 @@ vi.mock('react-textarea-autosize', () => ({
 // Mock icons
 vi.mock('lucide-react', () => ({
   ArrowRight: () => <svg data-testid="arrow-right-icon">ArrowRight</svg>,
+  PlusIcon: () => <svg data-testid="plus-icon">PlusIcon</svg>,
 }))
 
 vi.mock('@tabler/icons-react', () => ({
