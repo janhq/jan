@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -19,9 +20,10 @@ interface AddProjectDialogProps {
   initialData?: {
     id: string
     name: string
+    instruction?: string
     updated_at: number
   }
-  onSave: (name: string) => void
+  onSave: (name: string, instruction?: string) => void
 }
 
 export default function AddProjectDialog({
@@ -33,11 +35,13 @@ export default function AddProjectDialog({
 }: AddProjectDialogProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(initialData?.name || '')
+  const [instruction, setInstruction] = useState(initialData?.instruction || '')
   const { folders } = useThreadManagement()
 
   useEffect(() => {
     if (open) {
       setName(initialData?.name || '')
+      setInstruction(initialData?.instruction || '')
     }
   }, [open, initialData])
 
@@ -45,6 +49,7 @@ export default function AddProjectDialog({
     if (!name.trim()) return
 
     const trimmedName = name.trim()
+    const trimmedInstruction = instruction.trim()
 
     // Check for duplicate names (excluding current project when editing)
     const isDuplicate = folders.some(
@@ -58,7 +63,7 @@ export default function AddProjectDialog({
       return
     }
 
-    onSave(trimmedName)
+    onSave(trimmedName, trimmedInstruction || undefined)
 
     // Show detailed success message
     if (editingKey && initialData) {
@@ -73,16 +78,21 @@ export default function AddProjectDialog({
     }
 
     setName('')
+    setInstruction('')
   }
 
   const handleCancel = () => {
     onOpenChange(false)
     setName('')
+    setInstruction('')
   }
 
   // Check if the button should be disabled
   const isButtonDisabled =
-    !name.trim() || (editingKey && name.trim() === initialData?.name)
+    !name.trim() || 
+    (editingKey && 
+     name.trim() === initialData?.name && 
+     instruction.trim() === (initialData?.instruction || ''))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,6 +118,18 @@ export default function AddProjectDialog({
                   handleSave()
                 }
               }}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-main-view-fg/80">
+              {t('projects.addProjectDialog.instructionLabel')}
+            </label>
+            <Textarea
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              placeholder={t('projects.addProjectDialog.instructionPlaceholder')}
+              className="mt-1 min-h-[100px] resize-none"
+              rows={4}
             />
           </div>
         </div>

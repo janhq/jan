@@ -11,10 +11,9 @@ export default defineConfig({
     rollupOptions: {
       external: ['@janhq/core', 'zustand', 'react', 'react-dom', 'react/jsx-runtime', '@tabler/icons-react']
     },
-    emptyOutDir: false // Don't clean the output directory
+    emptyOutDir: false // Don't clean this output directory
   },
   define: {
-    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'https://api.jan.ai/v1'),
-    // JAN_BASE_URL: JSON.stringify('http://localhost:8000'), // For local dev with jan-api-gateway
+    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'http://localhost:8000'),
   }
 })

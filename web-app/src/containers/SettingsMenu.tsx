@@ -74,6 +74,12 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
+      title: 'common:personalization',
+      route: route.settings.personalization,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
+    },
+    {
       title: 'common:attachments',
       route: route.settings.attachments,
       hasSubMenu: false,
@@ -132,6 +138,12 @@ const SettingsMenu = () => {
       route: route.settings.extensions,
       hasSubMenu: false,
       isEnabled: PlatformFeatures[PlatformFeature.EXTENSIONS_SETTINGS],
+    },
+    {
+      title: 'common:advancedSettings',
+      route: route.settings.advancedSettings,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
     },
   ]
 
@@ -206,7 +218,7 @@ const SettingsMenu = () => {
                       const isActive = matches.some(
                         (match) =>
                           match.routeId ===
-                            '/settings/providers/$providerName' &&
+                          '/settings/providers/$providerName' &&
                           'providerName' in match.params &&
                           match.params.providerName === provider.provider
                       )
@@ -219,8 +231,8 @@ const SettingsMenu = () => {
                               isActive && 'bg-main-view-fg/5',
                               // hidden for llama.cpp provider for setup remote provider
                               provider.provider === 'llama.cpp' &&
-                                stepSetupRemoteProvider &&
-                                'hidden'
+                              stepSetupRemoteProvider &&
+                              'hidden'
                             )}
                             onClick={() =>
                               navigate({
@@ -230,8 +242,8 @@ const SettingsMenu = () => {
                                 },
                                 ...(stepSetupRemoteProvider
                                   ? {
-                                      search: { step: 'setup_remote_provider' },
-                                    }
+                                    search: { step: 'setup_remote_provider' },
+                                  }
                                   : {}),
                               })
                             }
