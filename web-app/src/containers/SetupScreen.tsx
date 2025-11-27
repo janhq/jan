@@ -14,10 +14,10 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { Progress } from '@/components/ui/progress'
-
-// Jan Model V2 configuration
-const JAN_MODEL_V2_NAME = 'jan-v2-vl-med-gguf'
-const DEFAULT_QUANTIZATION = 'q4_k_m'
+import {
+  JAN_MODEL_V2_NAME,
+  DEFAULT_MODEL_QUANTIZATIONS,
+} from '@/constants/models'
 
 // Check if Quick Start feature is available (Desktop only)
 const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
@@ -59,12 +59,18 @@ function SetupScreen() {
     )
   }, [sources])
 
-  // Find the default variant (q4_k_m)
+  // Find the default variant (prioritize from DEFAULT_MODEL_QUANTIZATIONS)
   const defaultVariant = useMemo(() => {
     if (!janModelV2) return null
-    return janModelV2.quants.find((quant) =>
-      quant.model_id.toLowerCase().includes(DEFAULT_QUANTIZATION)
-    )
+    // Try to find a variant matching any of the default quantizations (in priority order)
+    for (const quantization of DEFAULT_MODEL_QUANTIZATIONS) {
+      const variant = janModelV2.quants.find((quant) =>
+        quant.model_id.toLowerCase().includes(quantization)
+      )
+      if (variant) return variant
+    }
+    // Fallback to first available variant if none match
+    return janModelV2.quants[0]
   }, [janModelV2])
 
   // Check download status (Desktop only)
