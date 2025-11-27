@@ -99,6 +99,7 @@ export default defineConfig({
     POSTHOG_HOST: JSON.stringify(process.env.POSTHOG_HOST || ''),
     GA_MEASUREMENT_ID: JSON.stringify(process.env.GA_MEASUREMENT_ID),
     MODEL_CATALOG_URL: JSON.stringify(process.env.MODEL_CATALOG_URL || ''),
+    ENVIRONMENT: JSON.stringify(process.env.ENVIRONMENT || 'dev'),
   },
   server: {
     port: 3001,

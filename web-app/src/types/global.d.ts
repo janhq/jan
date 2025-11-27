@@ -1,4 +1,4 @@
-export {}
+export { }
 
 declare module 'react-syntax-highlighter-virtualized-renderer'
 
@@ -23,6 +23,7 @@ declare global {
   declare const AUTO_UPDATER_DISABLED: boolean
   declare const GA_MEASUREMENT_ID: string
   declare const IS_DEV: boolean
+  declare const ENVIRONMENT: string
   interface Window {
     core: AppCore | undefined
     gtag?: (...args: unknown[]) => void
