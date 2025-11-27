@@ -530,7 +530,7 @@ function ProviderDetail() {
                                     )
 
                                   if (deviceSettingIndex !== -1) {
-                                    (
+                                    ;(
                                       newSettings[deviceSettingIndex]
                                         .controller_props as {
                                         value: string
@@ -630,7 +630,6 @@ function ProviderDetail() {
                                     size="sm"
                                     className="p-0"
                                     onClick={handleCheckForBackendUpdate}
-                                    disabled={isCheckingBackendUpdate}
                                   >
                                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                                       <IconRefresh
