@@ -185,7 +185,7 @@ function ProjectContent() {
                 .slice()
                 .sort((a, b) => b.updated_at - a.updated_at)
                 .map((folder) => {
-                  const projectThreads = getThreadsForProject(folder.id)
+                  const projectThreads = folder.threads || getThreadsForProject(folder.id)
                   const isExpanded = expandedProjects.has(folder.id)
 
                   return (
@@ -274,7 +274,7 @@ function ProjectContent() {
 
                       {/* Thread List */}
                       {isExpanded && projectThreads.length > 0 && (
-                        <div 
+                        <div
                           className="mt-3 pl-2 pr-2 max-h-[190px] overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-main-view-fg/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-main-view-fg/30"
                         >
                           <ThreadList

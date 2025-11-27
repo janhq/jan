@@ -10,6 +10,7 @@ export interface ThreadFolder {
   name: string
   instruction?: string
   updated_at: number
+  threads?: Thread[]
 }
 
 export interface ProjectsService {

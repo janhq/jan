@@ -43,12 +43,24 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
     // Create new initialization promise
     const promise = (async () => {
       try {
-        console.log('[useThreadManagement] Initializing projects (first call only)')
         const projectsService = getServiceHub().projects()
         const projects = await projectsService.getProjects()
-        set({ folders: projects, isInitialized: true, initializePromise: null })
+
+        // Load threads for each project
+        const projectsWithThreads = await Promise.all(
+          projects.map(async (project) => {
+            try {
+              const threads = await projectsService.getProjectThreads(project.id)
+              return { ...project, threads }
+            } catch (err) {
+              console.error(`Failed to load threads for project ${project.id}:`, err)
+              return { ...project, threads: [] }
+            }
+          })
+        )
+
+        set({ folders: projectsWithThreads, isInitialized: true, initializePromise: null })
       } catch (error) {
-        console.error('[useThreadManagement] Error initializing projects:', error)
         set({ isInitialized: true, initializePromise: null }) // Mark as initialized even on error
       }
     })()
