@@ -68,7 +68,7 @@ export class JanAuthService {
       const storedRefreshToken = localStorage.getItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN)
       const storedAccessToken = localStorage.getItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN)
       const storedExpiry = localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRY)
-      
+
       // Try to refresh token if we have a stored refresh token
       let tokenRefreshSucceeded = false
       if (storedRefreshToken) {
@@ -76,8 +76,14 @@ export class JanAuthService {
           const tokens = await refreshToken(storedRefreshToken)
           // Successfully refreshed - user has a valid session
           this.saveTokens(tokens)
+
+          // Ensure in-memory refresh token is set if we used a stored one and didn't get a new one
+          if (!this.refreshToken) {
+            this.refreshToken = storedRefreshToken
+          }
+
           tokenRefreshSucceeded = true
-          
+
           // If we don't have auth provider in localStorage, we need to restore it
           if (!this.getAuthProvider()) {
             console.log('Session restored from tokens, but provider info was lost. Attempting to recover...')
@@ -244,6 +250,11 @@ export class JanAuthService {
 
       const tokens = await refreshToken(storedRefreshToken)
       this.saveTokens(tokens)
+
+      // Ensure in-memory refresh token is set if we used a stored one
+      if (!this.refreshToken) {
+        this.refreshToken = storedRefreshToken
+      }
     } catch (error) {
       console.error('Failed to refresh access token:', error)
       if (error instanceof ApiError && error.isStatus(401)) {
@@ -484,14 +495,17 @@ export class JanAuthService {
    */
   private saveTokens(tokens: AuthTokens): void {
     this.accessToken = tokens.access_token
-    this.refreshToken = tokens.refresh_token || null
+
+    // Only update refresh token if provided
+    if (tokens.refresh_token) {
+      this.refreshToken = tokens.refresh_token
+      localStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token)
+    }
+
     this.tokenExpiryTime = this.computeTokenExpiry(tokens)
 
     // Persist to localStorage
     localStorage.setItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN, tokens.access_token)
-    if (tokens.refresh_token) {
-      localStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token)
-    }
     localStorage.setItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRY, this.tokenExpiryTime.toString())
   }
 
