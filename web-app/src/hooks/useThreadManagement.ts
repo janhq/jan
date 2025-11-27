@@ -6,7 +6,10 @@ import { useEffect } from 'react'
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
+  isInitialized: boolean
+  initializePromise: Promise<void> | null
   setFolders: (folders: ThreadFolder[]) => void
+  initialize: () => Promise<void>
   addFolder: (name: string, instruction?: string) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string, instruction?: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
@@ -17,9 +20,53 @@ type ThreadManagementState = {
 
 const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
   folders: [],
+  isInitialized: false,
+  initializePromise: null,
 
   setFolders: (folders) => {
     set({ folders })
+  },
+
+  initialize: async () => {
+    const state = get()
+
+    // If already initialized, return immediately
+    if (state.isInitialized) {
+      return
+    }
+
+    // If initialization is in progress, wait for it
+    if (state.initializePromise) {
+      return state.initializePromise
+    }
+
+    // Create new initialization promise
+    const promise = (async () => {
+      try {
+        const projectsService = getServiceHub().projects()
+        const projects = await projectsService.getProjects()
+
+        // Load threads for each project
+        const projectsWithThreads = await Promise.all(
+          projects.map(async (project) => {
+            try {
+              const threads = await projectsService.getProjectThreads(project.id)
+              return { ...project, threads }
+            } catch (err) {
+              console.error(`Failed to load threads for project ${project.id}:`, err)
+              return { ...project, threads: [] }
+            }
+          })
+        )
+
+        set({ folders: projectsWithThreads, isInitialized: true, initializePromise: null })
+      } catch (error) {
+        set({ isInitialized: true, initializePromise: null }) // Mark as initialized even on error
+      }
+    })()
+
+    set({ initializePromise: promise })
+    return promise
   },
 
   addFolder: async (name, instruction) => {
@@ -98,18 +145,9 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
 export const useThreadManagement = () => {
   const store = useThreadManagementStore()
 
-  // Load projects from service on mount
+  // Initialize projects on first call
   useEffect(() => {
-    const syncProjects = async () => {
-      try {
-        const projectsService = getServiceHub().projects()
-        const projects = await projectsService.getProjects()
-        useThreadManagementStore.setState({ folders: projects })
-      } catch (error) {
-        console.error('Error syncing projects:', error)
-      }
-    }
-    syncProjects()
+    store.initialize()
   }, [])
 
   return store

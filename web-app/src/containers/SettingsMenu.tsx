@@ -143,7 +143,7 @@ const SettingsMenu = () => {
       title: 'common:advancedSettings',
       route: route.settings.advancedSettings,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION],
+      isEnabled: PlatformFeatures[PlatformFeature.AUTHENTICATION] && ENVIRONMENT === 'dev',
     },
   ]
 
