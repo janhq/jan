@@ -628,7 +628,11 @@ function ProviderDetail() {
                                   <Button
                                     variant="link"
                                     size="sm"
-                                    className="p-0"
+                                    className={cn(
+                                      'p-0',
+                                      isCheckingBackendUpdate &&
+                                        'pointer-events-none'
+                                    )}
                                     onClick={handleCheckForBackendUpdate}
                                   >
                                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
