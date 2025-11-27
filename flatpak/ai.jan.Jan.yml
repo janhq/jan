@@ -72,6 +72,8 @@ modules:
         url: https://github.com/KhronosGroup/glslang.git
         commit: 142052fa30f9eca191aa9dcf65359fcaed09eeec
         dest: third_party/glslang
+      - type: patch
+        path: patches/fix-cstdint.patch
 
   - name: jan-binary
     buildsystem: simple
