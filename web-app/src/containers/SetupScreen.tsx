@@ -8,18 +8,17 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey } from '@/constants/localStorage'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform'
-import { useModelSources } from '@/hooks/useModelSources'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { Progress } from '@/components/ui/progress'
+import type { CatalogModel } from '@/services/models/types'
 import {
-  JAN_MODEL_V2_NAME,
+  JAN_MODEL_V2_HF_REPO,
   DEFAULT_MODEL_QUANTIZATIONS,
 } from '@/constants/models'
 
-// Check if Quick Start feature is available (Desktop only)
 const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
 
 function SetupScreen() {
@@ -32,48 +31,46 @@ function SetupScreen() {
   // Check if setup tour has been completed
   const isSetupCompleted =
     localStorage.getItem(localStorageKey.setupCompleted) === 'true'
-
-  // Model sources and download state - only used on Desktop
-  const { sources, fetchSources } = useModelSources()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
   const { huggingfaceToken } = useGeneralSetting()
   const llamaProvider = getProviderByName('llamacpp')
-
-  // Track if we initiated quick start download
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
+  const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
 
-  // Fetch model sources on mount (Desktop only)
-  useEffect(() => {
-    if (isQuickStartAvailable) {
-      fetchSources()
+  const fetchJanModel = useCallback(async () => {
+    if (!isQuickStartAvailable) return
+
+    try {
+      const repo = await serviceHub
+        .models()
+        .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO, huggingfaceToken)
+
+      if (repo) {
+        const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repo)
+        setJanModelV2(catalogModel)
+      }
+    } catch (error) {
+      console.error('Error fetching Jan Model V2:', error)
     }
-  }, [fetchSources])
+  }, [serviceHub, huggingfaceToken])
 
-  // Find Jan Model V2 in catalog (Desktop only)
-  const janModelV2 = useMemo(() => {
-    if (!isQuickStartAvailable) return null
-    return sources.find((model) =>
-      model.model_name.toLowerCase().includes(JAN_MODEL_V2_NAME)
-    )
-  }, [sources])
+  useEffect(() => {
+    fetchJanModel()
+  }, [fetchJanModel])
 
-  // Find the default variant (prioritize from DEFAULT_MODEL_QUANTIZATIONS)
   const defaultVariant = useMemo(() => {
     if (!janModelV2) return null
-    // Try to find a variant matching any of the default quantizations (in priority order)
     for (const quantization of DEFAULT_MODEL_QUANTIZATIONS) {
       const variant = janModelV2.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
-    // Fallback to first available variant if none match
     return janModelV2.quants[0]
   }, [janModelV2])
 
-  // Check download status (Desktop only)
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -109,7 +106,6 @@ function SetupScreen() {
     )
   }, [defaultVariant, llamaProvider])
 
-  // Handle quick start click (Desktop only)
   const handleQuickStart = useCallback(() => {
     if (!defaultVariant || !janModelV2) {
       console.error('Jan Model V2 not found in catalog')
@@ -138,13 +134,11 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Navigate to chat when download completes (Desktop only)
+  // Navigate to chat after download completes
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
-      // Mark setup as completed
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
-      // Navigate to chat with model selected
       navigate({
         to: route.home,
         params: {},
