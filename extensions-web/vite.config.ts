@@ -16,6 +16,5 @@ export default defineConfig({
   define: {
     JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'https://api.jan.ai'),
     ENVIRONMENT: JSON.stringify(process.env.ENVIRONMENT || 'prod'),
-
   }
 })
