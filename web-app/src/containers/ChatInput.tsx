@@ -41,7 +41,7 @@ import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
@@ -298,22 +298,9 @@ const ChatInput = ({
       const paths = Array.isArray(selection) ? selection : [selection]
       if (!paths.length) return
 
-      // Check for duplicates and fetch file sizes
-      const existingPaths = new Set(
-        attachments
-          .filter((a) => a.type === 'document' && a.path)
-          .map((a) => a.path)
-      )
-
-      const duplicates: string[] = []
-      const newDocAttachments: Attachment[] = []
-
+      // Prepare attachments with file sizes
+      const preparedAttachments: Attachment[] = []
       for (const p of paths) {
-        if (existingPaths.has(p)) {
-          duplicates.push(p.split(/[\\/]/).pop() || p)
-          continue
-        }
-
         const name = p.split(/[\\/]/).pop() || p
         const fileType = name.split('.').pop()?.toLowerCase()
         let size: number | undefined = undefined
@@ -323,7 +310,7 @@ const ChatInput = ({
         } catch (e) {
           console.warn('Failed to read file size for', p, e)
         }
-        newDocAttachments.push(
+        preparedAttachments.push(
           createDocumentAttachment({
             name,
             path: p,
@@ -333,6 +320,33 @@ const ChatInput = ({
         )
       }
 
+      let duplicates: string[] = []
+      let newDocAttachments: Attachment[] = []
+
+      setAttachments((currentAttachments) => {
+        const existingPaths = new Set(
+          currentAttachments
+            .filter((a) => a.type === 'document' && a.path)
+            .map((a) => a.path)
+        )
+
+        duplicates = []
+        newDocAttachments = []
+
+        for (const att of preparedAttachments) {
+          if (existingPaths.has(att.path)) {
+            duplicates.push(att.name)
+            continue
+          }
+          newDocAttachments.push(att)
+        }
+
+        if (newDocAttachments.length > 0) {
+          return [...currentAttachments, ...newDocAttachments]
+        }
+        return currentAttachments
+      })
+
       if (duplicates.length > 0) {
         toast.warning('Files already attached', {
           description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
@@ -340,10 +354,6 @@ const ChatInput = ({
       }
 
       if (newDocAttachments.length > 0) {
-        // Add to state first with processing flag
-        setAttachments((prev) => [...prev, ...newDocAttachments])
-
-        // If thread exists, ingest immediately
         if (currentThreadId) {
           const ragExtension = ExtensionManager.getInstance().get(
             ExtensionTypeEnum.RAG
@@ -353,7 +363,6 @@ const ChatInput = ({
             return
           }
 
-          // Ingest each document
           for (const doc of newDocAttachments) {
             try {
               // Mark as processing
@@ -419,7 +428,30 @@ const ChatInput = ({
     }
   }
 
-  const handleRemoveAttachment = (indexToRemove: number) => {
+  const handleRemoveAttachment = async (indexToRemove: number) => {
+    const attachmentToRemove = attachments[indexToRemove]
+
+    // If attachment was ingested (has an ID), delete it from the backend
+    if (attachmentToRemove?.id && currentThreadId) {
+      try {
+        if (attachmentToRemove.type === 'document') {
+          const vectorDBExtension = ExtensionManager.getInstance().get(
+            ExtensionTypeEnum.VectorDB
+          ) as VectorDBExtension | undefined
+
+          if (vectorDBExtension?.deleteFile) {
+            await vectorDBExtension.deleteFile(currentThreadId, attachmentToRemove.id)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to delete attachment from backend:', error)
+        toast.error('Failed to remove attachment', {
+          description: error instanceof Error ? error.message : String(error)
+        })
+        return
+      }
+    }
+
     setAttachments((prev) => prev.filter((_, index) => index !== indexToRemove))
   }
 
@@ -450,24 +482,14 @@ const ChatInput = ({
 
   const processImageFiles = async (files: File[]) => {
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-    const newFiles: Attachment[] = []
-    const duplicates: string[] = []
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
-    const existingImageNames = new Set(
-      attachments.filter((a) => a.type === 'image').map((a) => a.name)
-    )
 
     const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
     const validFiles: File[] = []
 
+    // First pass: validate file size and type (no duplicate check yet)
     Array.from(files).forEach((file) => {
-      // Check for duplicate image names
-      if (existingImageNames.has(file.name)) {
-        duplicates.push(file.name)
-        return
-      }
-
       // Check file size
       if (file.size > maxSize) {
         oversizedFiles.push(file.name)
@@ -487,7 +509,8 @@ const ChatInput = ({
       validFiles.push(file)
     })
 
-    // Process valid files
+    // Process valid files into attachments
+    const preparedFiles: Attachment[] = []
     for (const file of validFiles) {
       const detectedType = file.type || getFileTypeFromExtension(file.name)
       const actualType = getFileTypeFromExtension(file.name) || detectedType
@@ -505,7 +528,7 @@ const ChatInput = ({
               base64: base64String,
               dataUrl: result,
             })
-            newFiles.push(att)
+            preparedFiles.push(att)
           }
           resolve()
         }
@@ -513,73 +536,88 @@ const ChatInput = ({
       })
     }
 
-    // Update state and ingest
-    if (newFiles.length > 0) {
-      setAttachments((prev) => {
-        const updated = [...prev, ...newFiles]
-        return updated
-      })
+    let duplicates: string[] = []
+    let newFiles: Attachment[] = []
 
-      // If thread exists, ingest images immediately
-      if (currentThreadId) {
-        void (async () => {
-          for (const img of newFiles) {
-            try {
-              // Mark as processing
+    setAttachments((currentAttachments) => {
+      const existingImageNames = new Set(
+        currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
+      )
+
+      duplicates = []
+      newFiles = []
+
+      for (const att of preparedFiles) {
+        if (existingImageNames.has(att.name)) {
+          duplicates.push(att.name)
+          continue
+        }
+        newFiles.push(att)
+      }
+
+      if (newFiles.length > 0) {
+        return [...currentAttachments, ...newFiles]
+      }
+      return currentAttachments
+    })
+
+    if (currentThreadId && newFiles.length > 0) {
+      void (async () => {
+        for (const img of newFiles) {
+          try {
+            // Mark as processing
+            setAttachments((prev) =>
+              prev.map((a) =>
+                a.name === img.name && a.type === 'image'
+                  ? { ...a, processing: true }
+                  : a
+              )
+            )
+
+            const result = await serviceHub
+              .uploads()
+              .ingestImage(currentThreadId, img)
+
+            if (result?.id) {
+              // Mark as processed with ID
               setAttachments((prev) =>
                 prev.map((a) =>
                   a.name === img.name && a.type === 'image'
-                    ? { ...a, processing: true }
+                    ? {
+                        ...a,
+                        processing: false,
+                        processed: true,
+                        id: result.id,
+                      }
                     : a
                 )
               )
-
-              const result = await serviceHub
-                .uploads()
-                .ingestImage(currentThreadId, img)
-
-              if (result?.id) {
-                // Mark as processed with ID
-                setAttachments((prev) =>
-                  prev.map((a) =>
-                    a.name === img.name && a.type === 'image'
-                      ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: result.id,
-                        }
-                      : a
-                  )
-                )
-              } else {
-                throw new Error('No ID returned from image ingestion')
-              }
-            } catch (error) {
-              console.error('Failed to ingest image:', error)
-              // Remove failed image
-              setAttachments((prev) =>
-                prev.filter((a) => !(a.name === img.name && a.type === 'image'))
-              )
-              toast.error(`Failed to ingest ${img.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
+            } else {
+              throw new Error('No ID returned from image ingestion')
             }
+          } catch (error) {
+            console.error('Failed to ingest image:', error)
+            // Remove failed image
+            setAttachments((prev) =>
+              prev.filter((a) => !(a.name === img.name && a.type === 'image'))
+            )
+            toast.error(`Failed to ingest ${img.name}`, {
+              description:
+                error instanceof Error ? error.message : String(error),
+            })
           }
-        })()
-      }
+        }
+      })()
     }
 
     // Display validation errors
-    const errors: string[] = []
-
     if (duplicates.length > 0) {
       toast.warning('Some images already attached', {
         description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
       })
     }
 
+    const errors: string[] = []
     if (oversizedFiles.length > 0) {
       errors.push(
         `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`

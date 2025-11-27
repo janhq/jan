@@ -174,7 +174,7 @@ describe('useMCPServers', () => {
   describe('editServer', () => {
     it('should edit existing server', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -200,9 +200,76 @@ describe('useMCPServers', () => {
       expect(result.current.mcpServers['test-server']).toEqual(updatedConfig)
     })
 
+    it('should preserve untouched properties when editing server with complete config', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      // Create a server with multiple properties including official, type, timeout, headers
+      const initialServerConfig: MCPServerConfig = {
+        command: 'npx',
+        args: ['-y', 'search-mcp-server@latest'],
+        env: {
+          BRIDGE_HOST: '127.0.0.1',
+          BRIDGE_PORT: '17389',
+          API_KEY: 'secret-key',
+        },
+        type: 'stdio',
+        official: true,
+        timeout: 30,
+        headers: {
+          'X-Custom-Header': 'custom-value',
+        },
+      }
+
+      // Updated config that changes some properties but preserves others
+      // This simulates what the UI component does after our fix
+      const updatedConfig: MCPServerConfig = {
+        ...initialServerConfig, // Preserve all existing properties
+        command: 'node', // Change command
+        args: ['updated-server.js'], // Change args
+        env: {
+          BRIDGE_HOST: '127.0.0.1',
+          BRIDGE_PORT: '18000', // Changed port
+        },
+        // official, type, timeout, headers are preserved via spread
+      }
+
+      act(() => {
+        result.current.addServer('test-server', initialServerConfig)
+      })
+
+      // Verify initial state
+      expect(result.current.mcpServers['test-server']?.official).toBe(true)
+      expect(result.current.mcpServers['test-server']?.type).toBe('stdio')
+      expect(result.current.mcpServers['test-server']?.timeout).toBe(30)
+      expect(result.current.mcpServers['test-server']?.headers).toEqual({
+        'X-Custom-Header': 'custom-value',
+      })
+
+      act(() => {
+        result.current.editServer('test-server', updatedConfig)
+      })
+
+      // Verify that modified fields changed
+      const editedServer = result.current.mcpServers['test-server']
+      expect(editedServer?.command).toBe('node')
+      expect(editedServer?.args).toEqual(['updated-server.js'])
+      expect(editedServer?.env).toEqual({
+        BRIDGE_HOST: '127.0.0.1',
+        BRIDGE_PORT: '18000',
+      })
+
+      // Verify that untouched properties ARE preserved (except active which can have side effects)
+      expect(editedServer?.official).toBe(true)
+      expect(editedServer?.type).toBe('stdio')
+      expect(editedServer?.timeout).toBe(30)
+      expect(editedServer?.headers).toEqual({
+        'X-Custom-Header': 'custom-value',
+      })
+    })
+
     it('should not modify state if server does not exist', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialState = result.current.mcpServers
 
       const config: MCPServerConfig = {

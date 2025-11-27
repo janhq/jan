@@ -171,6 +171,7 @@ export interface modelInfo {
   tags?: string[]
   path?: string // Absolute path to the model file, if applicable
   // Additional provider-specific metadata can be added here
+  embedding?: boolean
   [key: string]: any
 }
 
