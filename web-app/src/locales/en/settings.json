@@ -1,12 +1,12 @@
 {
   "autoDownload": "Automatic download new updates",
-  "checkForUpdates": "Check for Updates",
+  "checkForUpdates": "Check for updates",
   "checkForUpdatesDesc": "Check if a newer version of Jan is available.",
   "checkingForUpdates": "Checking for updates...",
   "noUpdateAvailable": "You're running the latest version",
   "devVersion": "Development version detected",
   "updateError": "Failed to check for updates",
-  "checkForBackendUpdates": "Check for Llamacpp Updates",
+  "checkForBackendUpdates": "Check for Llamacpp updates",
   "checkForBackendUpdatesDesc": "Check if a newer version of the Llamacpp backend is available.",
   "checkingForBackendUpdates": "Checking for Llamacpp updates...",
   "noBackendUpdateAvailable": "You're running the latest Llamacpp version",
@@ -104,10 +104,10 @@
     "threadScrollDesc": "Choose how the chat viewport should react when new messages arrive.",
     "threadScrollFlowTitle": "Flow scroll",
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
-    
+
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    
+
     "tokenCounterCompact": "Compact Token Counter",
     "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
