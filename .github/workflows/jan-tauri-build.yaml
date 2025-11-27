@@ -66,19 +66,6 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-  
-  build-linux-x64-flatpak:
-    uses: ./.github/workflows/template-tauri-build-linux-x64-flatpak.yml
-    secrets: inherit
-    needs: [get-update-version, create-draft-release]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      channel: stable
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      cortex_api_port: '39261'
-      disable_updater: true
 
   sync-temp-to-latest:
     needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]

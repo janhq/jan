@@ -15,10 +15,6 @@ on:
         required: true
         type: string
         default: ''
-      cortex_api_port:
-        required: false
-        type: string
-        default: ''
       upload_url:
         required: false
         type: string
@@ -177,13 +173,6 @@ jobs:
           name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-AppImage
-          path: ./src-tauri/target/release/bundle/appimage/*.AppImage
-
       ## Set output filename for linux
       - name: Set output filename for linux
         id: packageinfo
@@ -192,20 +181,14 @@ jobs:
 
           if [ "${{ inputs.channel }}" != "stable" ]; then
             DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
-            APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
             DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
           else
             DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
-            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
             DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
-            APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
           fi
 
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
-          echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
-          echo "APPIMAGE_FILE_NAME=$APPIMAGE_FILE_NAME" >> $GITHUB_OUTPUT
       
       - name: upload to aws s3 if public provider is aws
         if: inputs.public_provider == 'aws-s3'

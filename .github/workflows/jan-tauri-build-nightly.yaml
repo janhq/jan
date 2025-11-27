@@ -16,6 +16,7 @@ on:
         type: boolean
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
         default: false
+
   pull_request:
     branches:
       - release/**
@@ -106,19 +107,6 @@ jobs:
       channel: nightly
       cortex_api_port: '39261'
       disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
-  
-  build-linux-x64-flatpak:
-    uses: ./.github/workflows/template-tauri-build-linux-x64-flatpak.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      channel: nightly
-      cortex_api_port: '39261'
-      disable_updater: true
 
   sync-temp-to-latest:
     needs:
@@ -127,7 +115,6 @@ jobs:
         set-public-provider,
         build-windows-x64,
         build-linux-x64,
-        build-linux-x64-flatpak,
         build-macos,
       ]
     runs-on: ubuntu-22.04
