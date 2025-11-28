@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import type { Node } from 'unist'
-import type { Code } from 'mdast'
+import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
 import path from "path"
@@ -28,20 +28,19 @@ export function basenameNoExt(filePath: string): string {
 
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node) => {
-    visit(tree, 'code', (node: Code, index, parent) => {
+    visit(tree, 'code', (node: Code, index, parent: Parent) => {
       // Filter out fenced code blocks (those with lang or meta)
       // Check if the parent exists so we can replace the node safely
       if (!node.lang && !node.meta && parent && typeof index === 'number') {
-        const textNode = {
-          type: 'paragraph',
-          children: [
-            {
-              type: 'text',
-              value: node.value
-            }
-          ]
+        const textNode: Text = {
+          type: 'text',
+          value: node.value
         }
-        parent.children[index] = textNode
+        const paragraphNode: Paragraph = {
+          type: 'paragraph',
+          children: [textNode]
+        }
+        parent.children[index] = paragraphNode
       }
     })
   }
