@@ -102,6 +102,7 @@ interface DownloadItem {
   proxy?: Record<string, string | string[] | boolean>
   sha256?: string
   size?: number
+  model_id?: string
 }
 
 interface ModelConfig {
@@ -1436,6 +1437,7 @@ export default class llamacpp_extension extends AIEngine {
           sha256:
             saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
           size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+          model_id: modelId,
         })
         return localPath
       }
