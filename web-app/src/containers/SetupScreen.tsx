@@ -5,21 +5,81 @@ import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
 import { isProd } from '@/lib/version'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { localStorageKey } from '@/constants/localStorage'
+import {
+  localStorageKey,
+  CACHE_EXPIRY_MS,
+} from '@/constants/localStorage'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useEffect, useMemo, useCallback, useState } from 'react'
+import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { Progress } from '@/components/ui/progress'
 import type { CatalogModel } from '@/services/models/types'
 import {
   JAN_MODEL_V2_HF_REPO,
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
+import { toast } from 'sonner'
 
 const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
+
+type CacheEntry = {
+  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
+  timestamp: number
+}
+
+const modelSupportCache = new Map<string, CacheEntry>()
+
+function loadCacheFromStorage() {
+  try {
+    const stored = localStorage.getItem(localStorageKey.modelSupportCache)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      Object.entries(parsed).forEach(([key, value]) => {
+        modelSupportCache.set(key, value as CacheEntry)
+      })
+    }
+  } catch (error) {
+    console.error('Failed to load model support cache:', error)
+  }
+}
+
+function saveCacheToStorage() {
+  try {
+    const cacheObj = Object.fromEntries(modelSupportCache.entries())
+    localStorage.setItem(
+      localStorageKey.modelSupportCache,
+      JSON.stringify(cacheObj)
+    )
+  } catch (error) {
+    console.error('Failed to save model support cache:', error)
+  }
+}
+
+function getCachedSupport(modelId: string): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
+  const entry = modelSupportCache.get(modelId)
+  if (!entry) return null
+
+  const now = Date.now()
+  if (now - entry.timestamp > CACHE_EXPIRY_MS) {
+    modelSupportCache.delete(modelId)
+    return null
+  }
+
+  return entry.status
+}
+
+function setCachedSupport(modelId: string, status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY') {
+  modelSupportCache.set(modelId, {
+    status,
+    timestamp: Date.now(),
+  })
+  saveCacheToStorage()
+}
+
+loadCacheFromStorage()
 
 function SetupScreen() {
   const { t } = useTranslation()
@@ -42,6 +102,8 @@ function SetupScreen() {
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+  const supportCheckInProgress = useRef(false)
+  const checkedModelId = useRef<string | null>(null)
 
   const fetchJanModel = useCallback(async () => {
     if (!isQuickStartAvailable) return
@@ -65,6 +127,15 @@ function SetupScreen() {
     const checkModelSupport = async () => {
       if (!janModelV2) return
 
+      if (
+        supportCheckInProgress.current ||
+        checkedModelId.current === janModelV2.model_id
+      ) {
+        return
+      }
+
+      supportCheckInProgress.current = true
+      checkedModelId.current = janModelV2.model_id
       setIsSupportCheckComplete(false)
 
       const variantSupportMap = new Map<
@@ -78,12 +149,25 @@ function SetupScreen() {
         )
 
         if (variant) {
+          const cached = getCachedSupport(variant.model_id)
+          if (cached) {
+            console.log(
+              `[SetupScreen] ${variant.model_id}: ${cached} (cached)`
+            )
+            variantSupportMap.set(variant.model_id, cached)
+            continue
+          }
+
           try {
+            console.log(
+              `[SetupScreen] Checking support for ${variant.model_id}...`
+            )
             const supportStatus = await serviceHub
               .models()
               .isModelSupported(variant.path)
 
             console.log(`[SetupScreen] ${variant.model_id}: ${supportStatus}`)
+            setCachedSupport(variant.model_id, supportStatus)
             variantSupportMap.set(variant.model_id, supportStatus)
           } catch (error) {
             console.error(
@@ -91,16 +175,18 @@ function SetupScreen() {
               error
             )
             variantSupportMap.set(variant.model_id, 'GREY')
+            setCachedSupport(variant.model_id, 'GREY')
           }
         }
       }
 
       setSupportedVariants(variantSupportMap)
       setIsSupportCheckComplete(true)
+      supportCheckInProgress.current = false
     }
 
     checkModelSupport()
-  }, [janModelV2, serviceHub])
+  }, [janModelV2])
 
   useEffect(() => {
     fetchJanModel()
@@ -230,6 +316,7 @@ function SetupScreen() {
 
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
+      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
       navigate({

@@ -219,15 +219,13 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
 
+      // Dismiss any validation started toast when download completes successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
-
-      await new Promise((resolve) => setTimeout(resolve, 300))
-
       toast.success(t('common:toast.downloadComplete.title'), {
-        id: `download-complete-${state.modelId}`,
+        id: 'download-complete',
         description: t('common:toast.downloadComplete.description', {
           item: state.modelId,
         }),
@@ -240,15 +238,13 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
 
+      // Dismiss any validation started toast when download and verification complete successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
-
-      await new Promise((resolve) => setTimeout(resolve, 300))
-
       toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
-        id: `download-complete-${state.modelId}`,
+        id: 'download-complete',
         description: t(
           'common:toast.downloadAndVerificationComplete.description',
           {
