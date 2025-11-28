@@ -22,14 +22,14 @@
       Jan is an open source alternative to ChatGPT that runs 100% offline on your computer.
     </p>
 
-    <p><b>Features</b></p>
+    <p>Features</p>
     <ul>
-      <li><b>Local AI models:</b> Run LLMs such as Llama, Gemma, Qwen and others on your device</li>
-      <li><b>Optional cloud access:</b> Connect to services like OpenAI, Anthropic, Gemini and Groq when internet-based models are required</li>
-      <li><b>Custom assistants:</b> Create tailored assistants for writing, coding, summarizing and more</li>
-      <li><b>OpenAI-compatible API:</b> Includes a local API server at <code>localhost:1337</code> for tools expecting the OpenAI format</li>
-      <li><b>MCP support:</b> Integrates the Model Context Protocol for enhanced workflows and tooling</li>
-      <li><b>Privacy-aware design:</b> Jan works offline by default. Cloud access is optional and user-controlled</li>
+      <li>Local AI models: Run LLMs such as Llama, Gemma, Qwen and others on your device</li>
+      <li>Optional cloud access: Connect to services like OpenAI, Anthropic, Gemini and Groq when internet-based models are required</li>
+      <li>Custom assistants: Create tailored assistants for writing, coding, summarizing and more</li>
+      <li>OpenAI-compatible API: Includes a local API server at localhost:1337 for tools expecting the OpenAI format</li>
+      <li>MCP support: Integrates the Model Context Protocol for enhanced workflows and tooling</li>
+      <li>Privacy-aware design: Jan works offline by default. Cloud access is optional and user-controlled</li>
     </ul>
 
     <p>
