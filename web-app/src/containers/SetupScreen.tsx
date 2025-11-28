@@ -204,6 +204,12 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
+  useEffect(() => {
+    if (quickStartInitiated && !isDownloading && !isDownloaded) {
+      setQuickStartInitiated(false)
+    }
+  }, [quickStartInitiated, isDownloading, isDownloaded])
+
   // Navigate to chat after download completes
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
