@@ -16,7 +16,7 @@ import { Progress } from '@/components/ui/progress'
 import type { CatalogModel } from '@/services/models/types'
 import {
   JAN_MODEL_V2_HF_REPO,
-  DEFAULT_MODEL_QUANTIZATIONS,
+  SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
 
 const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
@@ -38,6 +38,10 @@ function SetupScreen() {
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
+  const [supportedVariants, setSupportedVariants] = useState<
+    Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
+  >(new Map())
+  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
 
   const fetchJanModel = useCallback(async () => {
     if (!isQuickStartAvailable) return
@@ -56,20 +60,86 @@ function SetupScreen() {
     }
   }, [serviceHub, huggingfaceToken])
 
+  // Check model support for variants when janModelV2 is available
+  useEffect(() => {
+    const checkModelSupport = async () => {
+      if (!janModelV2) return
+
+      setIsSupportCheckComplete(false)
+
+      const variantSupportMap = new Map<
+        string,
+        'RED' | 'YELLOW' | 'GREEN' | 'GREY'
+      >()
+
+      // Check support for each quantization in SETUP_SCREEN_QUANTIZATIONS
+      for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+        const variant = janModelV2.quants.find((quant) =>
+          quant.model_id.toLowerCase().includes(quantization)
+        )
+
+        if (variant) {
+          try {
+            // Check support using remote URL (doesn't require download)
+            const supportStatus = await serviceHub
+              .models()
+              .isModelSupported(variant.path)
+            variantSupportMap.set(variant.model_id, supportStatus)
+          } catch (error) {
+            console.error(
+              `Error checking support for ${variant.model_id}:`,
+              error
+            )
+            variantSupportMap.set(variant.model_id, 'GREY')
+          }
+        }
+      }
+
+      setSupportedVariants(variantSupportMap)
+      setIsSupportCheckComplete(true)
+    }
+
+    checkModelSupport()
+  }, [janModelV2, serviceHub])
+
   useEffect(() => {
     fetchJanModel()
   }, [fetchJanModel])
 
   const defaultVariant = useMemo(() => {
     if (!janModelV2) return null
-    for (const quantization of DEFAULT_MODEL_QUANTIZATIONS) {
+
+    // Priority: GREEN > YELLOW > GREY > RED
+    const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY' | 'RED'> = [
+      'GREEN',
+      'YELLOW',
+      'GREY',
+      'RED',
+    ]
+
+    // Try to find the best supported variant based on priority
+    for (const status of priorityOrder) {
+      for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+        const variant = janModelV2.quants.find((quant) =>
+          quant.model_id.toLowerCase().includes(quantization)
+        )
+
+        if (variant && supportedVariants.get(variant.model_id) === status) {
+          return variant
+        }
+      }
+    }
+
+    // Fallback: if no support status available yet, use first matching quantization
+    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       const variant = janModelV2.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
+
     return janModelV2.quants[0]
-  }, [janModelV2])
+  }, [janModelV2, supportedVariants])
 
   const downloadProcesses = useMemo(
     () =>
@@ -175,13 +245,19 @@ function SetupScreen() {
             {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
               <button
                 onClick={handleQuickStart}
-                disabled={isDownloading || isDownloaded || !defaultVariant}
+                disabled={
+                  quickStartInitiated ||
+                  isDownloading ||
+                  isDownloaded ||
+                  !defaultVariant ||
+                  !isSupportCheckComplete
+                }
                 className="w-full text-left disabled:cursor-not-allowed"
               >
                 <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                      {isDownloading ? (
+                      {quickStartInitiated || isDownloading ? (
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           className="h-6 w-6 text-white animate-spin"
@@ -215,13 +291,13 @@ function SetupScreen() {
                     </div>
                     <div className="flex-1">
                       <h1 className="text-main-view-fg font-semibold text-lg mb-1">
-                        {isDownloading
+                        {quickStartInitiated || isDownloading
                           ? t('setup:downloading', {
                               defaultValue: 'Downloading Jan Model...',
                             })
                           : t('setup:quickStart')}
                       </h1>
-                      {isDownloading ? (
+                      {quickStartInitiated || isDownloading ? (
                         <div className="space-y-2">
                           <div className="flex items-center gap-3">
                             <Progress
