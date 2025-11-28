@@ -165,7 +165,6 @@ describe('RenderMarkdown', () => {
     )
     const markdownContainer = document.querySelector('.markdown')
     const html = markdownContainer?.innerHTML || ''
-    console.log(html)
     expect(1).toBe(1) // Dummy assertion to ensure test runs
     expect(html).toContain('<pre>')
   })
