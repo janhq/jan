@@ -670,6 +670,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             cmd = Command::new(bun_x_path.display().to_string());
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
+            cmd.env("BUN_JSC_useJIT", "0");
         }
 
         let uv_path = if cfg!(windows) {
