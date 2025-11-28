@@ -219,20 +219,19 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
 
-      // Dismiss any validation started toast when download completes successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
 
-      setTimeout(() => {
-        toast.success(t('common:toast.downloadComplete.title'), {
-          id: `download-complete-${state.modelId}`,
-          description: t('common:toast.downloadComplete.description', {
-            item: state.modelId,
-          }),
-        })
-      }, 100)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      toast.success(t('common:toast.downloadComplete.title'), {
+        id: `download-complete-${state.modelId}`,
+        description: t('common:toast.downloadComplete.description', {
+          item: state.modelId,
+        }),
+      })
     },
     [removeDownload, removeLocalDownloadingModel, t]
   )
@@ -241,23 +240,22 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
 
-      // Dismiss any validation started toast when download and verification complete successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
 
-      setTimeout(() => {
-        toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
-          id: `download-complete-${state.modelId}`,
-          description: t(
-            'common:toast.downloadAndVerificationComplete.description',
-            {
-              item: state.modelId,
-            }
-          ),
-        })
-      }, 100)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+        id: `download-complete-${state.modelId}`,
+        description: t(
+          'common:toast.downloadAndVerificationComplete.description',
+          {
+            item: state.modelId,
+          }
+        ),
+      })
     },
     [removeDownload, removeLocalDownloadingModel, t]
   )

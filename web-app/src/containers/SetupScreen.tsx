@@ -72,7 +72,6 @@ function SetupScreen() {
         'RED' | 'YELLOW' | 'GREEN' | 'GREY'
       >()
 
-      // Check support for each quantization in SETUP_SCREEN_QUANTIZATIONS
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
         const variant = janModelV2.quants.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
@@ -80,14 +79,15 @@ function SetupScreen() {
 
         if (variant) {
           try {
-            // Check support using remote URL (doesn't require download)
             const supportStatus = await serviceHub
               .models()
               .isModelSupported(variant.path)
+
+            console.log(`[SetupScreen] ${variant.model_id}: ${supportStatus}`)
             variantSupportMap.set(variant.model_id, supportStatus)
           } catch (error) {
             console.error(
-              `Error checking support for ${variant.model_id}:`,
+              `[SetupScreen] Error checking support for ${variant.model_id}:`,
               error
             )
             variantSupportMap.set(variant.model_id, 'GREY')
@@ -109,15 +109,12 @@ function SetupScreen() {
   const defaultVariant = useMemo(() => {
     if (!janModelV2) return null
 
-    // Priority: GREEN > YELLOW > GREY > RED
-    const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY' | 'RED'> = [
+    const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY'> = [
       'GREEN',
       'YELLOW',
       'GREY',
-      'RED',
     ]
 
-    // Try to find the best supported variant based on priority
     for (const status of priorityOrder) {
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
         const variant = janModelV2.quants.find((quant) =>
@@ -130,7 +127,28 @@ function SetupScreen() {
       }
     }
 
-    // Fallback: if no support status available yet, use first matching quantization
+    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+      if (quantization === 'q8_0') continue
+
+      const variant = janModelV2.quants.find((quant) =>
+        quant.model_id.toLowerCase().includes(quantization)
+      )
+
+      if (variant && supportedVariants.get(variant.model_id) === 'RED') {
+        return variant
+      }
+    }
+
+    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+      const variant = janModelV2.quants.find((quant) =>
+        quant.model_id.toLowerCase().includes(quantization)
+      )
+
+      if (variant && supportedVariants.get(variant.model_id) === 'RED') {
+        return variant
+      }
+    }
+
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       const variant = janModelV2.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
@@ -210,7 +228,6 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, isDownloading, isDownloaded])
 
-  // Navigate to chat after download completes
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
@@ -228,7 +245,6 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
-  // Get appropriate description based on platform
   const descriptionKey = isQuickStartAvailable
     ? 'setup:description'
     : 'setup:descriptionWeb'
