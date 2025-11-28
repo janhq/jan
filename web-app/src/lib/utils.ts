@@ -29,7 +29,8 @@ export function basenameNoExt(filePath: string): string {
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node) => {
     visit(tree, 'code', (node: Code, index, parent: Parent) => {
-      // Filter out fenced code blocks (those with lang or meta)
+      // Convert indented code blocks (nodes without lang or meta property)
+      // to plain text
       // Check if the parent exists so we can replace the node safely
       if (!node.lang && !node.meta && parent && typeof index === 'number') {
         const textNode: Text = {
