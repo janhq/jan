@@ -15,10 +15,6 @@ on:
         required: true
         type: string
         default: ''
-      cortex_api_port:
-        required: false
-        type: string
-        default: ''
       upload_url:
         required: false
         type: string
@@ -84,7 +80,7 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libayatana-appindicator3-dev
 
       - name: Update app version base public_provider
         run: |
@@ -177,9 +173,33 @@ jobs:
           name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-AppImage
-          path: ./src-tauri/target/release/bundle/appimage/*.AppImage
+      ## Set output filename for linux
+      - name: Set output filename for linux
+        id: packageinfo
+        run: |
+          cd ./src-tauri/target/release/bundle
+
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
+          else
+            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
+            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
+          fi
+
+          echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
+          echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
+      
+      - name: upload to aws s3 if public provider is aws
+        if: inputs.public_provider == 'aws-s3'
+        run: |
+          cd ./src-tauri/target/release/bundle
+          # Upload for tauri updater
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig
+
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
