@@ -224,12 +224,15 @@ export function DownloadManagement() {
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
-      toast.success(t('common:toast.downloadComplete.title'), {
-        id: 'download-complete',
-        description: t('common:toast.downloadComplete.description', {
-          item: state.modelId,
-        }),
-      })
+
+      setTimeout(() => {
+        toast.success(t('common:toast.downloadComplete.title'), {
+          id: `download-complete-${state.modelId}`,
+          description: t('common:toast.downloadComplete.description', {
+            item: state.modelId,
+          }),
+        })
+      }, 100)
     },
     [removeDownload, removeLocalDownloadingModel, t]
   )
@@ -243,15 +246,18 @@ export function DownloadManagement() {
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
-      toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
-        id: 'download-complete',
-        description: t(
-          'common:toast.downloadAndVerificationComplete.description',
-          {
-            item: state.modelId,
-          }
-        ),
-      })
+
+      setTimeout(() => {
+        toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+          id: `download-complete-${state.modelId}`,
+          description: t(
+            'common:toast.downloadAndVerificationComplete.description',
+            {
+              item: state.modelId,
+            }
+          ),
+        })
+      }, 100)
     },
     [removeDownload, removeLocalDownloadingModel, t]
   )
