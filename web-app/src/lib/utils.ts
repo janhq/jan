@@ -26,6 +26,11 @@ export function basenameNoExt(filePath: string): string {
   return base.slice(0, -path.extname(base).length);
 }
 
+/**
+ * Remark plugin that disables indented code block syntax.
+ * Converts indented code blocks (without language specifier) to plain text paragraphs,
+ * while preserving fenced code blocks with backticks.
+ */
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node) => {
     visit(tree, 'code', (node: Code, index, parent: Parent) => {
