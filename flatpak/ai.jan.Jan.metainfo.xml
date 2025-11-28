@@ -39,6 +39,32 @@
   </description>
 
   <launchable type="desktop-id">ai.jan.Jan.desktop</launchable>
+  <screenshots>
+  <screenshot>
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_1.png</image>
+    <caption>Blank Jan page with 0 threads</caption>
+  </screenshot>
+  <screenshot type="default">
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_2.png</image>
+    <caption>Jan using a search MCP to gather information</caption>
+  </screenshot>
+  <screenshot>
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_3.png</image>
+    <caption>Assistant creation screen</caption>
+  </screenshot>
+  <screenshot>
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_4.png</image>
+    <caption>Jan Hub</caption>
+  </screenshot>
+  <screenshot>
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_5.png</image>
+    <caption>Llama.cpp screen showcasing the models</caption>
+  </screenshot>
+  <screenshot>
+    <image>https://catalog.jan.ai/flatpak/jan_screenshot_6.png</image>
+    <caption>MCP Settings</caption>
+  </screenshot>
+</screenshots>
 
   <url type="homepage">https://jan.ai/</url>
   <url type="bugtracker">https://github.com/janhq/jan/issues</url>
@@ -48,7 +74,7 @@
   <releases>
     <release version="0.7.3" date="2025-11-13">
       <description>
-        <p>Latest stable release of Jan.</p>
+        <p>Enhanced Browser Control and Smarter Interactions</p>
       </description>
     </release>
   </releases>
