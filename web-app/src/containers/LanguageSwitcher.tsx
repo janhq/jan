@@ -9,18 +9,18 @@ import {
 import { cn } from '@/lib/utils'
 
 const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'fr', label: 'Français' },
-  { value: 'id', label: 'Bahasa' },
-  { value: 'pl', label: 'Polski' },
-  { value: 'vn', label: 'Tiếng Việt' },
-  { value: 'zh-CN', label: '简体中文' },
-  { value: 'zh-TW', label: '繁體中文' },
-  { value: 'de-DE', label: 'Deutsch' },
-  { value: 'cs', label: 'Čeština' },
-  { value: 'pt-BR', label: 'Português (Brasil)' },
-  { value: 'ja', label: '日本語' },
-  { value: 'ru', label: 'Русский' },
+  { value: 'en-US', label: 'English (English)' },
+  { value: 'zh-CN', label: 'Chinese Simplified (简体中文)' },
+  { value: 'zh-TW', label: 'Chinese Traditional (繁體中文)' },
+  { value: 'cs-CZ', label: 'Czech (Čeština)' },
+  { value: 'fr-FR', label: 'French (Français)' },
+  { value: 'de-DE', label: 'German (Deutsch)' },
+  { value: 'id-ID', label: 'Indonesian (Bahasa Indonesia)' },
+  { value: 'ja-JP', label: 'Japanese (日本語)' },
+  { value: 'pl-PL', label: 'Polish (Polski)' },
+  { value: 'pt-BR', label: 'Portuguese Brazilian (Português do Brasil)' },
+  { value: 'ru-RU', label: 'Russian (Русский)' },
+  { value: 'vi-VN', label: 'Vietnamese (Tiếng Việt)' },
 ]
 
 export default function LanguageSwitcher() {
