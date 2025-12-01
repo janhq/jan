@@ -1,1 +1,5 @@
 export { default } from './provider'
+export { groupModelsByCategory } from './helpers'
+export type { GroupedModels } from './helpers'
+export type { JanModel } from './types'
+export type { JanChatCompletionRequest, JanChatCompletionResponse, JanChatMessage } from './api'
