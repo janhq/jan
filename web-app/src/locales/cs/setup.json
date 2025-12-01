@@ -1,6 +1,12 @@
 {
-  "welcome": "Welcome to Jan",
-  "description": "To get started, you'll need to either download a local AI model or connect to a cloud model using an API key",
-  "localModel": "Set up local model",
-  "remoteProvider": "Set up remote provider"
+  "welcome": "Vítejte v Jan",
+  "description": "Chcete-li začít, rychle spusťte Jan Model nebo si vyberte vlastního místního nebo vzdáleného poskytovatele",
+  "descriptionWeb": "Chcete-li začít, budete se muset připojit ke cloudovému modelu pomocí klíče API",
+  "quickStart": "Rychlý start s Jan Model",
+  "quickStartDescription": "Začněte okamžitě chatovat s naším doporučeným modelem",
+  "downloading": "Stahování Jan Model...",
+  "downloadingDescription": "Počkejte prosím, než stáhneme model. Může to trvat několik minut.",
+  "orDivider": "nebo",
+  "localModel": "Nastavit místní model",
+  "remoteProvider": "Nastavit vzdáleného poskytovatele"
 }

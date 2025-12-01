@@ -27,12 +27,11 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type SearchParams = {
   repo: string
 }
-
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetail,
@@ -431,7 +430,7 @@ function HubModelDetailContent() {
                                   model={modelData}
                                   variant={variant}
                                   defaultModelQuantizations={
-                                    defaultModelQuantizations
+                                    DEFAULT_MODEL_QUANTIZATIONS
                                   }
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
