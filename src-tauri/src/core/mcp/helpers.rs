@@ -24,6 +24,13 @@ use crate::core::{
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
+/// State container for restart loop operations
+pub struct RestartLoopState {
+    pub restart_counts: Arc<Mutex<HashMap<String, u32>>>,
+    pub successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
+    pub mcp_settings: Arc<Mutex<McpSettings>>,
+}
+
 /// Calculate exponential backoff delay with jitter
 ///
 /// # Arguments
@@ -291,17 +298,20 @@ pub async fn start_mcp_server_with_restart<R: Runtime>(
 
             if was_verified {
                 // Only spawn monitoring task if server passed verification
+                let restart_state = RestartLoopState {
+                    restart_counts,
+                    successfully_connected,
+                    mcp_settings,
+                };
                 spawn_server_monitoring_task(
                     app,
                     servers_state,
                     name,
-                config,
-                max_restarts,
-                restart_counts,
-                successfully_connected,
-                mcp_settings,
-            )
-            .await;
+                    config,
+                    max_restarts,
+                    restart_state,
+                )
+                .await;
 
                 Ok(())
             } else {
@@ -328,13 +338,11 @@ pub async fn start_restart_loop<R: Runtime>(
     name: String,
     config: Value,
     max_restarts: u32,
-    restart_counts: Arc<Mutex<HashMap<String, u32>>>,
-    successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
-    mcp_settings: Arc<Mutex<McpSettings>>,
+    state: RestartLoopState,
 ) {
     loop {
         let current_restart_count = {
-            let mut counts = restart_counts.lock().await;
+            let mut counts = state.restart_counts.lock().await;
             let count = counts.entry(name.clone()).or_insert(0);
             *count += 1;
             *count
@@ -362,7 +370,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
         // Calculate exponential backoff delay
         let settings_snapshot = {
-            let settings_guard = mcp_settings.lock().await;
+            let settings_guard = state.mcp_settings.lock().await;
             settings_guard.clone()
         };
         let delay_ms =
@@ -387,7 +395,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
                 // Check if server passed verification (was marked as successfully connected)
                 let passed_verification = {
-                    let connected = successfully_connected.lock().await;
+                    let connected = state.successfully_connected.lock().await;
                     connected.get(&name).copied().unwrap_or(false)
                 };
 
@@ -400,7 +408,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
                 // Reset restart count on successful restart with verification
                 {
-                    let mut counts = restart_counts.lock().await;
+                    let mut counts = state.restart_counts.lock().await;
                     if let Some(count) = counts.get_mut(&name) {
                         if *count > 0 {
                             log::info!(
@@ -419,7 +427,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
                 // Check if server was marked as successfully connected
                 let was_connected = {
-                    let connected = successfully_connected.lock().await;
+                    let connected = state.successfully_connected.lock().await;
                     connected.get(&name).copied().unwrap_or(false)
                 };
 
@@ -453,7 +461,7 @@ pub async fn start_restart_loop<R: Runtime>(
 
                 // Check if server was marked as successfully connected before
                 let was_connected = {
-                    let connected = successfully_connected.lock().await;
+                    let connected = state.successfully_connected.lock().await;
                     connected.get(&name).copied().unwrap_or(false)
                 };
 
@@ -1077,15 +1085,14 @@ pub async fn spawn_server_monitoring_task<R: Runtime>(
     name: String,
     config: Value,
     max_restarts: u32,
-    restart_counts: Arc<Mutex<HashMap<String, u32>>>,
-    successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
-    mcp_settings: Arc<Mutex<McpSettings>>,
+    state: RestartLoopState,
 ) {
     let app_clone = app.clone();
     let servers_clone = servers_state.clone();
     let name_clone = name.clone();
     let config_clone = config.clone();
-    let mcp_settings_clone = mcp_settings.clone();
+    let successfully_connected_clone = state.successfully_connected.clone();
+    let restart_state = state;
 
     tauri::async_runtime::spawn(async move {
         // Monitor the server using RunningService's JoinHandle<QuitReason>
@@ -1097,7 +1104,7 @@ pub async fn spawn_server_monitoring_task<R: Runtime>(
         );
 
         // Check if we should restart based on connection status and quit reason
-        if should_restart_server(&successfully_connected, &name_clone, &quit_reason).await {
+        if should_restart_server(&successfully_connected_clone, &name_clone, &quit_reason).await {
             // Start the restart loop
             start_restart_loop(
                 app_clone,
@@ -1105,9 +1112,7 @@ pub async fn spawn_server_monitoring_task<R: Runtime>(
                 name_clone,
                 config_clone,
                 max_restarts,
-                restart_counts,
-                successfully_connected,
-                mcp_settings_clone.clone(),
+                restart_state,
             )
             .await;
         }

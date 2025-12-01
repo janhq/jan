@@ -6,15 +6,22 @@ on:
       version:
         description: 'Version to build. For example: 0.6.8'
         required: false
+      public_provider:
+        type: choice
+        description: 'Public Provider'
+        options:
+          - none
+          - aws-s3
+        default: none
 
 jobs:
-
-  build-linux-x64:
+  build-linux-x64-flatpak:
     uses: ./.github/workflows/template-tauri-build-linux-x64-flatpak.yml
     secrets: inherit
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     with:
       ref: ${{ github.ref }}
-      public_provider: none
-      channel: stable
+      public_provider: ${{ inputs.public_provider }}
       new_version: ${{ inputs.version }}
+      channel: stable
       disable_updater: true
