@@ -129,13 +129,13 @@ function SetupScreen() {
 
       if (
         supportCheckInProgress.current ||
-        checkedModelId.current === janModelV2.model_id
+        checkedModelId.current === janModelV2.model_name
       ) {
         return
       }
 
       supportCheckInProgress.current = true
-      checkedModelId.current = janModelV2.model_id
+      checkedModelId.current = janModelV2.model_name
       setIsSupportCheckComplete(false)
 
       const variantSupportMap = new Map<
@@ -186,7 +186,7 @@ function SetupScreen() {
     }
 
     checkModelSupport()
-  }, [janModelV2])
+  }, [janModelV2, serviceHub])
 
   useEffect(() => {
     fetchJanModel()
