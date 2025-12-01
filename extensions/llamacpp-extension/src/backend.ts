@@ -278,11 +278,14 @@ export async function downloadBackend(
       ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
       : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
 
+  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
+
   const downloadItems = [
     {
       url: backendUrl,
       save_path: await joinPath([backendDir, 'backend.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     },
   ]
 
@@ -298,6 +301,7 @@ export async function downloadBackend(
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     })
   } else if (
     (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
@@ -310,6 +314,7 @@ export async function downloadBackend(
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     })
   } else if (
     backend.includes('cuda-13') &&
@@ -322,10 +327,9 @@ export async function downloadBackend(
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     })
   }
-
-  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
   console.log(
