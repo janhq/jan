@@ -430,8 +430,6 @@ function ProviderDetail() {
                             controllerType={setting.controller_type}
                             controllerProps={setting.controller_props}
                             className={cn(
-                              setting.key === 'api-key' &&
-                              'third-step-setup-remote-provider',
                               setting.key === 'device' && 'hidden'
                             )}
                             onChange={(newValue) => {
@@ -541,10 +539,6 @@ function ProviderDetail() {
                                       {...props}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className={cn(
-                                        setting.key === 'api-key' &&
-                                        'second-step-setup-remote-provider'
-                                      )}
                                     />
                                   )
                                 },
