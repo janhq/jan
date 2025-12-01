@@ -12,6 +12,10 @@ export interface JanModel {
   created?: number
   capabilities: string[]
   supportedParameters?: string[]
+  model_display_name?: string
+  category?: string
+  category_order_number?: number
+  model_order_number?: number
 }
 
 export interface JanProviderState {
@@ -79,7 +83,7 @@ export const janProviderStore = {
   getState: useJanProviderStore.getState,
   setState: useJanProviderStore.setState,
   subscribe: useJanProviderStore.subscribe,
-  
+
   // Direct action methods
   setAuthenticated: (isAuthenticated: boolean) =>
     useJanProviderStore.getState().setAuthenticated(isAuthenticated),

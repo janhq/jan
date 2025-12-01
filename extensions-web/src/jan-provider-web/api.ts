@@ -46,6 +46,10 @@ interface JanModelSummary {
   object: string
   owned_by: string
   created?: number
+  model_display_name?: string
+  category?: string
+  category_order_number?: number
+  model_order_number?: number
 }
 
 interface JanModelsResponse {
@@ -180,6 +184,10 @@ export class JanApiClient {
               created: summary.created,
               capabilities,
               supportedParameters,
+              model_display_name: summary.model_display_name,
+              category: summary.category,
+              category_order_number: summary.category_order_number,
+              model_order_number: summary.model_order_number,
             }
           })
         )
@@ -196,7 +204,7 @@ export class JanApiClient {
       this.modelsFetchPromise = null
 
       const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to fetch models'
+        error instanceof Error ? error.message : 'Failed to fetch models'
       janProviderStore.setError(errorMessage)
       janProviderStore.setLoadingModels(false)
       throw error
@@ -222,7 +230,7 @@ export class JanApiClient {
       )
     } catch (error) {
       const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to create chat completion'
+        error instanceof Error ? error.message : 'Failed to create chat completion'
       janProviderStore.setError(errorMessage)
       throw error
     }
@@ -263,17 +271,17 @@ export class JanApiClient {
 
       try {
         let buffer = ''
-        
+
         while (true) {
           const { done, value } = await reader.read()
-          
+
           if (done) {
             break
           }
 
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
-          
+
           // Keep the last incomplete line in buffer
           buffer = lines.pop() || ''
 
@@ -281,7 +289,7 @@ export class JanApiClient {
             const trimmedLine = line.trim()
             if (trimmedLine.startsWith('data: ')) {
               const data = trimmedLine.slice(6).trim()
-              
+
               if (data === '[DONE]') {
                 onComplete?.()
                 return
@@ -303,7 +311,7 @@ export class JanApiClient {
       }
     } catch (error) {
       const err = error instanceof ApiError ? error :
-                 error instanceof Error ? error : new Error('Unknown error occurred')
+        error instanceof Error ? error : new Error('Unknown error occurred')
       janProviderStore.setError(err.message)
       onError?.(err)
       throw err
@@ -318,7 +326,7 @@ export class JanApiClient {
       console.log('Jan API client initialized successfully')
     } catch (error) {
       const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to initialize API client'
+        error instanceof Error ? error.message : 'Failed to initialize API client'
       janProviderStore.setError(errorMessage)
       throw error
     } finally {
@@ -369,7 +377,7 @@ export class JanApiClient {
       capabilities.add('tools')
     }
 
-     if (parameters.includes('vision')) {
+    if (parameters.includes('vision')) {
       capabilities.add('vision')
     }
 

@@ -120,3 +120,80 @@ export function syncJanModelsLocalStorage(
 
   return storageUpdated
 }
+
+export interface GroupedModels {
+  category: string
+  categoryOrderNumber: number
+  models: JanModel[]
+}
+
+/**
+ * Groups models by category and sorts them by category_order_number.
+ * Within each category, models are sorted by model_order_number.
+ * 
+ * @param models - Array of JanModel objects to group and sort
+ * @returns Array of GroupedModels, sorted by category_order_number
+ */
+export function groupModelsByCategory(models: JanModel[]): GroupedModels[] {
+  // Group models by category
+  const categoryMap = new Map<string, JanModel[]>()
+
+  for (const model of models) {
+    const category = model.category ?? 'uncategorized'
+    if (!categoryMap.has(category)) {
+      categoryMap.set(category, [])
+    }
+    categoryMap.get(category)!.push(model)
+  }
+
+  // Convert to array and sort categories
+  const groupedModels: GroupedModels[] = Array.from(categoryMap.entries()).map(
+    ([category, categoryModels]) => {
+      // Sort models within category by model_order_number
+      const sortedModels = [...categoryModels].sort((a, b) => {
+        const orderA = a.model_order_number ?? Number.MAX_SAFE_INTEGER
+        const orderB = b.model_order_number ?? Number.MAX_SAFE_INTEGER
+        return orderA - orderB
+      })
+
+      // Get category order number from first model (all models in same category should have same value)
+      const categoryOrderNumber = categoryModels[0]?.category_order_number ?? Number.MAX_SAFE_INTEGER
+
+      return {
+        category,
+        categoryOrderNumber,
+        models: sortedModels,
+      }
+    }
+  )
+
+  // Sort categories by category_order_number
+  groupedModels.sort((a, b) => a.categoryOrderNumber - b.categoryOrderNumber)
+
+  return groupedModels
+}
+
+/**
+ * Gets a flat list of models sorted by category_order_number and model_order_number.
+ * 
+ * @param models - Array of JanModel objects to sort
+ * @returns Sorted array of JanModel objects
+ */
+export function sortModelsByCategoryAndOrder(models: JanModel[]): JanModel[] {
+  return [...models].sort((a, b) => {
+    // First sort by category_order_number
+    const categoryOrderA = a.category_order_number ?? Number.MAX_SAFE_INTEGER
+    const categoryOrderB = b.category_order_number ?? Number.MAX_SAFE_INTEGER
+
+    if (categoryOrderA !== categoryOrderB) {
+      return categoryOrderA - categoryOrderB
+    }
+
+    // Then sort by model_order_number within the same category
+    const modelOrderA = a.model_order_number ?? Number.MAX_SAFE_INTEGER
+    const modelOrderB = b.model_order_number ?? Number.MAX_SAFE_INTEGER
+
+    return modelOrderA - modelOrderB
+  })
+}
+

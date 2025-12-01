@@ -27,7 +27,9 @@ export function basenameNoExt(filePath: string): string {
  * Get the display name for a model, falling back to the model ID if no display name is set
  */
 export function getModelDisplayName(model: Model): string {
-  return model.displayName || model.id
+  // Prefer explicitly set displayName, then API-provided model_display_name, then model name, then id
+  const apiDisplayName = (model as any)?.model_display_name as string | undefined
+  return model.displayName || apiDisplayName || model.name || model.id
 }
 
 export function getProviderLogo(provider: string) {

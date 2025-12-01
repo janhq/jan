@@ -79,7 +79,8 @@ export default class JanProviderWeb extends AIEngine {
         model
           ? {
               id: model.id,
-              name: model.id, // Use ID as name for now
+              name: model.model_display_name || model.id,
+              displayName: model.model_display_name || model.id,
               quant_type: undefined,
               providerId: this.provider,
               port: 443, // HTTPS port for API
@@ -88,6 +89,10 @@ export default class JanProviderWeb extends AIEngine {
               path: undefined, // Remote model, no local path
               owned_by: model.owned_by,
               object: model.object,
+              category: model.category,
+              category_order_number: model.category_order_number,
+              model_order_number: model.model_order_number,
+              model_display_name: model.model_display_name,
               capabilities: [...model.capabilities],
             }
           : undefined
@@ -100,7 +105,10 @@ export default class JanProviderWeb extends AIEngine {
 
       return janModels.map((model) => ({
         id: model.id,
-        name: model.id, // Use ID as name for now
+        // Prefer server-provided display name for UI selection; fallback to id
+        name: model.model_display_name || model.id,
+        // Preserve a dedicated displayName field so downstream mappers can pick it up
+        displayName: model.model_display_name || model.id,
         quant_type: undefined,
         providerId: this.provider,
         port: 443, // HTTPS port for API
@@ -110,6 +118,10 @@ export default class JanProviderWeb extends AIEngine {
         owned_by: model.owned_by,
         object: model.object,
         capabilities: [...model.capabilities],
+        category: model.category,
+        category_order_number: model.category_order_number,
+        model_order_number: model.model_order_number,
+        model_display_name: model.model_display_name,
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)

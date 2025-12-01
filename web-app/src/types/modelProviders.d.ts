@@ -34,6 +34,11 @@ type Model = {
   format?: string
   capabilities?: string[]
   settings?: Record<string, ProviderSetting>
+  // Additional metadata (primarily from Jan provider)
+  category?: string
+  category_order_number?: number
+  model_order_number?: number
+  model_display_name?: string
 }
 
 /**

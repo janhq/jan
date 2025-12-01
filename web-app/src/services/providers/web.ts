@@ -37,12 +37,26 @@ export class WebProvidersService implements ProvidersService {
         }) as ProviderSetting[],
         models: await Promise.all(
           models.map(
-            async (model) =>
-              ({
+            async (model) => {
+              const displayName =
+                (model as any)?.displayName ||
+                (model as any)?.model_display_name ||
+                model.name ||
+                model.id
+              const category = (model as any)?.category
+              const categoryOrder = (model as any)?.category_order_number
+              const modelOrder = (model as any)?.model_order_number
+
+              return {
                 id: model.id,
                 model: model.id,
                 name: model.name,
+                displayName,
                 description: model.description,
+                category,
+                category_order_number: categoryOrder,
+                model_order_number: modelOrder,
+                model_display_name: (model as any)?.model_display_name,
                 capabilities:
                   'capabilities' in model
                     ? (model.capabilities as string[])
@@ -67,7 +81,8 @@ export class WebProvidersService implements ProvidersService {
                   },
                   {} as Record<string, ProviderSetting>
                 ),
-              }) as Model
+              } as Model
+            }
           )
         ),
       }

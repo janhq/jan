@@ -10,6 +10,23 @@ export { default as JanProviderWeb } from './jan-provider-web'
 export { default as MCPExtensionWeb } from './mcp-web'
 export { default as ProjectExtensionWeb } from './project-web'
 
+// Re-export jan-provider-web functionality
+export {
+  groupModelsByCategory,
+  sortModelsByCategoryAndOrder,
+  useJanProviderStore,
+  janProviderStore,
+  janApiClient,
+} from './jan-provider-web'
+
+export type {
+  GroupedModels,
+  JanModel,
+  JanChatCompletionRequest,
+  JanChatCompletionResponse,
+  JanChatMessage,
+} from './jan-provider-web'
+
 // Re-export auth functionality
 export {
   JanAuthService,
