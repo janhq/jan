@@ -20,29 +20,36 @@ const formatBytes = (bytes?: number) => {
 
 export default function AttachmentIngestionDialog() {
   const { t } = useTranslation()
-  const { isModalOpen, attachments, choose, cancel } = useAttachmentIngestionPrompt()
+  const { isModalOpen, currentAttachment, currentIndex, totalCount, choose, cancel } = useAttachmentIngestionPrompt()
 
-  if (!isModalOpen) return null
+  if (!isModalOpen || !currentAttachment) return null
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && cancel()}>
       <DialogContent onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>{t('common:attachmentsIngestion.title')}</DialogTitle>
+          <DialogTitle>
+            {t('common:attachmentsIngestion.title')}
+            {totalCount > 1 && (
+              <span className="text-sm font-normal text-main-view-fg/70 ml-2">
+                ({currentIndex + 1} of {totalCount})
+              </span>
+            )}
+          </DialogTitle>
           <DialogDescription>
             {t('common:attachmentsIngestion.description')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="border border-main-view-fg/10 rounded-md p-3 bg-main-view/40 space-y-2">
-          {attachments.map((att) => (
-            <div className="flex items-center justify-between gap-2" key={att.name}>
-              <span className="truncate" title={att.name}>
-                {att.name}
-              </span>
-              <span className="text-xs text-main-view-fg/70">{formatBytes(att.size)}</span>
-            </div>
-          ))}
+        <div className="border border-main-view-fg/10 rounded-md p-3 bg-main-view/40">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate font-medium" title={currentAttachment.name}>
+              {currentAttachment.name}
+            </span>
+            <span className="text-xs text-main-view-fg/70 flex-shrink-0">
+              {formatBytes(currentAttachment.size)}
+            </span>
+          </div>
         </div>
 
         <DialogFooter className="flex gap-2 sm:justify-end">

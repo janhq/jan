@@ -20,6 +20,7 @@ type AttachmentProcessingOptions = {
   estimateTokens?: (text: string) => Promise<number | undefined>
   parsePreference: 'auto' | 'inline' | 'embeddings' | 'prompt'
   autoFallbackMode?: 'inline' | 'embeddings'
+  perFileChoices?: Map<string, 'inline' | 'embeddings'>
   updateAttachmentProcessing?: (name: string, status: AttachmentProcessingStatus) => void
 }
 
@@ -39,6 +40,7 @@ export const processAttachmentsForSend = async (
     estimateTokens,
     parsePreference,
     autoFallbackMode,
+    perFileChoices,
     updateAttachmentProcessing,
   } = options
 
@@ -113,8 +115,12 @@ export const processAttachmentsForSend = async (
         }
 
         if (targetPreference === 'auto') {
-          targetMode = autoFallbackMode ?? 'embeddings'
-          if (parsedContent && estimateTokens) {
+          // Check if user made a per-file choice for this document
+          const userChoice = perFileChoices?.get(doc.path || '')
+          targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
+
+          // Only do auto-detection if no user choice was made
+          if (!userChoice && parsedContent && estimateTokens) {
             const tokenCount = await estimateTokens(parsedContent)
             if (!contextThreshold) {
               console.debug(
@@ -127,17 +133,19 @@ export const processAttachmentsForSend = async (
                 `Attachment ${doc.name}: token estimate missing; defaulting to ${targetMode}`
               )
             }
-          } else if (!parsedContent) {
+          } else if (!userChoice && !parsedContent) {
             console.debug(
               `Attachment ${doc.name}: parsed content unavailable for token estimation; defaulting to ${targetMode}`
             )
-          } else {
+          } else if (!userChoice) {
             console.debug(
               `Attachment ${doc.name}: token estimator unavailable; defaulting to ${targetMode}`
             )
           }
         } else if (targetPreference === 'prompt') {
-          targetMode = autoFallbackMode ?? 'embeddings'
+          // Check if user made a per-file choice for this document
+          const userChoice = perFileChoices?.get(doc.path || '')
+          targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
         }
 
         if (targetMode === 'inline' && parsedContent) {

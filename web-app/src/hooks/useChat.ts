@@ -520,13 +520,24 @@ export const useChat = () => {
         return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
       })
 
-      let autoFallbackMode: 'inline' | 'embeddings' | undefined
+      // Map to store individual choices for each document
+      const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
       if (docsNeedingPrompt.length > 0) {
-        const choice = await useAttachmentIngestionPrompt
-          .getState()
-          .showPrompt(docsNeedingPrompt, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES)
-        if (!choice) return
-        autoFallbackMode = choice
+        // Ask for each file individually
+        for (let i = 0; i < docsNeedingPrompt.length; i++) {
+          const doc = docsNeedingPrompt[i]
+          const choice = await useAttachmentIngestionPrompt
+            .getState()
+            .showPrompt(doc, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES, i, docsNeedingPrompt.length)
+
+          if (!choice) return
+
+          // Store the choice for this specific document
+          if (doc.path) {
+            docChoices.set(doc.path, choice)
+          }
+        }
       }
 
       const estimateTokens = async (text: string): Promise<number | undefined> => {
@@ -569,7 +580,7 @@ export const useChat = () => {
           contextThreshold,
           estimateTokens,
           parsePreference,
-          autoFallbackMode,
+          perFileChoices: docChoices.size > 0 ? docChoices : undefined,
           updateAttachmentProcessing,
         })
         processedAttachments = result.processedAttachments

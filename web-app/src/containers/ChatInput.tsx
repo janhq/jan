@@ -58,6 +58,10 @@ import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import {
+  NEW_THREAD_ATTACHMENT_KEY,
+  useChatAttachments,
+} from '@/hooks/useChatAttachments'
 
 import {
   Attachment,
@@ -116,7 +120,6 @@ const ChatInput = ({
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
@@ -134,37 +137,84 @@ const ChatInput = ({
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
   // Derived: any document currently processing (ingestion in progress)
+  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  const attachments = useChatAttachments(
+    useCallback((state) => state.getAttachments(attachmentsKey), [attachmentsKey])
+  )
+  const attachmentsKeyRef = useRef(attachmentsKey)
+  const setAttachmentsForThread = useChatAttachments(
+    (state) => state.setAttachments
+  )
+  const clearAttachmentsForThread = useChatAttachments(
+    (state) => state.clearAttachments
+  )
+  const transferAttachments = useChatAttachments(
+    (state) => state.transferAttachments
+  )
+
+  useEffect(() => {
+    attachmentsKeyRef.current = attachmentsKey
+  }, [attachmentsKey])
+
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+
+  const lastTransferredThreadId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (currentThreadId && lastTransferredThreadId.current !== currentThreadId) {
+      transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
+      lastTransferredThreadId.current = currentThreadId
+    }
+  }, [currentThreadId, transferAttachments])
 
   const updateAttachmentProcessing = useCallback(
     (
       fileName: string,
       status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
     ) => {
-      if (status === 'clear_docs') {
-        setAttachments((prev) => prev.filter((a) => a.type !== 'document'))
-        return
-      }
-      if (status === 'clear_all') {
-        setAttachments([])
-        return
-      }
-      setAttachments((prev) =>
-        prev.map((att) =>
-          att.name === fileName
-            ? {
-                ...att,
-                processing: status === 'processing',
-                processed: status === 'done' ? true : att.processed,
-              }
-            : att
+      const targetKey = attachmentsKeyRef.current
+      const storeState = useChatAttachments.getState()
+
+      // Find all keys that have this attachment (including NEW_THREAD_ATTACHMENT_KEY)
+      const allMatchingKeys = Object.entries(storeState.attachmentsByThread)
+        .filter(([_, list]) => list?.some((att) => att.name === fileName))
+        .map(([key]) => key)
+
+      // Always include targetKey and all matching keys
+      const keysToUpdate = new Set([targetKey, ...allMatchingKeys])
+
+      const applyUpdate = (key: string) => {
+        if (status === 'clear_docs') {
+          setAttachmentsForThread(key, (prev) =>
+            prev.filter((a) => a.type !== 'document')
+          )
+          return
+        }
+
+        if (status === 'clear_all') {
+          clearAttachmentsForThread(key)
+          return
+        }
+
+        setAttachmentsForThread(key, (prev) =>
+          prev.map((att) =>
+            att.name === fileName
+              ? {
+                  ...att,
+                  processing: status === 'processing',
+                  processed: status === 'done' ? true : att.processed,
+                }
+              : att
+          )
         )
-      )
+      }
+
+      keysToUpdate.forEach((key) => applyUpdate(key as string))
     },
-    []
+    [clearAttachmentsForThread, setAttachmentsForThread]
   )
 
   // Check for mmproj existence or vision capability when model changes
@@ -202,6 +252,10 @@ const ChatInput = ({
       return
     }
     if (!prompt.trim()) {
+      return
+    }
+    if (ingestingAny) {
+      toast.info('Please wait for attachments to finish processing')
       return
     }
 
@@ -307,23 +361,35 @@ const ChatInput = ({
         return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
       })
 
-      let autoFallbackMode: 'inline' | 'embeddings' | undefined
+      // Map to store individual choices for each document
+      const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
       if (docsNeedingPrompt.length > 0) {
-        const choice = await useAttachmentIngestionPrompt
-          .getState()
-          .showPrompt(docsNeedingPrompt, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES)
-        if (!choice) {
-          setAttachments((prev) =>
-            prev.filter(
-              (att) =>
-                !docsNeedingPrompt.some(
-                  (doc) => doc.path && att.path && doc.path === att.path
-                )
+        // Ask for each file individually
+        for (let i = 0; i < docsNeedingPrompt.length; i++) {
+          const doc = docsNeedingPrompt[i]
+          const choice = await useAttachmentIngestionPrompt
+            .getState()
+            .showPrompt(doc, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES, i, docsNeedingPrompt.length)
+
+          if (!choice) {
+            // User cancelled - remove all pending docs
+            setAttachmentsForThread(attachmentsKey, (prev) =>
+              prev.filter(
+                (att) =>
+                  !docsNeedingPrompt.some(
+                    (doc) => doc.path && att.path && doc.path === att.path
+                  )
+              )
             )
-          )
-          return
+            return
+          }
+
+          // Store the choice for this specific document
+          if (doc.path) {
+            docChoices.set(doc.path, choice)
+          }
         }
-        autoFallbackMode = choice
       }
 
       const estimateTokens = async (text: string): Promise<number | undefined> => {
@@ -365,12 +431,12 @@ const ChatInput = ({
             contextThreshold,
             estimateTokens,
             parsePreference,
-            autoFallbackMode,
+            perFileChoices: docChoices.size > 0 ? docChoices : undefined,
             updateAttachmentProcessing,
           })
 
         if (processedAttachments.length > 0) {
-          setAttachments((prev) =>
+          setAttachmentsForThread(attachmentsKey, (prev) =>
             prev.map((att) => {
               const match = processedAttachments.find(
                 (p) => p.path && att.path && p.path === att.path
@@ -462,7 +528,7 @@ const ChatInput = ({
       let duplicates: string[] = []
       let newDocAttachments: Attachment[] = []
 
-      setAttachments((currentAttachments) => {
+      setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
         const existingPaths = new Set(
           currentAttachments
             .filter((a) => a.type === 'document' && a.path)
@@ -480,10 +546,9 @@ const ChatInput = ({
           newDocAttachments.push(att)
         }
 
-        if (newDocAttachments.length > 0) {
-          return [...currentAttachments, ...newDocAttachments]
-        }
-        return currentAttachments
+        return newDocAttachments.length > 0
+          ? [...currentAttachments, ...newDocAttachments]
+          : currentAttachments
       })
 
       if (duplicates.length > 0) {
@@ -526,7 +591,9 @@ const ChatInput = ({
       }
     }
 
-    setAttachments((prev) => prev.filter((_, index) => index !== indexToRemove))
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      prev.filter((_, index) => index !== indexToRemove)
+    )
   }
 
   const getFileTypeFromExtension = (fileName: string): string => {
@@ -613,7 +680,7 @@ const ChatInput = ({
     let duplicates: string[] = []
     let newFiles: Attachment[] = []
 
-    setAttachments((currentAttachments) => {
+    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
       const existingImageNames = new Set(
         currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
       )
@@ -640,7 +707,7 @@ const ChatInput = ({
         for (const img of newFiles) {
           try {
             // Mark as processing
-            setAttachments((prev) =>
+            setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.map((a) =>
                 a.name === img.name && a.type === 'image'
                   ? { ...a, processing: true }
@@ -654,7 +721,7 @@ const ChatInput = ({
 
             if (result?.id) {
               // Mark as processed with ID
-              setAttachments((prev) =>
+              setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
                   a.name === img.name && a.type === 'image'
                     ? {
@@ -672,7 +739,7 @@ const ChatInput = ({
           } catch (error) {
             console.error('Failed to ingest image:', error)
             // Remove failed image
-            setAttachments((prev) =>
+            setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.filter((a) => !(a.name === img.name && a.type === 'image'))
             )
             toast.error(`Failed to ingest ${img.name}`, {
@@ -1007,7 +1074,7 @@ const ChatInput = ({
                       return (
                         <div
                           key={`${att.type}-${idx}-${att.name}`}
-                          className="relative flex w-20 flex-col items-center gap-1"
+                          className="relative"
                         >
                           <TooltipProvider>
                             <Tooltip>
@@ -1082,13 +1149,6 @@ const ChatInput = ({
                             </Tooltip>
                           </TooltipProvider>
 
-                          <div
-                            className="text-[11px] leading-tight px-1 text-center w-full truncate text-main-view-fg"
-                            title={att.name}
-                          >
-                            {att.name}
-                          </div>
-
                           {/* Remove button disabled while processing - outside overflow-hidden container */}
                           {!att.processing && (
                             <div
@@ -1128,7 +1188,7 @@ const ChatInput = ({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
-                  if (!streamingContent && prompt.trim()) {
+                  if (!streamingContent && prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
