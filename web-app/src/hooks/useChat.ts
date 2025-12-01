@@ -19,6 +19,7 @@ import {
   captureProactiveScreenshots,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   ChatCompletionMessageToolCall,
@@ -41,10 +42,10 @@ import {
 import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
 import { MCPTool } from '@/types/completion'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { useAttachmentIngestionPrompt } from './useAttachmentIngestionPrompt'
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -75,6 +76,8 @@ const cancelFrame = (handle: number | undefined) => {
     clearTimeout(handle)
   }
 }
+
+const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
 // Helper to finalize and save a message
 const finalizeMessage = (
@@ -481,118 +484,104 @@ export const useChat = () => {
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
+      let selectedModel = useModelProvider.getState().selectedModel
       let activeProvider = getProviderByName(selectedProvider)
 
       resetTokenSpeed()
       if (!activeThread || !activeProvider) return
 
-      // Separate images and documents
-      const fileAttachmentsFeatureEnabled =
-        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
       const allAttachments = attachments ?? []
+      const parsePreference = useAttachments.getState().parseMode
+      const autoInlineContextRatio = useAttachments.getState().autoInlineContextRatio
 
-      const images = allAttachments.filter((a) => a.type === 'image')
-      const documents = fileAttachmentsFeatureEnabled
-        ? allAttachments.filter((a) => a.type === 'document')
-        : []
+      const modelContextLength = (() => {
+        const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
+        if (typeof ctx === 'number') return ctx
+        if (typeof ctx === 'string') return parseInt(ctx)
+        return undefined
+      })()
 
-      // Process attachments BEFORE sending
-      const processedAttachments: Attachment[] = []
+      const contextThreshold =
+        typeof modelContextLength === 'number'
+          ? Math.floor(
+              modelContextLength *
+                (typeof autoInlineContextRatio === 'number'
+                  ? autoInlineContextRatio
+                  : 0.75)
+            )
+          : undefined
 
-      // 1) Images ingestion (placeholder/no-op for now)
-      // Track attachment ingestion; all must succeed before sending
+      const hasContextEstimate = typeof contextThreshold === 'number'
+      const docsNeedingPrompt = allAttachments.filter((doc) => {
+        if (doc.type !== 'document') return false
+        // Skip already processed/ingested documents to avoid repeated prompts
+        if (doc.processed || doc.injectionMode) return false
+        const preference = doc.parseMode ?? parsePreference
+        return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
+      })
 
-      if (images.length > 0) {
-        for (const img of images) {
-          try {
-            // Skip if already processed (ingested in ChatInput when thread existed)
-            if (img.processed && img.id) {
-              processedAttachments.push(img)
-              continue
-            }
+      let autoFallbackMode: 'inline' | 'embeddings' | undefined
+      if (docsNeedingPrompt.length > 0) {
+        const choice = await useAttachmentIngestionPrompt
+          .getState()
+          .showPrompt(docsNeedingPrompt, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES)
+        if (!choice) return
+        autoFallbackMode = choice
+      }
 
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'processing')
-            }
-            // Upload image, get id/URL
-            const res = await serviceHub
-              .uploads()
-              .ingestImage(activeThread.id, img)
-            processedAttachments.push({
-              ...img,
-              id: res.id,
-              processed: true,
-              processing: false,
-            })
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'done')
-            }
-          } catch (err) {
-            console.error(`Failed to ingest image ${img.name}:`, err)
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'error')
-            }
-            const desc = err instanceof Error ? err.message : String(err)
-            toast.error('Failed to ingest image attachment', {
-              description: desc,
-            })
-            return
-          }
+      const estimateTokens = async (text: string): Promise<number | undefined> => {
+        try {
+          if (!selectedModel?.id) return undefined
+          const tokenCount = await serviceHub
+            .models()
+            .getTokensCount(selectedModel.id, [
+              {
+                id: 'inline-attachment',
+                object: 'thread.message',
+                thread_id: activeThread.id,
+                role: 'user',
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: text, annotations: [] },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              } as ThreadMessage,
+            ])
+          return tokenCount
+        } catch (e) {
+          console.debug('Failed to estimate tokens for attachment content', e)
+          return undefined
         }
       }
 
-      if (documents.length > 0) {
-        try {
-          for (const doc of documents) {
-            // Skip if already processed (ingested in ChatInput when thread existed)
-            if (doc.processed && doc.id) {
-              processedAttachments.push(doc)
-              continue
-            }
+      let processedAttachments: Attachment[] = []
+      let hasEmbeddedDocuments = false
+      try {
+        const result = await processAttachmentsForSend({
+          attachments: allAttachments,
+          threadId: activeThread.id,
+          serviceHub,
+          selectedProvider,
+          contextThreshold,
+          estimateTokens,
+          parsePreference,
+          autoFallbackMode,
+          updateAttachmentProcessing,
+        })
+        processedAttachments = result.processedAttachments
+        hasEmbeddedDocuments = result.hasEmbeddedDocuments
+      } catch {
+        return
+      }
 
-            // Update UI to show spinner on this file
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(doc.name, 'processing')
-            }
-
-            try {
-              const res = await serviceHub
-                .uploads()
-                .ingestFileAttachment(activeThread.id, doc)
-
-              // Add processed document with ID
-              processedAttachments.push({
-                ...doc,
-                id: res.id,
-                size: res.size ?? doc.size,
-                chunkCount: res.chunkCount ?? doc.chunkCount,
-                processing: false,
-                processed: true,
-              })
-
-              // Update UI to show done state
-              if (updateAttachmentProcessing) {
-                updateAttachmentProcessing(doc.name, 'done')
-              }
-            } catch (err) {
-              console.error(`Failed to ingest ${doc.name}:`, err)
-              if (updateAttachmentProcessing) {
-                updateAttachmentProcessing(doc.name, 'error')
-              }
-              throw err // Re-throw to handle in outer catch
-            }
-          }
-          // Update thread since documents attached
-          useThreads.getState().updateThread(activeThread.id, {
-            metadata: { hasDocuments: true },
-          })
-        } catch (err) {
-          console.error('Failed to ingest documents:', err)
-          const desc = err instanceof Error ? err.message : String(err)
-          toast.error('Failed to index attachments', { description: desc })
-          // Don't continue with message send if ingestion failed
-          return
-        }
+      if (hasEmbeddedDocuments) {
+        useThreads.getState().updateThread(activeThread.id, {
+          metadata: { hasDocuments: true },
+        })
       }
 
       // All attachments prepared successfully
@@ -625,7 +614,7 @@ export const useChat = () => {
       }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
-      const selectedModel = useModelProvider.getState().selectedModel
+      selectedModel = useModelProvider.getState().selectedModel
 
       // If continuing, start with the previous content
       const accumulatedTextRef = {

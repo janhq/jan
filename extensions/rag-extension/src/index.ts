@@ -1,6 +1,7 @@
 import { RAGExtension, MCPTool, MCPToolCallResult, ExtensionTypeEnum, VectorDBExtension, type AttachmentInput, type SettingComponentProps, AIEngine, type AttachmentFileInfo } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
+import * as ragApi from '@janhq/tauri-plugin-rag-api'
 
 export default class RagExtension extends RAGExtension {
   private config = {
@@ -11,6 +12,8 @@ export default class RagExtension extends RAGExtension {
     overlapTokens: 64,
     searchMode: 'auto' as 'auto' | 'ann' | 'linear',
     maxFileSizeMB: 20,
+    parseMode: 'auto' as 'auto' | 'inline' | 'embeddings' | 'prompt',
+    autoInlineContextRatio: 0.75,
   }
 
   async onLoad(): Promise<void> {
@@ -23,6 +26,11 @@ export default class RagExtension extends RAGExtension {
     this.config.chunkSizeTokens = await this.getSetting('chunk_size_tokens', this.config.chunkSizeTokens)
     this.config.overlapTokens = await this.getSetting('overlap_tokens', this.config.overlapTokens)
     this.config.searchMode = await this.getSetting('search_mode', this.config.searchMode)
+    this.config.parseMode = await this.getSetting('parse_mode', this.config.parseMode)
+    this.config.autoInlineContextRatio = await this.getSetting(
+      'auto_inline_context_ratio',
+      this.config.autoInlineContextRatio
+    )
 
     // Check ANN availability on load
     try {
@@ -267,29 +275,39 @@ export default class RagExtension extends RAGExtension {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    switch (key) {
-      case 'enabled':
-        this.config.enabled = Boolean(value)
-        break
-      case 'max_file_size_mb':
-        this.config.maxFileSizeMB = Number(value)
-        break
-      case 'retrieval_limit':
-        this.config.retrievalLimit = Number(value)
-        break
-      case 'retrieval_threshold':
-        this.config.retrievalThreshold = Number(value)
-        break
-      case 'chunk_size_tokens':
-        this.config.chunkSizeTokens = Number(value)
-        break
-      case 'overlap_tokens':
-        this.config.overlapTokens = Number(value)
-        break
-      case 'search_mode':
-        this.config.searchMode = String(value) as 'auto' | 'ann' | 'linear'
-        break
-    }
+      switch (key) {
+        case 'enabled':
+          this.config.enabled = Boolean(value)
+          break
+        case 'max_file_size_mb':
+          this.config.maxFileSizeMB = Number(value)
+          break
+        case 'auto_inline_context_ratio':
+          this.config.autoInlineContextRatio = Number(value)
+          break
+        case 'retrieval_limit':
+          this.config.retrievalLimit = Number(value)
+          break
+        case 'retrieval_threshold':
+          this.config.retrievalThreshold = Number(value)
+          break
+        case 'chunk_size_tokens':
+          this.config.chunkSizeTokens = Number(value)
+          break
+        case 'overlap_tokens':
+          this.config.overlapTokens = Number(value)
+          break
+        case 'search_mode':
+          this.config.searchMode = String(value) as 'auto' | 'ann' | 'linear'
+          break
+        case 'parse_mode':
+          this.config.parseMode = String(value) as 'auto' | 'inline' | 'embeddings' | 'prompt'
+          break
+      }
+  }
+
+  async parseDocument(path: string, type?: string): Promise<string> {
+    return await ragApi.parseDocument(path, type || 'application/octet-stream')
   }
 
   // Locally implement embedding logic (previously in embeddings-extension)

@@ -12,6 +12,8 @@ export type AttachmentsSettings = {
   chunkSizeTokens: number
   overlapTokens: number
   searchMode: 'auto' | 'ann' | 'linear'
+  parseMode: 'auto' | 'inline' | 'embeddings' | 'prompt'
+  autoInlineContextRatio: number
 }
 
 type AttachmentsStore = AttachmentsSettings & {
@@ -25,6 +27,8 @@ type AttachmentsStore = AttachmentsSettings & {
   setChunkSizeTokens: (v: number) => void
   setOverlapTokens: (v: number) => void
   setSearchMode: (v: 'auto' | 'ann' | 'linear') => void
+  setParseMode: (v: 'auto' | 'inline' | 'embeddings' | 'prompt') => void
+  setAutoInlineContextRatio: (v: number) => void
 }
 
 const getRagExtension = (): RAGExtension | undefined => {
@@ -46,6 +50,8 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
   chunkSizeTokens: 512,
   overlapTokens: 64,
   searchMode: 'auto',
+  parseMode: 'auto',
+  autoInlineContextRatio: 0.75,
   settingsDefs: [],
   loadSettingsDefs: async () => {
     const ext = getRagExtension()
@@ -189,6 +195,40 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
       ),
     }))
   },
+  setParseMode: async (v) => {
+    if (!fileAttachmentsFeatureEnabled) return
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([
+        { key: 'parse_mode', controllerProps: { value: v } } as Partial<SettingComponentProps>,
+      ])
+    }
+    set((s) => ({
+      parseMode: v,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'parse_mode'
+          ? ({ ...d, controllerProps: { ...d.controllerProps, value: v } } as SettingComponentProps)
+          : d
+      ),
+    }))
+  },
+  setAutoInlineContextRatio: async (val) => {
+    if (!fileAttachmentsFeatureEnabled) return
+    const ext = getRagExtension()
+    if (ext?.updateSettings) {
+      await ext.updateSettings([
+        { key: 'auto_inline_context_ratio', controllerProps: { value: val } } as Partial<SettingComponentProps>,
+      ])
+    }
+    set((s) => ({
+      autoInlineContextRatio: val,
+      settingsDefs: s.settingsDefs.map((d) =>
+        d.key === 'auto_inline_context_ratio'
+          ? ({ ...d, controllerProps: { ...d.controllerProps, value: val } } as SettingComponentProps)
+          : d
+      ),
+    }))
+  },
 }))
 
 // Initialize from extension settings once on import
@@ -214,6 +254,10 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
       overlapTokens: (map.get('overlap_tokens') as number | undefined) ?? prev.overlapTokens,
       searchMode:
         (map.get('search_mode') as 'auto' | 'ann' | 'linear' | undefined) ?? prev.searchMode,
+      parseMode:
+        (map.get('parse_mode') as 'auto' | 'inline' | 'embeddings' | 'prompt' | undefined) ?? prev.parseMode,
+      autoInlineContextRatio:
+        (map.get('auto_inline_context_ratio') as number | undefined) ?? prev.autoInlineContextRatio,
     }))
   } catch (e) {
     console.debug('Failed to initialize attachment settings from extension:', e)

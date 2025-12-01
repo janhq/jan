@@ -371,5 +371,9 @@
       "title": "Conversa Removida",
       "description": "Conversa removida de \"{{projectName}}\" com sucesso"
     }
-  }
+  },
+  "attachmentInjectedIndicator": "Injected into chat",
+  "attachmentEmbeddedIndicator": "Embedded for RAG",
+  "viewInjectedContent": "View injected content",
+  "injectedContentTitle": "Injected file content"
 }

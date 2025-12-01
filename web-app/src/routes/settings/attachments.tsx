@@ -61,6 +61,8 @@ function AttachmentsSettings() {
       chunkSizeTokens: s.chunkSizeTokens,
       overlapTokens: s.overlapTokens,
       searchMode: s.searchMode,
+      parseMode: s.parseMode,
+      autoInlineContextRatio: s.autoInlineContextRatio,
       setEnabled: s.setEnabled,
       setMaxFileSizeMB: s.setMaxFileSizeMB,
       setRetrievalLimit: s.setRetrievalLimit,
@@ -68,6 +70,8 @@ function AttachmentsSettings() {
       setChunkSizeTokens: s.setChunkSizeTokens,
       setOverlapTokens: s.setOverlapTokens,
       setSearchMode: s.setSearchMode,
+      setParseMode: s.setParseMode,
+      setAutoInlineContextRatio: s.setAutoInlineContextRatio,
     }))
   )
 
@@ -99,9 +103,11 @@ function AttachmentsSettings() {
     }))
 
     // For non-numeric inputs, apply immediately without debounce
-    if (key === 'enabled' || key === 'search_mode') {
+    if (key === 'enabled' || key === 'search_mode' || key === 'parse_mode') {
       if (key === 'enabled') sel.setEnabled(!!val)
       else if (key === 'search_mode') sel.setSearchMode(val as 'auto' | 'ann' | 'linear')
+      else if (key === 'parse_mode')
+        sel.setParseMode(val as 'auto' | 'inline' | 'embeddings' | 'prompt')
       return
     }
 
@@ -109,12 +115,20 @@ function AttachmentsSettings() {
     timersRef.current[key] = setTimeout(() => {
       const currentStoreValue = (() => {
         switch (key) {
-          case 'max_file_size_mb': return sel.maxFileSizeMB
-          case 'retrieval_limit': return sel.retrievalLimit
-          case 'retrieval_threshold': return sel.retrievalThreshold
-          case 'chunk_size_tokens': return sel.chunkSizeTokens
-          case 'overlap_tokens': return sel.overlapTokens
-          default: return 0
+          case 'max_file_size_mb':
+            return sel.maxFileSizeMB
+          case 'retrieval_limit':
+            return sel.retrievalLimit
+          case 'retrieval_threshold':
+            return sel.retrievalThreshold
+          case 'chunk_size_tokens':
+            return sel.chunkSizeTokens
+          case 'overlap_tokens':
+            return sel.overlapTokens
+          case 'auto_inline_context_ratio':
+            return sel.autoInlineContextRatio
+          default:
+            return 0
         }
       })()
 
@@ -135,6 +149,9 @@ function AttachmentsSettings() {
           break
         case 'overlap_tokens':
           sel.setOverlapTokens(validated)
+          break
+        case 'auto_inline_context_ratio':
+          sel.setAutoInlineContextRatio(validated)
           break
       }
 
@@ -175,6 +192,10 @@ function AttachmentsSettings() {
                         return sel.overlapTokens
                       case 'search_mode':
                         return sel.searchMode
+                      case 'parse_mode':
+                        return sel.parseMode
+                      case 'auto_inline_context_ratio':
+                        return sel.autoInlineContextRatio
                       default:
                         return d?.controllerProps?.value
                     }

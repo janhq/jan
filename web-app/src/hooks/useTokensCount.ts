@@ -38,7 +38,10 @@ export const useTokensCount = (
   const { selectedModel, selectedProvider } = useModelProvider()
   const { prompt } = usePrompt()
 
-  // Create messages with current prompt for live calculation
+  // Create messages with current prompt for live calculation.
+  // This mirrors the payload sent to token counting by appending the draft
+  // user message (text plus any uploaded images) to the existing thread
+  // history so the model sees the full context that will be submitted.
   const messagesWithPrompt = useMemo(() => {
     const result = [...messages]
     if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {

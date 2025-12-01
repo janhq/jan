@@ -372,5 +372,9 @@
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
     }
-  }
+  },
+  "attachmentInjectedIndicator": "Injected into chat",
+  "attachmentEmbeddedIndicator": "Embedded for RAG",
+  "viewInjectedContent": "View injected content",
+  "injectedContentTitle": "Injected file content"
 }
