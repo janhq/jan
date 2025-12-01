@@ -180,7 +180,7 @@ const ChatInput = ({
 
       // Find all keys that have this attachment (including NEW_THREAD_ATTACHMENT_KEY)
       const allMatchingKeys = Object.entries(storeState.attachmentsByThread)
-        .filter(([_, list]) => list?.some((att) => att.name === fileName))
+        .filter(([, list]) => list?.some((att) => att.name === fileName))
         .map(([key]) => key)
 
       // Always include targetKey and all matching keys

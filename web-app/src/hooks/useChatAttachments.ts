@@ -36,6 +36,7 @@ export const useChatAttachments = create<AttachmentStore>()((set, get) => ({
   },
   clearAttachments: (threadId) => {
     set((state) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...rest } = state.attachmentsByThread
       return { attachmentsByThread: rest }
     })
