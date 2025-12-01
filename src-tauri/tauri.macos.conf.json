@@ -2,6 +2,9 @@
   "bundle": {
     "targets": ["app", "dmg"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"]
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
   }
 }
