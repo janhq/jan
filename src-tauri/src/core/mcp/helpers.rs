@@ -32,7 +32,7 @@ pub enum ShutdownContext {
 }
 
 impl ShutdownContext {
-    fn per_server_timeout(&self) -> Duration {
+    pub fn per_server_timeout(&self) -> Duration {
         match self {
             Self::AppExit => Duration::from_millis(500),
             Self::ManualRestart => Duration::from_secs(2),
@@ -40,7 +40,7 @@ impl ShutdownContext {
         }
     }
 
-    fn overall_timeout(&self) -> Duration {
+    pub fn overall_timeout(&self) -> Duration {
         match self {
             Self::AppExit => Duration::from_millis(1500),
             Self::ManualRestart => Duration::from_secs(5),
