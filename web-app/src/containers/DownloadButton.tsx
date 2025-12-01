@@ -11,12 +11,12 @@ import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type ModelProps = {
   model: CatalogModel
   handleUseModel: (modelId: string) => void
 }
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export function DownloadButtonPlaceholder({
   model,
@@ -40,7 +40,7 @@ export function DownloadButtonPlaceholder({
 
   const quant =
     model.quants.find((e) =>
-      defaultModelQuantizations.some((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
         e.model_id.toLowerCase().includes(m)
       )
     ) ?? model.quants[0]
