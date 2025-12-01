@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Vyberte poskytovatele",
-    "chooseProviderContent": "Vyberte poskytovatele, kterého chcete použít, ujistěte se, že máte přístup k API klíči pro něj.",
-    "getApiKeyTitle": "Získejte váš API klíč",
-    "getApiKeyContent": "Přihlaste se do dashboardu poskytovatele, abyste našli nebo vygenerovali váš API klíč.",
-    "insertApiKeyTitle": "Vložte váš API klíč",
-    "insertApiKeyContent": "Vložte váš API klíč sem pro připojení a aktivaci poskytovatele.",
-    "back": "Zpět",
-    "close": "Zavřít",
-    "last": "Dokončit",
-    "next": "Další",
-    "skip": "Přeskočit"
-  },
   "refreshModelsError": "Poskytovatel musí mít nakonfigurovanou základní URL a API klíč pro načtení modelů.",
   "refreshModelsSuccess": "Přidáno {{count}} nových modelů od {{provider}}.",
   "noNewModels": "Nebyly nalezeny žádné nové modely. Všechny dostupné modely již byly přidány.",

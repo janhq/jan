@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Chọn một nhà cung cấp",
-    "chooseProviderContent": "Chọn nhà cung cấp bạn muốn sử dụng, đảm bảo bạn có quyền truy cập vào khóa API cho nhà cung cấp đó.",
-    "getApiKeyTitle": "Lấy khóa API của bạn",
-    "getApiKeyContent": "Đăng nhập vào bảng điều khiển của nhà cung cấp để tìm hoặc tạo khóa API của bạn.",
-    "insertApiKeyTitle": "Chèn khóa API của bạn",
-    "insertApiKeyContent": "Dán khóa API của bạn vào đây để kết nối và kích hoạt nhà cung cấp.",
-    "back": "Quay lại",
-    "close": "Đóng",
-    "last": "Hoàn thành",
-    "next": "Tiếp theo",
-    "skip": "Bỏ qua"
-  },
   "refreshModelsError": "Nhà cung cấp phải có URL cơ sở và khóa API được định cấu hình để tìm nạp các mô hình.",
   "refreshModelsSuccess": "Đã thêm {{count}} mô hình mới từ {{provider}}.",
   "noNewModels": "Không tìm thấy mô hình mới nào. Tất cả các mô hình có sẵn đã được thêm vào.",
