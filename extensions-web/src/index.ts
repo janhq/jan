@@ -13,10 +13,6 @@ export { default as ProjectExtensionWeb } from './project-web'
 // Re-export jan-provider-web functionality
 export {
   groupModelsByCategory,
-  sortModelsByCategoryAndOrder,
-  useJanProviderStore,
-  janProviderStore,
-  janApiClient,
 } from './jan-provider-web'
 
 export type {

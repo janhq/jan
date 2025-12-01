@@ -13,9 +13,14 @@ import {
   chatCompletionChunk,
   ImportOptions,
 } from '@janhq/core' // cspell: disable-line
-import { janApiClient, JanChatMessage } from './api'
+import {
+  createChatCompletion,
+  createStreamingChatCompletion,
+  getModels,
+  initializeJanApi,
+  JanChatMessage,
+} from './api'
 import { syncJanModelsLocalStorage } from './helpers'
-import { janProviderStore } from './store'
 import { ApiError } from '../shared/types/errors'
 
 export default class JanProviderWeb extends AIEngine {
@@ -27,7 +32,7 @@ export default class JanProviderWeb extends AIEngine {
 
     try {
       // Initialize authentication
-      await janApiClient.initialize()
+      await initializeJanApi()
       // Check and sync stored Jan models against latest catalog data
       await this.validateJanModelsLocalStorage()
 
@@ -45,7 +50,7 @@ export default class JanProviderWeb extends AIEngine {
     try {
       console.log('Validating Jan models in localStorage...')
 
-      const remoteModels = await janApiClient.getModels()
+      const remoteModels = await getModels()
       const storageUpdated = syncJanModelsLocalStorage(remoteModels)
 
       if (storageUpdated) {
@@ -66,14 +71,11 @@ export default class JanProviderWeb extends AIEngine {
     for (const sessionId of this.activeSessions.keys()) {
       await this.unload(sessionId)
     }
-
-    janProviderStore.reset()
     console.log('Jan Provider Extension unloaded')
   }
 
   async get(modelId: string): Promise<modelInfo | undefined> {
-    return janApiClient
-      .getModels()
+    return getModels()
       .then((list) => list.find((e) => e.id === modelId))
       .then((model) =>
         model
@@ -101,7 +103,7 @@ export default class JanProviderWeb extends AIEngine {
 
   async list(): Promise<modelInfo[]> {
     try {
-      const janModels = await janApiClient.getModels()
+      const janModels = await getModels()
 
       return janModels.map((model) => ({
         id: model.id,
@@ -230,7 +232,7 @@ export default class JanProviderWeb extends AIEngine {
         return this.createStreamingGenerator(janRequest, abortController)
       } else {
         // Return single response
-        const response = await janApiClient.createChatCompletion(janRequest)
+        const response = await createChatCompletion(janRequest)
 
         // Check if aborted after completion
         if (abortController?.signal?.aborted) {
@@ -297,7 +299,7 @@ export default class JanProviderWeb extends AIEngine {
 
     try {
       // Start the streaming request
-      janApiClient.createStreamingChatCompletion(
+      createStreamingChatCompletion(
         janRequest,
         (chunk) => {
           if (abortController?.signal?.aborted) {

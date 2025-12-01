@@ -1,4 +1,4 @@
-import type { JanModel } from './store'
+import type { JanModel } from './types'
 import { MODEL_PROVIDER_STORAGE_KEY } from './const'
 
 type StoredModel = {
@@ -30,6 +30,14 @@ const normalizeCapabilities = (capabilities: unknown): string[] => {
   return [...new Set(capabilities.filter((item): item is string => typeof item === 'string'))].sort(
     (a, b) => a.localeCompare(b)
   )
+}
+
+const deriveCategoryFromModelId = (modelId: string): string => {
+  if (modelId.includes('/')) {
+    const [maybeCategory] = modelId.split('/')
+    return maybeCategory || 'uncategorized'
+  }
+  return 'uncategorized'
 }
 
 /**
@@ -139,7 +147,7 @@ export function groupModelsByCategory(models: JanModel[]): GroupedModels[] {
   const categoryMap = new Map<string, JanModel[]>()
 
   for (const model of models) {
-    const category = model.category ?? 'uncategorized'
+    const category = model.category ?? deriveCategoryFromModelId(model.id)
     if (!categoryMap.has(category)) {
       categoryMap.set(category, [])
     }
@@ -171,29 +179,5 @@ export function groupModelsByCategory(models: JanModel[]): GroupedModels[] {
   groupedModels.sort((a, b) => a.categoryOrderNumber - b.categoryOrderNumber)
 
   return groupedModels
-}
-
-/**
- * Gets a flat list of models sorted by category_order_number and model_order_number.
- * 
- * @param models - Array of JanModel objects to sort
- * @returns Sorted array of JanModel objects
- */
-export function sortModelsByCategoryAndOrder(models: JanModel[]): JanModel[] {
-  return [...models].sort((a, b) => {
-    // First sort by category_order_number
-    const categoryOrderA = a.category_order_number ?? Number.MAX_SAFE_INTEGER
-    const categoryOrderB = b.category_order_number ?? Number.MAX_SAFE_INTEGER
-
-    if (categoryOrderA !== categoryOrderB) {
-      return categoryOrderA - categoryOrderB
-    }
-
-    // Then sort by model_order_number within the same category
-    const modelOrderA = a.model_order_number ?? Number.MAX_SAFE_INTEGER
-    const modelOrderB = b.model_order_number ?? Number.MAX_SAFE_INTEGER
-
-    return modelOrderA - modelOrderB
-  })
 }
 
