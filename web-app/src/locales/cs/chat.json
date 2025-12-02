@@ -1,12 +1,12 @@
 {
-  "welcome": "Hi, how are you?",
-  "description": "How can I help you today?",
-  "temporaryChat": "Temporary Chat",
-  "temporaryChatDescription": "Start a temporary conversation that won't be saved to your chat history.",
+  "welcome": "Ahoj, jak se máte?",
+  "description": "Jak vám dnes mohu pomoci?",
+  "temporaryChat": "Dočasný chat",
+  "temporaryChatDescription": "Začněte dočasnou konverzaci, která nebude uložena do vaší historie chatů.",
   "status": {
-    "empty": "No Chats Found"
+    "empty": "Nebyly nalezeny žádné chaty"
   },
-  "sendMessage": "Send Message",
-  "newConversation": "New Conversation",
-  "clearHistory": "Clear History"
+  "sendMessage": "Odeslat zprávu",
+  "newConversation": "Nová konverzace",
+  "clearHistory": "Vymazat historii"
 }
