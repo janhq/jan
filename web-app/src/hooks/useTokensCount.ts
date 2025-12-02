@@ -14,6 +14,32 @@ export interface TokenCountData {
   error?: string
 }
 
+type InlineFileContent = {
+  name?: string
+  content: string
+}
+
+const getInlineFileContents = (
+  metadata: ThreadMessage['metadata']
+): InlineFileContent[] => {
+  const inlineFileContents = (
+    metadata as { inline_file_contents?: unknown }
+  )?.inline_file_contents
+
+  if (!Array.isArray(inlineFileContents)) return []
+
+  return inlineFileContents.filter((file): file is InlineFileContent => {
+    if (!file || typeof file !== 'object') return false
+    const { content, name } = file as { content?: unknown; name?: unknown }
+
+    const hasContent = typeof content === 'string' && content.length > 0
+    const hasValidName =
+      typeof name === 'string' || typeof name === 'undefined'
+
+    return hasContent && hasValidName
+  })
+}
+
 export const useTokensCount = (
   messages: ThreadMessage[] = [],
   uploadedFiles?: Array<{
@@ -77,14 +103,7 @@ export const useTokensCount = (
     }
     return result.map((e) => {
       // Pull inline file contents stored on the message metadata
-      const inlineFileContents = Array.isArray(
-        (e.metadata as any)?.inline_file_contents
-      )
-        ? ((e.metadata as any)?.inline_file_contents as Array<{
-            name?: string
-            content?: string
-          }>).filter((f) => f?.content)
-        : []
+      const inlineFileContents = getInlineFileContents(e.metadata)
 
       const buildInlineText = (base: string) => {
         if (!inlineFileContents.length) return base
