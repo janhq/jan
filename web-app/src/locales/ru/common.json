@@ -373,8 +373,8 @@
       "description": "Ответы успешно удалены из \"{{projectName}}\""
     }
   },
-  "attachmentInjectedIndicator": "Injected into chat",
-  "attachmentEmbeddedIndicator": "Embedded for RAG",
-  "viewInjectedContent": "View injected content",
-  "injectedContentTitle": "Injected file content"
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Встроено для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое вставленного файла"
 }
