@@ -291,10 +291,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linear",
     "chunkingTitle": "Chunking",
-    "chunkSize": "Chunk Size (tokens)",
-    "chunkSizeDesc": "Approximate max tokens per chunk for embeddings.",
-    "chunkOverlap": "Overlap (tokens)",
-    "chunkOverlapDesc": "Token overlap between consecutive chunks."
+    "chunkSize": "Chunk Size (characters)",
+    "chunkSizeDesc": "Approximate max characters per chunk for embeddings.",
+    "chunkOverlap": "Overlap (characters)",
+    "chunkOverlapDesc": "Character overlap between consecutive chunks."
   },
   "dialogs": {
     "changeDataFolder": {

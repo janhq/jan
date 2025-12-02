@@ -283,10 +283,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linear",
     "chunkingTitle": "Fragmentação",
-    "chunkSize": "Tamanho do Fragmento (tokens)",
-    "chunkSizeDesc": "Máximo aproximado de tokens por fragmento para embeddings.",
-    "chunkOverlap": "Sobreposição (tokens)",
-    "chunkOverlapDesc": "Sobreposição de tokens entre fragmentos consecutivos."
+    "chunkSize": "Tamanho do Fragmento (caracteres)",
+    "chunkSizeDesc": "Máximo aproximado de caracteres por fragmento para embeddings.",
+    "chunkOverlap": "Sobreposição (caracteres)",
+    "chunkOverlapDesc": "Sobreposição de caracteres entre fragmentos consecutivos."
   },
   "dialogs": {
     "changeDataFolder": {

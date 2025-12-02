@@ -289,10 +289,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linéaire",
     "chunkingTitle": "Découpage",
-    "chunkSize": "Taille du bloc (jetons)",
-    "chunkSizeDesc": "Nombre maximum approximatif de jetons par bloc pour les embeddings.",
-    "chunkOverlap": "Chevauchement (jetons)",
-    "chunkOverlapDesc": "Chevauchement de jetons entre les blocs consécutifs."
+    "chunkSize": "Taille du bloc (caractères)",
+    "chunkSizeDesc": "Nombre maximum approximatif de caractères par bloc pour les embeddings.",
+    "chunkOverlap": "Chevauchement (caractères)",
+    "chunkOverlapDesc": "Chevauchement de caractères entre les blocs consécutifs."
   },
   "dialogs": {
     "changeDataFolder": {

@@ -106,3 +106,79 @@ export function getProxyConfig(): Record<
     throw error
   }
 }
+
+// --- Embedding batching helpers ---
+
+export type EmbedBatch = { batch: string[]; offset: number }
+export type EmbedUsage = { prompt_tokens?: number; total_tokens?: number }
+export type EmbedData = { embedding: number[]; index: number }
+
+export type EmbedBatchResult = {
+  data: EmbedData[]
+  usage?: EmbedUsage
+}
+
+export function estimateTokensFromText(text: string, charsPerToken = 3): number {
+  return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
+}
+
+export function buildEmbedBatches(
+  inputs: string[],
+  ubatchSize: number,
+  charsPerToken = 3
+): EmbedBatch[] {
+  const batches: EmbedBatch[] = []
+  let current: string[] = []
+  let currentTokens = 0
+  let offset = 0
+
+  const push = () => {
+    if (current.length) {
+      batches.push({ batch: current, offset })
+      offset += current.length
+      current = []
+      currentTokens = 0
+    }
+  }
+
+  for (const text of inputs) {
+    const estTokens = estimateTokensFromText(text, charsPerToken)
+    if (!current.length && estTokens > ubatchSize) {
+      batches.push({ batch: [text], offset })
+      offset += 1
+      continue
+    }
+
+    if (currentTokens + estTokens > ubatchSize && current.length) {
+      push()
+    }
+
+    current.push(text)
+    currentTokens += estTokens
+  }
+
+  push()
+  return batches
+}
+
+export function mergeEmbedResponses(
+  model: string,
+  batchResults: Array<{ result: EmbedBatchResult; offset: number }>
+) {
+  const aggregated = {
+    model,
+    object: 'list',
+    usage: { prompt_tokens: 0, total_tokens: 0 },
+    data: [] as EmbedData[],
+  }
+
+  for (const { result, offset } of batchResults) {
+    aggregated.usage.prompt_tokens += result.usage?.prompt_tokens ?? 0
+    aggregated.usage.total_tokens += result.usage?.total_tokens ?? 0
+    for (const item of result.data || []) {
+      aggregated.data.push({ ...item, index: item.index + offset })
+    }
+  }
+
+  return aggregated
+}

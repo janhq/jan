@@ -58,8 +58,8 @@ function AttachmentsSettings() {
       maxFileSizeMB: s.maxFileSizeMB,
       retrievalLimit: s.retrievalLimit,
       retrievalThreshold: s.retrievalThreshold,
-      chunkSizeTokens: s.chunkSizeTokens,
-      overlapTokens: s.overlapTokens,
+      chunkSizeChars: s.chunkSizeChars,
+      overlapChars: s.overlapChars,
       searchMode: s.searchMode,
       parseMode: s.parseMode,
       autoInlineContextRatio: s.autoInlineContextRatio,
@@ -67,8 +67,8 @@ function AttachmentsSettings() {
       setMaxFileSizeMB: s.setMaxFileSizeMB,
       setRetrievalLimit: s.setRetrievalLimit,
       setRetrievalThreshold: s.setRetrievalThreshold,
-      setChunkSizeTokens: s.setChunkSizeTokens,
-      setOverlapTokens: s.setOverlapTokens,
+      setChunkSizeChars: s.setChunkSizeChars,
+      setOverlapChars: s.setOverlapChars,
       setSearchMode: s.setSearchMode,
       setParseMode: s.setParseMode,
       setAutoInlineContextRatio: s.setAutoInlineContextRatio,
@@ -121,10 +121,10 @@ function AttachmentsSettings() {
             return sel.retrievalLimit
           case 'retrieval_threshold':
             return sel.retrievalThreshold
-          case 'chunk_size_tokens':
-            return sel.chunkSizeTokens
-          case 'overlap_tokens':
-            return sel.overlapTokens
+          case 'chunk_size_chars':
+            return sel.chunkSizeChars
+          case 'overlap_chars':
+            return sel.overlapChars
           case 'auto_inline_context_ratio':
             return sel.autoInlineContextRatio
           default:
@@ -144,12 +144,12 @@ function AttachmentsSettings() {
         case 'retrieval_threshold':
           sel.setRetrievalThreshold(validated)
           break
-        case 'chunk_size_tokens':
-          sel.setChunkSizeTokens(validated)
-          break
-        case 'overlap_tokens':
-          sel.setOverlapTokens(validated)
-          break
+                      case 'chunk_size_chars':
+                        sel.setChunkSizeChars(validated)
+                        break
+                      case 'overlap_chars':
+                        sel.setOverlapChars(validated)
+                        break
         case 'auto_inline_context_ratio':
           sel.setAutoInlineContextRatio(validated)
           break
@@ -186,10 +186,10 @@ function AttachmentsSettings() {
                         return sel.retrievalLimit
                       case 'retrieval_threshold':
                         return sel.retrievalThreshold
-                      case 'chunk_size_tokens':
-                        return sel.chunkSizeTokens
-                      case 'overlap_tokens':
-                        return sel.overlapTokens
+                      case 'chunk_size_chars':
+                        return sel.chunkSizeChars
+                      case 'overlap_chars':
+                        return sel.overlapChars
                       case 'search_mode':
                         return sel.searchMode
                       case 'parse_mode':

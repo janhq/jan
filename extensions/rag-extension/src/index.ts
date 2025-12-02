@@ -8,8 +8,8 @@ export default class RagExtension extends RAGExtension {
     enabled: true,
     retrievalLimit: 3,
     retrievalThreshold: 0.3,
-    chunkSizeTokens: 512,
-    overlapTokens: 64,
+    chunkSizeChars: 512,
+    overlapChars: 64,
     searchMode: 'auto' as 'auto' | 'ann' | 'linear',
     maxFileSizeMB: 20,
     parseMode: 'auto' as 'auto' | 'inline' | 'embeddings' | 'prompt',
@@ -23,8 +23,13 @@ export default class RagExtension extends RAGExtension {
     this.config.maxFileSizeMB = await this.getSetting('max_file_size_mb', this.config.maxFileSizeMB)
     this.config.retrievalLimit = await this.getSetting('retrieval_limit', this.config.retrievalLimit)
     this.config.retrievalThreshold = await this.getSetting('retrieval_threshold', this.config.retrievalThreshold)
-    this.config.chunkSizeTokens = await this.getSetting('chunk_size_tokens', this.config.chunkSizeTokens)
-    this.config.overlapTokens = await this.getSetting('overlap_tokens', this.config.overlapTokens)
+    // Prefer char-based keys; fall back to legacy token keys for backward compatibility
+    this.config.chunkSizeChars =
+      (await this.getSetting('chunk_size_chars', this.config.chunkSizeChars)) ||
+      (await this.getSetting('chunk_size_tokens', this.config.chunkSizeChars))
+    this.config.overlapChars =
+      (await this.getSetting('overlap_chars', this.config.overlapChars)) ||
+      (await this.getSetting('overlap_tokens', this.config.overlapChars))
     this.config.searchMode = await this.getSetting('search_mode', this.config.searchMode)
     this.config.parseMode = await this.getSetting('parse_mode', this.config.parseMode)
     this.config.autoInlineContextRatio = await this.getSetting(
@@ -242,8 +247,8 @@ export default class RagExtension extends RAGExtension {
     // Load settings
     const s = this.config
     const maxSize = (s?.enabled === false ? 0 : s?.maxFileSizeMB) || undefined
-    const chunkSize = s?.chunkSizeTokens as number | undefined
-    const chunkOverlap = s?.overlapTokens as number | undefined
+    const chunkSize = s?.chunkSizeChars as number | undefined
+    const chunkOverlap = s?.overlapChars as number | undefined
 
     let totalChunks = 0
     const processedFiles: AttachmentFileInfo[] = []
@@ -291,11 +296,11 @@ export default class RagExtension extends RAGExtension {
         case 'retrieval_threshold':
           this.config.retrievalThreshold = Number(value)
           break
-        case 'chunk_size_tokens':
-          this.config.chunkSizeTokens = Number(value)
+        case 'chunk_size_chars':
+          this.config.chunkSizeChars = Number(value)
           break
-        case 'overlap_tokens':
-          this.config.overlapTokens = Number(value)
+        case 'overlap_chars':
+          this.config.overlapChars = Number(value)
           break
         case 'search_mode':
           this.config.searchMode = String(value) as 'auto' | 'ann' | 'linear'
@@ -311,27 +316,17 @@ export default class RagExtension extends RAGExtension {
   }
 
   // Locally implement embedding logic (previously in embeddings-extension)
-  private async embedTexts(texts: string[], batchSize: number = 128): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & { embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }> }
-    if (!llm?.embed) throw new Error('llamacpp extension not available')
-    const out: number[][] = new Array(texts.length)
-    for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize)
-    const batchStartIndex = i
-    try {
-      const res = await llm.embed(batch)
-      const data: Array<{ embedding: number[]; index: number }> = res?.data || []
-
-      // Map batch results to correct positions in output array
-      for (const item of data) {
-        const globalIndex = batchStartIndex + item.index
-        out[globalIndex] = item.embedding
-      }
-    } catch (error) {
-      console.error(`Failed to embed batch starting at index ${i}:`, error)
-      throw new Error(`Embedding failed at batch starting index ${i}: ${error}`)
+  private async embedTexts(texts: string[]): Promise<number[][]> {
+    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
+      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
     }
-  }
+    if (!llm?.embed) throw new Error('llamacpp extension not available')
+    const res = await llm.embed(texts)
+    const data: Array<{ embedding: number[]; index: number }> = res?.data || []
+    const out: number[][] = new Array(texts.length)
+    for (const item of data) {
+      out[item.index] = item.embedding
+    }
     return out
   }
 }
