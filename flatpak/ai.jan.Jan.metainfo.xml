@@ -96,6 +96,12 @@
 
   <content_rating type="oars-1.1"/>
 
+  <keywords>
+    <keyword>chatbot</keyword>
+    <keyword>ai assistant</keyword>
+    <keyword>offline ai</keyword>
+  </keywords>
+
   <releases>
     <release version="0.7.3" date="2025-11-13">
       <description>
