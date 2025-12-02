@@ -75,19 +75,41 @@ export const useTokensCount = (
         } as ThreadMessage)
       }
     }
-    return result.map((e) => ({
-      ...e,
-      content: e.content.map((c) => ({
-        ...c,
-        text:
-          c.type === 'text'
-            ? {
-                value: removeReasoningContent(c.text?.value ?? '.'),
-                annotations: [],
-              }
-            : c.text,
-      })),
-    }))
+    return result.map((e) => {
+      // Pull inline file contents stored on the message metadata
+      const inlineFileContents = Array.isArray(
+        (e.metadata as any)?.inline_file_contents
+      )
+        ? ((e.metadata as any)?.inline_file_contents as Array<{
+            name?: string
+            content?: string
+          }>).filter((f) => f?.content)
+        : []
+
+      const buildInlineText = (base: string) => {
+        if (!inlineFileContents.length) return base
+        const formatted = inlineFileContents
+          .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
+          .join('\n\n')
+        return base ? `${base}\n\n${formatted}` : formatted
+      }
+
+      return {
+        ...e,
+        content: e.content.map((c) => ({
+          ...c,
+          text:
+            c.type === 'text'
+              ? {
+                  value: removeReasoningContent(
+                    buildInlineText(c.text?.value ?? '.')
+                  ),
+                  annotations: [],
+                }
+              : c.text,
+        })),
+      }
+    })
   }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt
