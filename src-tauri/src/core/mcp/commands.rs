@@ -478,7 +478,6 @@ fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
 }
 
 /// Check if Jan Browser extension is connected via MCP
-/// Tries "ping" first (fast), falls back to "browser_snapshot" (slower)
 #[tauri::command]
 pub async fn check_jan_browser_extension_connected(
     state: State<'_, AppState>,
@@ -497,7 +496,7 @@ pub async fn check_jan_browser_extension_connected(
 
     let has_ping = tools.iter().any(|t| t.name == "ping");
 
-    // Try ping first if available
+    // Try simple ping first if available
     if has_ping {
         match try_ping_tool(service).await {
             PingResult::Connected => return Ok(true),
@@ -556,7 +555,9 @@ async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
 
 async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
     let result = timeout(
-        Duration::from_secs(5),
+        // Snapshot tool is very time-consuming
+        // Extend timeout to make sure the tool call has enough time to succeed
+        Duration::from_secs(20),
         service.call_tool(CallToolRequestParam {
             name: "browser_snapshot".into(),
             arguments: Some(Map::new()),
