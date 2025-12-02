@@ -448,17 +448,13 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
         .map_err(|e| format!("Failed to serialize MCP config: {e}"))
 }
 
-/// Helper function to check if an error message indicates extension not connected
-/// The exact errors from MCP server are:
-/// - "Browser extension not connected to bridge"
-/// - "Browser extension not responding to ping"
+/// Check if error indicates extension not connected
 fn is_extension_not_connected_error(text: &str) -> bool {
-    const ERROR_PATTERNS: &[&str] = &[
+    const PATTERNS: &[&str] = &[
         "not connected to bridge",
         "not responding to ping",
         "extension not connected",
     ];
-
     const KEYWORD_PAIRS: &[(&str, &str)] = &[
         ("browser", "not connected"),
         ("browser", "not responding"),
@@ -466,70 +462,64 @@ fn is_extension_not_connected_error(text: &str) -> bool {
     ];
 
     let text_lower = text.to_lowercase();
-
-    ERROR_PATTERNS
-        .iter()
-        .any(|pattern| text_lower.contains(pattern))
+    PATTERNS.iter().any(|p| text_lower.contains(p))
         || KEYWORD_PAIRS
             .iter()
             .any(|(a, b)| text_lower.contains(a) && text_lower.contains(b))
 }
 
-/// Check if the Jan Browser MCP server has its browser extension connected
-/// This is done by attempting to call a tool and checking if it fails with
-/// "not connected to bridge" error, which indicates the extension is not connected.
-///
-/// # Arguments
-/// * `state` - Application state containing MCP server connections
-///
-/// # Returns
-/// * `Result<bool, String>` - true if extension is connected, false otherwise
+/// Extract text response from tool result
+fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
+    result
+        .content
+        .first()
+        .and_then(|c| c.as_text())
+        .map(|t| t.text.as_str())
+}
+
+/// Check if Jan Browser extension is connected via MCP
+/// Tries "ping" first (fast), falls back to "browser_snapshot" (slower)
 #[tauri::command]
 pub async fn check_jan_browser_extension_connected(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     let servers = state.mcp_servers.lock().await;
-
-    // Check if Jan Browser MCP server is running
     let service = match servers.get("Jan Browser MCP") {
         Some(s) => s,
-        None => {
-            log::info!("check_jan_browser_extension_connected: server not running");
-            return Ok(false);
-        }
+        None => return Ok(false),
     };
 
-    log::info!("check_jan_browser_extension_connected: server found, checking tools...");
-
-    // First check if tools are available
-    let tools_result = timeout(Duration::from_secs(2), service.list_all_tools()).await;
-    let has_tools = match &tools_result {
-        Ok(Ok(tools)) => {
-            log::info!("check_jan_browser_extension_connected: found {} tools", tools.len());
-            !tools.is_empty()
-        }
-        Ok(Err(e)) => {
-            log::info!("check_jan_browser_extension_connected: list_all_tools error: {}", e);
-            false
-        }
-        Err(_) => {
-            log::info!("check_jan_browser_extension_connected: list_all_tools timeout");
-            false
-        }
+    // Check available tools
+    let tools = match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+        Ok(Ok(tools)) if !tools.is_empty() => tools,
+        _ => return Ok(false),
     };
 
-    if !has_tools {
-        log::info!("check_jan_browser_extension_connected: no tools available");
-        return Ok(false);
+    let has_ping = tools.iter().any(|t| t.name == "ping");
+
+    // Try ping first if available
+    if has_ping {
+        match try_ping_tool(service).await {
+            PingResult::Connected => return Ok(true),
+            PingResult::NotConnected => return Ok(false),
+            PingResult::ToolNotAvailable => {
+                log::debug!("ping unavailable, trying browser_snapshot");
+            }
+        }
     }
 
-    log::info!("check_jan_browser_extension_connected: calling ping tool to verify connection...");
+    // Fallback to browser_snapshot
+    try_browser_snapshot_tool(service).await
+}
 
-    // Call the lightweight "ping" tool to check extension connection
-    // This returns immediately with "pong" if connected, or error if not connected
-    // Much faster than browser_snapshot which captures the accessibility tree
-    // Use 3 second timeout - ping should return almost immediately
-    let call_result = timeout(
+enum PingResult {
+    Connected,
+    NotConnected,
+    ToolNotAvailable,
+}
+
+async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+    let result = timeout(
         Duration::from_secs(3),
         service.call_tool(CallToolRequestParam {
             name: "ping".into(),
@@ -538,66 +528,54 @@ pub async fn check_jan_browser_extension_connected(
     )
     .await;
 
-    match call_result {
-        Ok(Ok(result)) => {
-            log::info!(
-                "ping result: is_error={:?}, content_count={}",
-                result.is_error,
-                result.content.len()
-            );
-
-            // Check if the result indicates extension not connected
-            if result.is_error == Some(true) {
-                if let Some(content) = result.content.first() {
-                    if let Some(text) = content.as_text() {
-                        log::info!("ping error response: {}", text.text);
-                        if is_extension_not_connected_error(&text.text) {
-                            log::info!("Extension not connected: {}", text.text);
-                            return Ok(false);
-                        }
-                    }
+    match result {
+        Ok(Ok(res)) => {
+            if let Some(text) = get_result_text(&res) {
+                if text == "pong" {
+                    return PingResult::Connected;
+                }
+                if is_extension_not_connected_error(text) {
+                    return PingResult::NotConnected;
                 }
             }
+            if res.is_error == Some(true) {
+                return PingResult::NotConnected;
+            }
+            PingResult::Connected
+        }
+        Ok(Err(e)) => {
+            if is_extension_not_connected_error(&e.to_string()) {
+                PingResult::NotConnected
+            } else {
+                PingResult::ToolNotAvailable
+            }
+        }
+        Err(_) => PingResult::NotConnected,
+    }
+}
 
-            // Check for "pong" response indicating successful connection
-            if let Some(content) = result.content.first() {
-                if let Some(text) = content.as_text() {
-                    log::info!("ping response: {}", text.text);
-                    if text.text == "pong" {
-                        log::info!("Extension connected - received pong");
-                        return Ok(true);
-                    }
-                    // Check for connection error in text
-                    if is_extension_not_connected_error(&text.text) {
-                        log::info!("Extension not connected: {}", text.text);
+async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+    let result = timeout(
+        Duration::from_secs(5),
+        service.call_tool(CallToolRequestParam {
+            name: "browser_snapshot".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if res.is_error == Some(true) {
+                if let Some(text) = get_result_text(&res) {
+                    if is_extension_not_connected_error(text) {
                         return Ok(false);
                     }
                 }
             }
-
-            // If we got here with no error, assume connected
-            log::info!("Extension check passed - returning connected=true");
             Ok(true)
         }
-        Ok(Err(e)) => {
-            // Check if the error is about extension not being connected
-            let error_str = e.to_string();
-            log::info!("ping error: {}", error_str);
-            if is_extension_not_connected_error(&error_str) {
-                log::info!("Extension not connected (Err): {}", error_str);
-                Ok(false)
-            } else {
-                // Other errors - the tool might not exist in older versions
-                // In that case, consider it as not connected to be safe
-                log::info!("ping tool error: {}", error_str);
-                Ok(false)
-            }
-        }
-        Err(_) => {
-            // Timeout - shouldn't happen with ping, but treat as not connected
-            log::info!("Extension connection check timed out after 3s");
-            Ok(false)
-        }
+        Ok(Err(_)) | Err(_) => Ok(false),
     }
 }
 
