@@ -49,14 +49,29 @@ export default class VectorDBExt extends VectorDBExtension {
     return await vecdb.chunkText(text, chunkSize, chunkOverlap)
   }
 
-  private async embedTexts(texts: string[]): Promise<number[][]> {
+  private async embedTexts(texts: string[], batchSize: number = 128): Promise<number[][]> {
     const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & { embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }> }
     if (!llm?.embed) throw new Error('llamacpp extension not available')
-    const res = await llm.embed(texts)
-    const data: Array<{ embedding: number[]; index: number }> = res?.data || []
     const out: number[][] = new Array(texts.length)
-    for (const item of data) out[item.index] = item.embedding
-    return out
+    for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize)
+        const batchStartIndex = i
+        try {
+          const res = await llm.embed(batch)
+          const data: Array<{ embedding: number[]; index: number }> = res?.data || []
+
+          // Map batch results to correct positions in output array
+          for (const item of data) {
+            const globalIndex = batchStartIndex + item.index
+            out[globalIndex] = item.embedding
+          }
+        } catch (error) {
+          console.error(`Failed to embed batch starting at index ${i}:`, error)
+          throw new Error(`Embedding failed at batch starting index ${i}: ${error}`)
+        }
+      }
+
+      return out
   }
 
   async ingestFile(threadId: string, file: VectorDBFileInput, opts: VectorDBIngestOptions): Promise<AttachmentFileInfo> {
