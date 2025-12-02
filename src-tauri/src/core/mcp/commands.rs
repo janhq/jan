@@ -449,7 +449,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
 }
 
 /// Check if error indicates extension not connected
-fn is_extension_not_connected_error(text: &str) -> bool {
+pub(crate) fn is_extension_not_connected_error(text: &str) -> bool {
     const PATTERNS: &[&str] = &[
         "not connected to bridge",
         "not responding to ping",
