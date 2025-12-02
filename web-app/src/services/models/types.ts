@@ -113,7 +113,8 @@ export interface ModelsService {
     id: string,
     modelPath: string,
     mmprojPath?: string,
-    hfToken?: string
+    hfToken?: string,
+    skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string): Promise<void>
