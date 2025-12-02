@@ -372,8 +372,8 @@
       "description": "Conversa removida de \"{{projectName}}\" com sucesso"
     }
   },
-  "attachmentInjectedIndicator": "Injected into chat",
-  "attachmentEmbeddedIndicator": "Embedded for RAG",
-  "viewInjectedContent": "View injected content",
-  "injectedContentTitle": "Injected file content"
+  "attachmentInjectedIndicator": "Injetado no chat",
+  "attachmentEmbeddedIndicator": "Incorporado para RAG",
+  "viewInjectedContent": "Ver conteúdo injetado",
+  "injectedContentTitle": "Conteúdo de arquivo injetado"
 }
