@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
-    helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
+    helpers::{restart_active_mcp_servers, start_mcp_server_with_restart},
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -123,9 +123,11 @@ pub async fn deactivate_mcp_server<R: Runtime>(
 
 #[tauri::command]
 pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), String> {
+    use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+
     let servers = state.mcp_servers.clone();
-    // Stop the servers
-    stop_mcp_servers(state.mcp_servers.clone()).await?;
+
+    stop_mcp_servers_with_context(&app, &state, ShutdownContext::ManualRestart).await?;
 
     // Restart only previously active servers (like cortex)
     restart_active_mcp_servers(&app, servers).await?;

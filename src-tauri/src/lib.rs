@@ -2,7 +2,7 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
-    mcp::{helpers::clean_up_mcp_servers, models::McpSettings},
+    mcp::models::McpSettings,
     setup::{self, setup_mcp},
     state::AppState,
 };
@@ -125,6 +125,9 @@ pub fn run() {
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
+            mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
+            mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_cleanup_handle: Arc::new(Mutex::new(None)),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -206,24 +209,50 @@ pub fn run() {
     // Handle app lifecycle events
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // This is called when the app is actually exiting (e.g., macOS dock quit)
-            // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
+
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.hide();
+                    let _ = window.emit("app-shutting-down", ());
+                }
+            }
+
+            let state = app_handle.state::<AppState>();
+
+            let cleanup_already_running = tokio::task::block_in_place(|| {
+                tauri::async_runtime::block_on(async {
+                    let handle = state.background_cleanup_handle.lock().await;
+                    handle.is_some()
+                })
+            });
+
+            if cleanup_already_running {
+                return;
+            }
+
+            let app_handle_for_cleanup = app_handle.clone();
+
+            let cleanup_handle = tauri::async_runtime::spawn(async move {
+                use crate::core::mcp::helpers::background_cleanup_mcp_servers;
+
+                let state = app_handle_for_cleanup.state::<AppState>();
+
+                let cleanup_future = background_cleanup_mcp_servers(&app_handle_for_cleanup, &state);
+                let _ = tokio::time::timeout(tokio::time::Duration::from_secs(3), cleanup_future).await;
+
+                if let Err(e) = cleanup_llama_processes(app_handle_for_cleanup.clone()).await {
+                    log::warn!("Failed to cleanup llama processes: {}", e);
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            });
+
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    // Hide window immediately (not available on mobile platforms)
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                        {
-                            let _ = window.hide();
-                        }
-                        let _ = window.emit("kill-mcp-servers", ());
-                    }
-
-                    // Quick cleanup with shorter timeout
-                    let state = app_handle.state::<AppState>();
-                    let _ = clean_up_mcp_servers(&app_handle, state).await;
-                    let _ = cleanup_llama_processes(app.clone()).await;
+                    let mut handle_guard = state.background_cleanup_handle.lock().await;
+                    *handle_guard = Some(cleanup_handle);
                 });
             });
         }
