@@ -1155,7 +1155,10 @@ export default class llamacpp_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
-      const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+      const isEmbedding = await this.resolveEmbeddingConfig(
+        modelId,
+        modelConfig
+      )
 
       const modelInfo = {
         id: modelId,
@@ -2000,11 +2003,14 @@ export default class llamacpp_extension extends AIEngine {
       ]),
     })
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
+      const errorData = await response.json().catch(() => ({
+        message:
+          'llama.cpp error: something went wrong, check app.log for details',
+      }))
       throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
+        `API request failed with status ${response.status}: ${
+          errorData?.message || JSON.stringify(errorData)
+        }`
       )
     }
 
@@ -2040,8 +2046,18 @@ export default class llamacpp_extension extends AIEngine {
             jsonStr = trimmedLine.slice(6)
           } else if (trimmedLine.startsWith('error: ')) {
             jsonStr = trimmedLine.slice(7)
-            const error = JSON.parse(jsonStr)
-            throw new Error(error.message)
+            try {
+              const error = JSON.parse(jsonStr)
+              throw new Error(
+                error.message ||
+                  'llama.cpp error: something went wrong, check app.log for details'
+              )
+            } catch (parseError) {
+              // If we can't parse the error JSON, throw a generic error
+              throw new Error(
+                'llama.cpp error: something went wrong, check app.log for details'
+              )
+            }
           } else {
             // it should not normally reach here
             throw new Error('Malformed chunk')
@@ -2059,8 +2075,18 @@ export default class llamacpp_extension extends AIEngine {
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
-            // re‑throw so the async iterator terminates with an error
-            throw e
+            // If it's a known error, re-throw it
+            if (
+              e instanceof Error &&
+              (e.message === OUT_OF_CONTEXT_SIZE ||
+                e.message.includes('llama.cpp error'))
+            ) {
+              throw e
+            }
+            // For unknown parsing errors, throw a generic error
+            throw new Error(
+              'llama.cpp error: something went wrong, check app.log for details'
+            )
           }
         }
       }
