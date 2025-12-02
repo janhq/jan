@@ -198,6 +198,7 @@ export default class llamacpp_extension extends AIEngine {
   private isConfiguringBackends: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
+  private watcherId: string | null = null
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -241,7 +242,10 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    this.configureBackends()
+    await this.configureBackends()
+
+    // Start watching backends directory after configuration
+    await this.startBackendWatcher()
   }
 
   private getStoredBackendType(): string | null {
@@ -299,7 +303,7 @@ export default class llamacpp_extension extends AIEngine {
     this.isConfiguringBackends = true
 
     try {
-      let version_backends: { version: string; backend: string }[] = []
+      let version_backends: import('./backend').BackendWithStatus[] = []
 
       try {
         version_backends = await listSupportedBackends()
@@ -312,8 +316,7 @@ export default class llamacpp_extension extends AIEngine {
         }
       } catch (error) {
         throw new Error(
-          `Failed to fetch supported backends: ${
-            error instanceof Error ? error.message : error
+          `Failed to fetch supported backends: ${error instanceof Error ? error.message : error
           }`
         )
       }
@@ -383,7 +386,11 @@ export default class llamacpp_extension extends AIEngine {
 
         backendSetting.controllerProps.options = version_backends.map((b) => {
           const key = `${b.version}/${b.backend}`
-          return { value: key, name: key }
+          return {
+            value: key,
+            name: key,
+            metadata: { installed: b.installed }
+          }
         })
 
         // Set the recommended backend based on bestAvailableBackendString
@@ -556,31 +563,31 @@ export default class llamacpp_extension extends AIEngine {
     // Vulkan will be conditionally prioritized based on GPU memory
     const backendPriorities: string[] = hasEnoughGpuMemory
       ? [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'vulkan',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition/local installed detection
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-        ]
+        'cuda-cu13.0',
+        'cuda-cu12.0',
+        'cuda-cu11.7',
+        'vulkan',
+        'common_cpus', // NEW: Unified CPU backend
+        'avx512', // Old, for transition/local installed detection
+        'avx2', // Old, for transition
+        'avx', // Old, for transition
+        'noavx', // Old, for transition
+        'arm64',
+        'x64',
+      ]
       : [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-          'vulkan',
-        ]
+        'cuda-cu13.0',
+        'cuda-cu12.0',
+        'cuda-cu11.7',
+        'common_cpus', // NEW: Unified CPU backend
+        'avx512', // Old, for transition
+        'avx2', // Old, for transition
+        'avx', // Old, for transition
+        'noavx', // Old, for transition
+        'arm64',
+        'x64',
+        'vulkan',
+      ]
 
     // Helper to map backend string to a priority category
     const getBackendCategory = (backendString: string): string | undefined => {
@@ -880,38 +887,32 @@ export default class llamacpp_extension extends AIEngine {
         return
       }
 
-      const versionDirs = await fs.readdirSync(backendsDir)
+      // NOTE: Auto-removal of old backend versions has been disabled
+      // Users may want to keep multiple versions installed
+      logger.info(`Auto-removal disabled - keeping all installed backend versions`)
 
-      for (const versionDir of versionDirs) {
-        const versionPath = await joinPath([backendsDir, versionDir])
-        const versionName = await basename(versionDir)
-
-        // Skip the latest version
-        if (versionName === latestVersion) {
-          continue
-        }
-
-        // Check if this version has the specific backend type we're interested in
-        const backendTypePath = await joinPath([versionPath, backendType])
-
-        if (await fs.existsSync(backendTypePath)) {
-          const isInstalled = await isBackendInstalled(backendType, versionName)
-          if (isInstalled) {
-            try {
-              await fs.rm(backendTypePath)
-              logger.info(
-                `Removed old version of ${backendType}: ${backendTypePath}`
-              )
-            } catch (e) {
-              logger.warn(
-                `Failed to remove old backend version: ${backendTypePath}`,
-                e
-              )
-            }
-          }
-        }
-      }
-    } catch (error) {
+      // const versionDirs = await fs.readdirSync(backendsDir)
+      // for (const versionDir of versionDirs) {
+      //   const versionPath = await joinPath([backendsDir, versionDir])
+      //   const versionName = await basename(versionDir)
+      //   if (versionName === latestVersion) {
+      //     continue
+      //   }
+      //   const backendTypePath = await joinPath([versionPath, backendType])
+      //   if (await fs.existsSync(backendTypePath)) {
+      //     const isInstalled = await isBackendInstalled(backendType, versionName)
+      //     if (isInstalled) {
+      //       try {
+      //         await fs.rm(backendTypePath)
+      //         logger.info(`Removed old version of ${backendType}: ${backendTypePath}`)
+      //       } catch (e) {
+      //         logger.warn(`Failed to remove old backend version: ${backendTypePath}`, e)
+      //       }
+      //     }
+      //   }
+      // }
+    }
+    catch (error) {
       logger.error('Error during old backend version cleanup:', error)
     }
   }
@@ -967,9 +968,19 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async onUnload(): Promise<void> {
-    // Terminate all active sessions
+    // Stop watcher when extension unloads
+    if (this.watcherId) {
+      try {
+        await invoke('stop_watch', {
+          watcherId: this.watcherId
+        })
+        logger.info('Stopped backend watcher')
+      } catch (error) {
+        logger.error('Failed to stop backend watcher:', error)
+      }
+    }
 
-    // Clean up validation event listeners
+    // Stop validation event listener
     if (this.unlistenValidationStarted) {
       this.unlistenValidationStarted()
     }
@@ -1493,8 +1504,7 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.error('GGUF validation failed:', error)
       throw new Error(
-        `Invalid GGUF file(s): ${
-          error.message || 'File format validation failed'
+        `Invalid GGUF file(s): ${error.message || 'File format validation failed'
         }`
       )
     }
@@ -2279,7 +2289,7 @@ export default class llamacpp_extension extends AIEngine {
     if (response.status === 501) {
       try {
         await this.unload('sentence-transformer-mini')
-      } catch {}
+      } catch { }
       sInfo = await this.load('sentence-transformer-mini', undefined, true)
       response = await attemptRequest(sInfo)
     }
@@ -2460,9 +2470,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('Failed to validate GGUF file:', error)
       return {
         isValid: false,
-        error: `Failed to read model metadata: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        error: `Failed to read model metadata: ${error instanceof Error ? error.message : 'Unknown error'
+          }`,
       }
     }
   }
@@ -2539,8 +2548,7 @@ export default class llamacpp_extension extends AIEngine {
     if (!parseResponse.ok) {
       const errorData = await parseResponse.json().catch(() => null)
       throw new Error(
-        `API request failed with status ${
-          parseResponse.status
+        `API request failed with status ${parseResponse.status
         }: ${JSON.stringify(errorData)}`
       )
     }
@@ -2613,5 +2621,97 @@ export default class llamacpp_extension extends AIEngine {
       `Fallback estimation: ${estimatedTokensPerImage} tokens per image, ${imageCount} images total`
     )
     return imageCount * estimatedTokensPerImage - imageCount // remove the lingering <__image__> placeholder token
+  }
+
+  /**
+   * Start watching the backends directory for changes
+   */
+  private async startBackendWatcher(): Promise<void> {
+    logger.info('=== WATCHER: startBackendWatcher called ===')
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      logger.info(`WATCHER: janDataFolderPath = ${janDataFolderPath}`)
+
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+      logger.info(`WATCHER: backendsDir = ${backendsDir}`)
+
+      // Check if directory exists
+      const dirExists = await fs.existsSync(backendsDir)
+      logger.info(`WATCHER: Directory exists = ${dirExists}`)
+
+      if (!dirExists) {
+        logger.info('Backends directory does not exist yet, skipping watcher')
+        return
+      }
+
+      logger.info('WATCHER: Calling invoke(watch_directory)...')
+      // Start watching using Tauri command
+      this.watcherId = await invoke<string>('watch_directory', {
+        path: backendsDir,
+        eventName: 'backend-directory-change'
+      })
+
+      logger.info(`WATCHER: Successfully started with ID: ${this.watcherId}`)
+
+      // Listen for file change events
+      logger.info('WATCHER: Setting up event listener...')
+      await listen<{ eventType: string; path: string; watcherId: string }>(
+        'backend-directory-change',
+        (event) => {
+          logger.info('🔔 WATCHER EVENT RECEIVED:', event.payload)
+
+          // Refresh on both created and deleted events
+          if (event.payload.eventType === 'deleted') {
+            logger.info('WATCHER: Backend deleted, refreshing...')
+            this.handleBackendDeleted(event.payload.path)
+          } else if (event.payload.eventType === 'created') {
+            logger.info('WATCHER: Backend created, refreshing...')
+            this.handleBackendCreated(event.payload.path)
+          }
+        }
+      )
+
+      logger.info('✅ WATCHER: Started watching backends directory:', backendsDir)
+    } catch (error) {
+      logger.error('❌ WATCHER: Failed to start backend watcher:', error)
+    }
+  }
+
+  /**
+   * Handle backend directory deletion
+   */
+  private async handleBackendDeleted(deletedPath: string): Promise<void> {
+    logger.info('Backend deleted, refreshing list:', deletedPath)
+
+    try {
+      // Re-configure backends to update the list
+      await this.configureBackends()
+
+      // Emit event to notify UI
+      events.emit('onBackendListUpdated', {})
+    } catch (error) {
+      logger.error('Failed to handle backend deletion:', error)
+    }
+  }
+
+  /**
+   * Handle backend directory creation (new backend installed)
+   */
+  private async handleBackendCreated(createdPath: string): Promise<void> {
+    logger.info('Backend created, refreshing list:', createdPath)
+
+    try {
+      // Re-configure backends to update the list
+      await this.configureBackends()
+
+      // Emit event to notify UI
+      events.emit('onBackendListUpdated', {})
+    } catch (error) {
+      logger.error('Failed to handle backend creation:', error)
+    }
   }
 }
