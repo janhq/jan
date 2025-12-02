@@ -132,7 +132,7 @@ export default function JanBrowserExtensionDialog({
 
             <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
               <Button
-                variant="ghost"
+                variant="link"
                 onClick={handleCancel}
                 className="sm:order-1"
               >
@@ -140,9 +140,8 @@ export default function JanBrowserExtensionDialog({
               </Button>
               <div className="flex gap-2 sm:order-2">
                 <Button
-                  variant="outline"
                   onClick={onRetryConnection}
-                  className="gap-2"
+                  className="gap-2 bg-transparent border border-main-view-fg/20 text-main-view-fg hover:bg-main-view-fg/10"
                 >
                   <IconRefresh className="size-4" />
                   I've Installed It
@@ -187,7 +186,7 @@ export default function JanBrowserExtensionDialog({
 
             <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
               <Button
-                variant="ghost"
+                variant="link"
                 onClick={handleCancel}
                 className="sm:order-1"
               >
@@ -196,8 +195,8 @@ export default function JanBrowserExtensionDialog({
               <div className="flex gap-2 sm:order-2">
                 {onContinueAnyway && (
                   <Button
-                    variant="outline"
                     onClick={onContinueAnyway}
+                    className="bg-transparent border border-main-view-fg/20 text-main-view-fg hover:bg-main-view-fg/10"
                   >
                     Continue Anyway
                   </Button>
