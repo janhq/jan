@@ -380,7 +380,7 @@ export const useChat = () => {
         .getActiveModels()
         .then((models) => setActiveModels(models || []))
     },
-    [updateLoadingModel, serviceHub]
+    [updateLoadingModel, serviceHub, setActiveModels]
   )
 
   const ensureModelLoaded = useCallback(

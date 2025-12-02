@@ -75,7 +75,7 @@ export function DownloadButtonPlaceholder({
         if (state.modelId === modelId) setDownloaded(true)
       }
     )
-  }, [])
+  }, [modelId])
 
   const isRecommendedModel = useCallback((modelId: string) => {
     return (extractModelName(modelId)?.toLowerCase() ===

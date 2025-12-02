@@ -15,7 +15,6 @@ import {
 import { ArrowRight } from 'lucide-react'
 import {
   IconPhoto,
-  IconWorld,
   IconAtom,
   IconTool,
   IconCodeCircle2,
@@ -24,6 +23,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconCheck,
+  IconWorld,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -53,6 +53,7 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
@@ -131,6 +132,10 @@ const ChatInput = ({
       activeModels.some((e) => e === selectedModel?.id),
     [activeModels, selectedModel?.id]
   )
+
+  const { mcpServers, editServer, syncServers } = useMCPServers()
+  const janBrowserMCPActive = mcpServers['Jan Browser MCP']?.active || false
+  const [isJanBrowserMCPLoading, setIsJanBrowserMCPLoading] = useState(false)
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
@@ -771,11 +776,11 @@ const ChatInput = ({
                 prev.map((a) =>
                   a.name === img.name && a.type === 'image'
                     ? {
-                        ...a,
-                        processing: false,
-                        processed: true,
-                        id: result.id,
-                      }
+                      ...a,
+                      processing: false,
+                      processed: true,
+                      id: result.id,
+                    }
                     : a
                 )
               )
@@ -968,6 +973,50 @@ const ChatInput = ({
       } as React.ChangeEvent<HTMLInputElement>
 
       handleFileChange(syntheticEvent)
+    }
+  }
+
+  const handleBrowseClick = async () => {
+    const janBrowserConfig = mcpServers['Jan Browser MCP']
+    if (!janBrowserConfig) {
+      toast.error('Jan Browser MCP not found', {
+        description: 'Please check your MCP server configuration',
+      })
+      return
+    }
+
+    const newActiveState = !janBrowserMCPActive
+
+    setIsJanBrowserMCPLoading(true)
+    try {
+      if (newActiveState) {
+        // Activate the server
+        await serviceHub
+          .mcp()
+          .activateMCPServer('Jan Browser MCP', {
+            ...janBrowserConfig,
+            active: true,
+          })
+        toast.success('Jan Browser MCP enabled')
+      } else {
+        // Deactivate the server
+        await serviceHub.mcp().deactivateMCPServer('Jan Browser MCP')
+        toast.success('Jan Browser MCP disabled')
+      }
+
+      // Update the config
+      editServer('Jan Browser MCP', {
+        ...janBrowserConfig,
+        active: newActiveState,
+      })
+      await syncServers()
+    } catch (error) {
+      toast.error('Failed to toggle Jan Browser MCP', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      console.error('Error toggling Jan Browser MCP:', error)
+    } finally {
+      setIsJanBrowserMCPLoading(false)
     }
   }
 
@@ -1261,7 +1310,7 @@ const ChatInput = ({
             <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center w-full',
+                  'px-1 flex items-center w-full gap-1',
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -1355,7 +1404,46 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-
+                {selectedModel?.capabilities?.includes('tools') && mcpServers['Jan Browser MCP'] && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            "h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer",
+                            janBrowserMCPActive && "bg-accent/10",
+                            isJanBrowserMCPLoading && "opacity-70 cursor-not-allowed"
+                          )}
+                          onClick={isJanBrowserMCPLoading ? undefined : handleBrowseClick}
+                        >
+                          {isJanBrowserMCPLoading ? (
+                            <IconLoader2
+                              size={18}
+                              className="text-accent animate-spin"
+                            />
+                          ) : (
+                            <IconWorld
+                              size={18}
+                              className={cn(
+                                "text-main-view-fg/50",
+                                janBrowserMCPActive && "text-accent"
+                              )}
+                            />
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {isJanBrowserMCPLoading
+                            ? 'Starting...'
+                            : janBrowserMCPActive
+                            ? 'Browse (Active)'
+                            : 'Browse'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
@@ -1399,21 +1487,18 @@ const ChatInput = ({
                                 return (
                                   <div
                                     className={cn(
-                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                      isOpen && 'bg-main-view-fg/10'
+                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                                      isOpen && 'bg-main-view-fg/10',
+                                      toolsCount > 0 && 'bg-accent/10'
                                     )}
                                   >
                                     <IconTool
                                       size={18}
-                                      className="text-main-view-fg/50"
+                                      className={cn(
+                                        "text-main-view-fg/50",
+                                        toolsCount > 0 && "text-accent"
+                                      )}
                                     />
-                                    {toolsCount > 0 && (
-                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
-                                        <span className="leading-0 text-xs">
-                                          {toolsCount > 99 ? '99+' : toolsCount}
-                                        </span>
-                                      </div>
-                                    )}
                                   </div>
                                 )
                               }}
