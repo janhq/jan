@@ -13,7 +13,6 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { Progress } from '@/components/ui/progress'
 import type { CatalogModel } from '@/services/models/types'
@@ -94,7 +93,6 @@ function SetupScreen() {
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
-  const { huggingfaceToken } = useGeneralSetting()
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
@@ -111,7 +109,7 @@ function SetupScreen() {
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO, huggingfaceToken)
+        .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO)
 
       if (repo) {
         const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repo)
@@ -120,7 +118,7 @@ function SetupScreen() {
     } catch (error) {
       console.error('Error fetching Jan Model V2:', error)
     }
-  }, [serviceHub, huggingfaceToken])
+  }, [serviceHub])
 
   // Check model support for variants when janModelV2 is available
   useEffect(() => {
@@ -298,14 +296,14 @@ function SetupScreen() {
             (e) => e.model_id.toLowerCase() === 'mmproj-f16'
           ) || janModelV2.mmproj_models?.[0]
         )?.path,
-        huggingfaceToken
+        undefined, // No HF token needed for public model
+        true // Skip verification for faster download
       )
   }, [
     defaultVariant,
     janModelV2,
     addLocalDownloadingModel,
     serviceHub,
-    huggingfaceToken,
   ])
 
   useEffect(() => {
