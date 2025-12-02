@@ -47,6 +47,12 @@ export const processAttachmentsForSend = async (
   const fileAttachmentsFeatureEnabled = PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
   const processedAttachments: Attachment[] = []
   let hasEmbeddedDocuments = false
+  const effectiveContextThreshold =
+    typeof contextThreshold === 'number' &&
+    Number.isFinite(contextThreshold) &&
+    contextThreshold > 0
+      ? contextThreshold
+      : undefined
 
   // Images: ingest before sending
   const images = attachments.filter((a) => a.type === 'image')
@@ -121,16 +127,23 @@ export const processAttachmentsForSend = async (
 
           // Only do auto-detection if no user choice was made
           if (!userChoice && parsedContent && estimateTokens) {
-            const tokenCount = await estimateTokens(parsedContent)
-            if (!contextThreshold) {
+            const estimatedTokens = await estimateTokens(parsedContent)
+            const tokenCount =
+              typeof estimatedTokens === 'number' &&
+              Number.isFinite(estimatedTokens) &&
+              estimatedTokens > 0
+                ? estimatedTokens
+                : undefined
+            if (!effectiveContextThreshold) {
               console.debug(
                 `Attachment ${doc.name}: no context threshold available; defaulting to ${targetMode}`
               )
             } else if (typeof tokenCount === 'number') {
-              targetMode = tokenCount <= contextThreshold ? 'inline' : 'embeddings'
+              targetMode =
+                tokenCount <= effectiveContextThreshold ? 'inline' : 'embeddings'
             } else {
               console.debug(
-                `Attachment ${doc.name}: token estimate missing; defaulting to ${targetMode}`
+                `Attachment ${doc.name}: token estimate unavailable or non-positive; defaulting to ${targetMode}`
               )
             }
           } else if (!userChoice && !parsedContent) {

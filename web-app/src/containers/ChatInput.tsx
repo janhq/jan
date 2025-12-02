@@ -90,8 +90,10 @@ const ChatInput = ({
   const streamingContent = useAppState((state) => state.streamingContent)
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
+  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
@@ -151,6 +153,7 @@ const ChatInput = ({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
   useEffect(() => {
     attachmentsKeyRef.current = attachmentsKey
@@ -336,15 +339,37 @@ const ChatInput = ({
     async (docs: Attachment[]) => {
       if (!docs.length || !currentThreadId) return
 
+      const modelReady = await (async () => {
+        if (!selectedModel?.id) return false
+        if (activeModels.includes(selectedModel.id)) return true
+        const provider = getProviderByName(selectedProvider)
+        if (!provider) return false
+        try {
+          updateLoadingModel(true)
+          await serviceHub.models().startModel(provider, selectedModel.id)
+          const active = await serviceHub.models().getActiveModels()
+          setActiveModels(active || [])
+          return active?.includes(selectedModel.id) ?? false
+        } catch (err) {
+          console.warn('Failed to start model before attachment validation', err)
+          return false
+        } finally {
+          updateLoadingModel(false)
+        }
+      })()
+
       const modelContextLength = (() => {
         const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
         if (typeof ctx === 'number') return ctx
-        if (typeof ctx === 'string') return parseInt(ctx)
+        if (typeof ctx === 'string') {
+          const parsed = parseInt(ctx, 10)
+          return Number.isFinite(parsed) ? parsed : undefined
+        }
         return undefined
       })()
 
-      const contextThreshold =
-        typeof modelContextLength === 'number'
+      const rawContextThreshold =
+        typeof modelContextLength === 'number' && modelContextLength > 0
           ? Math.floor(
               modelContextLength *
                 (typeof autoInlineContextRatio === 'number'
@@ -353,8 +378,18 @@ const ChatInput = ({
             )
           : undefined
 
+      const contextThreshold =
+        typeof rawContextThreshold === 'number' &&
+        Number.isFinite(rawContextThreshold) &&
+        rawContextThreshold > 0
+          ? rawContextThreshold
+          : undefined
 
-      const hasContextEstimate = typeof contextThreshold === 'number'
+      const hasContextEstimate =
+        modelReady &&
+        typeof contextThreshold === 'number' &&
+        Number.isFinite(contextThreshold) &&
+        contextThreshold > 0
       const docsNeedingPrompt = docs.filter((doc) => {
         if (doc.processed || doc.injectionMode) return false
         const preference = doc.parseMode ?? parsePreference
@@ -394,7 +429,7 @@ const ChatInput = ({
 
       const estimateTokens = async (text: string): Promise<number | undefined> => {
         try {
-          if (!selectedModel?.id) return undefined
+          if (!selectedModel?.id || !modelReady) return undefined
           const tokenCount = await serviceHub
             .models()
             .getTokensCount(selectedModel.id, [
@@ -414,6 +449,13 @@ const ChatInput = ({
                 completed_at: Date.now(),
               } as ThreadMessage,
             ])
+          if (
+            typeof tokenCount !== 'number' ||
+            !Number.isFinite(tokenCount) ||
+            tokenCount <= 0
+          ) {
+            return undefined
+          }
           return tokenCount
         } catch (e) {
           console.debug('Failed to estimate tokens for attachment content', e)
@@ -457,13 +499,17 @@ const ChatInput = ({
     },
     [
       autoInlineContextRatio,
+      activeModels,
       currentThreadId,
+      getProviderByName,
       parsePreference,
       selectedModel?.id,
       selectedModel?.settings?.ctx_len?.controller_props?.value,
       selectedProvider,
       serviceHub,
+      setActiveModels,
       updateAttachmentProcessing,
+      updateLoadingModel,
     ]
   )
 

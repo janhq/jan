@@ -383,6 +383,30 @@ export const useChat = () => {
     [updateLoadingModel, serviceHub]
   )
 
+  const ensureModelLoaded = useCallback(
+    async (provider?: ProviderObject, modelId?: string | null) => {
+      if (!provider || !modelId) return false
+      try {
+        const active = await serviceHub.models().getActiveModels()
+        if (Array.isArray(active) && active.includes(modelId)) {
+          setActiveModels(active)
+          return true
+        }
+        updateLoadingModel(true)
+        await serviceHub.models().startModel(provider, modelId)
+        const refreshed = await serviceHub.models().getActiveModels()
+        setActiveModels(refreshed || [])
+        return refreshed?.includes(modelId) ?? false
+      } catch (err) {
+        console.warn('Failed to start model before attachment validation', err)
+        return false
+      } finally {
+        updateLoadingModel(false)
+      }
+    },
+    [serviceHub, setActiveModels, updateLoadingModel]
+  )
+
   const increaseModelContextSize = useCallback(
     async (modelId: string, provider: ProviderObject) => {
       /**
@@ -493,16 +517,20 @@ export const useChat = () => {
       const allAttachments = attachments ?? []
       const parsePreference = useAttachments.getState().parseMode
       const autoInlineContextRatio = useAttachments.getState().autoInlineContextRatio
+      const modelReady = await ensureModelLoaded(activeProvider, selectedModel?.id)
 
       const modelContextLength = (() => {
         const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
         if (typeof ctx === 'number') return ctx
-        if (typeof ctx === 'string') return parseInt(ctx)
+        if (typeof ctx === 'string') {
+          const parsed = parseInt(ctx, 10)
+          return Number.isFinite(parsed) ? parsed : undefined
+        }
         return undefined
       })()
 
-      const contextThreshold =
-        typeof modelContextLength === 'number'
+      const rawContextThreshold =
+        typeof modelContextLength === 'number' && modelContextLength > 0
           ? Math.floor(
               modelContextLength *
                 (typeof autoInlineContextRatio === 'number'
@@ -511,7 +539,18 @@ export const useChat = () => {
             )
           : undefined
 
-      const hasContextEstimate = typeof contextThreshold === 'number'
+      const contextThreshold =
+        typeof rawContextThreshold === 'number' &&
+        Number.isFinite(rawContextThreshold) &&
+        rawContextThreshold > 0
+          ? rawContextThreshold
+          : undefined
+
+      const hasContextEstimate =
+        modelReady &&
+        typeof contextThreshold === 'number' &&
+        Number.isFinite(contextThreshold) &&
+        contextThreshold > 0
       const docsNeedingPrompt = allAttachments.filter((doc) => {
         if (doc.type !== 'document') return false
         // Skip already processed/ingested documents to avoid repeated prompts
@@ -542,7 +581,7 @@ export const useChat = () => {
 
       const estimateTokens = async (text: string): Promise<number | undefined> => {
         try {
-          if (!selectedModel?.id) return undefined
+          if (!selectedModel?.id || !modelReady) return undefined
           const tokenCount = await serviceHub
             .models()
             .getTokensCount(selectedModel.id, [
@@ -562,6 +601,13 @@ export const useChat = () => {
                 completed_at: Date.now(),
               } as ThreadMessage,
             ])
+          if (
+            typeof tokenCount !== 'number' ||
+            !Number.isFinite(tokenCount) ||
+            tokenCount <= 0
+          ) {
+            return undefined
+          }
           return tokenCount
         } catch (e) {
           console.debug('Failed to estimate tokens for attachment content', e)
@@ -634,11 +680,16 @@ export const useChat = () => {
       let currentAssistant: Assistant | undefined | null
 
       try {
-        if (selectedModel?.id) {
+        if (selectedModel?.id && !modelReady) {
           updateLoadingModel(true)
           await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
           // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
+        } else if (selectedModel?.id) {
           serviceHub
             .models()
             .getActiveModels()
@@ -1090,6 +1141,7 @@ export const useChat = () => {
       updateTokenSpeed,
       showIncreaseContextSizeModal,
       increaseModelContextSize,
+      ensureModelLoaded,
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,
