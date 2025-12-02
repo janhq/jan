@@ -200,7 +200,6 @@ export default class llamacpp_extension extends AIEngine {
   private isConfiguringBackends: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
-  private embeddingSessionUbatch?: number
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -2314,115 +2313,32 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    const encoder = new TextEncoder()
-    const bytesForText = (value: string) => encoder.encode(value || '').length
-    const maxInputBytes =
-      text.length > 0
-        ? Math.max(...text.map((t) => bytesForText(t)))
-        : 0
-    const defaultUbatch =
-      typeof this.config?.ubatch_size === 'number' &&
-      this.config.ubatch_size > 0
-        ? this.config.ubatch_size
-        : 512
-    // Cap ubatch to avoid runaway memory usage but still allow large documents
-    const EMBED_UBATCH_CAP = 4096
-    const requiredUbatch = Math.min(
-      EMBED_UBATCH_CAP,
-      Math.max(defaultUbatch, maxInputBytes || defaultUbatch)
-    )
-
-    const splitByBytes = (value: string): string[] => {
-      if (!value) return ['']
-      const chunks: string[] = []
-      let current = ''
-      let currentBytes = 0
-      for (const ch of value) {
-        const chBytes = bytesForText(ch)
-        if (current && currentBytes + chBytes > requiredUbatch) {
-          chunks.push(current)
-          current = ch
-          currentBytes = chBytes
-        } else {
-          current += ch
-          currentBytes += chBytes
-        }
-      }
-      if (current) chunks.push(current)
-      return chunks
-    }
-
-    const flattenedInputs: { text: string; originalIndex: number }[] = []
-    text.forEach((value, index) => {
-      const str = value ?? ''
-      const byteLen = bytesForText(str)
-      if (byteLen > requiredUbatch) {
-        for (const part of splitByBytes(str)) {
-          flattenedInputs.push({ text: part, originalIndex: index })
-        }
-      } else {
-        flattenedInputs.push({ text: str, originalIndex: index })
-      }
-    })
-
     // Ensure the sentence-transformer model is present
-    const downloadedModelList = await this.list()
-    if (
-      !downloadedModelList.some(
-        (model) => model.id === 'sentence-transformer-mini'
-      )
-    ) {
-      await this.import('sentence-transformer-mini', {
-        modelPath:
-          'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
-      })
+    let sInfo = await this.findSessionByModel('sentence-transformer-mini')
+    if (!sInfo) {
+      const downloadedModelList = await this.list()
+      if (
+        !downloadedModelList.some(
+          (model) => model.id === 'sentence-transformer-mini'
+        )
+      ) {
+        await this.import('sentence-transformer-mini', {
+          modelPath:
+            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+        })
+      }
+      // Load specifically in embedding mode
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
 
-    const ensureEmbeddingSession = async (): Promise<SessionInfo> => {
-      let existing: SessionInfo | null = null
-      try {
-        existing = await this.findSessionByModel('sentence-transformer-mini')
-      } catch {
-        existing = null
-      }
-
-      const needsReload =
-        !existing ||
-        !this.embeddingSessionUbatch ||
-        this.embeddingSessionUbatch < requiredUbatch
-
-      if (!needsReload && existing) {
-        return existing
-      }
-
-      if (existing) {
-        try {
-          await this.unload('sentence-transformer-mini')
-        } catch {}
-      }
-
-      const loaded = await this.load(
-        'sentence-transformer-mini',
-        { ubatch_size: requiredUbatch },
-        true
-      )
-      this.embeddingSessionUbatch = requiredUbatch
-      return loaded
-    }
-
-    let sInfo = await ensureEmbeddingSession()
-
-    const attemptRequest = async (
-      session: SessionInfo,
-      inputs: { text: string; originalIndex: number }[]
-    ) => {
+    const attemptRequest = async (session: SessionInfo) => {
       const baseUrl = `http://localhost:${session.port}/v1/embeddings`
       const headers = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.api_key}`,
+        'Authorization': `Bearer ${session.api_key}`,
       }
       const body = JSON.stringify({
-        input: inputs.map((i) => i.text),
+        input: text,
         model: session.model_id,
         encoding_format: 'float',
       })
@@ -2435,31 +2351,15 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // First try with the existing session (may have been started without --embedding previously)
-    let response = await attemptRequest(sInfo, flattenedInputs)
+    let response = await attemptRequest(sInfo)
 
     // If embeddings endpoint is not available (501), reload with embedding mode and retry once
     if (response.status === 501) {
-      const downloadedModelList = await this.list()
       try {
         await this.unload('sentence-transformer-mini')
       } catch {}
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
-        await this.import('sentence-transformer-mini', {
-          modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
-        })
-      }
-      sInfo = await this.load(
-        'sentence-transformer-mini',
-        { ubatch_size: requiredUbatch },
-        true
-      )
-      this.embeddingSessionUbatch = requiredUbatch
-      response = await attemptRequest(sInfo, flattenedInputs)
+      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      response = await attemptRequest(sInfo)
     }
 
     if (!response.ok) {
@@ -2468,49 +2368,8 @@ export default class llamacpp_extension extends AIEngine {
         `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
       )
     }
-    const responseData = (await response.json()) as EmbeddingResponse
-
-    if (!Array.isArray(responseData?.data)) {
-      throw new Error('Embedding response missing data array')
-    }
-
-    if (responseData.data.length !== flattenedInputs.length) {
-      throw new Error(
-        `Unexpected embedding response length (${responseData.data.length} vs ${flattenedInputs.length})`
-      )
-    }
-
-    const grouped = new Map<number, number[][]>()
-    for (const item of responseData.data) {
-      const mapped = flattenedInputs[item.index]
-      if (!mapped) {
-        throw new Error(`Embedding response index ${item.index} out of range`)
-      }
-      const existing = grouped.get(mapped.originalIndex) || []
-      existing.push(item.embedding)
-      grouped.set(mapped.originalIndex, existing)
-    }
-
-    const aggregatedData: EmbeddingData[] = text.map((_, idx) => {
-      const vectors = grouped.get(idx) || []
-      if (vectors.length === 0) {
-        return { object: 'embedding', embedding: [], index: idx }
-      }
-      const dimension = vectors[0].length
-      const sum = new Array(dimension).fill(0)
-      for (const vec of vectors) {
-        if (vec.length !== dimension) {
-          throw new Error('Embedding dimension mismatch in aggregation')
-        }
-        for (let i = 0; i < dimension; i++) {
-          sum[i] += vec[i]
-        }
-      }
-      const averaged = sum.map((v) => v / vectors.length)
-      return { object: 'embedding', embedding: averaged, index: idx }
-    })
-
-    return { ...responseData, data: aggregatedData }
+    const responseData = await response.json()
+    return responseData as EmbeddingResponse
   }
 
   /**
