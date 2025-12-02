@@ -373,8 +373,8 @@
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
     }
   },
-  "attachmentInjectedIndicator": "Injected into chat",
-  "attachmentEmbeddedIndicator": "Embedded for RAG",
-  "viewInjectedContent": "View injected content",
-  "injectedContentTitle": "Injected file content"
+  "attachmentInjectedIndicator": "Injecté dans la discussion",
+  "attachmentEmbeddedIndicator": "Intégré pour RAG",
+  "viewInjectedContent": "Voir le contenu injecté",
+  "injectedContentTitle": "Contenu du fichier injecté"
 }
