@@ -427,8 +427,10 @@ pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
     let name_lower = process_info.name.to_lowercase();
     let cmd_str = process_info.cmd.join(" ").to_lowercase();
 
-    let is_node = name_lower.contains("node") || name_lower.contains("npx");
-    let is_mcp_server = cmd_str.contains("search-mcp-server");
+    let is_js_runtime =
+        name_lower.contains("node") || name_lower.contains("npx") || name_lower.contains("bun");
+    let is_jan_mcp_server = cmd_str.contains("search-mcp-server") 
+    || (cmd_str.contains("jan") && cmd_str.contains("mcp"));
 
-    is_node && is_mcp_server
+    is_js_runtime && is_jan_mcp_server
 }
