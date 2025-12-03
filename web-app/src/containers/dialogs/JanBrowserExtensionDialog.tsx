@@ -75,8 +75,8 @@ export default function JanBrowserExtensionDialog({
           <>
             <DialogHeader>
               <div className="flex items-start gap-3">
-                <div className="shrink-0">
-                  <IconLoader2 className="size-5 text-accent animate-spin" />
+                <div className="shrink-0 size-5 flex items-center justify-center">
+                  <IconLoader2 className="size-5 text-accent animate-spin origin-center" />
                 </div>
                 <div>
                   <DialogTitle>{t('mcp-servers:browserExtension.connecting.title')}</DialogTitle>
@@ -87,8 +87,8 @@ export default function JanBrowserExtensionDialog({
               </div>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
-              <div className="flex flex-col items-center gap-3">
-                <Loader className="size-8 text-accent animate-spin" />
+              <div className="flex flex-col items-center justify-center gap-3">
+                <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
                 <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
               </div>
             </div>
@@ -164,7 +164,7 @@ export default function JanBrowserExtensionDialog({
             <DialogHeader>
               <div className="flex items-start gap-3">
                 <div className="shrink-0 size-5 flex items-center justify-center">
-                  <Loader className="size-5 text-accent animate-spin" />
+                  <IconLoader2 className="size-5 text-accent animate-spin origin-center" />
                 </div>
                 <div>
                   <DialogTitle>{t('mcp-servers:browserExtension.waitingConnection.title')}</DialogTitle>
