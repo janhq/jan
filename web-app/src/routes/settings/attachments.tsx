@@ -144,12 +144,12 @@ function AttachmentsSettings() {
         case 'retrieval_threshold':
           sel.setRetrievalThreshold(validated)
           break
-                      case 'chunk_size_chars':
-                        sel.setChunkSizeChars(validated)
-                        break
-                      case 'overlap_chars':
-                        sel.setOverlapChars(validated)
-                        break
+        case 'chunk_size_chars':
+          sel.setChunkSizeChars(validated)
+          break
+        case 'overlap_chars':
+          sel.setOverlapChars(validated)
+          break
         case 'auto_inline_context_ratio':
           sel.setAutoInlineContextRatio(validated)
           break
