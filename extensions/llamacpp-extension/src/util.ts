@@ -118,14 +118,14 @@ export type EmbedBatchResult = {
   usage?: EmbedUsage
 }
 
-export function estimateTokensFromText(text: string, charsPerToken = 3): number {
+export function estimateTokensFromText(text: string, charsPerToken = 2): number {
   return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
 }
 
 export function buildEmbedBatches(
   inputs: string[],
   ubatchSize: number,
-  charsPerToken = 3
+  charsPerToken = 2
 ): EmbedBatch[] {
   const batches: EmbedBatch[] = []
   let current: string[] = []
