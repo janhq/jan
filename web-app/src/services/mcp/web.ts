@@ -273,6 +273,11 @@ export class WebMCPService implements MCPService {
     }
   }
 
+  async checkJanBrowserExtensionConnected(): Promise<boolean> {
+    // Jan Browser Extension is not supported on web platform
+    return false
+  }
+
   private generateCancellationToken(): string {
     return `mcp_cancel_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
   }

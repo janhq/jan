@@ -1,3 +1,4 @@
+use super::commands::is_extension_not_connected_error;
 use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
@@ -348,5 +349,57 @@ async fn test_stop_mcp_servers_prevents_concurrent_shutdown() {
     {
         let shutdown_flag = state.mcp_shutdown_in_progress.lock().await;
         assert!(*shutdown_flag);
+    }
+}
+
+// ============================================================================
+// Extension Connection Error Detection Tests
+// ============================================================================
+
+#[test]
+fn test_extension_disconnected_error_detection() {
+    // Real error messages from Jan Browser MCP server when extension is not connected
+    let disconnected_errors = [
+        // Direct error messages from MCP server
+        "Browser extension not connected to bridge",
+        "Browser extension not responding to ping",
+        "extension not connected",
+        // Error with different casing (case insensitive)
+        "BROWSER EXTENSION NOT CONNECTED TO BRIDGE",
+        // Tool not found errors (older extension without ping tool)
+        "tool ping not found",
+        "Tool 'browser_snapshot' not found in available tools",
+        // Wrapped error messages
+        "Error: Browser extension not connected to bridge. Please retry.",
+        "[MCP] extension not connected - check browser",
+    ];
+
+    for msg in disconnected_errors {
+        assert!(
+            is_extension_not_connected_error(msg),
+            "Should detect as disconnected: {msg}"
+        );
+    }
+}
+
+#[test]
+fn test_extension_connected_response_detection() {
+    // Valid responses when extension IS connected - should NOT trigger error detection
+    let connected_responses = [
+        "pong",                          // Successful ping response
+        "Success",                       // Generic success
+        "Connected successfully",        // Connection confirmation
+        "",                              // Empty response (not an error)
+        "Screenshot captured",           // Successful browser_snapshot
+        "Page loaded",                   // Browser action success
+        "browser",                       // Single keyword (not an error pattern)
+        "tool",                          // Single keyword (not an error pattern)
+    ];
+
+    for msg in connected_responses {
+        assert!(
+            !is_extension_not_connected_error(msg),
+            "Should NOT detect as disconnected: {msg}"
+        );
     }
 }

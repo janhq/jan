@@ -448,6 +448,138 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
         .map_err(|e| format!("Failed to serialize MCP config: {e}"))
 }
 
+/// Check if error indicates extension not connected
+pub(crate) fn is_extension_not_connected_error(text: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "not connected to bridge",
+        "not responding to ping",
+        "extension not connected",
+    ];
+    const KEYWORD_PAIRS: &[(&str, &str)] = &[
+        ("browser", "not connected"),
+        ("browser", "not responding"),
+        ("tool", "not found"),
+    ];
+
+    let text_lower = text.to_lowercase();
+    PATTERNS.iter().any(|p| text_lower.contains(p))
+        || KEYWORD_PAIRS
+            .iter()
+            .any(|(a, b)| text_lower.contains(a) && text_lower.contains(b))
+}
+
+/// Extract text response from tool result
+fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
+    result
+        .content
+        .first()
+        .and_then(|c| c.as_text())
+        .map(|t| t.text.as_str())
+}
+
+/// Check if Jan Browser extension is connected via MCP
+#[tauri::command]
+pub async fn check_jan_browser_extension_connected(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let servers = state.mcp_servers.lock().await;
+    let service = match servers.get("Jan Browser MCP") {
+        Some(s) => s,
+        None => return Ok(false),
+    };
+
+    // Check available tools
+    let tools = match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+        Ok(Ok(tools)) if !tools.is_empty() => tools,
+        _ => return Ok(false),
+    };
+
+    let has_ping = tools.iter().any(|t| t.name == "ping");
+
+    // Try simple ping first if available
+    if has_ping {
+        match try_ping_tool(service).await {
+            PingResult::Connected => return Ok(true),
+            PingResult::NotConnected => return Ok(false),
+            PingResult::ToolNotAvailable => {
+                log::debug!("ping unavailable, trying browser_snapshot");
+            }
+        }
+    }
+
+    // Fallback to browser_snapshot
+    try_browser_snapshot_tool(service).await
+}
+
+enum PingResult {
+    Connected,
+    NotConnected,
+    ToolNotAvailable,
+}
+
+async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+    let result = timeout(
+        Duration::from_secs(3),
+        service.call_tool(CallToolRequestParam {
+            name: "ping".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if let Some(text) = get_result_text(&res) {
+                if text == "pong" {
+                    return PingResult::Connected;
+                }
+                if is_extension_not_connected_error(text) {
+                    return PingResult::NotConnected;
+                }
+            }
+            if res.is_error == Some(true) {
+                return PingResult::NotConnected;
+            }
+            PingResult::Connected
+        }
+        Ok(Err(e)) => {
+            if is_extension_not_connected_error(&e.to_string()) {
+                PingResult::NotConnected
+            } else {
+                PingResult::ToolNotAvailable
+            }
+        }
+        Err(_) => PingResult::NotConnected,
+    }
+}
+
+async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+    let result = timeout(
+        // Snapshot tool is very time-consuming
+        // Extend timeout to make sure the tool call has enough time to succeed
+        Duration::from_secs(20),
+        service.call_tool(CallToolRequestParam {
+            name: "browser_snapshot".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if res.is_error == Some(true) {
+                if let Some(text) = get_result_text(&res) {
+                    if is_extension_not_connected_error(text) {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(true)
+        }
+        Ok(Err(_)) | Err(_) => Ok(false),
+    }
+}
+
 #[tauri::command]
 pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
     let mut path = get_jan_data_folder_path(app.clone());
