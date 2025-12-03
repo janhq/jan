@@ -18,6 +18,7 @@ import {
   IconCheck,
   IconAlertTriangle,
 } from '@tabler/icons-react'
+import { basename } from 'path'
 
 type ImportVisionModelDialogProps = {
   provider: ModelProvider
@@ -66,12 +67,7 @@ export const ImportVisionModelDialog = ({
               const architecture =
                 result.metadata.metadata?.['general.architecture']
 
-              // Extract baseName and use it as model name if available
-              const baseName = result.metadata.metadata?.['general.basename']
-
-              if (baseName) {
-                setModelName(baseName)
-              }
+              setModelName(basename(filePath))
 
               // Model files should NOT be clip
               if (architecture === 'clip') {
