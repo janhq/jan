@@ -33,4 +33,9 @@ export abstract class RAGExtension extends BaseExtension {
   abstract callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult>
 
   abstract ingestAttachments(threadId: string, files: AttachmentInput[]): Promise<IngestAttachmentsResult>
+
+  /**
+   * Parse a document into plain text for inline ingestion or preprocessing.
+   */
+  abstract parseDocument(path: string, type?: string): Promise<string>
 }

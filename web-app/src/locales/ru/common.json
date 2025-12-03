@@ -372,5 +372,9 @@
       "title": "Ответы удалены",
       "description": "Ответы успешно удалены из \"{{projectName}}\""
     }
-  }
+  },
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Встроено для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое вставленного файла"
 }

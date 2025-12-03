@@ -261,6 +261,14 @@
     "featureTitle": "Recurso",
     "enable": "Habilitar Anexos",
     "enableDesc": "Permitir upload e indexação de documentos para recuperação.",
+    "parseMode": "Preferência de análise",
+    "parseModeDesc": "Escolha como os documentos processados são adicionados às conversas.",
+    "parseModeAuto": "Auto",
+    "parseModeInline": "Incluir no chat",
+    "parseModeEmbeddings": "Ingerir como embeddings",
+    "parseModePrompt": "Perguntar sempre",
+    "autoInlineThreshold": "Limite de inclusão automática",
+    "autoInlineThresholdDesc": "Fração do contexto do modelo usada como limite para incluir arquivos processados em modelos locais.",
     "limitsTitle": "Limites",
     "maxFile": "Tamanho Máximo do Arquivo (MB)",
     "maxFileDesc": "Tamanho máximo por arquivo. Aplicado no upload e processamento.",
@@ -275,10 +283,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linear",
     "chunkingTitle": "Fragmentação",
-    "chunkSize": "Tamanho do Fragmento (tokens)",
-    "chunkSizeDesc": "Máximo aproximado de tokens por fragmento para embeddings.",
-    "chunkOverlap": "Sobreposição (tokens)",
-    "chunkOverlapDesc": "Sobreposição de tokens entre fragmentos consecutivos."
+    "chunkSize": "Tamanho do Fragmento (caracteres)",
+    "chunkSizeDesc": "Máximo aproximado de caracteres por fragmento para embeddings.",
+    "chunkOverlap": "Sobreposição (caracteres)",
+    "chunkOverlapDesc": "Sobreposição de caracteres entre fragmentos consecutivos."
   },
   "dialogs": {
     "changeDataFolder": {

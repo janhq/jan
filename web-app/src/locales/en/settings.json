@@ -269,6 +269,14 @@
     "featureTitle": "Feature",
     "enable": "Enable Attachments",
     "enableDesc": "Allow uploading and indexing documents for retrieval.",
+    "parseMode": "Parse preference",
+    "parseModeDesc": "Choose how parsed documents are added to conversations.",
+    "parseModeAuto": "Auto",
+    "parseModeInline": "Include in chat",
+    "parseModeEmbeddings": "Ingest as embeddings",
+    "parseModePrompt": "Ask every time",
+    "autoInlineThreshold": "Auto inline threshold",
+    "autoInlineThresholdDesc": "Fraction of the model context used as the cutoff for inlining parsed files on local models.",
     "limitsTitle": "Limits",
     "maxFile": "Max File Size (MB)",
     "maxFileDesc": "Maximum size per file. Enforced at upload and processing time.",
@@ -283,10 +291,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linear",
     "chunkingTitle": "Chunking",
-    "chunkSize": "Chunk Size (tokens)",
-    "chunkSizeDesc": "Approximate max tokens per chunk for embeddings.",
-    "chunkOverlap": "Overlap (tokens)",
-    "chunkOverlapDesc": "Token overlap between consecutive chunks."
+    "chunkSize": "Chunk Size (characters)",
+    "chunkSizeDesc": "Approximate max characters per chunk for embeddings.",
+    "chunkOverlap": "Overlap (characters)",
+    "chunkOverlapDesc": "Character overlap between consecutive chunks."
   },
   "dialogs": {
     "changeDataFolder": {

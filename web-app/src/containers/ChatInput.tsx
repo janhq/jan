@@ -15,6 +15,7 @@ import {
 import { ArrowRight } from 'lucide-react'
 import {
   IconPhoto,
+  IconAtom,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -40,13 +41,27 @@ import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension, VectorDBExtension } from '@janhq/core'
+import {
+  ContentType,
+  ExtensionTypeEnum,
+  MCPExtension,
+  MessageStatus,
+  ThreadMessage,
+  fs,
+  VectorDBExtension,
+} from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import {
+  NEW_THREAD_ATTACHMENT_KEY,
+  useChatAttachments,
+} from '@/hooks/useChatAttachments'
 
 import {
   Attachment,
@@ -77,8 +92,10 @@ const ChatInput = ({
   const streamingContent = useAppState((state) => state.streamingContent)
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
+  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
@@ -99,6 +116,7 @@ const ChatInput = ({
   )
 
   const maxRows = 10
+  const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -106,7 +124,6 @@ const ChatInput = ({
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
@@ -132,14 +149,92 @@ const ChatInput = ({
   } = useJanBrowserExtension()
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
+  const parsePreference = useAttachments((s) => s.parseMode)
+  const autoInlineContextRatio = useAttachments((s) => s.autoInlineContextRatio)
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
   // Derived: any document currently processing (ingestion in progress)
+  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  const attachments = useChatAttachments(
+    useCallback((state) => state.getAttachments(attachmentsKey), [attachmentsKey])
+  )
+  const attachmentsKeyRef = useRef(attachmentsKey)
+  const setAttachmentsForThread = useChatAttachments(
+    (state) => state.setAttachments
+  )
+  const clearAttachmentsForThread = useChatAttachments(
+    (state) => state.clearAttachments
+  )
+  const transferAttachments = useChatAttachments(
+    (state) => state.transferAttachments
+  )
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+
+  useEffect(() => {
+    attachmentsKeyRef.current = attachmentsKey
+  }, [attachmentsKey])
+
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+
+  const lastTransferredThreadId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (currentThreadId && lastTransferredThreadId.current !== currentThreadId) {
+      transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
+      lastTransferredThreadId.current = currentThreadId
+    }
+  }, [currentThreadId, transferAttachments])
+
+  const updateAttachmentProcessing = useCallback(
+    (
+      fileName: string,
+      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+    ) => {
+      const targetKey = attachmentsKeyRef.current
+      const storeState = useChatAttachments.getState()
+
+      // Find all keys that have this attachment (including NEW_THREAD_ATTACHMENT_KEY)
+      const allMatchingKeys = Object.entries(storeState.attachmentsByThread)
+        .filter(([, list]) => list?.some((att) => att.name === fileName))
+        .map(([key]) => key)
+
+      // Always include targetKey and all matching keys
+      const keysToUpdate = new Set([targetKey, ...allMatchingKeys])
+
+      const applyUpdate = (key: string) => {
+        if (status === 'clear_docs') {
+          setAttachmentsForThread(key, (prev) =>
+            prev.filter((a) => a.type !== 'document')
+          )
+          return
+        }
+
+        if (status === 'clear_all') {
+          clearAttachmentsForThread(key)
+          return
+        }
+
+        setAttachmentsForThread(key, (prev) =>
+          prev.map((att) =>
+            att.name === fileName
+              ? {
+                  ...att,
+                  processing: status === 'processing',
+                  processed: status === 'done' ? true : att.processed,
+                }
+              : att
+          )
+        )
+      }
+
+      keysToUpdate.forEach((key) => applyUpdate(key as string))
+    },
+    [clearAttachmentsForThread, setAttachmentsForThread]
+  )
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -178,34 +273,12 @@ const ChatInput = ({
     if (!prompt.trim()) {
       return
     }
+    if (ingestingAny) {
+      toast.info('Please wait for attachments to finish processing')
+      return
+    }
 
     setMessage('')
-
-    // Callback to update attachment processing state
-    const updateAttachmentProcessing = (
-      fileName: string,
-      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
-    ) => {
-      if (status === 'clear_docs') {
-        setAttachments((prev) => prev.filter((a) => a.type !== 'document'))
-        return
-      }
-      if (status === 'clear_all') {
-        setAttachments([])
-        return
-      }
-      setAttachments((prev) =>
-        prev.map((att) =>
-          att.name === fileName
-            ? {
-              ...att,
-              processing: status === 'processing',
-              processed: status === 'done' ? true : att.processed,
-            }
-            : att
-        )
-      )
-    }
 
     sendMessage(
       prompt,
@@ -278,6 +351,184 @@ const ChatInput = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const processNewDocumentAttachments = useCallback(
+    async (docs: Attachment[]) => {
+      if (!docs.length || !currentThreadId) return
+
+      const modelReady = await (async () => {
+        if (!selectedModel?.id) return false
+        if (activeModels.includes(selectedModel.id)) return true
+        const provider = getProviderByName(selectedProvider)
+        if (!provider) return false
+        try {
+          updateLoadingModel(true)
+          await serviceHub.models().startModel(provider, selectedModel.id)
+          const active = await serviceHub.models().getActiveModels()
+          setActiveModels(active || [])
+          return active?.includes(selectedModel.id) ?? false
+        } catch (err) {
+          console.warn('Failed to start model before attachment validation', err)
+          return false
+        } finally {
+          updateLoadingModel(false)
+        }
+      })()
+
+      const modelContextLength = (() => {
+        const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
+        if (typeof ctx === 'number') return ctx
+        if (typeof ctx === 'string') {
+          const parsed = parseInt(ctx, 10)
+          return Number.isFinite(parsed) ? parsed : undefined
+        }
+        return undefined
+      })()
+
+      const rawContextThreshold =
+        typeof modelContextLength === 'number' && modelContextLength > 0
+          ? Math.floor(
+              modelContextLength *
+                (typeof autoInlineContextRatio === 'number'
+                  ? autoInlineContextRatio
+                  : 0.75)
+            )
+          : undefined
+
+      const contextThreshold =
+        typeof rawContextThreshold === 'number' &&
+        Number.isFinite(rawContextThreshold) &&
+        rawContextThreshold > 0
+          ? rawContextThreshold
+          : undefined
+
+      const hasContextEstimate =
+        modelReady &&
+        typeof contextThreshold === 'number' &&
+        Number.isFinite(contextThreshold) &&
+        contextThreshold > 0
+      const docsNeedingPrompt = docs.filter((doc) => {
+        if (doc.processed || doc.injectionMode) return false
+        const preference = doc.parseMode ?? parsePreference
+        return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
+      })
+
+      // Map to store individual choices for each document
+      const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
+      if (docsNeedingPrompt.length > 0) {
+        // Ask for each file individually
+        for (let i = 0; i < docsNeedingPrompt.length; i++) {
+          const doc = docsNeedingPrompt[i]
+          const choice = await useAttachmentIngestionPrompt
+            .getState()
+            .showPrompt(doc, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES, i, docsNeedingPrompt.length)
+
+          if (!choice) {
+            // User cancelled - remove all pending docs
+            setAttachmentsForThread(attachmentsKey, (prev) =>
+              prev.filter(
+                (att) =>
+                  !docsNeedingPrompt.some(
+                    (doc) => doc.path && att.path && doc.path === att.path
+                  )
+              )
+            )
+            return
+          }
+
+          // Store the choice for this specific document
+          if (doc.path) {
+            docChoices.set(doc.path, choice)
+          }
+        }
+      }
+
+      const estimateTokens = async (text: string): Promise<number | undefined> => {
+        try {
+          if (!selectedModel?.id || !modelReady) return undefined
+          const tokenCount = await serviceHub
+            .models()
+            .getTokensCount(selectedModel.id, [
+              {
+                id: 'inline-attachment',
+                object: 'thread.message',
+                thread_id: currentThreadId,
+                role: 'user',
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: text, annotations: [] },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              } as ThreadMessage,
+            ])
+          if (
+            typeof tokenCount !== 'number' ||
+            !Number.isFinite(tokenCount) ||
+            tokenCount <= 0
+          ) {
+            return undefined
+          }
+          return tokenCount
+        } catch (e) {
+          console.debug('Failed to estimate tokens for attachment content', e)
+          return undefined
+        }
+      }
+
+      try {
+        const { processedAttachments, hasEmbeddedDocuments } =
+          await processAttachmentsForSend({
+            attachments: docs,
+            threadId: currentThreadId,
+            serviceHub,
+            selectedProvider,
+            contextThreshold,
+            estimateTokens,
+            parsePreference,
+            perFileChoices: docChoices.size > 0 ? docChoices : undefined,
+            updateAttachmentProcessing,
+          })
+
+        if (processedAttachments.length > 0) {
+          setAttachmentsForThread(attachmentsKey, (prev) =>
+            prev.map((att) => {
+              const match = processedAttachments.find(
+                (p) => p.path && att.path && p.path === att.path
+              )
+              return match ? { ...att, ...match } : att
+            })
+          )
+        }
+
+        if (hasEmbeddedDocuments) {
+          useThreads.getState().updateThread(currentThreadId, {
+            metadata: { hasDocuments: true },
+          })
+        }
+      } catch (e) {
+        console.error('Failed to process attachments:', e)
+      }
+    },
+    [
+      autoInlineContextRatio,
+      activeModels,
+      currentThreadId,
+      getProviderByName,
+      parsePreference,
+      selectedModel?.id,
+      selectedModel?.settings?.ctx_len?.controller_props?.value,
+      selectedProvider,
+      serviceHub,
+      setActiveModels,
+      updateAttachmentProcessing,
+      updateLoadingModel,
+    ]
+  )
+
   const handleAttachDocsIngest = async () => {
     try {
       if (!attachmentsEnabled) {
@@ -331,6 +582,7 @@ const ChatInput = ({
             path: p,
             fileType,
             size,
+            parseMode: parsePreference,
           })
         )
       }
@@ -338,7 +590,7 @@ const ChatInput = ({
       let duplicates: string[] = []
       let newDocAttachments: Attachment[] = []
 
-      setAttachments((currentAttachments) => {
+      setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
         const existingPaths = new Set(
           currentAttachments
             .filter((a) => a.type === 'document' && a.path)
@@ -356,10 +608,9 @@ const ChatInput = ({
           newDocAttachments.push(att)
         }
 
-        if (newDocAttachments.length > 0) {
-          return [...currentAttachments, ...newDocAttachments]
-        }
-        return currentAttachments
+        return newDocAttachments.length > 0
+          ? [...currentAttachments, ...newDocAttachments]
+          : currentAttachments
       })
 
       if (duplicates.length > 0) {
@@ -369,72 +620,7 @@ const ChatInput = ({
       }
 
       if (newDocAttachments.length > 0) {
-        if (currentThreadId) {
-          const ragExtension = ExtensionManager.getInstance().get(
-            ExtensionTypeEnum.RAG
-          ) as RAGExtension | undefined
-          if (!ragExtension) {
-            toast.error('RAG extension not available')
-            return
-          }
-
-          for (const doc of newDocAttachments) {
-            try {
-              // Mark as processing
-              setAttachments((prev) =>
-                prev.map((a) =>
-                  a.path === doc.path && a.type === 'document'
-                    ? { ...a, processing: true }
-                    : a
-                )
-              )
-
-              const result = await ragExtension.ingestAttachments(
-                currentThreadId,
-                [
-                  {
-                    path: doc.path!,
-                    name: doc.name,
-                    type: doc.fileType,
-                    size: doc.size,
-                  },
-                ]
-              )
-
-              const fileInfo = result.files?.[0]
-              if (fileInfo?.id) {
-                // Mark as processed with ID
-                setAttachments((prev) =>
-                  prev.map((a) =>
-                    a.path === doc.path && a.type === 'document'
-                      ? {
-                        ...a,
-                        processing: false,
-                        processed: true,
-                        id: fileInfo.id,
-                        chunkCount: fileInfo.chunk_count,
-                      }
-                      : a
-                  )
-                )
-              } else {
-                throw new Error('No file ID returned from ingestion')
-              }
-            } catch (error) {
-              console.error('Failed to ingest document:', error)
-              // Remove failed document
-              setAttachments((prev) =>
-                prev.filter(
-                  (a) => !(a.path === doc.path && a.type === 'document')
-                )
-              )
-              toast.error(`Failed to ingest ${doc.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-        }
+        await processNewDocumentAttachments(newDocAttachments)
       }
     } catch (e) {
       console.error('Failed to attach documents:', e)
@@ -467,7 +653,9 @@ const ChatInput = ({
       }
     }
 
-    setAttachments((prev) => prev.filter((_, index) => index !== indexToRemove))
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      prev.filter((_, index) => index !== indexToRemove)
+    )
   }
 
   const getFileTypeFromExtension = (fileName: string): string => {
@@ -554,7 +742,7 @@ const ChatInput = ({
     let duplicates: string[] = []
     let newFiles: Attachment[] = []
 
-    setAttachments((currentAttachments) => {
+    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
       const existingImageNames = new Set(
         currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
       )
@@ -581,7 +769,7 @@ const ChatInput = ({
         for (const img of newFiles) {
           try {
             // Mark as processing
-            setAttachments((prev) =>
+            setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.map((a) =>
                 a.name === img.name && a.type === 'image'
                   ? { ...a, processing: true }
@@ -595,7 +783,7 @@ const ChatInput = ({
 
             if (result?.id) {
               // Mark as processed with ID
-              setAttachments((prev) =>
+              setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
                   a.name === img.name && a.type === 'image'
                     ? {
@@ -613,7 +801,7 @@ const ChatInput = ({
           } catch (error) {
             console.error('Failed to ingest image:', error)
             // Remove failed image
-            setAttachments((prev) =>
+            setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.filter((a) => !(a.name === img.name && a.type === 'image'))
             )
             toast.error(`Failed to ingest ${img.name}`, {
@@ -938,102 +1126,105 @@ const ChatInput = ({
             onDrop={hasMmproj ? handleDrop : undefined}
           >
             {attachments.length > 0 && (
-              <div className="flex gap-3 items-center p-2 pb-0">
-                {attachments
-                  .map((att, idx) => ({ att, idx }))
-                  .map(({ att, idx }) => {
-                    const isImage = att.type === 'image'
-                    const ext = att.fileType || att.mimeType?.split('/')[1]
-                    return (
-                      <div
-                        key={`${att.type}-${idx}-${att.name}`}
-                        className="relative"
-                      >
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  'relative border border-main-view-fg/5 rounded-lg size-14 overflow-hidden bg-main-view/40',
-                                  'flex items-center justify-center'
-                                )}
-                              >
-                                {/* Inner content by state */}
-                                {isImage && att.dataUrl ? (
-                                  <img
-                                    className="object-cover w-full h-full"
-                                    src={att.dataUrl}
-                                    alt={`${att.name}`}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-main-view-fg/70">
-                                    <IconPaperclip size={18} />
-                                    {ext && (
-                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                        .{ext}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Overlay spinner when processing */}
-                                {att.processing && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                    <IconLoader2
-                                      size={18}
-                                      className="text-main-view-fg/80 animate-spin"
+              <div className="flex flex-col gap-2 p-2 pb-0">
+                <div className="flex gap-3 items-center">
+                  {attachments
+                    .map((att, idx) => ({ att, idx }))
+                    .map(({ att, idx }) => {
+                      const isImage = att.type === 'image'
+                      const ext = att.fileType || att.mimeType?.split('/')[1]
+                      return (
+                        <div
+                          key={`${att.type}-${idx}-${att.name}`}
+                          className="relative"
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn(
+                                    'relative border border-main-view-fg/5 rounded-lg size-14 overflow-hidden bg-main-view/40',
+                                    'flex items-center justify-center'
+                                  )}
+                                >
+                                  {/* Inner content by state */}
+                                  {isImage && att.dataUrl ? (
+                                    <img
+                                      className="object-cover w-full h-full"
+                                      src={att.dataUrl}
+                                      alt={`${att.name}`}
                                     />
-                                  </div>
-                                )}
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center text-main-view-fg/70">
+                                      <IconPaperclip size={18} />
+                                      {ext && (
+                                        <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                          .{ext}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
 
-                                {/* Overlay success check when processed */}
-                                {att.processed && !att.processing && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/5">
-                                    <div className="bg-green-600/90 rounded-full p-1">
-                                      <IconCheck
-                                        size={14}
-                                        className="text-white"
+                                  {/* Overlay spinner when processing */}
+                                  {att.processing && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                      <IconLoader2
+                                        size={18}
+                                        className="text-main-view-fg/80 animate-spin"
                                       />
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
-                                <div
-                                  className="font-medium truncate max-w-52"
-                                  title={att.name}
-                                >
-                                  {att.name}
-                                </div>
-                                <div className="opacity-70">
-                                  {isImage
-                                    ? att.mimeType || 'image'
-                                    : ext
-                                      ? `.${ext}`
-                                      : 'document'}
-                                  {att.size
-                                    ? ` · ${formatBytes(att.size)}`
-                                    : ''}
-                                </div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                                  )}
 
-                        {/* Remove button disabled while processing - outside overflow-hidden container */}
-                        {!att.processing && (
-                          <div
-                            className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                            onClick={() => handleRemoveAttachment(idx)}
-                          >
-                            <IconX className="text-destructive-fg" size={16} />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                                  {/* Overlay success check when processed */}
+                                  {att.processed && !att.processing && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/5">
+                                      <div className="bg-green-600/90 rounded-full p-1">
+                                        <IconCheck
+                                          size={14}
+                                          className="text-white"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-xs">
+                                  <div
+                                    className="font-medium truncate max-w-52"
+                                    title={att.name}
+                                  >
+                                    {att.name}
+                                  </div>
+                                  <div className="opacity-70">
+                                    {isImage
+                                      ? att.mimeType || 'image'
+                                      : ext
+                                        ? `.${ext}`
+                                        : 'document'}
+                                    {att.size
+                                      ? ` · ${formatBytes(att.size)}`
+                                      : ''}
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          {/* Remove button disabled while processing - outside overflow-hidden container */}
+                          {!att.processing && (
+                            <div
+                              className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                              onClick={() => handleRemoveAttachment(idx)}
+                            >
+                              <IconX className="text-destructive-fg" size={16} />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                </div>
+
               </div>
             )}
             <TextareaAutosize
@@ -1059,7 +1250,7 @@ const ChatInput = ({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
-                  if (!streamingContent && prompt.trim()) {
+                  if (!streamingContent && prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -1287,6 +1478,40 @@ const ChatInput = ({
                       </Tooltip>
                     </TooltipProvider>
                   ))}
+                {selectedModel?.capabilities?.includes('web_search') && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconWorld
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Web Search</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {selectedModel?.capabilities?.includes('reasoning') && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconAtom
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('reasoning')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
             </div>
 

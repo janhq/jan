@@ -23,6 +23,7 @@ import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import LoadModelErrorDialog from '@/containers/dialogs/LoadModelErrorDialog'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
+import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -251,6 +252,7 @@ function RootLayout() {
           <ToolApproval />
           <LoadModelErrorDialog />
           <ErrorDialog />
+          <AttachmentIngestionDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>
       </ServiceHubProvider>

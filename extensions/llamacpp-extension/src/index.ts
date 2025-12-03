@@ -35,7 +35,12 @@ import {
   mapOldBackendToNew,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
-import { getProxyConfig } from './util'
+import {
+  getProxyConfig,
+  buildEmbedBatches,
+  mergeEmbedResponses,
+  type EmbedBatchResult,
+} from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -2331,14 +2336,20 @@ export default class llamacpp_extension extends AIEngine {
       sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
 
-    const attemptRequest = async (session: SessionInfo) => {
+    const ubatchSize =
+      (this.config?.ubatch_size && this.config.ubatch_size > 0
+        ? this.config.ubatch_size
+        : 512) || 512
+    const batches = buildEmbedBatches(text, ubatchSize)
+
+    const attemptRequest = async (session: SessionInfo, batchInput: string[]) => {
       const baseUrl = `http://localhost:${session.port}/v1/embeddings`
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.api_key}`,
       }
       const body = JSON.stringify({
-        input: text,
+        input: batchInput,
         model: session.model_id,
         encoding_format: 'float',
       })
@@ -2350,26 +2361,38 @@ export default class llamacpp_extension extends AIEngine {
       return response
     }
 
-    // First try with the existing session (may have been started without --embedding previously)
-    let response = await attemptRequest(sInfo)
+    const sendBatch = async (batchInput: string[]) => {
+      let response = await attemptRequest(sInfo as SessionInfo, batchInput)
 
-    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-    if (response.status === 501) {
-      try {
-        await this.unload('sentence-transformer-mini')
-      } catch {}
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
-      response = await attemptRequest(sInfo)
+      // If embeddings endpoint is not available (501), reload with embedding mode and retry once
+      if (response.status === 501) {
+        try {
+          await this.unload('sentence-transformer-mini')
+        } catch {}
+        sInfo = await this.load('sentence-transformer-mini', undefined, true)
+        response = await attemptRequest(sInfo as SessionInfo, batchInput)
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        )
+      }
+      const responseData = (await response.json()) as EmbedBatchResult
+      return responseData
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-      )
+    const batchResults: Array<{ result: EmbedBatchResult; offset: number }> = []
+    for (const { batch, offset } of batches) {
+      const result = await sendBatch(batch)
+      batchResults.push({ result, offset })
     }
-    const responseData = await response.json()
-    return responseData as EmbeddingResponse
+
+    return mergeEmbedResponses(
+      (sInfo as SessionInfo).model_id,
+      batchResults
+    ) as EmbeddingResponse
   }
 
   /**

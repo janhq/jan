@@ -65,15 +65,19 @@ export const newUserThreadContent = (
   const images = attachments?.filter((a) => a.type === 'image') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
 
+  const inlineDocuments = documents.filter(
+    (doc) => doc.injectionMode === 'inline' && doc.inlineContent
+  )
+
   // Inject document metadata into the text content (id, name, fileType only - no path)
   const docMetadata = documents
-    .filter((doc) => doc.id) // Only include processed documents
     .map((doc) => ({
-      id: doc.id!,
+      id: doc.id ?? doc.name,
       name: doc.name,
       type: doc.fileType,
       size: typeof doc.size === 'number' ? doc.size : undefined,
       chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+      injectionMode: doc.injectionMode,
     }))
 
   const textWithFiles =
@@ -112,6 +116,15 @@ export const newUserThreadContent = (
     status: MessageStatus.Ready,
     created_at: 0,
     completed_at: 0,
+    metadata:
+      inlineDocuments.length > 0
+        ? {
+            inline_file_contents: inlineDocuments.map((doc) => ({
+              name: doc.name,
+              content: doc.inlineContent,
+            })),
+          }
+        : undefined,
   }
 }
 /**
