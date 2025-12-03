@@ -1,6 +1,39 @@
 {
   "editServer": "Edit MCP Server",
   "addServer": "Add MCP Server",
+  "browserExtension": {
+    "connecting": {
+      "title": "Connecting to Jan Browser Extension",
+      "description": "Please wait while we check for the browser extension...",
+      "checking": "Checking extension status..."
+    },
+    "notInstalled": {
+      "title": "Install Jan Browser Extension",
+      "description": "To use browser automation features, you need to install the Jan Browser Extension.",
+      "whatCanDo": "What can Jan Browser do?",
+      "feature1": "Search the web and extract information from pages",
+      "feature2": "Navigate websites and take screenshots",
+      "feature3": "Click, type, and interact with web elements",
+      "installed": "I've Installed It",
+      "getExtension": "Get Extension"
+    },
+    "waitingConnection": {
+      "title": "Waiting for Extension Connection",
+      "description": "The MCP server is running. Please open the Jan Browser Extension in your browser to connect.",
+      "howToConnect": "How to connect:",
+      "step1": "Click the Jan Browser Extension icon in your browser toolbar",
+      "step2": "Click \"Connect\" in the extension popup",
+      "step3": "The extension will automatically connect to Jan",
+      "continueAnyway": "Continue Anyway",
+      "checkAgain": "Check Again"
+    },
+    "connected": {
+      "title": "Extension Connected!",
+      "description": "The Jan Browser Extension is connected and ready to use.",
+      "toolsAvailable": "Browser tools are now available",
+      "done": "Done"
+    }
+  },
   "serverName": "Server Name",
   "enterServerName": "Enter server name",
   "command": "Command",

@@ -1,6 +1,39 @@
 {
   "editServer": "MCPサーバーを編集",
   "addServer": "MCPサーバーを追加",
+  "browserExtension": {
+    "connecting": {
+      "title": "Jan Browser拡張機能に接続中",
+      "description": "ブラウザ拡張機能を確認しています。しばらくお待ちください...",
+      "checking": "拡張機能の状態を確認中..."
+    },
+    "notInstalled": {
+      "title": "Jan Browser拡張機能をインストール",
+      "description": "ブラウザ自動化機能を使用するには、Jan Browser拡張機能をインストールする必要があります。",
+      "whatCanDo": "Jan Browserでできること",
+      "feature1": "ウェブを検索してページから情報を抽出",
+      "feature2": "ウェブサイトをナビゲートしてスクリーンショットを撮影",
+      "feature3": "クリック、入力、ウェブ要素との対話",
+      "installed": "インストール済み",
+      "getExtension": "拡張機能を取得"
+    },
+    "waitingConnection": {
+      "title": "拡張機能の接続を待機中",
+      "description": "MCPサーバーは実行中です。ブラウザでJan Browser拡張機能を開いて接続してください。",
+      "howToConnect": "接続方法：",
+      "step1": "ブラウザのツールバーでJan Browser拡張機能のアイコンをクリック",
+      "step2": "拡張機能のポップアップで「接続」をクリック",
+      "step3": "拡張機能は自動的にJanに接続します",
+      "continueAnyway": "このまま続行",
+      "checkAgain": "再確認"
+    },
+    "connected": {
+      "title": "拡張機能が接続されました！",
+      "description": "Jan Browser拡張機能が接続され、使用可能になりました。",
+      "toolsAvailable": "ブラウザツールが利用可能になりました",
+      "done": "完了"
+    }
+  },
   "serverName": "サーバー名",
   "enterServerName": "サーバー名を入力",
   "command": "コマンド",

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { toast } from 'sonner'
@@ -19,6 +19,11 @@ export function useJanBrowserExtension() {
   const [dialogState, setDialogState] = useState<JanBrowserExtensionDialogState>('closed')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  const cancelledRef = useRef(false)
+  const cancelDeactivationPromiseRef = useRef<Promise<void> | null>(null)
+  const operationInProgressRef = useRef(false)
 
   const janBrowserConfig = mcpServers[JAN_BROWSER_MCP_NAME]
   const hasConfig = !!janBrowserConfig
@@ -45,6 +50,9 @@ export function useJanBrowserExtension() {
   ): Promise<boolean> => {
     const startTime = Date.now()
     while (Date.now() - startTime < maxWaitMs) {
+      if (cancelledRef.current) {
+        return false
+      }
       const connected = await checkExtensionConnection()
       if (connected) {
         return true
@@ -97,23 +105,33 @@ export function useJanBrowserExtension() {
    * Handle cancel async
    */
   const handleCancel = useCallback(() => {
+    cancelledRef.current = true
     setDialogOpen(false)
     setDialogState('closed')
+    setIsLoading(false)
 
     if (janBrowserConfig) {
+      setIsCancelling(true)
+
       editServer(JAN_BROWSER_MCP_NAME, {
         ...janBrowserConfig,
         active: false,
       })
-    }
 
-    if (janBrowserConfig?.active) {
-      Promise.all([
+      const deactivationPromise = Promise.all([
         serviceHub.mcp().deactivateMCPServer(JAN_BROWSER_MCP_NAME),
         syncServers(),
-      ]).catch((error) => {
-        console.error('Error deactivating Jan Browser MCP on cancel:', error)
-      })
+      ])
+        .then(() => {})
+        .catch((error) => {
+          console.error('Error deactivating Jan Browser MCP on cancel:', error)
+        })
+        .finally(() => {
+          cancelDeactivationPromiseRef.current = null
+          setIsCancelling(false)
+        })
+
+      cancelDeactivationPromiseRef.current = deactivationPromise
     }
   }, [janBrowserConfig, serviceHub, editServer, syncServers])
 
@@ -121,23 +139,35 @@ export function useJanBrowserExtension() {
    * Toggle the Jan Browser MCP (called when clicking the browser icon)
    */
   const toggleBrowser = useCallback(async () => {
-    if (!janBrowserConfig) {
-      toast.error('Jan Browser MCP not found', {
-        description: 'Please check your MCP server configuration',
-      })
-      return
-    }
+    // Atomic check - refs update synchronously, prevents race conditions
+    if (operationInProgressRef.current) return
+    operationInProgressRef.current = true
 
-    const newActiveState = !isActive
-
-    setIsLoading(true)
     try {
+      if (!janBrowserConfig) {
+        toast.error('Jan Browser MCP not found', {
+          description: 'Please check your MCP server configuration',
+        })
+        return
+      }
+
+      if (cancelDeactivationPromiseRef.current) {
+        await cancelDeactivationPromiseRef.current
+      }
+
+      const newActiveState = !isActive
+      cancelledRef.current = false
+
+      setIsLoading(true)
       if (newActiveState) {
         // Activate the server
         await serviceHub.mcp().activateMCPServer(JAN_BROWSER_MCP_NAME, {
           ...janBrowserConfig,
           active: true,
         })
+
+        // Check if cancelled during activation
+        if (cancelledRef.current) return
 
         editServer(JAN_BROWSER_MCP_NAME, {
           ...janBrowserConfig,
@@ -153,6 +183,9 @@ export function useJanBrowserExtension() {
         await new Promise(resolve => setTimeout(resolve, SERVER_START_DELAY_MS))
 
         const connected = await waitForExtensionConnection(PING_TIMEOUT_MS, POLL_INTERVAL_MS)
+
+        // Check if cancelled during connection check
+        if (cancelledRef.current) return
 
         if (connected) {
           handleConnectionSuccess()
@@ -172,6 +205,9 @@ export function useJanBrowserExtension() {
         await syncServers()
       }
     } catch (error) {
+      // Don't show error if cancelled
+      if (cancelledRef.current) return
+
       toast.error('Failed to toggle Jan Browser MCP', {
         description: error instanceof Error ? error.message : String(error),
       })
@@ -179,7 +215,11 @@ export function useJanBrowserExtension() {
       setDialogOpen(false)
       setDialogState('closed')
     } finally {
-      setIsLoading(false)
+      if (!cancelledRef.current) {
+        setIsLoading(false)
+      }
+      // Always release the mutex
+      operationInProgressRef.current = false
     }
   }, [
     janBrowserConfig,
@@ -195,7 +235,7 @@ export function useJanBrowserExtension() {
     // State
     hasConfig,
     isActive,
-    isLoading,
+    isLoading: isLoading || isCancelling,
     dialogOpen,
     dialogState,
 

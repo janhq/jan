@@ -1,6 +1,39 @@
 {
   "editServer": "Edit Server MCP",
   "addServer": "Tambah Server MCP",
+  "browserExtension": {
+    "connecting": {
+      "title": "Menghubungkan ke Ekstensi Jan Browser",
+      "description": "Mohon tunggu sementara kami memeriksa ekstensi browser...",
+      "checking": "Memeriksa status ekstensi..."
+    },
+    "notInstalled": {
+      "title": "Instal Ekstensi Jan Browser",
+      "description": "Untuk menggunakan fitur otomatisasi browser, Anda perlu menginstal Ekstensi Jan Browser.",
+      "whatCanDo": "Apa yang bisa dilakukan Jan Browser?",
+      "feature1": "Mencari di web dan mengekstrak informasi dari halaman",
+      "feature2": "Menavigasi situs web dan mengambil tangkapan layar",
+      "feature3": "Klik, ketik, dan berinteraksi dengan elemen web",
+      "installed": "Saya Sudah Menginstalnya",
+      "getExtension": "Dapatkan Ekstensi"
+    },
+    "waitingConnection": {
+      "title": "Menunggu Koneksi Ekstensi",
+      "description": "Server MCP sedang berjalan. Silakan buka Ekstensi Jan Browser di browser Anda untuk terhubung.",
+      "howToConnect": "Cara menghubungkan:",
+      "step1": "Klik ikon Ekstensi Jan Browser di toolbar browser Anda",
+      "step2": "Klik \"Hubungkan\" di popup ekstensi",
+      "step3": "Ekstensi akan secara otomatis terhubung ke Jan",
+      "continueAnyway": "Lanjutkan Saja",
+      "checkAgain": "Periksa Lagi"
+    },
+    "connected": {
+      "title": "Ekstensi Terhubung!",
+      "description": "Ekstensi Jan Browser terhubung dan siap digunakan.",
+      "toolsAvailable": "Alat browser sekarang tersedia",
+      "done": "Selesai"
+    }
+  },
   "serverName": "Nama Server",
   "enterServerName": "Masukkan nama server",
   "command": "Perintah",

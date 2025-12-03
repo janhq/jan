@@ -1,6 +1,39 @@
 {
   "editServer": "Chỉnh sửa máy chủ MCP",
   "addServer": "Thêm máy chủ MCP",
+  "browserExtension": {
+    "connecting": {
+      "title": "Đang kết nối với tiện ích Jan Browser",
+      "description": "Vui lòng chờ trong khi chúng tôi kiểm tra tiện ích trình duyệt...",
+      "checking": "Đang kiểm tra trạng thái tiện ích..."
+    },
+    "notInstalled": {
+      "title": "Cài đặt tiện ích Jan Browser",
+      "description": "Để sử dụng các tính năng tự động hóa trình duyệt, bạn cần cài đặt tiện ích Jan Browser.",
+      "whatCanDo": "Jan Browser có thể làm gì?",
+      "feature1": "Tìm kiếm trên web và trích xuất thông tin từ các trang",
+      "feature2": "Điều hướng các trang web và chụp ảnh màn hình",
+      "feature3": "Nhấp, gõ và tương tác với các phần tử web",
+      "installed": "Tôi đã cài đặt",
+      "getExtension": "Tải tiện ích"
+    },
+    "waitingConnection": {
+      "title": "Đang chờ kết nối tiện ích",
+      "description": "Máy chủ MCP đang chạy. Vui lòng mở tiện ích Jan Browser trong trình duyệt để kết nối.",
+      "howToConnect": "Cách kết nối:",
+      "step1": "Nhấp vào biểu tượng tiện ích Jan Browser trên thanh công cụ trình duyệt",
+      "step2": "Nhấp \"Kết nối\" trong cửa sổ bật lên của tiện ích",
+      "step3": "Tiện ích sẽ tự động kết nối với Jan",
+      "continueAnyway": "Tiếp tục",
+      "checkAgain": "Kiểm tra lại"
+    },
+    "connected": {
+      "title": "Tiện ích đã kết nối!",
+      "description": "Tiện ích Jan Browser đã kết nối và sẵn sàng sử dụng.",
+      "toolsAvailable": "Các công cụ trình duyệt hiện đã có sẵn",
+      "done": "Hoàn tất"
+    }
+  },
   "serverName": "Tên máy chủ",
   "enterServerName": "Nhập tên máy chủ",
   "command": "Lệnh",

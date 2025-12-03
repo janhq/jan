@@ -1,6 +1,39 @@
 {
   "editServer": "MCP Server bearbeiten",
   "addServer": "MCP Server hinzufügen",
+  "browserExtension": {
+    "connecting": {
+      "title": "Verbindung zur Jan Browser-Erweiterung",
+      "description": "Bitte warten Sie, während wir die Browser-Erweiterung überprüfen...",
+      "checking": "Erweiterungsstatus wird überprüft..."
+    },
+    "notInstalled": {
+      "title": "Jan Browser-Erweiterung installieren",
+      "description": "Um Browser-Automatisierungsfunktionen zu nutzen, müssen Sie die Jan Browser-Erweiterung installieren.",
+      "whatCanDo": "Was kann Jan Browser?",
+      "feature1": "Im Web suchen und Informationen von Seiten extrahieren",
+      "feature2": "Websites navigieren und Screenshots aufnehmen",
+      "feature3": "Klicken, tippen und mit Web-Elementen interagieren",
+      "installed": "Ich habe es installiert",
+      "getExtension": "Erweiterung holen"
+    },
+    "waitingConnection": {
+      "title": "Warten auf Erweiterungsverbindung",
+      "description": "Der MCP-Server läuft. Bitte öffnen Sie die Jan Browser-Erweiterung in Ihrem Browser, um eine Verbindung herzustellen.",
+      "howToConnect": "So verbinden Sie sich:",
+      "step1": "Klicken Sie auf das Symbol der Jan Browser-Erweiterung in Ihrer Browser-Werkzeugleiste",
+      "step2": "Klicken Sie auf \"Verbinden\" im Erweiterungs-Popup",
+      "step3": "Die Erweiterung wird sich automatisch mit Jan verbinden",
+      "continueAnyway": "Trotzdem fortfahren",
+      "checkAgain": "Erneut prüfen"
+    },
+    "connected": {
+      "title": "Erweiterung verbunden!",
+      "description": "Die Jan Browser-Erweiterung ist verbunden und einsatzbereit.",
+      "toolsAvailable": "Browser-Tools sind jetzt verfügbar",
+      "done": "Fertig"
+    }
+  },
   "serverName": "Server Name",
   "enterServerName": "Server Namen eingeben",
   "command": "Kommando",
