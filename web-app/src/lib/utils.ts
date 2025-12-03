@@ -201,3 +201,34 @@ export const extractThinkingContent = (text: string) => {
     .replace(/<\|start\|>/g, '') // remove any remaining start markers
     .trim()
 }
+
+export interface MermaidDiagram {
+  code: string
+  index: number
+}
+
+/**
+ * Detect if markdown content contains mermaid diagrams
+ */
+export const hasMermaidDiagram = (content: string): boolean => {
+  return /```mermaid\n[\s\S]*?\n```/g.test(content)
+}
+
+/**
+ * Extract all mermaid diagrams from markdown content
+ */
+export const extractMermaidDiagrams = (content: string): MermaidDiagram[] => {
+  const regex = /```mermaid\n([\s\S]*?)\n```/g
+  const diagrams: MermaidDiagram[] = []
+  let match
+  let index = 0
+
+  while ((match = regex.exec(content)) !== null) {
+    diagrams.push({
+      code: match[1].trim(),
+      index: index++
+    })
+  }
+
+  return diagrams
+}

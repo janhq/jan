@@ -3,9 +3,11 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 export function KeyboardShortcutsProvider() {
   const { open, setLeftPanel } = useLeftPanel()
+  const { closePanel: closeToolPanel } = useToolCallPanel()
   const router = useRouter()
 
   // Get shortcut specs from centralized configuration
@@ -18,6 +20,10 @@ export function KeyboardShortcutsProvider() {
     ...sidebarShortcut,
     callback: () => {
       setLeftPanel(!open)
+      // Close tool panel when opening left panel
+      if (!open) {
+        closeToolPanel()
+      }
     },
   })
 

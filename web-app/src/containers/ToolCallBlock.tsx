@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { create } from 'zustand'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { twMerge } from 'tailwind-merge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import ImageModal from '@/containers/dialogs/ImageModal'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 interface Props {
   result: string
@@ -121,10 +122,26 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
     url: string
     alt: string
   } | null>(null)
+  const { openPanel } = useToolCallPanel()
 
   const handleClick = () => {
     const newExpandedState = !isExpanded
     setCollapseState(id, newExpandedState)
+  }
+
+  const handleOpenPanel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!loading && result) {
+      openPanel({
+        type: 'tool_call',
+        data: {
+          id,
+          name,
+          args,
+          result,
+        },
+      })
+    }
   }
 
   const handleImageClick = (imageUrl: string, alt: string) => {
@@ -146,40 +163,51 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
       data-tool-call-block={id}
     >
       <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
-        <div className="flex items-center gap-3 p-2" onClick={handleClick}>
-          {loading && (
-            <div className="w-4 h-4">
-              <Loader className="size-4 animate-spin text-main-view-fg/60" />
-            </div>
-          )}
-          <button className="flex items-center gap-2 focus:outline-none">
-            {!loading && (
-              <>
-                {isExpanded ? (
-                  <>
-                    <div className="ml-1 w-4 h-4">
-                      <ChevronUp className="h-4 w-4" />
-                    </div>
-                  </>
-                ) : (
-                  <div className="ml-1 w-4 h-4">
-                    <ChevronDown className="h-4 w-4" />
-                  </div>
-                )}
-              </>
+        <div className="flex items-center gap-3 p-2">
+          <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={handleClick}>
+            {loading && (
+              <div className="w-4 h-4">
+                <Loader className="size-4 animate-spin text-main-view-fg/60" />
+              </div>
             )}
-            <span className="font-medium text-main-view-fg/80">
-              <span className="font-medium text-main-view-fg mr-2">{name}</span>
-              <span
-                className={twMerge(
-                  'text-xs bg-main-view-fg/4 rounded-sm p-1',
-                  loading ? 'text-main-view-fg/40' : 'text-accent'
-                )}
-              >
-                {loading ? t('common:callingTool') : t('common:completed')}{' '}
+            <button className="flex items-center gap-2 focus:outline-none">
+              {!loading && (
+                <>
+                  {isExpanded ? (
+                    <>
+                      <div className="ml-1 w-4 h-4">
+                        <ChevronUp className="h-4 w-4" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="ml-1 w-4 h-4">
+                      <ChevronDown className="h-4 w-4" />
+                    </div>
+                  )}
+                </>
+              )}
+              <span className="font-medium text-main-view-fg/80">
+                <span className="font-medium text-main-view-fg mr-2">{name}</span>
+                <span
+                  className={twMerge(
+                    'text-xs bg-main-view-fg/4 rounded-sm p-1',
+                    loading ? 'text-main-view-fg/40' : 'text-accent'
+                  )}
+                >
+                  {loading ? t('common:callingTool') : t('common:completed')}{' '}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </div>
+          {!loading && result && (
+            <button
+              onClick={handleOpenPanel}
+              className="flex-shrink-0 p-1.5 rounded-md hover:bg-main-view-fg/10 transition-colors group"
+              title={t('common:viewInPanel')}
+            >
+              <ExternalLink className="w-4 h-4 text-main-view-fg/60 group-hover:text-main-view-fg" />
+            </button>
+          )}
         </div>
 
         <div

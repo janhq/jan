@@ -11,9 +11,10 @@ import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
 import 'katex/dist/katex.min.css'
-import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
+import { IconCopy, IconCopyCheck, IconExternalLink } from '@tabler/icons-react'
 import rehypeRaw from 'rehype-raw'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 interface MarkdownProps {
   content: string
@@ -91,6 +92,7 @@ const CodeComponent = memo(
     isWrapping,
     onCopy,
     copiedId,
+    openPanel,
     ...props
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }: any) => {
@@ -100,6 +102,7 @@ const CodeComponent = memo(
     const isInline = !match || !language
 
     const code = String(children).replace(/\n$/, '')
+    const isMermaid = language === 'mermaid'
 
     // Generate a stable ID based on content hash instead of position
     const codeId = useMemo(() => {
@@ -118,6 +121,23 @@ const CodeComponent = memo(
         onCopy(code, codeId)
       },
       [code, codeId, onCopy]
+    )
+
+    const handleViewInPanel = useCallback(
+      (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (isMermaid && openPanel) {
+          openPanel({
+            type: 'mermaid',
+            data: {
+              id: codeId,
+              code,
+              title: 'Mermaid Diagram'
+            }
+          })
+        }
+      },
+      [isMermaid, openPanel, codeId, code]
     )
 
     if (isInline || isUser) {
@@ -140,22 +160,33 @@ const CodeComponent = memo(
           <span className="font-medium text-xs font-sans">
             {getReadableLanguageName(language)}
           </span>
-          <button
-            onClick={handleCopyClick}
-            className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
-          >
-            {copiedId === codeId ? (
-              <>
-                <IconCopyCheck size={16} className="text-primary" />
-                <span>{t('copied')}</span>
-              </>
-            ) : (
-              <>
-                <IconCopy size={16} />
-                <span>{t('copy')}</span>
-              </>
+          <div className="flex items-center gap-2">
+            {isMermaid && openPanel && (
+              <button
+                onClick={handleViewInPanel}
+                className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer hover:text-primary"
+                title={t('viewInPanel')}
+              >
+                <IconExternalLink size={16} />
+              </button>
             )}
-          </button>
+            <button
+              onClick={handleCopyClick}
+              className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+            >
+              {copiedId === codeId ? (
+                <>
+                  <IconCopyCheck size={16} className="text-primary" />
+                  <span>{t('copied')}</span>
+                </>
+              ) : (
+                <>
+                  <IconCopy size={16} />
+                  <span>{t('copy')}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
         <SyntaxHighlighter
           style={
@@ -209,6 +240,7 @@ function RenderMarkdownComponent({
   isWrapping,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
+  const { openPanel } = useToolCallPanel()
 
   // State for tracking which code block has been copied
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -249,6 +281,7 @@ function RenderMarkdownComponent({
           isWrapping={isWrapping}
           onCopy={handleCopy}
           copiedId={copiedId}
+          openPanel={openPanel}
         />
       ),
       // Add other optimized components if needed
@@ -261,6 +294,7 @@ function RenderMarkdownComponent({
       isWrapping,
       handleCopy,
       copiedId,
+      openPanel,
       components,
     ]
   )

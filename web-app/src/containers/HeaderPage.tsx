@@ -12,12 +12,14 @@ import { route } from '@/constants/routes'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 type HeaderPageProps = {
   children?: ReactNode
 }
 const HeaderPage = ({ children }: HeaderPageProps) => {
   const { open, setLeftPanel } = useLeftPanel()
+  const { closePanel: closeToolPanel } = useToolCallPanel()
   const isMobile = useMobileScreen()
   const isSmallScreen = useSmallScreen()
   const router = useRouter()
@@ -76,7 +78,11 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
               // Larger touch target on mobile
               isMobile ? 'size-8 min-w-8' : 'size-5'
             )}
-            onClick={() => setLeftPanel(!open)}
+            onClick={() => {
+              setLeftPanel(!open)
+              // Close tool panel when opening left panel
+              closeToolPanel()
+            }}
             aria-label="Toggle sidebar"
           >
             <IconLayoutSidebar

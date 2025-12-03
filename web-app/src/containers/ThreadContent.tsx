@@ -2,13 +2,19 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
-import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
+import {
+  IconCopy,
+  IconCopyCheck,
+  IconRefresh,
+  IconExternalLink,
+} from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 import {
   EditMessageDialog,
   MessageMetadataDialog,
@@ -83,6 +89,7 @@ export const ThreadContent = memo(
   ) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const { openPanel } = useToolCallPanel()
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -203,7 +210,7 @@ export const ThreadContent = memo(
         while (toSendMessage && toSendMessage?.role !== 'user') {
           deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
           toSendMessage = threadMessages.pop()
-          // Stop deletion when encountering an assistant message that isn’t a tool call
+          // Stop deletion when encountering an assistant message that isn't a tool call
           if (
             toSendMessage &&
             toSendMessage.role === 'assistant' &&
@@ -215,6 +222,18 @@ export const ThreadContent = memo(
         deleteMessage(item.thread_id, item.id)
       }
     }, [deleteMessage, getMessages, item])
+
+    const handleViewInPanel = useCallback(() => {
+      openPanel({
+        type: 'message',
+        data: {
+          id: item.id,
+          content: textSegment.replace('</think>', ''),
+          role: item.role as 'assistant' | 'user',
+          metadata: item.metadata,
+        },
+      })
+    }, [openPanel, item.id, item.role, item.metadata, textSegment])
 
     const isToolCalls =
       item.metadata &&
@@ -417,6 +436,20 @@ export const ThreadContent = memo(
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <DeleteMessageDialog onDelete={removeMessage} />
                     <MessageMetadataDialog metadata={item.metadata} />
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                          onClick={handleViewInPanel}
+                        >
+                          <IconExternalLink size={16} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('viewInPanel')}</p>
+                      </TooltipContent>
+                    </Tooltip>
 
                     {item.isLastMessage && selectedModel && (
                       <Tooltip>

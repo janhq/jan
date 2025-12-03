@@ -32,6 +32,7 @@ import { useAuth } from '@/hooks/useAuth'
 
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo, useState, useEffect, useRef } from 'react'
@@ -78,6 +79,7 @@ const secondaryMenus = [
 const LeftPanel = () => {
   const open = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
+  const { closePanel: closeToolPanel } = useToolCallPanel()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
@@ -277,7 +279,13 @@ const LeftPanel = () => {
                 ? 'pl-20 right-auto'
                 : ''
             )}
-            onClick={() => setLeftPanel(!open)}
+            onClick={() => {
+              setLeftPanel(!open)
+              // Close tool panel when opening left panel
+              if (!open) {
+                closeToolPanel()
+              }
+            }}
           >
             <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
               <IconLayoutSidebar size={18} className="text-left-panel-fg" />

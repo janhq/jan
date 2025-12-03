@@ -28,6 +28,8 @@ import { ThreadPadding } from '@/containers/ThreadPadding'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
+import { SidePreviewPanel } from '@/containers/ToolCallPanel'
 
 const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
@@ -90,6 +92,8 @@ function ThreadDetail() {
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()
+
+  const { isOpen: isPanelOpen, panelData, closePanel } = useToolCallPanel()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -207,7 +211,14 @@ function ThreadDetail() {
   if (!messages || !threadModel) return null
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
+    <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
+      {/* Main chat area - shrinks when panel is open */}
+      <div
+        className={cn(
+          "flex flex-col flex-1 min-w-0 transition-all duration-300",
+          isPanelOpen && !isMobile && "mr-0"
+        )}
+      >
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <div>
@@ -296,6 +307,12 @@ function ThreadDetail() {
           <ChatInput model={threadModel} />
         </div>
       </div>
+      </div>
+
+      {/* Tool Call Panel */}
+      {isPanelOpen && panelData && (
+        <SidePreviewPanel panelData={panelData} onClose={closePanel} />
+      )}
     </div>
   )
 }

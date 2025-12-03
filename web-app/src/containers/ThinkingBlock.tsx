@@ -1,9 +1,10 @@
-import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader, ExternalLink } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { extractThinkingContent } from '@/lib/utils'
+import { useToolCallPanel } from '@/hooks/useToolCallPanel'
 
 interface Props {
   text: string
@@ -32,6 +33,8 @@ const ThinkingBlock = ({ id, text }: Props) => {
   const setThinkingState = useThinkingStore((state) => state.setThinkingState)
   const isStreaming = useAppState((state) => !!state.streamingContent)
   const { t } = useTranslation()
+  const { openPanel } = useToolCallPanel()
+
   // Check for thinking formats
   const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
   const hasAnalysisChannel =
@@ -44,29 +47,50 @@ const ThinkingBlock = ({ id, text }: Props) => {
     setThinkingState(id, newExpandedState)
   }
 
+  const handleOpenPanel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!loading && thinkingContent) {
+      openPanel({
+        type: 'thinking',
+        data: {
+          id,
+          content: thinkingContent,
+        },
+      })
+    }
+  }
+
   const thinkingContent = extractThinkingContent(text)
   if (!thinkingContent) return null
 
   return (
-    <div
-      className="mx-auto w-full cursor-pointer break-words"
-      onClick={handleClick}
-    >
+    <div className="mx-auto w-full cursor-pointer break-words">
       <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2">
         <div className="flex items-center gap-3">
-          {loading && (
-            <Loader className="size-4 animate-spin text-main-view-fg/60" />
-          )}
-          <button className="flex items-center gap-2 focus:outline-none">
-            {isExpanded ? (
-              <ChevronUp className="size-4 text-main-view-fg/60" />
-            ) : (
-              <ChevronDown className="size-4 text-main-view-fg/60" />
+          <div className="flex items-center gap-3 flex-1" onClick={handleClick}>
+            {loading && (
+              <Loader className="size-4 animate-spin text-main-view-fg/60" />
             )}
-            <span className="font-medium">
-              {loading ? t('common:thinking') : t('common:thought')}
-            </span>
-          </button>
+            <button className="flex items-center gap-2 focus:outline-none">
+              {isExpanded ? (
+                <ChevronUp className="size-4 text-main-view-fg/60" />
+              ) : (
+                <ChevronDown className="size-4 text-main-view-fg/60" />
+              )}
+              <span className="font-medium">
+                {loading ? t('common:thinking') : t('common:thought')}
+              </span>
+            </button>
+          </div>
+          {!loading && thinkingContent && (
+            <button
+              onClick={handleOpenPanel}
+              className="flex-shrink-0 p-1.5 rounded-md hover:bg-main-view-fg/10 transition-colors group"
+              title={t('common:viewInPanel')}
+            >
+              <ExternalLink className="w-4 h-4 text-main-view-fg/60 group-hover:text-main-view-fg" />
+            </button>
+          )}
         </div>
 
         {isExpanded && (
