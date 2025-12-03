@@ -99,6 +99,7 @@ pub fn run() {
             core::mcp::commands::activate_mcp_server,
             core::mcp::commands::deactivate_mcp_server,
             core::mcp::commands::reset_mcp_restart_count,
+            core::mcp::commands::check_jan_browser_extension_connected,
             // Threads
             core::threads::commands::list_threads,
             core::threads::commands::create_thread,

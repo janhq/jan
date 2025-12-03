@@ -53,7 +53,6 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
-import { useMCPServers } from '@/hooks/useMCPServers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
@@ -69,6 +68,8 @@ import {
   createImageAttachment,
   createDocumentAttachment,
 } from '@/types/attachment'
+import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
+import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 
 type ChatInputProps = {
   className?: string
@@ -133,9 +134,19 @@ const ChatInput = ({
     [activeModels, selectedModel?.id]
   )
 
-  const { mcpServers, editServer, syncServers } = useMCPServers()
-  const janBrowserMCPActive = mcpServers['Jan Browser MCP']?.active || false
-  const [isJanBrowserMCPLoading, setIsJanBrowserMCPLoading] = useState(false)
+  // Jan Browser Extension hook
+  const {
+    hasConfig: hasJanBrowserMCPConfig,
+    isActive: janBrowserMCPActive,
+    isLoading: isJanBrowserMCPLoading,
+    dialogOpen: extensionDialogOpen,
+    dialogState: extensionDialogState,
+    toggleBrowser: handleBrowseClick,
+    handleRetryConnection: handleExtensionDialogRetry,
+    handleContinueAnyway: handleExtensionDialogContinue,
+    handleCancel: handleExtensionDialogCancel,
+    setDialogOpen: setExtensionDialogOpen,
+  } = useJanBrowserExtension()
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
@@ -976,50 +987,6 @@ const ChatInput = ({
     }
   }
 
-  const handleBrowseClick = async () => {
-    const janBrowserConfig = mcpServers['Jan Browser MCP']
-    if (!janBrowserConfig) {
-      toast.error('Jan Browser MCP not found', {
-        description: 'Please check your MCP server configuration',
-      })
-      return
-    }
-
-    const newActiveState = !janBrowserMCPActive
-
-    setIsJanBrowserMCPLoading(true)
-    try {
-      if (newActiveState) {
-        // Activate the server
-        await serviceHub
-          .mcp()
-          .activateMCPServer('Jan Browser MCP', {
-            ...janBrowserConfig,
-            active: true,
-          })
-        toast.success('Jan Browser MCP enabled')
-      } else {
-        // Deactivate the server
-        await serviceHub.mcp().deactivateMCPServer('Jan Browser MCP')
-        toast.success('Jan Browser MCP disabled')
-      }
-
-      // Update the config
-      editServer('Jan Browser MCP', {
-        ...janBrowserConfig,
-        active: newActiveState,
-      })
-      await syncServers()
-    } catch (error) {
-      toast.error('Failed to toggle Jan Browser MCP', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-      console.error('Error toggling Jan Browser MCP:', error)
-    } finally {
-      setIsJanBrowserMCPLoading(false)
-    }
-  }
-
   const handlePaste = async (e: React.ClipboardEvent) => {
     // Only process images if model supports mmproj
     if (hasMmproj) {
@@ -1404,7 +1371,7 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-                {selectedModel?.capabilities?.includes('tools') && mcpServers['Jan Browser MCP'] && (
+                {selectedModel?.capabilities?.includes('tools') && hasJanBrowserMCPConfig && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1641,6 +1608,14 @@ const ChatInput = ({
           </div>
         )}
 
+      <JanBrowserExtensionDialog
+        open={extensionDialogOpen}
+        onOpenChange={setExtensionDialogOpen}
+        state={extensionDialogState}
+        onRetryConnection={handleExtensionDialogRetry}
+        onContinueAnyway={handleExtensionDialogContinue}
+        onCancel={handleExtensionDialogCancel}
+      />
     </div>
   )
 }
