@@ -79,17 +79,17 @@ export default function JanBrowserExtensionDialog({
                   <IconLoader2 className="size-5 text-accent animate-spin" />
                 </div>
                 <div>
-                  <DialogTitle>Connecting to Jan Browser Extension</DialogTitle>
+                  <DialogTitle>{t('mcp-servers:browserExtension.connecting.title')}</DialogTitle>
                   <DialogDescription className="mt-1 text-main-view-fg/70">
-                    Please wait while we check for the browser extension...
+                    {t('mcp-servers:browserExtension.connecting.description')}
                   </DialogDescription>
                 </div>
               </div>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
               <div className="flex flex-col items-center gap-3">
-                <IconLoader2 className="size-8 text-accent animate-spin" />
-                <p className="text-sm text-main-view-fg/60">Checking extension status...</p>
+                <Loader className="size-8 text-accent animate-spin" />
+                <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
               </div>
             </div>
           </>
@@ -104,28 +104,28 @@ export default function JanBrowserExtensionDialog({
                   <IconWorld className="size-5 text-accent" />
                 </div>
                 <div>
-                  <DialogTitle>Install Jan Browser Extension</DialogTitle>
+                  <DialogTitle>{t('mcp-servers:browserExtension.notInstalled.title')}</DialogTitle>
                   <DialogDescription className="mt-1 text-main-view-fg/70">
-                    To use browser automation features, you need to install the Jan Browser Extension.
+                    {t('mcp-servers:browserExtension.notInstalled.description')}
                   </DialogDescription>
                 </div>
               </div>
             </DialogHeader>
 
             <div className="bg-main-view-fg/2 p-4 border border-main-view-fg/5 rounded-lg space-y-3">
-              <h4 className="font-medium text-sm">What can Jan Browser do?</h4>
+              <h4 className="font-medium text-sm">{t('mcp-servers:browserExtension.notInstalled.whatCanDo')}</h4>
               <ul className="text-sm text-main-view-fg/70 space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-accent">•</span>
-                  <span>Search the web and extract information from pages</span>
+                  <span>{t('mcp-servers:browserExtension.notInstalled.feature1')}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-accent">•</span>
-                  <span>Navigate websites and take screenshots</span>
+                  <span>{t('mcp-servers:browserExtension.notInstalled.feature2')}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-accent">•</span>
-                  <span>Click, type, and interact with web elements</span>
+                  <span>{t('mcp-servers:browserExtension.notInstalled.feature3')}</span>
                 </li>
               </ul>
             </div>
@@ -144,14 +144,14 @@ export default function JanBrowserExtensionDialog({
                   className="gap-2 bg-transparent border border-main-view-fg/20 text-main-view-fg hover:bg-main-view-fg/10"
                 >
                   <IconRefresh className="size-4" />
-                  I've Installed It
+                  {t('mcp-servers:browserExtension.notInstalled.installed')}
                 </Button>
                 <Button
                   onClick={handleOpenChromeStore}
                   className="gap-2"
                 >
                   <IconExternalLink className="size-4" />
-                  Get Extension
+                  {t('mcp-servers:browserExtension.notInstalled.getExtension')}
                 </Button>
               </div>
             </DialogFooter>
@@ -163,24 +163,24 @@ export default function JanBrowserExtensionDialog({
           <>
             <DialogHeader>
               <div className="flex items-start gap-3">
-                <div className="shrink-0">
-                  <IconLoader2 className="size-5 text-accent animate-spin" />
+                <div className="shrink-0 size-5 flex items-center justify-center">
+                  <Loader className="size-5 text-accent animate-spin" />
                 </div>
                 <div>
-                  <DialogTitle>Waiting for Extension Connection</DialogTitle>
+                  <DialogTitle>{t('mcp-servers:browserExtension.waitingConnection.title')}</DialogTitle>
                   <DialogDescription className="mt-1 text-main-view-fg/70">
-                    The MCP server is running. Please open the Jan Browser Extension in your browser to connect.
+                    {t('mcp-servers:browserExtension.waitingConnection.description')}
                   </DialogDescription>
                 </div>
               </div>
             </DialogHeader>
 
             <div className="bg-main-view-fg/2 p-4 border border-main-view-fg/5 rounded-lg space-y-3">
-              <h4 className="font-medium text-sm">How to connect:</h4>
+              <h4 className="font-medium text-sm">{t('mcp-servers:browserExtension.waitingConnection.howToConnect')}</h4>
               <ol className="text-sm text-main-view-fg/70 space-y-2 list-decimal list-inside">
-                <li>Click the Jan Browser Extension icon in your browser toolbar</li>
-                <li>Click "Connect" in the extension popup</li>
-                <li>The extension will automatically connect to Jan</li>
+                <li>{t('mcp-servers:browserExtension.waitingConnection.step1')}</li>
+                <li>{t('mcp-servers:browserExtension.waitingConnection.step2')}</li>
+                <li>{t('mcp-servers:browserExtension.waitingConnection.step3')}</li>
               </ol>
             </div>
 
@@ -198,7 +198,7 @@ export default function JanBrowserExtensionDialog({
                     onClick={onContinueAnyway}
                     className="bg-transparent border border-main-view-fg/20 text-main-view-fg hover:bg-main-view-fg/10"
                   >
-                    Continue Anyway
+                    {t('mcp-servers:browserExtension.waitingConnection.continueAnyway')}
                   </Button>
                 )}
                 <Button
@@ -206,7 +206,7 @@ export default function JanBrowserExtensionDialog({
                   className="gap-2"
                 >
                   <IconRefresh className="size-4" />
-                  Check Again
+                  {t('mcp-servers:browserExtension.waitingConnection.checkAgain')}
                 </Button>
               </div>
             </DialogFooter>
@@ -222,9 +222,9 @@ export default function JanBrowserExtensionDialog({
                   <IconCheck className="size-5 text-green-500" />
                 </div>
                 <div>
-                  <DialogTitle>Extension Connected!</DialogTitle>
+                  <DialogTitle>{t('mcp-servers:browserExtension.connected.title')}</DialogTitle>
                   <DialogDescription className="mt-1 text-main-view-fg/70">
-                    The Jan Browser Extension is connected and ready to use.
+                    {t('mcp-servers:browserExtension.connected.description')}
                   </DialogDescription>
                 </div>
               </div>
@@ -235,13 +235,13 @@ export default function JanBrowserExtensionDialog({
                 <div className="bg-green-500/10 rounded-full p-4">
                   <IconCheck className="size-8 text-green-500" />
                 </div>
-                <p className="text-sm text-main-view-fg/60">Browser tools are now available</p>
+                <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connected.toolsAvailable')}</p>
               </div>
             </div>
 
             <DialogFooter>
               <Button onClick={handleClose} className="w-full sm:w-auto">
-                Done
+                {t('mcp-servers:browserExtension.connected.done')}
               </Button>
             </DialogFooter>
           </>

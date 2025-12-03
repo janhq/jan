@@ -1,6 +1,39 @@
 {
   "editServer": "编辑 MCP 服务器",
   "addServer": "添加 MCP 服务器",
+  "browserExtension": {
+    "connecting": {
+      "title": "正在连接 Jan Browser 扩展",
+      "description": "请稍候，正在检查浏览器扩展...",
+      "checking": "正在检查扩展状态..."
+    },
+    "notInstalled": {
+      "title": "安装 Jan Browser 扩展",
+      "description": "要使用浏览器自动化功能，您需要安装 Jan Browser 扩展。",
+      "whatCanDo": "Jan Browser 能做什么？",
+      "feature1": "搜索网页并从页面中提取信息",
+      "feature2": "浏览网站并截取屏幕截图",
+      "feature3": "点击、输入并与网页元素交互",
+      "installed": "我已安装",
+      "getExtension": "获取扩展"
+    },
+    "waitingConnection": {
+      "title": "等待扩展连接",
+      "description": "MCP 服务器正在运行。请在浏览器中打开 Jan Browser 扩展进行连接。",
+      "howToConnect": "如何连接：",
+      "step1": "点击浏览器工具栏中的 Jan Browser 扩展图标",
+      "step2": "在扩展弹出窗口中点击\"连接\"",
+      "step3": "扩展将自动连接到 Jan",
+      "continueAnyway": "仍然继续",
+      "checkAgain": "重新检查"
+    },
+    "connected": {
+      "title": "扩展已连接！",
+      "description": "Jan Browser 扩展已连接，可以使用了。",
+      "toolsAvailable": "浏览器工具现已可用",
+      "done": "完成"
+    }
+  },
   "serverName": "服务器名称",
   "enterServerName": "输入服务器名称",
   "command": "命令",
