@@ -29,49 +29,6 @@ export type AttachmentProcessingResult = {
   hasEmbeddedDocuments: boolean
 }
 
-const formatAttachmentError = (err: unknown): string => {
-  if (!err) return 'Unknown error'
-  if (err instanceof Error) return err.message || err.toString()
-  if (typeof err === 'string') return err
-  if (Array.isArray(err)) {
-    const parts = err.map((e) => formatAttachmentError(e)).filter(Boolean)
-    return parts.length ? Array.from(new Set(parts)).join('; ') : 'Unknown error'
-  }
-  if (typeof err === 'object') {
-    const obj = err as Record<string, unknown>
-    const candidates = [
-      obj.message,
-      obj.reason,
-      obj.detail,
-    ]
-    for (const val of candidates) {
-      if (typeof val === 'string' && val.trim().length > 0) {
-        return val
-      }
-    }
-    const nestedSources = [obj.error, obj.cause]
-    for (const nested of nestedSources) {
-      if (nested && typeof nested === 'object') {
-        const nestedMsg = formatAttachmentError(nested)
-        if (nestedMsg && nestedMsg !== 'Unknown error') {
-          return nestedMsg
-        }
-      } else if (typeof nested === 'string' && nested.trim().length > 0) {
-        return nested
-      }
-    }
-    if (typeof obj.code === 'string' && obj.code.trim().length > 0) {
-      return obj.code
-    }
-    try {
-      return JSON.stringify(obj)
-    } catch {
-      return String(err)
-    }
-  }
-  return String(err)
-}
-
 export const processAttachmentsForSend = async (
   options: AttachmentProcessingOptions
 ): Promise<AttachmentProcessingResult> => {
@@ -126,9 +83,9 @@ export const processAttachmentsForSend = async (
         if (updateAttachmentProcessing) {
           updateAttachmentProcessing(img.name, 'error')
         }
-        const desc = formatAttachmentError(err)
+        const desc = err instanceof Error ? err.message : String(err)
         toast.error('Failed to ingest image attachment', { description: desc })
-        throw err instanceof Error ? err : new Error(desc)
+        throw err
       }
     }
   }
@@ -247,9 +204,9 @@ export const processAttachmentsForSend = async (
         if (updateAttachmentProcessing) {
           updateAttachmentProcessing(doc.name, 'error')
         }
-        const desc = formatAttachmentError(err)
+        const desc = err instanceof Error ? err.message : String(err)
         toast.error('Failed to index attachments', { description: desc })
-        throw err instanceof Error ? err : new Error(desc)
+        throw err
       }
     }
   }
