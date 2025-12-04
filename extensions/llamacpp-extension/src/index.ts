@@ -2637,7 +2637,6 @@ export default class llamacpp_extension extends AIEngine {
       },
     }
 
-
     try {
       let parseResponse = await fetch(`${baseUrl}/apply-template`, {
         method: 'POST',
@@ -2678,7 +2677,7 @@ export default class llamacpp_extension extends AIEngine {
 
       return textTokens + imageTokens
     } catch (e) {
-      logger.error(String(e))
+      console.warn(String(e))
     }
     return 0
   }
