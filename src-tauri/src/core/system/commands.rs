@@ -1,5 +1,6 @@
 use std::fs;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
@@ -70,43 +71,13 @@ pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
 #[tauri::command]
 pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) {
     let app_path = app.path().app_data_dir().unwrap();
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
-    } else {
-        std::process::Command::new("xdg-open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
-    }
+    open_with_platform_default(app_path, "app directory");
 }
 
 #[tauri::command]
 pub fn open_file_explorer(path: String) {
     let path = PathBuf::from(path);
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
-    } else {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
-    }
+    open_with_platform_default(path, "file explorer");
 }
 
 #[tauri::command]
@@ -130,5 +101,74 @@ pub fn is_library_available(library: &str) -> bool {
             false
         }
     }
+}
+
+fn open_with_platform_default(path: PathBuf, target_desc: &str) {
+    let result = if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer").arg(&path).status().and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("explorer exited with status {status}"),
+                ))
+            }
+        })
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&path).status().and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("open exited with status {status}"),
+                ))
+            }
+        })
+    } else {
+        open_on_linux(&path)
+    };
+
+    if let Err(error) = result {
+        log::error!("Failed to open {target_desc} at {path:?}: {error}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn open_on_linux(path: &Path) -> io::Result<()> {
+    let xdg_open_status = std::process::Command::new("xdg-open")
+        .arg(path)
+        .status();
+
+    match xdg_open_status {
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => {
+            log::warn!("xdg-open exited with status {status}, trying gio open as fallback");
+        }
+        Err(err) => {
+            log::warn!("xdg-open failed: {err}, trying gio open as fallback");
+        }
+    }
+
+    std::process::Command::new("gio")
+        .arg("open")
+        .arg(path)
+        .status()
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("gio open exited with status {status}"),
+                ))
+            }
+        })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn open_on_linux(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
