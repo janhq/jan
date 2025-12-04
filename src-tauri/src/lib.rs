@@ -9,7 +9,6 @@ use core::{
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
-use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
@@ -206,7 +205,6 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
-
     // Handle app lifecycle events
     app.run(|app, event| {
         if let RunEvent::Exit = event {
@@ -215,13 +213,14 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.hide();
                     let _ = window.emit("app-shutting-down", ());
+                    let _ = window.hide();
                 }
             }
 
             let state = app_handle.state::<AppState>();
 
+            // Check if cleanup already ran
             let cleanup_already_running = tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
                     let handle = state.background_cleanup_handle.lock().await;
@@ -233,27 +232,29 @@ pub fn run() {
                 return;
             }
 
-            let app_handle_for_cleanup = app_handle.clone();
-
-            let cleanup_handle = tauri::async_runtime::spawn(async move {
-                use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-
-                let state = app_handle_for_cleanup.state::<AppState>();
-
-                let cleanup_future = background_cleanup_mcp_servers(&app_handle_for_cleanup, &state);
-                let _ = tokio::time::timeout(tokio::time::Duration::from_secs(3), cleanup_future).await;
-
-                if let Err(e) = cleanup_llama_processes(app_handle_for_cleanup.clone()).await {
-                    log::warn!("Failed to cleanup llama processes: {}", e);
-                }
-
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            });
-
+            // Run cleanup synchronously and WAIT for it to complete
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    let mut handle_guard = state.background_cleanup_handle.lock().await;
-                    *handle_guard = Some(cleanup_handle);
+                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
+                    use tauri_plugin_llamacpp::cleanup_llama_processes;
+
+                    let state = app_handle.state::<AppState>();
+
+                    // Increase timeout to 10 seconds and log if it times out
+                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
+                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
+                        .await
+                    {
+                        Ok(_) => log::info!("MCP cleanup completed successfully"),
+                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
+                    }
+
+                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
+                        log::warn!("Failed to cleanup llama processes: {}", e);
+                    } else {
+                        log::info!("Llama processes cleaned up successfully");
+                    }
+                    log::info!("App cleanup completed");
                 });
             });
         }
