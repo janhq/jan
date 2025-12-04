@@ -191,7 +191,7 @@ const ChatInput = ({
   const updateAttachmentProcessing = useCallback(
     (
       fileName: string,
-      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all',
+      status: 'processing' | 'done' | 'error' | 'clear_all',
       updatedAttachment?: Partial<Attachment>
     ) => {
       const targetKey = attachmentsKeyRef.current
@@ -206,13 +206,6 @@ const ChatInput = ({
       const keysToUpdate = new Set([targetKey, ...allMatchingKeys])
 
       const applyUpdate = (key: string) => {
-        if (status === 'clear_docs') {
-          setAttachmentsForThread(key, (prev) =>
-            prev.filter((a) => a.type !== 'document')
-          )
-          return
-        }
-
         if (status === 'clear_all') {
           clearAttachmentsForThread(key)
           return
