@@ -796,7 +796,7 @@ export const useChat = () => {
           }
         }
 
-        let assistantLoopSteps = 0
+        // let assistantLoopSteps = 0
 
         while (
           !isCompleted &&
@@ -809,7 +809,7 @@ export const useChat = () => {
           const modelConfig = activeProvider.models.find(
             (m) => m.id === selectedModel?.id
           )
-          assistantLoopSteps += 1
+          // assistantLoopSteps += 1
 
           const modelSettings = modelConfig?.settings
             ? Object.fromEntries(
@@ -998,12 +998,12 @@ export const useChat = () => {
           )
 
           isCompleted = !toolCalls.length
-          // Do not create agent loop if there is no need for it
-          // Check if assistant loop steps are within limits
-          if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
-            // Stop the assistant tool call if it exceeds the maximum steps
-            availableTools = []
-          }
+          // // Do not create agent loop if there is no need for it
+          // // Check if assistant loop steps are within limits
+          // if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
+          //   // Stop the assistant tool call if it exceeds the maximum steps
+          //   availableTools = []
+          // }
         }
 
         // IMPORTANT: Check if aborted AFTER the while loop exits
