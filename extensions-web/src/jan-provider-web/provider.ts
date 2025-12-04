@@ -81,8 +81,16 @@ export default class JanProviderWeb extends AIEngine {
         model
           ? {
               id: model.id,
-              name: model.model_display_name || model.id,
-              displayName: model.model_display_name || model.id,
+              name:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
+              displayName:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
               quant_type: undefined,
               providerId: this.provider,
               port: 443, // HTTPS port for API
@@ -94,7 +102,11 @@ export default class JanProviderWeb extends AIEngine {
               category: model.category,
               category_order_number: model.category_order_number,
               model_order_number: model.model_order_number,
-              model_display_name: model.model_display_name,
+              model_display_name:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
               capabilities: [...model.capabilities],
             }
           : undefined
@@ -108,9 +120,17 @@ export default class JanProviderWeb extends AIEngine {
       return janModels.map((model) => ({
         id: model.id,
         // Prefer server-provided display name for UI selection; fallback to id
-        name: model.model_display_name || model.id,
+        name:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
         // Preserve a dedicated displayName field so downstream mappers can pick it up
-        displayName: model.model_display_name || model.id,
+        displayName:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
         quant_type: undefined,
         providerId: this.provider,
         port: 443, // HTTPS port for API
@@ -123,7 +143,11 @@ export default class JanProviderWeb extends AIEngine {
         category: model.category,
         category_order_number: model.category_order_number,
         model_order_number: model.model_order_number,
-        model_display_name: model.model_display_name,
+        model_display_name:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)

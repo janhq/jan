@@ -5,12 +5,12 @@
 import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
-import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
+import { deriveCapabilitiesFromModel } from '@/lib/utils'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -68,32 +68,21 @@ export class TauriProvidersService extends DefaultProvidersService {
           }) as ProviderSetting[],
           models: await Promise.all(
             models.map(async (model) => {
-              let capabilities: string[] = []
-
-              // Check for capabilities
-              if ('capabilities' in model) {
-                capabilities = model.capabilities as string[]
-              } else {
-                // Try to check tool support, but don't let failures block the model
-                try {
-                  const toolSupported = await value.isToolSupported(model.id)
-                  if (toolSupported) {
-                    capabilities = [ModelCapabilities.TOOLS]
-                  }
-                } catch (error) {
-                  console.warn(
-                    `Failed to check tool support for model ${model.id}:`,
-                    error
-                  )
-                  // Continue without tool capabilities if check fails
-                }
-              }
+              const displayName =
+                (model as any)?.displayName ||
+                (model as any)?.model_display_name ||
+                model.name ||
+                model.id
+              const capabilities = await deriveCapabilitiesFromModel(model, {
+                checkToolSupport: () => value.isToolSupported(model.id),
+              })
 
               return {
                 id: model.id,
                 model: model.id,
-                name: model.name,
-                description: model.description,
+                name: model.name || displayName || model.id,
+                displayName,
+                description: model.description || (model as any)?.notes,
                 capabilities,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(

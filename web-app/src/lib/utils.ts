@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { ExtensionManager } from './extension'
 import path from "path"
+import { ModelCapabilities } from '@/types/models'
 
 
 export function cn(...inputs: ClassValue[]) {
@@ -29,7 +30,7 @@ export function basenameNoExt(filePath: string): string {
 export function getModelDisplayName(model: Model): string {
   // Prefer explicitly set displayName, then API-provided model_display_name, then model name, then id
   const apiDisplayName = (model as any)?.model_display_name as string | undefined
-  return model.displayName || apiDisplayName || model.name || model.id
+  return model.model_display_name || model.displayName || apiDisplayName || model.name || model.id
 }
 
 export function getProviderLogo(provider: string) {
@@ -202,4 +203,57 @@ export const extractThinkingContent = (text: string) => {
     .replace(/<\|message\|>/g, '') // remove any remaining message markers
     .replace(/<\|start\|>/g, '') // remove any remaining start markers
     .trim()
+}
+
+/**
+ * Derive model capabilities from server-provided metadata.
+ * Falls back to tool support check when capabilities are not explicitly provided.
+ */
+export const deriveCapabilitiesFromModel = async (
+  model: any,
+  options?: { checkToolSupport?: () => Promise<boolean> }
+): Promise<string[]> => {
+  const capabilities = new Set<string>([ModelCapabilities.COMPLETION])
+
+  // Include capabilities if explicitly provided
+  if (Array.isArray(model?.capabilities)) {
+    for (const capability of model.capabilities) {
+      if (typeof capability === 'string') {
+        capabilities.add(capability)
+      }
+    }
+  }
+
+  const supportedParams = Array.isArray(model?.supported_parameters?.names)
+    ? (model.supported_parameters.names as string[])
+    : []
+
+  // Tools support can be indicated by supported parameters
+  if (supportedParams.includes('tools') || supportedParams.includes('tool_choice')) {
+    capabilities.add(ModelCapabilities.TOOLS)
+  }
+
+  // Vision support should rely on supports_images flag (fallback to legacy vision param)
+  const supportsImages =
+    typeof model?.supports_images === 'boolean'
+      ? model.supports_images
+      : supportedParams.includes('vision')
+
+  if (supportsImages) {
+    capabilities.add(ModelCapabilities.VISION)
+  }
+
+  // Fallback: ask engine if tool calls are supported
+  if (!capabilities.has(ModelCapabilities.TOOLS) && options?.checkToolSupport) {
+    try {
+      const toolSupported = await options.checkToolSupport()
+      if (toolSupported) {
+        capabilities.add(ModelCapabilities.TOOLS)
+      }
+    } catch (error) {
+      console.warn('Failed to check tool support for model:', error)
+    }
+  }
+
+  return Array.from(capabilities)
 }
