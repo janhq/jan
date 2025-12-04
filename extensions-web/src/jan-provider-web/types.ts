@@ -3,6 +3,8 @@ export interface JanModel {
   object: string
   owned_by: string
   created?: number
+  name?: string
+  displayName?: string
   capabilities: string[]
   supportedParameters?: string[]
   model_display_name?: string

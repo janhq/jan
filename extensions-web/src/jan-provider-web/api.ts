@@ -32,16 +32,16 @@ function getChatCompletionConfig(request: JanChatCompletionRequest, stream: bool
     stream,
     ...(isTemporaryChat
       ? {
-          // For temporary chat: don't store anything, remove conversation metadata
-          conversation_id: undefined,
-        }
+        // For temporary chat: don't store anything, remove conversation metadata
+        conversation_id: undefined,
+      }
       : {
-          // For regular chat: store everything, use conversation metadata
-          store: true,
-          store_reasoning: true,
-          conversation: request.conversation_id,
-          conversation_id: undefined,
-        }),
+        // For regular chat: store everything, use conversation metadata
+        store: true,
+        store_reasoning: true,
+        conversation: request.conversation_id,
+        conversation_id: undefined,
+      }),
   }
 
   return { endpoint, payload, isTemporaryChat }
@@ -74,6 +74,7 @@ interface JanModelCatalogResponse {
     default_parameters?: Record<string, unknown>
     [key: string]: unknown
   }
+  supports_images?: boolean
   [key: string]: unknown
 }
 
@@ -160,8 +161,10 @@ export async function getModels(options?: { forceRefresh?: boolean }): Promise<J
 
       const models: JanModel[] = await Promise.all(
         summaries.map(async (summary) => {
-          const supportedParameters = await fetchSupportedParameters(summary.id)
-          const capabilities = deriveCapabilitiesFromParameters(supportedParameters)
+          const displayName = summary.model_display_name || summary.id
+          const catalog = await fetchModelCatalog(summary.id)
+          const supportedParameters = extractSupportedParameters(catalog)
+          const capabilities = deriveCapabilitiesFromCatalog(catalog)
           const category = summary.category ?? deriveCategoryFromModelId(summary.id)
           const category_order_number =
             summary.category_order_number ?? (category ? 0 : Number.MAX_SAFE_INTEGER)
@@ -171,6 +174,8 @@ export async function getModels(options?: { forceRefresh?: boolean }): Promise<J
             object: summary.object,
             owned_by: summary.owned_by,
             created: summary.created,
+            name: displayName,
+            displayName,
             capabilities,
             supportedParameters,
             model_display_name: summary.model_display_name,
@@ -315,14 +320,13 @@ export async function initializeJanApi(): Promise<void> {
   }
 }
 
-async function fetchSupportedParameters(modelId: string): Promise<string[]> {
+async function fetchModelCatalog(modelId: string): Promise<JanModelCatalogResponse | null> {
   try {
     const endpoint = `${JAN_BASE_URL}${JAN_API_ROUTES.MODEL_CATALOGS}/${encodeModelIdForCatalog(modelId)}`
-    const catalog = await authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
-    return extractSupportedParameters(catalog)
+    return await authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
   } catch (error) {
     console.warn(`Failed to fetch catalog metadata for model "${modelId}":`, error)
-    return []
+    return null
   }
 }
 
@@ -351,14 +355,17 @@ function extractSupportedParameters(catalog: JanModelCatalogResponse | null | un
   return []
 }
 
-function deriveCapabilitiesFromParameters(parameters: string[]): string[] {
+function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null): string[] {
   const capabilities = new Set<string>()
+  if (!catalog) return []
+
+  const parameters = extractSupportedParameters(catalog)
 
   if (parameters.includes('tools')) {
     capabilities.add('tools')
   }
 
-  if (parameters.includes('vision')) {
+  if (parameters.includes('vision') || catalog.supports_images) {
     capabilities.add('vision')
   }
 
