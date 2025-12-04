@@ -3,35 +3,12 @@
   "addServer": "新增 MCP 伺服器",
   "browserExtension": {
     "connecting": {
-      "title": "正在連接 Jan Browser 擴充功能",
-      "description": "請稍候，正在檢查瀏覽器擴充功能...",
       "checking": "正在檢查擴充功能狀態..."
     },
     "notInstalled": {
-      "title": "安裝 Jan Browser 擴充功能",
-      "description": "若要使用瀏覽器自動化功能，您需要安裝 Jan Browser 擴充功能。",
-      "whatCanDo": "Jan Browser 能做什麼？",
-      "feature1": "搜尋網頁並從頁面中擷取資訊",
-      "feature2": "瀏覽網站並擷取螢幕截圖",
-      "feature3": "點擊、輸入並與網頁元素互動",
-      "installed": "我已安裝",
+      "title": "Jan 在您的瀏覽器中完成任務",
+      "description": "安裝擴充功能以授予 Jan 瀏覽器存取權限",
       "getExtension": "取得擴充功能"
-    },
-    "waitingConnection": {
-      "title": "等待擴充功能連線",
-      "description": "MCP 伺服器正在執行。請在瀏覽器中開啟 Jan Browser 擴充功能以進行連線。",
-      "howToConnect": "如何連線：",
-      "step1": "點擊瀏覽器工具列中的 Jan Browser 擴充功能圖示",
-      "step2": "在擴充功能彈出視窗中點擊「連線」",
-      "step3": "擴充功能將自動連線至 Jan",
-      "continueAnyway": "仍然繼續",
-      "checkAgain": "重新檢查"
-    },
-    "connected": {
-      "title": "擴充功能已連線！",
-      "description": "Jan Browser 擴充功能已連線並可開始使用。",
-      "toolsAvailable": "瀏覽器工具現已可用",
-      "done": "完成"
     }
   },
   "serverName": "伺服器名稱",

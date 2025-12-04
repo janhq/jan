@@ -3,35 +3,12 @@
   "addServer": "Add MCP Server",
   "browserExtension": {
     "connecting": {
-      "title": "Připojování k rozšíření Jan Browser",
-      "description": "Prosím čekejte, kontrolujeme rozšíření prohlížeče...",
       "checking": "Kontrola stavu rozšíření..."
     },
     "notInstalled": {
-      "title": "Nainstalovat rozšíření Jan Browser",
-      "description": "Pro použití funkcí automatizace prohlížeče musíte nainstalovat rozšíření Jan Browser.",
-      "whatCanDo": "Co může Jan Browser dělat?",
-      "feature1": "Vyhledávat na webu a extrahovat informace ze stránek",
-      "feature2": "Procházet webové stránky a pořizovat snímky obrazovky",
-      "feature3": "Klikat, psát a interagovat s webovými prvky",
-      "installed": "Už jsem nainstaloval",
+      "title": "Jan dokončuje úkoly ve vašem prohlížeči",
+      "description": "Nainstalujte rozšíření pro přístup Jana k prohlížeči",
       "getExtension": "Získat rozšíření"
-    },
-    "waitingConnection": {
-      "title": "Čekání na připojení rozšíření",
-      "description": "MCP server běží. Otevřete prosím rozšíření Jan Browser ve svém prohlížeči pro připojení.",
-      "howToConnect": "Jak se připojit:",
-      "step1": "Klikněte na ikonu rozšíření Jan Browser v panelu nástrojů prohlížeče",
-      "step2": "Klikněte na \"Připojit\" v vyskakovacím okně rozšíření",
-      "step3": "Rozšíření se automaticky připojí k Jan",
-      "continueAnyway": "Pokračovat přesto",
-      "checkAgain": "Zkontrolovat znovu"
-    },
-    "connected": {
-      "title": "Rozšíření připojeno!",
-      "description": "Rozšíření Jan Browser je připojeno a připraveno k použití.",
-      "toolsAvailable": "Nástroje prohlížeče jsou nyní k dispozici",
-      "done": "Hotovo"
     }
   },
   "serverName": "Server Name",

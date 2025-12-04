@@ -3,35 +3,12 @@
   "addServer": "Dodaj Serwer MCP",
   "browserExtension": {
     "connecting": {
-      "title": "Łączenie z rozszerzeniem Jan Browser",
-      "description": "Proszę czekać, sprawdzamy rozszerzenie przeglądarki...",
       "checking": "Sprawdzanie statusu rozszerzenia..."
     },
     "notInstalled": {
-      "title": "Zainstaluj rozszerzenie Jan Browser",
-      "description": "Aby korzystać z funkcji automatyzacji przeglądarki, musisz zainstalować rozszerzenie Jan Browser.",
-      "whatCanDo": "Co może robić Jan Browser?",
-      "feature1": "Przeszukiwać sieć i wyodrębniać informacje ze stron",
-      "feature2": "Nawigować po stronach i robić zrzuty ekranu",
-      "feature3": "Klikać, pisać i wchodzić w interakcję z elementami sieci",
-      "installed": "Już zainstalowałem",
+      "title": "Jan wykonuje zadania w Twojej przeglądarce",
+      "description": "Zainstaluj rozszerzenie, aby dać Janowi dostęp do przeglądarki",
       "getExtension": "Pobierz rozszerzenie"
-    },
-    "waitingConnection": {
-      "title": "Oczekiwanie na połączenie rozszerzenia",
-      "description": "Serwer MCP jest uruchomiony. Proszę otworzyć rozszerzenie Jan Browser w przeglądarce, aby się połączyć.",
-      "howToConnect": "Jak się połączyć:",
-      "step1": "Kliknij ikonę rozszerzenia Jan Browser na pasku narzędzi przeglądarki",
-      "step2": "Kliknij \"Połącz\" w wyskakującym oknie rozszerzenia",
-      "step3": "Rozszerzenie automatycznie połączy się z Jan",
-      "continueAnyway": "Kontynuuj mimo to",
-      "checkAgain": "Sprawdź ponownie"
-    },
-    "connected": {
-      "title": "Rozszerzenie połączone!",
-      "description": "Rozszerzenie Jan Browser jest połączone i gotowe do użycia.",
-      "toolsAvailable": "Narzędzia przeglądarki są teraz dostępne",
-      "done": "Gotowe"
     }
   },
   "serverName": "Nazwa Serwera",
