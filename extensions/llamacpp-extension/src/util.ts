@@ -118,15 +118,29 @@ export type EmbedBatchResult = {
   usage?: EmbedUsage
 }
 
-export function estimateTokensFromText(text: string, charsPerToken = 2): number {
+// Embedding batching constants
+const DEFAULT_CHARS_PER_TOKEN = 3
+const UBATCH_SAFETY_MARGIN = 0.5
+
+export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {
   return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
 }
 
 export function buildEmbedBatches(
   inputs: string[],
   ubatchSize: number,
-  charsPerToken = 2
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN
 ): EmbedBatch[] {
+  // Ensure ubatch_size is large enough for at least 1 token with safety margin
+  const minUbatchSize = Math.ceil(1 / UBATCH_SAFETY_MARGIN)
+  if (ubatchSize < minUbatchSize) {
+    throw new Error(
+      `ubatch_size (${ubatchSize}) is too small. Minimum required: ${minUbatchSize}`
+    )
+  }
+
+  const safeLimit = Math.floor(ubatchSize * UBATCH_SAFETY_MARGIN)
+
   const batches: EmbedBatch[] = []
   let current: string[] = []
   let currentTokens = 0
@@ -143,13 +157,17 @@ export function buildEmbedBatches(
 
   for (const text of inputs) {
     const estTokens = estimateTokensFromText(text, charsPerToken)
-    if (!current.length && estTokens > ubatchSize) {
+
+    // If single text exceeds safe limit, still allow it as single batch
+    // (ensure at least one text per batch)
+    if (estTokens > safeLimit) {
+      if (current.length) push()
       batches.push({ batch: [text], offset })
       offset += 1
       continue
     }
 
-    if (currentTokens + estTokens > ubatchSize && current.length) {
+    if (currentTokens + estTokens > safeLimit && current.length) {
       push()
     }
 
@@ -158,6 +176,12 @@ export function buildEmbedBatches(
   }
 
   push()
+
+  // Validate that no batch is empty
+  if (batches.some(b => b.batch.length === 0)) {
+    throw new Error('Internal error: empty batch detected')
+  }
+
   return batches
 }
 

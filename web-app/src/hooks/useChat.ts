@@ -502,7 +502,8 @@ export const useChat = () => {
       projectId?: string,
       updateAttachmentProcessing?: (
         fileName: string,
-        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+        status: 'processing' | 'done' | 'error' | 'clear_all',
+        updatedAttachment?: Partial<Attachment>
       ) => void,
       continueFromMessageId?: string
     ) => {
@@ -658,9 +659,7 @@ export const useChat = () => {
       // All attachments (images + docs) ingested successfully.
       // Build the user content once; use it for both the outbound request
       // and persisting to the store so both are identical.
-      if (updateAttachmentProcessing) {
-        updateAttachmentProcessing('__CLEAR_ALL__', 'clear_all')
-      }
+      updateAttachmentProcessing?.('__CLEAR_ALL__', 'clear_all')
       const userContent = newUserThreadContent(
         activeThread.id,
         message,

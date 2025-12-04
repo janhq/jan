@@ -148,6 +148,7 @@ const ChatInput = ({
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
+  const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
   const autoInlineContextRatio = useAttachments((s) => s.autoInlineContextRatio)
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
@@ -190,7 +191,8 @@ const ChatInput = ({
   const updateAttachmentProcessing = useCallback(
     (
       fileName: string,
-      status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+      status: 'processing' | 'done' | 'error' | 'clear_all',
+      updatedAttachment?: Partial<Attachment>
     ) => {
       const targetKey = attachmentsKeyRef.current
       const storeState = useChatAttachments.getState()
@@ -204,13 +206,6 @@ const ChatInput = ({
       const keysToUpdate = new Set([targetKey, ...allMatchingKeys])
 
       const applyUpdate = (key: string) => {
-        if (status === 'clear_docs') {
-          setAttachmentsForThread(key, (prev) =>
-            prev.filter((a) => a.type !== 'document')
-          )
-          return
-        }
-
         if (status === 'clear_all') {
           clearAttachmentsForThread(key)
           return
@@ -221,8 +216,11 @@ const ChatInput = ({
             att.name === fileName
               ? {
                   ...att,
+                  ...updatedAttachment,
                   processing: status === 'processing',
-                  processed: status === 'done' ? true : att.processed,
+                  processed: status === 'done'
+                    ? true
+                    : updatedAttachment?.processed ?? att.processed,
                 }
               : att
           )
@@ -586,6 +584,23 @@ const ChatInput = ({
             parseMode: parsePreference,
           })
         )
+      }
+
+      const maxFileSizeBytes =
+        typeof maxFileSizeMB === 'number' && maxFileSizeMB > 0
+          ? maxFileSizeMB * 1024 * 1024
+          : undefined
+
+      if (maxFileSizeBytes !== undefined) {
+        const hasOversized = preparedAttachments.some(
+          (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
+        )
+        if (hasOversized) {
+          toast.error('File too large', {
+            description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
+          })
+          return
+        }
       }
 
       let duplicates: string[] = []

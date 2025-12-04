@@ -8,7 +8,6 @@ type AttachmentProcessingStatus =
   | 'processing'
   | 'done'
   | 'error'
-  | 'clear_docs'
   | 'clear_all'
 
 type AttachmentProcessingOptions = {
@@ -21,7 +20,11 @@ type AttachmentProcessingOptions = {
   parsePreference: 'auto' | 'inline' | 'embeddings' | 'prompt'
   autoFallbackMode?: 'inline' | 'embeddings'
   perFileChoices?: Map<string, 'inline' | 'embeddings'>
-  updateAttachmentProcessing?: (name: string, status: AttachmentProcessingStatus) => void
+  updateAttachmentProcessing?: (
+    name: string,
+    status: AttachmentProcessingStatus,
+    updatedAttachment?: Partial<Attachment>
+  ) => void
 }
 
 export type AttachmentProcessingResult = {
@@ -96,6 +99,9 @@ export const processAttachmentsForSend = async (
     contextThreshold > 0
       ? contextThreshold
       : undefined
+  const notifyUpdate = (
+    ...args: Parameters<NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>>
+  ) => updateAttachmentProcessing?.(...args)
 
   // Images: ingest before sending
   const images = attachments.filter((a) => a.type === 'image')
@@ -107,9 +113,7 @@ export const processAttachmentsForSend = async (
           continue
         }
 
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(img.name, 'processing')
-        }
+        notifyUpdate(img.name, 'processing')
 
         const res = await serviceHub.uploads().ingestImage(threadId, img)
         processedAttachments.push({
@@ -118,14 +122,14 @@ export const processAttachmentsForSend = async (
           processed: true,
           processing: false,
         })
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(img.name, 'done')
-        }
+        notifyUpdate(img.name, 'done', {
+          id: res.id,
+          processed: true,
+          processing: false,
+        })
       } catch (err) {
         console.error(`Failed to ingest image ${img.name}:`, err)
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(img.name, 'error')
-        }
+        notifyUpdate(img.name, 'error')
         const desc = formatAttachmentError(err)
         toast.error('Failed to ingest image attachment', { description: desc })
         throw err instanceof Error ? err : new Error(desc)
@@ -143,9 +147,7 @@ export const processAttachmentsForSend = async (
           continue
         }
 
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(doc.name, 'processing')
-        }
+        notifyUpdate(doc.name, 'processing')
 
         const targetPreference = doc.parseMode ?? parsePreference
         let targetMode: 'inline' | 'embeddings' =
@@ -213,16 +215,17 @@ export const processAttachmentsForSend = async (
             injectionMode: 'inline',
           })
 
-          if (updateAttachmentProcessing) {
-            updateAttachmentProcessing(doc.name, 'done')
-          }
+          notifyUpdate(doc.name, 'done', {
+            processing: false,
+            processed: true,
+            inlineContent: parsedContent,
+            injectionMode: 'inline',
+          })
           continue
         }
 
         // Default: ingest as embeddings
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(doc.name, 'processing')
-        }
+        notifyUpdate(doc.name, 'processing')
 
         const res = await serviceHub
           .uploads()
@@ -239,14 +242,17 @@ export const processAttachmentsForSend = async (
         })
         hasEmbeddedDocuments = true
 
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(doc.name, 'done')
-        }
+        notifyUpdate(doc.name, 'done', {
+          id: res.id,
+          size: res.size ?? doc.size,
+          chunkCount: res.chunkCount ?? doc.chunkCount,
+          processing: false,
+          processed: true,
+          injectionMode: 'embeddings',
+        })
       } catch (err) {
         console.error(`Failed to ingest ${doc.name}:`, err)
-        if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(doc.name, 'error')
-        }
+        notifyUpdate(doc.name, 'error')
         const desc = formatAttachmentError(err)
         toast.error('Failed to index attachments', { description: desc })
         throw err instanceof Error ? err : new Error(desc)
