@@ -1160,7 +1160,10 @@ export default class llamacpp_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
-      const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+      const isEmbedding = await this.resolveEmbeddingConfig(
+        modelId,
+        modelConfig
+      )
 
       const modelInfo = {
         id: modelId,
@@ -2342,7 +2345,10 @@ export default class llamacpp_extension extends AIEngine {
         : 512) || 512
     const batches = buildEmbedBatches(text, ubatchSize)
 
-    const attemptRequest = async (session: SessionInfo, batchInput: string[]) => {
+    const attemptRequest = async (
+      session: SessionInfo,
+      batchInput: string[]
+    ) => {
       const baseUrl = `http://localhost:${session.port}/v1/embeddings`
       const headers = {
         'Content-Type': 'application/json',
@@ -2631,44 +2637,48 @@ export default class llamacpp_extension extends AIEngine {
       },
     }
 
-    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(tokenizeRequest),
-    })
+    try {
+      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(tokenizeRequest),
+      })
 
-    if (!parseResponse.ok) {
-      const errorData = await parseResponse.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${
-          parseResponse.status
-        }: ${JSON.stringify(errorData)}`
-      )
+      if (!parseResponse.ok) {
+        const errorData = await parseResponse.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${
+            parseResponse.status
+          }: ${JSON.stringify(errorData)}`
+        )
+      }
+
+      const parsedPrompt = await parseResponse.json()
+
+      const response = await fetch(`${baseUrl}/tokenize`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          content: parsedPrompt.prompt,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(
+            errorData
+          )}`
+        )
+      }
+
+      const dataTokens = await response.json()
+      const textTokens = dataTokens.tokens?.length || 0
+
+      return textTokens + imageTokens
+    } catch (e) {
+      logger.error(String(e))
     }
-
-    const parsedPrompt = await parseResponse.json()
-
-    const response = await fetch(`${baseUrl}/tokenize`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        content: parsedPrompt.prompt,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
-      )
-    }
-
-    const dataTokens = await response.json()
-    const textTokens = dataTokens.tokens?.length || 0
-
-    return textTokens + imageTokens
   }
 
   private async calculateImageTokens(
