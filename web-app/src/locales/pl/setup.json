@@ -3,7 +3,7 @@
   "description": "Aby rozpocząć, szybko uruchom Jan Model lub wybierz własnego dostawcę lokalnego lub zdalnego",
   "descriptionWeb": "Aby rozpocząć, musisz połączyć się z modelem w chmurze przy użyciu klucza API",
   "quickStart": "Szybki start z Jan Model",
-  "quickStartDescription": "Zacznij rozmawiać natychmiast z naszym zalecanym modelem",
+  "quickStartDescription": "Nie wymaga konfiguracji",
   "downloading": "Pobieranie Jan Model...",
   "downloadingDescription": "Poczekaj, aż pobierzemy model. To może potrwać kilka minut.",
   "orDivider": "lub",

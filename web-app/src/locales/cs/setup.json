@@ -3,7 +3,7 @@
   "description": "Chcete-li začít, rychle spusťte Jan Model nebo si vyberte vlastního místního nebo vzdáleného poskytovatele",
   "descriptionWeb": "Chcete-li začít, budete se muset připojit ke cloudovému modelu pomocí klíče API",
   "quickStart": "Rychlý start s Jan Model",
-  "quickStartDescription": "Začněte okamžitě chatovat s naším doporučeným modelem",
+  "quickStartDescription": "Není potřeba žádné nastavení",
   "downloading": "Stahování Jan Model...",
   "downloadingDescription": "Počkejte prosím, než stáhneme model. Může to trvat několik minut.",
   "orDivider": "nebo",
