@@ -100,10 +100,10 @@ function SetupScreen() {
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
-  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
+  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
 
   const fetchJanModel = useCallback(async () => {
     if (!isQuickStartAvailable) return
@@ -185,8 +185,8 @@ function SetupScreen() {
       }
 
       setSupportedVariants(variantSupportMap)
-      setIsSupportCheckComplete(true)
       supportCheckInProgress.current = false
+      setIsSupportCheckComplete(true)
     }
 
     checkModelSupport()
@@ -286,7 +286,7 @@ function SetupScreen() {
 
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
-    if (!defaultVariant || !janModelV2) {
+    if (!defaultVariant || !janModelV2 || !isSupportCheckComplete) {
       setQuickStartQueued(true)
       setQuickStartInitiated(true)
       return
@@ -310,13 +310,14 @@ function SetupScreen() {
   }, [
     defaultVariant,
     janModelV2,
+    isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
   ])
 
   // Process queued quick start when metadata becomes available
   useEffect(() => {
-    if (quickStartQueued && defaultVariant && janModelV2) {
+    if (quickStartQueued && defaultVariant && janModelV2 && isSupportCheckComplete) {
       setQuickStartQueued(false)
       addLocalDownloadingModel(defaultVariant.model_id)
       serviceHub
@@ -333,7 +334,7 @@ function SetupScreen() {
           true
         )
     }
-  }, [quickStartQueued, defaultVariant, janModelV2, addLocalDownloadingModel, serviceHub])
+  }, [quickStartQueued, defaultVariant, janModelV2, isSupportCheckComplete, addLocalDownloadingModel, serviceHub])
 
   // Handle error when quick start is queued but metadata fetch fails
   useEffect(() => {
