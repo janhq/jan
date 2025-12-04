@@ -502,7 +502,8 @@ export const useChat = () => {
       projectId?: string,
       updateAttachmentProcessing?: (
         fileName: string,
-        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all',
+        updatedAttachment?: Partial<Attachment>
       ) => void,
       continueFromMessageId?: string
     ) => {

@@ -21,7 +21,11 @@ type AttachmentProcessingOptions = {
   parsePreference: 'auto' | 'inline' | 'embeddings' | 'prompt'
   autoFallbackMode?: 'inline' | 'embeddings'
   perFileChoices?: Map<string, 'inline' | 'embeddings'>
-  updateAttachmentProcessing?: (name: string, status: AttachmentProcessingStatus) => void
+  updateAttachmentProcessing?: (
+    name: string,
+    status: AttachmentProcessingStatus,
+    updatedAttachment?: Partial<Attachment>
+  ) => void
 }
 
 export type AttachmentProcessingResult = {
@@ -119,7 +123,11 @@ export const processAttachmentsForSend = async (
           processing: false,
         })
         if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(img.name, 'done')
+          updateAttachmentProcessing(img.name, 'done', {
+            id: res.id,
+            processed: true,
+            processing: false,
+          })
         }
       } catch (err) {
         console.error(`Failed to ingest image ${img.name}:`, err)
@@ -214,7 +222,12 @@ export const processAttachmentsForSend = async (
           })
 
           if (updateAttachmentProcessing) {
-            updateAttachmentProcessing(doc.name, 'done')
+            updateAttachmentProcessing(doc.name, 'done', {
+              processing: false,
+              processed: true,
+              inlineContent: parsedContent,
+              injectionMode: 'inline',
+            })
           }
           continue
         }
@@ -240,7 +253,14 @@ export const processAttachmentsForSend = async (
         hasEmbeddedDocuments = true
 
         if (updateAttachmentProcessing) {
-          updateAttachmentProcessing(doc.name, 'done')
+          updateAttachmentProcessing(doc.name, 'done', {
+            id: res.id,
+            size: res.size ?? doc.size,
+            chunkCount: res.chunkCount ?? doc.chunkCount,
+            processing: false,
+            processed: true,
+            injectionMode: 'embeddings',
+          })
         }
       } catch (err) {
         console.error(`Failed to ingest ${doc.name}:`, err)
