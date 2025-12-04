@@ -142,8 +142,6 @@ const ChatInput = ({
     dialogOpen: extensionDialogOpen,
     dialogState: extensionDialogState,
     toggleBrowser: handleBrowseClick,
-    handleRetryConnection: handleExtensionDialogRetry,
-    handleContinueAnyway: handleExtensionDialogContinue,
     handleCancel: handleExtensionDialogCancel,
     setDialogOpen: setExtensionDialogOpen,
   } = useJanBrowserExtension()
@@ -514,6 +512,8 @@ const ChatInput = ({
       }
     },
     [
+      ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
+      attachmentsKey,
       autoInlineContextRatio,
       activeModels,
       currentThreadId,
@@ -524,6 +524,7 @@ const ChatInput = ({
       selectedProvider,
       serviceHub,
       setActiveModels,
+      setAttachmentsForThread,
       updateAttachmentProcessing,
       updateLoadingModel,
     ]
@@ -1612,8 +1613,6 @@ const ChatInput = ({
         open={extensionDialogOpen}
         onOpenChange={setExtensionDialogOpen}
         state={extensionDialogState}
-        onRetryConnection={handleExtensionDialogRetry}
-        onContinueAnyway={handleExtensionDialogContinue}
         onCancel={handleExtensionDialogCancel}
       />
     </div>

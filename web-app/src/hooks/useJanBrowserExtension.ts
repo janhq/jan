@@ -10,7 +10,6 @@ const JAN_BROWSER_MCP_NAME = 'Jan Browser MCP'
 const PING_TIMEOUT_MS = 6000 // Backend ping takes up to 3s
 const POLL_INTERVAL_MS = 500
 const SERVER_START_DELAY_MS = 1000
-const SUCCESS_CLOSE_DELAY_MS = 1500
 
 export function useJanBrowserExtension() {
   const serviceHub = useServiceHub()
@@ -63,42 +62,12 @@ export function useJanBrowserExtension() {
   }, [checkExtensionConnection])
 
   /**
-   * Handle successful connection - show success state and auto-close
+   * Handle successful connection - close dialog and show toast
    */
   const handleConnectionSuccess = useCallback(() => {
-    setDialogState('connected')
-    toast.success('Jan Browser MCP enabled')
-    setTimeout(() => {
-      setDialogOpen(false)
-      setDialogState('closed')
-    }, SUCCESS_CLOSE_DELAY_MS)
-  }, [])
-
-  /**
-   * Handle retry connection (called from dialog's "I've Installed It" or "Check Again" button)
-   */
-  const handleRetryConnection = useCallback(async () => {
-    setDialogState('checking')
-
-    const connected = await waitForExtensionConnection(PING_TIMEOUT_MS, POLL_INTERVAL_MS)
-
-    if (connected) {
-      handleConnectionSuccess()
-    } else {
-      // Still not connected, show waiting state
-      setDialogState('waiting_connection')
-    }
-  }, [waitForExtensionConnection, handleConnectionSuccess])
-
-  /**
-   * Handle continue anyway (user wants to proceed without extension)
-   */
-  const handleContinueAnyway = useCallback(() => {
     setDialogOpen(false)
     setDialogState('closed')
-    toast.info('Jan Browser MCP is active', {
-      description: 'Connect the browser extension to use browser tools',
-    })
+    toast.success('Jan Browser MCP enabled')
   }, [])
 
   /**
@@ -241,8 +210,6 @@ export function useJanBrowserExtension() {
 
     // Actions
     toggleBrowser,
-    handleRetryConnection,
-    handleContinueAnyway,
     handleCancel,
     setDialogOpen,
   }

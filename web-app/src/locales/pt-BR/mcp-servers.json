@@ -3,35 +3,12 @@
   "addServer": "Adicionar Servidor MCP",
   "browserExtension": {
     "connecting": {
-      "title": "Conectando à Extensão Jan Browser",
-      "description": "Por favor, aguarde enquanto verificamos a extensão do navegador...",
       "checking": "Verificando status da extensão..."
     },
     "notInstalled": {
-      "title": "Instalar Extensão Jan Browser",
-      "description": "Para usar os recursos de automação do navegador, você precisa instalar a Extensão Jan Browser.",
-      "whatCanDo": "O que o Jan Browser pode fazer?",
-      "feature1": "Pesquisar na web e extrair informações de páginas",
-      "feature2": "Navegar em sites e capturar telas",
-      "feature3": "Clicar, digitar e interagir com elementos da web",
-      "installed": "Já instalei",
+      "title": "Jan completa tarefas no seu navegador",
+      "description": "Instale a extensão para dar ao Jan acesso ao navegador",
       "getExtension": "Obter Extensão"
-    },
-    "waitingConnection": {
-      "title": "Aguardando Conexão da Extensão",
-      "description": "O servidor MCP está em execução. Por favor, abra a Extensão Jan Browser no seu navegador para conectar.",
-      "howToConnect": "Como conectar:",
-      "step1": "Clique no ícone da Extensão Jan Browser na barra de ferramentas do navegador",
-      "step2": "Clique em \"Conectar\" no popup da extensão",
-      "step3": "A extensão se conectará automaticamente ao Jan",
-      "continueAnyway": "Continuar assim mesmo",
-      "checkAgain": "Verificar novamente"
-    },
-    "connected": {
-      "title": "Extensão Conectada!",
-      "description": "A Extensão Jan Browser está conectada e pronta para uso.",
-      "toolsAvailable": "As ferramentas do navegador já estão disponíveis",
-      "done": "Concluído"
     }
   },
   "serverName": "Nome do Servidor",

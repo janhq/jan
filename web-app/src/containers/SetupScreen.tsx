@@ -330,10 +330,6 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
-  const descriptionKey = isQuickStartAvailable
-    ? 'setup:description'
-    : 'setup:descriptionWeb'
-
   return (
     <div className="flex h-full flex-col justify-center">
       <HeaderPage></HeaderPage>
@@ -343,9 +339,11 @@ function SetupScreen() {
             <h1 className="font-editorialnew text-main-view-fg text-4xl">
               {t('setup:welcome')}
             </h1>
-            <p className="text-main-view-fg/70 text-lg mt-2">
-              {t(descriptionKey)}
-            </p>
+            {!isQuickStartAvailable && (
+              <p className="text-main-view-fg/70 text-lg mt-2">
+                {t('setup:descriptionWeb')}
+              </p>
+            )}
           </div>
           <div className="flex gap-4 flex-col">
             {/* Quick Start Button - Highlighted */}
