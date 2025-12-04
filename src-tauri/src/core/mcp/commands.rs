@@ -118,6 +118,17 @@ pub async fn deactivate_mcp_server<R: Runtime>(
     }
 
     log::info!("Server {name} stopped successfully and marked as deactivated.");
+
+    // Emit mcp-update event so frontend can refresh tools list
+    if let Err(e) = app.emit(
+        "mcp-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-update event: {e}");
+    }
+
     Ok(())
 }
 

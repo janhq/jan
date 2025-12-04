@@ -256,7 +256,7 @@ const ChatInput = ({
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
-  const hasActiveMCPServers = tools.length > 0
+  const hasActiveMCPServers = tools.filter((tool) => tool.server !== 'Jan Browser MCP').length > 0
 
   // Get MCP extension and its custom component
   const extensionManager = ExtensionManager.getInstance()

@@ -4,6 +4,7 @@
   "descriptionWeb": "要开始使用，您需要使用 API 密钥连接到云模型",
   "quickStart": "使用 Jan Model 快速启动",
   "quickStartDescription": "无需设置",
+  "quickStartFailed": "出了点问题。请重试。",
   "downloading": "正在下载 Jan Model...",
   "downloadingDescription": "请等待我们下载模型。这可能需要几分钟。",
   "orDivider": "或",

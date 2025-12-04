@@ -4,6 +4,7 @@
   "descriptionWeb": "Aby rozpocząć, musisz połączyć się z modelem w chmurze przy użyciu klucza API",
   "quickStart": "Szybki start z Jan Model",
   "quickStartDescription": "Nie wymaga konfiguracji",
+  "quickStartFailed": "Coś poszło nie tak. Spróbuj ponownie.",
   "downloading": "Pobieranie Jan Model...",
   "downloadingDescription": "Poczekaj, aż pobierzemy model. To może potrwać kilka minut.",
   "orDivider": "lub",

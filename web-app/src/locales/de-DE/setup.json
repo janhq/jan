@@ -4,6 +4,7 @@
   "descriptionWeb": "Um zu beginnen, müssen Sie über einen API-Schlüssel eine Verbindung zu einem Cloud-Modell herstellen",
   "quickStart": "Schnellstart mit Jan Model",
   "quickStartDescription": "Keine Einrichtung erforderlich",
+  "quickStartFailed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
   "downloading": "Jan Model wird heruntergeladen...",
   "downloadingDescription": "Bitte warten Sie, während wir das Modell herunterladen. Dies kann einige Minuten dauern.",
   "orDivider": "oder",

@@ -95,17 +95,20 @@ function SetupScreen() {
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
+  const [quickStartQueued, setQuickStartQueued] = useState(false)
   const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
-  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+  const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
+  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
 
   const fetchJanModel = useCallback(async () => {
     if (!isQuickStartAvailable) return
 
+    setMetadataFetchFailed(false)
     try {
       const repo = await serviceHub
         .models()
@@ -114,9 +117,12 @@ function SetupScreen() {
       if (repo) {
         const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repo)
         setJanModelV2(catalogModel)
+      } else {
+        setMetadataFetchFailed(true)
       }
     } catch (error) {
       console.error('Error fetching Jan Model V2:', error)
+      setMetadataFetchFailed(true)
     }
   }, [serviceHub])
 
@@ -179,8 +185,8 @@ function SetupScreen() {
       }
 
       setSupportedVariants(variantSupportMap)
-      setIsSupportCheckComplete(true)
       supportCheckInProgress.current = false
+      setIsSupportCheckComplete(true)
     }
 
     checkModelSupport()
@@ -279,8 +285,10 @@ function SetupScreen() {
   }, [defaultVariant, llamaProvider])
 
   const handleQuickStart = useCallback(() => {
-    if (!defaultVariant || !janModelV2) {
-      console.error('Jan Model V2 not found in catalog')
+    // If metadata is still loading, queue the download
+    if (!defaultVariant || !janModelV2 || !isSupportCheckComplete) {
+      setQuickStartQueued(true)
+      setQuickStartInitiated(true)
       return
     }
 
@@ -302,15 +310,50 @@ function SetupScreen() {
   }, [
     defaultVariant,
     janModelV2,
+    isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
   ])
 
+  // Process queued quick start when metadata becomes available
   useEffect(() => {
-    if (quickStartInitiated && !isDownloading && !isDownloaded) {
+    if (quickStartQueued && defaultVariant && janModelV2 && isSupportCheckComplete) {
+      setQuickStartQueued(false)
+      addLocalDownloadingModel(defaultVariant.model_id)
+      serviceHub
+        .models()
+        .pullModelWithMetadata(
+          defaultVariant.model_id,
+          defaultVariant.path,
+          (
+            janModelV2.mmproj_models?.find(
+              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+            ) || janModelV2.mmproj_models?.[0]
+          )?.path,
+          undefined,
+          true
+        )
+    }
+  }, [quickStartQueued, defaultVariant, janModelV2, isSupportCheckComplete, addLocalDownloadingModel, serviceHub])
+
+  // Handle error when quick start is queued but metadata fetch fails
+  useEffect(() => {
+    if (quickStartQueued && metadataFetchFailed) {
+      setQuickStartQueued(false)
+      setQuickStartInitiated(false)
+      toast.error(
+        t('setup:quickStartFailed', {
+          defaultValue: 'Something went wrong. Please try again.',
+        })
+      )
+    }
+  }, [quickStartQueued, metadataFetchFailed, t])
+
+  useEffect(() => {
+    if (quickStartInitiated && !quickStartQueued && !isDownloading && !isDownloaded) {
       setQuickStartInitiated(false)
     }
-  }, [quickStartInitiated, isDownloading, isDownloaded])
+  }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
 
   useEffect(() => {
     if (quickStartInitiated && isDownloaded && defaultVariant) {
@@ -353,11 +396,9 @@ function SetupScreen() {
                 disabled={
                   quickStartInitiated ||
                   isDownloading ||
-                  isDownloaded ||
-                  !defaultVariant ||
-                  !isSupportCheckComplete
+                  isDownloaded
                 }
-                className="w-full text-left disabled:cursor-not-allowed"
+                className="w-full text-left"
               >
                 <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
                   <div className="flex items-start gap-3">
