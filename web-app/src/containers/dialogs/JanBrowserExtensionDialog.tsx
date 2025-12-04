@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Button } from '@/components/ui/button'
 import { IconExternalLink, IconLoader2 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -61,12 +62,17 @@ export default function JanBrowserExtensionDialog({
     switch (state) {
       case 'checking':
         return (
-          <div className="flex items-center justify-center py-8">
-            <div className="flex flex-col items-center justify-center gap-3">
-              <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
-              <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
+          <>
+            <VisuallyHidden>
+              <DialogTitle>{t('mcp-servers:browserExtension.connecting.checking')}</DialogTitle>
+            </VisuallyHidden>
+            <div className="flex items-center justify-center py-8">
+              <div className="flex flex-col items-center justify-center gap-3">
+                <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
+                <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
+              </div>
             </div>
-          </div>
+          </>
         )
 
       case 'not_installed':

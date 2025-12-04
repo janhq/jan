@@ -4,6 +4,7 @@
   "descriptionWeb": "Untuk memulai, Anda perlu terhubung ke model cloud menggunakan kunci API",
   "quickStart": "Mulai cepat dengan Jan Model",
   "quickStartDescription": "Tidak perlu pengaturan",
+  "quickStartFailed": "Terjadi kesalahan. Silakan coba lagi.",
   "downloading": "Mengunduh Jan Model...",
   "downloadingDescription": "Harap tunggu saat kami mengunduh model. Ini mungkin memakan waktu beberapa menit.",
   "orDivider": "atau",
