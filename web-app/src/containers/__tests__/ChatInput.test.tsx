@@ -178,6 +178,15 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <div onClick={onClick}>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('react-textarea-autosize', () => ({
   default: ({ value, onChange, onKeyDown, placeholder, disabled, className, minRows, maxRows, onHeightChange, ...props }: any) => (
     <textarea
@@ -197,6 +206,7 @@ vi.mock('react-textarea-autosize', () => ({
 // Mock icons
 vi.mock('lucide-react', () => ({
   ArrowRight: () => <svg data-testid="arrow-right-icon">ArrowRight</svg>,
+  PlusIcon: () => <svg data-testid="plus-icon">PlusIcon</svg>,
 }))
 
 vi.mock('@tabler/icons-react', () => ({
@@ -443,32 +453,5 @@ describe('ChatInput', () => {
     await act(async () => {
       expect(() => renderWithRouter()).not.toThrow()
     })
-  })
-
-  describe('Proactive Mode', () => {
-    it('should render ChatInput with proactive capable model', async () => {
-      await act(async () => {
-        renderWithRouter()
-      })
-
-      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-    })
-
-    it('should handle proactive capability detection', async () => {
-      await act(async () => {
-        renderWithRouter()
-      })
-
-      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-    })
-
-    it('should work with models that have multiple capabilities', async () => {
-      await act(async () => {
-        renderWithRouter()
-      })
-
-      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-    })
-
   })
 })

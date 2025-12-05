@@ -449,9 +449,23 @@ export const useModelProvider = create<ModelProviderState>()(
           // TODO: Default providers should be updated automatically somehow later
           state.providers = state.providers.filter((provider) => provider.provider !== 'cohere')
         }
+        if (version <= 7 && state?.providers) {
+          // Remove 'proactive' capability from all models as it's now managed in MCP settings
+          state.providers.forEach((provider) => {
+            if (provider.models) {
+              provider.models.forEach((model) => {
+                if (model.capabilities) {
+                  model.capabilities = model.capabilities.filter(
+                    (cap) => cap !== 'proactive'
+                  )
+                }
+              })
+            }
+          })
+        }
         return state
       },
-      version: 7,
+      version: 8,
     }
   )
 )

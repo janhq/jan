@@ -41,8 +41,26 @@ pub async fn activate_mcp_server<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn deactivate_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     log::info!("Deactivating MCP server: {name}");
+
+    // Get port from config before removing (for lock file cleanup later)
+    let bridge_port = if name == "Jan Browser MCP" {
+        let active_servers = state.mcp_active_servers.lock().await;
+        active_servers.get(&name).and_then(|config| {
+            config
+                .get("envs")
+                .and_then(|envs| envs.get("BRIDGE_PORT"))
+                .and_then(|port| port.as_str())
+                .and_then(|port_str| port_str.parse::<u16>().ok())
+        })
+    } else {
+        None
+    };
 
     // First, mark server as manually deactivated to prevent restart
     // Remove from active servers list to prevent restart
@@ -87,6 +105,18 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
             service.cancel().await.map_err(|e| e.to_string())?;
         }
     }
+
+    // Delete lock file if this is Jan Browser MCP and we have a port
+    if name == "Jan Browser MCP" {
+        if let Some(port) = bridge_port {
+            use crate::core::mcp::lockfile::delete_lock_file;
+
+            if let Err(e) = delete_lock_file(&app, port) {
+                log::warn!("Failed to delete lock file for port {}: {}", port, e);
+            }
+        }
+    }
+
     log::info!("Server {name} stopped successfully and marked as deactivated.");
     Ok(())
 }

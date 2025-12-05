@@ -125,7 +125,7 @@ vi.mock('../useModelProvider', () => ({
           models: [
             {
               id: 'test-model',
-              capabilities: ['tools', 'vision', 'proactive'],
+              capabilities: ['tools', 'vision'],
               settings: {},
             },
           ],
@@ -133,8 +133,7 @@ vi.mock('../useModelProvider', () => ({
         })),
         selectedModel: {
           id: 'test-model',
-          // FIX: Add vision and proactive for the corresponding tests
-          capabilities: ['tools', 'vision', 'proactive'],
+          capabilities: ['tools', 'vision'],
         },
         selectedProvider: 'llamacpp',
         updateProvider: vi.fn(),
@@ -149,7 +148,7 @@ vi.mock('../useModelProvider', () => ({
           models: [
             {
               id: 'test-model',
-              capabilities: ['tools', 'vision', 'proactive'],
+              capabilities: ['tools', 'vision'],
               settings: {},
             },
           ],
@@ -157,8 +156,7 @@ vi.mock('../useModelProvider', () => ({
         })),
         selectedModel: {
           id: 'test-model',
-          // FIX: Add vision and proactive for the corresponding tests
-          capabilities: ['tools', 'vision', 'proactive'],
+          capabilities: ['tools', 'vision'],
         },
         selectedProvider: 'llamacpp',
         updateProvider: vi.fn(),
@@ -762,30 +760,6 @@ describe('useChat', () => {
       })
 
       expect(result.current).toBeDefined()
-    })
-  })
-
-  describe('Proactive Mode', () => {
-    // These tests implicitly rely on the corrected useModelProvider mock
-    // which now includes 'proactive' in capabilities.
-    it('should detect proactive mode when model has proactive capability', () => {
-      const { result } = renderHook(() => useChat())
-
-      expect(result.current).toBeDefined()
-      expect(typeof result.current).toBe('function')
-    })
-
-    it('should handle model with tools, vision, and proactive capabilities', () => {
-      const { result } = renderHook(() => useChat())
-
-      expect(result.current).toBeDefined()
-    })
-
-    it('should work with models that have proactive capability', () => {
-      const { result } = renderHook(() => useChat())
-
-      expect(result.current).toBeDefined()
-      expect(typeof result.current).toBe('function')
     })
   })
 })
