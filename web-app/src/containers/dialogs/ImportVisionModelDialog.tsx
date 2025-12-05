@@ -63,11 +63,18 @@ export const ImportVisionModelDialog = ({
             const result = await serviceHub.models().validateGgufFile(filePath)
 
             if (result.metadata) {
+              const { invoke } = await import('@tauri-apps/api/core')
               // Check architecture from metadata
               const architecture =
                 result.metadata.metadata?.['general.architecture']
+              let filePathNormalized = await invoke(
+                'plugin:llamacpp|get_shortest_path',
+                {
+                  path: filePath,
+                }
+              )
 
-              setModelName(basename(filePath))
+              setModelName(basename(filePathNormalized as string))
 
               // Model files should NOT be clip
               if (architecture === 'clip') {

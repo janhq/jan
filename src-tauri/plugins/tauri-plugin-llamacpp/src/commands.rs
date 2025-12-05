@@ -2,6 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 use tauri::{Manager, Runtime, State};
@@ -300,6 +301,24 @@ pub async fn unload_llama_model<R: Runtime>(
             success: true,
             error: None,
         })
+    }
+}
+
+// Normalize paths helper function
+#[tauri::command]
+pub async fn get_shortest_path(path: &str) -> Result<String, String> {
+    let path_pb = PathBuf::from(path);
+    #[cfg(windows)]
+    {
+        if let Some(short) = get_short_path(path_pb) {
+            Ok(short)
+        } else {
+            Err("Unable to get short path") // or path.to_string()
+        }
+    }
+    #[cfg(unix)]
+    {
+        Ok(path_pb.to_string_lossy().to_string())
     }
 }
 

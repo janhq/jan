@@ -12,6 +12,7 @@ const COMMANDS: &[&str] = &[
     "get_loaded_models",
     "get_all_sessions",
     "get_session_by_model",
+    "get_shortest_path",
     // GGUF commands
     "read_gguf_metadata",
     "estimate_kv_cache_size",

@@ -151,3 +151,11 @@ export async function planModelLoadInternal(
     requestedContext,
   })
 }
+
+export async function getShortestPath(
+    path: string
+): Promise<string> {
+    return await invoke('plugin:llamacpp|get_shortest_path', {
+        path
+    })
+}

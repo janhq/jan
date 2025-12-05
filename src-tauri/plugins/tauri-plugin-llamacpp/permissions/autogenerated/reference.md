@@ -15,6 +15,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-loaded-models`
 - `allow-get-all-sessions`
 - `allow-get-session-by-model`
+- `allow-get-shortest-path`
 - `allow-read-gguf-metadata`
 - `allow-estimate-kv-cache-size`
 - `allow-get-model-size`
@@ -286,6 +287,32 @@ Enables the get_session_by_model command without any pre-configured scope.
 <td>
 
 Denies the get_session_by_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-shortest-path`
+
+</td>
+<td>
+
+Enables the get_shortest_path command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-shortest-path`
+
+</td>
+<td>
+
+Denies the get_shortest_path command without any pre-configured scope.
 
 </td>
 </tr>

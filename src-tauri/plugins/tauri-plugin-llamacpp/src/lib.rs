@@ -31,6 +31,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_loaded_models,
             commands::get_all_sessions,
             commands::get_session_by_model,
+            commands::get_shortest_path,
             // GGUF commands
             gguf::commands::read_gguf_metadata,
             gguf::commands::estimate_kv_cache_size,

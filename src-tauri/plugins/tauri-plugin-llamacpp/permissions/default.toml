@@ -15,6 +15,7 @@ permissions = [
     "allow-get-loaded-models",
     "allow-get-all-sessions",
     "allow-get-session-by-model",
+    "allow-get-shortest-path",
 
     # GGUF commands
     "allow-read-gguf-metadata",
