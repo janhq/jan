@@ -67,7 +67,7 @@ export const ImportVisionModelDialog = ({
               // Check architecture from metadata
               const architecture =
                 result.metadata.metadata?.['general.architecture']
-              let filePathNormalized = await invoke(
+              const filePathNormalized = await invoke(
                 'plugin:llamacpp|get_shortest_path',
                 {
                   path: filePath,
