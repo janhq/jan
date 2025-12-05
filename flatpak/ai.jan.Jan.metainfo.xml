@@ -103,6 +103,11 @@
   </keywords>
 
   <releases>
+    <release version="0.7.4" date="2025-12-05">
+      <description>
+        <p>Streamlined Onboarding and Enhanced File Attachments</p>
+      </description>
+    </release>
     <release version="0.7.3" date="2025-11-13">
       <description>
         <p>Enhanced Browser Control and Smarter Interactions</p>
