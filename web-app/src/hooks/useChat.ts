@@ -43,6 +43,8 @@ import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
+import { MCPTool } from '@/types/completion'
+import { useMCPServers } from '@/hooks/useMCPServers'
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -271,6 +273,7 @@ export const useChat = () => {
   const getDisabledToolsForThread = useToolAvailable(
     (state) => state.getDisabledToolsForThread
   )
+  const mcpSettings = useMCPServers((state) => state.settings)
 
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
@@ -668,12 +671,21 @@ export const useChat = () => {
 
         let isCompleted = false
 
+        const disabledTools = getDisabledToolsForThread(activeThread.id)
+        const isToolDisabled = (tool: MCPTool) => {
+          const compositeKey = `${tool.server}::${tool.name}`
+          return (
+            disabledTools.includes(compositeKey) ||
+            // Backwards compatibility with pre-migration keys
+            disabledTools.includes(tool.name)
+          )
+        }
+
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? useAppState.getState().tools.filter((tool) => {
-              const disabledTools = getDisabledToolsForThread(activeThread.id)
-              return !disabledTools.includes(tool.name)
-            })
+          ? useAppState
+              .getState()
+              .tools.filter((tool) => !isToolDisabled(tool))
           : []
 
         // Conditionally inject RAG if tools are supported and documents are attached
@@ -691,7 +703,10 @@ export const useChat = () => {
               .getTools()
               .catch(() => [])
             if (Array.isArray(ragTools) && ragTools.length) {
-              availableTools = [...availableTools, ...ragTools]
+              const enabledRagTools = ragTools.filter(
+                (tool) => !isToolDisabled(tool)
+              )
+              availableTools = [...availableTools, ...enabledRagTools]
               console.log('RAG tools injected for completion.')
             }
           } catch (e) {
@@ -699,11 +714,11 @@ export const useChat = () => {
           }
         }
 
-        // Check if proactive mode is enabled
-        const isProactiveMode =
-          (selectedModel?.capabilities?.includes('tools') ?? false) &&
+        // Check if proactive mode is enabled in MCP settings and model has required capabilities
+        const hasRequiredCapabilities =
           (selectedModel?.capabilities?.includes('vision') ?? false) &&
-          (selectedModel?.capabilities?.includes('proactive') ?? false)
+          (selectedModel?.capabilities?.includes('tools') ?? false)
+        const isProactiveMode = mcpSettings.proactiveMode && hasRequiredCapabilities
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
         if (
@@ -904,11 +919,12 @@ export const useChat = () => {
             )
           }
 
-          // Check if proactive mode is enabled for this model
-          const isProactiveMode =
-            (selectedModel?.capabilities?.includes('tools') ?? false) &&
+          // Check if proactive mode is enabled in MCP settings and model has required capabilities
+          const hasRequiredCapabilitiesForPostProcessing =
             (selectedModel?.capabilities?.includes('vision') ?? false) &&
-            (selectedModel?.capabilities?.includes('proactive') ?? false)
+            (selectedModel?.capabilities?.includes('tools') ?? false)
+          const isProactiveModeForPostProcessing =
+            mcpSettings.proactiveMode && hasRequiredCapabilitiesForPostProcessing
 
           const updatedMessage = await postMessageProcessing(
             toolCalls,
@@ -918,7 +934,7 @@ export const useChat = () => {
             useToolApproval.getState().approvedTools,
             allowAllMCPPermissions ? undefined : showApprovalModal,
             allowAllMCPPermissions,
-            isProactiveMode
+            isProactiveModeForPostProcessing
           )
           finalizeMessage(
             updatedMessage ?? finalContent,
@@ -1078,6 +1094,8 @@ export const useChat = () => {
       setModelLoadError,
       serviceHub,
       setTokenSpeed,
+      mcpSettings.proactiveMode,
+      setActiveModels,
     ]
   )
 

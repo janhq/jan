@@ -14,7 +14,6 @@ vi.mock('@/components/ui/tooltip', () => ({
 vi.mock('@tabler/icons-react', () => ({
   IconEye: () => <div data-testid="icon-eye">Eye Icon</div>,
   IconTool: () => <div data-testid="icon-tool">Tool Icon</div>,
-  IconSparkles: () => <div data-testid="icon-sparkles">Sparkles Icon</div>,
   IconAtom: () => <div data-testid="icon-atom">Atom Icon</div>,
   IconWorld: () => <div data-testid="icon-world">World Icon</div>,
   IconCodeCircle2: () => <div data-testid="icon-code">Code Icon</div>,
@@ -33,20 +32,6 @@ describe('Capabilities', () => {
 
     const toolIcon = screen.getByTestId('icon-tool')
     expect(toolIcon).toBeInTheDocument()
-  })
-
-  it('should NOT render proactive icon without tools and vision', () => {
-    render(<Capabilities capabilities={['proactive']} />)
-
-    const sparklesIcon = screen.queryByTestId('icon-sparkles')
-    expect(sparklesIcon).not.toBeInTheDocument()
-  })
-
-  it('should render proactive capability with sparkles icon when tools and vision are present', () => {
-    render(<Capabilities capabilities={['tools', 'vision', 'proactive']} />)
-
-    const sparklesIcon = screen.getByTestId('icon-sparkles')
-    expect(sparklesIcon).toBeInTheDocument()
   })
 
   it('should render reasoning capability with atom icon', () => {
@@ -71,19 +56,18 @@ describe('Capabilities', () => {
   })
 
   it('should render multiple capabilities', () => {
-    render(<Capabilities capabilities={['tools', 'vision', 'proactive']} />)
+    render(<Capabilities capabilities={['tools', 'vision', 'reasoning']} />)
 
     expect(screen.getByTestId('icon-tool')).toBeInTheDocument()
     expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-sparkles')).toBeInTheDocument()
+    expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
   })
 
   it('should render all capabilities in correct order', () => {
-    render(<Capabilities capabilities={['tools', 'vision', 'proactive', 'reasoning', 'web_search', 'embeddings']} />)
+    render(<Capabilities capabilities={['tools', 'vision', 'reasoning', 'web_search', 'embeddings']} />)
 
     expect(screen.getByTestId('icon-tool')).toBeInTheDocument()
     expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-sparkles')).toBeInTheDocument()
     expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
     expect(screen.getByTestId('icon-world')).toBeInTheDocument()
     expect(screen.getByTestId('icon-code')).toBeInTheDocument()
@@ -99,47 +83,5 @@ describe('Capabilities', () => {
     const { container } = render(<Capabilities capabilities={['unknown_capability']} />)
 
     expect(container).toBeInTheDocument()
-  })
-
-  it('should display proactive tooltip with correct text when all requirements met', () => {
-    render(<Capabilities capabilities={['tools', 'vision', 'proactive']} />)
-
-    // The tooltip content should be 'Proactive'
-    expect(screen.getByTestId('icon-sparkles')).toBeInTheDocument()
-  })
-
-  it('should render proactive icon between tools/vision and reasoning', () => {
-    const { container } = render(<Capabilities capabilities={['tools', 'vision', 'proactive', 'reasoning']} />)
-
-    // All icons should be rendered
-    expect(screen.getByTestId('icon-tool')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-sparkles')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
-
-    expect(container.querySelector('[data-testid="icon-sparkles"]')).toBeInTheDocument()
-  })
-
-  it('should apply correct CSS classes to proactive icon', () => {
-    render(<Capabilities capabilities={['tools', 'vision', 'proactive']} />)
-
-    const sparklesIcon = screen.getByTestId('icon-sparkles')
-    expect(sparklesIcon).toBeInTheDocument()
-    // Icon should have size-3.5 class (same as tools, reasoning, etc.)
-    expect(sparklesIcon.parentElement).toBeInTheDocument()
-  })
-
-  it('should NOT show proactive icon when only tools capability is present', () => {
-    render(<Capabilities capabilities={['tools', 'proactive']} />)
-
-    const sparklesIcon = screen.queryByTestId('icon-sparkles')
-    expect(sparklesIcon).not.toBeInTheDocument()
-  })
-
-  it('should NOT show proactive icon when only vision capability is present', () => {
-    render(<Capabilities capabilities={['vision', 'proactive']} />)
-
-    const sparklesIcon = screen.queryByTestId('icon-sparkles')
-    expect(sparklesIcon).not.toBeInTheDocument()
   })
 })

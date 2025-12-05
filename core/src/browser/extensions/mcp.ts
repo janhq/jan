@@ -15,7 +15,7 @@ export abstract class MCPExtension extends BaseExtension implements MCPInterface
   }
 
   abstract getTools(): Promise<MCPTool[]>
-  abstract callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult>
+  abstract callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult>
   abstract getConnectedServers(): Promise<string[]>
   abstract refreshTools(): Promise<void>
   abstract isHealthy(): Promise<boolean>

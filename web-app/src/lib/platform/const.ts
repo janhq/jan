@@ -84,6 +84,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
 
-  // File attachments/RAG UI and tooling - disabled until feature release
-  [PlatformFeature.FILE_ATTACHMENTS]: false,
+  // File attachments/RAG UI and tooling - desktop platforms only
+  [PlatformFeature.FILE_ATTACHMENTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

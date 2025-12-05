@@ -1,0 +1,6 @@
+{
+  "welcome": "Vítejte v Jan",
+  "description": "Pro začátek budete muset buď stáhnout lokální AI model, nebo se připojit ke cloudovému modelu pomocí API klíče",
+  "localModel": "Nastavit lokální model",
+  "remoteProvider": "Nastavit vzdáleného poskytovatele"
+}

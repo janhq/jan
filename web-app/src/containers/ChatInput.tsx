@@ -12,7 +12,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ArrowRight } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
   IconWorld,
@@ -1037,6 +1043,56 @@ const ChatInput = ({
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
+                {/* Dropdown for attachments */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <div className="size-7 flex items-center justify-center rounded-full bg-main-view-fg/4 hover:bg-main-view-fg/4 transition-all duration-200 ease-in-out gap-1 mr-2 cursor-pointer">
+                      <PlusIcon size={18} className="text-main-view-fg/50" />
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {/* Vision image attachment - show only for models with mmproj */}
+                    <DropdownMenuItem
+                      onClick={handleImagePickerClick}
+                      disabled={!hasMmproj}
+                    >
+                      <IconPhoto size={18} className="text-main-view-fg/50" />
+                      <span>Add Images</span>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        multiple
+                        onChange={handleFileChange}
+                      />
+                    </DropdownMenuItem>
+                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                    <DropdownMenuItem
+                      onClick={handleAttachDocsIngest}
+                      disabled={
+                        !selectedModel?.capabilities?.includes('tools') &&
+                        !showAttachmentButton
+                      }
+                    >
+                      {ingestingDocs ? (
+                        <IconLoader2
+                          size={18}
+                          className="text-main-view-fg/50 animate-spin"
+                        />
+                      ) : (
+                        <IconPaperclip
+                          size={18}
+                          className="text-main-view-fg/50"
+                        />
+                      )}
+                      <span>
+                        {ingestingDocs
+                          ? 'Indexing documents…'
+                          : 'Add documents or files'}
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1045,67 +1101,6 @@ const ChatInput = ({
                     useLastUsedModel={initialMessage}
                   />
                 )}
-                {/* Vision image attachment - show only for models with mmproj */}
-                {hasMmproj && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                          onClick={handleImagePickerClick}
-                        >
-                          <IconPhoto
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            multiple
-                            onChange={handleFileChange}
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vision')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                {selectedModel?.capabilities?.includes('tools') &&
-                  showAttachmentButton && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            onClick={handleAttachDocsIngest}
-                            className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer"
-                          >
-                            {ingestingDocs ? (
-                              <IconLoader2
-                                size={18}
-                                className="text-main-view-fg/50 animate-spin"
-                              />
-                            ) : (
-                              <IconPaperclip
-                                size={18}
-                                className="text-main-view-fg/50"
-                              />
-                            )}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            {ingestingDocs
-                              ? 'Indexing documents…'
-                              : 'Attach documents'}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />

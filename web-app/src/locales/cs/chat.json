@@ -1,0 +1,12 @@
+{
+  "welcome": "Ahoj, jak se máte?",
+  "description": "Jak vám dnes mohu pomoci?",
+  "temporaryChat": "Dočasný chat",
+  "temporaryChatDescription": "Začněte dočasnou konverzaci, která nebude uložena do vaší historie chatů.",
+  "status": {
+    "empty": "Nebyly nalezeny žádné chaty"
+  },
+  "sendMessage": "Odeslat zprávu",
+  "newConversation": "Nová konverzace",
+  "clearHistory": "Vymazat historii"
+}

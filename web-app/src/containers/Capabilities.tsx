@@ -10,7 +10,6 @@ import {
   IconAtom,
   IconWorld,
   IconCodeCircle2,
-  IconSparkles,
 } from '@tabler/icons-react'
 import { Fragment } from 'react/jsx-runtime'
 
@@ -21,15 +20,9 @@ interface CapabilitiesProps {
 const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   if (!capabilities.length) return null
 
+  // Filter out proactive capability as it's now managed in MCP settings
   const filteredCapabilities = capabilities.filter((capability) => {
-    if (capability === 'proactive') {
-      return (
-        capabilities.includes('tools') &&
-        capabilities.includes('vision') &&
-        capabilities.includes('proactive')
-      )
-    }
-    return true
+    return capability !== 'proactive'
   })
 
   return (
@@ -41,8 +34,6 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = <IconEye className="size-4" />
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
-        } else if (capability === 'proactive') {
-          icon = <IconSparkles className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
         } else if (capability === 'embeddings') {
@@ -70,8 +61,6 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                     <p>
                       {capability === 'web_search'
                         ? 'Web Search'
-                        : capability === 'proactive'
-                        ? 'Proactive'
                         : capability}
                     </p>
                   </TooltipContent>
