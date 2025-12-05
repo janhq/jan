@@ -151,12 +151,18 @@ fn open_on_linux(path: &PathBuf) {
         }
     }
 
-    if let Err(err) = std::process::Command::new("gio")
+    match std::process::Command::new("gio")
         .arg("open")
         .arg(path)
         .status()
     {
-        log::error!("Failed to open path {path:?} via gio open: {err}");
+        Ok(status) if status.success() => {}
+        Ok(status) => {
+            log::error!("gio open exited with status {status} for path {path:?}");
+        }
+        Err(err) => {
+            log::error!("Failed to open path {path:?} via gio open: {err}");
+        }
     }
 }
 
