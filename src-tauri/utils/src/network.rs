@@ -204,7 +204,8 @@ fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
             if let Some(state_val) = state {
                 if state_val.contains("LISTEN") {
                     if let Ok(pid) = pid_str.parse::<u32>() {
-                        let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+                        let cmd =
+                            get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
                         return Some(ProcessUsingPort { pid, name, cmd });
                     }
                 }
@@ -282,12 +283,7 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
         return None;
     }
 
-    Some(
-        cmd_str
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect(),
-    )
+    Some(cmd_str.split_whitespace().map(|s| s.to_string()).collect())
 }
 
 #[cfg(target_os = "windows")]
@@ -321,12 +317,7 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
         if line.starts_with("CommandLine=") {
             let cmd_str = line.strip_prefix("CommandLine=")?.trim().to_string();
             if !cmd_str.is_empty() {
-                return Some(
-                    cmd_str
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect(),
-                );
+                return Some(cmd_str.split_whitespace().map(|s| s.to_string()).collect());
             }
         }
     }
@@ -429,8 +420,10 @@ pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
 
     let is_js_runtime =
         name_lower.contains("node") || name_lower.contains("npx") || name_lower.contains("bun");
-    let is_jan_mcp_server = cmd_str.contains("search-mcp-server") 
-    || (cmd_str.contains("jan") && cmd_str.contains("mcp"));
+    let is_jan_mcp_server = cmd_str.contains("search-mcp-server")
+        || (cmd_str.contains("jan") && cmd_str.contains("mcp"))
+        || cmd_str.contains("node")
+        || cmd_str.contains("bun");
 
     is_js_runtime && is_jan_mcp_server
 }
