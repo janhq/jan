@@ -64,7 +64,6 @@ const mockServiceHub = {
     getSystemInfo: vi.fn().mockResolvedValue({}),
     relocateJanDataFolder: vi.fn().mockResolvedValue(undefined),
     getJanDataFolder: vi.fn().mockResolvedValue('/mock/jan/data'),
-    openLogsDirectory: vi.fn().mockResolvedValue(undefined),
   }),
   analytic: () => ({
     track: vi.fn(),

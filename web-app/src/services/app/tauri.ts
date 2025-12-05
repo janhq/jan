@@ -40,15 +40,6 @@ export class TauriAppService extends DefaultAppService {
     }
   }
 
-  async openLogsDirectory(): Promise<void> {
-    try {
-      await invoke('open_logs_directory')
-    } catch (error) {
-      console.error('Failed to open logs directory:', error)
-      throw error
-    }
-  }
-
   async relocateJanDataFolder(path: string): Promise<void> {
     await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
   }

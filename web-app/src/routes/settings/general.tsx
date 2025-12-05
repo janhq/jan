@@ -340,10 +340,18 @@ function General() {
                         size="sm"
                         className="p-0"
                         onClick={async () => {
-                          try {
-                            await serviceHub.app().openLogsDirectory()
-                          } catch (error) {
-                            console.error('Failed to reveal logs folder:', error)
+                          if (janDataFolder) {
+                            try {
+                              const logsPath = `${janDataFolder}/logs`
+                              await serviceHub
+                                .opener()
+                                .revealItemInDir(logsPath)
+                            } catch (error) {
+                              console.error(
+                                'Failed to reveal logs folder:',
+                                error
+                              )
+                            }
                           }
                         }}
                         title={t('settings:general.revealLogs')}

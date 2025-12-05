@@ -32,10 +32,6 @@ export class WebAppService implements AppService {
     return undefined
   }
 
-  async openLogsDirectory(): Promise<void> {
-    console.log('Logs directory not available in web mode')
-  }
-
   async relocateJanDataFolder(_path: string): Promise<void> {
     console.log('Data folder relocation not available in web mode')
   }
