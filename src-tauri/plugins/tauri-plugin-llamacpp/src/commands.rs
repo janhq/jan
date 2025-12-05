@@ -313,7 +313,7 @@ pub async fn get_shortest_path(path: &str) -> Result<String, String> {
         if let Some(short) = get_short_path(path_pb) {
             Ok(short)
         } else {
-            Err("Unable to get short path") // or path.to_string()
+            Err("Unable to get short path".to_string()) // or path.to_string()
         }
     }
     #[cfg(unix)]
