@@ -98,7 +98,6 @@ pub fn run() {
             core::mcp::commands::get_mcp_configs,
             core::mcp::commands::activate_mcp_server,
             core::mcp::commands::deactivate_mcp_server,
-            core::mcp::commands::reset_mcp_restart_count,
             core::mcp::commands::check_jan_browser_extension_connected,
             // Threads
             core::threads::commands::list_threads,
@@ -120,9 +119,7 @@ pub fn run() {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
-            mcp_restart_counts: Arc::new(Mutex::new(HashMap::new())),
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
-            mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),

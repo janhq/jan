@@ -32,10 +32,6 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
             let mut active_servers = state.mcp_active_servers.lock().await;
             active_servers.clear();
         }
-        {
-            let mut restart_counts = state.mcp_restart_counts.lock().await;
-            restart_counts.clear();
-        }
 
         use crate::core::mcp::lockfile::cleanup_own_locks;
         if let Err(e) = cleanup_own_locks(&app_handle) {
