@@ -301,8 +301,6 @@ async fn test_background_cleanup_with_empty_state() {
     let active = state.mcp_active_servers.lock().await;
     assert!(active.is_empty());
 
-    let counts = state.mcp_restart_counts.lock().await;
-    assert!(counts.is_empty());
 }
 
 #[tokio::test]

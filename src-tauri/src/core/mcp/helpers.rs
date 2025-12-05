@@ -49,55 +49,6 @@ impl ShutdownContext {
     }
 }
 
-/// Calculate exponential backoff delay with jitter
-///
-/// # Arguments
-/// * `attempt` - The current restart attempt number (1-based)
-///
-/// # Returns
-/// * `u64` - Delay in milliseconds, capped at configured maximum
-pub fn calculate_exponential_backoff_delay(attempt: u32, settings: &McpSettings) -> u64 {
-    use std::cmp;
-
-    let attempt = attempt.max(1);
-    let base_delay_ms = settings.base_restart_delay_ms.max(1);
-    let max_delay_ms = settings.max_restart_delay_ms.max(base_delay_ms);
-    let backoff_multiplier = if settings.backoff_multiplier <= 0.0 {
-        1.0
-    } else {
-        settings.backoff_multiplier
-    };
-
-    // Calculate base exponential delay: base_delay * multiplier^(attempt-1)
-    let exponential_delay =
-        (base_delay_ms as f64) * backoff_multiplier.powi((attempt - 1) as i32);
-
-    // Cap the delay at maximum
-    let capped_delay = cmp::min(exponential_delay.round() as u64, max_delay_ms);
-
-    // Add jitter (±25% randomness) to prevent thundering herd
-    let jitter_range = (capped_delay as f64 * 0.25) as u64;
-    let jitter = if jitter_range > 0 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        // Use attempt number as seed for deterministic but varied jitter
-        let mut hasher = DefaultHasher::new();
-        attempt.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Convert hash to jitter value in range [-jitter_range, +jitter_range]
-        (hash % (jitter_range * 2)) as i64 - jitter_range as i64
-    } else {
-        0
-    };
-
-    // Apply jitter while ensuring delay stays positive and within bounds
-    let min_delay_ms = cmp::min(base_delay_ms, max_delay_ms).max(100);
-    let upper_bound = cmp::max(max_delay_ms, min_delay_ms);
-    ((capped_delay as i64 + jitter) as u64).clamp(min_delay_ms, upper_bound)
-}
-
 /// Runs MCP commands by reading configuration from a JSON file and initializing servers
 ///
 /// # Arguments
@@ -159,12 +110,11 @@ pub async fn run_mcp_commands<R: Runtime>(
         // Spawn task for initial startup attempt
         let handle = tauri::async_runtime::spawn(async move {
             // Only wait for the initial startup attempt, not the monitoring
-            let result = start_mcp_server_with_restart(
+            let result = start_mcp_server(
                 app_clone.clone(),
                 servers_clone.clone(),
                 name_clone.clone(),
                 config_clone.clone(),
-                Some(3), // Default max restarts for startup
             )
             .await;
 
@@ -280,25 +230,20 @@ pub async fn monitor_mcp_server_handle(
     }
 }
 
-/// Starts an MCP server with restart monitoring
-/// Returns the result of the first start attempt, then continues with restart monitoring
-pub async fn start_mcp_server_with_restart<R: Runtime>(
+/// Starts an MCP server
+/// Returns the result of the first start attempt
+pub async fn start_mcp_server<R: Runtime>(
     app: AppHandle<R>,
     servers_state: SharedMcpServers,
     name: String,
     config: Value,
-    max_restarts: Option<u32>,
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
-    let restart_counts = app_state.mcp_restart_counts.clone();
     let active_servers_state = app_state.mcp_active_servers.clone();
-    let successfully_connected = app_state.mcp_successfully_connected.clone();
     let mcp_settings = app_state.mcp_settings.clone();
 
     // Store active server config for restart purposes
     store_active_server_config(&active_servers_state, &name, &config).await;
-
-    let max_restarts = max_restarts.unwrap_or(5);
 
     // Try the first start attempt and return its result
     log::info!("Starting MCP server {name} (Initial attempt)");
@@ -312,193 +257,14 @@ pub async fn start_mcp_server_with_restart<R: Runtime>(
 
     match first_start_result {
         Ok(_) => {
-            log::info!("MCP server {name} started successfully on first attempt");
-            reset_restart_count(&restart_counts, &name).await;
-
-            // Check if server was marked as successfully connected (passed verification)
-            let was_verified = {
-                let connected = successfully_connected.lock().await;
-                connected.get(&name).copied().unwrap_or(false)
-            };
-
-            if was_verified {
-                // Only spawn monitoring task if server passed verification
-                spawn_server_monitoring_task(
-                    app,
-                    servers_state,
-                    name,
-                config,
-                max_restarts,
-                restart_counts,
-                successfully_connected,
-                mcp_settings,
-            )
-            .await;
-
-                Ok(())
-            } else {
-                // Server failed verification, don't monitor for restarts
-                log::error!("MCP server {name} failed verification after startup");
-                Err(format!(
-                    "MCP server {name} failed verification after startup"
-                ))
-            }
+            log::info!("MCP server {name} started successfully");
+            Ok(())
         }
         Err(e) => {
             log::error!(
                 "Failed to start MCP server {name} on first attempt: {e}"
             );
             Err(e)
-        }
-    }
-}
-
-/// Helper function to handle the restart loop logic
-pub async fn start_restart_loop<R: Runtime>(
-    app: AppHandle<R>,
-    servers_state: SharedMcpServers,
-    name: String,
-    config: Value,
-    max_restarts: u32,
-    restart_counts: Arc<Mutex<HashMap<String, u32>>>,
-    successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
-    mcp_settings: Arc<Mutex<McpSettings>>,
-    shutdown_flag: Arc<Mutex<bool>>,
-) {
-    loop {
-        let current_restart_count = {
-            let mut counts = restart_counts.lock().await;
-            let count = counts.entry(name.clone()).or_insert(0);
-            *count += 1;
-            *count
-        };
-
-        if current_restart_count > max_restarts {
-            log::error!(
-                "MCP server {name} reached maximum restart attempts ({max_restarts}). Giving up."
-            );
-            if let Err(e) = app.emit(
-                "mcp_max_restarts_reached",
-                serde_json::json!({
-                    "server": name,
-                    "max_restarts": max_restarts
-                }),
-            ) {
-                log::error!("Failed to emit mcp_max_restarts_reached event: {e}");
-            }
-            break;
-        }
-
-        log::info!(
-            "Restarting MCP server {name} (Attempt {current_restart_count}/{max_restarts})"
-        );
-
-        // Calculate exponential backoff delay
-        let settings_snapshot = {
-            let settings_guard = mcp_settings.lock().await;
-            settings_guard.clone()
-        };
-        let delay_ms =
-            calculate_exponential_backoff_delay(current_restart_count, &settings_snapshot);
-        log::info!(
-            "Waiting {delay_ms}ms before restart attempt {current_restart_count} for MCP server {name}"
-        );
-        sleep(Duration::from_millis(delay_ms)).await;
-
-        // Attempt to restart the server
-        let start_result = schedule_mcp_start_task(
-            app.clone(),
-            servers_state.clone(),
-            name.clone(),
-            config.clone(),
-        )
-        .await;
-
-        match start_result {
-            Ok(_) => {
-                log::info!("MCP server {name} restarted successfully.");
-
-                // Check if server passed verification (was marked as successfully connected)
-                let passed_verification = {
-                    let connected = successfully_connected.lock().await;
-                    connected.get(&name).copied().unwrap_or(false)
-                };
-
-                if !passed_verification {
-                    log::error!(
-                        "MCP server {name} failed verification after restart - stopping permanently"
-                    );
-                    break;
-                }
-
-                // Reset restart count on successful restart with verification
-                {
-                    let mut counts = restart_counts.lock().await;
-                    if let Some(count) = counts.get_mut(&name) {
-                        if *count > 0 {
-                            log::info!(
-                                "MCP server {name} restarted successfully, resetting restart count from {count} to 0."
-                            );
-                            *count = 0;
-                        }
-                    }
-                }
-
-                // Monitor the server again
-                let quit_reason =
-                    monitor_mcp_server_handle(servers_state.clone(), name.clone(), shutdown_flag.clone()).await;
-
-                log::info!("MCP server {name} quit with reason: {quit_reason:?}");
-
-                // Check if server was marked as successfully connected
-                let was_connected = {
-                    let connected = successfully_connected.lock().await;
-                    connected.get(&name).copied().unwrap_or(false)
-                };
-
-                // Only continue restart loop if server was previously connected
-                if !was_connected {
-                    log::error!(
-                        "MCP server {name} failed before establishing successful connection - stopping permanently"
-                    );
-                    break;
-                }
-
-                // Determine if we should restart based on quit reason
-                let should_restart = match quit_reason {
-                    Some(reason) => {
-                        log::warn!("MCP server {name} terminated unexpectedly: {reason:?}");
-                        true
-                    }
-                    None => {
-                        log::info!("MCP server {name} was manually stopped - not restarting");
-                        false
-                    }
-                };
-
-                if !should_restart {
-                    break;
-                }
-                // Continue the loop for another restart attempt
-            }
-            Err(e) => {
-                log::error!("Failed to restart MCP server {name}: {e}");
-
-                // Check if server was marked as successfully connected before
-                let was_connected = {
-                    let connected = successfully_connected.lock().await;
-                    connected.get(&name).copied().unwrap_or(false)
-                };
-
-                // Only continue restart attempts if server was previously connected
-                if !was_connected {
-                    log::error!(
-                        "MCP server {name} failed restart and was never successfully connected - stopping permanently"
-                    );
-                    break;
-                }
-                // Continue the loop for another restart attempt
-            }
         }
     }
 }
@@ -574,13 +340,6 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     .await
                     .insert(name.clone(), RunningServiceEnum::WithInit(client));
 
-                // Mark server as successfully connected (for restart policy)
-                {
-                    let app_state = app.state::<AppState>();
-                    let mut connected = app_state.mcp_successfully_connected.lock().await;
-                    connected.insert(name.clone(), true);
-                    log::info!("Marked MCP server {name} as successfully connected");
-                }
                 emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
@@ -650,13 +409,6 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     .await
                     .insert(name.clone(), RunningServiceEnum::WithInit(client));
 
-                // Mark server as successfully connected (for restart policy)
-                {
-                    let app_state = app.state::<AppState>();
-                    let mut connected = app_state.mcp_successfully_connected.lock().await;
-                    connected.insert(name.clone(), true);
-                    log::info!("Marked MCP server {name} as successfully connected");
-                }
                 emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
@@ -792,13 +544,6 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 "MCP server {name} quit immediately after starting"
             ));
         }
-        // Mark server as successfully connected (for restart policy)
-        {
-            let app_state = app.state::<AppState>();
-            let mut connected = app_state.mcp_successfully_connected.lock().await;
-            connected.insert(name.clone(), true);
-            log::info!("Marked MCP server {name} as successfully connected");
-        }
 
         // Create lock file for Jan Browser MCP
         if name == "Jan Browser MCP" {
@@ -890,12 +635,11 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
         let config_clone = config.clone();
 
         tauri::async_runtime::spawn(async move {
-            let _ = start_mcp_server_with_restart(
+            let _ = start_mcp_server(
                 app_clone,
                 servers_clone,
                 name_clone,
                 config_clone,
-                Some(3), // Default max restarts for startup
             )
             .await;
         });
@@ -1060,14 +804,6 @@ pub async fn background_cleanup_mcp_servers<R: Runtime>(
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.clear();
     }
-    {
-        let mut restart_counts = state.mcp_restart_counts.lock().await;
-        restart_counts.clear();
-    }
-    {
-        let mut connected = state.mcp_successfully_connected.lock().await;
-        connected.clear();
-    }
 
     // Clean up all lock files created by this process
     use crate::core::mcp::lockfile::cleanup_own_locks;
@@ -1200,99 +936,6 @@ pub async fn store_active_server_config(
 ) {
     let mut active_servers = active_servers_state.lock().await;
     active_servers.insert(name.to_string(), config.clone());
-}
-
-/// Reset restart count for a server
-pub async fn reset_restart_count(restart_counts: &Arc<Mutex<HashMap<String, u32>>>, name: &str) {
-    let mut counts = restart_counts.lock().await;
-    counts.insert(name.to_string(), 0);
-}
-
-/// Spawn the server monitoring task for handling restarts
-pub async fn spawn_server_monitoring_task<R: Runtime>(
-    app: AppHandle<R>,
-    servers_state: SharedMcpServers,
-    name: String,
-    config: Value,
-    max_restarts: u32,
-    restart_counts: Arc<Mutex<HashMap<String, u32>>>,
-    successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
-    mcp_settings: Arc<Mutex<McpSettings>>,
-) {
-    let app_state = app.state::<AppState>();
-    let shutdown_flag = app_state.mcp_shutdown_in_progress.clone();
-
-    let app_clone = app.clone();
-    let servers_clone = servers_state.clone();
-    let name_clone = name.clone();
-    let config_clone = config.clone();
-    let mcp_settings_clone = mcp_settings.clone();
-
-    let task_handle = tauri::async_runtime::spawn(async move {
-        // Monitor the server using RunningService's JoinHandle<QuitReason>
-        let quit_reason =
-            monitor_mcp_server_handle(servers_clone.clone(), name_clone.clone(), shutdown_flag.clone()).await;
-
-        log::info!(
-            "MCP server {name_clone} quit with reason: {quit_reason:?}"
-        );
-
-        // Check if we should restart based on connection status and quit reason
-        if should_restart_server(&successfully_connected, &name_clone, &quit_reason).await {
-            // Start the restart loop
-            start_restart_loop(
-                app_clone,
-                servers_clone,
-                name_clone,
-                config_clone,
-                max_restarts,
-                restart_counts,
-                successfully_connected,
-                mcp_settings_clone.clone(),
-                shutdown_flag,
-            )
-            .await;
-        }
-    });
-
-    // Store task handle for later cancellation
-    {
-        let mut tasks = app_state.mcp_monitoring_tasks.lock().await;
-        tasks.insert(name.clone(), task_handle);
-    }
-}
-
-/// Determine if a server should be restarted based on its connection status and quit reason
-pub async fn should_restart_server(
-    successfully_connected: &Arc<Mutex<HashMap<String, bool>>>,
-    name: &str,
-    quit_reason: &Option<rmcp::service::QuitReason>,
-) -> bool {
-    // Check if server was marked as successfully connected
-    let was_connected = {
-        let connected = successfully_connected.lock().await;
-        connected.get(name).copied().unwrap_or(false)
-    };
-
-    // Only restart if server was previously connected
-    if !was_connected {
-        log::error!(
-            "MCP server {name} failed before establishing successful connection - stopping permanently"
-        );
-        return false;
-    }
-
-    // Determine if we should restart based on quit reason
-    match quit_reason {
-        Some(reason) => {
-            log::warn!("MCP server {name} terminated unexpectedly: {reason:?}");
-            true
-        }
-        None => {
-            log::info!("MCP server {name} was manually stopped - not restarting");
-            false
-        }
-    }
 }
 
 // Add a new server configuration to the MCP config file

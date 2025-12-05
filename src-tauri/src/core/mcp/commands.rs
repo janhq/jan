@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
-    helpers::{restart_active_mcp_servers, start_mcp_server_with_restart},
+    helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -36,8 +36,8 @@ pub async fn activate_mcp_server<R: Runtime>(
 ) -> Result<(), String> {
     let servers: SharedMcpServers = state.mcp_servers.clone();
 
-    // Use the modified start_mcp_server_with_restart that returns first attempt result
-    start_mcp_server_with_restart(app, servers, name, config, Some(3)).await
+    // Use the modified start_mcp_server that returns first attempt result
+    start_mcp_server(app, servers, name, config).await
 }
 
 #[tauri::command]
@@ -62,26 +62,12 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         None
     };
 
-    // First, mark server as manually deactivated to prevent restart
-    // Remove from active servers list to prevent restart
+    // First, mark server as manually deactivated
+    // Remove from active servers list
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.remove(&name);
         log::info!("Removed MCP server {name} from active servers list");
-    }
-
-    // Mark as not successfully connected to prevent restart logic
-    {
-        let mut connected = state.mcp_successfully_connected.lock().await;
-        connected.insert(name.clone(), false);
-        log::info!("Marked MCP server {name} as not successfully connected");
-    }
-
-    // Reset restart count
-    {
-        let mut counts = state.mcp_restart_counts.lock().await;
-        counts.remove(&name);
-        log::info!("Reset restart count for MCP server {name}");
     }
 
     // Now remove and stop the server
@@ -149,26 +135,6 @@ pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_,
     Ok(())
 }
 
-/// Reset MCP restart count for a specific server (like cortex reset)
-#[tauri::command]
-pub async fn reset_mcp_restart_count(
-    state: State<'_, AppState>,
-    server_name: String,
-) -> Result<(), String> {
-    let mut counts = state.mcp_restart_counts.lock().await;
-
-    let count = match counts.get_mut(&server_name) {
-        Some(count) => count,
-        None => return Ok(()), // Server not found, nothing to reset
-    };
-
-    let old_count = *count;
-    *count = 0;
-    log::info!(
-        "MCP server {server_name} restart count reset from {old_count} to 0."
-    );
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn get_connected_servers(
