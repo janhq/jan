@@ -310,6 +310,7 @@ pub async fn get_shortest_path(path: &str) -> Result<String, String> {
     let path_pb = PathBuf::from(path);
     #[cfg(windows)]
     {
+        use jan_utils::path::get_short_path;
         if let Some(short) = get_short_path(path_pb) {
             Ok(short)
         } else {
