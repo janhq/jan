@@ -80,6 +80,7 @@ pub fn run() {
             core::system::commands::relaunch,
             core::system::commands::open_app_directory,
             core::system::commands::open_file_explorer,
+            core::system::commands::open_logs_directory,
             core::system::commands::factory_reset,
             core::system::commands::read_logs,
             core::system::commands::is_library_available,

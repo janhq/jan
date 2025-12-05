@@ -83,6 +83,18 @@ pub fn open_file_explorer(path: String) {
 }
 
 #[tauri::command]
+pub fn open_logs_directory<R: Runtime>(app: AppHandle<R>) {
+    let logs_dir = get_jan_data_folder_path(app).join("logs");
+
+    if let Err(error) = fs::create_dir_all(&logs_dir) {
+        log::error!("Failed to create logs directory {logs_dir:?}: {error}");
+        return;
+    }
+
+    open_with_platform_default(logs_dir, "logs directory");
+}
+
+#[tauri::command]
 pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let log_path = get_jan_data_folder_path(app).join("logs").join("app.log");
     if log_path.exists() {
@@ -106,24 +118,34 @@ pub fn is_library_available(library: &str) -> bool {
 }
 
 fn open_with_platform_default(path: PathBuf, target_desc: &str) {
-    let path = path.canonicalize().unwrap_or(path);
-    let (path_to_open, is_dir) = if path.is_dir() {
-        (path.as_path(), true)
+    let (resolved_path, path_exists) = path
+        .canonicalize()
+        .map(|p| (p, true))
+        .unwrap_or((path, false));
+
+    let (path_to_open, is_dir) = if resolved_path.is_dir() {
+        (resolved_path.clone(), true)
     } else {
-        (path.parent().unwrap_or(path.as_path()), false)
+        (
+            resolved_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| resolved_path.clone()),
+            false,
+        )
     };
 
     let result = if cfg!(target_os = "windows") {
-        open_on_windows(&path, is_dir)
+        open_on_windows(&resolved_path, &path_to_open, is_dir, path_exists)
     } else if cfg!(target_os = "macos") {
         if is_dir {
             std::process::Command::new("open")
-                .arg(path_to_open)
+                .arg(&path_to_open)
                 .status()
         } else {
             std::process::Command::new("open")
                 .arg("-R")
-                .arg(&path)
+                .arg(&resolved_path)
                 .status()
         }
         .and_then(|status| {
@@ -137,7 +159,7 @@ fn open_with_platform_default(path: PathBuf, target_desc: &str) {
             }
         })
     } else {
-        open_on_linux(path_to_open)
+        open_on_linux(&path_to_open)
     };
 
     if let Err(error) = result {
@@ -146,26 +168,32 @@ fn open_with_platform_default(path: PathBuf, target_desc: &str) {
 }
 
 #[cfg(target_os = "windows")]
-fn open_on_windows(path: &Path, is_dir: bool) -> io::Result<()> {
-    if is_dir {
-        std::process::Command::new("explorer").arg(path).status()
+fn open_on_windows(
+    path: &Path,
+    dir_to_open: &Path,
+    is_dir: bool,
+    path_exists: bool,
+) -> io::Result<()> {
+    let status = if is_dir || !path_exists {
+        std::process::Command::new("explorer")
+            .arg(dir_to_open)
+            .status()
     } else {
         let mut select_arg = OsString::from("/select,");
         select_arg.push(path);
         std::process::Command::new("explorer")
             .arg(select_arg)
             .status()
+    }?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("explorer exited with status {status}"),
+        ))
     }
-    .and_then(|status| {
-        if status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("explorer exited with status {status}"),
-            ))
-        }
-    })
 }
 
 #[cfg(target_os = "linux")]

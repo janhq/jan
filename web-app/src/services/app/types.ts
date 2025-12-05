@@ -14,6 +14,7 @@ export interface AppService {
   readLogs(): Promise<LogEntry[]>
   parseLogLine(line: string): LogEntry
   getJanDataFolder(): Promise<string | undefined>
+  openLogsDirectory(): Promise<void>
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
   readYaml<T = unknown>(path: string): Promise<T>

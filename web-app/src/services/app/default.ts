@@ -26,6 +26,11 @@ export class DefaultAppService implements AppService {
     return undefined
   }
 
+  async openLogsDirectory(): Promise<void> {
+    console.log('openLogsDirectory called')
+    // No-op - not implemented in default service
+  }
+
   async relocateJanDataFolder(path: string): Promise<void> {
     console.log('relocateJanDataFolder called with path:', path)
     // No-op - not implemented in default service
