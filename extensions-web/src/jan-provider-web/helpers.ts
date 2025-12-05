@@ -98,15 +98,33 @@ export function syncJanModelsLocalStorage(
         storedCapabilities.length === remoteCapabilities.length &&
         storedCapabilities.every((cap, index) => cap === remoteCapabilities[index])
 
-      if (!capabilitiesMatch) {
+      // Check if metadata needs update
+      const metadataMatch =
+        model.category === remoteModel.category &&
+        model.category_order_number === remoteModel.category_order_number &&
+        model.model_order_number === remoteModel.model_order_number &&
+        model.model_display_name === remoteModel.model_display_name
+
+      if (!capabilitiesMatch || !metadataMatch) {
         console.log(
-          `Updating capabilities for Jan model ${modelId}:`,
-          storedCapabilities,
-          '=>',
-          remoteCapabilities
+          `Updating metadata/capabilities for Jan model ${modelId}`
         )
         updatedModels.push({
           ...model,
+          ...remoteModel, // Update all fields from remote
+          // setup state is preserved because it's local-only usually, but here we merge all.
+          // Careful: We want to preserve user settings if any?
+          // JanModel from remote has the metadata.
+          // StoredModel might have local flags?
+          // The spread `...model` then `...remoteModel` overwrites model's props with remote's.
+          // But valid fields like `active` or `downloaded` (if they exist) should be preserved?
+          // JanModel types don't seem to have download state?
+          // Let's look at `types.ts`.
+          // For now, I will explicitly update the fields safely.
+          category: remoteModel.category,
+          category_order_number: remoteModel.category_order_number,
+          model_order_number: remoteModel.model_order_number,
+          model_display_name: remoteModel.model_display_name,
           capabilities: remoteModel.capabilities,
         })
         storageUpdated = true

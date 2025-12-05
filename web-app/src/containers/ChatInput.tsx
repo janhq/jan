@@ -41,6 +41,7 @@ import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { JanImage } from '@/components/JanImage'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -138,7 +139,11 @@ const ChatInput = ({
       if (selectedModel && selectedModel?.id) {
         try {
           // Only check mmproj for llamacpp provider
-          if (selectedModel?.capabilities?.includes('vision')) {
+          const hasVisionCap =
+            selectedModel?.capabilities?.includes('vision') ||
+            (selectedModel as any)?.supports_images === true
+
+          if (hasVisionCap) {
             setHasMmproj(true)
           } else {
             setHasMmproj(false)
@@ -189,10 +194,10 @@ const ChatInput = ({
         prev.map((att) =>
           att.name === fileName
             ? {
-                ...att,
-                processing: status === 'processing',
-                processed: status === 'done' ? true : att.processed,
-              }
+              ...att,
+              processing: status === 'processing',
+              processed: status === 'done' ? true : att.processed,
+            }
             : att
         )
       )
@@ -390,12 +395,12 @@ const ChatInput = ({
                   prev.map((a) =>
                     a.path === doc.path && a.type === 'document'
                       ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: fileInfo.id,
-                          chunkCount: fileInfo.chunk_count,
-                        }
+                        ...a,
+                        processing: false,
+                        processed: true,
+                        id: fileInfo.id,
+                        chunkCount: fileInfo.chunk_count,
+                      }
                       : a
                   )
                 )
@@ -550,11 +555,11 @@ const ChatInput = ({
                   prev.map((a) =>
                     a.name === img.name && a.type === 'image'
                       ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: result.id,
-                        }
+                        ...a,
+                        processing: false,
+                        processed: true,
+                        id: result.id,
+                      }
                       : a
                   )
                 )
@@ -913,7 +918,7 @@ const ChatInput = ({
                               >
                                 {/* Inner content by state */}
                                 {isImage && att.dataUrl ? (
-                                  <img
+                                  <JanImage
                                     className="object-cover w-full h-full"
                                     src={att.dataUrl}
                                     alt={`${att.name}`}
@@ -1043,6 +1048,15 @@ const ChatInput = ({
                   streamingContent && 'opacity-50 pointer-events-none'
                 )}
               >
+                {/* Hidden input for file selection - moved outside dropdown to persist during selection */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  multiple
+                  onChange={handleFileChange}
+                />
+
                 {/* Dropdown for attachments */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1058,38 +1072,6 @@ const ChatInput = ({
                     >
                       <IconPhoto size={18} className="text-main-view-fg/50" />
                       <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={
-                        !selectedModel?.capabilities?.includes('tools') &&
-                        !showAttachmentButton
-                      }
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-main-view-fg/50 animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-main-view-fg/50"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
