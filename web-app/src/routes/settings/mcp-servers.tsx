@@ -456,6 +456,28 @@ function MCPServersDesktop() {
                   />
                 }
               />
+              <CardItem
+                title={
+                  <div className="flex items-center gap-2">
+                    <span>{t('mcp-servers:proactiveMode')}</span>
+                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
+                      <span>{t('mcp-servers:experimental')}</span>
+                    </div>
+                  </div>
+                }
+                description={t('mcp-servers:proactiveModeDesc')}
+                actions={
+                  <div className="flex-shrink-0 ml-4">
+                    <Switch
+                      checked={settings.proactiveMode}
+                      onCheckedChange={(checked) => {
+                        updateSettings({ proactiveMode: checked })
+                        void syncServers()
+                      }}
+                    />
+                  </div>
+                }
+              />
             </Card>
 
             {Object.keys(mcpServers).length === 0 ? (
@@ -480,6 +502,16 @@ function MCPServersDesktop() {
                         <h1 className="text-main-view-fg text-base capitalize">
                           {key}
                         </h1>
+                        {config.official && (
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-blue-500/10 text-blue-500 rounded">
+                            <img
+                              src="/images/jan-logo.png"
+                              alt="Jan"
+                              className="w-3 h-3 object-contain"
+                            />
+                            <span>Official</span>
+                          </div>
+                        )}
                       </div>
                     }
                     descriptionOutside={
@@ -512,6 +544,22 @@ function MCPServersDesktop() {
                                     .join(', ')}
                                 </div>
                               )}
+                            {config.official && (
+                              <div className="mt-2 text-xs text-main-view-fg/60 border-t border-main-view-fg/10 pt-2">
+                                <p className="mb-1">
+                                  Requires Jan Browser Extension to be installed
+                                  in your Chrome-based browser.
+                                </p>
+                                <a
+                                  href="https://github.com/menloresearch/jan-browser-extension"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-500 hover:underline"
+                                >
+                                  Install Extension →
+                                </a>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <>

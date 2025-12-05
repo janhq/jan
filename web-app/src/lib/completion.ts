@@ -418,6 +418,7 @@ export const captureProactiveScreenshots = async (
       try {
         const { promise } = getServiceHub().mcp().callToolWithCancellation({
           toolName: screenshotTool.name,
+          serverName: screenshotTool.server,
           arguments: {},
         })
         const screenshotResult = await promise
@@ -434,6 +435,7 @@ export const captureProactiveScreenshots = async (
       try {
         const { promise } = getServiceHub().mcp().callToolWithCancellation({
           toolName: snapshotTool.name,
+          serverName: snapshotTool.server,
           arguments: {},
         })
         const snapshotResult = await promise
@@ -601,10 +603,23 @@ export const postMessageProcessing = async (
               }),
               cancel: async () => {},
             }
-        : getServiceHub().mcp().callToolWithCancellation({
-            toolName,
-            arguments: toolArgs,
-          })
+        : await (async () => {
+            // Find server name for this MCP tool from available tools
+            let serverName: string | undefined
+            try {
+              const availableTools = await getServiceHub().mcp().getTools()
+              const matchingTool = availableTools.find(t => t.name === toolName)
+              serverName = matchingTool?.server
+            } catch (e) {
+              console.warn('Failed to lookup server for tool:', toolName, e)
+            }
+
+            return getServiceHub().mcp().callToolWithCancellation({
+              toolName,
+              serverName,
+              arguments: toolArgs,
+            })
+          })()
 
       useAppState.getState().setCancelToolCall(cancel)
 

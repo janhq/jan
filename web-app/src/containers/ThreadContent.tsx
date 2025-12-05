@@ -29,6 +29,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
 import { UploadedAttachmentImage } from '@/components/UploadedAttachmentImage'
+import { JanImage } from '@/components/JanImage'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -284,34 +285,34 @@ export const ThreadContent = memo(
             {item.content?.some(
               (c) => (c.type === 'image_url' && c.image_url?.url) || false
             ) && (
-              <div className="flex justify-end w-full mb-2">
-                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                  {item.content
-                    ?.filter(
-                      (c) =>
-                        (c.type === 'image_url' && c.image_url?.url) || false
-                    )
-                    .map((contentPart, index) => {
-                      // Handle images
-                      if (
-                        contentPart.type === 'image_url' &&
-                        contentPart.image_url?.url
-                      ) {
-                        return (
-                          <div key={index} className="relative">
-                            <UploadedAttachmentImage
-                              src={contentPart.image_url.url}
-                              alt="Uploaded attachment"
-                              className="size-40 rounded-md object-cover border border-main-view-fg/10"
-                            />
-                          </div>
-                        )
-                      }
-                      return null
-                    })}
+                <div className="flex justify-end w-full mb-2">
+                  <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
+                    {item.content
+                      ?.filter(
+                        (c) =>
+                          (c.type === 'image_url' && c.image_url?.url) || false
+                      )
+                      .map((contentPart, index) => {
+                        // Handle images
+                        if (
+                          contentPart.type === 'image_url' &&
+                          contentPart.image_url?.url
+                        ) {
+                          return (
+                            <div key={index} className="relative">
+                              <UploadedAttachmentImage
+                                src={contentPart.image_url.url}
+                                alt="Uploaded attachment"
+                                className="size-40 rounded-md object-cover border border-main-view-fg/10"
+                              />
+                            </div>
+                          )
+                        }
+                        return null
+                      })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditMessageDialog
@@ -450,7 +451,7 @@ export const ThreadContent = memo(
 
         {item.type === 'image_url' && image && (
           <div>
-            <img
+            <JanImage
               src={image.url}
               alt={image.detail || 'Thread image'}
               className="max-w-full rounded-md"

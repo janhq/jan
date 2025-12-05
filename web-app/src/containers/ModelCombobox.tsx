@@ -406,6 +406,10 @@ export function ModelCombobox({
           placeholder={placeholder}
           disabled={disabled}
           className="pr-16"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
         />
 
         {/* Input action buttons */}

@@ -34,7 +34,7 @@ export default class JanProviderWeb extends AIEngine {
       // Initialize authentication
       await initializeJanApi()
       // Check and sync stored Jan models against latest catalog data
-      await this.validateJanModelsLocalStorage()
+      // await this.validateJanModelsLocalStorage()
 
       console.log('Jan Provider Extension loaded successfully')
     } catch (error) {

@@ -15,7 +15,7 @@ def pytest_configure(config):
 
 def pytest_runtest_setup(item):
     getoption = item.config.getoption("--endpoint").split(",")
-    if getoption not in (["all"], [''], [""]):
+    if getoption not in (["all"], [""]):
         endpoint_names = [mark.args[0] for mark in item.iter_markers(name="endpoint")]
         if not endpoint_names or not set(getoption).intersection(set(endpoint_names)):
             pytest.skip("Test skipped because endpoint is {!r}".format(endpoint_names))

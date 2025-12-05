@@ -84,7 +84,21 @@
   "selectAModel": "选择一个模型",
   "noToolsAvailable": "无可用工具",
   "noModelsFoundFor": "未找到“{{searchValue}}”的模型",
-  "customAvatar": "自定义头像",
+  "failedToLoadModels": "加载模型失败",
+  "noModels": "未找到模型",
+  "conversationNotAvailable": "对话不可用",
+  "conversationNotAvailableDescription": "您尝试访问的对话不可用或已被删除。",
+  "temporaryChat": "临时聊天",
+  "temporaryChatTooltip": "临时聊天不会出现在您的历史记录中",
+  "generateAiResponse": "生成AI响应",
+  "outOfContextError": {
+    "truncateInput": "截断输入",
+    "title": "上下文错误",
+    "description": "此聊天正在达到AI的内存限制，就像白板被填满一样。我们可以扩展内存窗口（称为上下文大小），以便它记住更多内容，但这可能会使用更多计算机内存。我们也可以截断输入，这意味着它将忘记一些聊天历史记录以为新消息腾出空间。",
+    "increaseContextSizeDescription": "您想要增加上下文大小吗？",
+    "increaseContextSize": "增加上下文大小"
+  },
+    "customAvatar": "自定义头像",
   "editAssistant": "编辑助手",
   "jan": "Jan",
   "metadata": "元数据",
@@ -227,7 +241,32 @@
     "noProjectsAvailable": "没有可用的项目",
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
-    "tryDifferentSearch": "尝试不同的搜索词"
+    "tryDifferentSearch": "尝试不同的搜索词",
+    "createNewProject": "创建新项目",
+    "deleteProjectDialog": {
+      "title": "删除项目",
+      "permanentDelete": "这将永久删除所有线程。",
+      "permanentDeleteWarning": "此操作将永久删除项目内的所有线程！",
+      "deleteEmptyProject": "此操作将删除项目\"{{projectName}}\"。",
+      "saveThreadsAdvice": "要保存线程，请在删除前将它们移动到您的线程列表或另一个项目中。",
+      "starredWarning": "您在项目中仍有收藏的线程。",
+      "deleteButton": "删除",
+      "successWithName": "项目\"{{projectName}}\"删除成功",
+      "successWithoutName": "项目删除成功",
+      "error": "删除项目失败。请重试。",
+      "ariaLabel": "删除{{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "创建新项目",
+      "editTitle": "编辑项目",
+      "nameLabel": "项目名称",
+      "namePlaceholder": "输入项目名称...",
+      "createButton": "创建",
+      "updateButton": "更新",
+      "alreadyExists": "项目\"{{projectName}}\"已存在",
+      "createSuccess": "项目\"{{projectName}}\"创建成功",
+      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -304,6 +343,34 @@
     "downloadAndVerificationComplete": {
       "title": "下载完成",
       "description": "模型 \"{{item}}\" 下载并验证成功"
+    },
+    "projectCreated": {
+      "title": "项目已创建",
+      "description": "项目\"{{projectName}}\"创建成功"
+    },
+    "projectRenamed": {
+      "title": "项目已重命名",
+      "description": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "项目已删除",
+      "description": "项目\"{{projectName}}\"删除成功"
+    },
+    "projectAlreadyExists": {
+      "title": "项目已存在",
+      "description": "项目\"{{projectName}}\"已存在"
+    },
+    "projectDeleteFailed": {
+      "title": "删除失败",
+      "description": "删除项目失败。请重试。"
+    },
+    "threadAssignedToProject": {
+      "title": "线程已分配",
+      "description": "线程已成功分配到\"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "线程已移除",
+      "description": "线程已成功从\"{{projectName}}\"中移除"
     }
   }
 }
