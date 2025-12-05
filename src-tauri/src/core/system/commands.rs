@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -27,7 +28,8 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
     log::info!("Factory reset, removing data folder: {data_folder:?}");
 
     tauri::async_runtime::block_on(async {
-        let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+        let _ =
+            stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
 
         {
             let mut active_servers = state.mcp_active_servers.lock().await;
@@ -104,19 +106,27 @@ pub fn is_library_available(library: &str) -> bool {
 }
 
 fn open_with_platform_default(path: PathBuf, target_desc: &str) {
+    let path = path.canonicalize().unwrap_or(path);
+    let (path_to_open, is_dir) = if path.is_dir() {
+        (path.as_path(), true)
+    } else {
+        (path.parent().unwrap_or(path.as_path()), false)
+    };
+
     let result = if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer").arg(&path).status().and_then(|status| {
-            if status.success() {
-                Ok(())
-            } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("explorer exited with status {status}"),
-                ))
-            }
-        })
+        open_on_windows(&path, is_dir)
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(&path).status().and_then(|status| {
+        if is_dir {
+            std::process::Command::new("open")
+                .arg(path_to_open)
+                .status()
+        } else {
+            std::process::Command::new("open")
+                .arg("-R")
+                .arg(&path)
+                .status()
+        }
+        .and_then(|status| {
             if status.success() {
                 Ok(())
             } else {
@@ -127,7 +137,7 @@ fn open_with_platform_default(path: PathBuf, target_desc: &str) {
             }
         })
     } else {
-        open_on_linux(&path)
+        open_on_linux(path_to_open)
     };
 
     if let Err(error) = result {
@@ -135,11 +145,32 @@ fn open_with_platform_default(path: PathBuf, target_desc: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn open_on_windows(path: &Path, is_dir: bool) -> io::Result<()> {
+    if is_dir {
+        std::process::Command::new("explorer").arg(path).status()
+    } else {
+        let mut select_arg = OsString::from("/select,");
+        select_arg.push(path);
+        std::process::Command::new("explorer")
+            .arg(select_arg)
+            .status()
+    }
+    .and_then(|status| {
+        if status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("explorer exited with status {status}"),
+            ))
+        }
+    })
+}
+
 #[cfg(target_os = "linux")]
 fn open_on_linux(path: &Path) -> io::Result<()> {
-    let xdg_open_status = std::process::Command::new("xdg-open")
-        .arg(path)
-        .status();
+    let xdg_open_status = std::process::Command::new("xdg-open").arg(path).status();
 
     match xdg_open_status {
         Ok(status) if status.success() => return Ok(()),
@@ -171,4 +202,3 @@ fn open_on_linux(path: &Path) -> io::Result<()> {
 fn open_on_linux(_path: &Path) -> io::Result<()> {
     Ok(())
 }
-
