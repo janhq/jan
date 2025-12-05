@@ -351,6 +351,7 @@ export default function AddEditMCPServer({
     const filteredArgs = args.map((arg) => arg.trim()).filter((arg) => arg)
 
     const config: MCPServerConfig = {
+      ...(initialData || {}),
       command: transportType === 'stdio' ? command.trim() : '',
       args: transportType === 'stdio' ? filteredArgs : [],
       env: transportType === 'stdio' ? envObj : {},

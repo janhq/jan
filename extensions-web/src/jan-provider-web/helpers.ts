@@ -1,4 +1,4 @@
-import type { JanModel } from './store'
+import type { JanModel } from './types'
 import { MODEL_PROVIDER_STORAGE_KEY } from './const'
 
 type StoredModel = {
@@ -30,6 +30,14 @@ const normalizeCapabilities = (capabilities: unknown): string[] => {
   return [...new Set(capabilities.filter((item): item is string => typeof item === 'string'))].sort(
     (a, b) => a.localeCompare(b)
   )
+}
+
+const deriveCategoryFromModelId = (modelId: string): string => {
+  if (modelId.includes('/')) {
+    const [maybeCategory] = modelId.split('/')
+    return maybeCategory || 'uncategorized'
+  }
+  return 'uncategorized'
 }
 
 /**
@@ -90,15 +98,33 @@ export function syncJanModelsLocalStorage(
         storedCapabilities.length === remoteCapabilities.length &&
         storedCapabilities.every((cap, index) => cap === remoteCapabilities[index])
 
-      if (!capabilitiesMatch) {
+      // Check if metadata needs update
+      const metadataMatch =
+        model.category === remoteModel.category &&
+        model.category_order_number === remoteModel.category_order_number &&
+        model.model_order_number === remoteModel.model_order_number &&
+        model.model_display_name === remoteModel.model_display_name
+
+      if (!capabilitiesMatch || !metadataMatch) {
         console.log(
-          `Updating capabilities for Jan model ${modelId}:`,
-          storedCapabilities,
-          '=>',
-          remoteCapabilities
+          `Updating metadata/capabilities for Jan model ${modelId}`
         )
         updatedModels.push({
           ...model,
+          ...remoteModel, // Update all fields from remote
+          // setup state is preserved because it's local-only usually, but here we merge all.
+          // Careful: We want to preserve user settings if any?
+          // JanModel from remote has the metadata.
+          // StoredModel might have local flags?
+          // The spread `...model` then `...remoteModel` overwrites model's props with remote's.
+          // But valid fields like `active` or `downloaded` (if they exist) should be preserved?
+          // JanModel types don't seem to have download state?
+          // Let's look at `types.ts`.
+          // For now, I will explicitly update the fields safely.
+          category: remoteModel.category,
+          category_order_number: remoteModel.category_order_number,
+          model_order_number: remoteModel.model_order_number,
+          model_display_name: remoteModel.model_display_name,
           capabilities: remoteModel.capabilities,
         })
         storageUpdated = true
@@ -120,3 +146,56 @@ export function syncJanModelsLocalStorage(
 
   return storageUpdated
 }
+
+export interface GroupedModels {
+  category: string
+  categoryOrderNumber: number
+  models: JanModel[]
+}
+
+/**
+ * Groups models by category and sorts them by category_order_number.
+ * Within each category, models are sorted by model_order_number.
+ * 
+ * @param models - Array of JanModel objects to group and sort
+ * @returns Array of GroupedModels, sorted by category_order_number
+ */
+export function groupModelsByCategory(models: JanModel[]): GroupedModels[] {
+  // Group models by category
+  const categoryMap = new Map<string, JanModel[]>()
+
+  for (const model of models) {
+    const category = model.category ?? deriveCategoryFromModelId(model.id)
+    if (!categoryMap.has(category)) {
+      categoryMap.set(category, [])
+    }
+    categoryMap.get(category)!.push(model)
+  }
+
+  // Convert to array and sort categories
+  const groupedModels: GroupedModels[] = Array.from(categoryMap.entries()).map(
+    ([category, categoryModels]) => {
+      // Sort models within category by model_order_number
+      const sortedModels = [...categoryModels].sort((a, b) => {
+        const orderA = a.model_order_number ?? Number.MAX_SAFE_INTEGER
+        const orderB = b.model_order_number ?? Number.MAX_SAFE_INTEGER
+        return orderA - orderB
+      })
+
+      // Get category order number from first model (all models in same category should have same value)
+      const categoryOrderNumber = categoryModels[0]?.category_order_number ?? Number.MAX_SAFE_INTEGER
+
+      return {
+        category,
+        categoryOrderNumber,
+        models: sortedModels,
+      }
+    }
+  )
+
+  // Sort categories by category_order_number
+  groupedModels.sort((a, b) => a.categoryOrderNumber - b.categoryOrderNumber)
+
+  return groupedModels
+}
+

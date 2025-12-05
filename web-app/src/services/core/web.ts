@@ -29,7 +29,7 @@ export class WebCoreService implements CoreService {
     try {
       const { WEB_EXTENSIONS } = await import('@jan/extensions-web')
       const manifests: ExtensionManifest[] = []
-      
+
       // Create manifests and register extensions
       const entries = Object.entries(WEB_EXTENSIONS) as [WebExtensionName, WebExtensionRegistry[WebExtensionName]][]
       for (const [name, loader] of entries) {
@@ -37,7 +37,7 @@ export class WebCoreService implements CoreService {
           // Load the extension module
           const extensionModule = await loader()
           const ExtensionClass = extensionModule.default
-          
+
           // Create manifest data with extension instance
           const manifest = {
             url: `web://${name}`,
@@ -55,13 +55,13 @@ export class WebCoreService implements CoreService {
               '1.0.0' // version
             )
           }
-          
+
           manifests.push(manifest)
         } catch (error) {
           console.error(`Failed to register web extension '${name}':`, error)
         }
       }
-      
+
       return manifests
     } catch (error) {
       console.error('Failed to get web extensions:', error)
@@ -86,7 +86,13 @@ export class WebCoreService implements CoreService {
 
   // App token - web fallback
   async getAppToken(): Promise<string | null> {
-    console.warn('App token not available in web environment')
-    return null
+    try {
+      const { getSharedAuthService } = await import('@jan/extensions-web')
+      const token = await getSharedAuthService().getValidAccessToken()
+      return token
+    } catch (error) {
+      console.warn('App token (access token) not available in web environment:', error)
+      return null
+    }
   }
 }

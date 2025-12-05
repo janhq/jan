@@ -249,7 +249,9 @@
     "reportIssue": "报告问题",
     "credits": "致谢",
     "creditsDesc1": "Jan 由 Menlo 团队用 ❤️ 构建。",
-    "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。"
+    "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
+    "huggingfaceToken": "HuggingFace 令牌",
+    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。"
   },
   "extensions": {
     "title": "扩展"
@@ -272,5 +274,7 @@
     "updateNow": "立即更新",
     "updateSuccess": "Llamacpp 更新成功",
     "updateError": "更新 Llamacpp 失败"
-  }
+  },
+  "backendInstallSuccess": "后端安装成功",
+  "backendInstallError": "后端安装失败"
 }

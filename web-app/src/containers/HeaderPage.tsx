@@ -1,7 +1,11 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import { useMobileScreen, useSmallScreen } from '@/hooks/useMediaQuery'
-import { IconLayoutSidebar, IconMessage, IconMessageFilled } from '@tabler/icons-react'
+import {
+  IconLayoutSidebar,
+  IconMessage,
+  IconMessageFilled,
+} from '@tabler/icons-react'
 import { ReactNode } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -24,17 +28,25 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   // Parse temporary chat flag from URL search params directly to avoid invariant errors
   const searchString = window.location.search
   const urlSearchParams = new URLSearchParams(searchString)
-  const isTemporaryChat = isHomePage && urlSearchParams.get(TEMPORARY_CHAT_QUERY_ID) === 'true'
+  const isTemporaryChat =
+    isHomePage && urlSearchParams.get(TEMPORARY_CHAT_QUERY_ID) === 'true'
 
   const handleChatToggle = () => {
-    console.log('Chat toggle clicked!', { isTemporaryChat, isHomePage, currentPath })
+    console.log('Chat toggle clicked!', {
+      isTemporaryChat,
+      isHomePage,
+      currentPath,
+    })
     if (isHomePage) {
       if (isTemporaryChat) {
         console.log('Switching to regular chat')
         router.navigate({ to: route.home, search: {} })
       } else {
         console.log('Switching to temporary chat')
-        router.navigate({ to: route.home, search: { [TEMPORARY_CHAT_QUERY_ID]: true } })
+        router.navigate({
+          to: route.home,
+          search: { [TEMPORARY_CHAT_QUERY_ID]: true },
+        })
       }
     }
   }
@@ -46,15 +58,17 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
         // Mobile-first responsive padding
         isMobile ? 'px-3' : 'px-4',
         // macOS-specific padding when panel is closed
-        IS_MACOS && !open && !isSmallScreen ? 'pl-18' : '',
+        (IS_MACOS && isSmallScreen) || (IS_MACOS && !open) ? 'pl-20' : '',
         children === undefined && 'border-none'
       )}
     >
-      <div className={cn(
-        'flex items-center w-full',
-        // Adjust gap based on screen size
-        isMobile ? 'gap-2' : 'gap-3'
-      )}>
+      <div
+        className={cn(
+          'flex items-center w-full',
+          // Adjust gap based on screen size
+          isMobile ? 'gap-2' : 'gap-3'
+        )}
+      >
         {!open && (
           <button
             className={cn(
@@ -71,10 +85,12 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
             />
           </button>
         )}
-        <div className={cn(
-          'flex-1 min-w-0', // Allow content to shrink on small screens
-          isMobile && 'overflow-hidden'
-        )}>
+        <div
+          className={cn(
+            'flex-1 min-w-0', // Allow content to shrink on small screens
+            isMobile && 'overflow-hidden'
+          )}
+        >
           {children}
         </div>
 
@@ -84,18 +100,16 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
             <button
               className="size-8 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out relative z-20"
               onClick={handleChatToggle}
-              title={isTemporaryChat ? 'Switch to Regular Chat' : 'Start Temporary Chat'}
+              title={
+                isTemporaryChat
+                  ? 'Switch to Regular Chat'
+                  : 'Start Temporary Chat'
+              }
             >
               {isTemporaryChat ? (
-                <IconMessageFilled
-                  size={18}
-                  className="text-main-view-fg"
-                />
+                <IconMessageFilled size={18} className="text-main-view-fg" />
               ) : (
-                <IconMessage
-                  size={18}
-                  className="text-main-view-fg"
-                />
+                <IconMessage size={18} className="text-main-view-fg" />
               )}
             </button>
           </div>

@@ -13,9 +13,14 @@ import {
   chatCompletionChunk,
   ImportOptions,
 } from '@janhq/core' // cspell: disable-line
-import { janApiClient, JanChatMessage } from './api'
+import {
+  createChatCompletion,
+  createStreamingChatCompletion,
+  getModels,
+  initializeJanApi,
+  JanChatMessage,
+} from './api'
 import { syncJanModelsLocalStorage } from './helpers'
-import { janProviderStore } from './store'
 import { ApiError } from '../shared/types/errors'
 
 export default class JanProviderWeb extends AIEngine {
@@ -27,9 +32,9 @@ export default class JanProviderWeb extends AIEngine {
 
     try {
       // Initialize authentication
-      await janApiClient.initialize()
+      await initializeJanApi()
       // Check and sync stored Jan models against latest catalog data
-      await this.validateJanModelsLocalStorage()
+      // await this.validateJanModelsLocalStorage()
 
       console.log('Jan Provider Extension loaded successfully')
     } catch (error) {
@@ -45,7 +50,7 @@ export default class JanProviderWeb extends AIEngine {
     try {
       console.log('Validating Jan models in localStorage...')
 
-      const remoteModels = await janApiClient.getModels()
+      const remoteModels = await getModels()
       const storageUpdated = syncJanModelsLocalStorage(remoteModels)
 
       if (storageUpdated) {
@@ -66,20 +71,26 @@ export default class JanProviderWeb extends AIEngine {
     for (const sessionId of this.activeSessions.keys()) {
       await this.unload(sessionId)
     }
-
-    janProviderStore.reset()
     console.log('Jan Provider Extension unloaded')
   }
 
   async get(modelId: string): Promise<modelInfo | undefined> {
-    return janApiClient
-      .getModels()
+    return getModels()
       .then((list) => list.find((e) => e.id === modelId))
       .then((model) =>
         model
           ? {
               id: model.id,
-              name: model.id, // Use ID as name for now
+              name:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
+              displayName:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
               quant_type: undefined,
               providerId: this.provider,
               port: 443, // HTTPS port for API
@@ -88,6 +99,14 @@ export default class JanProviderWeb extends AIEngine {
               path: undefined, // Remote model, no local path
               owned_by: model.owned_by,
               object: model.object,
+              category: model.category,
+              category_order_number: model.category_order_number,
+              model_order_number: model.model_order_number,
+              model_display_name:
+                model.model_display_name ||
+                model.displayName ||
+                model.name ||
+                model.id,
               capabilities: [...model.capabilities],
             }
           : undefined
@@ -96,11 +115,22 @@ export default class JanProviderWeb extends AIEngine {
 
   async list(): Promise<modelInfo[]> {
     try {
-      const janModels = await janApiClient.getModels()
+      const janModels = await getModels()
 
       return janModels.map((model) => ({
         id: model.id,
-        name: model.id, // Use ID as name for now
+        // Prefer server-provided display name for UI selection; fallback to id
+        name:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
+        // Preserve a dedicated displayName field so downstream mappers can pick it up
+        displayName:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
         quant_type: undefined,
         providerId: this.provider,
         port: 443, // HTTPS port for API
@@ -110,6 +140,14 @@ export default class JanProviderWeb extends AIEngine {
         owned_by: model.owned_by,
         object: model.object,
         capabilities: [...model.capabilities],
+        category: model.category,
+        category_order_number: model.category_order_number,
+        model_order_number: model.model_order_number,
+        model_display_name:
+          model.model_display_name ||
+          model.displayName ||
+          model.name ||
+          model.id,
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)
@@ -218,7 +256,7 @@ export default class JanProviderWeb extends AIEngine {
         return this.createStreamingGenerator(janRequest, abortController)
       } else {
         // Return single response
-        const response = await janApiClient.createChatCompletion(janRequest)
+        const response = await createChatCompletion(janRequest)
 
         // Check if aborted after completion
         if (abortController?.signal?.aborted) {
@@ -285,7 +323,7 @@ export default class JanProviderWeb extends AIEngine {
 
     try {
       // Start the streaming request
-      janApiClient.createStreamingChatCompletion(
+      createStreamingChatCompletion(
         janRequest,
         (chunk) => {
           if (abortController?.signal?.aborted) {

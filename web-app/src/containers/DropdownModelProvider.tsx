@@ -6,10 +6,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { groupModelsByCategory } from '@jan/extensions-web'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { IconSettings, IconX } from '@tabler/icons-react'
+import { IconSettings, IconX, IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
@@ -38,6 +39,22 @@ interface SearchableModel {
   value: string
   highlightedId?: string
 }
+
+interface CategorizedGroup {
+  categoryName: string
+  categoryOrder: number
+  models: SearchableModel[]
+}
+
+type ProviderGroup =
+  | {
+      type: 'jan'
+      categories: CategorizedGroup[]
+    }
+  | {
+      type: 'default'
+      models: SearchableModel[]
+    }
 
 // Helper functions for localStorage
 const setLastUsedModel = (provider: string, model: string) => {
@@ -359,35 +376,77 @@ const DropdownModelProvider = ({
     })
   }, [searchableItems, searchValue, fzfInstance])
 
-  // Group filtered items by provider, excluding favorites when not searching
+  // Group filtered items by provider, with category support for jan provider
   const groupedItems = useMemo(() => {
-    const groups: Record<string, SearchableModel[]> = {}
+    const groups: Record<string, ProviderGroup> = {}
 
     if (!searchValue) {
       // When not searching, show all active providers (even without models)
       providers.forEach((provider) => {
         if (provider.active) {
-          groups[provider.provider] = []
+          groups[provider.provider] =
+            provider.provider === 'jan'
+              ? { type: 'jan', categories: [] }
+              : { type: 'default', models: [] }
         }
       })
     }
 
-    // Add the filtered items to their respective groups
+    // Separate jan provider items for category grouping
+    const janItems: SearchableModel[] = []
+    const otherItems: SearchableModel[] = []
+
     filteredItems.forEach((item) => {
-      const providerKey = item.provider.provider
-      if (!groups[providerKey]) {
-        groups[providerKey] = []
-      }
-
-      // When not searching, exclude favorite models from regular provider sections
       const isFavorite = favoriteModels.some((fav) => fav.id === item.model.id)
-      if (!searchValue && isFavorite) return // Skip adding this item to regular provider section
+      if (!searchValue && isFavorite) return // Skip favorites when not searching
 
-      groups[providerKey].push(item)
+      if (item.provider.provider === 'jan') {
+        janItems.push(item)
+      } else {
+        otherItems.push(item)
+      }
+    })
+
+    // Handle jan provider with category grouping
+    if (janItems.length > 0 || (!searchValue && groups['jan'] !== undefined)) {
+      // Group jan models by category, preserving model order within categories
+      const janModelMap = new Map(janItems.map((item) => [item.model.id, item]))
+      const categorizedGroups = groupModelsByCategory(
+        janItems.map((item) => item.model)
+      )
+
+      const categories: CategorizedGroup[] = categorizedGroups
+        .map((group) => {
+          const categoryModels = group.models
+            .map((model) => janModelMap.get(model.id))
+            .filter((model): model is SearchableModel => Boolean(model))
+
+          return {
+            categoryName: group.category,
+            categoryOrder: group.categoryOrderNumber,
+            models: categoryModels,
+          }
+        })
+        .filter((category) => category.models.length > 0)
+
+      groups['jan'] = { type: 'jan', categories }
+    }
+
+    // Handle other providers with regular grouping
+    otherItems.forEach((item) => {
+      const providerKey = item.provider.provider
+      if (!groups[providerKey] || groups[providerKey].type !== 'default') {
+        groups[providerKey] = { type: 'default', models: [] }
+      }
+      ;(groups[providerKey] as ProviderGroup & { type: 'default' }).models.push(
+        item
+      )
     })
 
     return groups
   }, [filteredItems, providers, searchValue, favoriteModels])
+
+  const [legacyOpen, setLegacyOpen] = useState(false)
 
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
@@ -565,7 +624,7 @@ const DropdownModelProvider = ({
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                             'hover:bg-main-view-fg/4',
                             isSelected &&
-                              'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                            'bg-main-view-fg/8 hover:bg-main-view-fg/8'
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -596,7 +655,7 @@ const DropdownModelProvider = ({
                 )}
 
                 {/* Regular provider sections */}
-                {Object.entries(groupedItems).map(([providerKey, models]) => {
+                {Object.entries(groupedItems).map(([providerKey, group]) => {
                   const providerInfo = providers.find(
                     (p) => p.provider === providerKey
                   )
@@ -639,15 +698,151 @@ const DropdownModelProvider = ({
                       </div>
 
                       {/* Models for this provider */}
-                      {models.length === 0 ? (
+                      {group.type === 'jan' ? (
+                        (() => {
+                              const primaryCategories = group.categories.filter(
+                                (category) => category.categoryName !== 'legacy'
+                              )
+                              const legacyCategory = group.categories.find(
+                                (category) => category.categoryName === 'legacy'
+                          )
+
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  {primaryCategories.map((category) => (
+                                    <div
+                                      key={`${providerKey}-${category.categoryName}`}
+                                      className="flex flex-col"
+                                    >
+                                      {category.categoryName !== 'jan' && (
+                                        <div className="flex items-center gap-1.5 px-2 py-1 select-none">
+                                          <IconChevronDown
+                                            size={16}
+                                            className="text-main-view-fg/60"
+                                          />
+                                          <span className="text-sm font-medium text-main-view-fg/70 capitalize">
+                                            {getProviderTitle(category.categoryName) ||
+                                              category.categoryName}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {category.models.map((searchableModel) => {
+                                        const isSelected =
+                                          selectedModel?.id === searchableModel.model.id &&
+                                          selectedProvider ===
+                                            searchableModel.provider.provider
+                                    const capabilities =
+                                      searchableModel.model.capabilities || []
+
+                                    return (
+                                      <div
+                                        key={`${category.categoryName}-${searchableModel.value}`}
+                                        title={searchableModel.model.id}
+                                        onClick={() => handleSelect(searchableModel)}
+                                        className={cn(
+                                          'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                          'hover:bg-main-view-fg/4',
+                                          isSelected &&
+                                            'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                          <span
+                                            className="text-main-view-fg/80 text-sm"
+                                            title={searchableModel.model.id}
+                                          >
+                                            {getModelDisplayName(searchableModel.model)}
+                                          </span>
+                                          <div className="flex-1"></div>
+                                          {capabilities.length > 0 && (
+                                            <div className="flex-shrink-0 -mr-1.5">
+                                              <Capabilities capabilities={capabilities} />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ))}
+
+                              {legacyCategory && legacyCategory.models.length > 0 && (
+                                <div className="mt-1">
+                                  <div
+                                    className="flex items-center justify-between px-2 py-1 rounded-sm cursor-pointer hover:bg-main-view-fg/6 transition-all"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setLegacyOpen((open) => !open)
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <IconChevronRight
+                                        size={16}
+                                        className={cn(
+                                          'text-main-view-fg/60 transition-transform',
+                                          legacyOpen && 'rotate-90'
+                                        )}
+                                      />
+                                      <span className="text-sm font-medium text-main-view-fg/70">
+                                        Legacy Models
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {(legacyOpen || searchValue.length > 0) && (
+                                    <div className="ml-6 mt-0.5">
+                                      {legacyCategory.models.map((searchableModel) => {
+                                        const isSelected =
+                                          selectedModel?.id === searchableModel.model.id &&
+                                          selectedProvider ===
+                                            searchableModel.provider.provider
+                                        const capabilities =
+                                          searchableModel.model.capabilities || []
+
+                                        return (
+                                          <div
+                                            key={`${legacyCategory.categoryName}-${searchableModel.value}`}
+                                            title={searchableModel.model.id}
+                                            onClick={() => handleSelect(searchableModel)}
+                                            className={cn(
+                                              'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                              'hover:bg-main-view-fg/4',
+                                              isSelected &&
+                                                'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                                            )}
+                                          >
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                              <span
+                                                className="text-main-view-fg/80 text-sm"
+                                                title={searchableModel.model.id}
+                                              >
+                                                {getModelDisplayName(searchableModel.model)}
+                                              </span>
+                                              <div className="flex-1"></div>
+                                              {capabilities.length > 0 && (
+                                                <div className="flex-shrink-0 -mr-1.5">
+                                                  <Capabilities capabilities={capabilities} />
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()
+                      ) : group.models.length === 0 ? (
                         // Show message when provider has no available models
                         <></>
                       ) : (
-                        models.map((searchableModel) => {
+                        group.models.map((searchableModel) => {
                           const isSelected =
                             selectedModel?.id === searchableModel.model.id &&
                             selectedProvider ===
-                              searchableModel.provider.provider
+                            searchableModel.provider.provider
                           const capabilities =
                             searchableModel.model.capabilities || []
 
@@ -660,7 +855,7 @@ const DropdownModelProvider = ({
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                                 'hover:bg-main-view-fg/4',
                                 isSelected &&
-                                  'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                                'bg-main-view-fg/8 hover:bg-main-view-fg/8'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">

@@ -5,13 +5,13 @@
 import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/consts/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
-import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import type { ProvidersService } from './types'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { getModelCapabilities } from '@/lib/models'
+import { deriveCapabilitiesFromModel } from '@/lib/utils'
 
 export class WebProvidersService implements ProvidersService {
   async getProviders(): Promise<ModelProvider[]> {
@@ -37,18 +37,30 @@ export class WebProvidersService implements ProvidersService {
         }) as ProviderSetting[],
         models: await Promise.all(
           models.map(
-            async (model) =>
-              ({
+            async (model) => {
+              const displayName =
+                (model as any)?.displayName ||
+                (model as any)?.model_display_name ||
+                model.name ||
+                model.id
+              const category = (model as any)?.category
+              const categoryOrder = (model as any)?.category_order_number
+              const modelOrder = (model as any)?.model_order_number
+              const capabilities = await deriveCapabilitiesFromModel(model, {
+                checkToolSupport: () => value.isToolSupported(model.id),
+              })
+
+              return {
                 id: model.id,
                 model: model.id,
-                name: model.name,
-                description: model.description,
-                capabilities:
-                  'capabilities' in model
-                    ? (model.capabilities as string[])
-                    : (await value.isToolSupported(model.id))
-                      ? [ModelCapabilities.TOOLS]
-                      : [],
+                name: model.name || displayName || model.id,
+                displayName,
+                description: model.description || (model as any)?.notes,
+                category,
+                category_order_number: categoryOrder,
+                model_order_number: modelOrder,
+                model_display_name: (model as any)?.model_display_name,
+                capabilities,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
@@ -67,7 +79,8 @@ export class WebProvidersService implements ProvidersService {
                   },
                   {} as Record<string, ProviderSetting>
                 ),
-              }) as Model
+              } as Model
+            }
           )
         ),
       }

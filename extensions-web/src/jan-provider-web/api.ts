@@ -7,12 +7,16 @@ import { Content } from '@janhq/core'
 import { getSharedAuthService, JanAuthService } from '../shared'
 import { ApiError } from '../shared/types/errors'
 import { JAN_API_ROUTES } from './const'
-import { JanModel, janProviderStore } from './store'
+import type { JanModel } from './types'
 
 // JAN_BASE_URL is defined in vite.config.ts
 
 // Constants
 const TEMPORARY_CHAT_ID = 'temporary-chat'
+const authService: JanAuthService = getSharedAuthService()
+
+let modelsCache: JanModel[] | null = null
+let modelsFetchPromise: Promise<JanModel[]> | null = null
 
 /**
  * Determines the appropriate API endpoint and request payload based on chat type
@@ -26,16 +30,18 @@ function getChatCompletionConfig(request: JanChatCompletionRequest, stream: bool
   const payload = {
     ...request,
     stream,
-    ...(isTemporaryChat ? {
-      // For temporary chat: don't store anything, remove conversation metadata
-      conversation_id: undefined,
-    } : {
-      // For regular chat: store everything, use conversation metadata
-      store: true,
-      store_reasoning: true,
-      conversation: request.conversation_id,
-      conversation_id: undefined,
-    })
+    ...(isTemporaryChat
+      ? {
+        // For temporary chat: don't store anything, remove conversation metadata
+        conversation_id: undefined,
+      }
+      : {
+        // For regular chat: store everything, use conversation metadata
+        store: true,
+        store_reasoning: true,
+        conversation: request.conversation_id,
+        conversation_id: undefined,
+      }),
   }
 
   return { endpoint, payload, isTemporaryChat }
@@ -46,6 +52,10 @@ interface JanModelSummary {
   object: string
   owned_by: string
   created?: number
+  model_display_name?: string
+  category?: string
+  category_order_number?: number
+  model_order_number?: number
 }
 
 interface JanModelsResponse {
@@ -64,6 +74,7 @@ interface JanModelCatalogResponse {
     default_parameters?: Record<string, unknown>
     [key: string]: unknown
   }
+  supports_images?: boolean
   [key: string]: unknown
 }
 
@@ -127,254 +138,244 @@ export interface JanChatCompletionChunk {
   }>
 }
 
-export class JanApiClient {
-  private static instance: JanApiClient
-  private authService: JanAuthService
-  private modelsCache: JanModel[] | null = null
-  private modelsFetchPromise: Promise<JanModel[]> | null = null
+export async function getModels(options?: { forceRefresh?: boolean }): Promise<JanModel[]> {
+  try {
+    const forceRefresh = options?.forceRefresh ?? false
 
-  private constructor() {
-    this.authService = getSharedAuthService()
-  }
-
-  static getInstance(): JanApiClient {
-    if (!JanApiClient.instance) {
-      JanApiClient.instance = new JanApiClient()
+    if (forceRefresh) {
+      modelsCache = null
+    } else if (modelsCache) {
+      return modelsCache
     }
-    return JanApiClient.instance
-  }
 
-  async getModels(options?: { forceRefresh?: boolean }): Promise<JanModel[]> {
-    try {
-      const forceRefresh = options?.forceRefresh ?? false
-
-      if (forceRefresh) {
-        this.modelsCache = null
-      } else if (this.modelsCache) {
-        return this.modelsCache
-      }
-
-      if (this.modelsFetchPromise) {
-        return this.modelsFetchPromise
-      }
-
-      janProviderStore.setLoadingModels(true)
-      janProviderStore.clearError()
-
-      this.modelsFetchPromise = (async () => {
-        const response = await this.authService.makeAuthenticatedRequest<JanModelsResponse>(
-          `${JAN_BASE_URL}${JAN_API_ROUTES.MODELS}`
-        )
-
-        const summaries = response.data || []
-
-        const models: JanModel[] = await Promise.all(
-          summaries.map(async (summary) => {
-            const supportedParameters = await this.fetchSupportedParameters(summary.id)
-            const capabilities = this.deriveCapabilitiesFromParameters(supportedParameters)
-
-            return {
-              id: summary.id,
-              object: summary.object,
-              owned_by: summary.owned_by,
-              created: summary.created,
-              capabilities,
-              supportedParameters,
-            }
-          })
-        )
-
-        this.modelsCache = models
-        janProviderStore.setModels(models)
-
-        return models
-      })()
-
-      return await this.modelsFetchPromise
-    } catch (error) {
-      this.modelsCache = null
-      this.modelsFetchPromise = null
-
-      const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to fetch models'
-      janProviderStore.setError(errorMessage)
-      janProviderStore.setLoadingModels(false)
-      throw error
-    } finally {
-      this.modelsFetchPromise = null
+    if (modelsFetchPromise) {
+      return modelsFetchPromise
     }
-  }
 
-  async createChatCompletion(
-    request: JanChatCompletionRequest
-  ): Promise<JanChatCompletionResponse> {
-    try {
-      janProviderStore.clearError()
-
-      const { endpoint, payload } = getChatCompletionConfig(request, false)
-
-      return await this.authService.makeAuthenticatedRequest<JanChatCompletionResponse>(
-        endpoint,
-        {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        }
+    modelsFetchPromise = (async () => {
+      const response = await authService.makeAuthenticatedRequest<JanModelsResponse>(
+        `${JAN_BASE_URL}${JAN_API_ROUTES.MODELS}`
       )
-    } catch (error) {
-      const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to create chat completion'
-      janProviderStore.setError(errorMessage)
-      throw error
-    }
-  }
 
-  async createStreamingChatCompletion(
-    request: JanChatCompletionRequest,
-    onChunk: (chunk: JanChatCompletionChunk) => void,
-    onComplete?: () => void,
-    onError?: (error: Error) => void
-  ): Promise<void> {
-    try {
-      janProviderStore.clearError()
+      const summaries = response.data || []
 
-      const authHeader = await this.authService.getAuthHeader()
-      const { endpoint, payload } = getChatCompletionConfig(request, true)
+      const models: JanModel[] = await Promise.all(
+        summaries.map(async (summary) => {
+          const displayName = summary.model_display_name || summary.id
+          const catalog = await fetchModelCatalog(summary.id)
+          const supportedParameters = extractSupportedParameters(catalog)
+          const capabilities = deriveCapabilitiesFromCatalog(catalog)
+          const category = summary.category ?? deriveCategoryFromModelId(summary.id)
+          const category_order_number =
+            summary.category_order_number ?? (category ? 0 : Number.MAX_SAFE_INTEGER)
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeader,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null')
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-
-      try {
-        let buffer = ''
-        
-        while (true) {
-          const { done, value } = await reader.read()
-          
-          if (done) {
-            break
+          return {
+            id: summary.id,
+            object: summary.object,
+            owned_by: summary.owned_by,
+            created: summary.created,
+            name: displayName,
+            displayName,
+            capabilities,
+            supportedParameters,
+            model_display_name: summary.model_display_name,
+            category,
+            category_order_number,
+            model_order_number: summary.model_order_number,
           }
+        })
+      )
 
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          
-          // Keep the last incomplete line in buffer
-          buffer = lines.pop() || ''
+      modelsCache = models
+      return models
+    })()
 
-          for (const line of lines) {
-            const trimmedLine = line.trim()
-            if (trimmedLine.startsWith('data: ')) {
-              const data = trimmedLine.slice(6).trim()
-              
-              if (data === '[DONE]') {
-                onComplete?.()
-                return
-              }
-
-              try {
-                const parsedChunk: JanChatCompletionChunk = JSON.parse(data)
-                onChunk(parsedChunk)
-              } catch (parseError) {
-                console.warn('Failed to parse SSE chunk:', parseError, 'Data:', data)
-              }
-            }
-          }
-        }
-
-        onComplete?.()
-      } finally {
-        reader.releaseLock()
-      }
-    } catch (error) {
-      const err = error instanceof ApiError ? error :
-                 error instanceof Error ? error : new Error('Unknown error occurred')
-      janProviderStore.setError(err.message)
-      onError?.(err)
-      throw err
-    }
-  }
-
-  async initialize(): Promise<void> {
-    try {
-      janProviderStore.setAuthenticated(true)
-      // Fetch initial models (cached for subsequent calls)
-      await this.getModels()
-      console.log('Jan API client initialized successfully')
-    } catch (error) {
-      const errorMessage = error instanceof ApiError ? error.message :
-                          error instanceof Error ? error.message : 'Failed to initialize API client'
-      janProviderStore.setError(errorMessage)
-      throw error
-    } finally {
-      janProviderStore.setInitializing(false)
-    }
-  }
-
-  private async fetchSupportedParameters(modelId: string): Promise<string[]> {
-    try {
-      const endpoint = `${JAN_BASE_URL}${JAN_API_ROUTES.MODEL_CATALOGS}/${this.encodeModelIdForCatalog(modelId)}`
-      const catalog = await this.authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
-      return this.extractSupportedParameters(catalog)
-    } catch (error) {
-      console.warn(`Failed to fetch catalog metadata for model "${modelId}":`, error)
-      return []
-    }
-  }
-
-  private encodeModelIdForCatalog(modelId: string): string {
-    return modelId
-      .split('/')
-      .map((segment) => encodeURIComponent(segment))
-      .join('/')
-  }
-
-  private extractSupportedParameters(catalog: JanModelCatalogResponse | null | undefined): string[] {
-    if (!catalog) {
-      return []
-    }
-
-    const primaryNames = catalog.supported_parameters?.names
-    if (Array.isArray(primaryNames) && primaryNames.length > 0) {
-      return [...new Set(primaryNames)]
-    }
-
-    const extraNames = catalog.extras?.supported_parameters
-    if (Array.isArray(extraNames) && extraNames.length > 0) {
-      return [...new Set(extraNames)]
-    }
-
-    return []
-  }
-
-  private deriveCapabilitiesFromParameters(parameters: string[]): string[] {
-    const capabilities = new Set<string>()
-
-    if (parameters.includes('tools')) {
-      capabilities.add('tools')
-    }
-
-     if (parameters.includes('vision')) {
-      capabilities.add('vision')
-    }
-
-    return Array.from(capabilities)
+    return await modelsFetchPromise
+  } catch (error) {
+    modelsCache = null
+    modelsFetchPromise = null
+    throw error
+  } finally {
+    modelsFetchPromise = null
   }
 }
 
-export const janApiClient = JanApiClient.getInstance()
+export async function createChatCompletion(
+  request: JanChatCompletionRequest
+): Promise<JanChatCompletionResponse> {
+  try {
+    const { endpoint, payload } = getChatCompletionConfig(request, false)
+
+    return await authService.makeAuthenticatedRequest<JanChatCompletionResponse>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    const err =
+      error instanceof ApiError
+        ? error
+        : error instanceof Error
+          ? error
+          : new Error('Failed to create chat completion')
+    throw err
+  }
+}
+
+export async function createStreamingChatCompletion(
+  request: JanChatCompletionRequest,
+  onChunk: (chunk: JanChatCompletionChunk) => void,
+  onComplete?: () => void,
+  onError?: (error: Error) => void
+): Promise<void> {
+  try {
+    const authHeader = await authService.getAuthHeader()
+    const { endpoint, payload } = getChatCompletionConfig(request, true)
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith('data: ')) {
+            const data = trimmedLine.slice(6).trim()
+
+            if (data === '[DONE]') {
+              onComplete?.()
+              return
+            }
+
+            try {
+              const parsedChunk: JanChatCompletionChunk = JSON.parse(data)
+              onChunk(parsedChunk)
+            } catch (parseError) {
+              console.warn('Failed to parse SSE chunk:', parseError, 'Data:', data)
+            }
+          }
+        }
+      }
+
+      onComplete?.()
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error) {
+    const err =
+      error instanceof ApiError
+        ? error
+        : error instanceof Error
+          ? error
+          : new Error('Unknown error occurred')
+    onError?.(err)
+    throw err
+  }
+}
+
+export async function initializeJanApi(): Promise<void> {
+  try {
+    // Fetch initial models (cached for subsequent calls)
+    await getModels()
+    console.log('Jan API client initialized successfully')
+  } catch (error) {
+    const err =
+      error instanceof ApiError
+        ? error
+        : error instanceof Error
+          ? error
+          : new Error('Failed to initialize API client')
+    throw err
+  }
+}
+
+async function fetchModelCatalog(modelId: string): Promise<JanModelCatalogResponse | null> {
+  try {
+    const endpoint = `${JAN_BASE_URL}${JAN_API_ROUTES.MODEL_CATALOGS}/${encodeModelIdForCatalog(modelId)}`
+    return await authService.makeAuthenticatedRequest<JanModelCatalogResponse>(endpoint)
+  } catch (error) {
+    console.warn(`Failed to fetch catalog metadata for model "${modelId}":`, error)
+    return null
+  }
+}
+
+function encodeModelIdForCatalog(modelId: string): string {
+  return modelId
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
+function extractSupportedParameters(catalog: JanModelCatalogResponse | null | undefined): string[] {
+  if (!catalog) {
+    return []
+  }
+
+  const primaryNames = catalog.supported_parameters?.names
+  if (Array.isArray(primaryNames) && primaryNames.length > 0) {
+    return [...new Set(primaryNames)]
+  }
+
+  const extraNames = catalog.extras?.supported_parameters
+  if (Array.isArray(extraNames) && extraNames.length > 0) {
+    return [...new Set(extraNames)]
+  }
+
+  return []
+}
+
+function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null): string[] {
+  const capabilities = new Set<string>()
+  if (!catalog) return []
+
+  const parameters = extractSupportedParameters(catalog)
+
+  if (parameters.includes('tools')) {
+    capabilities.add('tools')
+  }
+
+  if (parameters.includes('vision') || catalog.supports_images) {
+    capabilities.add('vision')
+  }
+
+  return Array.from(capabilities)
+}
+
+function deriveCategoryFromModelId(modelId: string): string {
+  if (modelId.includes('/')) {
+    const [maybeCategory] = modelId.split('/')
+    return maybeCategory || 'uncategorized'
+  }
+  return 'uncategorized'
+}

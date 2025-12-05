@@ -2,7 +2,6 @@ export const route = {
   // home as new chat or thread
   home: '/',
   appLogs: '/logs',
-  assistant: '/assistant',
   project: '/project',
   projectDetail: '/project/$projectId',
   settings: {

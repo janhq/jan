@@ -41,8 +41,26 @@ pub async fn activate_mcp_server<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn deactivate_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     log::info!("Deactivating MCP server: {name}");
+
+    // Get port from config before removing (for lock file cleanup later)
+    let bridge_port = if name == "Jan Browser MCP" {
+        let active_servers = state.mcp_active_servers.lock().await;
+        active_servers.get(&name).and_then(|config| {
+            config
+                .get("envs")
+                .and_then(|envs| envs.get("BRIDGE_PORT"))
+                .and_then(|port| port.as_str())
+                .and_then(|port_str| port_str.parse::<u16>().ok())
+        })
+    } else {
+        None
+    };
 
     // First, mark server as manually deactivated to prevent restart
     // Remove from active servers list to prevent restart
@@ -87,6 +105,18 @@ pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> 
             service.cancel().await.map_err(|e| e.to_string())?;
         }
     }
+
+    // Delete lock file if this is Jan Browser MCP and we have a port
+    if name == "Jan Browser MCP" {
+        if let Some(port) = bridge_port {
+            use crate::core::mcp::lockfile::delete_lock_file;
+
+            if let Err(e) = delete_lock_file(&app, port) {
+                log::warn!("Failed to delete lock file for port {}: {}", port, e);
+            }
+        }
+    }
+
     log::info!("Server {name} stopped successfully and marked as deactivated.");
     Ok(())
 }
@@ -190,6 +220,7 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>
 /// # Arguments
 /// * `state` - Application state containing MCP server connections
 /// * `tool_name` - Name of the tool to call
+/// * `server_name` - Optional name of the server to call the tool from (for disambiguation)
 /// * `arguments` - Optional map of argument names to values
 /// * `cancellation_token` - Optional token to allow cancellation from JS side
 ///
@@ -198,21 +229,23 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>
 ///
 /// This function:
 /// 1. Locks the MCP servers mutex to access server connections
-/// 2. Searches through all servers for one containing the named tool
-/// 3. When found, calls the tool on that server with the provided arguments
-/// 4. Supports cancellation via cancellation_token
-/// 5. Returns error if no server has the requested tool
+/// 2. If server_name is provided, looks for the tool in that specific server
+/// 3. Otherwise, searches through all servers for one containing the named tool
+/// 4. When found, calls the tool on that server with the provided arguments
+/// 5. Supports cancellation via cancellation_token
+/// 6. Returns error if no server has the requested tool or if specified server not found
 #[tauri::command]
 pub async fn call_tool(
     state: State<'_, AppState>,
     tool_name: String,
+    server_name: Option<String>,
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
     let timeout_duration = tool_call_timeout(&state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    
+
     if let Some(token) = &cancellation_token {
         let mut cancellations = state.tool_call_cancellations.lock().await;
         cancellations.insert(token.clone(), cancel_tx);
@@ -220,8 +253,23 @@ pub async fn call_tool(
 
     let servers = state.mcp_servers.lock().await;
 
-    // Iterate through servers and find the first one that contains the tool
-    for (_, service) in servers.iter() {
+    // If server_name is provided, only check that specific server
+    let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> = if let Some(ref server) = server_name {
+        servers.iter()
+            .filter(|(name, _)| *name == server)
+            .collect()
+    } else {
+        servers.iter().collect()
+    };
+
+    if servers_to_check.is_empty() {
+        if let Some(server) = server_name {
+            return Err(format!("Server '{server}' not found"));
+        }
+    }
+
+    // Iterate through servers and find the one that contains the tool
+    for (srv_name, service) in servers_to_check.iter() {
         let tools = match service.list_all_tools().await {
             Ok(tools) => tools,
             Err(_) => continue, // Skip this server if we can't list tools
@@ -231,7 +279,7 @@ pub async fn call_tool(
             continue; // Tool not found in this server, try next
         }
 
-        println!("Found tool {tool_name} in server");
+        println!("Found tool {tool_name} in server {srv_name}");
 
         // Call the tool with timeout and cancellation support
         let tool_call = service.call_tool(CallToolRequestParam {
@@ -350,6 +398,30 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
 
     if !config_object.contains_key("mcpServers") {
         config_object.insert("mcpServers".to_string(), json!({}));
+        mutated = true;
+    }
+
+    // Migration: Add Jan Browser MCP if not present
+    let mcp_servers = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+        .ok_or("mcpServers is not an object")?;
+
+    if !mcp_servers.contains_key("Jan Browser MCP") {
+        log::info!("Migrating config: Adding 'Jan Browser MCP' server");
+        mcp_servers.insert(
+            "Jan Browser MCP".to_string(),
+            json!({
+                "command": "npx",
+                "args": ["-y", "search-mcp-server@latest"],
+                "env": {
+                    "BRIDGE_HOST": "127.0.0.1",
+                    "BRIDGE_PORT": "17389"
+                },
+                "active": false,
+                "official": true
+            }),
+        );
         mutated = true;
     }
 
