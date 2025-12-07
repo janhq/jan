@@ -103,10 +103,6 @@ export const ImportVisionModelDialog = ({
               metadata as { metadata?: Record<string, string> }
             ).metadata?.['general.architecture']
 
-            // Get general.baseName from metadata
-            const baseName = (metadata as { metadata?: Record<string, string> })
-              .metadata?.['general.basename']
-
             // MMProj files MUST be clip
             if (architecture !== 'clip') {
               const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
@@ -115,19 +111,6 @@ export const ImportVisionModelDialog = ({
                 'Non-CLIP architecture detected in mmproj file:',
                 architecture
               )
-            } else if (
-              baseName &&
-              modelName &&
-              !modelName.toLowerCase().includes(baseName.toLowerCase()) &&
-              !baseName.toLowerCase().includes(modelName.toLowerCase())
-            ) {
-              // Validate that baseName and model name are compatible (one should contain the other)
-              const errorMessage = `MMProj file baseName "${baseName}" does not match model name "${modelName}". The MMProj file should be compatible with the selected model.`
-              setMmprojValidationError(errorMessage)
-              console.error('BaseName mismatch in mmproj file:', {
-                baseName,
-                modelName,
-              })
             }
           } catch (directError) {
             console.error(
