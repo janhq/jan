@@ -499,6 +499,14 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 format!("Failed to run command {name}: {e}")
             })?;
 
+        let process_pid = process.id();
+        if let Some(pid) = process_pid {
+            log::info!("MCP server {name} spawned with PID {pid}");
+            let app_state = app.state::<AppState>();
+            let mut pids = app_state.mcp_server_pids.lock().await;
+            pids.insert(name.clone(), pid);
+        }
+
         let service = ()
             .serve(process)
             .await
@@ -854,6 +862,10 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
+    let pids_snapshot: std::collections::HashMap<String, u32> = {
+        let pids = state.mcp_server_pids.lock().await;
+        pids.clone()
+    };
     let servers_to_stop: Vec<(String, RunningServiceEnum, Option<u16>)> = {
         let mut servers_map = state.mcp_servers.lock().await;
         let keys: Vec<String> = servers_map.keys().cloned().collect();
@@ -883,6 +895,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         return Ok(());
     }
 
+    let server_names: Vec<String> = servers_to_stop.iter().map(|(name, _, _)| name.clone()).collect();
     let per_server_timeout = context.per_server_timeout();
     let stop_handles: Vec<_> = servers_to_stop
         .into_iter()
@@ -918,10 +931,46 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         .collect();
 
     let overall_timeout = context.overall_timeout();
-    let _ = tokio::time::timeout(
+    let results = tokio::time::timeout(
         overall_timeout,
         futures_util::future::join_all(stop_handles)
     ).await;
+
+    let failed_servers: Vec<String> = match results {
+        Ok(results) => {
+            results
+                .into_iter()
+                .filter_map(|r| match r {
+                    Ok((name, success)) if !success => Some(name),
+                    Err(_) => None, // Task was cancelled/panicked
+                    _ => None,
+                })
+                .collect()
+        }
+        Err(_) => {
+            // Overall timeout - assume all servers need force-kill
+            log::warn!("MCP shutdown timed out, will force-kill remaining processes");
+            server_names.clone()
+        }
+    };
+
+    // Force-kill processes that didn't stop gracefully
+    for server_name in &failed_servers {
+        if let Some(&pid) = pids_snapshot.get(server_name) {
+            log::warn!("Force-killing MCP server {} (PID {})", server_name, pid);
+            if let Err(e) = kill_process_by_pid(pid).await {
+                log::error!("Failed to force-kill PID {}: {}", pid, e);
+            }
+        }
+    }
+
+    // Clean up PIDs from tracking
+    {
+        let mut pids = state.mcp_server_pids.lock().await;
+        for name in &server_names {
+            pids.remove(name);
+        }
+    }
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 

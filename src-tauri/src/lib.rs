@@ -125,6 +125,7 @@ pub fn run() {
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
+            mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
