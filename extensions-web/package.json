@@ -37,6 +37,7 @@
     "zustand": "5.0.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.17.5"
+    "@modelcontextprotocol/sdk": "1.17.5",
+    "mcp-web-client": "file:../../jan-browser/packages/mcp-web-client"
   }
 }

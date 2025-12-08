@@ -161,10 +161,18 @@ const ChatInput = ({
   // Check if there are active MCP servers
   const hasActiveMCPServers = tools.length > 0
 
-  // Get MCP extension and its custom component
+  // Get MCP extensions and their custom components
+  // Use useMemo to re-evaluate when tools change (which happens when extensions load)
   const extensionManager = ExtensionManager.getInstance()
-  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
-  const MCPToolComponent = mcpExtension?.getToolComponent?.()
+
+  const { MCPToolComponent, BrowserToolComponent } = useMemo(() => {
+    const mcpExt = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
+    const mcpBrowserExt = extensionManager.getByName('mcp-browser') as MCPExtension | undefined
+    return {
+      MCPToolComponent: mcpExt?.getToolComponent?.(),
+      BrowserToolComponent: mcpBrowserExt?.getToolComponent?.(),
+    }
+  }, [extensionManager, tools])
 
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
@@ -1105,10 +1113,23 @@ const ChatInput = ({
                   </TooltipProvider>
                 )}
 
+                {/* Browser Extension Tool Button - always show if model supports tools */}
+                {selectedModel?.capabilities?.includes('tools') && BrowserToolComponent && (
+                  <McpExtensionToolLoader
+                    tools={tools}
+                    hasActiveMCPServers={true} // Browser extension manages its own connection
+                    selectedModelHasTools={
+                      selectedModel?.capabilities?.includes('tools') ?? false
+                    }
+                    initialMessage={initialMessage}
+                    MCPToolComponent={BrowserToolComponent}
+                  />
+                )}
+
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
-                    // Use custom MCP component
+                    // Use custom MCP component (Web Search)
                     <McpExtensionToolLoader
                       tools={tools}
                       hasActiveMCPServers={hasActiveMCPServers}
