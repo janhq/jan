@@ -236,6 +236,9 @@ export default class JanProviderWeb extends AIEngine {
         content: msg.content ?? '',
       }))
 
+      // Deep Research flag is passed from web-app (useChat) via params; forward to Jan API
+      const deepResearch = (opts as any)?.deep_research
+
       const janRequest = {
         model: modelId,
         messages: janMessages,
@@ -249,6 +252,7 @@ export default class JanProviderWeb extends AIEngine {
         stop: opts.stop ?? undefined,
         tools: opts.tools ?? undefined,
         tool_choice: opts.tool_choice ?? undefined,
+        ...(deepResearch !== undefined ? { deep_research: deepResearch } : {}),
       }
 
       if (opts.stream) {

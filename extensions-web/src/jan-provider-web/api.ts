@@ -75,6 +75,10 @@ interface JanModelCatalogResponse {
     [key: string]: unknown
   }
   supports_images?: boolean
+  supports_embeddings?: boolean
+  supports_reasoning?: boolean
+  supports_audio?: boolean
+  supports_video?: boolean
   [key: string]: unknown
 }
 
@@ -99,6 +103,7 @@ export interface JanChatCompletionRequest {
   stop?: string | string[]
   tools?: any[]
   tool_choice?: any
+  deep_research?: boolean
 }
 
 export interface JanChatCompletionChoice {
@@ -368,6 +373,16 @@ function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null):
   if (parameters.includes('vision') || catalog.supports_images) {
     capabilities.add('vision')
   }
+
+  if (catalog.supports_reasoning) {
+    capabilities.add('reasoning')
+  }
+
+  // Debug log - remove after testing
+  console.log('[deriveCapabilities]', catalog.id, { 
+    supports_reasoning: catalog.supports_reasoning, 
+    capabilities: Array.from(capabilities) 
+  })
 
   return Array.from(capabilities)
 }

@@ -21,8 +21,6 @@ import {
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
-  IconWorld,
-  IconAtom,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -30,6 +28,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconCheck,
+  IconZoomScan,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -51,6 +50,8 @@ import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import { ExtensionTypeEnum, MCPExtension, fs, RAGExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useDeepResearch } from '@/hooks/useDeepResearch'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -124,6 +125,45 @@ const ChatInput = ({
   )
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
+  
+  // Deep Research mode state
+  const deepResearchEnabled = useDeepResearch((state) => state.enabled)
+  const toggleDeepResearch = useDeepResearch((state) => state.toggleDeepResearch)
+  
+  // Check if the selected model supports reasoning (required for Deep Research)
+  const modelSupportsReasoning = useMemo(
+    () => selectedModel?.capabilities?.includes('reasoning') ?? false,
+    [selectedModel?.capabilities]
+  )
+  
+  // Web Search tools management - for Deep Research integration
+  const WEB_SEARCH_TOOL_NAMES = ['google_search', 'scrape']
+  const {
+    setToolDisabledForThread,
+    setDefaultDisabledTools,
+    getDefaultDisabledTools,
+  } = useToolAvailable()
+  
+  const webSearchTools = useMemo(
+    () => tools.filter((tool) => WEB_SEARCH_TOOL_NAMES.includes(tool.name)),
+    [tools]
+  )
+  
+  // Force enable web search when Deep Research is enabled
+  useEffect(() => {
+    if (deepResearchEnabled && webSearchTools.length > 0) {
+      webSearchTools.forEach((tool) => {
+        if (initialMessage) {
+          const currentDefaults = getDefaultDisabledTools()
+          const toolKey = `${tool.server}::${tool.name}`
+          setDefaultDisabledTools(currentDefaults.filter((key) => key !== toolKey))
+        } else if (currentThreadId) {
+          setToolDisabledForThread(currentThreadId, tool.server, tool.name, true)
+        }
+      })
+    }
+  }, [deepResearchEnabled, webSearchTools, initialMessage, currentThreadId, setToolDisabledForThread, setDefaultDisabledTools, getDefaultDisabledTools])
+
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
@@ -208,7 +248,9 @@ const ChatInput = ({
       true,
       attachments.length > 0 ? attachments : undefined,
       projectId,
-      updateAttachmentProcessing
+      updateAttachmentProcessing,
+      undefined, // continueFromMessageId
+      deepResearchEnabled && modelSupportsReasoning // deep_research flag
     )
   }
 
@@ -1117,6 +1159,7 @@ const ChatInput = ({
                       }
                       initialMessage={initialMessage}
                       MCPToolComponent={MCPToolComponent}
+                      deepResearchEnabled={deepResearchEnabled}
                     />
                   ) : (
                     // Use default tools dropdown
@@ -1175,36 +1218,44 @@ const ChatInput = ({
                       </Tooltip>
                     </TooltipProvider>
                   ))}
-                {selectedModel?.capabilities?.includes('web_search') && (
+                {/* Deep Research Button - Only shown for models with reasoning capability */}
+                {modelSupportsReasoning && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconWorld
+                        <div
+                          onClick={toggleDeepResearch}
+                          className={cn(
+                            'h-7 px-2 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1.5 cursor-pointer ml-1',
+                            deepResearchEnabled
+                              ? 'bg-accent/20 text-accent hover:bg-accent/30'
+                              : 'hover:bg-main-view-fg/10'
+                          )}
+                        >
+                          <IconZoomScan
                             size={18}
-                            className="text-main-view-fg/50"
+                            className={cn(
+                              deepResearchEnabled
+                                ? 'text-accent'
+                                : 'text-main-view-fg/50'
+                            )}
                           />
+                          <span className={cn(
+                            'text-sm font-medium',
+                            deepResearchEnabled
+                              ? 'text-accent'
+                              : 'text-main-view-fg/50'
+                          )}>
+                            {t('deepResearch')}
+                          </span>
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {selectedModel?.capabilities?.includes('reasoning') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconAtom
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('reasoning')}</p>
+                        <p>
+                          {deepResearchEnabled
+                            ? t('deepResearchEnabled')
+                            : t('deepResearchDisabled')}
+                        </p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
