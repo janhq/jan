@@ -92,6 +92,10 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         }
     }
 
+    {
+        let mut pids = state.mcp_server_pids.lock().await;
+        pids.remove(&name);
+    }
     // Delete lock file if this is Jan Browser MCP and we have a port
     if name == "Jan Browser MCP" {
         if let Some(port) = bridge_port {

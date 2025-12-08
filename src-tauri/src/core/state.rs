@@ -29,6 +29,7 @@ pub struct AppState {
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
     pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
     pub background_cleanup_handle: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
+    pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl RunningServiceEnum {
