@@ -75,6 +75,10 @@ interface JanModelCatalogResponse {
     [key: string]: unknown
   }
   supports_images?: boolean
+  supports_embeddings?: boolean
+  supports_reasoning?: boolean
+  supports_audio?: boolean
+  supports_video?: boolean
   [key: string]: unknown
 }
 
@@ -99,6 +103,7 @@ export interface JanChatCompletionRequest {
   stop?: string | string[]
   tools?: any[]
   tool_choice?: any
+  deep_research?: boolean
 }
 
 export interface JanChatCompletionChoice {
@@ -187,6 +192,14 @@ export async function getModels(options?: { forceRefresh?: boolean }): Promise<J
       )
 
       modelsCache = models
+      
+      // Store models in localStorage for default model selection
+      try {
+        localStorage.setItem('jan-models', JSON.stringify(models))
+      } catch (storageError) {
+        console.warn('Failed to store models in localStorage:', storageError)
+      }
+      
       return models
     })()
 
@@ -369,6 +382,16 @@ function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null):
     capabilities.add('vision')
   }
 
+  if (catalog.supports_reasoning) {
+    capabilities.add('reasoning')
+  }
+
+  // Debug log - remove after testing
+  console.log('[deriveCapabilities]', catalog.id, { 
+    supports_reasoning: catalog.supports_reasoning, 
+    capabilities: Array.from(capabilities) 
+  })
+
   return Array.from(capabilities)
 }
 
@@ -378,4 +401,35 @@ function deriveCategoryFromModelId(modelId: string): string {
     return maybeCategory || 'uncategorized'
   }
   return 'uncategorized'
+}
+
+/**
+ * Gets the default model ID by selecting the model with:
+ * 1. Lowest category_order_number
+ * 2. Within that category, lowest model_order_number
+ * @returns The default model ID or 'jan-v1-4b' as fallback
+ */
+export async function getDefaultModelId(): Promise<string> {
+  try {
+    const models = await getModels()
+    
+    if (!models || models.length === 0) {
+      return 'jan-v1-4b'
+    }
+
+    // Sort by category_order_number (ascending), then model_order_number (ascending)
+    const sortedModels = [...models].sort((a, b) => {
+      const categoryDiff = (a.category_order_number ?? Number.MAX_SAFE_INTEGER) - 
+                          (b.category_order_number ?? Number.MAX_SAFE_INTEGER)
+      if (categoryDiff !== 0) return categoryDiff
+      
+      return (a.model_order_number ?? Number.MAX_SAFE_INTEGER) - 
+             (b.model_order_number ?? Number.MAX_SAFE_INTEGER)
+    })
+
+    return sortedModels[0].id
+  } catch (error) {
+    console.error('Failed to get default model:', error)
+    return 'jan-v1-4b'
+  }
 }

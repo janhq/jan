@@ -477,7 +477,8 @@ export const useChat = () => {
         fileName: string,
         status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
       ) => void,
-      continueFromMessageId?: string
+      continueFromMessageId?: string,
+      deepResearch?: boolean
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
@@ -785,7 +786,8 @@ export const useChat = () => {
             {
               ...modelSettings,
               ...(currentAssistant?.parameters || {}),
-            } as unknown as Record<string, object>
+              ...(deepResearch ? { deep_research: true } : {}),
+            }
           )
 
           if (!completion) throw new Error('No completion received')

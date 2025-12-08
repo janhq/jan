@@ -22,4 +22,5 @@ export const localStorageKey = {
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   threadManagement: 'thread-management',
+  deepResearch: 'deep-research',
 }
