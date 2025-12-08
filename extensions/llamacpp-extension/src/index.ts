@@ -351,21 +351,29 @@ export default class llamacpp_extension extends AIEngine {
             logger.warn(
               `Migration from '${storedBackendType}' to '${mappedNewBackendType}' skipped: New type not available in supported backends. Using old preference for now.`
             )
+            // Keep the original type if new type not available
+            effectiveStoredBackendType = storedBackendType
           }
         }
-        // Find the latest version of the stored backend type
+
+        // Use effectiveStoredBackendType (which is now the migrated type)
         const preferredBackendString = this.findLatestVersionForBackend(
           version_backends,
-          effectiveStoredBackendType
+          effectiveStoredBackendType // Use the effective (migrated) type here
         )
+
         if (preferredBackendString) {
-          bestAvailableBackendString = preferredBackendString
+          // The returned string has the original asset name, we need to normalize it
+          const [version, backend] = preferredBackendString.split('/')
+          const normalizedBackend = mapOldBackendToNew(backend)
+          bestAvailableBackendString = `${version}/${normalizedBackend}`
+
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
         } else {
           logger.warn(
-            `Stored backend type '${storedBackendType}' not available, falling back to best backend`
+            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
@@ -414,16 +422,17 @@ export default class llamacpp_extension extends AIEngine {
           savedBackendSetting &&
           savedBackendSetting !== originalDefaultBackendValue
         ) {
-          initialUiDefault = savedBackendSetting
-          // Store the backend type from the saved setting only if different
-          const [, backendType] = savedBackendSetting.split('/')
-          if (backendType) {
+          const [savedVersion, savedBackend] = savedBackendSetting.split('/')
+          if (savedVersion && savedBackend) {
+            const normalizedBackend = mapOldBackendToNew(savedBackend)
+            initialUiDefault = `${savedVersion}/${normalizedBackend}`
+
+            // Store the backend type from the saved setting only if different
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== normalizedBackend) {
+              this.setStoredBackendType(normalizedBackend)
               logger.info(
-                `Stored backend type preference from saved setting: ${effectiveBackendType}`
+                `Stored backend type preference from saved setting: ${normalizedBackend}`
               )
             }
           }
@@ -433,11 +442,10 @@ export default class llamacpp_extension extends AIEngine {
           const [, backendType] = bestAvailableBackendString.split('/')
           if (backendType) {
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
               logger.info(
-                `Stored backend type preference from best available: ${effectiveBackendType}`
+                `Stored backend type preference from best available: ${backendType}`
               )
             }
           }
