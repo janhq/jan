@@ -137,11 +137,15 @@ export function DownloadButtonPlaceholder({
       )}
       {isDownloaded ? (
         <Button
+          variant="link"
           size="sm"
+          className="p-0"
           onClick={() => handleUseModel(modelId)}
           data-test-id={`hub-model-${modelId}`}
         >
-          {t('hub:use')}
+          <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+            {t('hub:newChat')}
+          </div>
         </Button>
       ) : (
         <Button

@@ -240,7 +240,6 @@ pub async fn start_mcp_server<R: Runtime>(
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
     let active_servers_state = app_state.mcp_active_servers.clone();
-    let mcp_settings = app_state.mcp_settings.clone();
 
     // Store active server config for restart purposes
     store_active_server_config(&active_servers_state, &name, &config).await;

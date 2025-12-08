@@ -207,7 +207,7 @@ const SettingsMenu = () => {
 
                 {/* Sub-menu for model providers */}
                 {menu.hasSubMenu && expandedProviders && (
-                  <div className="ml-2 mt-1 space-y-1 first-step-setup-remote-provider">
+                  <div className="ml-2 mt-1 space-y-1">
                     {activeProviders.map((provider) => {
                       const isActive = matches.some(
                         (match) =>

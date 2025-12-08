@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import { useTranslation } from '@/i18n'
 
 type SearchParams = {
   repo: string
@@ -49,6 +50,7 @@ function HubModelDetail() {
 }
 
 function HubModelDetailContent() {
+  const { t } = useTranslation()
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
@@ -455,12 +457,16 @@ function HubModelDetailContent() {
                                   if (isDownloaded) {
                                     return (
                                       <Button
+                                        variant="link"
                                         size="sm"
+                                        className="p-0"
                                         onClick={() =>
                                           handleUseModel(variant.model_id)
                                         }
                                       >
-                                        Use
+                                        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+                                          {t('hub:newChat')}
+                                        </div>
                                       </Button>
                                     )
                                   }

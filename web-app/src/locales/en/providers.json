@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Choose a Provider",
-    "chooseProviderContent": "Pick the provider you want to use, make sure you have access to an API key for it.",
-    "getApiKeyTitle": "Get Your API Key",
-    "getApiKeyContent": "Log into the provider's dashboard to find or generate your API key.",
-    "insertApiKeyTitle": "Insert Your API Key",
-    "insertApiKeyContent": "Paste your API key here to connect and activate the provider.",
-    "back": "Back",
-    "close": "Close",
-    "last": "Finish",
-    "next": "Next",
-    "skip": "Skip"
-  },
   "refreshModelsError": "Provider must have base URL and API key configured to fetch models.",
   "refreshModelsSuccess": "Added {{count}} new model(s) from {{provider}}.",
   "noNewModels": "No new models found. All available models are already added.",
