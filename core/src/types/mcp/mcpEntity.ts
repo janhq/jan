@@ -35,4 +35,7 @@ export interface MCPToolComponentProps {
 
   /** Function to toggle a tool's enabled/disabled state */
   onToolToggle: (toolName: string, enabled: boolean) => void
+
+  /** Whether Deep Research mode is currently enabled (optional) */
+  deepResearchEnabled?: boolean
 }

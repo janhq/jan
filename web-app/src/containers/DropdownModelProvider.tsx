@@ -532,7 +532,7 @@ const DropdownModelProvider = ({
             )}
             <span
               className={cn(
-                'text-main-view-fg/80 truncate leading-normal',
+                'text-sm text-main-view-fg/80 truncate leading-normal',
                 !selectedModel?.id && 'text-main-view-fg/50'
               )}
             >

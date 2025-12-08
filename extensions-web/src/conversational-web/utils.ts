@@ -2,6 +2,44 @@ import { Thread, ThreadAssistantInfo, ThreadMessage, ContentType } from '@janhq/
 import { Conversation, ConversationResponse, ConversationItem, ConversationItemContent, ConversationMetadata } from './types'
 import { DEFAULT_ASSISTANT } from './const'
 
+/**
+ * Gets the default model ID from localStorage or returns fallback
+ * The model list should be synced to localStorage by jan-provider-web
+ */
+function getDefaultModelIdFromStorage(): { id: string; engine: string } {
+  try {
+    // Try to get models from localStorage (set by jan-provider-web)
+    const modelsJson = localStorage.getItem('jan-models')
+    if (modelsJson) {
+      const models = JSON.parse(modelsJson)
+      if (Array.isArray(models) && models.length > 0) {
+        // Sort by category_order_number, then model_order_number
+        const sortedModels = [...models].sort((a: any, b: any) => {
+          const categoryDiff = (a.category_order_number ?? Number.MAX_SAFE_INTEGER) - 
+                              (b.category_order_number ?? Number.MAX_SAFE_INTEGER)
+          if (categoryDiff !== 0) return categoryDiff
+          
+          return (a.model_order_number ?? Number.MAX_SAFE_INTEGER) - 
+                 (b.model_order_number ?? Number.MAX_SAFE_INTEGER)
+        })
+        
+        return {
+          id: sortedModels[0].id,
+          engine: 'jan'
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to get default model from storage:', error)
+  }
+  
+  // Fallback
+  return {
+    id: 'jan-v1-4b',
+    engine: 'jan'
+  }
+}
+
 export class ObjectParser {
   static threadToConversation(thread: Thread): Conversation {
     const modelName = thread.assistants?.[0]?.model?.id || undefined
@@ -36,11 +74,13 @@ export class ObjectParser {
         },
       })
     } else {
+      // Get default model with lowest category_order_number and model_order_number
+      const defaultModel = getDefaultModelIdFromStorage()
       assistants.push({
         ...DEFAULT_ASSISTANT,
         model: {
-          id: 'jan-v1-4b',
-          engine: 'jan',
+          id: defaultModel.id,
+          engine: defaultModel.engine,
         },
       })
     }
