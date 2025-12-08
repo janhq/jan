@@ -325,7 +325,7 @@ export async function downloadBackend(
         source === 'github'
           ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
       proxy: proxyConfig,
       model_id: taskId,
     })
@@ -457,17 +457,18 @@ async function _fetchGithubReleases(
   }
 }
 
-// accept backendDir (full path) and cuda version (e.g. '11.7' or '12.0')
+// accept backendDir (full path) and cuda version (e.g. '11.7' or '12.0' or '13.0')
 async function _isCudaInstalled(
   backendDir: string,
   version: string
 ): Promise<boolean> {
   const sysInfo = await getSystemInfo()
-  const os_type = sysInfo.os_type // not sure the reason behind this naming convention
+  const os_type = sysInfo.os_type
+
   const libnameLookup = {
     'windows-11.7': `cudart64_110.dll`,
     'windows-12.0': `cudart64_12.dll`,
-    'windows-13.0': `cudart64_130.dll`,
+    'windows-13.0': `cudart64_13.dll`,
     'linux-11.7': `libcudart.so.11.0`,
     'linux-12.0': `libcudart.so.12`,
     'linux-13.0': `libcudart.so.13`,
