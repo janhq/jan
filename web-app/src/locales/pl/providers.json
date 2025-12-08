@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Wybierz Dostawcę",
-    "chooseProviderContent": "Wybierz swojego dostawcę i upewnij się, że masz odpowiedni klucz API.",
-    "getApiKeyTitle": "Zdobądź Swój Klucz API",
-    "getApiKeyContent": "Zaloguj się do panelu sterowania swojego dostawcy i znajdź lub wygeneruj swój klucz API.",
-    "insertApiKeyTitle": "Wprowadź Swój Klucz API",
-    "insertApiKeyContent": "Wprowadź swój klucz API, następnie połącz się z dostawcą i go aktywuj.",
-    "back": "Wstecz",
-    "close": "Zamknij",
-    "last": "Ostatni",
-    "next": "Dalej",
-    "skip": "Pomiń"
-  },
   "refreshModelsError": "Dostawca musi mieć ustawiony adres URL i klucz API aby pobrać modele.",
   "refreshModelsSuccess": "Dodano {{count}} model-e/i od dostawcy {{provider}}.",
   "noNewModels": "Nie znaleziono nowych modeli. Wszystkie modele są już dodane.",

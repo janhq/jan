@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Wähle einen Anbieter",
-    "chooseProviderContent": "Wähle den Anbieter aus, den Du verwenden möchtest, und stelle sicher, daß Du Zugriff auf einen API-Schlüssel dafür hast.",
-    "getApiKeyTitle": "Hole Dir Deinen API-Schlüssel",
-    "getApiKeyContent": "Melde Dich bei dem Anbieter an, um Deinen API-Schlüssel zu finden oder zu generieren.",
-    "insertApiKeyTitle": "Gebe Deinen API-Schlüssel ein",
-    "insertApiKeyContent": "Füge hier Deinen API-Schlüssel ein, um eine Verbindung zum Anbieter herzustellen und ihn zu aktivieren.",
-    "back": "Zurück",
-    "close": "Schließen",
-    "last": "Abschließen",
-    "next": "Nächster",
-    "skip": "Überspringen"
-  },
   "refreshModelsError": "Der Anbieter muss über eine Basis-URL und einen API-Schlüssel verfügen, um Modelle abzurufen.",
   "refreshModelsSuccess": "{{count}} neue(s) Modell(e) hinzugefügt von {{provider}}.",
   "noNewModels": "Keine neuen Modelle gefunden. Alle verfügbaren Modelle sind bereits hinzugefügt.",
