@@ -2,6 +2,8 @@
 @import 'tw-animate-css';
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
+@source '../node_modules/streamdown/dist/*.js';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -51,6 +53,10 @@
   --app-accent-fg: '';
   --app-destructive: '';
   --app-destructive-fg: '';
+
+  /* Shimmer component compatibility */
+  --color-background: var(--color-main-view);
+  --color-muted-foreground: color-mix(in srgb, var(--color-main-view-fg) 60%, transparent);
 }
 
 @layer base {
