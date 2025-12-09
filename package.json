@@ -6,6 +6,7 @@
     "packages": [
       "core",
       "web-app",
+      "app",
       "extensions-web"
     ]
   },
