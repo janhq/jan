@@ -3465,6 +3465,7 @@ __metadata:
   resolution: "@jan/extensions-web@workspace:extensions-web"
   dependencies:
     "@janhq/core": "workspace:*"
+    "@janhq/mcp-web-client": "npm:0.14.3"
     "@modelcontextprotocol/sdk": "npm:1.17.5"
     "@tabler/icons-react": "npm:^3.34.0"
     "@types/react": "npm:19.1.2"
@@ -3507,6 +3508,13 @@ __metadata:
     react: 19.0.0
   languageName: unknown
   linkType: soft
+
+"@janhq/mcp-web-client@npm:0.14.2":
+  version: 0.14.2
+  resolution: "@janhq/mcp-web-client@npm:0.14.2"
+  checksum: 10c0/bafaea36a850ccd70cb914a13cee5efc8bd684fced25d696117e0496c2327e0e7842a9110c308f7db393be76c074003e5c49957c108172df65a07f03ed1d8e85
+  languageName: node
+  linkType: hard
 
 "@janhq/web-app@workspace:web-app":
   version: 0.0.0-use.local
