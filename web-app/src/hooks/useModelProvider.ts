@@ -103,7 +103,11 @@ export const useModelProvider = create<ModelProviderState>()(
               return {
                 ...model,
                 settings: settings,
-                capabilities: existingModel?.capabilities || model.capabilities,
+                // Prefer fresh capabilities from provider; fall back to persisted if missing
+                capabilities:
+                  (Array.isArray(model.capabilities) && model.capabilities.length > 0
+                    ? model.capabilities
+                    : existingModel?.capabilities),
                 displayName: existingModel?.displayName || model.displayName,
               }
             })

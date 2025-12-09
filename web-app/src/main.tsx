@@ -1,50 +1,12 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { localStorageKey } from '@/constants/localStorage'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
 
 import './index.css'
 import './i18n'
-
-// Clean up localStorage on every page load, preserving auth tokens and core settings
-const cleanupLocalStorage = () => {
-  // Keys to preserve
-  const keysToPreserve = [
-    'jan_access_token',
-    'jan_auth_provider',
-    'jan_refresh_token',
-    'jan_token_expiry',
-    localStorageKey.lastUsedModel,
-    localStorageKey.theme,
-    localStorageKey.settingAppearance,
-    localStorageKey.settingGeneral, // keep language, browser extension ID, etc.
-  ]
-
-  // Save values of keys to preserve
-  const preservedValues: Record<string, string> = {}
-  keysToPreserve.forEach((key) => {
-    const value = localStorage.getItem(key)
-    if (value !== null) {
-      preservedValues[key] = value
-    }
-  })
-
-  // Clear all localStorage
-  localStorage.clear()
-
-  // Restore preserved values
-  Object.entries(preservedValues).forEach(([key, value]) => {
-    localStorage.setItem(key, value)
-  })
-
-  console.log('LocalStorage cleaned up, preserved keys:', Object.keys(preservedValues))
-}
-
-// Run cleanup on every page load
-cleanupLocalStorage()
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {

@@ -22,6 +22,7 @@ import {
 } from './api'
 import { syncJanModelsLocalStorage } from './helpers'
 import { ApiError } from '../shared/types/errors'
+import { MODEL_PROVIDER_STORAGE_KEY } from './const'
 
 export default class JanProviderWeb extends AIEngine {
   readonly provider = 'jan'
@@ -34,7 +35,7 @@ export default class JanProviderWeb extends AIEngine {
       // Initialize authentication
       await initializeJanApi()
       // Check and sync stored Jan models against latest catalog data
-      // await this.validateJanModelsLocalStorage()
+      await this.validateJanModelsLocalStorage()
 
       console.log('Jan Provider Extension loaded successfully')
     } catch (error) {
@@ -54,14 +55,40 @@ export default class JanProviderWeb extends AIEngine {
       const storageUpdated = syncJanModelsLocalStorage(remoteModels)
 
       if (storageUpdated) {
+        const fingerprint = localStorage.getItem(MODEL_PROVIDER_STORAGE_KEY) ?? ''
+        const shouldReload = this.shouldReloadAfterSync(fingerprint)
         console.log(
-          'Synchronized Jan models in localStorage with server capabilities; reloading...'
+          'Synchronized Jan models in localStorage with server capabilities; reloading...',
+          { shouldReload, fingerprintLength: fingerprint.length }
         )
-        window.location.reload()
+        if (shouldReload) {
+          window.location.reload()
+        }
       }
     } catch (error) {
       console.error('Failed to check Jan models:', error)
     }
+  }
+
+  private shouldReloadAfterSync(fingerprint?: string): boolean {
+    if (typeof window === 'undefined') {
+      console.log('[shouldReloadAfterSync] window undefined, skipping reload')
+      return false
+    }
+
+    const reloadKey = 'jan-model-sync-reloaded'
+    const lastFingerprint = sessionStorage.getItem(reloadKey)
+    if (lastFingerprint && fingerprint && lastFingerprint === fingerprint) {
+      console.log('[shouldReloadAfterSync] reload already performed for this fingerprint')
+      return false
+    }
+
+    sessionStorage.setItem(reloadKey, fingerprint ?? 'true')
+    console.log('[shouldReloadAfterSync] first sync for fingerprint; will reload', {
+      lastFingerprintLength: lastFingerprint?.length ?? 0,
+      fingerprintLength: fingerprint?.length ?? 0,
+    })
+    return true
   }
 
   override async onUnload() {
