@@ -63,7 +63,7 @@ export default function AddEditAssistant({
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const emojiPickerTriggerRef = useRef<HTMLDivElement>(null)
   const [nameError, setNameError] = useState<string | null>(null)
-  const [toolStepsInput, setToolStepsInput] = useState('20')
+  // const [toolStepsInput, setToolStepsInput] = useState('20')
 
   // Handle click outside emoji picker or trigger
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function AddEditAssistant({
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
       setShowEmojiPicker(false)
-      setToolStepsInput(String(initialData.tool_steps ?? 20))
+      // setToolStepsInput(String(initialData.tool_steps ?? 20))
 
       // Convert parameters object to arrays of keys and values
       const keys = Object.keys(initialData.parameters || {})
@@ -128,7 +128,7 @@ export default function AddEditAssistant({
     setParamsTypes(['string'])
     setNameError(null)
     setShowEmojiPicker(false)
-    setToolStepsInput('20')
+    // setToolStepsInput('20')
   }
 
   const handleParameterChange = (
@@ -223,7 +223,7 @@ export default function AddEditAssistant({
       }
     })
 
-    const parsedToolSteps = Number(toolStepsInput)
+    // const parsedToolSteps = Number(toolStepsInput)
     const assistant: Assistant = {
       avatar,
       id: initialData?.id || Math.random().toString(36).substring(7),
@@ -232,7 +232,7 @@ export default function AddEditAssistant({
       description,
       instructions,
       parameters: parameters || {},
-      tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
+      // tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
     }
     onSave(assistant)
     onOpenChange(false)
@@ -348,7 +348,7 @@ export default function AddEditAssistant({
             <div className="flex items-center justify-between">
               <label className="text-sm">{t('common:settings')}</label>
             </div>
-            <div className="flex justify-between items-center gap-2">
+            {/* <div className="flex justify-between items-center gap-2">
               <div className="w-full">
                 <p className="text-sm">{t('assistants:maxToolSteps')}</p>
               </div>
@@ -363,7 +363,7 @@ export default function AddEditAssistant({
                 placeholder="20"
                 className="w-18 text-right"
               />
-            </div>
+            </div> */}
           </div>
 
           <div className="space-y-2 my-4">

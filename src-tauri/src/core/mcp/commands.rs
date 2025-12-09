@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
-    helpers::{restart_active_mcp_servers, start_mcp_server_with_restart, stop_mcp_servers},
+    helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -36,8 +36,8 @@ pub async fn activate_mcp_server<R: Runtime>(
 ) -> Result<(), String> {
     let servers: SharedMcpServers = state.mcp_servers.clone();
 
-    // Use the modified start_mcp_server_with_restart that returns first attempt result
-    start_mcp_server_with_restart(app, servers, name, config, Some(3)).await
+    // Use the modified start_mcp_server that returns first attempt result
+    start_mcp_server(app, servers, name, config).await
 }
 
 #[tauri::command]
@@ -62,26 +62,12 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         None
     };
 
-    // First, mark server as manually deactivated to prevent restart
-    // Remove from active servers list to prevent restart
+    // First, mark server as manually deactivated
+    // Remove from active servers list
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.remove(&name);
         log::info!("Removed MCP server {name} from active servers list");
-    }
-
-    // Mark as not successfully connected to prevent restart logic
-    {
-        let mut connected = state.mcp_successfully_connected.lock().await;
-        connected.insert(name.clone(), false);
-        log::info!("Marked MCP server {name} as not successfully connected");
-    }
-
-    // Reset restart count
-    {
-        let mut counts = state.mcp_restart_counts.lock().await;
-        counts.remove(&name);
-        log::info!("Reset restart count for MCP server {name}");
     }
 
     // Now remove and stop the server
@@ -106,6 +92,10 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         }
     }
 
+    {
+        let mut pids = state.mcp_server_pids.lock().await;
+        pids.remove(&name);
+    }
     // Delete lock file if this is Jan Browser MCP and we have a port
     if name == "Jan Browser MCP" {
         if let Some(port) = bridge_port {
@@ -118,14 +108,27 @@ pub async fn deactivate_mcp_server<R: Runtime>(
     }
 
     log::info!("Server {name} stopped successfully and marked as deactivated.");
+
+    // Emit mcp-update event so frontend can refresh tools list
+    if let Err(e) = app.emit(
+        "mcp-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-update event: {e}");
+    }
+
     Ok(())
 }
 
 #[tauri::command]
 pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), String> {
+    use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+
     let servers = state.mcp_servers.clone();
-    // Stop the servers
-    stop_mcp_servers(state.mcp_servers.clone()).await?;
+
+    stop_mcp_servers_with_context(&app, &state, ShutdownContext::ManualRestart).await?;
 
     // Restart only previously active servers (like cortex)
     restart_active_mcp_servers(&app, servers).await?;
@@ -136,26 +139,6 @@ pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_,
     Ok(())
 }
 
-/// Reset MCP restart count for a specific server (like cortex reset)
-#[tauri::command]
-pub async fn reset_mcp_restart_count(
-    state: State<'_, AppState>,
-    server_name: String,
-) -> Result<(), String> {
-    let mut counts = state.mcp_restart_counts.lock().await;
-
-    let count = match counts.get_mut(&server_name) {
-        Some(count) => count,
-        None => return Ok(()), // Server not found, nothing to reset
-    };
-
-    let old_count = *count;
-    *count = 0;
-    log::info!(
-        "MCP server {server_name} restart count reset from {old_count} to 0."
-    );
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn get_connected_servers(
@@ -444,6 +427,138 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
 
     serde_json::to_string_pretty(&config_value)
         .map_err(|e| format!("Failed to serialize MCP config: {e}"))
+}
+
+/// Check if error indicates extension not connected
+pub(crate) fn is_extension_not_connected_error(text: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "not connected to bridge",
+        "not responding to ping",
+        "extension not connected",
+    ];
+    const KEYWORD_PAIRS: &[(&str, &str)] = &[
+        ("browser", "not connected"),
+        ("browser", "not responding"),
+        ("tool", "not found"),
+    ];
+
+    let text_lower = text.to_lowercase();
+    PATTERNS.iter().any(|p| text_lower.contains(p))
+        || KEYWORD_PAIRS
+            .iter()
+            .any(|(a, b)| text_lower.contains(a) && text_lower.contains(b))
+}
+
+/// Extract text response from tool result
+fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
+    result
+        .content
+        .first()
+        .and_then(|c| c.as_text())
+        .map(|t| t.text.as_str())
+}
+
+/// Check if Jan Browser extension is connected via MCP
+#[tauri::command]
+pub async fn check_jan_browser_extension_connected(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let servers = state.mcp_servers.lock().await;
+    let service = match servers.get("Jan Browser MCP") {
+        Some(s) => s,
+        None => return Ok(false),
+    };
+
+    // Check available tools
+    let tools = match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+        Ok(Ok(tools)) if !tools.is_empty() => tools,
+        _ => return Ok(false),
+    };
+
+    let has_ping = tools.iter().any(|t| t.name == "ping");
+
+    // Try simple ping first if available
+    if has_ping {
+        match try_ping_tool(service).await {
+            PingResult::Connected => return Ok(true),
+            PingResult::NotConnected => return Ok(false),
+            PingResult::ToolNotAvailable => {
+                log::debug!("ping unavailable, trying browser_snapshot");
+            }
+        }
+    }
+
+    // Fallback to browser_snapshot
+    try_browser_snapshot_tool(service).await
+}
+
+enum PingResult {
+    Connected,
+    NotConnected,
+    ToolNotAvailable,
+}
+
+async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+    let result = timeout(
+        Duration::from_secs(3),
+        service.call_tool(CallToolRequestParam {
+            name: "ping".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if let Some(text) = get_result_text(&res) {
+                if text == "pong" {
+                    return PingResult::Connected;
+                }
+                if is_extension_not_connected_error(text) {
+                    return PingResult::NotConnected;
+                }
+            }
+            if res.is_error == Some(true) {
+                return PingResult::NotConnected;
+            }
+            PingResult::Connected
+        }
+        Ok(Err(e)) => {
+            if is_extension_not_connected_error(&e.to_string()) {
+                PingResult::NotConnected
+            } else {
+                PingResult::ToolNotAvailable
+            }
+        }
+        Err(_) => PingResult::NotConnected,
+    }
+}
+
+async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+    let result = timeout(
+        // Snapshot tool is very time-consuming
+        // Extend timeout to make sure the tool call has enough time to succeed
+        Duration::from_secs(20),
+        service.call_tool(CallToolRequestParam {
+            name: "browser_snapshot".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if res.is_error == Some(true) {
+                if let Some(text) = get_result_text(&res) {
+                    if is_extension_not_connected_error(text) {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(true)
+        }
+        Ok(Err(_)) | Err(_) => Ok(false),
+    }
 }
 
 #[tauri::command]

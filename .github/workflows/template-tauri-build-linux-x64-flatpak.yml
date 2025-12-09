@@ -149,12 +149,6 @@ jobs:
         run: |
           make build
 
-          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-          yarn tauri signer sign \
-          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-          "$APP_IMAGE"
-
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -178,14 +172,8 @@ jobs:
         id: packageinfo
         run: |
           cd ./src-tauri/target/release/bundle
-
-          if [ "${{ inputs.channel }}" != "stable" ]; then
-            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
-            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
-          else
-            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
-            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
-          fi
+          DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
+          DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
 
           echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
@@ -195,8 +183,8 @@ jobs:
         run: |
           cd ./src-tauri/target/release/bundle
           # Upload for tauri updater
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig
+          aws s3 cp ./deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
+          aws s3 cp ./deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/flatpak/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}.sig
 
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

@@ -196,6 +196,7 @@ fn test_download_item_with_ssl_proxy() {
         proxy: Some(proxy_config),
         sha256: None,
         size: None,
+        model_id: None,
     };
 
     assert!(download_item.proxy.is_some());
@@ -215,6 +216,7 @@ fn test_client_creation_with_ssl_settings() {
         proxy: Some(proxy_config),
         sha256: None,
         size: None,
+        model_id: None,
     };
 
     let header_map = HeaderMap::new();
@@ -262,6 +264,7 @@ fn test_download_item_creation() {
         proxy: None,
         sha256: None,
         size: None,
+        model_id: None,
     };
 
     assert_eq!(item.url, "https://example.com/file.tar.gz");

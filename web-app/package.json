@@ -37,7 +37,7 @@
     "@radix-ui/react-tooltip": "1.2.4",
     "@tabler/icons-react": "3.34.0",
     "@tailwindcss/vite": "4.1.4",
-    "@tanstack/react-router": "1.117.0",
+    "@tanstack/react-router": "^1.121.34",
     "@tanstack/react-router-devtools": "1.121.34",
     "@tanstack/react-virtual": "3.13.12",
     "@tauri-apps/api": "2.8.0",

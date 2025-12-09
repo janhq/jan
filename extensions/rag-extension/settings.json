@@ -7,6 +7,28 @@
     "controllerProps": { "value": true }
   },
   {
+    "key": "parse_mode",
+    "titleKey": "settings:attachments.parseMode",
+    "descriptionKey": "settings:attachments.parseModeDesc",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        { "name": "Auto", "value": "auto" },
+        { "name": "Include in chat", "value": "inline" },
+        { "name": "Ingest as embeddings", "value": "embeddings" },
+        { "name": "Ask every time", "value": "prompt" }
+      ]
+    }
+  },
+  {
+    "key": "auto_inline_context_ratio",
+    "titleKey": "settings:attachments.autoInlineThreshold",
+    "descriptionKey": "settings:attachments.autoInlineThresholdDesc",
+    "controllerType": "input",
+    "controllerProps": { "value": 0.75, "type": "number", "min": 0.05, "max": 1, "step": 0.05, "textAlign": "right" }
+  },
+  {
     "key": "max_file_size_mb",
     "titleKey": "settings:attachments.maxFile",
     "descriptionKey": "settings:attachments.maxFileDesc",
@@ -28,14 +50,14 @@
     "controllerProps": { "value": 0.3, "type": "number", "min": 0, "max": 1, "step": 0.01, "textAlign": "right" }
   },
   {
-    "key": "chunk_size_tokens",
+    "key": "chunk_size_chars",
     "titleKey": "settings:attachments.chunkSize",
     "descriptionKey": "settings:attachments.chunkSizeDesc",
     "controllerType": "input",
     "controllerProps": { "value": 512, "type": "number", "min": 64, "max": 8192, "step": 64, "textAlign": "right" }
   },
   {
-    "key": "overlap_tokens",
+    "key": "overlap_chars",
     "titleKey": "settings:attachments.chunkOverlap",
     "descriptionKey": "settings:attachments.chunkOverlapDesc",
     "controllerType": "input",

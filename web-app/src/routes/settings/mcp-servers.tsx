@@ -551,7 +551,7 @@ function MCPServersDesktop() {
                                   in your Chrome-based browser.
                                 </p>
                                 <a
-                                  href="https://github.com/menloresearch/jan-browser-extension"
+                                  href="https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal"
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-blue-500 hover:underline"

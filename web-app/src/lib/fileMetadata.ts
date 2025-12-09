@@ -8,6 +8,7 @@ export interface FileMetadata {
   type?: string
   size?: number
   chunkCount?: number
+  injectionMode?: 'inline' | 'embeddings'
 }
 
 const FILE_METADATA_START = '[ATTACHED_FILES]'
@@ -31,6 +32,7 @@ export function injectFilesIntoPrompt(
       if (file.type) parts.push(`type: ${file.type}`)
       if (typeof file.size === 'number') parts.push(`size: ${file.size}`)
       if (typeof file.chunkCount === 'number') parts.push(`chunks: ${file.chunkCount}`)
+      if (file.injectionMode) parts.push(`mode: ${file.injectionMode}`)
       return `- ${parts.join(', ')}`
     })
     .join('\n')
@@ -93,6 +95,10 @@ export function extractFilesFromPrompt(prompt: string): {
     }
     if (typeof chunkCount === 'number' && !Number.isNaN(chunkCount)) {
       fileObj.chunkCount = chunkCount;
+    }
+    const injectionMode = map['mode']
+    if (injectionMode === 'inline' || injectionMode === 'embeddings') {
+      fileObj.injectionMode = injectionMode
     }
     files.push(fileObj);
   }

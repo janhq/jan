@@ -1,6 +1,16 @@
 {
   "editServer": "编辑 MCP 服务器",
   "addServer": "添加 MCP 服务器",
+  "browserExtension": {
+    "connecting": {
+      "checking": "正在检查扩展状态..."
+    },
+    "notInstalled": {
+      "title": "Jan 在您的浏览器中完成任务",
+      "description": "安装扩展以授予 Jan 浏览器访问权限",
+      "getExtension": "获取扩展"
+    }
+  },
   "serverName": "服务器名称",
   "enterServerName": "输入服务器名称",
   "command": "命令",

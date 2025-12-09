@@ -567,11 +567,10 @@ function ProviderDetail() {
                                     size="sm"
                                     className={cn(
                                       'p-0',
-                                      isCheckingBackendUpdate &&
+                                      isCheckingBackendUpdate && 
                                       'pointer-events-none'
                                     )}
                                     onClick={handleCheckForBackendUpdate}
-                                    disabled={isCheckingBackendUpdate}
                                   >
                                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                                       <IconRefresh

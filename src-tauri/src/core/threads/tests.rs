@@ -1,6 +1,7 @@
 
 use super::commands::*;
 use super::helpers::should_use_sqlite;
+use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::future;
 use serde_json::json;
 use std::fs;
@@ -10,18 +11,9 @@ use tauri::test::{mock_app, MockRuntime};
 // Helper to create a mock app handle with a temp data dir
 fn mock_app_with_temp_data_dir() -> (tauri::App<MockRuntime>, PathBuf) {
     let app = mock_app();
-    // Create a unique test directory to avoid race conditions between parallel tests
-    let unique_id = std::thread::current().id();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let data_dir = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(format!("test-data-{unique_id:?}-{timestamp}"));
+    // Get the actual data dir that will be used by storage code
+    let data_dir = get_jan_data_folder_path(app.handle().clone());
     println!("Mock app data dir: {}", data_dir.display());
-    // Ensure the unique test directory exists
-    let _ = fs::create_dir_all(&data_dir);
     (app, data_dir)
 }
 
@@ -449,13 +441,6 @@ async fn test_concurrent_message_operations() {
 #[tokio::test]
 async fn test_empty_thread_list() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
-    // Clean up any leftover test data
-    let test_data_threads = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("test-data")
-        .join("threads");
-    let _ = fs::remove_dir_all(&test_data_threads);
-
     let threads = list_threads(app.handle().clone()).await.unwrap();
     assert_eq!(threads.len(), 0);
     let _ = fs::remove_dir_all(data_dir);

@@ -373,5 +373,9 @@
       "title": "Обсуждение удалено",
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
     }
-  }
+  },
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Встроено для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое вставленного файла"
 }

@@ -1,6 +1,16 @@
 {
   "editServer": "Upravit MCP server",
   "addServer": "Přidat MCP server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Kontrola stavu rozšíření..."
+    },
+    "notInstalled": {
+      "title": "Jan dokončuje úkoly ve vašem prohlížeči",
+      "description": "Nainstalujte rozšíření pro přístup Jana k prohlížeči",
+      "getExtension": "Získat rozšíření"
+    }
+  },
   "serverName": "Název serveru",
   "enterServerName": "Zadejte název serveru",
   "command": "Příkaz",
