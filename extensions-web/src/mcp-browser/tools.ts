@@ -12,7 +12,7 @@ export const BROWSER_SERVER_NAME = 'Jan Browser Extension'
  * Get browser tool names dynamically from schemas
  */
 export function getBrowserToolNames(): string[] {
-  return getToolSchemas().map((schema) => schema.name)
+  return getToolSchemas().map((schema: ToolSchema) => schema.name)
 }
 
 /**

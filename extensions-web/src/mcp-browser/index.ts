@@ -227,12 +227,12 @@ export default class MCPBrowserExtension extends MCPExtension {
       await this.detectExtensionState()
     })
 
-    this.client.on('error', (error) => {
+    this.client.on('error', (error: Error) => {
       console.error('Browser extension error:', error)
       this.setConnectionState('error')
     })
 
-    this.client.on('stateChange', (state) => {
+    this.client.on('stateChange', (state: ConnectionState) => {
       this.setConnectionState(state)
     })
 
@@ -360,24 +360,24 @@ export default class MCPBrowserExtension extends MCPExtension {
 
       return {
         error: toolResult.isError ? (toolResult.content[0]?.text || 'Tool call failed') : '',
-        content: toolResult.content.map((item) => ({
+        content: toolResult.content.map((item: { type?: string; text?: string }) => ({
           type: item.type || 'text',
           text: item.text || '',
         })),
       }
-    } catch (error) {
+    } catch (err) {
       let errorMessage: string
 
-      if (error instanceof TimeoutError) {
-        errorMessage = `Tool call timed out after ${error.timeoutMs}ms`
-      } else if (error instanceof ToolCallError) {
-        errorMessage = error.toolError || 'Tool call failed'
-      } else if (error instanceof NotConnectedError) {
+      if (err instanceof TimeoutError) {
+        errorMessage = `Tool call timed out after ${(err as TimeoutError).timeoutMs}ms`
+      } else if (err instanceof ToolCallError) {
+        errorMessage = (err as ToolCallError).toolError || 'Tool call failed'
+      } else if (err instanceof NotConnectedError) {
         errorMessage = 'Browser extension disconnected during tool call'
-      } else if (error instanceof ConnectionError) {
-        errorMessage = error.message
+      } else if (err instanceof ConnectionError) {
+        errorMessage = (err as Error).message
       } else {
-        errorMessage = error instanceof Error ? error.message : String(error)
+        errorMessage = err instanceof Error ? err.message : String(err)
       }
 
       return {

@@ -37,7 +37,7 @@
     "zustand": "5.0.3"
   },
   "dependencies": {
-    "@janhq/mcp-web-client": "0.14.3",
-    "@modelcontextprotocol/sdk": "1.17.5"
+    "@modelcontextprotocol/sdk": "1.17.5",
+    "mcp-web-client": "npm:@janhq/mcp-web-client@0.14.3"
   }
 }
