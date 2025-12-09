@@ -97,8 +97,10 @@ export interface JanChatCompletionRequest {
   temperature?: number
   max_tokens?: number
   top_p?: number
+  top_k?: number
   frequency_penalty?: number
   presence_penalty?: number
+  repetition_penalty?: number
   stream?: boolean
   stop?: string | string[]
   tools?: any[]

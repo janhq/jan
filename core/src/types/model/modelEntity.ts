@@ -145,6 +145,7 @@ export type ModelRuntimeParams = {
   stop?: string[]
   frequency_penalty?: number
   presence_penalty?: number
+  repetition_penalty?: number
   engine?: string
 }
 
