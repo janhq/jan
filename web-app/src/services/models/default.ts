@@ -199,7 +199,8 @@ export class DefaultModelsService implements ModelsService {
     id: string,
     modelPath: string,
     mmprojPath?: string,
-    hfToken?: string
+    hfToken?: string,
+    skipVerification?: boolean
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -212,7 +213,7 @@ export class DefaultModelsService implements ModelsService {
       /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
     )
 
-    if (modelUrlMatch) {
+    if (modelUrlMatch && !skipVerification) {
       const [, repoId, modelFilename] = modelUrlMatch
 
       try {

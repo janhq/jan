@@ -7,7 +7,7 @@ use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
 };
 use crate::core::app::models::AppConfiguration;
-use crate::core::mcp::helpers::clean_up_mcp_servers;
+use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
 
 #[tauri::command]
@@ -26,7 +26,17 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
     log::info!("Factory reset, removing data folder: {data_folder:?}");
 
     tauri::async_runtime::block_on(async {
-        clean_up_mcp_servers(&app_handle, state.clone()).await;
+        let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+
+        {
+            let mut active_servers = state.mcp_active_servers.lock().await;
+            active_servers.clear();
+        }
+
+        use crate::core::mcp::lockfile::cleanup_own_locks;
+        if let Err(e) = cleanup_own_locks(&app_handle) {
+            log::warn!("Failed to cleanup lock files: {}", e);
+        }
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {

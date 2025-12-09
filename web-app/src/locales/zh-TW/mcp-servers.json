@@ -1,6 +1,16 @@
 {
   "editServer": "編輯 MCP 伺服器",
   "addServer": "新增 MCP 伺服器",
+  "browserExtension": {
+    "connecting": {
+      "checking": "正在檢查擴充功能狀態..."
+    },
+    "notInstalled": {
+      "title": "Jan 在您的瀏覽器中完成任務",
+      "description": "安裝擴充功能以授予 Jan 瀏覽器存取權限",
+      "getExtension": "取得擴充功能"
+    }
+  },
   "serverName": "伺服器名稱",
   "enterServerName": "輸入伺服器名稱",
   "command": "指令",

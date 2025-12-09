@@ -1,6 +1,16 @@
 {
   "editServer": "Chỉnh sửa máy chủ MCP",
   "addServer": "Thêm máy chủ MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Đang kiểm tra trạng thái tiện ích..."
+    },
+    "notInstalled": {
+      "title": "Jan hoàn thành các tác vụ trong trình duyệt của bạn",
+      "description": "Cài đặt tiện ích để cho phép Jan truy cập trình duyệt",
+      "getExtension": "Tải tiện ích"
+    }
+  },
   "serverName": "Tên máy chủ",
   "enterServerName": "Nhập tên máy chủ",
   "command": "Lệnh",

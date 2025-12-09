@@ -1,6 +1,16 @@
 {
   "editServer": "MCP Server bearbeiten",
   "addServer": "MCP Server hinzufügen",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Erweiterungsstatus wird überprüft..."
+    },
+    "notInstalled": {
+      "title": "Jan erledigt Aufgaben in Ihrem Browser",
+      "description": "Installieren Sie die Erweiterung, um Jan Browserzugriff zu gewähren",
+      "getExtension": "Erweiterung holen"
+    }
+  },
   "serverName": "Server Name",
   "enterServerName": "Server Namen eingeben",
   "command": "Kommando",

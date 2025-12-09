@@ -18,8 +18,9 @@ pub async fn download_files<R: Runtime>(
     let cancel_token = CancellationToken::new();
     {
         let mut download_manager = state.download_manager.lock().await;
-        if download_manager.cancel_tokens.contains_key(task_id) {
-            return Err(format!("task_id {task_id} exists"));
+        if let Some(existing_token) = download_manager.cancel_tokens.remove(task_id) {
+            log::info!("Cancelling existing download task: {task_id}");
+            existing_token.cancel();
         }
         download_manager
             .cancel_tokens

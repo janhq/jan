@@ -16,7 +16,6 @@ on:
         type: boolean
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
         default: false
-
   pull_request:
     branches:
       - release/**

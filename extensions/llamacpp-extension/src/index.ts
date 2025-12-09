@@ -35,7 +35,12 @@ import {
   mapOldBackendToNew,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
-import { getProxyConfig } from './util'
+import {
+  getProxyConfig,
+  buildEmbedBatches,
+  mergeEmbedResponses,
+  type EmbedBatchResult,
+} from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -102,6 +107,7 @@ interface DownloadItem {
   proxy?: Record<string, string | string[] | boolean>
   sha256?: string
   size?: number
+  model_id?: string
 }
 
 interface ModelConfig {
@@ -113,6 +119,7 @@ interface ModelConfig {
   sha256?: string
   mmproj_sha256?: string
   mmproj_size_bytes?: number
+  embedding?: boolean
 }
 
 interface EmbeddingResponse {
@@ -344,21 +351,29 @@ export default class llamacpp_extension extends AIEngine {
             logger.warn(
               `Migration from '${storedBackendType}' to '${mappedNewBackendType}' skipped: New type not available in supported backends. Using old preference for now.`
             )
+            // Keep the original type if new type not available
+            effectiveStoredBackendType = storedBackendType
           }
         }
-        // Find the latest version of the stored backend type
+
+        // Use effectiveStoredBackendType (which is now the migrated type)
         const preferredBackendString = this.findLatestVersionForBackend(
           version_backends,
-          effectiveStoredBackendType
+          effectiveStoredBackendType // Use the effective (migrated) type here
         )
+
         if (preferredBackendString) {
-          bestAvailableBackendString = preferredBackendString
+          // The returned string has the original asset name, we need to normalize it
+          const [version, backend] = preferredBackendString.split('/')
+          const normalizedBackend = mapOldBackendToNew(backend)
+          bestAvailableBackendString = `${version}/${normalizedBackend}`
+
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
         } else {
           logger.warn(
-            `Stored backend type '${storedBackendType}' not available, falling back to best backend`
+            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
@@ -407,16 +422,17 @@ export default class llamacpp_extension extends AIEngine {
           savedBackendSetting &&
           savedBackendSetting !== originalDefaultBackendValue
         ) {
-          initialUiDefault = savedBackendSetting
-          // Store the backend type from the saved setting only if different
-          const [, backendType] = savedBackendSetting.split('/')
-          if (backendType) {
+          const [savedVersion, savedBackend] = savedBackendSetting.split('/')
+          if (savedVersion && savedBackend) {
+            const normalizedBackend = mapOldBackendToNew(savedBackend)
+            initialUiDefault = `${savedVersion}/${normalizedBackend}`
+
+            // Store the backend type from the saved setting only if different
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== normalizedBackend) {
+              this.setStoredBackendType(normalizedBackend)
               logger.info(
-                `Stored backend type preference from saved setting: ${effectiveBackendType}`
+                `Stored backend type preference from saved setting: ${normalizedBackend}`
               )
             }
           }
@@ -426,11 +442,10 @@ export default class llamacpp_extension extends AIEngine {
           const [, backendType] = bestAvailableBackendString.split('/')
           if (backendType) {
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
               logger.info(
-                `Stored backend type preference from best available: ${effectiveBackendType}`
+                `Stored backend type preference from best available: ${backendType}`
               )
             }
           }
@@ -1037,6 +1052,8 @@ export default class llamacpp_extension extends AIEngine {
       path,
     })
 
+    const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+
     return {
       id: modelId,
       name: modelConfig.name ?? modelId,
@@ -1044,7 +1061,69 @@ export default class llamacpp_extension extends AIEngine {
       providerId: this.provider,
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
+      embedding: isEmbedding,
     } as modelInfo
+  }
+
+  /**
+   * Checks if embedding status is known. If not, reads GGUF, detects it,
+   * and updates the model.yml for future performance.
+   */
+  private async resolveEmbeddingConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<boolean> {
+    // Fast exit: if explicitly set in config, return it
+    if (typeof modelConfig.embedding === 'boolean') {
+      return modelConfig.embedding
+    }
+
+    // Migration logic: Detect from GGUF
+    let isEmbedding = false
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        // Check for BERT-based architectures usually used for embeddings
+        // You can expand this list (e.g., 'nomic-bert', 'xlm-roberta')
+        const arch = metadata.metadata['general.architecture']
+        if (arch === 'bert' || arch === 'nomic-bert') {
+          isEmbedding = true
+        }
+      }
+    } catch (e) {
+      // If GGUF read fails, default to false but log it
+      logger.warn(`Failed to check metadata for ${modelId}`, e)
+      return false
+    }
+
+    // Persist the result back to model.yml so we don't read GGUF next time
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+
+      // Update the local object
+      modelConfig.embedding = isEmbedding
+
+      // Write to disk
+      await invoke<void>('write_yaml', {
+        data: modelConfig,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to update config for ${modelId}`, e)
+    }
+
+    return isEmbedding
   }
 
   // Implement the required LocalProvider interface methods
@@ -1089,6 +1168,10 @@ export default class llamacpp_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+      const isEmbedding = await this.resolveEmbeddingConfig(
+        modelId,
+        modelConfig
+      )
 
       const modelInfo = {
         id: modelId,
@@ -1097,6 +1180,7 @@ export default class llamacpp_extension extends AIEngine {
         providerId: this.provider,
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
+        embedding: isEmbedding,
       } as modelInfo
       modelInfos.push(modelInfo)
     }
@@ -1369,6 +1453,7 @@ export default class llamacpp_extension extends AIEngine {
           sha256:
             saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
           size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+          model_id: modelId,
         })
         return localPath
       }
@@ -1474,6 +1559,7 @@ export default class llamacpp_extension extends AIEngine {
     // Validate GGUF files
     const janDataFolderPath = await getJanDataFolderPath()
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+    let isEmbedding = false
 
     try {
       // Validate main model file
@@ -1481,6 +1567,12 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
       )
+
+      // check if the model is an embedding model
+      const architecture = modelMetadata.metadata['general.architecture']
+      if (architecture === 'bert' || architecture === 'nomic-bert') {
+        isEmbedding = true
+      }
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -1518,6 +1610,7 @@ export default class llamacpp_extension extends AIEngine {
       model_size_bytes: opts.modelSize,
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
+      embedding: isEmbedding,
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -1533,6 +1626,7 @@ export default class llamacpp_extension extends AIEngine {
       model_size_bytes: opts.modelSize,
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
+      embedding: isEmbedding,
     })
   }
 
@@ -2253,14 +2347,23 @@ export default class llamacpp_extension extends AIEngine {
       sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
 
-    const attemptRequest = async (session: SessionInfo) => {
+    const ubatchSize =
+      (this.config?.ubatch_size && this.config.ubatch_size > 0
+        ? this.config.ubatch_size
+        : 512) || 512
+    const batches = buildEmbedBatches(text, ubatchSize)
+
+    const attemptRequest = async (
+      session: SessionInfo,
+      batchInput: string[]
+    ) => {
       const baseUrl = `http://localhost:${session.port}/v1/embeddings`
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.api_key}`,
       }
       const body = JSON.stringify({
-        input: text,
+        input: batchInput,
         model: session.model_id,
         encoding_format: 'float',
       })
@@ -2272,26 +2375,38 @@ export default class llamacpp_extension extends AIEngine {
       return response
     }
 
-    // First try with the existing session (may have been started without --embedding previously)
-    let response = await attemptRequest(sInfo)
+    const sendBatch = async (batchInput: string[]) => {
+      let response = await attemptRequest(sInfo as SessionInfo, batchInput)
 
-    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-    if (response.status === 501) {
-      try {
-        await this.unload('sentence-transformer-mini')
-      } catch {}
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
-      response = await attemptRequest(sInfo)
+      // If embeddings endpoint is not available (501), reload with embedding mode and retry once
+      if (response.status === 501) {
+        try {
+          await this.unload('sentence-transformer-mini')
+        } catch {}
+        sInfo = await this.load('sentence-transformer-mini', undefined, true)
+        response = await attemptRequest(sInfo as SessionInfo, batchInput)
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        )
+      }
+      const responseData = (await response.json()) as EmbedBatchResult
+      return responseData
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-      )
+    const batchResults: Array<{ result: EmbedBatchResult; offset: number }> = []
+    for (const { batch, offset } of batches) {
+      const result = await sendBatch(batch)
+      batchResults.push({ result, offset })
     }
-    const responseData = await response.json()
-    return responseData as EmbeddingResponse
+
+    return mergeEmbedResponses(
+      (sInfo as SessionInfo).model_id,
+      batchResults
+    ) as EmbeddingResponse
   }
 
   /**
@@ -2530,44 +2645,49 @@ export default class llamacpp_extension extends AIEngine {
       },
     }
 
-    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(tokenizeRequest),
-    })
+    try {
+      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(tokenizeRequest),
+      })
 
-    if (!parseResponse.ok) {
-      const errorData = await parseResponse.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${
-          parseResponse.status
-        }: ${JSON.stringify(errorData)}`
-      )
+      if (!parseResponse.ok) {
+        const errorData = await parseResponse.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${
+            parseResponse.status
+          }: ${JSON.stringify(errorData)}`
+        )
+      }
+
+      const parsedPrompt = await parseResponse.json()
+
+      const response = await fetch(`${baseUrl}/tokenize`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          content: parsedPrompt.prompt,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(
+            errorData
+          )}`
+        )
+      }
+
+      const dataTokens = await response.json()
+      const textTokens = dataTokens.tokens?.length || 0
+
+      return textTokens + imageTokens
+    } catch (e) {
+      console.warn(String(e))
     }
-
-    const parsedPrompt = await parseResponse.json()
-
-    const response = await fetch(`${baseUrl}/tokenize`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        content: parsedPrompt.prompt,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
-      )
-    }
-
-    const dataTokens = await response.json()
-    const textTokens = dataTokens.tokens?.length || 0
-
-    return textTokens + imageTokens
+    return 0
   }
 
   private async calculateImageTokens(

@@ -436,6 +436,9 @@ const LeftPanel = () => {
                                 'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
                                 isProjectActive && 'bg-left-panel-fg/10'
                               )}
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                              }}
                             >
                               <Link
                                 to="/project/$projectId"

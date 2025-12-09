@@ -1,6 +1,16 @@
 {
   "editServer": "Редактировать сервер MCP",
   "addServer": "Добавить сервер MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Проверка статуса расширения..."
+    },
+    "notInstalled": {
+      "title": "Jan выполняет задачи в вашем браузере",
+      "description": "Установите расширение, чтобы дать Jan доступ к браузеру",
+      "getExtension": "Получить расширение"
+    }
+  },
   "serverName": "Имя сервера",
   "enterServerName": "Введите имя сервера",
   "command": "Команда",

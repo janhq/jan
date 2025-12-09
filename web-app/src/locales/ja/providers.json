@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "プロバイダーを選択",
-    "chooseProviderContent": "使用したいプロバイダーを選択し、そのAPIキーにアクセスできることを確認してください。",
-    "getApiKeyTitle": "APIキーを取得",
-    "getApiKeyContent": "プロバイダーのダッシュボードにログインして、APIキーを見つけるか生成してください。",
-    "insertApiKeyTitle": "APIキーを挿入",
-    "insertApiKeyContent": "ここにAPIキーを貼り付けて、プロバイダーに接続してアクティベートしてください。",
-    "back": "戻る",
-    "close": "閉じる",
-    "last": "完了",
-    "next": "次へ",
-    "skip": "スキップ"
-  },
   "refreshModelsError": "モデルを取得するには、プロバイダーにベースURLとAPIキーが設定されている必要があります。",
   "refreshModelsSuccess": "{{provider}}から{{count}}個の新しいモデルを追加しました。",
   "noNewModels": "新しいモデルは見つかりませんでした。利用可能なすべてのモデルは既に追加されています。",

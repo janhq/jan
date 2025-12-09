@@ -742,7 +742,7 @@ pub async fn start_server(
     };
     log::info!("Jan API server started on http://{addr}");
 
-    let server_task = tokio::spawn(async move {
+    let server_task = tauri::async_runtime::spawn(async move {
         if let Err(e) = server.await {
             log::error!("Server error: {e}");
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);

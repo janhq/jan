@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Pilih Penyedia",
-    "chooseProviderContent": "Pilih penyedia yang ingin Anda gunakan, pastikan Anda memiliki akses ke kunci API untuk itu.",
-    "getApiKeyTitle": "Dapatkan Kunci API Anda",
-    "getApiKeyContent": "Masuk ke dasbor penyedia untuk menemukan atau membuat kunci API Anda.",
-    "insertApiKeyTitle": "Masukkan Kunci API Anda",
-    "insertApiKeyContent": "Tempel kunci API Anda di sini untuk menghubungkan dan mengaktifkan penyedia.",
-    "back": "Kembali",
-    "close": "Tutup",
-    "last": "Selesai",
-    "next": "Berikutnya",
-    "skip": "Lewati"
-  },
   "refreshModelsError": "Penyedia harus memiliki URL dasar dan kunci API yang dikonfigurasi untuk mengambil model.",
   "refreshModelsSuccess": "Menambahkan {{count}} model baru dari {{provider}}.",
   "noNewModels": "Tidak ada model baru yang ditemukan. Semua model yang tersedia sudah ditambahkan.",
