@@ -7,8 +7,8 @@ import {
 import {
   IconEye,
   IconTool,
-  IconAtom,
   IconWorld,
+  IconZoomScan,
   IconCodeCircle2,
 } from '@tabler/icons-react'
 import { Fragment } from 'react/jsx-runtime'
@@ -35,7 +35,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
-          icon = <IconAtom className="size-3.5" />
+          icon = <IconZoomScan className="size-3.5" />
         } else if (capability === 'embeddings') {
           icon = <IconCodeCircle2 className="size-3.5" />
         } else if (capability === 'web_search') {
@@ -60,8 +60,10 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                   <TooltipContent>
                     <p>
                       {capability === 'web_search'
-                        ? 'Web Search'
-                        : capability}
+                        ? 'Search'
+                        : capability === 'reasoning'
+                          ? 'Deep Research'
+                          : capability}
                     </p>
                   </TooltipContent>
                 </Tooltip>
