@@ -192,6 +192,7 @@ export async function getModels(options?: { forceRefresh?: boolean }): Promise<J
       )
 
       modelsCache = models
+
       // Store models in localStorage for default model selection
       try {
         localStorage.setItem('jan-models', JSON.stringify(models))
