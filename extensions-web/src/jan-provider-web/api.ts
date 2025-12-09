@@ -371,7 +371,8 @@ function extractSupportedParameters(catalog: JanModelCatalogResponse | null | un
 }
 
 function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null): string[] {
-  const capabilities = new Set<string>()
+  // Always include base completion capability
+  const capabilities = new Set<string>(['completion'])
   if (!catalog) return []
 
   const parameters = extractSupportedParameters(catalog)
