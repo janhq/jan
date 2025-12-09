@@ -95,7 +95,7 @@ export default function LoadModelErrorDialog() {
             <div className="shrink-0">
               <AlertTriangle className="size-4 text-destructive" />
             </div>
-            <div>
+            <div className='flex flex-col justify-start items-start'>
               <DialogTitle>{t('common:error')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
                 Something went wrong

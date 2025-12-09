@@ -60,7 +60,7 @@ export const WebSearchButton = ({
           size={16}
           className={isEnabled ? 'text-accent' : 'text-main-view-fg/50'}
         />
-        <span className={`text-sm font-medium ${isEnabled ? 'text-accent' : 'text-main-view-fg/50'}`}>Search</span>
+        <span className={`text-sm font-medium hidden lg:inline ${isEnabled ? 'text-accent' : 'text-main-view-fg/50'}`}>Search</span>
         {deepResearchEnabled && (
           <IconLock
             size={12}

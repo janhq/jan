@@ -57,7 +57,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                       {icon}
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent >
                     <p>
                       {capability === 'web_search'
                         ? 'Search'
