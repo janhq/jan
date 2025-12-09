@@ -1242,7 +1242,7 @@ const ChatInput = ({
                             )}
                           />
                           <span className={cn(
-                            'text-sm font-medium hidden md:inline',
+                            'text-sm font-medium hidden lg:inline',
                             deepResearchEnabled
                               ? 'text-accent'
                               : 'text-main-view-fg/50'
