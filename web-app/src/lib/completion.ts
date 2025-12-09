@@ -172,7 +172,7 @@ export const sendCompletion = async (
   abortController: AbortController,
   tools: MCPTool[] = [],
   stream: boolean = true,
-  params: Record<string, object> = {}
+  params: Record<string, any> = {}
 ): Promise<ChatCompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 

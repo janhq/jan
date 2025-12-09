@@ -9,6 +9,7 @@ interface McpExtensionToolLoaderProps {
   selectedModelHasTools: boolean
   initialMessage?: boolean
   MCPToolComponent?: ComponentType<MCPToolComponentProps> | null
+  deepResearchEnabled?: boolean
 }
 
 export const McpExtensionToolLoader = ({
@@ -17,6 +18,7 @@ export const McpExtensionToolLoader = ({
   selectedModelHasTools,
   initialMessage,
   MCPToolComponent,
+  deepResearchEnabled,
 }: McpExtensionToolLoaderProps) => {
   // Get tool management hooks
   const { isToolDisabled, setToolDisabledForThread, setDefaultDisabledTools, getDefaultDisabledTools } = useToolAvailable()
@@ -66,6 +68,7 @@ export const McpExtensionToolLoader = ({
       tools={tools}
       isToolEnabled={isToolEnabled}
       onToolToggle={handleToolToggle}
+      deepResearchEnabled={deepResearchEnabled}
     />
   )
 }
