@@ -10,6 +10,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+use crate::args::{ArgumentBuilder, LlamacppConfig};
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::{validate_binary_path, validate_mmproj_path, validate_model_path};
@@ -19,8 +20,7 @@ use crate::process::{
 };
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
-    add_cuda_paths, binary_requires_cuda, extract_arg_value, parse_port_from_args,
-    setup_library_path, setup_windows_process_flags,
+    add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -42,8 +42,12 @@ pub struct UnloadResult {
 pub async fn load_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     backend_path: &str,
-    mut args: Vec<String>,
+    model_id: String,
+    model_path: String,
+    port: u16,
+    config: LlamacppConfig,
     envs: HashMap<String, String>,
+    mmproj_path: Option<String>,
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
@@ -51,11 +55,19 @@ pub async fn load_llama_model<R: Runtime>(
     let mut process_map = state.llama_server_process.lock().await;
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
-    log::info!("Using arguments: {:?}", args);
+    log::info!("Using configuration: {:?}", config);
 
     let bin_path = validate_binary_path(backend_path)?;
 
-    let port = parse_port_from_args(&args);
+    // Build arguments using the ArgumentBuilder
+    let builder = ArgumentBuilder::new(config.clone(), is_embedding)
+        .map_err(|e| ServerError::InvalidArgument(e))?;
+
+    let mut args = builder.build(&model_id, &model_path, port, mmproj_path.clone());
+
+    log::info!("Generated arguments: {:?}", args);
+
+    // Validate paths
     let model_path_pb = validate_model_path(&mut args)?;
     let mmproj_path_pb = validate_mmproj_path(&mut args)?;
 
@@ -75,16 +87,13 @@ pub async fn load_llama_model<R: Runtime>(
         &mmproj_path_string.as_ref().unwrap_or(&"None".to_string())
     );
 
-    let api_key: String;
-
-    if let Some(api_value) = envs.get("LLAMA_API_KEY") {
-        api_key = api_value.to_string();
-    } else {
-        log::warn!("API key not provided");
-        api_key = "".to_string();
-    }
-
-    let model_id = extract_arg_value(&args, "-a");
+    let api_key: String = envs
+        .get("LLAMA_API_KEY")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            log::warn!("API key not provided");
+            String::new()
+        });
 
     // Configure the command to run the server
     let mut command = Command::new(&bin_path);
@@ -108,6 +117,7 @@ pub async fn load_llama_model<R: Runtime>(
 
     // Add the binary's directory to library path
     setup_library_path(bin_path.parent(), &mut command);
+
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
 
@@ -171,7 +181,7 @@ pub async fn load_llama_model<R: Runtime>(
                         stderr_buffer.push('\n');
                         log::info!("[llamacpp] {}", line);
 
-                        // Check for readiness indicator - llama-server outputs this when ready
+                        // Check for readiness indicator
                         let line_lower = line.to_string().to_lowercase();
                         if line_lower.contains("server is listening on")
                             || line_lower.contains("starting the main loop")
@@ -206,6 +216,7 @@ pub async fn load_llama_model<R: Runtime>(
     let timeout_duration = Duration::from_secs(timeout);
     let start_time = Instant::now();
     log::info!("Waiting for model session to be ready...");
+
     loop {
         tokio::select! {
             // Server is ready
@@ -248,7 +259,7 @@ pub async fn load_llama_model<R: Runtime>(
     log::info!("Server process started with PID: {} and is ready", pid);
     let session_info = SessionInfo {
         pid: pid.clone(),
-        port: port,
+        port: port.into(),
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
         is_embedding: is_embedding,
