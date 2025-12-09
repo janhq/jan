@@ -135,7 +135,6 @@ const ChatInput = ({
     () => selectedModel?.capabilities?.includes('reasoning') ?? false,
     [selectedModel?.capabilities]
   )
-
   // Web Search tools management - for Deep Research integration
   const WEB_SEARCH_TOOL_NAMES = ['google_search', 'scrape']
   const {
