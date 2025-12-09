@@ -192,7 +192,6 @@ export async function getModels(options?: { forceRefresh?: boolean }): Promise<J
       )
 
       modelsCache = models
-      
       // Store models in localStorage for default model selection
       try {
         localStorage.setItem('jan-models', JSON.stringify(models))
@@ -377,7 +376,6 @@ function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null):
   if (parameters.includes('tools')) {
     capabilities.add('tools')
   }
-
   if (parameters.includes('vision') || catalog.supports_images) {
     capabilities.add('vision')
   }
