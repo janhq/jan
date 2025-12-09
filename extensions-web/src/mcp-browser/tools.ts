@@ -1,9 +1,9 @@
 /**
  * Browser tool definitions for MCP Browser Extension
- * Uses dynamic schemas from mcp-web-client
+ * Uses dynamic schemas from @janhq/mcp-web-client
  */
 
-import { getToolSchemas, type ToolSchema } from 'mcp-web-client'
+import { getToolSchemas, type ToolSchema } from '@janhq/mcp-web-client'
 import type { MCPTool } from '@janhq/core'
 
 export const BROWSER_SERVER_NAME = 'Jan Browser Extension'

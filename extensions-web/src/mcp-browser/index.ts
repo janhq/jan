@@ -1,7 +1,7 @@
 /**
  * MCP Browser Extension
  * Provides browser automation tools via the jan-browser Chrome extension
- * Uses mcp-web-client for direct chrome.runtime communication
+ * Uses @janhq/mcp-web-client for direct chrome.runtime communication
  */
 
 import { MCPExtension, MCPTool, MCPToolCallResult, MCPToolComponentProps } from '@janhq/core'
@@ -16,7 +16,7 @@ import {
   ToolCallError,
   TimeoutError,
   toToolResult,
-} from 'mcp-web-client'
+} from '@janhq/mcp-web-client'
 import type { ComponentType } from 'react'
 import { getBrowserTools, BROWSER_SERVER_NAME, isBrowserTool } from './tools'
 import { BrowserToolButton } from './components'
@@ -24,20 +24,16 @@ import { BrowserToolButton } from './components'
 // Extension ID injected at build time via vite.config.ts
 declare const BROWSER_EXTENSION_ID: string
 
-// Default extension ID (fallback)
-const DEFAULT_EXTENSION_ID = 'mkciifcjehgnpaigoiaakdgabbpfppal'
-
 // LocalStorage key for settings (matches web-app's useGeneralSetting)
 const SETTINGS_STORAGE_KEY = 'setting-general'
 
 /**
- * Get browser extension ID from localStorage settings or fallback to default
+ * Get browser extension ID from localStorage settings or fallback to build-time value
  */
 function getExtensionIdFromSettings(): string {
-  const fallback = typeof BROWSER_EXTENSION_ID !== 'undefined' ? BROWSER_EXTENSION_ID : DEFAULT_EXTENSION_ID
   try {
     if (typeof localStorage === 'undefined') {
-      return fallback
+      return BROWSER_EXTENSION_ID
     }
     const stored = localStorage.getItem(SETTINGS_STORAGE_KEY)
     if (stored) {
@@ -50,7 +46,7 @@ function getExtensionIdFromSettings(): string {
   } catch {
     // Ignore parsing errors
   }
-  return fallback
+  return BROWSER_EXTENSION_ID
 }
 
 /**

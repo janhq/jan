@@ -3465,10 +3465,10 @@ __metadata:
   resolution: "@jan/extensions-web@workspace:extensions-web"
   dependencies:
     "@janhq/core": "workspace:*"
+    "@janhq/mcp-web-client": "npm:@janhq/mcp-web-client@0.14.3"
     "@modelcontextprotocol/sdk": "npm:1.17.5"
     "@tabler/icons-react": "npm:^3.34.0"
     "@types/react": "npm:19.1.2"
-    mcp-web-client: "npm:@janhq/mcp-web-client@0.14.3"
     react: "npm:19.0.0"
     typescript: "npm:5.9.2"
     vite: "npm:5.4.20"
@@ -3508,6 +3508,16 @@ __metadata:
     react: 19.0.0
   languageName: unknown
   linkType: soft
+
+"@janhq/mcp-web-client@npm:@janhq/mcp-web-client@0.14.3":
+  version: 0.14.3
+  resolution: "@janhq/mcp-web-client@npm:0.14.3"
+  dependencies:
+    zod: "npm:^3.24.1"
+    zod-to-json-schema: "npm:^3.24.1"
+  checksum: 10c0/586945af57aea428e7d98cec97a9833b4c2a94bc44a9188a4850c1582ae6498749b74d72f27f02de833f949a6d2b1f031d61dbfdd08affe1c1064548fb1776e1
+  languageName: node
+  linkType: hard
 
 "@janhq/web-app@workspace:web-app":
   version: 0.0.0-use.local
@@ -14581,16 +14591,6 @@ __metadata:
   version: 1.0.4
   resolution: "math-random@npm:1.0.4"
   checksum: 10c0/7b0ddc17f5dfe3b426c1e92505122e6a32f884dd50f5e0bb3898e5ce2da60b4ffb47c9b607809cf0beb5b8bf253b9dcc3b6f7331b20ce59b8bd7e8dbbbb1e347
-  languageName: node
-  linkType: hard
-
-"mcp-web-client@npm:@janhq/mcp-web-client@0.14.3":
-  version: 0.14.3
-  resolution: "@janhq/mcp-web-client@npm:0.14.3"
-  dependencies:
-    zod: "npm:^3.24.1"
-    zod-to-json-schema: "npm:^3.24.1"
-  checksum: 10c0/586945af57aea428e7d98cec97a9833b4c2a94bc44a9188a4850c1582ae6498749b74d72f27f02de833f949a6d2b1f031d61dbfdd08affe1c1064548fb1776e1
   languageName: node
   linkType: hard
 
