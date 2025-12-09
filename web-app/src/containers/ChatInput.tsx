@@ -125,17 +125,17 @@ const ChatInput = ({
   )
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
-  
+
   // Deep Research mode state
   const deepResearchEnabled = useDeepResearch((state) => state.enabled)
   const toggleDeepResearch = useDeepResearch((state) => state.toggleDeepResearch)
-  
+
   // Check if the selected model supports reasoning (required for Deep Research)
   const modelSupportsReasoning = useMemo(
     () => selectedModel?.capabilities?.includes('reasoning') ?? false,
     [selectedModel?.capabilities]
   )
-  
+
   // Web Search tools management - for Deep Research integration
   const WEB_SEARCH_TOOL_NAMES = ['google_search', 'scrape']
   const {
@@ -143,12 +143,12 @@ const ChatInput = ({
     setDefaultDisabledTools,
     getDefaultDisabledTools,
   } = useToolAvailable()
-  
+
   const webSearchTools = useMemo(
     () => tools.filter((tool) => WEB_SEARCH_TOOL_NAMES.includes(tool.name)),
     [tools]
   )
-  
+
   // Force enable web search when Deep Research is enabled
   useEffect(() => {
     if (deepResearchEnabled && webSearchTools.length > 0) {
@@ -1226,7 +1226,8 @@ const ChatInput = ({
                         <div
                           onClick={toggleDeepResearch}
                           className={cn(
-                            'h-7 px-2 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1.5 cursor-pointer ml-1',
+                            'h-7 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1.5 cursor-pointer ml-1',
+                            'px-1 md:px-2',
                             deepResearchEnabled
                               ? 'bg-accent/20 text-accent hover:bg-accent/30'
                               : 'hover:bg-main-view-fg/10'
@@ -1241,7 +1242,7 @@ const ChatInput = ({
                             )}
                           />
                           <span className={cn(
-                            'text-sm font-medium',
+                            'text-sm font-medium hidden md:inline',
                             deepResearchEnabled
                               ? 'text-accent'
                               : 'text-main-view-fg/50'
