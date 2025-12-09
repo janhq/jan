@@ -28,7 +28,7 @@ ${StrLoc}
 
 !define WEBVIEW2APPGUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
-!define MANUFACTURER "ai"
+!define MANUFACTURER "Menlo Research Pte. Ltd."
 !define PRODUCTNAME "jan_productname"
 !define VERSION "jan_version"
 !define VERSIONWITHBUILD "jan_build"
