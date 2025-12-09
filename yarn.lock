@@ -3465,6 +3465,7 @@ __metadata:
   resolution: "@jan/extensions-web@workspace:extensions-web"
   dependencies:
     "@janhq/core": "workspace:*"
+    "@janhq/mcp-web-client": "npm:@janhq/mcp-web-client@0.14.3"
     "@modelcontextprotocol/sdk": "npm:1.17.5"
     "@tabler/icons-react": "npm:^3.34.0"
     "@types/react": "npm:19.1.2"
@@ -3507,6 +3508,16 @@ __metadata:
     react: 19.0.0
   languageName: unknown
   linkType: soft
+
+"@janhq/mcp-web-client@npm:@janhq/mcp-web-client@0.14.3":
+  version: 0.14.3
+  resolution: "@janhq/mcp-web-client@npm:0.14.3"
+  dependencies:
+    zod: "npm:^3.24.1"
+    zod-to-json-schema: "npm:^3.24.1"
+  checksum: 10c0/586945af57aea428e7d98cec97a9833b4c2a94bc44a9188a4850c1582ae6498749b74d72f27f02de833f949a6d2b1f031d61dbfdd08affe1c1064548fb1776e1
+  languageName: node
+  linkType: hard
 
 "@janhq/web-app@workspace:web-app":
   version: 0.0.0-use.local
@@ -21259,7 +21270,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zod@npm:^3.23.8":
+"zod@npm:^3.23.8, zod@npm:^3.24.1":
   version: 3.25.76
   resolution: "zod@npm:3.25.76"
   checksum: 10c0/5718ec35e3c40b600316c5b4c5e4976f7fee68151bc8f8d90ec18a469be9571f072e1bbaace10f1e85cf8892ea12d90821b200e980ab46916a6166a4260a983c

@@ -22,6 +22,7 @@ export type {
   JanChatCompletionResponse,
   JanChatMessage,
 } from './jan-provider-web'
+export { default as MCPBrowserExtension } from './mcp-browser'
 
 // Re-export auth functionality
 export {
@@ -55,6 +56,7 @@ export type {
   JanProviderWebModule,
   MCPWebModule,
   ProjectWebModule,
+  MCPBrowserModule,
 } from './types'
 
 // Re-export auth types
@@ -106,4 +108,5 @@ export const WEB_EXTENSIONS: WebExtensionRegistry = {
   'jan-provider-web': () => import('./jan-provider-web'),
   'mcp-web': () => import('./mcp-web'),
   'project-web': () => import('./project-web'),
+  'mcp-browser': () => import('./mcp-browser'),
 }

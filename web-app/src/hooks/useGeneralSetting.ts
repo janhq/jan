@@ -2,15 +2,21 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
+
+// Default browser extension ID from Chrome Web Store
+const DEFAULT_BROWSER_EXTENSION_ID = 'mkciifcjehgnpaigoiaakdgabbpfppal'
+
 type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
   huggingfaceToken?: string
+  browserExtensionId: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
   setCurrentLanguage: (value: Language) => void
+  setBrowserExtensionId: (id: string) => void
 }
 
 export const useGeneralSetting = create<GeneralSettingState>()(
@@ -20,6 +26,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
+      browserExtensionId: DEFAULT_BROWSER_EXTENSION_ID,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
@@ -42,6 +49,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
             }
           })
       },
+      setBrowserExtensionId: (id) => set({ browserExtensionId: id }),
     }),
     {
       name: localStorageKey.settingGeneral,

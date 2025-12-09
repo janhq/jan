@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
+import { localStorageKey } from '@/constants/localStorage'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -8,7 +9,7 @@ import { routeTree } from './routeTree.gen'
 import './index.css'
 import './i18n'
 
-// Clean up localStorage on every page load, preserving only auth tokens and last-used-model
+// Clean up localStorage on every page load, preserving auth tokens and core settings
 const cleanupLocalStorage = () => {
   // Keys to preserve
   const keysToPreserve = [
@@ -16,9 +17,10 @@ const cleanupLocalStorage = () => {
     'jan_auth_provider',
     'jan_refresh_token',
     'jan_token_expiry',
-    'last-used-model',
-    'theme',
-    'setting-appearance'
+    localStorageKey.lastUsedModel,
+    localStorageKey.theme,
+    localStorageKey.settingAppearance,
+    localStorageKey.settingGeneral, // keep language, browser extension ID, etc.
   ]
 
   // Save values of keys to preserve
