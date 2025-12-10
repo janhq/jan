@@ -407,7 +407,7 @@ export const ThreadContent = memo(
                     isStreamingThisThread && item.isLastMessage && !textSegment
                   }
                 >
-                  <ReasoningTrigger/>
+                  <ReasoningTrigger />
                   <div className="relative">
                     {isStreamingThisThread &&
                       item.isLastMessage &&
@@ -437,20 +437,15 @@ export const ThreadContent = memo(
 
             {isToolCalls && item.metadata?.tool_calls ? (
               <>
-                {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
+                {(
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (item.streamTools?.tool_calls ?? item.metadata.tool_calls) as any[]
+                ).map((toolCall) => (
                   <ToolCallBlock
-                    id={toolCall.tool?.id ?? 0}
-                    key={toolCall.tool?.id}
-                    name={
-                      (item.streamTools?.tool_calls?.function?.name ||
-                        toolCall.tool?.function?.name) ??
-                      ''
-                    }
-                    args={
-                      item.streamTools?.tool_calls?.function?.arguments ||
-                      toolCall.tool?.function?.arguments ||
-                      undefined
-                    }
+                    id={(toolCall.tool ?? toolCall)?.id ?? 0}
+                    key={(toolCall.tool ?? toolCall)?.id ?? 0}
+                    name={(toolCall.tool?.function ?? toolCall.function)?.name ?? ''}
+                    args={(toolCall.tool?.function ?? toolCall.function)?.arguments || {}}
                     result={JSON.stringify(toolCall.response)}
                     loading={toolCall.state === 'pending'}
                   />
@@ -459,7 +454,7 @@ export const ThreadContent = memo(
             ) : null}
 
             {!isToolCalls && (
-              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
+              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs mt-2">
                 <div className={cn('flex items-center gap-2')}>
                   <div
                     className={cn(
@@ -475,7 +470,7 @@ export const ThreadContent = memo(
                     />
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <DeleteMessageDialog onDelete={removeMessage} />
-                    <MessageMetadataDialog metadata={item.metadata} />
+                    {/* <MessageMetadataDialog metadata={item.metadata} /> */}
 
                     {item.isLastMessage && selectedModel && (
                       <Tooltip>

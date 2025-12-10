@@ -217,7 +217,7 @@
   /* ==================== BLOCKQUOTES ==================== */
   blockquote {
     line-height: 1.7;
-    border-left: 4px solid var(--color-primary);
+    border-left: 4px solid #3b82f6;
     @apply bg-main-view-fg/4;
     padding: 1em 1.25em;
     margin: 1.5em 0;
@@ -259,10 +259,10 @@
     }
   }
 
-  /* Nested blockquotes */
+  /* Nested blockquotes - keep same blue color */
   blockquote blockquote {
     margin: 0.75em 0;
-    border-left-color: var(--color-accent);
+    border-left-color: #3b82f6;
   }
 
   /* ==================== CODE ==================== */
