@@ -426,16 +426,21 @@ function General() {
                         required
                       />
                       <Button
-                        size="sm"
-                        variant={(huggingfaceToken || '').trim() ? 'default' : 'link'}
-                        className={(huggingfaceToken || '').trim()
-                          ? 'bg-green-600 text-white hover:bg-green-700'
-                          : ''}
+                        variant={
+                          (huggingfaceToken || '').trim() ? 'default' : 'link'
+                        }
+                        className={
+                          (huggingfaceToken || '').trim()
+                            ? 'bg-green-600 text-white hover:bg-green-700'
+                            : ''
+                        }
                         disabled={isValidatingToken}
                         onClick={async () => {
                           const token = (huggingfaceToken || '').trim()
                           if (!token) {
-                            toast.error('Enter a Hugging Face token to validate')
+                            toast.error(
+                              'Please enter a Hugging Face token to validate'
+                            )
                             return
                           }
                           setIsValidatingToken(true)
@@ -445,28 +450,38 @@ function General() {
                             TOKEN_VALIDATION_TIMEOUT_MS
                           )
                           try {
-                            const resp = await fetch('https://huggingface.co/api/whoami-v2', {
-                              headers: { Authorization: `Bearer ${token}` },
-                              signal: controller.signal,
-                            })
+                            const resp = await fetch(
+                              'https://huggingface.co/api/whoami-v2',
+                              {
+                                headers: { Authorization: `Bearer ${token}` },
+                                signal: controller.signal,
+                              }
+                            )
                             if (resp.ok) {
                               const data = await resp.json()
-                              toast.success('Token valid', {
+                              toast.success('Token is valid', {
                                 description: data?.name
                                   ? `Signed in as ${data.name}`
-                                  : 'Your token is valid.',
+                                  : 'Your Hugging Face token is valid.',
                               })
                             } else {
                               toast.error('Token invalid', {
-                                description: `HTTP ${resp.status}`,
+                                description:
+                                  'The provided Hugging Face token is invalid. Please check your token and try again.',
                               })
                             }
                           } catch (e) {
                             const name = (e as { name?: string })?.name
                             if (name === 'AbortError') {
-                              toast.error('Validation timed out')
+                              toast.error('Validation timed out', {
+                                description:
+                                  'The validation request timed out. Please check your network connection and try again.',
+                              })
                             } else {
-                              toast.error('Network error while validating token')
+                              toast.error('Validation failed', {
+                                description:
+                                  'A network error occurred while validating the token. Please check your internet connection.',
+                              })
                             }
                           } finally {
                             clearTimeout(timeoutId)
@@ -474,7 +489,7 @@ function General() {
                           }
                         }}
                       >
-                        Validate
+                        Verify
                       </Button>
                     </div>
                   }

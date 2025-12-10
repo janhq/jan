@@ -108,9 +108,9 @@ export const ModelDownloadAction = ({
       }
 
       if (preflight.reason === 'NOT_FOUND') {
-        toast.error('File not found', {
+        toast.error('Model file not found', {
           description:
-            'The requested artifact was not found in the repository. Try another quant or check the model page.',
+            'The requested model could not be found. Please verify the model URL',
           action: {
             label: 'Open model page',
             onClick: () => window.open(repoPage, '_blank'),
@@ -119,9 +119,9 @@ export const ModelDownloadAction = ({
         return
       }
 
-      toast.error('Model download error', {
+      toast.error('Unable to start download', {
         description:
-          'We could not start the download. Check your network or try again later.',
+          'Jan encountered an issue. Please check your connection and try again.',
       })
       return
     }
