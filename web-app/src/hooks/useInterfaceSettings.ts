@@ -83,7 +83,7 @@ const getAlphaValue = () => {
 }
 
 // Default interface settings
-const defaultFontSize: FontSize = '15px'
+const defaultFontSize: FontSize = '16px'
 const defaultAppBgColor: RgbaColor = {
   r: 25,
   g: 25,

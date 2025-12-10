@@ -21,14 +21,18 @@ export interface MCPWebModule {
 export interface ProjectWebModule {
   default: new (...args: ExtensionConstructorParams) => ProjectExtension
 }
+export interface MCPBrowserModule {
+  default: new (...args: ExtensionConstructorParams) => MCPExtension
+}
 
-export type WebExtensionModule = ConversationalWebModule | JanProviderWebModule | MCPWebModule | ProjectWebModule
+export type WebExtensionModule = ConversationalWebModule | JanProviderWebModule | MCPWebModule | ProjectWebModule | MCPBrowserModule
 
 export interface WebExtensionRegistry {
   'conversational-web': () => Promise<ConversationalWebModule>
   'jan-provider-web': () => Promise<JanProviderWebModule>
   'mcp-web': () => Promise<MCPWebModule>
   'project-web': () => Promise<ProjectWebModule>
+  'mcp-browser': () => Promise<MCPBrowserModule>
 }
 
 export type WebExtensionName = keyof WebExtensionRegistry

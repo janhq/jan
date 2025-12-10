@@ -3,7 +3,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import { MCPTool } from '@/types/completion'
+import { MCPTool, MCPToolCallResult } from '@janhq/core'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
 import type { MCPConfig } from './types'
@@ -69,7 +69,7 @@ export class TauriMCPService extends DefaultMCPService {
     toolName: string
     serverName?: string
     arguments: object
-  }): Promise<{ error: string; content: { text: string }[] }> {
+  }): Promise<MCPToolCallResult> {
     return window.core?.api?.callTool(args)
   }
 
@@ -79,7 +79,7 @@ export class TauriMCPService extends DefaultMCPService {
     arguments: object
     cancellationToken?: string
   }): {
-    promise: Promise<{ error: string; content: { text: string }[] }>
+    promise: Promise<MCPToolCallResult>
     cancel: () => Promise<void>
     token: string
   } {

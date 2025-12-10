@@ -20,6 +20,7 @@ import {
   IconLogs,
   IconCopy,
   IconCopyCheck,
+  IconRefresh,
 } from '@tabler/icons-react'
 // import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
@@ -44,6 +45,8 @@ function General() {
     setSpellCheckChatInput,
     huggingfaceToken,
     setHuggingfaceToken,
+    browserExtensionId,
+    setBrowserExtensionId,
   } = useGeneralSetting()
   const serviceHub = useServiceHub()
 
@@ -425,6 +428,28 @@ function General() {
                   }
                 />
               )}
+              <CardItem
+                title="Browser Extension ID"
+                description="Chrome extension ID for browser automation. Change this if using a custom extension."
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="browser-extension-id"
+                      value={browserExtensionId || ''}
+                      onChange={(e) => setBrowserExtensionId(e.target.value)}
+                      placeholder={'mkciifcjehgnpaigoiaakdgabbpfppal'}
+                      className="font-mono text-xs"
+                    />
+                    <button
+                      onClick={() => setBrowserExtensionId('mkciifcjehgnpaigoiaakdgabbpfppal')}
+                      className="size-8 flex-shrink-0 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                      title="Reset to default"
+                    >
+                      <IconRefresh size={14} className="text-main-view-fg/50" />
+                    </button>
+                  </div>
+                }
+              />
             </Card>
 
             {/* Resources */}

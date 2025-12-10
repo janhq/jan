@@ -5,7 +5,7 @@
  */
 
 import { MCPExtension, MCPTool, MCPToolCallResult, MCPToolComponentProps } from '@janhq/core'
-import { getSharedAuthService, JanAuthService } from '../shared'
+import { getSharedAuthService, JanAuthService, createErrorResult, normalizeContentItem } from '../shared'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './oauth-provider'
@@ -151,57 +151,33 @@ export default class MCPExtensionWeb extends MCPExtension {
 
   async callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult> {
     if (!this.mcpClient) {
-      return {
-        error: 'MCP client not initialized',
-        content: [{ type: 'text', text: 'MCP client not initialized' }]
-      }
+      return createErrorResult('MCP client not initialized')
     }
 
     try {
-      // Use MCP SDK to call tool (OAuth provider handles auth automatically)
       const result = await this.mcpClient.callTool({
         name: toolName,
         arguments: args
       })
-      
+
       console.log(`MCP tool call result for ${toolName}:`, result)
-      
-      // Handle tool call result
+
       if (result.isError) {
         const errorText = Array.isArray(result.content) && result.content.length > 0
           ? (result.content[0].type === 'text' ? (result.content[0] as any).text : 'Tool call failed')
           : 'Tool call failed'
-        
-        return {
-          error: errorText,
-          content: [{ type: 'text', text: errorText }]
-        }
+        return createErrorResult(errorText)
       }
 
-      // Convert MCP content to Jan's format
-      const content = Array.isArray(result.content) 
-        ? result.content.map(item => {
-            if (item.type === 'text') {
-              return { type: 'text' as const, text: (item as any).text }
-            } else {
-              // For non-text types, convert to text representation
-              return { type: 'text' as const, text: JSON.stringify(item) }
-            }
-          })
+      const content = Array.isArray(result.content)
+        ? result.content.map(item => normalizeContentItem(item as any))
         : [{ type: 'text' as const, text: 'No content returned' }]
 
-      return {
-        error: '',
-        content
-      }
+      return { error: '', content }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${toolName}:`, error)
-      
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: errorMessage }]
-      }
+      return createErrorResult(errorMessage)
     }
   }
 

@@ -1,9 +1,14 @@
 .markdown {
   @apply text-inherit;
 
+  /* Smooth typography rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
   &.is-user {
     p {
-      line-height: 1.6;
+      line-height: 1.7;
       margin-bottom: 1em;
       &:first-child {
         margin-bottom: 0;
@@ -11,66 +16,118 @@
     }
   }
 
-  /* Headings */
+  /* ==================== HEADINGS ==================== */
   :is(h1, h2, h3, h4, h5, h6) {
-    font-weight: 600;
-    margin-top: 1em;
-    margin-bottom: 0.5em;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-top: 1.5em;
+    margin-bottom: 0.75em;
+    line-height: 1.3;
+    scroll-margin-top: 2rem;
+    position: relative;
+
+    /* Subtle gradient on headings */
+    background: linear-gradient(135deg, currentColor 0%, currentColor 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+
+    /* First heading has no top margin */
+    &:first-child {
+      margin-top: 0;
+    }
   }
+
   h1 {
     font-size: var(--text-3xl);
     line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    padding-bottom: 0.3em;
+    border-bottom: 2px solid;
+    @apply border-main-view-fg/10;
+    margin-bottom: 1em;
   }
 
   h2 {
     font-size: var(--text-2xl);
-    line-height: 1.3;
+    line-height: 1.25;
+    font-weight: 700;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid;
+    @apply border-main-view-fg/8;
+    margin-bottom: 0.85em;
   }
 
   h3 {
     font-size: var(--text-xl);
-    line-height: 1.4;
+    line-height: 1.3;
+    font-weight: 700;
   }
 
   h4 {
     font-size: var(--text-lg);
     line-height: 1.4;
+    font-weight: 600;
   }
 
   h5 {
     font-size: var(--text-base);
     line-height: 1.5;
+    font-weight: 600;
   }
 
   h6 {
     font-size: var(--text-sm);
     line-height: 1.5;
-  }
-
-  /* Paragraphs and text */
-  p {
-    line-height: 1.6;
-    margin-bottom: 1em;
-  }
-
-  strong {
     font-weight: 600;
+    @apply text-main-view-fg/70;
   }
 
-  em {
+  /* ==================== PARAGRAPHS & TEXT ==================== */
+  p {
+    line-height: 1.75;
+    margin-bottom: 1.25em;
+
+    /* Better text wrapping */
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  strong, b {
+    font-weight: 700;
+    @apply text-main-view-fg;
+  }
+
+  em, i {
     font-style: italic;
   }
 
-  del {
+  del, s {
     text-decoration: line-through;
+    @apply text-main-view-fg/50;
   }
 
-  /* Lists */
+  mark {
+    @apply bg-yellow-200/30 text-main-view-fg;
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
+
+  u {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  /* ==================== LISTS ==================== */
   ul,
   ol {
-    line-height: 1.6;
-    margin-bottom: 1em;
-    padding-left: 1.5em;
+    line-height: 1.75;
+    margin-bottom: 1.25em;
+    padding-left: 1.75em;
   }
 
   ul {
@@ -79,14 +136,32 @@
 
   ul > li {
     list-style-type: circle;
+    position: relative;
+  }
+
+  ul > li::marker {
+    @apply text-main-view-fg/70;
   }
 
   ol {
     list-style-type: decimal;
   }
 
+  ol > li::marker {
+    @apply text-main-view-fg/70;
+    font-weight: 600;
+  }
+
   li {
     margin-bottom: 0.5em;
+    padding-left: 0.5em;
+
+    /* Smooth transition for hover effects */
+    transition: all 0.2s ease;
+
+    &:hover {
+      @apply text-main-view-fg;
+    }
   }
 
   li > ul,
@@ -96,48 +171,169 @@
   }
 
   li > ol {
-    list-style-type: lower-roman;
+    list-style-type: lower-alpha;
   }
 
   li > ul {
     list-style-type: circle;
   }
 
-  /* Blockquotes */
-  blockquote {
-    line-height: 1.6;
-    border-left: 4px solid var(--color-accent);
-    padding-left: 1em;
-    margin-left: 0;
-    margin-right: 0;
-    margin-bottom: 1em;
-    opacity: 0.8;
+  li > ul > li > ul {
+    list-style-type: square;
   }
 
-  /* Code */
+  /* Task lists */
+  ul.contains-task-list {
+    list-style: none;
+    padding-left: 0.5em;
+  }
+
+  .task-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+
+    input[type="checkbox"] {
+      margin-top: 0.35em;
+      cursor: pointer;
+      accent-color: var(--color-primary);
+    }
+  }
+
+  ol,
+  ul {
+    list-style: auto;
+    padding-left: 1.75em;
+    white-space: normal;
+    list-style-position: outside;
+
+    li {
+      p {
+        display: inline;
+      }
+    }
+  }
+
+  /* ==================== BLOCKQUOTES ==================== */
+  blockquote {
+    line-height: 1.7;
+    border-left: 4px solid #3b82f6;
+    @apply bg-main-view-fg/4;
+    padding: 1em 1.25em;
+    margin: 1.5em 0;
+    border-radius: 0 8px 8px 0;
+    position: relative;
+    font-style: italic;
+
+    /* Subtle shadow for depth */
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+
+    /* Animated border on hover */
+    transition: all 0.3s ease;
+
+    &:hover {
+      border-left-width: 6px;
+      @apply bg-main-view-fg/6;
+      box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.08);
+    }
+
+    p {
+      margin-bottom: 0.75em;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    /* Citation styling */
+    cite {
+      display: block;
+      margin-top: 0.75em;
+      font-size: 0.9em;
+      @apply text-main-view-fg/60;
+      font-style: normal;
+
+      &::before {
+        content: "— ";
+      }
+    }
+  }
+
+  /* Nested blockquotes - keep same blue color */
+  blockquote blockquote {
+    margin: 0.75em 0;
+    border-left-color: #3b82f6;
+  }
+
+  /* ==================== CODE ==================== */
   code {
-    font-family: monospace;
-    @apply bg-main-view-fg/6 text-main-view-fg;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+    @apply bg-main-view-fg/8 text-main-view-fg;
+    padding: 0.2em 0.5em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+
+    /* Subtle border for definition */
+    border: 1px solid;
+    @apply border-main-view-fg/10;
+
+    /* Smooth transitions */
+    transition: all 0.2s ease;
+
+    &:hover {
+      @apply bg-main-view-fg/12 border-main-view-fg/20;
+    }
   }
 
   pre {
-    font-family: monospace;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     @apply bg-main-view-fg/6 text-main-view-fg;
     overflow-x: auto;
-    border-radius: 8px;
-    margin-bottom: 8px;
+    border-radius: 10px;
+    margin: 1.5em 0;
+
+    /* Enhanced shadow */
+    box-shadow:
+      0 1px 3px 0 rgb(0 0 0 / 0.05),
+      0 0 0 1px rgb(0 0 0 / 0.05);
+
+    /* Smooth scrollbar */
+    &::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+      @apply bg-main-view-fg/5;
+      border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      @apply bg-main-view-fg/20;
+      border-radius: 4px;
+
+      &:hover {
+        @apply bg-main-view-fg/30;
+      }
+    }
   }
 
   pre code {
     background-color: transparent;
-    padding: 8px;
+    border: none;
+    padding: 1em;
     @apply !text-sm;
-    display: inline-block;
+    display: block;
+    color: inherit;
+    border-radius: 0;
+
+    &:hover {
+      background-color: transparent;
+    }
   }
 
-  /* Tables */
+  /* ==================== TABLES ==================== */
   table {
     border-collapse: collapse;
     margin-bottom: 1em;
@@ -164,14 +360,57 @@
     @apply bg-main-view-fg/5;
   }
 
-  /* Links */
-  a {
-    color: var(--color-primary);
-    text-decoration: none;
+  tbody tr {
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      @apply bg-main-view-fg/8;
+    }
   }
 
-  a:hover {
-    text-decoration: underline;
+  /* ==================== LINKS ==================== */
+  a {
+    color: inherit;
+    text-decoration: none;
+    position: relative;
+    transition: all 0.2s ease;
+
+    /* Subtle underline */
+    background-image: linear-gradient(
+      to right,
+      currentColor 0%,
+      currentColor 100%
+    );
+    background-size: 0 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+
+    &:hover {
+      background-size: 100% 1px;
+      opacity: 0.8;
+    }
+
+    /* External link indicator */
+    &[href^="http"]::after {
+      content: "↗";
+      display: inline-block;
+      margin-left: 0.2em;
+      font-size: 0.8em;
+      opacity: 0.5;
+      transition: all 0.2s ease;
+    }
+
+    &[href^="http"]:hover::after {
+      opacity: 1;
+      transform: translate(2px, -2px);
+    }
+
+    /* Focus state for accessibility */
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
   }
 
   ul.contains-task-list {
@@ -179,36 +418,199 @@
     padding-left: 0;
   }
 
-  ol,
-  ul {
-    list-style: auto;
-    padding-left: 16px;
-    white-space: normal;
-    list-style-position: inside;
-    li {
-      p {
-        display: inline;
-      }
-    }
-  }
-
-  /* Images */
+  /* ==================== IMAGES ==================== */
   img {
     max-width: 100%;
     height: auto;
-    border-radius: 5px;
-    margin-bottom: 1em;
+    border-radius: 8px;
+    margin: 1.5em 0;
+
+    /* Elegant shadow */
+    box-shadow:
+      0 4px 6px -1px rgb(0 0 0 / 0.1),
+      0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+    /* Smooth loading transition */
+    transition: all 0.3s ease;
+
+    &:hover {
+      box-shadow:
+        0 10px 15px -3px rgb(0 0 0 / 0.1),
+        0 4px 6px -4px rgb(0 0 0 / 0.1);
+      transform: translateY(-2px);
+    }
   }
 
-  /* Horizontal rule */
+  /* ==================== HORIZONTAL RULE ==================== */
   hr {
     border: 0;
-    height: 1px;
-    @apply bg-main-view-fg/50;
-    opacity: 0.2;
-    margin: 2em 0;
+    height: 2px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      currentColor 20%,
+      currentColor 80%,
+      transparent
+    );
+    @apply text-main-view-fg/20;
+    margin: 2.5em 0;
+    border-radius: 2px;
+  }
+
+  /* ==================== KEYBOARD KEYS ==================== */
+  kbd {
+    font-family: inherit;
+    font-size: 0.875em;
+    @apply bg-main-view-fg/10 text-main-view-fg;
+    padding: 0.2em 0.5em;
+    border-radius: 4px;
+    border: 1px solid;
+    @apply border-main-view-fg/20;
+    box-shadow:
+      0 1px 0 0 rgba(0, 0, 0, 0.1),
+      inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+    font-weight: 600;
+    display: inline-block;
+    line-height: 1;
+  }
+
+  /* ==================== DEFINITION LISTS ==================== */
+  dl {
+    margin: 1.5em 0;
+  }
+
+  dt {
+    font-weight: 700;
+    margin-top: 1em;
+    @apply text-main-view-fg;
+  }
+
+  dd {
+    margin-left: 1.5em;
+    margin-top: 0.5em;
+    @apply text-main-view-fg/80;
+    padding-left: 1em;
+    border-left: 2px solid;
+    @apply border-main-view-fg/20;
+  }
+
+  /* ==================== DETAILS & SUMMARY ==================== */
+  details {
+    @apply bg-main-view-fg/4;
+    border-radius: 8px;
+    padding: 1em 1.25em;
+    margin: 1.5em 0;
+    border: 1px solid;
+    @apply border-main-view-fg/10;
+    transition: all 0.3s ease;
+
+    &[open] {
+      @apply bg-main-view-fg/6;
+      box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.05);
+    }
+  }
+
+  summary {
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    transition: all 0.2s ease;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: "▶";
+      display: inline-block;
+      transition: transform 0.3s ease;
+      font-size: 0.8em;
+    }
+
+    &:hover {
+      opacity: 0.8;
+    }
+  }
+
+  details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  /* ==================== SUBSCRIPT & SUPERSCRIPT ==================== */
+  sub,
+  sup {
+    font-size: 0.75em;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+
+  sup {
+    top: -0.5em;
+  }
+
+  sub {
+    bottom: -0.25em;
+  }
+
+  /* ==================== ANIMATIONS ==================== */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Apply fade-in animation to content */
+  > * {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  /* ==================== SELECTION ==================== */
+  ::selection {
+    @apply bg-primary/20;
   }
 }
+
+/* ==================== TOOL CALL BLOCKS ==================== */
 [data-tool-call-block] + [data-tool-call-block] {
-  margin-top: 16px;
+  margin-top: 1em;
+}
+
+/* ==================== DARK MODE OPTIMIZATIONS ==================== */
+@media (prefers-color-scheme: dark) {
+  .markdown {
+    img {
+      opacity: 0.9;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+}
+
+/* ==================== PRINT STYLES ==================== */
+@media print {
+  .markdown {
+    a::after {
+      content: " (" attr(href) ")";
+      font-size: 0.8em;
+      color: inherit;
+    }
+
+    blockquote,
+    pre,
+    img {
+      page-break-inside: avoid;
+    }
+  }
 }

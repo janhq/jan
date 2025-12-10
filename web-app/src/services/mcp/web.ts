@@ -7,30 +7,79 @@
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import type { MCPService, MCPConfig, ToolCallWithCancellationResult } from './types'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, MCPTool, MCPToolCallResult, MCPToolCallResultContent } from '@janhq/core'
+
+/** Create an error result with the given message */
+const createErrorResult = (error: string, text?: string): MCPToolCallResult => ({
+  error,
+  content: [{ type: 'text' as const, text: text || error }]
+})
+
+/** Normalize content item to proper MCPToolCallResultContent type */
+const normalizeContentItem = (item: { type?: string; text?: string; data?: string; mimeType?: string }): MCPToolCallResultContent => {
+  if (item.type === 'image' && item.data && item.mimeType) {
+    return { type: 'image' as const, data: item.data, mimeType: item.mimeType }
+  }
+  return { type: 'text' as const, text: item.text || JSON.stringify(item) }
+}
+
+/** Normalize tool call result content array */
+const normalizeResult = (result: { error?: string; content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }> }): MCPToolCallResult => ({
+  error: result.error || '',
+  content: (result.content || []).map(normalizeContentItem)
+})
 
 export class WebMCPService implements MCPService {
   private abortControllers: Map<string, AbortController> = new Map()
-  private extensionCache: MCPExtension | null = null
+  private extensionsCache: MCPExtension[] | null = null
   private cacheTimestamp = 0
   private readonly CACHE_TTL = 5000 // 5 seconds
 
-  private getMCPExtension(): MCPExtension | null {
+  /**
+   * Get all MCP extensions (supports multiple extensions like mcp-web and mcp-browser)
+   */
+  private getMCPExtensions(): MCPExtension[] {
     const now = Date.now()
-    if (this.extensionCache && (now - this.cacheTimestamp) < this.CACHE_TTL) {
-      return this.extensionCache
+    if (this.extensionsCache && (now - this.cacheTimestamp) < this.CACHE_TTL) {
+      return this.extensionsCache
     }
-    
-    this.extensionCache = ExtensionManager.getInstance().get<MCPExtension>(
-      ExtensionTypeEnum.MCP
-    ) || null
-    
+
+    // Get all extensions with MCP type
+    this.extensionsCache = ExtensionManager.getInstance()
+      .getAll()
+      .filter(e => e.type() === ExtensionTypeEnum.MCP) as MCPExtension[]
+
     this.cacheTimestamp = now
-    return this.extensionCache
+    return this.extensionsCache
+  }
+
+  /**
+   * Find the extension that owns a specific tool by server name
+   * Uses cached tool list to find the right extension
+   */
+  private async findExtensionForServer(serverName?: string): Promise<MCPExtension | null> {
+    const extensions = this.getMCPExtensions()
+    if (extensions.length === 0) return null
+    if (!serverName) return extensions[0] || null
+
+    // Find extension that owns this server
+    for (const ext of extensions) {
+      try {
+        const servers = await ext.getConnectedServers()
+        if (servers.includes(serverName)) {
+          return ext
+        }
+      } catch {
+        // Continue checking other extensions
+      }
+    }
+
+    // Fallback to first extension
+    return extensions[0] || null
   }
 
   private invalidateCache(): void {
-    this.extensionCache = null
+    this.extensionsCache = null
     this.cacheTimestamp = 0
   }
 
@@ -45,15 +94,23 @@ export class WebMCPService implements MCPService {
 
   async restartMCPServers(): Promise<void> {
     // For web platform, servers are managed remotely
-    // This triggers a refresh of available tools
+    // This triggers a refresh of available tools on all MCP extensions
     this.invalidateCache()
-    const extension = this.getMCPExtension()
-    if (extension) {
-      try {
-        await extension.refreshTools()
-      } catch (error) {
-        throw new Error(`Failed to restart MCP servers: ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const extensions = this.getMCPExtensions()
+    const errors: string[] = []
+
+    await Promise.all(
+      extensions.map(async (extension) => {
+        try {
+          await extension.refreshTools()
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error))
+        }
+      })
+    )
+
+    if (errors.length > 0) {
+      throw new Error(`Failed to restart MCP servers: ${errors.join(', ')}`)
     }
   }
 
@@ -63,13 +120,20 @@ export class WebMCPService implements MCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
-    const extension = this.getMCPExtension()
-    if (!extension) {
+    const extensions = this.getMCPExtensions()
+    if (extensions.length === 0) {
       return []
     }
-    
+
     try {
-      return await extension.getTools()
+      // Aggregate tools from all MCP extensions
+      const toolArrays = await Promise.all(
+        extensions.map(ext => ext.getTools().catch((error) => {
+          console.warn('Failed to get tools from extension:', error)
+          return [] as MCPTool[]
+        }))
+      )
+      return toolArrays.flat()
     } catch (error) {
       console.error('Failed to get MCP tools:', error)
       return []
@@ -77,77 +141,60 @@ export class WebMCPService implements MCPService {
   }
 
   async getConnectedServers(): Promise<string[]> {
-    const extension = this.getMCPExtension()
-    if (!extension) {
+    const extensions = this.getMCPExtensions()
+    if (extensions.length === 0) {
       return []
     }
-    
+
     try {
-      return await extension.getConnectedServers()
+      // Aggregate connected servers from all MCP extensions
+      const serverArrays = await Promise.all(
+        extensions.map(ext => ext.getConnectedServers().catch((error) => {
+          console.warn('Failed to get connected servers from extension:', error)
+          return [] as string[]
+        }))
+      )
+      return serverArrays.flat()
     } catch (error) {
       console.error('Failed to get connected servers:', error)
       return []
     }
   }
 
-  async callTool(args: { toolName: string; arguments: object }): Promise<MCPToolCallResult> {
-    // Validate input parameters
+  async callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult> {
     if (!args.toolName || typeof args.toolName !== 'string') {
-      return {
-        error: 'Invalid tool name provided',
-        content: [{ type: 'text', text: 'Tool name must be a non-empty string' }]
-      }
+      return createErrorResult('Invalid tool name provided', 'Tool name must be a non-empty string')
     }
 
-    const extension = this.getMCPExtension()
+    const extension = await this.findExtensionForServer(args.serverName)
     if (!extension) {
-      return {
-        error: 'MCP extension not available',
-        content: [{ type: 'text', text: 'MCP service is not available' }]
-      }
+      return createErrorResult('MCP extension not available', 'MCP service is not available')
     }
 
     try {
-      const result = await extension.callTool(args.toolName, args.arguments as Record<string, unknown>)
-      
-      // Ensure OpenAI-compliant response format
+      const result = await extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
+
       if (!result.content || !Array.isArray(result.content)) {
-        return {
-          error: 'Invalid tool response format',
-          content: [{ type: 'text', text: 'Tool returned invalid response format' }]
-        }
+        return createErrorResult('Invalid tool response format', 'Tool returned invalid response format')
       }
 
-      return {
-        error: result.error || '',
-        content: result.content.map(item => ({
-          type: item.type || 'text',
-          text: item.text || JSON.stringify(item)
-        }))
-      }
+      return normalizeResult(result)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }]
-      }
+      return createErrorResult(errorMessage, `Tool execution failed: ${errorMessage}`)
     }
   }
 
   callToolWithCancellation(args: {
     toolName: string
+    serverName?: string
     arguments: object
     cancellationToken?: string
   }): ToolCallWithCancellationResult {
-    // Validate input parameters
     if (!args.toolName || typeof args.toolName !== 'string') {
-      const errorResult: MCPToolCallResult = {
-        error: 'Invalid tool name provided',
-        content: [{ type: 'text', text: 'Tool name must be a non-empty string' }]
-      }
       return {
-        promise: Promise.resolve(errorResult),
-        cancel: async () => {}, // No-op for failed validation
+        promise: Promise.resolve(createErrorResult('Invalid tool name provided', 'Tool name must be a non-empty string')),
+        cancel: async () => {},
         token: 'invalid'
       }
     }
@@ -175,61 +222,38 @@ export class WebMCPService implements MCPService {
   }
 
   private async callToolWithAbort(
-    args: { toolName: string; arguments: object },
+    args: { toolName: string; serverName?: string; arguments: object },
     signal: AbortSignal
   ): Promise<MCPToolCallResult> {
-    // Check if already aborted
+    const cancelledResult = createErrorResult('Tool call was cancelled', 'Tool call was cancelled by user')
+
     if (signal.aborted) {
-      return {
-        error: 'Tool call was cancelled',
-        content: [{ type: 'text', text: 'Tool call was cancelled by user' }]
-      }
+      return cancelledResult
     }
 
-    const extension = this.getMCPExtension()
+    const extension = await this.findExtensionForServer(args.serverName)
     if (!extension) {
-      return {
-        error: 'MCP extension not available',
-        content: [{ type: 'text', text: 'MCP service is not available' }]
-      }
+      return createErrorResult('MCP extension not available', 'MCP service is not available')
     }
 
     return new Promise((resolve) => {
-      const abortHandler = () => {
-        resolve({
-          error: 'Tool call was cancelled',
-          content: [{ type: 'text', text: 'Tool call was cancelled by user' }]
-        })
-      }
+      const abortHandler = () => resolve(cancelledResult)
       signal.addEventListener('abort', abortHandler, { once: true })
 
-      extension.callTool(args.toolName, args.arguments as Record<string, unknown>)
+      extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
         .then(result => {
           if (!signal.aborted) {
             if (!result.content || !Array.isArray(result.content)) {
-              resolve({
-                error: 'Invalid tool response format',
-                content: [{ type: 'text', text: 'Tool returned invalid response format' }]
-              })
+              resolve(createErrorResult('Invalid tool response format', 'Tool returned invalid response format'))
               return
             }
-
-            resolve({
-              error: result.error || '',
-              content: result.content.map(item => ({
-                type: item.type || 'text',
-                text: item.text || JSON.stringify(item)
-              }))
-            })
+            resolve(normalizeResult(result))
           }
         })
         .catch(error => {
           if (!signal.aborted) {
             const errorMessage = error instanceof Error ? error.message : String(error)
-            resolve({
-              error: errorMessage,
-              content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }]
-            })
+            resolve(createErrorResult(errorMessage, `Tool execution failed: ${errorMessage}`))
           }
         })
         .finally(() => {
@@ -249,27 +273,45 @@ export class WebMCPService implements MCPService {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async activateMCPServer(name: string, _config: MCPServerConfig): Promise<void> {
     // For web platform, server activation is handled remotely
+    // Refresh all MCP extensions to ensure all tool lists are up to date
     this.invalidateCache()
-    const extension = this.getMCPExtension()
-    if (extension) {
-      try {
-        await extension.refreshTools()
-      } catch (error) {
-        throw new Error(`Failed to activate MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const extensions = this.getMCPExtensions()
+    const errors: string[] = []
+
+    await Promise.all(
+      extensions.map(async (extension) => {
+        try {
+          await extension.refreshTools()
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error))
+        }
+      })
+    )
+
+    if (errors.length > 0) {
+      throw new Error(`Failed to activate MCP server ${name}: ${errors.join(', ')}`)
     }
   }
 
   async deactivateMCPServer(name: string): Promise<void> {
     // For web platform, server deactivation is handled remotely
+    // Refresh all MCP extensions to ensure all tool lists are up to date
     this.invalidateCache()
-    const extension = this.getMCPExtension()
-    if (extension) {
-      try {
-        await extension.refreshTools()
-      } catch (error) {
-        throw new Error(`Failed to deactivate MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const extensions = this.getMCPExtensions()
+    const errors: string[] = []
+
+    await Promise.all(
+      extensions.map(async (extension) => {
+        try {
+          await extension.refreshTools()
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error))
+        }
+      })
+    )
+
+    if (errors.length > 0) {
+      throw new Error(`Failed to deactivate MCP server ${name}: ${errors.join(', ')}`)
     }
   }
 

@@ -15,6 +15,7 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   stop: (value: any) => Array.isArray(value) && value.every((v) => typeof v === 'string'),
   frequency_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
   presence_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
+  repetition_penalty: (value: any) => typeof value === 'number' && value >= 0,
   repeat_last_n: (value: any) => typeof value === 'number',
   repeat_penalty: (value: any) => typeof value === 'number',
   min_p: (value: any) => typeof value === 'number',

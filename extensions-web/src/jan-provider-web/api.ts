@@ -97,8 +97,10 @@ export interface JanChatCompletionRequest {
   temperature?: number
   max_tokens?: number
   top_p?: number
+  top_k?: number
   frequency_penalty?: number
   presence_penalty?: number
+  repetition_penalty?: number
   stream?: boolean
   stop?: string | string[]
   tools?: any[]
@@ -369,7 +371,8 @@ function extractSupportedParameters(catalog: JanModelCatalogResponse | null | un
 }
 
 function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null): string[] {
-  const capabilities = new Set<string>()
+  // Always include base completion capability
+  const capabilities = new Set<string>(['completion'])
   if (!catalog) return []
 
   const parameters = extractSupportedParameters(catalog)

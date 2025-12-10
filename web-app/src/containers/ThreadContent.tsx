@@ -1,12 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
-import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
+import React, {
+  Fragment,
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+} from 'react'
+import {
+  IconCopy,
+  IconCopyCheck,
+  IconDatabase,
+  IconFileText,
+  IconRefresh,
+} from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
-import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
@@ -20,7 +33,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
@@ -30,6 +42,20 @@ import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
 import { UploadedAttachmentImage } from '@/components/UploadedAttachmentImage'
 import { JanImage } from '@/components/JanImage'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from '@/components/ai-elements/reasoning'
+import { twMerge } from 'tailwind-merge'
+import { Streamdown } from 'streamdown'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -85,6 +111,11 @@ export const ThreadContent = memo(
   ) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const [inlinePreview, setInlinePreview] = useState<{
+      name: string
+      content: string
+    } | null>(null)
+    const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -114,6 +145,20 @@ export const ThreadContent = memo(
       return { files: [], cleanPrompt: text }
     }, [text, item.role])
 
+    const inlineFileContents = useMemo(() => {
+      const contents = (item.metadata as any)?.inline_file_contents
+      if (!Array.isArray(contents)) return new Map<string, string>()
+
+      return contents.reduce((map, entry) => {
+        const name = entry?.name
+        const content = entry?.content
+        if (typeof name === 'string' && typeof content === 'string') {
+          map.set(name, content)
+        }
+        return map
+      }, new Map<string, string>())
+    }, [item.metadata])
+
     const { reasoningSegment, textSegment } = useMemo(() => {
       // Check for thinking formats
       const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
@@ -130,7 +175,7 @@ export const ThreadContent = memo(
         const splitIndex = thinkMatch.index + thinkMatch[0].length
         return {
           reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
+          textSegment: text.slice(splitIndex).replace('</think>', ''),
         }
       }
 
@@ -142,12 +187,27 @@ export const ThreadContent = memo(
         const splitIndex = analysisMatch.index + analysisMatch[0].length
         return {
           reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
+          textSegment: text.slice(splitIndex).replace('</think>', ''),
         }
       }
 
-      return { reasoningSegment: undefined, textSegment: text }
+      return {
+        reasoningSegment: undefined,
+        textSegment: text.replace('</think>', ''),
+      }
     }, [text])
+
+    // Auto-scroll to bottom during streaming
+    useEffect(() => {
+      if (
+        isStreamingThisThread &&
+        item.isLastMessage &&
+        reasoningContainerRef.current
+      ) {
+        reasoningContainerRef.current.scrollTop =
+          reasoningContainerRef.current.scrollHeight
+      }
+    }, [isStreamingThisThread, item.isLastMessage, reasoningSegment])
 
     const getMessages = useMessages((state) => state.getMessages)
     const deleteMessage = useMessages((state) => state.deleteMessage)
@@ -166,7 +226,8 @@ export const ThreadContent = memo(
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         // Extract text content and any attachments
         const rawText =
-          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value || ''
+          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
+          ''
         const { cleanPrompt: textContent } = extractFilesFromPrompt(rawText)
         const attachments = toSendMessage.content
           ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
@@ -285,34 +346,34 @@ export const ThreadContent = memo(
             {item.content?.some(
               (c) => (c.type === 'image_url' && c.image_url?.url) || false
             ) && (
-                <div className="flex justify-end w-full mb-2">
-                  <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                    {item.content
-                      ?.filter(
-                        (c) =>
-                          (c.type === 'image_url' && c.image_url?.url) || false
-                      )
-                      .map((contentPart, index) => {
-                        // Handle images
-                        if (
-                          contentPart.type === 'image_url' &&
-                          contentPart.image_url?.url
-                        ) {
-                          return (
-                            <div key={index} className="relative">
-                              <UploadedAttachmentImage
-                                src={contentPart.image_url.url}
-                                alt="Uploaded attachment"
-                                className="size-40 rounded-md object-cover border border-main-view-fg/10"
-                              />
-                            </div>
-                          )
-                        }
-                        return null
-                      })}
-                  </div>
+              <div className="flex justify-end w-full mb-2">
+                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
+                  {item.content
+                    ?.filter(
+                      (c) =>
+                        (c.type === 'image_url' && c.image_url?.url) || false
+                    )
+                    .map((contentPart, index) => {
+                      // Handle images
+                      if (
+                        contentPart.type === 'image_url' &&
+                        contentPart.image_url?.url
+                      ) {
+                        return (
+                          <div key={index} className="relative">
+                            <UploadedAttachmentImage
+                              src={contentPart.image_url.url}
+                              alt="Uploaded attachment"
+                              className="size-40 rounded-md object-cover border border-main-view-fg/10"
+                            />
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
                 </div>
-              )}
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <EditMessageDialog
@@ -337,40 +398,36 @@ export const ThreadContent = memo(
         )}
         {item.content?.[0]?.text && item.role !== 'user' && (
           <>
-            {item.showAssistant && (
-              <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
-                {assistant?.avatar && (
-                  <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
-                    <AvatarEmoji
-                      avatar={assistant?.avatar}
-                      imageClassName="w-6 h-6 object-contain"
-                      textClassName="text-base"
-                    />
-                  </div>
-                )}
-
-                <div className="flex flex-col">
-                  <span className="text-main-view-fg font-medium">
-                    {assistant?.name || 'Jan'}
-                  </span>
-                  {item?.created_at && item?.created_at !== 0 && (
-                    <span className="text-xs mt-0.5">
-                      {formatDate(item?.created_at)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
             {reasoningSegment && (
-              <ThinkingBlock
-                id={
-                  item.isLastMessage
-                    ? `${item.thread_id}-last-${reasoningSegment.slice(0, 50).replace(/\s/g, '').slice(-10)}`
-                    : `${item.thread_id}-${item.index ?? item.id}`
-                }
-                text={reasoningSegment}
-              />
+              <div className="relative w-full">
+                <Reasoning
+                  defaultOpen={item.isLastMessage && !textSegment}
+                  className="w-full text-main-view-fg/60"
+                  isStreaming={
+                    isStreamingThisThread && item.isLastMessage && !textSegment
+                  }
+                >
+                  <ReasoningTrigger />
+                  <div className="relative">
+                    {isStreamingThisThread &&
+                      item.isLastMessage &&
+                      !textSegment && (
+                        <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-br from-main-view to-transparent pointer-events-none z-10" />
+                      )}
+                    <div
+                      ref={reasoningContainerRef}
+                      className={twMerge(
+                        'w-full overflow-auto relative',
+                        isStreamingThisThread && item.isLastMessage
+                          ? 'max-h-32 opacity-70'
+                          : 'h-auto opacity-100'
+                      )}
+                    >
+                      <ReasoningContent>{reasoningSegment}</ReasoningContent>
+                    </div>
+                  </div>
+                </Reasoning>
+              </div>
             )}
 
             <RenderMarkdown
@@ -380,20 +437,15 @@ export const ThreadContent = memo(
 
             {isToolCalls && item.metadata?.tool_calls ? (
               <>
-                {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
+                {(
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (item.streamTools?.tool_calls ?? item.metadata.tool_calls) as any[]
+                ).map((toolCall) => (
                   <ToolCallBlock
-                    id={toolCall.tool?.id ?? 0}
-                    key={toolCall.tool?.id}
-                    name={
-                      (item.streamTools?.tool_calls?.function?.name ||
-                        toolCall.tool?.function?.name) ??
-                      ''
-                    }
-                    args={
-                      item.streamTools?.tool_calls?.function?.arguments ||
-                      toolCall.tool?.function?.arguments ||
-                      undefined
-                    }
+                    id={(toolCall.tool ?? toolCall)?.id ?? 0}
+                    key={(toolCall.tool ?? toolCall)?.id ?? 0}
+                    name={(toolCall.tool?.function ?? toolCall.function)?.name ?? ''}
+                    args={(toolCall.tool?.function ?? toolCall.function)?.arguments || {}}
                     result={JSON.stringify(toolCall.response)}
                     loading={toolCall.state === 'pending'}
                   />
@@ -402,7 +454,7 @@ export const ThreadContent = memo(
             ) : null}
 
             {!isToolCalls && (
-              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
+              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs mt-2">
                 <div className={cn('flex items-center gap-2')}>
                   <div
                     className={cn(
@@ -418,7 +470,7 @@ export const ThreadContent = memo(
                     />
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <DeleteMessageDialog onDelete={removeMessage} />
-                    <MessageMetadataDialog metadata={item.metadata} />
+                    {/* <MessageMetadataDialog metadata={item.metadata} /> */}
 
                     {item.isLastMessage && selectedModel && (
                       <Tooltip>

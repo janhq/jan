@@ -318,7 +318,7 @@ const LeftPanel = () => {
           )}
         </div>
 
-        <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
+        <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)] mx-2">
           <div className="space-y-1 py-1">
             {IS_MACOS && (
               <div
@@ -661,7 +661,7 @@ const LeftPanel = () => {
             })}
 
             {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
-              <div className="space-y-1 shrink-0 py-1">
+              <div className="space-y-1 shrink-0 py-1 mb-2">
                 <div>
                   <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
                   {isAuthenticated ? <UserProfileMenu /> : <AuthLoginButton />}
