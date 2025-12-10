@@ -50,12 +50,17 @@ export default class VectorDBExt extends VectorDBExtension {
   }
 
   private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & { embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }> }
+    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
+      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
+    }
     if (!llm?.embed) throw new Error('llamacpp extension not available')
+
     const res = await llm.embed(texts)
     const data: Array<{ embedding: number[]; index: number }> = res?.data || []
     const out: number[][] = new Array(texts.length)
-    for (const item of data) out[item.index] = item.embedding
+    for (const item of data) {
+      out[item.index] = item.embedding
+    }
     return out
   }
 

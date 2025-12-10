@@ -61,7 +61,7 @@ function ScrollOption({
       onClick={onSelect}
       type="button"
     >
-      <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
+      <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-main-view-fg/10 -mt-1">
         <span className="font-medium text-xs font-sans">{title}</span>
         {isSelected && (
           <IconCircleCheckFilled className="size-4 text-accent" />
@@ -438,7 +438,7 @@ function StickyScrollPreview({ placeholder }: { placeholder: string }) {
         timersRef.current.push(timer)
       })
     }
-  }, [step])
+  }, [step, MAX_ASSISTANTS])
 
   useEffect(() => {
     return () => {

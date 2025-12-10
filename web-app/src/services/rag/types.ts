@@ -8,4 +8,6 @@ export interface RAGService {
   callTool(args: { toolName: string; arguments: object; threadId?: string }): Promise<MCPToolCallResult>
   // Convenience: return tool names for routing
   getToolNames(): Promise<string[]>
+  // Parse a document to text for inline injection decisions
+  parseDocument?: (path: string, type?: string) => Promise<string>
 }

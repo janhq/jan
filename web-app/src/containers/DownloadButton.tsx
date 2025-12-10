@@ -14,12 +14,12 @@ import { toast } from 'sonner'
 import { route } from '@/constants/routes'
 import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/shallow'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type ModelProps = {
   model: CatalogModel
   handleUseModel: (modelId: string) => void
 }
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export function DownloadButtonPlaceholder({
   model,
@@ -44,7 +44,7 @@ export function DownloadButtonPlaceholder({
 
   const quant =
     model.quants.find((e) =>
-      defaultModelQuantizations.some((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
         e.model_id.toLowerCase().includes(m)
       )
     ) ?? model.quants[0]
@@ -69,10 +69,8 @@ export function DownloadButtonPlaceholder({
         m.id === modelId ||
         m.id === `${model.developer}/${sanitizeModelId(modelId)}`
     )
-    if (isDownloaded) {
-      setDownloaded(true)
-    }
-  }, [llamaProvider])
+    setDownloaded(!!isDownloaded)
+  }, [llamaProvider, modelId, model.developer])
 
   useEffect(() => {
     events.on(
@@ -81,7 +79,7 @@ export function DownloadButtonPlaceholder({
         if (state.modelId === modelId) setDownloaded(true)
       }
     )
-  }, [])
+  }, [modelId])
 
   const isRecommendedModel = useCallback((modelId: string) => {
     return (extractModelName(modelId)?.toLowerCase() ===
@@ -206,11 +204,15 @@ export function DownloadButtonPlaceholder({
       )}
       {isDownloaded ? (
         <Button
+          variant="link"
           size="sm"
+          className="p-0"
           onClick={() => handleUseModel(modelId)}
           data-test-id={`hub-model-${modelId}`}
         >
-          {t('hub:use')}
+          <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+            {t('hub:newChat')}
+          </div>
         </Button>
       ) : (
         <Button

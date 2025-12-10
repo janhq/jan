@@ -1,7 +1,7 @@
 {
   "sortNewest": "新着順",
   "sortMostDownloaded": "ダウンロード数順",
-  "use": "使用",
+  "newChat": "新しいチャット",
   "download": "ダウンロード",
   "downloaded": "ダウンロード済み",
   "loadingModels": "モデルを読み込み中...",
@@ -13,19 +13,5 @@
   "useModel": "このモデルを使用",
   "downloadModel": "モデルをダウンロード",
   "tools": "ツール",
-  "searchPlaceholder": "Hugging Faceでモデルを検索...",
-  "joyride": {
-    "recommendedModelTitle": "おすすめのモデル",
-    "recommendedModelContent": "さまざまなプロバイダーの強力なAIモデルを1か所で閲覧、ダウンロードできます。まずは、関数呼び出し、ツール統合、および研究機能に最適化されたモデルであるJan-Nanoから始めることをお勧めします。インタラクティブなAIエージェントの構築に最適です。",
-    "downloadInProgressTitle": "ダウンロード進行中",
-    "downloadInProgressContent": "モデルは現在ダウンロード中です。ここで進行状況を確認できます。完了すると、使用できるようになります。",
-    "downloadModelTitle": "モデルをダウンロード",
-    "downloadModelContent": "「ダウンロード」ボタンをクリックして、モデルのダウンロードを開始します。",
-    "back": "戻る",
-    "close": "閉じる",
-    "lastWithDownload": "ダウンロード",
-    "last": "完了",
-    "next": "次へ",
-    "skip": "スキップ"
-  }
+  "searchPlaceholder": "Hugging Faceでモデルを検索..."
 }

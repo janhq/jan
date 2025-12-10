@@ -132,7 +132,7 @@ function getPlatformArch() {
   let bunPlatform, uvPlatform
 
   if (platform === 'darwin') {
-    bunPlatform = arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x86'
+    bunPlatform = arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x64'
     uvPlatform =
       arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
   } else if (platform === 'linux') {

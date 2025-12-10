@@ -6,5 +6,7 @@
   },
   "sendMessage": "Wyślij Wiadomość",
   "newConversation": "Nowa Rozmowa",
-  "clearHistory": "Wyczyść Historię"
+  "clearHistory": "Wyczyść Historię",
+  "temporaryChat": "Tymczasowy Czat",
+  "temporaryChatDescription": "Rozpocznij tymczasową rozmowę, która nie zostanie zapisana w historii czatów."
 }

@@ -3,7 +3,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
-import { useMCPServers } from '@/hooks/useMCPServers'
+import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -19,11 +19,12 @@ export function DataProvider() {
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
-  const { setServers } = useMCPServers()
+  const { setServers, setSettings } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
@@ -46,7 +47,10 @@ export function DataProvider() {
     serviceHub
       .mcp()
       .getMCPConfig()
-      .then((data) => setServers(data.mcpServers ?? {}))
+      .then((data) => {
+        setServers(data.mcpServers ?? {})
+        setSettings(data.mcpSettings ?? DEFAULT_MCP_SETTINGS)
+      })
     serviceHub
       .assistants()
       .getAssistants()
@@ -136,6 +140,11 @@ export function DataProvider() {
         .startModel(modelToStart.provider, modelToStart.model)
         .then(() => {
           console.log(`Model ${modelToStart.model} started successfully`)
+          // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
 
           // Then start the server
           return window.core?.api?.startServer({

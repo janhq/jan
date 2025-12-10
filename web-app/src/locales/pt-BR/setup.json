@@ -1,6 +1,13 @@
 {
   "welcome": "Bem-vindo ao Jan",
-  "description": "Para começar, você precisará baixar um modelo de IA local ou conectar-se a um modelo em nuvem usando uma chave de API",
+  "description": "Para começar, inicie rapidamente com Jan Model ou escolha seu próprio provedor local ou remoto",
+  "descriptionWeb": "Para começar, você precisará conectar-se a um modelo em nuvem usando uma chave de API",
+  "quickStart": "Início rápido com Jan Model",
+  "quickStartDescription": "Nenhuma configuração necessária",
+  "quickStartFailed": "Algo deu errado. Por favor, tente novamente.",
+  "downloading": "Baixando Jan Model...",
+  "downloadingDescription": "Por favor, aguarde enquanto baixamos o modelo. Isso pode levar alguns minutos.",
+  "orDivider": "ou",
   "localModel": "Configurar modelo local",
   "remoteProvider": "Configurar provedor remoto"
 }

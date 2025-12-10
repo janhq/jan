@@ -13,6 +13,7 @@ import {
   ContentType,
   events,
   DownloadEvent,
+  UnloadResult,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -230,7 +231,8 @@ export class DefaultModelsService implements ModelsService {
     id: string,
     modelPath: string,
     mmprojPath?: string,
-    hfToken?: string
+    hfToken?: string,
+    skipVerification?: boolean
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -243,7 +245,7 @@ export class DefaultModelsService implements ModelsService {
       /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
     )
 
-    if (modelUrlMatch) {
+    if (modelUrlMatch && !skipVerification) {
       const [, repoId, modelFilename] = modelUrlMatch
 
       try {
@@ -320,8 +322,11 @@ export class DefaultModelsService implements ModelsService {
     return this.getEngine(provider)?.getLoadedModels() ?? []
   }
 
-  async stopModel(model: string, provider?: string): Promise<void> {
-    this.getEngine(provider)?.unload(model)
+  async stopModel(
+    model: string,
+    provider?: string
+  ): Promise<UnloadResult | undefined> {
+    return this.getEngine(provider)?.unload(model)
   }
 
   async stopAllModels(): Promise<void> {

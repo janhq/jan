@@ -111,13 +111,13 @@ vi.mock('@/hooks/useAppState', () => ({
 
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
-    ATTACHMENTS: true,
+    FILE_ATTACHMENTS: true,
   },
 }))
 
 vi.mock('@/lib/platform/types', () => ({
   PlatformFeature: {
-    ATTACHMENTS: 'ATTACHMENTS',
+    FILE_ATTACHMENTS: 'FILE_ATTACHMENTS',
   },
 }))
 
@@ -345,14 +345,17 @@ describe('completion.ts', () => {
 
     it('should not treat non-browser tools as browser tools', async () => {
       const { getServiceHub } = await import('@/hooks/useServiceHub')
-      const mockGetTools = vi.fn(() => Promise.resolve([]))
+      const mockGetTools = vi.fn(() => Promise.resolve([
+        { name: 'fetch_url', server: 'test-server', description: 'Fetch URL', inputSchema: {} }
+      ]))
+      const mockCallTool = vi.fn(() => ({
+        promise: Promise.resolve({ content: [{ type: 'text', text: 'result' }], error: '' }),
+        cancel: vi.fn(),
+      }))
       vi.mocked(getServiceHub).mockReturnValue({
         mcp: () => ({
           getTools: mockGetTools,
-          callToolWithCancellation: vi.fn(() => ({
-            promise: Promise.resolve({ content: [{ type: 'text', text: 'result' }], error: '' }),
-            cancel: vi.fn(),
-          }))
+          callToolWithCancellation: mockCallTool
         }),
         rag: () => ({ getToolNames: () => Promise.resolve([]) })
       } as any)
@@ -371,8 +374,17 @@ describe('completion.ts', () => {
 
       await postMessageProcessing(calls, builder, message, abortController, {}, undefined, false, true)
 
-      // Proactive screenshots should not be called for non-browser tools
-      expect(mockGetTools).not.toHaveBeenCalled()
+      // getTools should be called once for server lookup
+      expect(mockGetTools).toHaveBeenCalledTimes(1)
+      // callTool should be called once for the actual tool call
+      expect(mockCallTool).toHaveBeenCalledTimes(1)
+      // Verify proactive screenshots are NOT triggered (no additional getTools calls for screenshot tools)
+      // and tool is called with correct server parameter
+      expect(mockCallTool).toHaveBeenCalledWith({
+        toolName: 'fetch_url',
+        serverName: 'test-server',
+        arguments: { url: 'test.com' }
+      })
     })
   })
 
@@ -587,7 +599,8 @@ describe('completion.ts', () => {
       const { getServiceHub } = await import('@/hooks/useServiceHub')
 
       const mockGetTools = vi.fn(() => Promise.resolve([
-        { name: 'browserbase_screenshot', inputSchema: {} }
+        { name: 'browserbase_navigate', server: 'browserbase', description: 'Navigate', inputSchema: {} },
+        { name: 'browserbase_screenshot', server: 'browserbase', description: 'Screenshot', inputSchema: {} }
       ]))
 
       const mockCallTool = vi.fn(() => ({
@@ -626,17 +639,26 @@ describe('completion.ts', () => {
         {},
         undefined,
         false,
-        false
+        false  // isProactiveMode = false
       )
 
+      // getTools called once for server lookup
+      expect(mockGetTools).toHaveBeenCalledTimes(1)
+      // callTool called once for the navigate tool (no proactive screenshots because mode is disabled)
       expect(mockCallTool).toHaveBeenCalledTimes(1)
-      expect(mockGetTools).not.toHaveBeenCalled()
+      expect(mockCallTool).toHaveBeenCalledWith({
+        toolName: 'browserbase_navigate',
+        serverName: 'browserbase',
+        arguments: {}
+      })
     })
 
     it('should not trigger proactive screenshots for non-browser tools', async () => {
       const { getServiceHub } = await import('@/hooks/useServiceHub')
 
-      const mockGetTools = vi.fn(() => Promise.resolve([]))
+      const mockGetTools = vi.fn(() => Promise.resolve([
+        { name: 'fetch_url', server: 'fetch-server', description: 'Fetch URL', inputSchema: {} }
+      ]))
       const mockCallTool = vi.fn(() => ({
         promise: Promise.resolve({
           content: [{ type: 'text', text: 'fetched data' }],
@@ -673,11 +695,18 @@ describe('completion.ts', () => {
         {},
         undefined,
         false,
-        true
+        true  // isProactiveMode = true
       )
 
+      // getTools called once for server lookup
+      expect(mockGetTools).toHaveBeenCalledTimes(1)
+      // callTool called once for fetch_url (no proactive screenshots because it's not a browser tool)
       expect(mockCallTool).toHaveBeenCalledTimes(1)
-      expect(mockGetTools).not.toHaveBeenCalled()
+      expect(mockCallTool).toHaveBeenCalledWith({
+        toolName: 'fetch_url',
+        serverName: 'fetch-server',
+        arguments: { url: 'test.com' }
+      })
     })
   })
 })

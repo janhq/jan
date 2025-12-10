@@ -1,6 +1,13 @@
 {
   "welcome": "Chào mừng đến với Jan",
-  "description": "Để bắt đầu, bạn cần tải xuống một mô hình AI cục bộ hoặc kết nối với một mô hình đám mây bằng khóa API",
+  "description": "Để bắt đầu, khởi chạy nhanh với Jan Model hoặc chọn nhà cung cấp cục bộ hoặc từ xa của riêng bạn",
+  "descriptionWeb": "Để bắt đầu, bạn cần kết nối với mô hình đám mây bằng khóa API",
+  "quickStart": "Khởi động nhanh với Jan Model",
+  "quickStartDescription": "Không cần thiết lập",
+  "quickStartFailed": "Đã xảy ra lỗi. Vui lòng thử lại.",
+  "downloading": "Đang tải xuống Jan Model...",
+  "downloadingDescription": "Vui lòng đợi trong khi chúng tôi tải xuống mô hình. Điều này có thể mất vài phút.",
+  "orDivider": "hoặc",
   "localModel": "Thiết lập mô hình cục bộ",
   "remoteProvider": "Thiết lập nhà cung cấp từ xa"
 }

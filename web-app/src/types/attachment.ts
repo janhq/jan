@@ -20,9 +20,12 @@ export type Attachment = {
   // For documents (local files)
   path?: string
   fileType?: string // e.g., 'pdf', 'docx'
+  parseMode?: 'auto' | 'inline' | 'embeddings' | 'prompt'
 
   // After processing (images uploaded, documents ingested)
   id?: string
+  injectionMode?: 'inline' | 'embeddings'
+  inlineContent?: string
 }
 
 /**
@@ -49,6 +52,7 @@ export function createDocumentAttachment(data: {
   path: string
   fileType?: string
   size?: number
+  parseMode?: 'auto' | 'inline' | 'embeddings' | 'prompt'
 }): Attachment {
   return {
     ...data,

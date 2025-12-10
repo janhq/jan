@@ -24,6 +24,7 @@ pub struct DownloadItem {
     pub proxy: Option<ProxyConfig>,
     pub sha256: Option<String>,
     pub size: Option<u64>,
+    pub model_id: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]

@@ -41,9 +41,6 @@ interface InterfaceSettingsState {
   resetInterface: () => void
 }
 
-const LEGACY_INTERFACE_STORAGE_KEY = 'setting-appearance' as const
-const GENERAL_SETTINGS_STORAGE_KEY = localStorageKey.settingGeneral
-
 type InterfaceSettingsPersistedSlice = Omit<
   InterfaceSettingsState,
   | 'resetInterface'
@@ -213,132 +210,9 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   }
 }
 
-const buildDefaultPersistedSnapshot = () =>
-  JSON.stringify({ state: createDefaultInterfaceValues(), version: 0 })
-
-const validatePersistedSnapshot = (value: string): string | null => {
-  try {
-    const parsed = JSON.parse(value) as {
-      state?: Record<string, unknown>
-      version?: unknown
-    }
-
-    if (parsed && typeof parsed === 'object' && parsed.state) {
-      const state = parsed.state
-
-      if (
-        !isThreadScrollBehavior(
-          state.threadScrollBehavior as ThreadScrollBehavior
-        )
-      ) {
-        const draft = {
-          ...parsed,
-          state: {
-            ...state,
-            threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
-          },
-        }
-
-        return JSON.stringify(draft)
-      }
-      return value
-    }
-  } catch {
-    // ignore parse failures
-  }
-
-  return null
-}
-
-const migrateLegacySnapshot = (): string | null => {
-  const legacy = localStorage.getItem(LEGACY_INTERFACE_STORAGE_KEY)
-  if (!legacy) return null
-
-  const migrated =
-    validatePersistedSnapshot(legacy) ?? buildDefaultPersistedSnapshot()
-
-  localStorage.setItem(localStorageKey.settingInterface, migrated)
-  localStorage.removeItem(LEGACY_INTERFACE_STORAGE_KEY)
-
-  return migrated
-}
-
-const migrateFromGeneralSettings = (): string | null => {
-  const general = localStorage.getItem(GENERAL_SETTINGS_STORAGE_KEY)
-  if (!general) return null
-
-  try {
-    const parsed = JSON.parse(general) as {
-      state?: Record<string, unknown>
-      version?: unknown
-    }
-
-    const legacyBehavior = parsed?.state?.threadScrollBehavior
-
-    if (!isThreadScrollBehavior(legacyBehavior)) {
-      return null
-    }
-
-    const nextInterfaceState = {
-      ...createDefaultInterfaceValues(),
-      threadScrollBehavior: legacyBehavior,
-    }
-
-    const migrated = JSON.stringify({
-      state: nextInterfaceState,
-      version: 0,
-    })
-
-    localStorage.setItem(localStorageKey.settingInterface, migrated)
-
-    if (parsed?.state) {
-      const rest = { ...parsed.state }
-      delete rest.threadScrollBehavior
-
-      const cleaned = JSON.stringify({
-        ...parsed,
-        state: rest,
-      })
-      localStorage.setItem(GENERAL_SETTINGS_STORAGE_KEY, cleaned)
-    }
-
-    return migrated
-  } catch {
-    return null
-  }
-}
-
-const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() => ({
-  getItem: (name: string) => {
-    const existing = localStorage.getItem(name)
-    if (existing !== null) {
-      const valid = validatePersistedSnapshot(existing)
-      if (valid) {
-        if (valid !== existing) {
-          localStorage.setItem(name, valid)
-        }
-        return valid
-      }
-
-      const fallback = buildDefaultPersistedSnapshot()
-      localStorage.setItem(name, fallback)
-      return fallback
-    }
-
-    if (name !== localStorageKey.settingInterface) {
-      return null
-    }
-
-    return migrateLegacySnapshot() ?? migrateFromGeneralSettings()
-  },
-  setItem: (name: string, value: string) => {
-    const valid = validatePersistedSnapshot(value)
-    localStorage.setItem(name, valid ?? buildDefaultPersistedSnapshot())
-  },
-  removeItem: (name: string) => {
-    localStorage.removeItem(name)
-  },
-}))
+const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() =>
+  localStorage
+)
 
 // Hook to check if alpha slider should be shown
 export const useBlurSupport = () => {
@@ -826,6 +700,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
+          if (!isThreadScrollBehavior(state.threadScrollBehavior)) {
+            state.threadScrollBehavior = DEFAULT_THREAD_SCROLL_BEHAVIOR
+          }
+
           // Apply font size from storage
           document.documentElement.style.setProperty(
             '--font-size-base',

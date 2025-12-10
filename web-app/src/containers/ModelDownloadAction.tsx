@@ -175,18 +175,17 @@ export const ModelDownloadAction = ({
 
   if (isDownloaded) {
     return (
-      <div
-        className="flex items-center justify-center rounded bg-main-view-fg/10"
+      <Button
+        variant="link"
+        size="sm"
+        className="p-0"
+        onClick={() => handleUseModel(variant.model_id)}
         title={t('hub:useModel')}
       >
-        <Button
-          variant="link"
-          size="sm"
-          onClick={() => handleUseModel(variant.model_id)}
-        >
-          {t('hub:use')}
-        </Button>
-      </div>
+        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+          {t('hub:newChat')}
+        </div>
+      </Button>
     )
   }
 

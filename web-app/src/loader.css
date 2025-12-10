@@ -1,0 +1,64 @@
+/* Critical CSS for initial loader - loaded inline to prevent FOUC */
+#initial-loader {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: hsl(0, 0%, 100%);
+  z-index: 9999;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+}
+
+/* Light mode (default) */
+@media (prefers-color-scheme: light) {
+  #initial-loader {
+    background: rgb(255, 255, 255);
+  }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  #initial-loader {
+    background: rgb(25, 25, 25);
+  }
+}
+
+#initial-loader img {
+  width: 5rem;
+  height: 5rem;
+  animation: wave 2s ease-in-out infinite;
+  transform-origin: 70% 70%;
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10%,
+  30% {
+    transform: rotate(14deg);
+  }
+  20% {
+    transform: rotate(-8deg);
+  }
+  40%,
+  60% {
+    transform: rotate(14deg);
+  }
+  50% {
+    transform: rotate(-8deg);
+  }
+  70% {
+    transform: rotate(0deg);
+  }
+}
+
+.loaded #initial-loader {
+  opacity: 0;
+  pointer-events: none;
+}

@@ -1,6 +1,16 @@
 {
   "editServer": "Editar Servidor MCP",
   "addServer": "Adicionar Servidor MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Verificando status da extensão..."
+    },
+    "notInstalled": {
+      "title": "Jan completa tarefas no seu navegador",
+      "description": "Instale a extensão para dar ao Jan acesso ao navegador",
+      "getExtension": "Obter Extensão"
+    }
+  },
   "serverName": "Nome do Servidor",
   "enterServerName": "Digite o nome do servidor",
   "command": "Comando",
@@ -43,5 +53,13 @@
   "args": "Args",
   "env": "Env",
   "serverStatusActive": "Servidor {{serverKey}} ativado com sucesso",
-  "serverStatusInactive": "Servidor {{serverKey}} desativado com sucesso"
+  "serverStatusInactive": "Servidor {{serverKey}} desativado com sucesso",
+  "runtimeSettings": {
+    "title": "Configurações de Execução",
+    "description": "Configure como o Jan gerencia e tenta novamente os servidores MCP.",
+    "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
+    "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite."
+  },
+  "proactiveMode": "Modo Proativo de Uso do Navegador",
+  "proactiveModeDesc": "Quando habilitado, captura automaticamente capturas de tela do navegador para fornecer contexto adicional para tarefas de automação do navegador. Requer Jan Browser MCP com modelo de visão e uso de ferramentas."
 }

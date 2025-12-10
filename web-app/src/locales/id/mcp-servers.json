@@ -1,6 +1,16 @@
 {
   "editServer": "Edit Server MCP",
   "addServer": "Tambah Server MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Memeriksa status ekstensi..."
+    },
+    "notInstalled": {
+      "title": "Jan menyelesaikan tugas di browser Anda",
+      "description": "Instal ekstensi untuk memberikan Jan akses browser",
+      "getExtension": "Dapatkan Ekstensi"
+    }
+  },
   "serverName": "Nama Server",
   "enterServerName": "Masukkan nama server",
   "command": "Perintah",
@@ -43,5 +53,13 @@
   "args": "Argumen",
   "env": "Lingkungan",
   "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
-  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan"
+  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan",
+  "runtimeSettings": {
+    "title": "Pengaturan Runtime",
+    "description": "Atur bagaimana Jan mengelola dan mencoba ulang server MCP.",
+    "toolCallTimeout": "Batas waktu pemanggilan alat (detik)",
+    "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis."
+  },
+  "proactiveMode": "Mode Proaktif Penggunaan Browser",
+  "proactiveModeDesc": "Jika diaktifkan, secara otomatis menangkap tangkapan layar browser untuk memberikan konteks tambahan untuk tugas otomasi browser. Memerlukan Jan Browser MCP dengan model vision dan penggunaan tool."
 }

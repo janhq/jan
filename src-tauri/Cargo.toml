@@ -60,7 +60,7 @@ hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
-rmcp = { version = "0.6.0", features = [
+rmcp = { version = "0.8.5", features = [
     "client",
     "transport-sse-client",
     "transport-sse-client-reqwest",
@@ -97,6 +97,9 @@ rfd = { version = "0.15.4", default-features = false, features = [
   "xdg-portal",
   "common-controls-v6",
 ] }
+chrono = { version = "0.4", features = ["serde"] }
+hostname = "0.4"
+glob = "0.3"
 
 [dependencies.tauri]
 version = "2.8.5"

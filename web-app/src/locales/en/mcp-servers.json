@@ -1,6 +1,16 @@
 {
   "editServer": "Edit MCP Server",
   "addServer": "Add MCP Server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Checking extension status..."
+    },
+    "notInstalled": {
+      "title": "Jan completes tasks in your browser",
+      "description": "Install the extension to give Jan browser access",
+      "getExtension": "Get Extension"
+    }
+  },
   "serverName": "Server Name",
   "enterServerName": "Enter server name",
   "command": "Command",
@@ -43,5 +53,13 @@
   "args": "Args",
   "env": "Env",
   "serverStatusActive": "Server {{serverKey}} activated successfully",
-  "serverStatusInactive": "Server {{serverKey}} deactivated successfully"
+  "serverStatusInactive": "Server {{serverKey}} deactivated successfully",
+  "runtimeSettings": {
+    "title": "Runtime Settings",
+    "description": "Configure how Jan manages and retries MCP servers.",
+    "toolCallTimeout": "Tool call timeout (seconds)",
+    "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out."
+  },
+  "proactiveMode": "Browser Use Proactive Mode",
+  "proactiveModeDesc": "When enabled, automatically captures browser screenshots to provide additional context for browser automation tasks. Requires Jan Browser MCP with vision and tool use model."
 }

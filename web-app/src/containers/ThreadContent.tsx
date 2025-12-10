@@ -2,7 +2,13 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
-import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
+import {
+  IconCopy,
+  IconCopyCheck,
+  IconDatabase,
+  IconFileText,
+  IconRefresh,
+} from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
@@ -28,6 +34,13 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -83,6 +96,9 @@ export const ThreadContent = memo(
   ) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const [inlinePreview, setInlinePreview] = useState<
+      { name: string; content: string } | null
+    >(null)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -111,6 +127,20 @@ export const ThreadContent = memo(
       }
       return { files: [], cleanPrompt: text }
     }, [text, item.role])
+
+    const inlineFileContents = useMemo(() => {
+      const contents = (item.metadata as any)?.inline_file_contents
+      if (!Array.isArray(contents)) return new Map<string, string>()
+
+      return contents.reduce((map, entry) => {
+        const name = entry?.name
+        const content = entry?.content
+        if (typeof name === 'string' && typeof content === 'string') {
+          map.set(name, content)
+        }
+        return map
+      }, new Map<string, string>())
+    }, [item.metadata])
 
     const { reasoningSegment, textSegment } = useMemo(() => {
       // Check for thinking formats
@@ -249,32 +279,80 @@ export const ThreadContent = memo(
             {attachedFiles.length > 0 && (
               <div className="flex justify-end w-full mt-2 mb-2">
                 <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                  {attachedFiles.map((file, index) => (
-                    <div
-                      key={file.id || index}
-                      className="flex items-center gap-2 px-3 py-2 bg-main-view-fg/5 rounded-md border border-main-view-fg/10 text-xs"
-                    >
-                      <svg
-                        className="w-4 h-4 text-main-view-fg/50"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                  {attachedFiles.map((file, index) => {
+                    const inlineContent =
+                      file.injectionMode === 'inline'
+                        ? inlineFileContents.get(file.name) || undefined
+                        : undefined
+                    const indicator =
+                      file.injectionMode ||
+                      (inlineContent ? 'inline' : undefined)
+                    const canPreview = Boolean(
+                      indicator === 'inline' && inlineContent
+                    )
+
+                    return (
+                      <div
+                        key={file.id || index}
+                        className="flex items-center gap-2 px-3 py-2 bg-main-view-fg/5 rounded-md border border-main-view-fg/10 text-xs"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <span className="text-main-view-fg">{file.name}</span>
-                      {file.type && (
-                        <span className="text-main-view-fg/40 text-[10px]">
-                          .{file.type}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                        {indicator && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex items-center justify-center size-6 rounded-full bg-main-view/70 text-main-view-fg/80"
+                                aria-label={
+                                  indicator === 'inline'
+                                    ? t('common:attachmentInjectedIndicator')
+                                    : t('common:attachmentEmbeddedIndicator')
+                                }
+                              >
+                                {indicator === 'inline' ? (
+                                  <IconFileText size={14} />
+                                ) : (
+                                  <IconDatabase size={14} />
+                                )}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {indicator === 'inline'
+                                ? t('common:attachmentInjectedIndicator')
+                                : t('common:attachmentEmbeddedIndicator')}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={!canPreview}
+                          onClick={() =>
+                            canPreview &&
+                            setInlinePreview({
+                              name: file.name,
+                              content: inlineContent!,
+                            })
+                          }
+                          className={cn(
+                            'text-main-view-fg text-left truncate max-w-48',
+                            canPreview && 'hover:underline'
+                          )}
+                          title={
+                            canPreview
+                              ? t('common:viewInjectedContent')
+                              : file.name
+                          }
+                        >
+                          {file.name}
+                        </button>
+
+                        {file.type && (
+                          <span className="text-main-view-fg/40 text-[10px]">
+                            .{file.type}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -458,6 +536,23 @@ export const ThreadContent = memo(
           </div>
         )}
         {item.contextOverflowModal && item.contextOverflowModal}
+
+        <Dialog
+          open={Boolean(inlinePreview)}
+          onOpenChange={(open) => {
+            if (!open) setInlinePreview(null)
+          }}
+        >
+          <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{t('common:injectedContentTitle')}</DialogTitle>
+              <DialogDescription>{inlinePreview?.name}</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm font-mono bg-muted px-3 py-2 rounded-md">
+              {inlinePreview?.content}
+            </div>
+          </DialogContent>
+        </Dialog>
       </Fragment>
     )
   }

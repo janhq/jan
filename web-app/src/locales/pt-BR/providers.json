@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "Escolha um Provedor",
-    "chooseProviderContent": "Escolha o provedor que você quer usar, certifique-se de ter acesso a uma chave API para ele.",
-    "getApiKeyTitle": "Obtenha sua Chave de API",
-    "getApiKeyContent": "Entre no painel do provedor para encontrar ou gerar sua chave de API.",
-    "insertApiKeyTitle": "Insira sua Chave de API",
-    "insertApiKeyContent": "Cole sua chave de API aqui para conectar e ativar o provedor.",
-    "back": "Voltar",
-    "close": "Fechar",
-    "last": "Finalizar",
-    "next": "Próximo",
-    "skip": "Pular"
-  },
   "refreshModelsError": "Provedor deve ter URL base e chave API configuradas para buscar modelos.",
   "refreshModelsSuccess": "Adicionado {{count}} novo(s) modelo(s) de {{provider}}.",
   "noNewModels": "Nenhum modelo novo encontrado. Todos os modelos disponíveis já foram adicionados.",

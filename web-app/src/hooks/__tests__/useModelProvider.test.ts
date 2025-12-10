@@ -20,10 +20,12 @@ vi.mock('@/constants/localStorage', () => ({
 
 // Mock localStorage
 const localStorageMock = {
-  getItem: vi.fn(),
+  getItem: vi.fn(() => null),
   setItem: vi.fn(),
   removeItem: vi.fn(),
   clear: vi.fn(),
+  length: 0,
+  key: vi.fn(() => null),
 }
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
@@ -32,8 +34,11 @@ Object.defineProperty(window, 'localStorage', {
 
 describe('useModelProvider - displayName functionality', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    // Reset the mock implementations instead of clearing them
     localStorageMock.getItem.mockReturnValue(null)
+    localStorageMock.setItem.mockClear()
+    localStorageMock.removeItem.mockClear()
+    localStorageMock.clear.mockClear()
 
     // Reset Zustand store to default state
     act(() => {

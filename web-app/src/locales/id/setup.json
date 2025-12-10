@@ -1,6 +1,13 @@
 {
   "welcome": "Selamat Datang di Jan",
-  "description": "Untuk memulai, Anda perlu mengunduh model AI lokal atau terhubung ke model cloud menggunakan kunci API",
+  "description": "Untuk memulai, luncurkan dengan cepat menggunakan Jan Model atau pilih penyedia lokal atau jarak jauh Anda sendiri",
+  "descriptionWeb": "Untuk memulai, Anda perlu terhubung ke model cloud menggunakan kunci API",
+  "quickStart": "Mulai cepat dengan Jan Model",
+  "quickStartDescription": "Tidak perlu pengaturan",
+  "quickStartFailed": "Terjadi kesalahan. Silakan coba lagi.",
+  "downloading": "Mengunduh Jan Model...",
+  "downloadingDescription": "Harap tunggu saat kami mengunduh model. Ini mungkin memakan waktu beberapa menit.",
+  "orDivider": "atau",
   "localModel": "Siapkan model lokal",
   "remoteProvider": "Siapkan penyedia jarak jauh"
 }

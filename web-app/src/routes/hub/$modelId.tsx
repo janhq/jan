@@ -27,12 +27,12 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import { useTranslation } from '@/i18n'
 
 type SearchParams = {
   repo: string
 }
-
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetail,
@@ -50,6 +50,7 @@ function HubModelDetail() {
 }
 
 function HubModelDetailContent() {
+  const { t } = useTranslation()
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
@@ -431,7 +432,7 @@ function HubModelDetailContent() {
                                   model={modelData}
                                   variant={variant}
                                   defaultModelQuantizations={
-                                    defaultModelQuantizations
+                                    DEFAULT_MODEL_QUANTIZATIONS
                                   }
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
@@ -456,12 +457,16 @@ function HubModelDetailContent() {
                                   if (isDownloaded) {
                                     return (
                                       <Button
+                                        variant="link"
                                         size="sm"
+                                        className="p-0"
                                         onClick={() =>
                                           handleUseModel(variant.model_id)
                                         }
                                       >
-                                        Use
+                                        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+                                          {t('hub:newChat')}
+                                        </div>
                                       </Button>
                                     )
                                   }

@@ -21,19 +21,19 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {
           "x": 12,
-          "y": 22
+          "y": 25
         },
         "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
-          "state": "active",
-          "radius": 8
+          "state": "active"
         },
         "dragDropEnabled": false
       }
@@ -41,13 +41,13 @@
     "security": {
       "capabilities": [
         "default",
-        "logs-app-window",
+        "log-app-window",
         "logs-window",
         "system-monitor-window"
       ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+        "connect-src": "'self' asset: ipc: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
@@ -80,7 +80,6 @@
     }
   },
   "bundle": {
-    "licenseFile": "../LICENSE",
     "publisher": "Menlo Research Pte. Ltd.",
     "active": true,
     "createUpdaterArtifacts": false,

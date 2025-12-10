@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMCPServers } from '../useMCPServers'
+import { useMCPServers, DEFAULT_MCP_SETTINGS } from '../useMCPServers'
 import type { MCPServerConfig } from '../useMCPServers'
 
 // Mock the ServiceHub
@@ -23,6 +23,7 @@ describe('useMCPServers', () => {
     useMCPServers.setState({
       open: true,
       mcpServers: {},
+      settings: { ...DEFAULT_MCP_SETTINGS },
       loading: false,
       deletedServerKeys: [],
     })
@@ -33,6 +34,7 @@ describe('useMCPServers', () => {
 
     expect(result.current.open).toBe(true)
     expect(result.current.mcpServers).toEqual({})
+    expect(result.current.settings).toEqual(DEFAULT_MCP_SETTINGS)
     expect(result.current.loading).toBe(false)
     expect(result.current.deletedServerKeys).toEqual([])
     expect(typeof result.current.getServerConfig).toBe('function')
@@ -41,6 +43,8 @@ describe('useMCPServers', () => {
     expect(typeof result.current.editServer).toBe('function')
     expect(typeof result.current.deleteServer).toBe('function')
     expect(typeof result.current.setServers).toBe('function')
+    expect(typeof result.current.setSettings).toBe('function')
+    expect(typeof result.current.updateSettings).toBe('function')
     expect(typeof result.current.syncServers).toBe('function')
     expect(typeof result.current.syncServersAndRestart).toBe('function')
   })
@@ -170,7 +174,7 @@ describe('useMCPServers', () => {
   describe('editServer', () => {
     it('should edit existing server', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -196,9 +200,76 @@ describe('useMCPServers', () => {
       expect(result.current.mcpServers['test-server']).toEqual(updatedConfig)
     })
 
+    it('should preserve untouched properties when editing server with complete config', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      // Create a server with multiple properties including official, type, timeout, headers
+      const initialServerConfig: MCPServerConfig = {
+        command: 'npx',
+        args: ['-y', 'search-mcp-server@latest'],
+        env: {
+          BRIDGE_HOST: '127.0.0.1',
+          BRIDGE_PORT: '17389',
+          API_KEY: 'secret-key',
+        },
+        type: 'stdio',
+        official: true,
+        timeout: 30,
+        headers: {
+          'X-Custom-Header': 'custom-value',
+        },
+      }
+
+      // Updated config that changes some properties but preserves others
+      // This simulates what the UI component does after our fix
+      const updatedConfig: MCPServerConfig = {
+        ...initialServerConfig, // Preserve all existing properties
+        command: 'node', // Change command
+        args: ['updated-server.js'], // Change args
+        env: {
+          BRIDGE_HOST: '127.0.0.1',
+          BRIDGE_PORT: '18000', // Changed port
+        },
+        // official, type, timeout, headers are preserved via spread
+      }
+
+      act(() => {
+        result.current.addServer('test-server', initialServerConfig)
+      })
+
+      // Verify initial state
+      expect(result.current.mcpServers['test-server']?.official).toBe(true)
+      expect(result.current.mcpServers['test-server']?.type).toBe('stdio')
+      expect(result.current.mcpServers['test-server']?.timeout).toBe(30)
+      expect(result.current.mcpServers['test-server']?.headers).toEqual({
+        'X-Custom-Header': 'custom-value',
+      })
+
+      act(() => {
+        result.current.editServer('test-server', updatedConfig)
+      })
+
+      // Verify that modified fields changed
+      const editedServer = result.current.mcpServers['test-server']
+      expect(editedServer?.command).toBe('node')
+      expect(editedServer?.args).toEqual(['updated-server.js'])
+      expect(editedServer?.env).toEqual({
+        BRIDGE_HOST: '127.0.0.1',
+        BRIDGE_PORT: '18000',
+      })
+
+      // Verify that untouched properties ARE preserved (except active which can have side effects)
+      expect(editedServer?.official).toBe(true)
+      expect(editedServer?.type).toBe('stdio')
+      expect(editedServer?.timeout).toBe(30)
+      expect(editedServer?.headers).toEqual({
+        'X-Custom-Header': 'custom-value',
+      })
+    })
+
     it('should not modify state if server does not exist', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialState = result.current.mcpServers
 
       const config: MCPServerConfig = {
@@ -343,6 +414,36 @@ describe('useMCPServers', () => {
     })
   })
 
+  describe('setSettings', () => {
+    it('should replace runtime settings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      const newSettings = {
+        ...DEFAULT_MCP_SETTINGS,
+        toolCallTimeoutSeconds: 45,
+      }
+
+      act(() => {
+        result.current.setSettings(newSettings)
+      })
+
+      expect(result.current.settings).toEqual(newSettings)
+      expect(result.current.settings).not.toBe(DEFAULT_MCP_SETTINGS)
+    })
+  })
+
+  describe('updateSettings', () => {
+    it('should merge runtime settings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      act(() => {
+        result.current.updateSettings({ toolCallTimeoutSeconds: 45 })
+      })
+
+      expect(result.current.settings.toolCallTimeoutSeconds).toBe(45)
+    })
+  })
+
   describe('syncServers', () => {
     it('should call updateMCPConfig with current servers', async () => {
       const { result } = renderHook(() => useMCPServers())
@@ -366,6 +467,7 @@ describe('useMCPServers', () => {
           mcpServers: {
             'test-server': serverConfig,
           },
+          mcpSettings: result.current.settings,
         })
       )
     })
@@ -380,6 +482,7 @@ describe('useMCPServers', () => {
       expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
         JSON.stringify({
           mcpServers: {},
+          mcpSettings: result.current.settings,
         })
       )
     })
@@ -408,6 +511,7 @@ describe('useMCPServers', () => {
           mcpServers: {
             'python-server': serverConfig,
           },
+          mcpSettings: result.current.settings,
         })
       )
       expect(mockRestartMCPServers).toHaveBeenCalled()
@@ -472,6 +576,120 @@ describe('useMCPServers', () => {
 
       expect(result.current.mcpServers['lifecycle-server']).toBeUndefined()
       expect(result.current.deletedServerKeys).toContain('lifecycle-server')
+    })
+  })
+
+  describe('Proactive Mode Settings', () => {
+    it('should have proactiveMode in default settings', () => {
+      expect(DEFAULT_MCP_SETTINGS.proactiveMode).toBeDefined()
+      expect(DEFAULT_MCP_SETTINGS.proactiveMode).toBe(false)
+    })
+
+    it('should initialize proactiveMode as false', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      expect(result.current.settings.proactiveMode).toBe(false)
+    })
+
+    it('should update proactiveMode using updateSettings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      act(() => {
+        result.current.updateSettings({ proactiveMode: true })
+      })
+
+      expect(result.current.settings.proactiveMode).toBe(true)
+    })
+
+    it('should toggle proactiveMode on and off', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      // Initially false
+      expect(result.current.settings.proactiveMode).toBe(false)
+
+      // Toggle to true
+      act(() => {
+        result.current.updateSettings({ proactiveMode: true })
+      })
+
+      expect(result.current.settings.proactiveMode).toBe(true)
+
+      // Toggle back to false
+      act(() => {
+        result.current.updateSettings({ proactiveMode: false })
+      })
+
+      expect(result.current.settings.proactiveMode).toBe(false)
+    })
+
+    it('should not affect other settings when updating proactiveMode', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      const originalSettings = { ...result.current.settings }
+
+      act(() => {
+        result.current.updateSettings({ proactiveMode: true })
+      })
+
+      expect(result.current.settings.toolCallTimeoutSeconds).toBe(
+        originalSettings.toolCallTimeoutSeconds
+      )
+      expect(result.current.settings.baseRestartDelayMs).toBe(
+        originalSettings.baseRestartDelayMs
+      )
+      expect(result.current.settings.maxRestartDelayMs).toBe(
+        originalSettings.maxRestartDelayMs
+      )
+      expect(result.current.settings.backoffMultiplier).toBe(
+        originalSettings.backoffMultiplier
+      )
+    })
+
+    it('should update proactiveMode along with other settings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      act(() => {
+        result.current.updateSettings({
+          proactiveMode: true,
+          toolCallTimeoutSeconds: 60,
+        })
+      })
+
+      expect(result.current.settings.proactiveMode).toBe(true)
+      expect(result.current.settings.toolCallTimeoutSeconds).toBe(60)
+    })
+
+    it('should call syncServers with proactiveMode included in settings', async () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      act(() => {
+        result.current.updateSettings({ proactiveMode: true })
+      })
+
+      await act(async () => {
+        await result.current.syncServers()
+      })
+
+      expect(mockUpdateMCPConfig).toHaveBeenCalledWith(
+        expect.stringContaining('proactiveMode')
+      )
+    })
+
+    it('should persist proactiveMode setting through setSettings', () => {
+      const { result } = renderHook(() => useMCPServers())
+
+      const newSettings = {
+        ...DEFAULT_MCP_SETTINGS,
+        proactiveMode: true,
+        toolCallTimeoutSeconds: 45,
+      }
+
+      act(() => {
+        result.current.setSettings(newSettings)
+      })
+
+      expect(result.current.settings.proactiveMode).toBe(true)
+      expect(result.current.settings.toolCallTimeoutSeconds).toBe(45)
     })
   })
 })

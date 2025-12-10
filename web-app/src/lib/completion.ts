@@ -65,15 +65,19 @@ export const newUserThreadContent = (
   const images = attachments?.filter((a) => a.type === 'image') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
 
+  const inlineDocuments = documents.filter(
+    (doc) => doc.injectionMode === 'inline' && doc.inlineContent
+  )
+
   // Inject document metadata into the text content (id, name, fileType only - no path)
   const docMetadata = documents
-    .filter((doc) => doc.id) // Only include processed documents
     .map((doc) => ({
-      id: doc.id!,
+      id: doc.id ?? doc.name,
       name: doc.name,
       type: doc.fileType,
       size: typeof doc.size === 'number' ? doc.size : undefined,
       chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+      injectionMode: doc.injectionMode,
     }))
 
   const textWithFiles =
@@ -112,6 +116,15 @@ export const newUserThreadContent = (
     status: MessageStatus.Ready,
     created_at: 0,
     completed_at: 0,
+    metadata:
+      inlineDocuments.length > 0
+        ? {
+            inline_file_contents: inlineDocuments.map((doc) => ({
+              name: doc.name,
+              content: doc.inlineContent,
+            })),
+          }
+        : undefined,
   }
 }
 /**
@@ -234,36 +247,19 @@ export const sendCompletion = async (
     }
   }
 
-  // Inject RAG tools on-demand (not in global tools list)
   const providerModelConfig = provider.models?.find(
     (model) => model.id === thread.model?.id || model.model === thread.model?.id
   )
-  const effectiveCapabilities = Array.isArray(
-    providerModelConfig?.capabilities
-  )
-    ? providerModelConfig?.capabilities ?? []
+  const effectiveCapabilities = Array.isArray(providerModelConfig?.capabilities)
+    ? (providerModelConfig?.capabilities ?? [])
     : getModelCapabilities(provider.provider, thread.model.id)
   const modelSupportsTools = effectiveCapabilities.includes(
     ModelCapabilities.TOOLS
   )
   let usableTools = tools
-  try {
-    const attachmentsEnabled = useAttachments.getState().enabled
-    if (
-      attachmentsEnabled &&
-      PlatformFeatures[PlatformFeature.ATTACHMENTS] &&
-      modelSupportsTools
-    ) {
-      const ragTools = await getServiceHub().rag().getTools().catch(() => [])
-      if (Array.isArray(ragTools) && ragTools.length) {
-        usableTools = [...tools, ...ragTools]
-      }
-    }
-  } catch (e) {
-    // Ignore RAG tool injection errors during completion setup
-    console.debug('Skipping RAG tools injection:', e)
+  if (modelSupportsTools) {
+    usableTools = [...tools]
   }
-
   const engine = ExtensionManager.getInstance().getEngine(provider.provider)
 
   const completion = engine
@@ -440,6 +436,7 @@ export const captureProactiveScreenshots = async (
       try {
         const { promise } = getServiceHub().mcp().callToolWithCancellation({
           toolName: screenshotTool.name,
+          serverName: screenshotTool.server,
           arguments: {},
         })
         const screenshotResult = await promise
@@ -456,6 +453,7 @@ export const captureProactiveScreenshots = async (
       try {
         const { promise } = getServiceHub().mcp().callToolWithCancellation({
           toolName: snapshotTool.name,
+          serverName: snapshotTool.server,
           arguments: {},
         })
         const snapshotResult = await promise
@@ -546,7 +544,8 @@ export const postMessageProcessing = async (
       console.error('Failed to load RAG tool names:', e)
     }
     const ragFeatureAvailable =
-      useAttachments.getState().enabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
+      useAttachments.getState().enabled &&
+      PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
     for (const toolCall of calls) {
       if (abortController.signal.aborted) break
       const toolId = ulid()
@@ -622,10 +621,23 @@ export const postMessageProcessing = async (
               }),
               cancel: async () => {},
             }
-        : getServiceHub().mcp().callToolWithCancellation({
-            toolName,
-            arguments: toolArgs,
-          })
+        : await (async () => {
+            // Find server name for this MCP tool from available tools
+            let serverName: string | undefined
+            try {
+              const availableTools = await getServiceHub().mcp().getTools()
+              const matchingTool = availableTools.find(t => t.name === toolName)
+              serverName = matchingTool?.server
+            } catch (e) {
+              console.warn('Failed to lookup server for tool:', toolName, e)
+            }
+
+            return getServiceHub().mcp().callToolWithCancellation({
+              toolName,
+              serverName,
+              arguments: toolArgs,
+            })
+          })()
 
       useAppState.getState().setCancelToolCall(cancel)
 
