@@ -33,8 +33,7 @@ export const StreamingContent = memo(({ threadId }: Props) => {
     return extractReasoningSegment(text)
   }, [streamingContent])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const streamingTools: any = useMemo(() => {
+  const streamingTools = useMemo(() => {
     const calls = streamingContent?.metadata?.tool_calls
     return calls
   }, [streamingContent])
@@ -67,12 +66,7 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   return (
     <ThreadContent
       streamTools={{
-        tool_calls: {
-          function: {
-            name: streamingTools?.[0]?.function?.name as string,
-            arguments: streamingTools?.[0]?.function?.arguments as string,
-          },
-        },
+        tool_calls: streamingTools,
       }}
       {...streamingContent}
       isLastMessage={true}
