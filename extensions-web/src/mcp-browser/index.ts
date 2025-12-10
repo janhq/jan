@@ -20,6 +20,7 @@ import {
 import type { ComponentType } from 'react'
 import { getBrowserTools, BROWSER_SERVER_NAME, isBrowserTool } from './tools'
 import { BrowserToolButton } from './components'
+import { createErrorResult, normalizeContentItem } from '../shared/mcp-utils'
 
 // Extension ID injected at build time via vite.config.ts
 declare const BROWSER_EXTENSION_ID: string
@@ -330,36 +331,23 @@ export default class MCPBrowserExtension extends MCPExtension {
     _serverName?: string
   ): Promise<MCPToolCallResult> {
     if (!isBrowserTool(toolName)) {
-      return {
-        error: `Unknown browser tool: ${toolName}`,
-        content: [{ type: 'text', text: `Unknown browser tool: ${toolName}` }],
-      }
+      return createErrorResult(`Unknown browser tool: ${toolName}`)
     }
 
     if (!this.client?.isConnected()) {
-      return {
-        error: 'Browser extension not connected',
-        content: [
-          {
-            type: 'text',
-            text: 'Browser extension is not connected. Please click the Browser button to connect.',
-          },
-        ],
-      }
+      return createErrorResult(
+        'Browser extension not connected',
+        'Browser extension is not connected. Please click the Browser button to connect.'
+      )
     }
 
     try {
       const response = await this.client.call(toolName, args)
-
-      // Use toToolResult to format response consistently with mcp-server (YAML for snapshots)
       const toolResult = toToolResult(response)
 
       return {
         error: toolResult.isError ? (toolResult.content[0]?.text || 'Tool call failed') : '',
-        content: toolResult.content.map((item: { type?: string; text?: string }) => ({
-          type: item.type || 'text',
-          text: item.text || '',
-        })),
+        content: toolResult.content.map(normalizeContentItem),
       }
     } catch (err) {
       let errorMessage: string
@@ -376,10 +364,7 @@ export default class MCPBrowserExtension extends MCPExtension {
         errorMessage = err instanceof Error ? err.message : String(err)
       }
 
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: errorMessage }],
-      }
+      return createErrorResult(errorMessage)
     }
   }
 

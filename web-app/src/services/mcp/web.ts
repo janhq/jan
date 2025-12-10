@@ -7,7 +7,27 @@
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import type { MCPService, MCPConfig, ToolCallWithCancellationResult } from './types'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, MCPExtension, MCPTool, MCPToolCallResult } from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, MCPTool, MCPToolCallResult, MCPToolCallResultContent } from '@janhq/core'
+
+/** Create an error result with the given message */
+const createErrorResult = (error: string, text?: string): MCPToolCallResult => ({
+  error,
+  content: [{ type: 'text' as const, text: text || error }]
+})
+
+/** Normalize content item to proper MCPToolCallResultContent type */
+const normalizeContentItem = (item: { type?: string; text?: string; data?: string; mimeType?: string }): MCPToolCallResultContent => {
+  if (item.type === 'image' && item.data && item.mimeType) {
+    return { type: 'image' as const, data: item.data, mimeType: item.mimeType }
+  }
+  return { type: 'text' as const, text: item.text || JSON.stringify(item) }
+}
+
+/** Normalize tool call result content array */
+const normalizeResult = (result: { error?: string; content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }> }): MCPToolCallResult => ({
+  error: result.error || '',
+  content: (result.content || []).map(normalizeContentItem)
+})
 
 export class WebMCPService implements MCPService {
   private abortControllers: Map<string, AbortController> = new Map()
@@ -142,47 +162,26 @@ export class WebMCPService implements MCPService {
   }
 
   async callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult> {
-    // Validate input parameters
     if (!args.toolName || typeof args.toolName !== 'string') {
-      return {
-        error: 'Invalid tool name provided',
-        content: [{ type: 'text', text: 'Tool name must be a non-empty string' }]
-      }
+      return createErrorResult('Invalid tool name provided', 'Tool name must be a non-empty string')
     }
 
-    // Find the right extension based on server name
     const extension = await this.findExtensionForServer(args.serverName)
     if (!extension) {
-      return {
-        error: 'MCP extension not available',
-        content: [{ type: 'text', text: 'MCP service is not available' }]
-      }
+      return createErrorResult('MCP extension not available', 'MCP service is not available')
     }
 
     try {
       const result = await extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
 
-      // Ensure OpenAI-compliant response format
       if (!result.content || !Array.isArray(result.content)) {
-        return {
-          error: 'Invalid tool response format',
-          content: [{ type: 'text', text: 'Tool returned invalid response format' }]
-        }
+        return createErrorResult('Invalid tool response format', 'Tool returned invalid response format')
       }
 
-      return {
-        error: result.error || '',
-        content: result.content.map(item => ({
-          type: item.type || 'text',
-          text: item.text || JSON.stringify(item)
-        }))
-      }
+      return normalizeResult(result)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }]
-      }
+      return createErrorResult(errorMessage, `Tool execution failed: ${errorMessage}`)
     }
   }
 
@@ -192,15 +191,10 @@ export class WebMCPService implements MCPService {
     arguments: object
     cancellationToken?: string
   }): ToolCallWithCancellationResult {
-    // Validate input parameters
     if (!args.toolName || typeof args.toolName !== 'string') {
-      const errorResult: MCPToolCallResult = {
-        error: 'Invalid tool name provided',
-        content: [{ type: 'text', text: 'Tool name must be a non-empty string' }]
-      }
       return {
-        promise: Promise.resolve(errorResult),
-        cancel: async () => {}, // No-op for failed validation
+        promise: Promise.resolve(createErrorResult('Invalid tool name provided', 'Tool name must be a non-empty string')),
+        cancel: async () => {},
         token: 'invalid'
       }
     }
@@ -231,59 +225,35 @@ export class WebMCPService implements MCPService {
     args: { toolName: string; serverName?: string; arguments: object },
     signal: AbortSignal
   ): Promise<MCPToolCallResult> {
-    // Check if already aborted
+    const cancelledResult = createErrorResult('Tool call was cancelled', 'Tool call was cancelled by user')
+
     if (signal.aborted) {
-      return {
-        error: 'Tool call was cancelled',
-        content: [{ type: 'text', text: 'Tool call was cancelled by user' }]
-      }
+      return cancelledResult
     }
 
-    // Find the right extension based on server name
     const extension = await this.findExtensionForServer(args.serverName)
     if (!extension) {
-      return {
-        error: 'MCP extension not available',
-        content: [{ type: 'text', text: 'MCP service is not available' }]
-      }
+      return createErrorResult('MCP extension not available', 'MCP service is not available')
     }
 
     return new Promise((resolve) => {
-      const abortHandler = () => {
-        resolve({
-          error: 'Tool call was cancelled',
-          content: [{ type: 'text', text: 'Tool call was cancelled by user' }]
-        })
-      }
+      const abortHandler = () => resolve(cancelledResult)
       signal.addEventListener('abort', abortHandler, { once: true })
 
       extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
         .then(result => {
           if (!signal.aborted) {
             if (!result.content || !Array.isArray(result.content)) {
-              resolve({
-                error: 'Invalid tool response format',
-                content: [{ type: 'text', text: 'Tool returned invalid response format' }]
-              })
+              resolve(createErrorResult('Invalid tool response format', 'Tool returned invalid response format'))
               return
             }
-
-            resolve({
-              error: result.error || '',
-              content: result.content.map(item => ({
-                type: item.type || 'text',
-                text: item.text || JSON.stringify(item)
-              }))
-            })
+            resolve(normalizeResult(result))
           }
         })
         .catch(error => {
           if (!signal.aborted) {
             const errorMessage = error instanceof Error ? error.message : String(error)
-            resolve({
-              error: errorMessage,
-              content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }]
-            })
+            resolve(createErrorResult(errorMessage, `Tool execution failed: ${errorMessage}`))
           }
         })
         .finally(() => {

@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { twMerge } from 'tailwind-merge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import ImageModal from '@/containers/dialogs/ImageModal'
+import type { MCPToolCallResult, MCPToolCallResultContent } from '@janhq/core'
 
 interface Props {
   result: string
@@ -31,21 +32,8 @@ const useToolCallBlockStore = create<ToolCallBlockState>((set) => ({
     })),
 }))
 
-// Types for MCP response content
-interface MCPContentItem {
-  type: string
-  data?: string
-  text?: string
-  mimeType?: string
-}
-
-interface MCPResponse {
-  content?: MCPContentItem[]
-}
-
 // Utility function to create data URL from base64 and mimeType
 const createDataUrl = (base64Data: string, mimeType: string): string => {
-  // Handle case where base64 data might already include data URL prefix
   if (base64Data.startsWith('data:')) {
     return base64Data
   }
@@ -55,22 +43,19 @@ const createDataUrl = (base64Data: string, mimeType: string): string => {
 // Parse MCP response and extract content items
 const parseMCPResponse = (result: string) => {
   try {
-    const parsed: MCPResponse = JSON.parse(result)
+    const parsed = JSON.parse(result) as MCPToolCallResult
     const content = parsed.content || []
 
     return {
       parsedResult: parsed,
       contentItems: content,
       hasStructuredContent: content.length > 0,
-      parseError: false,
     }
   } catch {
-    // Fallback: JSON parsing failed, treat as plain text
     return {
       parsedResult: result,
-      contentItems: [],
+      contentItems: [] as MCPToolCallResultContent[],
       hasStructuredContent: false,
-      parseError: true,
     }
   }
 }
@@ -81,11 +66,11 @@ const ContentItemRenderer = ({
   index,
   onImageClick,
 }: {
-  item: MCPContentItem
+  item: MCPToolCallResultContent
   index: number
   onImageClick?: (imageUrl: string, alt: string) => void
 }) => {
-  if (item.type === 'image' && item.data && item.mimeType) {
+  if (item.type === 'image') {
     const imageUrl = createDataUrl(item.data, item.mimeType)
     return (
       <div key={index} className="my-3">
@@ -94,7 +79,6 @@ const ContentItemRenderer = ({
           alt={`Result image ${index + 1}`}
           className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10 cursor-pointer hover:opacity-80 transition-opacity"
           onError={(e) => {
-            // Hide broken images
             e.currentTarget.style.display = 'none'
           }}
           onClick={() => onImageClick?.(imageUrl, `Result image ${index + 1}`)}
@@ -103,7 +87,7 @@ const ContentItemRenderer = ({
     )
   }
 
-  // For any other types, render as JSON
+  // Text content - render as JSON
   return (
     <div key={index} className="mt-3">
       <RenderMarkdown
