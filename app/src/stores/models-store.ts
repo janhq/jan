@@ -41,6 +41,9 @@ export const useModels = create<ModelState>((set, get) => ({
   setSelectedModel: async (model: Model) => {
     set({ selectedModel: model })
     if (!model) return
+    if (get().modelDetail.id === model.id) {
+      return
+    }
     const modelDetail = await modelService.getModelDetail(model.id)
     set({ modelDetail })
   },

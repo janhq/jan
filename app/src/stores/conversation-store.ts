@@ -7,7 +7,12 @@ interface ConversationState {
   conversations: Conversation[]
   loading: boolean
   getConversations: () => Promise<void>
+  getConversation: (conversationId: string) => Promise<Conversation>
   createConversation: (
+    payload: CreateConversationPayload
+  ) => Promise<Conversation>
+  updateConversation: (
+    convId: string,
     payload: CreateConversationPayload
   ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<void>
@@ -36,6 +41,28 @@ export const useConversations = create<ConversationState>((set, get) => ({
       }
     })()
   },
+  getConversation: async (conversationId: string) => {
+    try {
+      const conversation =
+        await conversationService.getConversation(conversationId)
+      set((state) => {
+        const existingIndex = state.conversations.findIndex(
+          (conv) => conv.id === conversationId
+        )
+        if (existingIndex !== -1) {
+          const updatedConversations = [...state.conversations]
+          updatedConversations[existingIndex] = conversation
+          return { conversations: updatedConversations }
+        } else {
+          return { conversations: [...state.conversations, conversation] }
+        }
+      })
+      return conversation
+    } catch (err) {
+      console.error('Error fetching conversation:', err)
+      throw err
+    }
+  },
   createConversation: async (payload: CreateConversationPayload) => {
     try {
       const newConversation =
@@ -46,6 +73,26 @@ export const useConversations = create<ConversationState>((set, get) => ({
       return newConversation
     } catch (err) {
       console.error('Error creating conversation:', err)
+      throw err
+    }
+  },
+  updateConversation: async (
+    convId: string,
+    payload: CreateConversationPayload
+  ) => {
+    try {
+      const updatedConversation = await conversationService.updateConversation(
+        convId,
+        payload
+      )
+      set((state) => ({
+        conversations: state.conversations.map((conv) =>
+          conv.id === updatedConversation.id ? updatedConversation : conv
+        ),
+      }))
+      return updatedConversation
+    } catch (err) {
+      console.error('Error updating conversation:', err)
       throw err
     }
   },

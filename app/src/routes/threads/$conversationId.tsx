@@ -1,26 +1,11 @@
 import { createFileRoute, useParams } from '@tanstack/react-router'
-import { useEffect } from 'react'
-// import { useConversations } from '@/hooks/use-conversations'
+
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { NavHeader } from '@/components/sidebar/nav-header'
 
 function ThreadPageContent() {
-  const { conversationId } = useParams({ strict: false }) as {
-    conversationId: string
-  }
-  // const { conversations, currentConversation, setCurrentConversation } =
-  //   useConversations()
-
-  // Set current conversation when component mounts or conversationId changes
-  // useEffect(() => {
-  //   const conversation = conversations.find((c) => c.id === conversationId)
-  //   if (conversation) {
-  //     setCurrentConversation(conversation)
-  //   }
-  // }, [conversationId, conversations, setCurrentConversation])
-
   return (
     <>
       <AppSidebar />

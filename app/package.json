@@ -35,6 +35,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.68.0",
+    "streamdown": "^1.6.10",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "vaul": "^1.1.2",
