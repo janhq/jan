@@ -5,6 +5,7 @@ import { useRouter } from '@tanstack/react-router'
 
 export function NavActions() {
   const isAuthenticated = useAuth((state) => state.isAuthenticated)
+  const isGuest = useAuth((state) => state.isGuest)
   const router = useRouter()
 
   const handleLogin = () => {
@@ -14,7 +15,7 @@ export function NavActions() {
     router.navigate({ to: url.pathname + url.search })
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isGuest) {
     return (
       <Button size="sm" onClick={handleLogin}>
         Log in
