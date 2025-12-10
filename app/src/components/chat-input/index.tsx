@@ -22,6 +22,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
+import { completionsService } from '@/services/completions-service'
 
 const SUBMITTING_TIMEOUT = 200
 const STREAMING_TIMEOUT = 2000
@@ -68,6 +69,20 @@ const ChatInput = ({
           navigate({
             to: '/threads/$conversationId',
             params: { conversationId: conversation.id },
+          })
+
+          // Call completions service after redirect
+          return completionsService.completions({
+            model: selectedModel.id,
+            messages: [
+              {
+                role: 'user',
+                content: message.text || '',
+              },
+            ],
+            conversation: conversation.id,
+            stream: true,
+            store: true,
           })
         })
         .catch((error) => {

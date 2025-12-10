@@ -14,7 +14,7 @@ export const modelService = {
 
   getModelDetail: async (modelId: string): Promise<ModelDetail> => {
     return fetchJsonWithAuth<ModelDetail>(
-      `${JAN_API_BASE_URL}v1/models/catalogs//${modelId}`
+      `${JAN_API_BASE_URL}v1/models/catalogs/${modelId}`
     )
   },
 }
