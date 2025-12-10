@@ -10,6 +10,7 @@ import { useAuth } from '@/stores/auth-store'
 
 function PageContent() {
   const isAuthenticated = useAuth((state) => state.isAuthenticated)
+  const isGuest = useAuth((state) => state.isGuest)
   const { setOpen } = useSidebar()
   const prevAuthRef = useRef(isAuthenticated)
 
@@ -23,7 +24,7 @@ function PageContent() {
 
   return (
     <>
-      <AppSidebar />
+      {!isGuest && <AppSidebar />}
       <SidebarInset>
         <NavHeader />
         <div className="flex flex-1 flex-col gap-4 px-4 py-10">

@@ -4,13 +4,29 @@ import {
   useLocation,
   useRouter,
 } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { LoginForm } from '@/components/form/login'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { useAuth } from '@/stores/auth-store'
 
 function RootLayout() {
   const location = useLocation()
   const router = useRouter()
+  const accessToken = useAuth((state) => state.accessToken)
+  const guestLogin = useAuth((state) => state.guestLogin)
+  const hasAttemptedGuestLogin = useRef(false)
+
+  // Auto guest login if no token exists
+  useEffect(() => {
+    if (!accessToken && !hasAttemptedGuestLogin.current) {
+      hasAttemptedGuestLogin.current = true
+      guestLogin().catch((error) => {
+        console.error('Auto guest login failed:', error)
+        hasAttemptedGuestLogin.current = false // Allow retry on failure
+      })
+    }
+  }, [accessToken, guestLogin])
 
   // Check if modals should be shown via search params
   const searchParams = new URLSearchParams(location.search)
@@ -45,7 +61,10 @@ function RootLayout() {
       </Dialog>
 
       {/* Settings Dialog */}
-      <SettingsDialog open={isSettingsOpen} section={settingSection || 'general'} />
+      <SettingsDialog
+        open={isSettingsOpen}
+        section={settingSection || 'general'}
+      />
     </>
   )
 }

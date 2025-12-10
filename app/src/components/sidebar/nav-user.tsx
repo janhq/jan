@@ -110,7 +110,7 @@ export function NavUser() {
                 }}
               >
                 <div className="flex gap-2 items-center justify-center">
-                  <LogOut className="text-muted-foreground" />
+                  <LogOut className="text-muted-foreground ml-0.5" />
                   Log out
                 </div>
               </DropDrawerItem>
