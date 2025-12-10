@@ -14,7 +14,7 @@ export default defineConfig({
     emptyOutDir: false // Don't clean this output directory
   },
   define: {
-    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'http://localhost:8000'),
+    JAN_BASE_URL: JSON.stringify(process.env.JAN_BASE_URL || 'https://api.jan.ai'),
     ENVIRONMENT: JSON.stringify(process.env.ENVIRONMENT || 'prod'),
     BROWSER_EXTENSION_ID: JSON.stringify(process.env.BROWSER_EXTENSION_ID || 'mkciifcjehgnpaigoiaakdgabbpfppal'),
     CHROME_STORE_URL: JSON.stringify(process.env.CHROME_STORE_URL || 'https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal'),
