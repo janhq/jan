@@ -253,11 +253,16 @@ export default class MCPBrowserExtension extends MCPExtension {
    */
   private setConnectionState(state: ConnectionState): void {
     if (this.connectionState !== state) {
+      const wasConnected = this.connectionState === 'connected'
       this.connectionState = state
 
       // Manage polling based on connection state
       if (state === 'connected') {
         this.stopPolling()
+        // Emit event to trigger tools refresh when newly connected
+        if (!wasConnected && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('mcp-browser-connected'))
+        }
       } else {
         this.startPolling()
       }
