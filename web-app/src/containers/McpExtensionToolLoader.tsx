@@ -30,7 +30,9 @@ export const McpExtensionToolLoader = ({
     const tool = tools.find(t => t.name === toolName)
     if (!tool) return
 
-    const toolKey = `${tool.server}::${toolName}`
+    const server = tool.server
+
+    const toolKey = `${server}::${toolName}`
 
     if (initialMessage) {
       const currentDefaults = getDefaultDisabledTools()
@@ -40,7 +42,7 @@ export const McpExtensionToolLoader = ({
         setDefaultDisabledTools([...currentDefaults, toolKey])
       }
     } else if (currentThread?.id) {
-      setToolDisabledForThread(currentThread.id, tool.server, toolName, enabled)
+      setToolDisabledForThread(currentThread.id, server, toolName, enabled)
     }
   }
 

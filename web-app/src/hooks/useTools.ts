@@ -43,7 +43,17 @@ export const useTools = () => {
     }).catch((error) => {
       console.error('Failed to set up MCP update listener:', error)
     })
-    return unsubscribe
+
+    // Also listen for browser extension connection events to refresh tools
+    const handleBrowserConnected = () => {
+      setTools()
+    }
+    window.addEventListener('mcp-browser-connected', handleBrowserConnected)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('mcp-browser-connected', handleBrowserConnected)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 }
