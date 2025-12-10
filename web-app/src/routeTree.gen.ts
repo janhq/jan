@@ -13,7 +13,6 @@
 import { Route as rootRoute } from './routes/__root'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as LogsImport } from './routes/logs'
-import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
 import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
@@ -22,12 +21,13 @@ import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
+import { Route as SettingsInterfaceImport } from './routes/settings/interface'
 import { Route as SettingsHttpsProxyImport } from './routes/settings/https-proxy'
 import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAttachmentsImport } from './routes/settings/attachments'
-import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
+import { Route as SettingsAssistantImport } from './routes/settings/assistant'
 import { Route as ProjectProjectIdImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
@@ -46,12 +46,6 @@ const SystemMonitorRoute = SystemMonitorImport.update({
 const LogsRoute = LogsImport.update({
   id: '/logs',
   path: '/logs',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const AssistantRoute = AssistantImport.update({
-  id: '/assistant',
-  path: '/assistant',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -103,6 +97,12 @@ const SettingsLocalApiServerRoute = SettingsLocalApiServerImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsInterfaceRoute = SettingsInterfaceImport.update({
+  id: '/settings/interface',
+  path: '/settings/interface',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsHttpsProxyRoute = SettingsHttpsProxyImport.update({
   id: '/settings/https-proxy',
   path: '/settings/https-proxy',
@@ -133,9 +133,9 @@ const SettingsAttachmentsRoute = SettingsAttachmentsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const SettingsAppearanceRoute = SettingsAppearanceImport.update({
-  id: '/settings/appearance',
-  path: '/settings/appearance',
+const SettingsAssistantRoute = SettingsAssistantImport.update({
+  id: '/settings/assistant',
+  path: '/settings/assistant',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -187,13 +187,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
-    '/assistant': {
-      id: '/assistant'
-      path: '/assistant'
-      fullPath: '/assistant'
-      preLoaderRoute: typeof AssistantImport
-      parentRoute: typeof rootRoute
-    }
     '/logs': {
       id: '/logs'
       path: '/logs'
@@ -229,11 +222,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectProjectIdImport
       parentRoute: typeof rootRoute
     }
-    '/settings/appearance': {
-      id: '/settings/appearance'
-      path: '/settings/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof SettingsAppearanceImport
+    '/settings/assistant': {
+      id: '/settings/assistant'
+      path: '/settings/assistant'
+      fullPath: '/settings/assistant'
+      preLoaderRoute: typeof SettingsAssistantImport
       parentRoute: typeof rootRoute
     }
     '/settings/attachments': {
@@ -269,6 +262,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/https-proxy'
       fullPath: '/settings/https-proxy'
       preLoaderRoute: typeof SettingsHttpsProxyImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/interface': {
+      id: '/settings/interface'
+      path: '/settings/interface'
+      fullPath: '/settings/interface'
+      preLoaderRoute: typeof SettingsInterfaceImport
       parentRoute: typeof rootRoute
     }
     '/settings/local-api-server': {
@@ -348,18 +348,18 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -374,18 +374,18 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -401,18 +401,18 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
-  '/assistant': typeof AssistantRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
+  '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -429,18 +429,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/appearance'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -454,18 +454,18 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/appearance'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -479,18 +479,18 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/assistant'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/appearance'
+    | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
+    | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -506,18 +506,18 @@ export interface FileRouteTypes {
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AssistantRoute: typeof AssistantRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
-  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
+  SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
@@ -532,18 +532,18 @@ export interface RootRouteChildren {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AssistantRoute: AssistantRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
-  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
+  SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
@@ -567,18 +567,18 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/assistant",
         "/logs",
         "/system-monitor",
         "/hub/$modelId",
         "/local-api-server/logs",
         "/project/$projectId",
-        "/settings/appearance",
+        "/settings/assistant",
         "/settings/attachments",
         "/settings/extensions",
         "/settings/general",
         "/settings/hardware",
         "/settings/https-proxy",
+        "/settings/interface",
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
@@ -593,9 +593,6 @@ export const routeTree = rootRoute
     },
     "/": {
       "filePath": "index.tsx"
-    },
-    "/assistant": {
-      "filePath": "assistant.tsx"
     },
     "/logs": {
       "filePath": "logs.tsx"
@@ -612,8 +609,8 @@ export const routeTree = rootRoute
     "/project/$projectId": {
       "filePath": "project/$projectId.tsx"
     },
-    "/settings/appearance": {
-      "filePath": "settings/appearance.tsx"
+    "/settings/assistant": {
+      "filePath": "settings/assistant.tsx"
     },
     "/settings/attachments": {
       "filePath": "settings/attachments.tsx"
@@ -629,6 +626,9 @@ export const routeTree = rootRoute
     },
     "/settings/https-proxy": {
       "filePath": "settings/https-proxy.tsx"
+    },
+    "/settings/interface": {
+      "filePath": "settings/interface.tsx"
     },
     "/settings/local-api-server": {
       "filePath": "settings/local-api-server.tsx"

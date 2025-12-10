@@ -14,6 +14,32 @@ export interface TokenCountData {
   error?: string
 }
 
+type InlineFileContent = {
+  name?: string
+  content: string
+}
+
+const getInlineFileContents = (
+  metadata: ThreadMessage['metadata']
+): InlineFileContent[] => {
+  const inlineFileContents = (
+    metadata as { inline_file_contents?: unknown }
+  )?.inline_file_contents
+
+  if (!Array.isArray(inlineFileContents)) return []
+
+  return inlineFileContents.filter((file): file is InlineFileContent => {
+    if (!file || typeof file !== 'object') return false
+    const { content, name } = file as { content?: unknown; name?: unknown }
+
+    const hasContent = typeof content === 'string' && content.length > 0
+    const hasValidName =
+      typeof name === 'string' || typeof name === 'undefined'
+
+    return hasContent && hasValidName
+  })
+}
+
 export const useTokensCount = (
   messages: ThreadMessage[] = [],
   uploadedFiles?: Array<{
@@ -31,12 +57,17 @@ export const useTokensCount = (
   })
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  const latestCalculationRef = useRef<(() => Promise<void>) | null>(null)
+  const requestIdRef = useRef(0)
   const isIncreasingContextSize = useRef<boolean>(false)
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider } = useModelProvider()
   const { prompt } = usePrompt()
 
-  // Create messages with current prompt for live calculation
+  // Create messages with current prompt for live calculation.
+  // This mirrors the payload sent to token counting by appending the draft
+  // user message (text plus any uploaded images) to the existing thread
+  // history so the model sees the full context that will be submitted.
   const messagesWithPrompt = useMemo(() => {
     const result = [...messages]
     if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {
@@ -70,41 +101,53 @@ export const useTokensCount = (
         } as ThreadMessage)
       }
     }
-    return result.map((e) => ({
-      ...e,
-      content: e.content.map((c) => ({
-        ...c,
-        text:
-          c.type === 'text'
-            ? {
-                value: removeReasoningContent(c.text?.value ?? '.'),
-                annotations: [],
-              }
-            : c.text,
-      })),
-    }))
+    return result.map((e) => {
+      // Pull inline file contents stored on the message metadata
+      const inlineFileContents = getInlineFileContents(e.metadata)
+
+      const buildInlineText = (base: string) => {
+        if (!inlineFileContents.length) return base
+        const formatted = inlineFileContents
+          .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
+          .join('\n\n')
+        return base ? `${base}\n\n${formatted}` : formatted
+      }
+
+      return {
+        ...e,
+        content: e.content.map((c) => ({
+          ...c,
+          text:
+            c.type === 'text'
+              ? {
+                  value: removeReasoningContent(
+                    buildInlineText(c.text?.value ?? '.')
+                  ),
+                  annotations: [],
+                }
+              : c.text,
+        })),
+      }
+    })
   }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt
-  const debouncedCalculateTokens = useCallback(async () => {
+  const runTokenCalculation = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     const modelId = selectedModel?.id
-    if (!modelId || selectedProvider !== 'llamacpp') {
-      setTokenData({
-        tokenCount: 0,
-        loading: false,
-        isNearLimit: false,
-      })
-      return
-    }
 
-    // Use messages with current prompt for calculation
-    const messagesToCalculate = messagesWithPrompt
-    if (messagesToCalculate.length === 0) {
-      setTokenData({
-        tokenCount: 0,
-        loading: false,
-        isNearLimit: false,
-      })
+    if (
+      !modelId ||
+      selectedProvider !== 'llamacpp' ||
+      messagesWithPrompt.length === 0
+    ) {
+      if (requestId === requestIdRef.current) {
+        setTokenData({
+          tokenCount: 0,
+          loading: false,
+          isNearLimit: false,
+        })
+      }
       return
     }
 
@@ -113,7 +156,11 @@ export const useTokensCount = (
     try {
       const tokenCount = await serviceHub
         .models()
-        .getTokensCount(modelId, messagesToCalculate)
+        .getTokensCount(modelId, messagesWithPrompt)
+
+      if (requestId !== requestIdRef.current) {
+        return
+      }
 
       const maxTokensValue =
         selectedModel?.settings?.ctx_len?.controller_props?.value
@@ -137,6 +184,10 @@ export const useTokensCount = (
         loading: false,
       })
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return
+      }
+
       console.error('Failed to calculate tokens:', error)
       setTokenData((prev) => ({
         ...prev,
@@ -152,6 +203,10 @@ export const useTokensCount = (
     serviceHub,
     selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
+
+  useEffect(() => {
+    latestCalculationRef.current = runTokenCalculation
+  }, [runTokenCalculation])
 
   // Debounced effect that triggers when prompt or messages change
   useEffect(() => {
@@ -172,10 +227,11 @@ export const useTokensCount = (
       selectedModel?.id
     ) {
       debounceTimeoutRef.current = setTimeout(() => {
-        debouncedCalculateTokens()
-      }, 150) // 150ms debounce for more responsive updates
+        void latestCalculationRef.current?.()
+      }, 500) // 500ms debounce to reduce repeated token calculations
     } else {
       // Reset immediately if no content
+      requestIdRef.current += 1
       setTokenData({
         tokenCount: 0,
         loading: false,
@@ -194,7 +250,8 @@ export const useTokensCount = (
     selectedModel?.id,
     selectedProvider,
     messagesWithPrompt.length,
-    debouncedCalculateTokens,
+    messagesWithPrompt,
+    selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
 
   // Manual calculation function (for click events)
@@ -203,8 +260,8 @@ export const useTokensCount = (
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current)
     }
-    await debouncedCalculateTokens()
-  }, [debouncedCalculateTokens])
+    await latestCalculationRef.current?.()
+  }, [])
 
   return {
     ...tokenData,

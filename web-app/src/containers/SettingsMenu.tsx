@@ -77,11 +77,11 @@ const SettingsMenu = () => {
       title: 'common:attachments',
       route: route.settings.attachments,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.ATTACHMENTS],
+      isEnabled: PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS],
     },
     {
-      title: 'common:appearance',
-      route: route.settings.appearance,
+      title: 'common:interface',
+      route: route.settings.interface,
       hasSubMenu: false,
       isEnabled: true,
     },
@@ -96,6 +96,12 @@ const SettingsMenu = () => {
       route: route.settings.model_providers,
       hasSubMenu: activeProviders.length > 0,
       isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
+    },
+    {
+      title: 'common:assistants',
+      route: route.settings.assistant,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
     },
     {
       title: 'common:keyboardShortcuts',
@@ -201,7 +207,7 @@ const SettingsMenu = () => {
 
                 {/* Sub-menu for model providers */}
                 {menu.hasSubMenu && expandedProviders && (
-                  <div className="ml-2 mt-1 space-y-1 first-step-setup-remote-provider">
+                  <div className="ml-2 mt-1 space-y-1">
                     {activeProviders.map((provider) => {
                       const isActive = matches.some(
                         (match) =>

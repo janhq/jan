@@ -38,6 +38,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Default model providers (OpenAI, Anthropic, etc.) - disabled for web-only Jan builds
   [PlatformFeature.DEFAULT_PROVIDERS]: isPlatformTauri(),
 
+  // Projects management
+  [PlatformFeature.PROJECTS]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
   // Analytics and telemetry - disabled for web
   [PlatformFeature.ANALYTICS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
@@ -81,7 +85,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
 
-  // Attachments/RAG UI and tooling - desktop only for now
-  [PlatformFeature.ATTACHMENTS]:
+  // File attachments/RAG UI and tooling - desktop platforms only
+  [PlatformFeature.FILE_ATTACHMENTS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

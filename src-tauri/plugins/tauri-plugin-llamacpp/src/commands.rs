@@ -10,6 +10,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+use crate::args::{ArgumentBuilder, LlamacppConfig};
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::{validate_binary_path, validate_mmproj_path, validate_model_path};
@@ -19,7 +20,7 @@ use crate::process::{
 };
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
-    extract_arg_value, parse_port_from_args, setup_library_path, setup_windows_process_flags,
+    add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -41,20 +42,32 @@ pub struct UnloadResult {
 pub async fn load_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     backend_path: &str,
-    library_path: Option<&str>,
-    mut args: Vec<String>,
+    model_id: String,
+    model_path: String,
+    port: u16,
+    config: LlamacppConfig,
     envs: HashMap<String, String>,
+    mmproj_path: Option<String>,
     is_embedding: bool,
+    timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
-    log::info!("Using arguments: {:?}", args);
+    log::info!("Using configuration: {:?}", config);
 
-    validate_binary_path(backend_path)?;
+    let bin_path = validate_binary_path(backend_path)?;
 
-    let port = parse_port_from_args(&args);
+    // Build arguments using the ArgumentBuilder
+    let builder = ArgumentBuilder::new(config.clone(), is_embedding)
+        .map_err(|e| ServerError::InvalidArgument(e))?;
+
+    let mut args = builder.build(&model_id, &model_path, port, mmproj_path.clone());
+
+    log::info!("Generated arguments: {:?}", args);
+
+    // Validate paths
     let model_path_pb = validate_model_path(&mut args)?;
     let mmproj_path_pb = validate_mmproj_path(&mut args)?;
 
@@ -69,28 +82,41 @@ pub async fn load_llama_model<R: Runtime>(
         None
     };
 
-    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap_or(&"None".to_string()));
+    log::info!(
+        "MMPROJ Path string: {}",
+        &mmproj_path_string.as_ref().unwrap_or(&"None".to_string())
+    );
 
-    let api_key: String;
-
-    if let Some(api_value) = envs.get("LLAMA_API_KEY") {
-        api_key = api_value.to_string();
-    } else {
-        log::warn!("API key not provided");
-        api_key = "".to_string();
-    }
-
-    let model_id = extract_arg_value(&args, "-a");
+    let api_key: String = envs
+        .get("LLAMA_API_KEY")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            log::warn!("API key not provided");
+            String::new()
+        });
 
     // Configure the command to run the server
-    let mut command = Command::new(backend_path);
+    let mut command = Command::new(&bin_path);
+
     command.args(args);
     command.envs(envs);
 
-    setup_library_path(library_path, &mut command);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
+
+    // Try to add CUDA paths (works on both Windows and Linux)
+    let cuda_found = add_cuda_paths(&mut command);
+
+    // Optionally check if binary needs CUDA
+    if !cuda_found && binary_requires_cuda(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
+        );
+    }
+
+    // Add the binary's directory to library path
+    setup_library_path(bin_path.parent(), &mut command);
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
@@ -102,6 +128,7 @@ pub async fn load_llama_model<R: Runtime>(
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
 
     // Spawn task to monitor stdout for readiness
+    let stdout_ready_tx = ready_tx.clone();
     let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
@@ -115,6 +142,16 @@ pub async fn load_llama_model<R: Runtime>(
                     let line = line.trim_end();
                     if !line.is_empty() {
                         log::info!("[llamacpp stdout] {}", line);
+                    }
+
+                    // Check for readiness indicators
+                    let line_lower = line.to_lowercase();
+                    if line_lower.contains("http server listening")
+                        || line_lower.contains("all slots are idle")
+                        || line_lower.contains("starting the main loop")
+                    {
+                        log::info!("Server appears to be ready based on stdout: '{}'", line);
+                        let _ = stdout_ready_tx.send(true).await;
                     }
                 }
                 Err(e) => {
@@ -144,7 +181,7 @@ pub async fn load_llama_model<R: Runtime>(
                         stderr_buffer.push('\n');
                         log::info!("[llamacpp] {}", line);
 
-                        // Check for readiness indicator - llama-server outputs this when ready
+                        // Check for readiness indicator
                         let line_lower = line.to_string().to_lowercase();
                         if line_lower.contains("server is listening on")
                             || line_lower.contains("starting the main loop")
@@ -176,9 +213,10 @@ pub async fn load_llama_model<R: Runtime>(
     }
 
     // Wait for server to be ready or timeout
-    let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+    let timeout_duration = Duration::from_secs(timeout);
     let start_time = Instant::now();
     log::info!("Waiting for model session to be ready...");
+
     loop {
         tokio::select! {
             // Server is ready
@@ -221,7 +259,7 @@ pub async fn load_llama_model<R: Runtime>(
     log::info!("Server process started with PID: {} and is ready", pid);
     let session_info = SessionInfo {
         pid: pid.clone(),
-        port: port,
+        port: port.into(),
         model_id: model_id,
         model_path: model_path_pb.display().to_string(),
         is_embedding: is_embedding,
@@ -280,10 +318,9 @@ pub async fn unload_llama_model<R: Runtime>(
 #[tauri::command]
 pub async fn get_devices(
     backend_path: &str,
-    library_path: Option<&str>,
     envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
-    get_devices_from_backend(backend_path, library_path, envs).await
+    get_devices_from_backend(backend_path, envs).await
 }
 
 /// Generate API key using HMAC-SHA256

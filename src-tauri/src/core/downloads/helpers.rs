@@ -27,6 +27,7 @@ async fn validate_downloaded_file(
     save_path: &Path,
     app: &tauri::AppHandle<impl Runtime>,
     cancel_token: &CancellationToken,
+    emit_event: bool,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
     if item.sha256.is_none() && item.size.is_none() {
@@ -37,25 +38,27 @@ async fn validate_downloaded_file(
         return Ok(());
     }
 
-    // Extract model ID from save path for validation events
+    // Use model_id from item if available, otherwise extract from save path
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
-    let model_id = save_path
-        .parent() // get parent directory (modelId folder)
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
+    let model_id = item.model_id.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
+        save_path
+            .parent() // get parent directory (modelId folder)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+    });
 
-    // Emit validation started event
-    app.emit(
-        "onModelValidationStarted",
-        serde_json::json!({
-            "modelId": model_id,
-            "downloadType": "Model",
-        }),
-    )
-    .unwrap();
-
-    log::info!("Starting validation for model: {model_id}");
+    if emit_event {
+        app.emit(
+            "onModelValidationStarted",
+            serde_json::json!({
+                "modelId": model_id,
+                "downloadType": "Model",
+            }),
+        )
+        .unwrap();
+        log::info!("Starting validation for model: {model_id}");
+    }
 
     // Validate size if provided (fast check first)
     if let Some(expected_size) = &item.size {
@@ -292,6 +295,15 @@ pub async fn _get_file_size(
 
 // ===== MAIN DOWNLOAD FUNCTIONS =====
 
+// Context passed to `download_single_file` to reduce the number of arguments
+struct DownloadCtx {
+    header_map: HeaderMap,
+    resume: bool,
+    cancel_token: CancellationToken,
+    evt_name: String,
+    progress_tracker: ProgressTracker,
+}
+
 /// Downloads multiple files in parallel with individual progress tracking
 pub async fn _download_files_internal(
     app: tauri::AppHandle<impl Runtime>,
@@ -344,25 +356,25 @@ pub async fn _download_files_internal(
         // Spawn download task for each file
         let item_clone = item.clone();
         let app_clone = app.clone();
-        let header_map_clone = header_map.clone();
-        let cancel_token_clone = cancel_token.clone();
-        let evt_name_clone = evt_name.clone();
-        let progress_tracker_clone = progress_tracker.clone();
         let file_id = format!("{task_id}-{index}");
         let file_size = file_sizes.get(&item.url).copied().unwrap_or(0);
+
+        let ctx = DownloadCtx {
+            header_map: header_map.clone(),
+            resume,
+            cancel_token: cancel_token.clone(),
+            evt_name: evt_name.clone(),
+            progress_tracker: progress_tracker.clone(),
+        };
 
         let task = tokio::spawn(async move {
             download_single_file(
                 app_clone,
                 &item_clone,
-                &header_map_clone,
                 &save_path,
-                resume,
-                cancel_token_clone,
-                evt_name_clone,
-                progress_tracker_clone,
                 file_id,
                 file_size,
+                ctx,
             )
             .await
         });
@@ -383,12 +395,37 @@ pub async fn _download_files_internal(
                 let path_clone = downloaded_path.clone();
                 let cancel_token_clone = cancel_token.clone();
                 let validation_task = tokio::spawn(async move {
-                    validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone).await
+                    validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone, false).await
                 });
                 validation_tasks.push((validation_task, downloaded_path, item.clone()));
             }
             Err(e) => return Err(e),
         }
+    }
+
+    let model_id = items.iter()
+        .find_map(|item| item.model_id.as_ref())
+        .map(|s| s.as_str())
+        .or_else(|| {
+            items.first().and_then(|item| {
+                std::path::Path::new(&item.save_path)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+            })
+        })
+        .unwrap_or("unknown");
+
+    if !validation_tasks.is_empty() && items.iter().any(|item| item.sha256.is_some() || item.size.is_some()) {
+        app.emit(
+            "onModelValidationStarted",
+            serde_json::json!({
+                "modelId": model_id,
+                "downloadType": "Model",
+            }),
+        )
+        .unwrap();
+        log::info!("Starting validation for model: {model_id}");
     }
 
     // Wait for all validations to complete
@@ -421,15 +458,18 @@ pub async fn _download_files_internal(
 async fn download_single_file(
     app: tauri::AppHandle<impl Runtime>,
     item: &DownloadItem,
-    header_map: &HeaderMap,
     save_path: &std::path::Path,
-    resume: bool,
-    cancel_token: CancellationToken,
-    evt_name: String,
-    progress_tracker: ProgressTracker,
     file_id: String,
     _file_size: u64,
+    ctx: DownloadCtx,
 ) -> Result<std::path::PathBuf, String> {
+    let DownloadCtx {
+        header_map,
+        resume,
+        cancel_token,
+        evt_name,
+        progress_tracker,
+    } = ctx;
     // Create parent directories if they don't exist
     if let Some(parent) = save_path.parent() {
         if !parent.exists() {
@@ -466,7 +506,7 @@ async fn download_single_file(
         .map(|u| u.to_string())
         .unwrap_or_else(|_| item.url.clone());
     log::info!("Started downloading: {decoded_url}");
-    let client = _get_client_for_item(item, header_map).map_err(err_to_string)?;
+    let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
 

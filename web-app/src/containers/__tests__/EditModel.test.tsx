@@ -82,6 +82,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconEye: () => <div data-testid="eye-icon" />,
   IconTool: () => <div data-testid="tool-icon" />,
   IconLoader2: () => <div data-testid="loader-icon" />,
+  IconSparkles: () => <div data-testid="sparkles-icon" />,
 }))
 
 describe('DialogEditModel - Basic Component Tests', () => {

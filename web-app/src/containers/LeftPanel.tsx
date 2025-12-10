@@ -12,7 +12,6 @@ import {
   IconApps,
   IconX,
   IconSearch,
-  IconClipboardSmile,
   IconFolder,
   IconPencil,
   IconTrash,
@@ -56,17 +55,12 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled: !(IS_IOS || IS_ANDROID),
+    isEnabled:
+      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
   },
 ]
 
 const secondaryMenus = [
-  {
-    title: 'common:assistants',
-    icon: IconClipboardSmile,
-    route: route.assistant,
-    isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
-  },
   {
     title: 'common:hub',
     icon: IconApps,
@@ -88,6 +82,7 @@ const LeftPanel = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const { isAuthenticated } = useAuth()
+  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
@@ -263,11 +258,11 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
+          'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
-            !isSmallScreen &&
-            'w-48 shrink-0 rounded-lg m-1.5 mr-0',
+          !isSmallScreen &&
+          'w-48 shrink-0 rounded-lg m-1.5 mr-0',
           // Visibility controls
           open
             ? 'opacity-100 visibility-visible'
@@ -276,7 +271,12 @@ const LeftPanel = () => {
       >
         <div className="relative h-10">
           <button
-            className="absolute top-1/2 right-0 -translate-y-1/2 z-20"
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 z-20 right-0',
+              (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
+                ? 'pl-20 right-auto'
+                : ''
+            )}
             onClick={() => setLeftPanel(!open)}
           >
             <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
@@ -402,7 +402,7 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
+          {projectsEnabled && filteredProjects.length > 0 && !(IS_IOS || IS_ANDROID) && (
             <div className="space-y-1 py-1 rounded-lg mx-1 mb-3">
               <div className="flex items-center justify-between mb-2 px-2 pt-2">
                 <span className="block text-xs text-left-panel-fg/50 font-semibold">
@@ -426,6 +426,9 @@ const LeftPanel = () => {
                               'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
                               isProjectActive && 'bg-left-panel-fg/10'
                             )}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                            }}
                           >
                             <Link
                               to="/project/$projectId"
@@ -458,7 +461,10 @@ const LeftPanel = () => {
                                     }}
                                   />
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent side="bottom" align="end">
+                                <DropdownMenuContent
+                                  side="bottom"
+                                  align="end"
+                                >
                                   <DropdownMenuItem
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -674,23 +680,29 @@ const LeftPanel = () => {
       </aside>
 
       {/* Project Dialogs */}
-      <AddProjectDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        editingKey={editingProjectKey}
-        initialData={
-          editingProjectKey ? getFolderById(editingProjectKey) : undefined
-        }
-        onSave={handleProjectSave}
-      />
-      <DeleteProjectDialog
-        open={deleteProjectConfirmOpen}
-        onOpenChange={handleProjectDeleteClose}
-        projectId={deletingProjectId ?? undefined}
-        projectName={
-          deletingProjectId ? getFolderById(deletingProjectId)?.name : undefined
-        }
-      />
+      {projectsEnabled && (
+        <>
+          <AddProjectDialog
+            open={projectDialogOpen}
+            onOpenChange={setProjectDialogOpen}
+            editingKey={editingProjectKey}
+            initialData={
+              editingProjectKey ? getFolderById(editingProjectKey) : undefined
+            }
+            onSave={handleProjectSave}
+          />
+          <DeleteProjectDialog
+            open={deleteProjectConfirmOpen}
+            onOpenChange={handleProjectDeleteClose}
+            projectId={deletingProjectId ?? undefined}
+            projectName={
+              deletingProjectId
+                ? getFolderById(deletingProjectId)?.name
+                : undefined
+            }
+          />
+        </>
+      )}
     </>
   )
 }

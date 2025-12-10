@@ -1,4 +1,4 @@
-import { useAppearance, useBlurSupport } from '@/hooks/useAppearance'
+﻿import { useInterfaceSettings, useBlurSupport } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { RgbaColor, RgbaColorPicker } from 'react-colorful'
 import { IconColorPicker } from '@tabler/icons-react'
@@ -11,7 +11,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTheme } from '@/hooks/useTheme'
 
 export function ColorPickerAppBgColor() {
-  const { appBgColor, setAppBgColor } = useAppearance()
+  const { appBgColor, setAppBgColor } = useInterfaceSettings()
   const { isDark } = useTheme()
   const { t } = useTranslation()
   const showAlphaSlider = useBlurSupport()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+﻿import { useEffect, useMemo, useRef } from 'react'
 import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
@@ -16,7 +16,7 @@ import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useAppearance } from '@/hooks/useAppearance'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { ContentType, ThreadMessage } from '@janhq/core'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
@@ -86,7 +86,7 @@ function ThreadDetail() {
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
 
-  const chatWidth = useAppearance((state) => state.chatWidth)
+  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()
@@ -140,17 +140,32 @@ function ThreadDetail() {
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
         if (fetchedMessages) {
-          // For web platform: preserve local messages if server fetch is empty but we have local messages
+          const currentLocalMessages = useMessages.getState().getMessages(threadId)
+
           if (PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
               fetchedMessages.length === 0 &&
-              messages &&
-              messages.length > 0) {
-            console.log('!!!Preserving local messages as server fetch is empty:', messages.length)
-            // Don't override local messages with empty server response
+              currentLocalMessages &&
+              currentLocalMessages.length > 0
+          ) {
             return
           }
 
           // Update the messages in the store
+          if (currentLocalMessages && currentLocalMessages.length > 0) {
+            const fetchedIds = new Set(fetchedMessages.map((m) => m.id))
+            const localOnlyMessages = currentLocalMessages.filter(
+              (m) => !fetchedIds.has(m.id)
+            )
+
+            if (localOnlyMessages.length > 0) {
+              const mergedMessages = [...fetchedMessages, ...localOnlyMessages].sort(
+                (a, b) => (a.created_at || 0) - (b.created_at || 0)
+              )
+              setMessages(threadId, mergedMessages)
+              return
+            }
+          }
+
           setMessages(threadId, fetchedMessages)
         }
       })

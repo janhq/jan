@@ -1,23 +1,23 @@
-import { Skeleton } from '@/components/ui/skeleton'
-import { useAppearance } from '@/hooks/useAppearance'
+﻿import { Skeleton } from '@/components/ui/skeleton'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { IconCircleCheckFilled } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function ChatWidthSwitcher() {
-  const { chatWidth, setChatWidth } = useAppearance()
+  const { chatWidth, setChatWidth } = useInterfaceSettings()
   const { t } = useTranslation()
 
   return (
     <div className="flex flex-col sm:flex-row sm:gap-4">
       <button
         className={cn(
-          'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer ',
+          'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer',
           chatWidth === 'compact' && 'border-accent'
         )}
         onClick={() => setChatWidth('compact')}
       >
-        <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-main-view-fg/10 -mt-1">
           <span className="font-medium text-xs font-sans">
             {t('common:compactWidth')}
           </span>

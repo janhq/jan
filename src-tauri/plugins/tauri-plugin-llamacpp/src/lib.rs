@@ -10,6 +10,7 @@ mod error;
 mod gguf;
 mod path;
 mod process;
+mod args;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
 pub use state::LLamaBackendSession;

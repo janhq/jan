@@ -16,6 +16,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useAppState } from '@/hooks/useAppState'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -31,12 +32,22 @@ export function ModelSetting({
   const { updateProvider } = useModelProvider()
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   const [isPlanning, setIsPlanning] = useState(false)
 
   // Create a debounced version of stopModel that waits 500ms after the last call
   const debouncedStopModel = debounce((modelId: string) => {
-    serviceHub.models().stopModel(modelId)
+    serviceHub
+      .models()
+      .stopModel(modelId)
+      .then(() => {
+        // Refresh active models after stopping
+        serviceHub
+          .models()
+          .getActiveModels()
+          .then((models) => setActiveModels(models || []))
+      })
   }, 500)
 
   const handlePlanModelLoad = async () => {

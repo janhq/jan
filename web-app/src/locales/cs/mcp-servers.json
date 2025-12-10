@@ -1,0 +1,65 @@
+{
+  "editServer": "Upravit MCP server",
+  "addServer": "Přidat MCP server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Kontrola stavu rozšíření..."
+    },
+    "notInstalled": {
+      "title": "Jan dokončuje úkoly ve vašem prohlížeči",
+      "description": "Nainstalujte rozšíření pro přístup Jana k prohlížeči",
+      "getExtension": "Získat rozšíření"
+    }
+  },
+  "serverName": "Název serveru",
+  "enterServerName": "Zadejte název serveru",
+  "command": "Příkaz",
+  "enterCommand": "Zadejte příkaz (uvx nebo npx)",
+  "arguments": "Argumenty",
+  "argument": "Argument {{index}}",
+  "envVars": "Proměnné prostředí",
+  "key": "Klíč",
+  "value": "Hodnota",
+  "save": "Uložit",
+  "status": "Stav",
+  "connected": "Připojeno",
+  "disconnected": "Odpojeno",
+  "deleteServer": {
+    "title": "Smazat MCP server",
+    "description": "Opravdu chcete smazat MCP server {{serverName}}? Tuto akci nelze vrátit zpět.",
+    "delete": "Smazat",
+    "success": "MCP server {{serverName}} byl úspěšně smazán"
+  },
+  "editJson": {
+    "title": "Upravit JSON pro MCP server: {{serverName}}",
+    "titleAll": "Upravit JSON všech MCP serverů",
+    "placeholder": "Zadejte konfiguraci JSON",
+    "errorParse": "Nepodařilo se analyzovat počáteční data",
+    "errorPaste": "Neplatný formát JSON ve vloženém obsahu",
+    "errorFormat": "Neplatný formát JSON",
+    "errorServerName": "Název serveru je vyžadován a nemůže být prázdný",
+    "errorMissingServerNameKey": "JSON musí mít strukturu {\"serverName\": {config}} - chybí klíč názvu serveru",
+    "errorInvalidType": "Neplatný typ '{{type}}' pro server '{{serverName}}'. Typ musí být 'stdio', 'http' nebo 'sse'",
+    "save": "Uložit"
+  },
+  "checkParams": "Zkontrolujte prosím parametry podle tutoriálu.",
+  "title": "MCP servery",
+  "experimental": "Experimentální",
+  "editAllJson": "Upravit JSON všech serverů",
+  "findMore": "Najděte více MCP serverů na",
+  "allowPermissions": "Povolit všechna oprávnění MCP nástrojů",
+  "allowPermissionsDesc": "Pokud je povoleno, všechna volání MCP nástrojů budou automaticky schválena bez zobrazení dialogů oprávnění. Toto nastavení platí globálně pro všechny konverzace, včetně nových chatů.",
+  "noServers": "Nebyly nalezeny žádné MCP servery",
+  "args": "Argumenty",
+  "env": "Prostředí",
+  "serverStatusActive": "Server {{serverKey}} byl úspěšně aktivován",
+  "serverStatusInactive": "Server {{serverKey}} byl úspěšně deaktivován",
+  "runtimeSettings": {
+    "title": "Nastavení běhového prostředí",
+    "description": "Nakonfigurujte, jak Jan spravuje a opakuje pokusy se servery MCP.",
+    "toolCallTimeout": "Časový limit volání nástroje (sekundy)",
+    "toolCallTimeoutDesc": "Maximální doba čekání na odpověď nástroje MCP před vypršením časového limitu."
+  },
+  "proactiveMode": "Proaktivní režim používání prohlížeče",
+  "proactiveModeDesc": "Pokud je povoleno, automaticky zachytává snímky obrazovky prohlížeče, aby poskytl další kontext pro úlohy automatizace prohlížeče. Vyžaduje Jan Browser MCP s modelem pro vidění a použití nástrojů."
+}

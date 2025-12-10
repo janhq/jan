@@ -2,18 +2,20 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
-    mcp::helpers::clean_up_mcp_servers,
+    mcp::models::McpSettings,
     setup::{self, setup_mcp},
     state::AppState,
 };
 use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
-use tauri_plugin_llamacpp::cleanup_llama_processes;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-#[cfg_attr(all(mobile, any(target_os = "android", target_os = "ios")), tauri::mobile_entry_point)]
+#[cfg_attr(
+    all(mobile, any(target_os = "android", target_os = "ios")),
+    tauri::mobile_entry_point
+)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
@@ -26,7 +28,6 @@ pub fn run() {
 
     let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -60,6 +61,8 @@ pub fn run() {
             core::filesystem::commands::write_yaml,
             core::filesystem::commands::read_yaml,
             core::filesystem::commands::decompress,
+            core::filesystem::commands::open_dialog,
+            core::filesystem::commands::save_dialog,
             // App configuration commands
             core::app::commands::get_app_configurations,
             core::app::commands::get_user_home_path,
@@ -94,7 +97,7 @@ pub fn run() {
             core::mcp::commands::get_mcp_configs,
             core::mcp::commands::activate_mcp_server,
             core::mcp::commands::deactivate_mcp_server,
-            core::mcp::commands::reset_mcp_restart_count,
+            core::mcp::commands::check_jan_browser_extension_connected,
             // Threads
             core::threads::commands::list_threads,
             core::threads::commands::create_thread,
@@ -115,11 +118,14 @@ pub fn run() {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
-            mcp_restart_counts: Arc::new(Mutex::new(HashMap::new())),
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
-            mcp_successfully_connected: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
+            mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
+            mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_cleanup_handle: Arc::new(Mutex::new(None)),
+            mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -136,7 +142,8 @@ pub fn run() {
                     .build(),
             )?;
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
@@ -149,11 +156,7 @@ pub fn run() {
                 .get("version")
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default();
-            let app_version = app
-                .config()
-                .version
-                .clone()
-                .unwrap_or_default();
+            let app_version = app.config().version.clone().unwrap_or_default();
             // Migrate extensions
             if let Err(e) =
                 setup::install_extensions(app.handle().clone(), stored_version != app_version)
@@ -170,7 +173,7 @@ pub fn run() {
             store.set("version", serde_json::json!(app_version));
             store.save().expect("Failed to save store");
             // Migration completed
-            
+
             #[cfg(desktop)]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
@@ -200,26 +203,56 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
-
     // Handle app lifecycle events
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // This is called when the app is actually exiting (e.g., macOS dock quit)
-            // We can't prevent this, so run cleanup quickly
             let app_handle = app.clone();
+
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.emit("app-shutting-down", ());
+                    let _ = window.hide();
+                }
+            }
+
+            let state = app_handle.state::<AppState>();
+
+            // Check if cleanup already ran
+            let cleanup_already_running = tokio::task::block_in_place(|| {
+                tauri::async_runtime::block_on(async {
+                    let handle = state.background_cleanup_handle.lock().await;
+                    handle.is_some()
+                })
+            });
+
+            if cleanup_already_running {
+                return;
+            }
+
+            // Run cleanup synchronously and WAIT for it to complete
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
-                    // Hide window immediately (not available on mobile platforms)
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                        { let _ = window.hide(); }
-                        let _ = window.emit("kill-mcp-servers", ());
+                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
+                    use tauri_plugin_llamacpp::cleanup_llama_processes;
+
+                    let state = app_handle.state::<AppState>();
+
+                    // Increase timeout to 10 seconds and log if it times out
+                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
+                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
+                        .await
+                    {
+                        Ok(_) => log::info!("MCP cleanup completed successfully"),
+                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
                     }
 
-                    // Quick cleanup with shorter timeout
-                    let state = app_handle.state::<AppState>();
-                    let _ = clean_up_mcp_servers(state).await;
-                    let _ = cleanup_llama_processes(app.clone()).await;
+                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
+                        log::warn!("Failed to cleanup llama processes: {}", e);
+                    } else {
+                        log::info!("Llama processes cleaned up successfully");
+                    }
+                    log::info!("App cleanup completed");
                 });
             });
         }

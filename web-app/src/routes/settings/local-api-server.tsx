@@ -63,6 +63,7 @@ function LocalAPIServerContent() {
   const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
   )
+  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -134,7 +135,11 @@ function LocalAPIServerContent() {
               .then(() => {
                 console.log(`Model ${modelToStart.model} started successfully`)
                 setIsModelLoading(false) // Model loaded, stop loading state
-
+                // Refresh active models after starting
+                serviceHub
+                  .models()
+                  .getActiveModels()
+                  .then((models) => setActiveModels(models || []))
                 // Add a small delay for the backend to update state
                 return new Promise((resolve) => setTimeout(resolve, 500))
               })

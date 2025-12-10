@@ -12,8 +12,8 @@ import { JanMCPOAuthProvider } from './oauth-provider'
 import { WebSearchButton } from './components'
 import type { ComponentType } from 'react'
 
-// JAN_API_BASE is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/jan/v1')
-declare const JAN_API_BASE: string
+// JAN_BASE_URL is defined in vite.config.ts (defaults to 'https://api-dev.jan.ai/v1')
+declare const JAN_BASE_URL: string
 
 export default class MCPExtensionWeb extends MCPExtension {
   private mcpEndpoint = '/mcp'
@@ -77,7 +77,7 @@ export default class MCPExtensionWeb extends MCPExtension {
 
       // Create transport with OAuth provider (handles token refresh automatically)
       const transport = new StreamableHTTPClientTransport(
-        new URL(`${JAN_API_BASE}${this.mcpEndpoint}`),
+        new URL(`${JAN_BASE_URL}${this.mcpEndpoint}`),
         {
           authProvider: this.oauthProvider
           // No sessionId needed - server will generate one automatically
@@ -149,7 +149,7 @@ export default class MCPExtensionWeb extends MCPExtension {
     return this.tools
   }
 
-  async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolCallResult> {
+  async callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult> {
     if (!this.mcpClient) {
       return {
         error: 'MCP client not initialized',
@@ -244,14 +244,14 @@ export default class MCPExtensionWeb extends MCPExtension {
   }
 
   /**
-   * Returns the list of tool names that should be disabled by default for new users
+   * Returns the list of tool keys (server::tool format) that should be disabled by default for new users
    * All MCP web tools are disabled by default to prevent accidental API usage
-   * @returns Array of tool names to disable by default
+   * @returns Array of tool keys (server::tool) to disable by default
    */
   async getDefaultDisabledTools(): Promise<string[]> {
     try {
       const tools = await this.getTools()
-      return tools.map(tool => tool.name)
+      return tools.map(tool => `${tool.server}::${tool.name}`)
     } catch (error) {
       console.error('Failed to get default disabled tools:', error)
       return []

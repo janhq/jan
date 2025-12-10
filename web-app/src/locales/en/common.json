@@ -9,7 +9,7 @@
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
-  "appearance": "Appearance",
+  "interface": "Interface",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "newChat": "New Chat",
@@ -81,6 +81,7 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
@@ -136,6 +137,7 @@
   "enterApiKey": "Enter API Key",
   "scrollToBottom": "Scroll to bottom",
   "generateAiResponse": "Generate AI Response",
+  "continueAiResponse": "Continue with AI Response",
   "addModel": {
     "title": "Add Model",
     "modelId": "Model ID",
@@ -290,6 +292,16 @@
     "noProjectsFound": "No projects found",
     "tryDifferentSearch": "Try a different search term"
   },
+  "attachmentsIngestion": {
+    "title": "Choose how to ingest attachments",
+    "description": "Choose whether to include these files directly in the chat or index them as embeddings instead.",
+    "inline": "Inject into chat",
+    "embeddings": "Use embeddings"
+  },
+  "attachmentInjectedIndicator": "Injected into chat",
+  "attachmentEmbeddedIndicator": "Embedded for RAG",
+  "viewInjectedContent": "View injected content",
+  "injectedContentTitle": "Injected file content",
   "toast": {
     "allThreadsUnfavorited": {
       "title": "All Threads Unfavorited",

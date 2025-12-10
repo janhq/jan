@@ -45,6 +45,7 @@ vi.mock('@/hooks/useAppUpdater', () => ({
 vi.mock('@/hooks/useMCPServers', () => ({
   useMCPServers: vi.fn(() => ({
     setServers: vi.fn(),
+    setSettings: vi.fn(),
   })),
 }))
 

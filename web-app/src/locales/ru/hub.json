@@ -1,0 +1,17 @@
+{
+  "sortNewest": "Самые новые",
+  "sortMostDownloaded": "Самые загружаемые",
+  "newChat": "Новый чат",
+  "download": "Загрузить",
+  "downloaded": "Загруженные",
+  "loadingModels": "Загрузка моделей…",
+  "noModels": "Модели не найдены",
+  "by": "От",
+  "downloads": "Загрузки",
+  "variants": "Варианты",
+  "showVariants": "Показать варианты",
+  "useModel": "Использовать эту модель",
+  "downloadModel": "Загрузить модель",
+  "tools": "Инструменты",
+  "searchPlaceholder": "Поиск моделей на Hugging Face…"
+}

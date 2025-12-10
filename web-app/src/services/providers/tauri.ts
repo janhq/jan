@@ -43,11 +43,11 @@ export class TauriProvidersService extends DefaultProvidersService {
           ...provider,
           models,
         }
-      })
+      }).filter(Boolean)
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
-        const models = (await value.list()) ?? []
+        const models = await value.list().then(list => list.filter(e => !e.embedding)) ?? []
         const provider: ModelProvider = {
           active: false,
           persist: true,

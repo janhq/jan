@@ -1,6 +1,16 @@
 {
   "editServer": "Chỉnh sửa máy chủ MCP",
   "addServer": "Thêm máy chủ MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Đang kiểm tra trạng thái tiện ích..."
+    },
+    "notInstalled": {
+      "title": "Jan hoàn thành các tác vụ trong trình duyệt của bạn",
+      "description": "Cài đặt tiện ích để cho phép Jan truy cập trình duyệt",
+      "getExtension": "Tải tiện ích"
+    }
+  },
   "serverName": "Tên máy chủ",
   "enterServerName": "Nhập tên máy chủ",
   "command": "Lệnh",
@@ -43,5 +53,13 @@
   "args": "Đối số",
   "env": "Môi trường",
   "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
-  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công"
+  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công",
+  "runtimeSettings": {
+    "title": "Cài đặt thời gian chạy",
+    "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
+    "toolCallTimeout": "Thời gian chờ lệnh (giây)",
+    "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
+  },
+  "proactiveMode": "Chế độ Chủ động Sử dụng Trình duyệt",
+  "proactiveModeDesc": "Khi được bật, tự động chụp ảnh màn hình trình duyệt để cung cấp ngữ cảnh bổ sung cho các tác vụ tự động hóa trình duyệt. Yêu cầu Jan Browser MCP với mô hình vision và sử dụng công cụ."
 }

@@ -34,7 +34,9 @@ export default function DropdownToolsAvailable({
   initialMessage = false,
   onOpenChange,
 }: DropdownToolsAvailableProps) {
-  const tools = useAppState((state) => state.tools)
+  const allTools = useAppState((state) => state.tools)
+  // Filter out Jan Browser MCP tools
+  const tools = allTools.filter((tool) => tool.server !== 'Jan Browser MCP')
   const [isOpen, setIsOpen] = useState(false)
   const { t } = useTranslation()
 
@@ -61,30 +63,32 @@ export default function DropdownToolsAvailable({
     }
   }, [currentThread?.id, tools, initializeThreadTools])
 
-  const handleToolToggle = (toolName: string, checked: boolean) => {
+  const handleToolToggle = (serverName: string, toolName: string, checked: boolean) => {
     if (initialMessage) {
       // Update default tools for new threads/index page
       const currentDefaults = getDefaultDisabledTools()
+      const toolKey = `${serverName}::${toolName}`
       if (checked) {
         setDefaultDisabledTools(
-          currentDefaults.filter((name) => name !== toolName)
+          currentDefaults.filter((key) => key !== toolKey)
         )
       } else {
-        setDefaultDisabledTools([...currentDefaults, toolName])
+        setDefaultDisabledTools([...currentDefaults, toolKey])
       }
     } else if (currentThread?.id) {
       // Update tools for specific thread
-      setToolDisabledForThread(currentThread.id, toolName, checked)
+      setToolDisabledForThread(currentThread.id, serverName, toolName, checked)
     }
   }
 
-  const isToolChecked = (toolName: string): boolean => {
+  const isToolChecked = (serverName: string, toolName: string): boolean => {
     if (initialMessage) {
       // Use default tools for index page
-      return !getDefaultDisabledTools().includes(toolName)
+      const toolKey = `${serverName}::${toolName}`
+      return !getDefaultDisabledTools().includes(toolKey)
     } else if (currentThread?.id) {
       // Use thread-specific tools
-      return !isToolDisabled(currentThread.id, toolName)
+      return !isToolDisabled(currentThread.id, serverName, toolName)
     }
     return false
   }
@@ -96,23 +100,26 @@ export default function DropdownToolsAvailable({
     const allToolsByServer = getToolsByServer()
     const serverTools = allToolsByServer[serverName] || []
     serverTools.forEach((tool) => {
-      handleToolToggle(tool.name, !disable)
+      handleToolToggle(tool.server, tool.name, !disable)
     })
   }
 
-  const areAllServerToolsDisabled = (serverName: string): boolean => {
+  const areAllServerToolsEnabled = (serverName: string): boolean => {
     const allToolsByServer = getToolsByServer()
     const serverTools = allToolsByServer[serverName] || []
-    return serverTools.every((tool) => !isToolChecked(tool.name))
+    return serverTools.every((tool) => isToolChecked(tool.server, tool.name))
   }
 
   const getEnabledToolsCount = (): number => {
-    const disabledTools = initialMessage
+    const disabledToolKeys = initialMessage
       ? getDefaultDisabledTools()
       : currentThread?.id
         ? getDisabledToolsForThread(currentThread.id)
         : []
-    return tools.filter((tool) => !disabledTools.includes(tool.name)).length
+    return tools.filter((tool) => {
+      const toolKey = `${tool.server}::${tool.name}`
+      return !disabledToolKeys.includes(toolKey)
+    }).length
   }
 
   const getToolsByServer = () => {
@@ -175,7 +182,7 @@ export default function DropdownToolsAvailable({
                     </span>
                     <span className="text-xs text-main-view-fg/50 inline-flex items-center mr-1 border border-main-view-fg/20 px-1 rounded-sm">
                       {
-                        serverTools.filter((tool) => isToolChecked(tool.name))
+                        serverTools.filter((tool) => isToolChecked(tool.server, tool.name))
                           .length
                       }
                     </span>
@@ -186,7 +193,7 @@ export default function DropdownToolsAvailable({
                     {serverTools.length > 1 && (
                       <div className="sticky top-0 z-10 bg-main-view border-b border-main-view-fg/10 px-4 md:px-2 pr-2 py-1.5 flex items-center justify-between">
                         <span className="text-xs font-medium text-main-view-fg/70">
-                          Disable All Tools
+                          All Tools
                         </span>
                         <div
                           className={cn(
@@ -197,7 +204,7 @@ export default function DropdownToolsAvailable({
                           )}
                         >
                           <Switch
-                            checked={!areAllServerToolsDisabled(serverName)}
+                            checked={areAllServerToolsEnabled(serverName)}
                             onCheckedChange={(checked) =>
                               handleDisableAllServerTools(serverName, !checked)
                             }
@@ -207,25 +214,25 @@ export default function DropdownToolsAvailable({
                     )}
                     <div className="max-h-56 overflow-y-auto">
                       {serverTools.map((tool) => {
-                        const isChecked = isToolChecked(tool.name)
+                        const isChecked = isToolChecked(tool.server, tool.name)
                         return (
                           <DropDrawerItem
                             onClick={(e) => {
-                              handleToolToggle(tool.name, !isChecked)
+                              handleToolToggle(tool.server, tool.name, !isChecked)
                               e.preventDefault()
                             }}
                             onSelect={(e) => {
-                              handleToolToggle(tool.name, !isChecked)
+                              handleToolToggle(tool.server, tool.name, !isChecked)
                               e.preventDefault()
                             }}
-                            key={tool.name}
+                            key={`${tool.server}::${tool.name}`}
                             className="mt-1 first:mt-0 py-1.5"
                             icon={
                               <Switch
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   console.log('checked', checked)
-                                  handleToolToggle(tool.name, checked)
+                                  handleToolToggle(tool.server, tool.name, checked)
                                 }}
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -233,15 +240,14 @@ export default function DropdownToolsAvailable({
                               />
                             }
                           >
-                            <div className="overflow-hidden flex flex-col items-start ">
-                              <div className="truncate">
-                                <span
-                                  className="text-sm font-medium text-main-view-fg"
-                                  title={tool.name}
-                                >
-                                  {tool.name}
-                                </span>
-                              </div>
+                            <div className="overflow-hidden flex flex-col items-start w-full">
+                              <span
+                                className="text-sm font-medium text-main-view-fg truncate block w-full"
+                                title={tool.name}
+                              >
+                                {tool.name}
+                              </span>
+
                               {tool.description && (
                                 <p
                                   className="text-xs text-main-view-fg/70 mt-1 line-clamp-1"

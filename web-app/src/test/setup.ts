@@ -17,6 +17,7 @@ vi.mock('@/lib/platform/const', () => ({
     systemIntegrations: true,
     httpsProxy: true,
     defaultProviders: true,
+    projects: true,
     analytics: true,
     webAutoModelSelection: false,
     modelProviderSettings: true,
@@ -25,6 +26,7 @@ vi.mock('@/lib/platform/const', () => ({
     extensionsSettings: true,
     assistants: true,
     authentication: false,
+    attachments: true,
   }
 }))
 
@@ -115,6 +117,7 @@ const mockServiceHub = {
     deleteModel: vi.fn().mockResolvedValue(undefined),
     updateModel: vi.fn().mockResolvedValue(undefined),
     startModel: vi.fn().mockResolvedValue(undefined),
+    getActiveModels: vi.fn().mockResolvedValue([]),
     isModelSupported: vi.fn().mockResolvedValue('GREEN'),
     checkMmprojExists: vi.fn().mockResolvedValue(true), // cspell: disable-line
     stopAllModels: vi.fn().mockResolvedValue(undefined),

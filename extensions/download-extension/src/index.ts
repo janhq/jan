@@ -12,6 +12,7 @@ interface DownloadItem {
   proxy?: Record<string, string | string[] | boolean>
   sha256?: string
   size?: number
+  model_id?: string
 }
 
 type DownloadEvent = {

@@ -14,7 +14,6 @@ import {
   useCallback,
   useRef,
 } from 'react'
-import { Button } from '@/components/ui/button'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
@@ -42,8 +41,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
 import { Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -51,11 +48,12 @@ import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
+import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type SearchParams = {
   repo: string
 }
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: Hub,
@@ -246,21 +244,6 @@ function HubContent() {
       fetchHuggingFaceModel(e.target.value)
     }
   }
-
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
-
-  const downloadProcesses = useMemo(
-    () =>
-      Object.values(downloads).map((download) => ({
-        id: download.name,
-        name: download.name,
-        progress: download.progress,
-        current: download.current,
-        total: download.total,
-      })),
-    [downloads]
-  )
 
   const navigate = useNavigate()
 
@@ -473,7 +456,7 @@ function HubContent() {
                                       filteredModels[
                                         virtualItem.index
                                       ].quants.find((m) =>
-                                        defaultModelQuantizations.some((e) =>
+                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                           m.model_id.toLowerCase().includes(e)
                                         )
                                       ) ??
@@ -485,13 +468,13 @@ function HubContent() {
                                 <ModelInfoHoverCard
                                   model={filteredModels[virtualItem.index]}
                                   defaultModelQuantizations={
-                                    defaultModelQuantizations
+                                    DEFAULT_MODEL_QUANTIZATIONS
                                   }
                                   variant={
                                     filteredModels[
                                       virtualItem.index
                                     ].quants.find((m) =>
-                                      defaultModelQuantizations.some((e) =>
+                                      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                         m.model_id.toLowerCase().includes(e)
                                       )
                                     ) ??
@@ -693,7 +676,7 @@ function HubContent() {
                                             }
                                             variant={variant}
                                             defaultModelQuantizations={
-                                              defaultModelQuantizations
+                                              DEFAULT_MODEL_QUANTIZATIONS
                                             }
                                             modelSupportStatus={
                                               modelSupportStatus
@@ -702,105 +685,12 @@ function HubContent() {
                                               checkModelSupport
                                             }
                                           />
-                                          {(() => {
-                                            const isDownloading =
-                                              localDownloadingModels.has(
-                                                variant.model_id
-                                              ) ||
-                                              downloadProcesses.some(
-                                                (e) => e.id === variant.model_id
-                                              )
-                                            const downloadProgress =
-                                              downloadProcesses.find(
-                                                (e) => e.id === variant.model_id
-                                              )?.progress || 0
-                                            const isDownloaded =
-                                              useModelProvider
-                                                .getState()
-                                                .getProviderByName('llamacpp')
-                                                ?.models.some(
-                                                  (m: { id: string }) =>
-                                                    m.id === variant.model_id
-                                                )
-
-                                            if (isDownloading) {
-                                              return (
-                                                <>
-                                                  <div className="flex items-center gap-2 w-20">
-                                                    <Progress
-                                                      value={
-                                                        downloadProgress * 100
-                                                      }
-                                                    />
-                                                    <span className="text-xs text-center text-main-view-fg/70">
-                                                      {Math.round(
-                                                        downloadProgress * 100
-                                                      )}
-                                                      %
-                                                    </span>
-                                                  </div>
-                                                </>
-                                              )
+                                          <ModelDownloadAction
+                                            variant={variant}
+                                            model={
+                                              filteredModels[virtualItem.index]
                                             }
-
-                                            if (isDownloaded) {
-                                              return (
-                                                <div
-                                                  className="flex items-center justify-center rounded bg-main-view-fg/10"
-                                                  title={t('hub:useModel')}
-                                                >
-                                                  <Button
-                                                    variant="link"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                      handleUseModel(
-                                                        variant.model_id
-                                                      )
-                                                    }
-                                                  >
-                                                    {t('hub:use')}
-                                                  </Button>
-                                                </div>
-                                              )
-                                            }
-
-                                            return (
-                                              <div
-                                                className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                                title={t('hub:downloadModel')}
-                                                onClick={() => {
-                                                  addLocalDownloadingModel(
-                                                    variant.model_id
-                                                  )
-                                                  serviceHub
-                                                    .models()
-                                                    .pullModelWithMetadata(
-                                                      variant.model_id,
-                                                      variant.path,
-
-                                                      (
-                                                        filteredModels[
-                                                          virtualItem.index
-                                                        ].mmproj_models?.find(
-                                                          (e) =>
-                                                            e.model_id.toLowerCase() ===
-                                                            'mmproj-f16'
-                                                        ) ||
-                                                        filteredModels[
-                                                          virtualItem.index
-                                                        ].mmproj_models?.[0]
-                                                      )?.path,
-                                                      huggingfaceToken
-                                                    )
-                                                }}
-                                              >
-                                                <IconDownload
-                                                  size={16}
-                                                  className="text-main-view-fg/80"
-                                                />
-                                              </div>
-                                            )
-                                          })()}
+                                          />
                                         </div>
                                       }
                                     />

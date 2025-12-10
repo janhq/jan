@@ -18,6 +18,7 @@ import {
   IconStar,
   IconFolder,
   IconX,
+  IconTrash,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -25,6 +26,8 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useMessages } from '@/hooks/useMessages'
 import { cn, extractThinkingContent } from '@/lib/utils'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import {
   DropdownMenu,
@@ -79,6 +82,7 @@ const SortableItem = memo(
     const getMessages = useMessages((state) => state.getMessages)
     const { t } = useTranslation()
     const [openDropdown, setOpenDropdown] = useState(false)
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
     const navigate = useNavigate()
     // Check if current route matches this thread's detail page
     const matches = useMatches()
@@ -88,6 +92,7 @@ const SortableItem = memo(
         'threadId' in match.params &&
         match.params.threadId === thread.id
     )
+    const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
     const handleClick = (e: MouseEvent<HTMLDivElement>) => {
       if (openDropdown) {
@@ -111,6 +116,9 @@ const SortableItem = memo(
     }, [thread.title])
 
     const availableProjects = useMemo(() => {
+      if (!projectsEnabled) {
+        return []
+      }
       return folders
         .filter((f) => {
           // Exclude the current project page we're on
@@ -120,9 +128,18 @@ const SortableItem = memo(
           return true
         })
         .sort((a, b) => b.updated_at - a.updated_at)
-    }, [folders, currentProjectId, thread.metadata?.project?.id])
+    }, [
+      projectsEnabled,
+      folders,
+      currentProjectId,
+      thread.metadata?.project?.id,
+    ])
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
+      if (!projectsEnabled) {
+        return
+      }
+
       const project = getFolderById(projectId)
       if (project && updateThread) {
         const projectMetadata = {
@@ -234,37 +251,39 @@ const SortableItem = memo(
                 onDropdownClose={() => setOpenDropdown(false)}
               />
 
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2">
-                  <IconFolder size={16} />
-                  <span>{t('common:projects.addToProject')}</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-60 min-w-44 overflow-y-auto">
-                  {availableProjects.length === 0 ? (
-                    <DropdownMenuItem disabled>
-                      <span className="text-left-panel-fg/50">
-                        {t('common:projects.noProjectsAvailable')}
-                      </span>
-                    </DropdownMenuItem>
-                  ) : (
-                    availableProjects.map((folder) => (
-                      <DropdownMenuItem
-                        key={folder.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          assignThreadToProject(thread.id, folder.id)
-                        }}
-                      >
-                        <IconFolder size={16} />
-                        <span className="truncate max-w-[200px]">
-                          {folder.name}
+              {projectsEnabled && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2">
+                    <IconFolder size={16} />
+                    <span>{t('common:projects.addToProject')}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-60 min-w-44 overflow-y-auto">
+                    {availableProjects.length === 0 ? (
+                      <DropdownMenuItem disabled>
+                        <span className="text-left-panel-fg/50">
+                          {t('common:projects.noProjectsAvailable')}
                         </span>
                       </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              {thread.metadata?.project && (
+                    ) : (
+                      availableProjects.map((folder) => (
+                        <DropdownMenuItem
+                          key={folder.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            assignThreadToProject(thread.id, folder.id)
+                          }}
+                        >
+                          <IconFolder size={16} />
+                          <span className="truncate max-w-[200px]">
+                            {folder.name}
+                          </span>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+              {projectsEnabled && thread.metadata?.project && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -289,14 +308,28 @@ const SortableItem = memo(
                 </>
               )}
               <DropdownMenuSeparator />
-              <DeleteThreadDialog
-                thread={thread}
-                onDelete={deleteThread}
-                onDropdownClose={() => setOpenDropdown(false)}
-                variant={variant}
-              />
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setDeleteConfirmOpen(true)
+                  setOpenDropdown(false)
+                }}
+              >
+                <IconTrash />
+                <span>{t('common:delete')}</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <DeleteThreadDialog
+            thread={thread}
+            onDelete={deleteThread}
+            onDropdownClose={() => setOpenDropdown(false)}
+            variant={variant}
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            withoutTrigger
+          />
         </div>
       </div>
     )

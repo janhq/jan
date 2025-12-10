@@ -14,11 +14,9 @@ import {
   ImportOptions,
 } from '@janhq/core' // cspell: disable-line
 import { janApiClient, JanChatMessage } from './api'
+import { syncJanModelsLocalStorage } from './helpers'
 import { janProviderStore } from './store'
 import { ApiError } from '../shared/types/errors'
-
-// Jan models support tools via MCP
-const JAN_MODEL_CAPABILITIES = ['tools'] as const
 
 export default class JanProviderWeb extends AIEngine {
   readonly provider = 'jan'
@@ -28,11 +26,11 @@ export default class JanProviderWeb extends AIEngine {
     console.log('Loading Jan Provider Extension...')
 
     try {
-      // Check and clear invalid Jan models (capabilities mismatch)
-      this.validateJanModelsLocalStorage()
-
-      // Initialize authentication and fetch models
+      // Initialize authentication
       await janApiClient.initialize()
+      // Check and sync stored Jan models against latest catalog data
+      await this.validateJanModelsLocalStorage()
+
       console.log('Jan Provider Extension loaded successfully')
     } catch (error) {
       console.error('Failed to load Jan Provider Extension:', error)
@@ -43,59 +41,17 @@ export default class JanProviderWeb extends AIEngine {
   }
 
   // Verify Jan models capabilities in localStorage
-  private validateJanModelsLocalStorage() {
+  private async validateJanModelsLocalStorage(): Promise<void> {
     try {
       console.log('Validating Jan models in localStorage...')
-      const storageKey = 'model-provider'
-      const data = localStorage.getItem(storageKey)
-      if (!data) return
 
-      const parsed = JSON.parse(data)
-      if (!parsed?.state?.providers) return
+      const remoteModels = await janApiClient.getModels()
+      const storageUpdated = syncJanModelsLocalStorage(remoteModels)
 
-      // Check if any Jan model has incorrect capabilities
-      let hasInvalidModel = false
-
-      for (const provider of parsed.state.providers) {
-        if (provider.provider === 'jan' && provider.models) {
-          for (const model of provider.models) {
-            console.log(`Checking Jan model: ${model.id}`, model.capabilities)
-            if (
-              JSON.stringify(model.capabilities) !==
-              JSON.stringify(JAN_MODEL_CAPABILITIES)
-            ) {
-              hasInvalidModel = true
-              console.log(
-                `Found invalid Jan model: ${model.id}, clearing localStorage`
-              )
-              break
-            }
-          }
-        }
-        if (hasInvalidModel) break
-      }
-
-      // If any invalid model found, just clear the storage
-      if (hasInvalidModel) {
-        // Force clear the storage
-        localStorage.removeItem(storageKey)
-        // Verify it's actually removed
-        const afterRemoval = localStorage.getItem(storageKey)
-        // If still present, try setting to empty state
-        if (afterRemoval) {
-          // Try alternative clearing method
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify({
-              state: { providers: [] },
-              version: parsed.version || 3,
-            })
-          )
-        }
+      if (storageUpdated) {
         console.log(
-          'Cleared model-provider from localStorage due to invalid Jan capabilities'
+          'Synchronized Jan models in localStorage with server capabilities; reloading...'
         )
-        // Force a page reload to ensure clean state
         window.location.reload()
       }
     } catch (error) {
@@ -132,7 +88,7 @@ export default class JanProviderWeb extends AIEngine {
               path: undefined, // Remote model, no local path
               owned_by: model.owned_by,
               object: model.object,
-              capabilities: [...JAN_MODEL_CAPABILITIES],
+              capabilities: [...model.capabilities],
             }
           : undefined
       )
@@ -153,7 +109,7 @@ export default class JanProviderWeb extends AIEngine {
         path: undefined, // Remote model, no local path
         owned_by: model.owned_by,
         object: model.object,
-        capabilities: [...JAN_MODEL_CAPABILITIES],
+        capabilities: [...model.capabilities],
       }))
     } catch (error) {
       console.error('Failed to list Jan models:', error)

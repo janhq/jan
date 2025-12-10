@@ -8,7 +8,7 @@
   "general": "一般",
   "settings": "設定",
   "modelProviders": "模型提供者",
-  "appearance": "外觀",
+  "interface": "外觀",
   "privacy": "隱私",
   "keyboardShortcuts": "快捷鍵",
   "newChat": "新聊天",
@@ -80,9 +80,24 @@
   "tools": "工具",
   "webSearch": "網路搜尋",
   "reasoning": "推理",
+  "proactive": "主動模式",
   "selectAModel": "選擇一個模型",
   "noToolsAvailable": "沒有可用的工具",
   "noModelsFoundFor": "找不到符合「{{searchValue}}」的模型",
+  "failedToLoadModels": "載入模型失敗",
+  "noModels": "找不到模型",
+  "conversationNotAvailable": "對話不可用",
+  "conversationNotAvailableDescription": "您嘗試存取的對話不可用或已被刪除。",
+  "temporaryChat": "臨時聊天",
+  "temporaryChatTooltip": "臨時聊天不會出現在您的歷史記錄中",
+  "generateAiResponse": "產生 AI 回應",
+  "outOfContextError": {
+    "truncateInput": "截斷輸入",
+    "title": "超出上下文錯誤",
+    "description": "此聊天正在達到 AI 的記憶限制，就像白板被填滿一樣。我們可以擴展記憶視窗（稱為上下文大小），讓它記住更多內容，但可能會使用更多您電腦的記憶體。我們也可以截斷輸入，這意味著它會忘記一些聊天歷史記錄，為新訊息騰出空間。",
+    "increaseContextSizeDescription": "您想要增加上下文大小嗎？",
+    "increaseContextSize": "增加上下文大小"
+  },
   "customAvatar": "自訂頭像",
   "editAssistant": "編輯助理",
   "jan": "Jan",
@@ -226,7 +241,32 @@
     "noProjectsAvailable": "沒有可用的專案",
     "searchProjects": "搜尋專案...",
     "noProjectsFound": "找不到專案",
-    "tryDifferentSearch": "嘗試不同的搜尋詞"
+    "tryDifferentSearch": "嘗試不同的搜尋詞",
+    "createNewProject": "建立新專案",
+    "deleteProjectDialog": {
+      "title": "刪除專案",
+      "permanentDelete": "這將永久刪除所有執行緒。",
+      "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
+      "deleteEmptyProject": "此操作將刪除專案「{{projectName}}」。",
+      "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",
+      "starredWarning": "您在專案內仍有已加星號的執行緒。",
+      "deleteButton": "刪除",
+      "successWithName": "專案「{{projectName}}」已成功刪除",
+      "successWithoutName": "專案已成功刪除",
+      "error": "刪除專案失敗。請再試一次。",
+      "ariaLabel": "刪除 {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "建立新專案",
+      "editTitle": "編輯專案",
+      "nameLabel": "專案名稱",
+      "namePlaceholder": "輸入專案名稱...",
+      "createButton": "建立",
+      "updateButton": "更新",
+      "alreadyExists": "專案「{{projectName}}」已存在",
+      "createSuccess": "專案「{{projectName}}」已成功建立",
+      "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -303,6 +343,34 @@
     "downloadAndVerificationComplete": {
       "title": "下載完成",
       "description": "模型 \"{{item}}\" 下載並驗證成功"
+    },
+    "projectCreated": {
+      "title": "專案已建立",
+      "description": "專案「{{projectName}}」已成功建立"
+    },
+    "projectRenamed": {
+      "title": "專案已重新命名",
+      "description": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
+    },
+    "projectDeleted": {
+      "title": "專案已刪除",
+      "description": "專案「{{projectName}}」已成功刪除"
+    },
+    "projectAlreadyExists": {
+      "title": "專案已存在",
+      "description": "專案「{{projectName}}」已存在"
+    },
+    "projectDeleteFailed": {
+      "title": "刪除失敗",
+      "description": "刪除專案失敗。請再試一次。"
+    },
+    "threadAssignedToProject": {
+      "title": "執行緒已指派",
+      "description": "執行緒已成功指派至「{{projectName}}」"
+    },
+    "threadRemovedFromProject": {
+      "title": "執行緒已移除",
+      "description": "執行緒已成功從「{{projectName}}」中移除"
     }
   }
 }

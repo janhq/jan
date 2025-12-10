@@ -40,6 +40,8 @@ let mockAppState = {
   loadingModel: false,
   tools: [],
   updateTools: vi.fn(),
+  activeModels: [] as string[],
+  cancelToolCall: vi.fn(),
 }
 
 vi.mock('@/hooks/useAppState', () => ({
@@ -111,6 +113,7 @@ const mockGetConnectedServers = vi.fn(() => Promise.resolve(['server1']))
 const mockGetTools = vi.fn(() => Promise.resolve([]))
 const mockStopAllModels = vi.fn()
 const mockCheckMmprojExists = vi.fn(() => Promise.resolve(true))
+const mockGetActiveModels = vi.fn(() => Promise.resolve([]))
 
 const mockListen = vi.fn(() => Promise.resolve(() => {}))
 
@@ -122,6 +125,7 @@ const mockServiceHub = {
   models: () => ({
     stopAllModels: mockStopAllModels,
     checkMmprojExists: mockCheckMmprojExists,
+    getActiveModels: mockGetActiveModels,
   }),
   events: () => ({
     listen: mockListen,
@@ -174,6 +178,15 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <div onClick={onClick}>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('react-textarea-autosize', () => ({
   default: ({ value, onChange, onKeyDown, placeholder, disabled, className, minRows, maxRows, onHeightChange, ...props }: any) => (
     <textarea
@@ -193,6 +206,7 @@ vi.mock('react-textarea-autosize', () => ({
 // Mock icons
 vi.mock('lucide-react', () => ({
   ArrowRight: () => <svg data-testid="arrow-right-icon">ArrowRight</svg>,
+  PlusIcon: () => <svg data-testid="plus-icon">PlusIcon</svg>,
 }))
 
 vi.mock('@tabler/icons-react', () => ({
@@ -201,6 +215,9 @@ vi.mock('@tabler/icons-react', () => ({
   IconAtom: () => <svg data-testid="atom-icon">Atom</svg>,
   IconTool: () => <svg data-testid="tool-icon">Tool</svg>,
   IconCodeCircle2: () => <svg data-testid="code-icon">Code</svg>,
+  IconPaperclip: () => <svg data-testid="paperclip-icon">Paperclip</svg>,
+  IconLoader2: () => <svg data-testid="loader-icon">Loader</svg>,
+  IconCheck: () => <svg data-testid="check-icon">Check</svg>,
   IconPlayerStopFilled: () => <svg className="tabler-icon-player-stop-filled" data-testid="stop-icon">Stop</svg>,
   IconX: () => <svg data-testid="x-icon">X</svg>,
 }))
@@ -240,6 +257,8 @@ describe('ChatInput', () => {
     mockAppState.abortControllers = {}
     mockAppState.loadingModel = false
     mockAppState.tools = []
+    mockAppState.activeModels = []
+    mockAppState.cancelToolCall = vi.fn()
   })
 
   it('renders chat input textarea', async () => {
@@ -416,6 +435,7 @@ describe('ChatInput', () => {
   it('shows tools dropdown when model supports tools and MCP servers are connected', async () => {
     // Mock connected servers
     mockGetConnectedServers.mockResolvedValue(['server1'])
+    mockAppState.tools = [{ name: 'test-tool' } as any]
 
     await act(async () => {
       renderWithRouter()

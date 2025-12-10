@@ -63,7 +63,6 @@ export default defineConfig({
         '@tauri-apps/plugin-fs',
         '@tauri-apps/plugin-shell',
         '@tauri-apps/plugin-clipboard-manager',
-        '@tauri-apps/plugin-dialog',
         '@tauri-apps/plugin-os',
         '@tauri-apps/plugin-process',
         '@tauri-apps/plugin-updater',

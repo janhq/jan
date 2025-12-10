@@ -1,0 +1,65 @@
+{
+  "editServer": "MCPサーバーを編集",
+  "addServer": "MCPサーバーを追加",
+  "browserExtension": {
+    "connecting": {
+      "checking": "拡張機能の状態を確認中..."
+    },
+    "notInstalled": {
+      "title": "Janがブラウザでタスクを実行します",
+      "description": "拡張機能をインストールしてJanにブラウザアクセスを許可してください",
+      "getExtension": "拡張機能を取得"
+    }
+  },
+  "serverName": "サーバー名",
+  "enterServerName": "サーバー名を入力",
+  "command": "コマンド",
+  "enterCommand": "コマンドを入力 (uvx または npx)",
+  "arguments": "引数",
+  "argument": "引数 {{index}}",
+  "envVars": "環境変数",
+  "key": "キー",
+  "value": "値",
+  "save": "保存",
+  "status": "ステータス",
+  "connected": "接続済み",
+  "disconnected": "切断済み",
+  "deleteServer": {
+    "title": "MCPサーバーを削除",
+    "description": "本当にMCPサーバー {{serverName}} を削除しますか？この操作は元に戻せません。",
+    "delete": "削除",
+    "success": "MCPサーバー {{serverName}} を正常に削除しました"
+  },
+  "editJson": {
+    "title": "MCPサーバーのJSONを編集: {{serverName}}",
+    "titleAll": "すべてのMCPサーバーのJSONを編集",
+    "placeholder": "JSON構成を入力",
+    "errorParse": "初期データの解析に失敗しました",
+    "errorPaste": "貼り付けたコンテンツのJSON形式が無効です",
+    "errorFormat": "無効なJSON形式です",
+    "errorServerName": "サーバー名は必須であり、空にすることはできません",
+    "errorMissingServerNameKey": "JSONは {\"serverName\": {config}} のように構成する必要があります - サーバー名のキーがありません",
+    "errorInvalidType": "サーバー '{{serverName}}' のタイプ '{{type}}' が無効です。タイプは 'stdio'、'http'、または 'sse' である必要があります",
+    "save": "保存"
+  },
+  "checkParams": "チュートリアルに従ってパラメータを確認してください。",
+  "title": "MCPサーバー",
+  "experimental": "実験的",
+  "editAllJson": "すべてのサーバーのJSONを編集",
+  "findMore": "その他のMCPサーバーは以下で検索してください",
+  "allowPermissions": "すべてのMCPツール権限を許可",
+  "allowPermissionsDesc": "有効にすると、すべてのMCPツール呼び出しは許可ダイアログを表示せずに自動的に承認されます。この設定は、新しいチャットを含むすべての会話にグローバルに適用されます。",
+  "noServers": "MCPサーバーが見つかりません",
+  "args": "引数",
+  "env": "環境変数",
+  "serverStatusActive": "サーバー {{serverKey}} が正常にアクティブ化されました",
+  "serverStatusInactive": "サーバー {{serverKey}} が正常に非アクティブ化されました",
+  "runtimeSettings": {
+    "title": "ランタイム設定",
+    "description": "JanがMCPサーバーを管理し再試行する方法を設定します。",
+    "toolCallTimeout": "ツール呼び出しタイムアウト（秒）",
+    "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。"
+  },
+  "proactiveMode": "ブラウザ使用プロアクティブモード",
+  "proactiveModeDesc": "有効にすると、ブラウザの自動化タスクに追加のコンテキストを提供するために、ブラウザのスクリーンショットを自動的にキャプチャします。VisionとToolを使用するモデルを備えたJan Browser MCPが必要です。"
+}

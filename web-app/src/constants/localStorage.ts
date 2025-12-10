@@ -5,7 +5,7 @@ export const localStorageKey = {
   theme: 'theme',
   modelProvider: 'model-provider',
   modelSources: 'model-sources',
-  settingAppearance: 'setting-appearance',
+  settingInterface: 'setting-appearance',
   settingGeneral: 'setting-general',
   settingCodeBlock: 'setting-code-block',
   settingLocalApiServer: 'setting-local-api-server',
@@ -22,4 +22,7 @@ export const localStorageKey = {
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   threadManagement: 'thread-management',
+  modelSupportCache: 'jan_model_support_cache',
 }
+
+export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

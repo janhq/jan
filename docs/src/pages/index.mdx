@@ -1,6 +1,6 @@
 ---
-title: "Open source ChatGPT alternative that runs offline"
-description: "Jan is building Open Superintelligence. It’s the open-source ChatGPT alternative that leverages the best of open-source AI."
+title: "Jan - Open-Source ChatGPT Replacement"
+description: "Jan is an open-source alternative to ChatGPT. Run open-source AI models locally or connect to cloud models like GPT, Claude and others."
 keywords:
   [
     Jan,
@@ -19,9 +19,9 @@ keywords:
 import Home from "@/components/Home"
 
 export const getStaticProps = async() => {
-  const resReleaseLatest = await fetch('https://api.github.com/repos/menloresearch/jan/releases/latest')  
-  const resRelease = await fetch('https://api.github.com/repos/menloresearch/jan/releases?per_page=500')  
-  const resRepo = await fetch('https://api.github.com/repos/menloresearch/jan')
+  const resReleaseLatest = await fetch('https://api.github.com/repos/janhq/jan/releases/latest')  
+  const resRelease = await fetch('https://api.github.com/repos/janhq/jan/releases?per_page=500')  
+  const resRepo = await fetch('https://api.github.com/repos/janhq/jan')
   const repo = await resRepo.json()
   const latestRelease = await resReleaseLatest.json()
   const release = await resRelease.json()

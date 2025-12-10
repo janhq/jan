@@ -8,14 +8,15 @@ import { useTranslation } from '@/i18n'
 import { extractModelName } from '@/lib/models'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
-import { useCallback, useMemo } from 'react'
+import { DownloadEvent, DownloadState, events } from '@janhq/core'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type ModelProps = {
   model: CatalogModel
   handleUseModel: (modelId: string) => void
 }
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export function DownloadButtonPlaceholder({
   model,
@@ -35,10 +36,11 @@ export function DownloadButtonPlaceholder({
 
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+  const [isDownloaded, setDownloaded] = useState<boolean>(false)
 
   const quant =
     model.quants.find((e) =>
-      defaultModelQuantizations.some((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
         e.model_id.toLowerCase().includes(m)
       )
     ) ?? model.quants[0]
@@ -56,6 +58,24 @@ export function DownloadButtonPlaceholder({
       })),
     [downloads]
   )
+
+  useEffect(() => {
+    const isDownloaded = llamaProvider?.models.some(
+      (m: { id: string }) =>
+        m.id === modelId ||
+        m.id === `${model.developer}/${sanitizeModelId(modelId)}`
+    )
+    setDownloaded(!!isDownloaded)
+  }, [llamaProvider, modelId, model.developer])
+
+  useEffect(() => {
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      (state: DownloadState) => {
+        if (state.modelId === modelId) setDownloaded(true)
+      }
+    )
+  }, [modelId])
 
   const isRecommendedModel = useCallback((modelId: string) => {
     return (extractModelName(modelId)?.toLowerCase() ===
@@ -84,11 +104,7 @@ export function DownloadButtonPlaceholder({
 
   const downloadProgress =
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
-  const isDownloaded = llamaProvider?.models.some(
-    (m: { id: string }) =>
-      m.id === modelId ||
-      m.id === `${model.developer}/${sanitizeModelId(modelId)}`
-  )
+
   const isRecommended = isRecommendedModel(model.model_name)
 
   const handleDownload = () => {
@@ -121,11 +137,15 @@ export function DownloadButtonPlaceholder({
       )}
       {isDownloaded ? (
         <Button
+          variant="link"
           size="sm"
+          className="p-0"
           onClick={() => handleUseModel(modelId)}
           data-test-id={`hub-model-${modelId}`}
         >
-          {t('hub:use')}
+          <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+            {t('hub:newChat')}
+          </div>
         </Button>
       ) : (
         <Button

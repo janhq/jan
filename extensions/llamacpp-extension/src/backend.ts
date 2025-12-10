@@ -3,6 +3,51 @@ import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig, basenameNoExt } from './util'
 import { dirname, basename } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+
+/*
+ * Helper function to map an old backend type string to its new, common equivalent.
+ * This is used for migrating stored user preferences.
+ */
+export function mapOldBackendToNew(oldBackend: string): string {
+  const isWindows = oldBackend.startsWith('win-')
+  const isLinux = oldBackend.startsWith('linux-')
+  const osPrefix = isWindows ? 'win-' : isLinux ? 'linux-' : ''
+
+  // Determine architecture suffix, defaulting to x64
+  const archSuffix = oldBackend.includes('-arm64') ? 'arm64' : 'x64'
+  const isX64 = archSuffix === 'x64'
+
+  // Handle GPU backends
+  if (oldBackend.includes('cuda-cu12.0')) {
+    // Migration from e.g., 'linux-avx2-cuda-cu12.0-x64' to 'linux-cuda-12-common_cpus-x64'
+    return `${osPrefix}cuda-12-common_cpus-${isX64 ? 'x64' : archSuffix}`
+  } else if (oldBackend.includes('cuda-cu11.7')) {
+    // Migration from e.g., 'win-noavx-cuda-cu11.7-x64' to 'win-cuda-11-common_cpus-x64'
+    return `${osPrefix}cuda-11-common_cpus-${isX64 ? 'x64' : archSuffix}`
+  } else if (oldBackend.includes('vulkan')) {
+    // If it's already the new name, return it
+    if (oldBackend.includes('vulkan-common_cpus')) return oldBackend
+
+    // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
+    return `${osPrefix}vulkan-common_cpus-${isX64 ? 'x64' : archSuffix}`
+  }
+
+  // Handle CPU-only backends (avx, avx2, avx512, noavx)
+  const isOldCpuBackend =
+    oldBackend.includes('avx512') ||
+    oldBackend.includes('avx2') ||
+    oldBackend.includes('avx-x64') || // Check for 'avx' but not as part of 'avx2' or 'avx512'
+    oldBackend.includes('noavx-x64')
+
+  if (isOldCpuBackend) {
+    // Migration from e.g., 'win-avx512-x64' to 'win-common_cpus-x64'
+    return `${osPrefix}common_cpus-${isX64 ? 'x64' : archSuffix}`
+  }
+
+  // Return original if it doesn't match a pattern that needs migration (e.g., macos/arm64 which are already 'common')
+  return oldBackend
+}
+
 /*
  * Reads currently installed backends in janDataFolderPath
  *
@@ -56,7 +101,7 @@ async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
 ): Promise<{ version: string; backend: string }[]> {
   // Pull the latest releases from the repo
-  const { releases } = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  const { releases } = await _fetchGithubReleases('janhq', 'llama.cpp')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
   releases.splice(10) // keep only the latest 10 releases
 
@@ -75,6 +120,12 @@ async function fetchRemoteSupportedBackends(
       const backend = basenameNoExt(name).slice(prefix.length)
 
       if (supportedBackends.includes(backend)) {
+        remote.push({ version, backend })
+        continue
+      }
+      const mappedNew = mapOldBackendToNew(backend)
+      if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
+        // Push the ORIGINAL backend name here, as this is the name of the file on the server.
         remote.push({ version, backend })
       }
     }
@@ -98,54 +149,32 @@ export async function listSupportedBackends(): Promise<
   const sysType = `${os_type}-${arch}`
   let supportedBackends = []
 
-  // NOTE: menloresearch's tags for llama.cpp builds are a bit different
+  // NOTE: janhq's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
   if (sysType == 'windows-x86_64') {
-    // NOTE: if a machine supports AVX2, should we include noavx and avx?
-    supportedBackends.push('win-noavx-x64')
-    if (features.avx) supportedBackends.push('win-avx-x64')
-    if (features.avx2) supportedBackends.push('win-avx2-x64')
-    if (features.avx512) supportedBackends.push('win-avx512-x64')
+    supportedBackends.push('win-common_cpus-x64')
     if (features.cuda11) {
-      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu11.7-x64')
-      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu11.7-x64')
-      else if (features.avx) supportedBackends.push('win-avx-cuda-cu11.7-x64')
-      else supportedBackends.push('win-noavx-cuda-cu11.7-x64')
+      supportedBackends.push('win-cuda-11-common_cpus-x64')
     }
     if (features.cuda12) {
-      if (features.avx512) supportedBackends.push('win-avx512-cuda-cu12.0-x64')
-      else if (features.avx2) supportedBackends.push('win-avx2-cuda-cu12.0-x64')
-      else if (features.avx) supportedBackends.push('win-avx-cuda-cu12.0-x64')
-      else supportedBackends.push('win-noavx-cuda-cu12.0-x64')
+      supportedBackends.push('win-cuda-12-common_cpus-x64')
     }
-    if (features.vulkan) supportedBackends.push('win-vulkan-x64')
+    if (features.cuda13)
+      if (features.vulkan) supportedBackends.push('win-vulkan-common_cpus-x64')
   }
   // not available yet, placeholder for future
   else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
     supportedBackends.push('win-arm64')
   } else if (sysType === 'linux-x86_64' || sysType === 'linux-x86') {
-    supportedBackends.push('linux-noavx-x64')
-    if (features.avx) supportedBackends.push('linux-avx-x64')
-    if (features.avx2) supportedBackends.push('linux-avx2-x64')
-    if (features.avx512) supportedBackends.push('linux-avx512-x64')
+    supportedBackends.push('linux-common_cpus-x64')
     if (features.cuda11) {
-      if (features.avx512)
-        supportedBackends.push('linux-avx512-cuda-cu11.7-x64')
-      else if (features.avx2)
-        supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
-      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu11.7-x64')
-      else supportedBackends.push('linux-noavx-cuda-cu11.7-x64')
+      supportedBackends.push('linux-cuda-11-common_cpus-x64')
     }
     if (features.cuda12) {
-      if (features.avx512)
-        supportedBackends.push('linux-avx512-cuda-cu12.0-x64')
-      else if (features.avx2)
-        supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
-      else if (features.avx) supportedBackends.push('linux-avx-cuda-cu12.0-x64')
-      else supportedBackends.push('linux-noavx-cuda-cu12.0-x64')
+      supportedBackends.push('linux-cuda-12-common_cpus-x64')
     }
-    if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
+    if (features.vulkan) supportedBackends.push('linux-vulkan-common_cpus-x64')
   }
   // not available yet, placeholder for future
   else if (sysType === 'linux-aarch64' || sysType === 'linux-arm64') {
@@ -159,9 +188,11 @@ export async function listSupportedBackends(): Promise<
   let remoteBackendVersions = []
   try {
     remoteBackendVersions =
-    await fetchRemoteSupportedBackends(supportedBackends)
+      await fetchRemoteSupportedBackends(supportedBackends)
   } catch (e) {
-      console.debug(`Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`)
+    console.debug(
+      `Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`
+    )
   }
 
   // Get locally installed versions
@@ -230,10 +261,7 @@ export async function downloadBackend(
   version: string,
   source: 'github' | 'cdn' = 'github'
 ): Promise<void> {
-  const janDataFolderPath = await getJanDataFolderPath()
-  const llamacppPath = await joinPath([janDataFolderPath, 'llamacpp'])
   const backendDir = await getBackendDir(backend, version)
-  const libDir = await joinPath([llamacppPath, 'lib'])
 
   const downloadManager = window.core.extensionManager.getByName(
     '@janhq/download-extension'
@@ -247,39 +275,61 @@ export async function downloadBackend(
   // Build URLs per source
   const backendUrl =
     source === 'github'
-      ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
+      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
       : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+
+  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
 
   const downloadItems = [
     {
       url: backendUrl,
       save_path: await joinPath([backendDir, 'backend.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     },
   ]
 
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
-  if (backend.includes('cu11.7') && !(await _isCudaInstalled('11.7'))) {
+  if (
+    (backend.includes('cu11.7') || backend.includes('cuda-11')) &&
+    !(await _isCudaInstalled(backendDir, '11.7'))
+  ) {
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([libDir, 'cuda11.tar.gz']),
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
     })
-  } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
+  } else if (
+    (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
+    !(await _isCudaInstalled(backendDir, '12.0'))
+  ) {
     downloadItems.push({
       url:
         source === 'github'
-          ? `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
           : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([libDir, 'cuda12.tar.gz']),
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
+      model_id: taskId,
+    })
+  } else if (
+    backend.includes('cuda-13') &&
+    !(await _isCudaInstalled(backendDir, '13.0'))
+  ) {
+    downloadItems.push({
+      url:
+        source === 'github'
+          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
+          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
+      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
+      proxy: proxyConfig,
+      model_id: taskId,
     })
   }
-
-  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
   console.log(
@@ -340,18 +390,22 @@ async function _getSupportedFeatures() {
     avx512: sysInfo.cpu.extensions.includes('avx512'),
     cuda11: false,
     cuda12: false,
+    cuda13: false,
     vulkan: false,
   }
 
   // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
-  let minCuda11DriverVersion
-  let minCuda12DriverVersion
+  let minCuda11DriverVersion: string
+  let minCuda12DriverVersion: string
+  let minCuda13DriverVersion: string
   if (sysInfo.os_type === 'linux') {
     minCuda11DriverVersion = '450.80.02'
     minCuda12DriverVersion = '525.60.13'
+    minCuda13DriverVersion = '580'
   } else if (sysInfo.os_type === 'windows') {
     minCuda11DriverVersion = '452.39'
     minCuda12DriverVersion = '527.41'
+    minCuda13DriverVersion = '580'
   }
 
   // TODO: HIP and SYCL
@@ -363,6 +417,9 @@ async function _getSupportedFeatures() {
         features.cuda11 = true
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
+      if (compareVersions(driverVersion, minCuda13DriverVersion) >= 0) {
+        features.cuda13 = true
+      }
     }
     // Vulkan support check
     if (gpuInfo.vulkan_info?.api_version) {
@@ -400,17 +457,23 @@ async function _fetchGithubReleases(
   }
 }
 
-async function _isCudaInstalled(version: string): Promise<boolean> {
+// accept backendDir (full path) and cuda version (e.g. '11.7' or '12.0' or '13.0')
+async function _isCudaInstalled(
+  backendDir: string,
+  version: string
+): Promise<boolean> {
   const sysInfo = await getSystemInfo()
   const os_type = sysInfo.os_type
 
-  // not sure the reason behind this naming convention
   const libnameLookup = {
     'windows-11.7': `cudart64_110.dll`,
     'windows-12.0': `cudart64_12.dll`,
+    'windows-13.0': `cudart64_13.dll`,
     'linux-11.7': `libcudart.so.11.0`,
     'linux-12.0': `libcudart.so.12`,
+    'linux-13.0': `libcudart.so.13`,
   }
+
   const key = `${os_type}-${version}`
   if (!(key in libnameLookup)) {
     return false
@@ -418,29 +481,37 @@ async function _isCudaInstalled(version: string): Promise<boolean> {
 
   const libname = libnameLookup[key]
 
-  // check from system libraries first
-  // TODO: might need to check for CuBLAS and CuBLASLt as well
-  if (os_type === 'linux') {
-    // not sure why libloading cannot find library from name alone
-    // using full path here
-    const libPath = `/usr/local/cuda/lib64/${libname}`
-    if (await invoke<boolean>('is_library_available', { library: libPath }))
-      return true
-  } else if (os_type === 'windows') {
-    // TODO: test this on Windows
-    if (await invoke<boolean>('is_library_available', { library: libname }))
-      return true
-  }
+  // Expected new location
+  const newPath = await joinPath([backendDir, 'build', 'bin', libname])
+  if (await fs.existsSync(newPath)) return true
 
-  // check for libraries shipped with Jan's llama.cpp extension
+  // Old location (used by older builds)
   const janDataFolderPath = await getJanDataFolderPath()
-  const cudartPath = await joinPath([
+  const oldPath = await joinPath([
     janDataFolderPath,
     'llamacpp',
     'lib',
     libname,
   ])
-  return await fs.existsSync(cudartPath)
+
+  if (await fs.existsSync(oldPath)) {
+    // Ensure target directory exists
+    const targetDir = await joinPath([backendDir, 'build', 'bin'])
+    if (!(await fs.existsSync(targetDir))) {
+      await fs.mkdir(targetDir, { recursive: true })
+    }
+
+    try {
+      // Move old lib to the correct new location
+      await fs.mv(oldPath, newPath)
+      console.log(`[CUDA] Migrated ${libname} from old path to new location.`)
+      return true
+    } catch (err) {
+      console.warn(`[CUDA] Failed to move old library:`, err)
+    }
+  }
+
+  return false
 }
 
 function compareVersions(a: string, b: string): number {

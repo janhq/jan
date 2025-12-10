@@ -20,10 +20,12 @@ vi.mock('@/constants/localStorage', () => ({
 
 // Mock localStorage
 const localStorageMock = {
-  getItem: vi.fn(),
+  getItem: vi.fn(() => null),
   setItem: vi.fn(),
   removeItem: vi.fn(),
   clear: vi.fn(),
+  length: 0,
+  key: vi.fn(() => null),
 }
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
@@ -32,8 +34,11 @@ Object.defineProperty(window, 'localStorage', {
 
 describe('useModelProvider - displayName functionality', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    // Reset the mock implementations instead of clearing them
     localStorageMock.getItem.mockReturnValue(null)
+    localStorageMock.setItem.mockClear()
+    localStorageMock.removeItem.mockClear()
+    localStorageMock.clear.mockClear()
 
     // Reset Zustand store to default state
     act(() => {
@@ -178,5 +183,50 @@ describe('useModelProvider - displayName functionality', () => {
     const provider = result.current.getProviderByName('llamacpp')
     expect(provider?.models[0].displayName).toBe('Custom Model Name')
     expect(provider?.models[0].id).toBe('test-model.gguf')
+  })
+})
+
+describe('useModelProvider migrations', () => {
+  it('migrates flash_attn setting to dropdown with default value', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'llamacpp',
+          models: [],
+          settings: [
+            {
+              key: 'flash_attn',
+              controller_type: 'toggle',
+              controller_props: {
+                value: 'ON',
+              },
+            },
+          ],
+        },
+      ],
+      selectedProvider: 'llamacpp',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 5)
+    const flashAttnSetting = migratedState.providers[0].settings.find(
+      (setting: any) => setting.key === 'flash_attn'
+    )
+
+    expect(flashAttnSetting.controller_type).toBe('dropdown')
+    expect(flashAttnSetting.controller_props.value).toBe('auto')
+    expect(flashAttnSetting.controller_props.options).toEqual([
+      { name: 'Auto', value: 'auto' },
+      { name: 'On', value: 'on' },
+      { name: 'Off', value: 'off' },
+    ])
   })
 })

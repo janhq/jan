@@ -1,7 +1,7 @@
 {
   "sortNewest": "Mới nhất",
   "sortMostDownloaded": "Tải nhiều nhất",
-  "use": "Sử dụng",
+  "newChat": "Cuộc trò chuyện mới",
   "download": "Tải xuống",
   "downloaded": "Đã tải xuống",
   "loadingModels": "Đang tải mô hình...",
@@ -13,19 +13,5 @@
   "useModel": "Sử dụng mô hình này",
   "downloadModel": "Tải xuống mô hình",
   "tools": "Công cụ",
-  "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
-  "joyride": {
-    "recommendedModelTitle": "Mô hình được đề xuất",
-    "recommendedModelContent": "Duyệt và tải xuống các mô hình AI mạnh mẽ từ nhiều nhà cung cấp khác nhau, tất cả ở cùng một nơi. Chúng tôi khuyên bạn nên bắt đầu với Jan-Nano - một mô hình được tối ưu hóa cho các khả năng gọi hàm, tích hợp công cụ và nghiên cứu. Nó lý tưởng để xây dựng các tác nhân AI tương tác.",
-    "downloadInProgressTitle": "Đang tải xuống",
-    "downloadInProgressContent": "Mô hình của bạn hiện đang được tải xuống. Theo dõi tiến trình tại đây - sau khi hoàn tất, nó sẽ sẵn sàng để sử dụng.",
-    "downloadModelTitle": "Tải xuống mô hình",
-    "downloadModelContent": "Nhấp vào nút Tải xuống để bắt đầu tải xuống mô hình.",
-    "back": "Quay lại",
-    "close": "Đóng",
-    "lastWithDownload": "Tải xuống",
-    "last": "Hoàn thành",
-    "next": "Tiếp theo",
-    "skip": "Bỏ qua"
-  }
+  "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face..."
 }

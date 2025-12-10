@@ -13,7 +13,7 @@ jobs:
       deployments: write
       pull-requests: write
     env:
-      JAN_API_BASE: "https://api.menlo.ai/v1"
+      JAN_BASE_URL: "https://api.jan.ai/v1"
       GA_MEASUREMENT_ID: "G-YK53MX8M8M"
       CLOUDFLARE_PROJECT_NAME: "jan-server-web"
     steps:
@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: make config-yarn && yarn install && yarn build:core && make build-web-app
         env:
-          JAN_API_BASE: ${{ env.JAN_API_BASE }}
+          JAN_BASE_URL: ${{ env.JAN_BASE_URL }}
           GA_MEASUREMENT_ID: ${{ env.GA_MEASUREMENT_ID }}
 
       - name: Publish to Cloudflare Pages Production

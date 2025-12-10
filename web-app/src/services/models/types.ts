@@ -2,7 +2,7 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage } from '@janhq/core'
+import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -113,12 +113,13 @@ export interface ModelsService {
     id: string,
     modelPath: string,
     mmprojPath?: string,
-    hfToken?: string
+    hfToken?: string,
+    skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>
-  stopModel(model: string, provider?: string): Promise<void>
+  stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
   stopAllModels(): Promise<void>
   startModel(
     provider: ProviderObject,
