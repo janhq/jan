@@ -27,12 +27,13 @@ import { useRouter } from '@tanstack/react-router'
 import { getInitialsAvatar } from '@/lib/utils'
 
 export function NavUser() {
-  const { isMobile, toggleSidebar } = useSidebar()
+  const { isMobile } = useSidebar()
   const user = useAuth((state) => state.user)
+  const isGuest = useAuth((state) => state.isGuest)
   const logout = useAuth((state) => state.logout)
   const router = useRouter()
 
-  if (!user) {
+  if (!user || isGuest) {
     return null
   }
 
@@ -105,7 +106,6 @@ export function NavUser() {
               <DropDrawerItem
                 onClick={() => {
                   logout()
-                  toggleSidebar()
                   router.navigate({ to: '/' })
                 }}
               >
