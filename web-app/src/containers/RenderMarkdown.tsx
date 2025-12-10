@@ -79,6 +79,16 @@ const normalizeLatex = (input: string): string => {
   return result
 }
 
+// Helper function to check if code block contains a table
+const isMarkdownTable = (code: string): boolean => {
+  const lines = code.trim().split('\n')
+  // Check for markdown table pattern (| header | header |)
+  return lines.some(line => {
+    const trimmed = line.trim()
+    return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.split('|').length >= 3
+  })
+}
+
 // Memoized code component to prevent unnecessary re-renders
 const CodeComponent = memo(
   ({
@@ -99,6 +109,9 @@ const CodeComponent = memo(
     const isInline = !match || !language
 
     const code = String(children).replace(/\n$/, '')
+
+    // Check if this is a markdown code block with a table
+    const shouldRenderTable = language === 'markdown' && isMarkdownTable(code)
 
     // Generate a stable ID based on content hash instead of position
     const codeId = useMemo(() => {
@@ -121,6 +134,40 @@ const CodeComponent = memo(
 
     if (isInline || isUser) {
       return <code className={cn(className)}>{children}</code>
+    }
+
+    // If it's a markdown table, render it as actual table instead of code
+    if (shouldRenderTable) {
+      return (
+        <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
+          <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
+            <span className="font-medium text-xs font-sans">
+              Table
+            </span>
+            <button
+              onClick={handleCopyClick}
+              className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+            >
+              {copiedId === codeId ? (
+                <>
+                  <IconCopyCheck size={16} className="text-primary" />
+                  <span>{t('copied')}</span>
+                </>
+              ) : (
+                <>
+                  <IconCopy size={16} />
+                  <span>{t('copy')}</span>
+                </>
+              )}
+            </button>
+          </div>
+          <div className="p-4">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {code}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )
     }
 
     return (
