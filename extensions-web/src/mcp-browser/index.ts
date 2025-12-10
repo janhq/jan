@@ -393,6 +393,10 @@ export default class MCPBrowserExtension extends MCPExtension {
     const subscribeToState = this.subscribeToState
     const onConnect = () => this.connect()
 
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.matchMedia('(max-width: 768px)').matches
+
+    if(isMobile) return null
+
     return function WrappedBrowserToolButton(props: MCPToolComponentProps) {
       return BrowserToolButton({
         ...props,
