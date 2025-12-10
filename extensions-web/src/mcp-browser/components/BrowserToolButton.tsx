@@ -154,14 +154,14 @@ export const BrowserToolButton = ({
       <button
         onClick={handleClick}
         disabled={isConnecting}
-        className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 cursor-pointer ml-0.5 border-0 ${getButtonStyle()}`}
+        className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 cursor-pointer ml-1 border-0 ${getButtonStyle()}`}
         title={getTooltip()}
       >
         <IconBrowser
           size={16}
           className={isConnected && isEnabled ? 'text-accent' : 'text-main-view-fg/70'}
         />
-        <span className={`text-sm font-medium ${isConnected && isEnabled ? 'text-accent' : ''}`}>
+        <span className={`text-sm hidden xl:inline font-medium ${isConnected && isEnabled ? 'text-accent' : ''}`}>
           Browser
         </span>
         {getStatusIndicator()}

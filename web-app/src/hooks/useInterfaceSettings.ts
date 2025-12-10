@@ -697,6 +697,20 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
     {
       name: localStorageKey.settingInterface,
       storage: interfaceStorage,
+      migrate: (persistedState: any, version) => {
+        if (persistedState && typeof persistedState === 'object') {
+          const state = persistedState as InterfaceSettingsState
+
+          if (version <= 1 && state?.fontSize) {
+            return {
+              ...state,
+              fontSize: defaultFontSize
+            }
+          }
+        }
+        return persistedState
+      },
+      version: 2,
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {

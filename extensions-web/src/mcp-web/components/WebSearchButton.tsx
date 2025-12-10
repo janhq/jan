@@ -41,7 +41,7 @@ export const WebSearchButton = ({
   return (
     <button
       onClick={handleToggle}
-      className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 ml-0.5 border-0 ${
+      className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 ml-1 border-0 ${
           isEnabled
             ? 'bg-accent/20 text-accent'
             : 'bg-transparent text-main-view-fg/50 hover:bg-main-view-fg/5'
@@ -60,7 +60,7 @@ export const WebSearchButton = ({
           size={16}
           className={isEnabled ? 'text-accent' : 'text-main-view-fg/50'}
         />
-        <span className={`text-sm font-medium hidden lg:inline ${isEnabled ? 'text-accent' : 'text-main-view-fg/50'}`}>Search</span>
+        <span className={`text-sm font-medium hidden xl:inline ${isEnabled ? 'text-accent' : 'text-main-view-fg/50'}`}>Search</span>
         {deepResearchEnabled && (
           <IconLock
             size={12}
