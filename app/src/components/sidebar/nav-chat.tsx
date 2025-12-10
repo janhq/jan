@@ -1,5 +1,6 @@
 import { ArrowUpRight, MoreHorizontal, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
 import {
   DropDrawer,
@@ -27,46 +28,49 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+// import { useConversations, type Conversation } from '@/hooks/use-conversations'
 
-type NavChatItem = {
-  name: string
-  url: string
-}
-
-const navChats: NavChatItem[] = [
-  {
-    name: 'Project Management & Task Tracking',
-    url: '#',
-  },
-  {
-    name: 'Family Recipe Collection & Meal Planning',
-    url: '#',
-  },
-  {
-    name: 'Fitness Tracker & Workout Routines',
-    url: '#',
-  },
-  {
-    name: 'Book Notes & Reading List',
-    url: '#',
-  },
-]
+import { useConversations } from '@/stores/conversation-store'
 
 export function NavChats() {
   const { isMobile } = useSidebar()
+  const navigate = useNavigate()
+  const params = useParams({ strict: false }) as { conversationId?: string }
+  const conversations = useConversations((state) => state.conversations)
+  const getConversations = useConversations((state) => state.getConversations)
+  const deleteConversation = useConversations(
+    (state) => state.deleteConversation
+  )
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [itemToDelete, setItemToDelete] = useState<NavChatItem | null>(null)
+  const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
 
-  const handleDeleteClick = (item: NavChatItem) => {
+  useEffect(() => {
+    getConversations()
+  }, [getConversations])
+
+  const handleDeleteClick = (item: Conversation) => {
     setItemToDelete(item)
     setDeleteDialogOpen(true)
   }
 
-  const handleConfirmDelete = () => {
-    // TODO: Implement actual delete logic here
-    console.log('Deleting:', itemToDelete)
-    setDeleteDialogOpen(false)
-    setItemToDelete(null)
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return
+
+    try {
+      await deleteConversation(itemToDelete.id)
+      setDeleteDialogOpen(false)
+      setItemToDelete(null)
+      // If we're currently viewing the deleted conversation, redirect to home
+      if (params.conversationId === itemToDelete.id) {
+        navigate({ to: '/' })
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error)
+    }
+  }
+
+  if (conversations.length === 0) {
+    return null
   }
 
   return (
@@ -76,12 +80,16 @@ export function NavChats() {
           Chats
         </SidebarGroupLabel>
         <SidebarMenu>
-          {navChats.map((item) => (
-            <SidebarMenuItem key={item.name}>
-              <SidebarMenuButton asChild>
-                <a href={item.url} title={item.name}>
-                  <span>{item.name}</span>
-                </a>
+          {conversations.map((item) => (
+            <SidebarMenuItem key={item.id}>
+              <SidebarMenuButton asChild isActive={params.conversationId === item.id}>
+                <Link
+                  to="/threads/$conversationId"
+                  params={{ conversationId: item.id }}
+                  title={item.title}
+                >
+                  <span>{item.title}</span>
+                </Link>
               </SidebarMenuButton>
               <DropDrawer>
                 <DropDrawerTrigger asChild>
@@ -125,7 +133,7 @@ export function NavChats() {
             <DialogDescription>
               Are you sure you want to delete{' '}
               <span className="font-semibold">
-                &quot;{itemToDelete?.name}&quot;?
+                &quot;{itemToDelete?.title}&quot;?
               </span>
               This action cannot be undone.
             </DialogDescription>

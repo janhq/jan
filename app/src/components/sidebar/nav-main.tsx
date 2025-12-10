@@ -7,6 +7,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { Link } from '@tanstack/react-router'
 
 type NavMainItem = {
   title: string
@@ -19,7 +20,7 @@ type NavMainItem = {
 const navMain: NavMainItem[] = [
   {
     title: 'New Chat',
-    url: '#',
+    url: '/',
     icon: MessageCirclePlusIcon,
     isActive: false,
   },
@@ -41,10 +42,10 @@ export function NavMain() {
       {navMain.map((item) => (
         <SidebarMenuItem key={item.title}>
           <SidebarMenuButton asChild isActive={item.isActive}>
-            <a href={item.url}>
+            <Link to={item.url}>
               <item.icon />
               <span>{item.title}</span>
-            </a>
+            </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
       ))}

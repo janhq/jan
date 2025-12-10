@@ -115,7 +115,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans text-sm antialiased;
+    @apply bg-background text-foreground font-sans text-sm antialiased overflow-hidden;
   }
   svg.lucide {
     width: 14px;

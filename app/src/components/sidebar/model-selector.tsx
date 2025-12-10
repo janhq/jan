@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Check, ChevronsUpDown, Loader2, Box } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, ChevronsUpDown, Box } from 'lucide-react'
 import {
   DropDrawer,
   DropDrawerContent,
@@ -10,28 +10,24 @@ import {
 } from '@/components/ui/dropdrawer'
 import { Button } from '@/components/ui/button'
 import { Jan } from '@/components/ui/svgs/jan'
-import { useModels, type Model } from '@/hooks/use-models'
+import { useModels } from '@/stores/models-store'
 
 export function ModelSelector() {
-  const { models, loading, error } = useModels()
   const [open, setOpen] = useState(false)
-  const [manuallySelectedModelId, setManuallySelectedModelId] = useState<
-    string | null
-  >(null)
+  const models = useModels((state) => state.models)
+  const getModels = useModels((state) => state.getModels)
+  const selectedModel = useModels((state) => state.selectedModel)
+  const setSelectedModel = useModels((state) => state.setSelectedModel)
+  const loading = useModels((state) => state.loading)
 
-  // Get the first model
-  const firstModel = models.length > 0 ? models[0] : null
-
-  // Compute selected model: use manually selected if available, otherwise use first model
-  const selectedModel = useMemo(() => {
-    if (manuallySelectedModelId) {
-      return models.find((m) => m.id === manuallySelectedModelId) || null
-    }
-    return firstModel
-  }, [manuallySelectedModelId, models, firstModel])
+  useEffect(() => {
+    getModels()
+    const firstModel = models.length > 0 ? models[0] : null
+    setSelectedModel(firstModel as Model)
+  }, [getModels, models, setSelectedModel])
 
   const handleSelectModel = (model: Model) => {
-    setManuallySelectedModelId(model.id)
+    setSelectedModel(model)
     setOpen(false)
   }
 
@@ -45,23 +41,14 @@ export function ModelSelector() {
               selectedModel ? 'truncate' : 'truncate text-muted-foreground'
             }
           >
-            {selectedModel?.model_display_name || 'Select a model'}
+            {!loading &&
+              (selectedModel?.model_display_name || 'Select a model')}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </Button>
       </DropDrawerTrigger>
       <DropDrawerContent align="start" className="p-2 md:w-70">
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {error && (
-          <div className="px-4 py-6 text-center text-sm text-destructive">
-            {error.message}
-          </div>
-        )}
-        {!loading && !error && (
+        {!loading && (
           <>
             {models.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-muted-foreground">
