@@ -1,4 +1,4 @@
-use crate::{RagError, MAX_FILE_SIZE};
+use crate::{RagError, MAX_PDF_FILE_SIZE, MAX_SPREADSHEET_FILE_SIZE, MAX_CSV_FILE_SIZE, MAX_PPTX_FILE_SIZE, MAX_DOCX_FILE_SIZE};
 use std::borrow::Cow;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -92,7 +92,7 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
 
 fn parse_docx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
-    if metadata.len() > MAX_FILE_SIZE {
+    if metadata.len() > MAX_DOCX_FILE_SIZE {
         return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
     }
     let file = std::fs::File::open(file_path)?;
@@ -166,8 +166,8 @@ fn parse_docx(file_path: &str) -> Result<String, RagError> {
 
 fn parse_csv(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
-    if metadata.len() > MAX_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
+    if metadata.len() > MAX_CSV_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
     }
     let mut rdr = csv_crate::ReaderBuilder::new()
         .has_headers(false)
@@ -185,7 +185,7 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
 
 fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
-    if metadata.len() > MAX_FILE_SIZE {
+    if metadata.len() > MAX_SPREADSHEET_FILE_SIZE {
         return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
     }
     let mut workbook = open_workbook_auto(file_path)
@@ -219,7 +219,7 @@ fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
 
 fn parse_pptx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
-    if metadata.len() > MAX_FILE_SIZE {
+    if metadata.len() > MAX_PPTX_FILE_SIZE {
         return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
     }
     let file = std::fs::File::open(file_path)?;
