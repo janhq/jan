@@ -9,12 +9,22 @@ export interface MCPTool {
   server: string
 }
 
+export interface MCPToolCallResultTextContent {
+  type: 'text'
+  text: string
+}
+
+export interface MCPToolCallResultImageContent {
+  type: 'image'
+  data: string
+  mimeType: string
+}
+
+export type MCPToolCallResultContent = MCPToolCallResultTextContent | MCPToolCallResultImageContent
+
 export interface MCPToolCallResult {
   error: string
-  content: Array<{
-    type?: string
-    text: string
-  }>
+  content: MCPToolCallResultContent[]
 }
 
 export interface MCPServerInfo {
