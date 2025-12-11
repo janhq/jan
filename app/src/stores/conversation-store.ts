@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { conversationService } from '@/services/conversation-service'
+import type { UIMessage } from '@ai-sdk/react'
+import { convertToUIMessages } from '@/lib/utils'
 
 let fetchPromise: Promise<void> | null = null
 
@@ -8,6 +10,7 @@ interface ConversationState {
   loading: boolean
   getConversations: () => Promise<void>
   getConversation: (conversationId: string) => Promise<Conversation>
+  getUIMessages: (conversationId: string) => Promise<UIMessage[]>
   createConversation: (
     payload: CreateConversationPayload
   ) => Promise<Conversation>
@@ -40,6 +43,15 @@ export const useConversations = create<ConversationState>((set, get) => ({
         fetchPromise = null
       }
     })()
+  },
+  getUIMessages: async (conversationId: string) => {
+    try {
+      const items = (await conversationService.getItems(conversationId)).data
+      return convertToUIMessages(items)
+    } catch (err) {
+      console.error('Error fetching conversation items:', err)
+      throw err
+    }
   },
   getConversation: async (conversationId: string) => {
     try {
