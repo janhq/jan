@@ -26,7 +26,13 @@ import {
   ReasoningTrigger,
   ReasoningContent,
 } from '@/components/ai-elements/reasoning'
-import { RefreshCcwIcon, CopyIcon, Loader } from 'lucide-react'
+import {
+  RefreshCcwIcon,
+  CopyIcon,
+  Loader,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
+} from 'lucide-react'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
 
@@ -93,9 +99,12 @@ function ThreadPageContent() {
           <div className="flex-1 relative">
             <Conversation className="absolute inset-0 text-start">
               <ConversationContent className="max-w-3xl mx-auto">
-                {messages.map((message) => (
+                {messages.map((message, messageIndex) => (
                   <div key={message.id}>
                     {message.parts.map((part, i) => {
+                      const isLastMessage = messageIndex === messages.length - 1
+                      const isLastPart = i === message.parts.length - 1
+
                       switch (part.type) {
                         case 'text':
                           return (
@@ -107,21 +116,34 @@ function ThreadPageContent() {
                                 <MessageResponse>{part.text}</MessageResponse>
                               </MessageContent>
                               {message.role === 'assistant' &&
-                                i === messages.length - 1 && (
-                                  <MessageActions>
-                                    <MessageAction
-                                      onClick={() => regenerate()}
-                                      label="Retry"
-                                    >
-                                      <RefreshCcwIcon className="size-3" />
-                                    </MessageAction>
+                                isLastMessage &&
+                                isLastPart && (
+                                  <MessageActions className="mt-1">
                                     <MessageAction
                                       onClick={() =>
                                         navigator.clipboard.writeText(part.text)
                                       }
                                       label="Copy"
                                     >
-                                      <CopyIcon className="size-3" />
+                                      <CopyIcon className="text-muted-foreground size-3" />
+                                    </MessageAction>
+                                    <MessageAction
+                                      onClick={() => regenerate()}
+                                      label="Retry"
+                                    >
+                                      <RefreshCcwIcon className="text-muted-foreground size-3" />
+                                    </MessageAction>
+                                    <MessageAction
+                                      label="Like"
+                                      tooltip="Like this response"
+                                    >
+                                      <ThumbsUpIcon className="text-muted-foreground size-3" />
+                                    </MessageAction>
+                                    <MessageAction
+                                      label="Dislike"
+                                      tooltip="Dislike this response"
+                                    >
+                                      <ThumbsDownIcon className="text-muted-foreground size-3" />
                                     </MessageAction>
                                   </MessageActions>
                                 )}
