@@ -36,6 +36,7 @@ import {
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
+import { twMerge } from 'tailwind-merge'
 
 declare const JAN_API_BASE_URL: string
 
@@ -44,6 +45,7 @@ function ThreadPageContent() {
   const conversationId = params.conversationId as string | undefined
   const selectedModel = useModels((state) => state.selectedModel)
   const initialMessageSentRef = useRef(false)
+  const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
   const provider = createOpenAICompatible({
     name: 'janhq',
@@ -63,7 +65,7 @@ function ThreadPageContent() {
       onFinish: () => {
         // After finishing a message, refresh the conversation list to get updated timestamps
         initialMessageSentRef.current = false
-      }
+      },
     }
   )
 
@@ -110,6 +112,14 @@ function ThreadPageContent() {
           console.error('Failed to load conversation items:', error)
         })
   }, [conversationId])
+
+  // Auto-scroll to bottom during streaming
+  useEffect(() => {
+    if (status === 'streaming' && reasoningContainerRef.current) {
+      reasoningContainerRef.current.scrollTop =
+        reasoningContainerRef.current.scrollHeight
+    }
+  }, [status, reasoningContainerRef.current?.textContent])
 
   return (
     <>
@@ -178,12 +188,37 @@ function ThreadPageContent() {
                               className="w-full text-muted-foreground"
                               isStreaming={
                                 status === 'streaming' &&
-                                i === message.parts.length - 1 &&
-                                message.id === messages.at(-1)?.id
+                                isLastPart &&
+                                isLastMessage
+                              }
+                              defaultOpen={
+                                status === 'streaming' && isLastMessage
                               }
                             >
                               <ReasoningTrigger />
-                              <ReasoningContent>{part.text}</ReasoningContent>
+
+                              <div className="relative">
+                                {status === 'streaming' && isLastMessage && (
+                                  <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-br from-main-view to-transparent pointer-events-none z-10" />
+                                )}
+                                <div
+                                  ref={
+                                    status === 'streaming' && isLastMessage
+                                      ? reasoningContainerRef
+                                      : null
+                                  }
+                                  className={twMerge(
+                                    'w-full overflow-auto relative',
+                                    status === 'streaming' && isLastMessage
+                                      ? 'max-h-32 opacity-70'
+                                      : 'h-auto opacity-100'
+                                  )}
+                                >
+                                  <ReasoningContent>
+                                    {part.text}
+                                  </ReasoningContent>
+                                </div>
+                              </div>
                             </Reasoning>
                           )
                         default:
