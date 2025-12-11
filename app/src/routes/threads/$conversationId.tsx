@@ -88,13 +88,11 @@ function ThreadPageContent() {
         } catch (error) {
           console.error('Failed to parse initial message:', error)
         }
+        return
       }
     }
-  }, [conversationId, sendMessage, selectedModel])
-
-  // Set messages on load
-  useEffect(() => {
-    if (conversationId && !initialMessageSentRef.current) {
+    if (conversationId)
+      // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
           setMessages(uiMessages)
@@ -102,8 +100,7 @@ function ThreadPageContent() {
         .catch((error) => {
           console.error('Failed to load conversation items:', error)
         })
-    }
-  }, [conversationId])
+  }, [conversationId, sendMessage, selectedModel])
 
   return (
     <>
