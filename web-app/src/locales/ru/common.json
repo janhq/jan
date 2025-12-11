@@ -292,6 +292,16 @@
     "noProjectsFound": "Проекты не найдены",
     "tryDifferentSearch": "Попробуйте другой поисковый запрос"
   },
+  "attachmentsIngestion": {
+    "title": "Выберите способ обработки вложений",
+    "description": "Выберите, вставить содержимое файлов непосредственно в чат или индексировать их как эмбеддинги.",
+    "inline": "Вставить в чат",
+    "embeddings": "Использовать эмбеддинги"
+  },
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Эмбеддинг для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое файла",
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Все обсуждения удалены из избранного",
@@ -373,9 +383,5 @@
       "title": "Обсуждение удалено",
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
     }
-  },
-  "attachmentInjectedIndicator": "Вставлено в чат",
-  "attachmentEmbeddedIndicator": "Встроено для RAG",
-  "viewInjectedContent": "Просмотреть вставленный контент",
-  "injectedContentTitle": "Содержимое вставленного файла"
+  }
 }
