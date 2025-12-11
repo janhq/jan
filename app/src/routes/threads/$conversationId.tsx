@@ -42,7 +42,9 @@ function ThreadPageContent() {
     name: 'janhq',
     baseURL: `${JAN_API_BASE_URL}v1`,
     fetch: createAuthenticatedFetch({
-      store: true
+      store: true,
+      store_rasoning: true,
+      conversation: conversationId,
     }),
   })
 
@@ -62,7 +64,6 @@ function ThreadPageContent() {
     if (conversationId && !initialMessageSentRef.current) {
       const initialMessageKey = `initial-message-${conversationId}`
       const storedMessage = sessionStorage.getItem(initialMessageKey)
-
       if (storedMessage) {
         try {
           const message: PromptInputMessage = JSON.parse(storedMessage)
