@@ -1,4 +1,4 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -42,6 +42,8 @@ declare const JAN_API_BASE_URL: string
 function ThreadPageContent() {
   const params = useParams({ strict: false })
   const conversationId = params.conversationId as string | undefined
+  const search = useSearch({ from: '/threads/$conversationId' })
+  const initialConversation = search.initialConversation
   const selectedModel = useModels((state) => state.selectedModel)
   const initialMessageSentRef = useRef(false)
 
@@ -91,7 +93,10 @@ function ThreadPageContent() {
         return
       }
     }
-    if (conversationId)
+  }, [conversationId, sendMessage, selectedModel])
+
+  useEffect(() => {
+    if (conversationId && !initialConversation)
       // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
@@ -100,7 +105,7 @@ function ThreadPageContent() {
         .catch((error) => {
           console.error('Failed to load conversation items:', error)
         })
-  }, [conversationId, sendMessage, selectedModel])
+  }, [conversationId, getUIMessages, initialConversation, setMessages])
 
   return (
     <>
@@ -210,4 +215,9 @@ function ThreadPage() {
 
 export const Route = createFileRoute('/threads/$conversationId')({
   component: ThreadPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      initialConversation: search.initialConversation as boolean | undefined,
+    }
+  },
 })
