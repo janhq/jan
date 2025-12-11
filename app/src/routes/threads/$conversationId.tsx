@@ -191,7 +191,6 @@ function ThreadPageContent() {
                               }
                             >
                               <ReasoningTrigger />
-
                               <div className="relative">
                                 {status === 'streaming' && isLastMessage && (
                                   <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
@@ -205,7 +204,7 @@ function ThreadPageContent() {
                                   className={twMerge(
                                     'w-full overflow-auto relative',
                                     status === 'streaming' && isLastMessage
-                                      ? 'max-h-32 opacity-70'
+                                      ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                                       : 'h-auto opacity-100'
                                   )}
                                 >
