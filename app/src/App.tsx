@@ -3,8 +3,31 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { NavHeader } from '@/components/sidebar/nav-header'
 
 import ChatInput from '@/components/chat-input'
+import { useEffect } from 'react'
+import { useModels } from '@/stores/models-store'
+import { useLastUsedModel } from '@/stores/last-used-model-store'
 
 function AppPageContent() {
+  const models = useModels((state) => state.models)
+  const setSelectedModel = useModels((state) => state.setSelectedModel)
+  const lastUsedModelId = useLastUsedModel((state) => state.lastUsedModelId)
+  const setLastUsedModelId = useLastUsedModel(
+    (state) => state.setLastUsedModelId
+  )
+
+  useEffect(() => {
+    if (lastUsedModelId) {
+      const lastUsedModel = models.find((m) => m.id === lastUsedModelId)
+      if (lastUsedModel) {
+        setSelectedModel(lastUsedModel)
+      }
+    } else {
+      setSelectedModel(models[0])
+      setLastUsedModelId(models[0]?.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models.length])
+
   return (
     <>
       <AppSidebar />

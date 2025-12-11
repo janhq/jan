@@ -7,6 +7,8 @@ interface Conversation {
     is_favorite: string
     model_id: string
     model_provider: string
+    search_enabled?: string
+    deep_research_enabled?: string
   }
 }
 
@@ -25,6 +27,8 @@ interface CreateConversationPayload {
     model_id: string
     model_provider: string
     is_favorite?: string
+    search_enabled?: string
+    deep_research_enabled?: string
   }
 }
 

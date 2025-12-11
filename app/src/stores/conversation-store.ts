@@ -9,6 +9,7 @@ interface ConversationState {
   conversations: Conversation[]
   loading: boolean
   getConversations: () => Promise<void>
+  getConversation: (conversationId: string) => Promise<Conversation>
   getUIMessages: (conversationId: string) => Promise<UIMessage[]>
   createConversation: (
     payload: CreateConversationPayload
@@ -38,6 +39,15 @@ export const useConversations = create<ConversationState>((set, get) => ({
         fetchPromise = null
       }
     })()
+  },
+  getConversation: async (conversationId: string) => {
+    try {
+      const conversation = await conversationService.getConversation(conversationId)
+      return conversation
+    } catch (err) {
+      console.error('Error fetching conversation:', err)
+      throw err
+    }
   },
   getUIMessages: async (conversationId: string) => {
     try {

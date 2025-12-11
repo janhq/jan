@@ -37,13 +37,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useLastUsedModel } from '@/stores/last-used-model-store'
 
 const SUBMITTING_TIMEOUT = 200
 const STREAMING_TIMEOUT = 2000
 
 const ChatInput = ({
   initialConversation = false,
-  conversationId,
   submit,
 }: {
   initialConversation?: boolean
@@ -74,6 +74,10 @@ const ChatInput = ({
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
+  )
+
+  const setLastUsedModelId = useLastUsedModel(
+    (state) => state.setLastUsedModelId
   )
 
   const isSupportTools =
@@ -139,6 +143,9 @@ const ChatInput = ({
               to: '/threads/$conversationId',
               params: { conversationId: conversation.id },
             })
+
+            setLastUsedModelId(selectedModel.id)
+
             return
           })
           .catch((error) => {
@@ -275,7 +282,6 @@ const ChatInput = ({
                   <span>Search</span>
                 </PromptInputButton>
               )}
-
               {deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
