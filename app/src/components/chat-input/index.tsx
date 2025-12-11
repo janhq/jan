@@ -17,7 +17,7 @@ import {
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
@@ -38,21 +38,20 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
-
-const SUBMITTING_TIMEOUT = 200
-const STREAMING_TIMEOUT = 2000
+import { BorderAnimate } from '../ui/border-animate'
+import { cn } from '@/lib/utils'
+import type { ChatStatus } from 'ai'
 
 const ChatInput = ({
   initialConversation = false,
+  status,
   submit,
 }: {
   initialConversation?: boolean
   conversationId?: string | undefined
+  status: ChatStatus
   submit?: (message: PromptInputMessage) => void
 }) => {
-  const [status, setStatus] = useState<
-    'submitted' | 'streaming' | 'ready' | 'error'
-  >('ready')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
 
@@ -119,8 +118,6 @@ const ChatInput = ({
       return
     }
 
-    setStatus('submitted')
-
     if (selectedModel) {
       if (initialConversation) {
         createConversation({
@@ -143,33 +140,34 @@ const ChatInput = ({
               to: '/threads/$conversationId',
               params: { conversationId: conversation.id },
             })
-
             setLastUsedModelId(selectedModel.id)
-
             return
           })
           .catch((error) => {
             console.error('Failed to create initial conversation:', error)
-            setStatus('error')
           })
       } else {
         submit?.(message)
       }
     }
-
-    setTimeout(() => {
-      setStatus('streaming')
-    }, SUBMITTING_TIMEOUT)
-
-    setTimeout(() => {
-      setStatus('ready')
-    }, STREAMING_TIMEOUT)
   }
 
   return (
-    <div className="w-full">
+    <div
+      className={cn(
+        'w-full relative rounded-3xl p-[1.5px]',
+        !initialConversation &&
+          status === 'streaming' &&
+          'overflow-hidden outline-0'
+      )}
+    >
       <PromptInputProvider>
-        <PromptInput globalDrop multiple onSubmit={handleSubmit}>
+        <PromptInput
+          globalDrop
+          multiple
+          onSubmit={handleSubmit}
+          className="rounded-3xl relative z-40 bg-background "
+        >
           <PromptInputAttachments>
             {(attachment) => <PromptInputAttachment data={attachment} />}
           </PromptInputAttachments>
@@ -296,11 +294,31 @@ const ChatInput = ({
             </PromptInputTools>
             <div className="flex items-center gap-2">
               <PromptInputSpeechButton textareaRef={textareaRef} />
-              <PromptInputSubmit status={status} className="rounded-full" />
+              <PromptInputSubmit
+                status={status}
+                className="rounded-full"
+                variant={status === 'streaming' ? 'destructive' : 'default'}
+              />
             </div>
           </PromptInputFooter>
         </PromptInput>
+        {status === 'streaming' && (
+          <div className="absolute inset-0 ">
+            <BorderAnimate rx="10%" ry="10%">
+              <div
+                className={cn(
+                  'h-100 w-100 bg-[radial-gradient(var(--primary),transparent_50%)]'
+                )}
+              />
+            </BorderAnimate>
+          </div>
+        )}
       </PromptInputProvider>
+      {initialConversation && (
+        <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-20 blur-xl transition-all duration-100">
+          <div className="bg-linear-to-r/increasing animate-hue-rotate absolute inset-x-0 bottom-0 top-6 from-pink-300 to-purple-300" />
+        </div>
+      )}
     </div>
   )
 }
