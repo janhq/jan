@@ -7,7 +7,7 @@ import { NavHeader } from '@/components/sidebar/nav-header'
 
 import { useChat } from '@/hooks/use-chat'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { useAuth } from '@/stores/auth-store'
+import { createAuthenticatedFetch } from '@/lib/api-client'
 import {
   Conversation,
   ConversationContent,
@@ -38,15 +38,10 @@ function ThreadPageContent() {
   const selectedModel = useModels((state) => state.selectedModel)
   const initialMessageSentRef = useRef(false)
 
-  const accessToken = useAuth(() => useAuth.getState().accessToken)
-
   const provider = createOpenAICompatible({
     name: 'janhq',
-    apiKey: accessToken ?? '',
     baseURL: `${JAN_API_BASE_URL}v1`,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+    fetch: createAuthenticatedFetch(),
   })
 
   const { messages, status, sendMessage, regenerate } = useChat(
