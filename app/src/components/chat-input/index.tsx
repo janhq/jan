@@ -90,7 +90,6 @@ const ChatInput = ({
             navigate({
               to: '/threads/$conversationId',
               params: { conversationId: conversation.id },
-              search: { initialConversation: true },
             })
             return
           })

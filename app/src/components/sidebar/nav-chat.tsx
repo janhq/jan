@@ -82,17 +82,11 @@ export function NavChats() {
         <SidebarMenu>
           {conversations.map((item) => (
             <SidebarMenuItem key={item.id}>
-              <SidebarMenuButton
-                asChild
-                isActive={params.conversationId === item.id}
-              >
+              <SidebarMenuButton asChild isActive={params.conversationId === item.id}>
                 <Link
                   to="/threads/$conversationId"
                   params={{ conversationId: item.id }}
                   title={item.title}
-                  search={{
-                    initialConversation: undefined,
-                  }}
                 >
                   <span>{item.title}</span>
                 </Link>
