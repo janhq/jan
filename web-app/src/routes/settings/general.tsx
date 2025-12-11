@@ -31,6 +31,7 @@ import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isRootDir } from '@/utils/path'
+const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -63,6 +64,7 @@ function General() {
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [isValidatingToken, setIsValidatingToken] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -415,13 +417,81 @@ function General() {
                     ns: 'settings',
                   })}
                   actions={
-                    <Input
-                      id="hf-token"
-                      value={huggingfaceToken || ''}
-                      onChange={(e) => setHuggingfaceToken(e.target.value)}
-                      placeholder={'hf_xxx'}
-                      required
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="hf-token"
+                        value={huggingfaceToken || ''}
+                        onChange={(e) => setHuggingfaceToken(e.target.value)}
+                        placeholder={'hf_xxx'}
+                        required
+                      />
+                      <Button
+                        variant={
+                          (huggingfaceToken || '').trim() ? 'default' : 'link'
+                        }
+                        className={
+                          (huggingfaceToken || '').trim()
+                            ? 'bg-green-600 text-white hover:bg-green-700'
+                            : ''
+                        }
+                        disabled={isValidatingToken}
+                        onClick={async () => {
+                          const token = (huggingfaceToken || '').trim()
+                          if (!token) {
+                            toast.error(
+                              'Please enter a Hugging Face token to validate'
+                            )
+                            return
+                          }
+                          setIsValidatingToken(true)
+                          const controller = new AbortController()
+                          const timeoutId = setTimeout(
+                            () => controller.abort(),
+                            TOKEN_VALIDATION_TIMEOUT_MS
+                          )
+                          try {
+                            const resp = await fetch(
+                              'https://huggingface.co/api/whoami-v2',
+                              {
+                                headers: { Authorization: `Bearer ${token}` },
+                                signal: controller.signal,
+                              }
+                            )
+                            if (resp.ok) {
+                              const data = await resp.json()
+                              toast.success('Token is valid', {
+                                description: data?.name
+                                  ? `Signed in as ${data.name}`
+                                  : 'Your Hugging Face token is valid.',
+                              })
+                            } else {
+                              toast.error('Token invalid', {
+                                description:
+                                  'The provided Hugging Face token is invalid. Please check your token and try again.',
+                              })
+                            }
+                          } catch (e) {
+                            const name = (e as { name?: string })?.name
+                            if (name === 'AbortError') {
+                              toast.error('Validation timed out', {
+                                description:
+                                  'The validation request timed out. Please check your network connection and try again.',
+                              })
+                            } else {
+                              toast.error('Validation failed', {
+                                description:
+                                  'A network error occurred while validating the token. Please check your internet connection.',
+                              })
+                            }
+                          } finally {
+                            clearTimeout(timeoutId)
+                            setIsValidatingToken(false)
+                          }
+                        }}
+                      >
+                        Verify
+                      </Button>
+                    </div>
                   }
                 />
               )}
