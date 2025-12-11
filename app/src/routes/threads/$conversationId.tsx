@@ -47,6 +47,7 @@ function ThreadPageContent() {
   const selectedModel = useModels((state) => state.selectedModel)
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
+  const fetchingMessagesRef = useRef(false)
 
   const provider = createOpenAICompatible({
     name: 'janhq',
@@ -103,7 +104,8 @@ function ThreadPageContent() {
   }, [conversationId, sendMessage])
 
   useEffect(() => {
-    if (conversationId && !initialMessageSentRef.current)
+    if (conversationId && !initialMessageSentRef.current && !fetchingMessagesRef.current) {
+      fetchingMessagesRef.current = true
       // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
@@ -112,7 +114,12 @@ function ThreadPageContent() {
         .catch((error) => {
           console.error('Failed to load conversation items:', error)
         })
-  }, [conversationId, getUIMessages, setMessages])
+        .finally(() => {
+          fetchingMessagesRef.current = false
+        })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -204,7 +211,7 @@ function ThreadPageContent() {
                                   className={twMerge(
                                     'w-full overflow-auto relative',
                                     status === 'streaming' && isLastMessage
-                                      ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                                      ? 'mt-1 max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                                       : 'h-auto opacity-100'
                                   )}
                                 >
