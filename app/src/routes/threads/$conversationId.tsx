@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
+import { useConversations } from '@/stores/conversation-store'
 
 declare const JAN_API_BASE_URL: string
 
@@ -49,12 +50,14 @@ function ThreadPageContent() {
     baseURL: `${JAN_API_BASE_URL}v1`,
     fetch: createAuthenticatedFetch({
       store: true,
-      store_rasoning: true,
+      store_reasoning: true,
       conversation: conversationId,
     }),
   })
 
-  const { messages, status, sendMessage, regenerate } = useChat(
+  const getUIMessages = useConversations((state) => state.getUIMessages)
+
+  const { messages, status, sendMessage, regenerate, setMessages } = useChat(
     provider(selectedModel?.id)
   )
 
@@ -88,6 +91,19 @@ function ThreadPageContent() {
       }
     }
   }, [conversationId, sendMessage, selectedModel])
+
+  // Set messages on load
+  useEffect(() => {
+    if (conversationId && !initialMessageSentRef.current) {
+      getUIMessages(conversationId)
+        .then((uiMessages) => {
+          setMessages(uiMessages)
+        })
+        .catch((error) => {
+          console.error('Failed to load conversation items:', error)
+        })
+    }
+  }, [conversationId])
 
   return (
     <>
@@ -154,6 +170,7 @@ function ThreadPageContent() {
                             <Reasoning
                               key={`${message.id}-${i}`}
                               className="w-full text-muted-foreground"
+                              defaultOpen={false}
                               isStreaming={
                                 status === 'streaming' &&
                                 i === message.parts.length - 1 &&

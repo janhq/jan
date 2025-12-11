@@ -48,4 +48,12 @@ export const conversationService = {
       }
     )
   },
+
+  getItems: async (
+    conversationId: string
+  ): Promise<ConversationItemsResponse> => {
+    return fetchJsonWithAuth<ConversationItemsResponse>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items?limit=${100}&order=asc`
+    )
+  },
 }
