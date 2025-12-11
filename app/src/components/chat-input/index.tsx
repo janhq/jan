@@ -30,9 +30,11 @@ const STREAMING_TIMEOUT = 2000
 const ChatInput = ({
   initialConversation = false,
   conversationId,
+  submit,
 }: {
   initialConversation?: boolean
   conversationId?: string | undefined
+  submit?: () => void
 }) => {
   const [status, setStatus] = useState<
     'submitted' | 'streaming' | 'ready' | 'error'
@@ -57,58 +59,60 @@ const ChatInput = ({
     setStatus('submitted')
     console.log('Submitting message:', message)
 
-    if (selectedModel) {
-      if (initialConversation) {
-        createConversation({
-          title: message.text || 'New Chat',
-          metadata: {
-            model_id: selectedModel.id,
-            model_provider: selectedModel.owned_by,
-            is_favorite: 'false',
-          },
-        })
-          .then((conversation) => {
-            // Redirect to the conversation detail page
-            navigate({
-              to: '/threads/$conversationId',
-              params: { conversationId: conversation.id },
-            })
+    // if (selectedModel) {
+    if (initialConversation) {
+      createConversation({
+        title: message.text || 'New Chat',
+        metadata: {
+          model_id: selectedModel.id,
+          model_provider: selectedModel.owned_by,
+          is_favorite: 'false',
+        },
+      })
+        .then((conversation) => {
+          // Redirect to the conversation detail page
+          // navigate({
+          //   to: '/threads/$conversationId',
+          //   params: { conversationId: conversation.id },
+          // })
 
-            // Call completions service after redirect
-            return completionsService.completions({
-              model: selectedModel.id,
-              messages: [
-                {
-                  role: 'user',
-                  content: message.text || '',
-                },
-              ],
-              conversation: conversation.id,
-              stream: true,
-              store_reasoning: true,
-              store: true,
-            })
-          })
-          .catch((error) => {
-            console.error('Failed to create initial conversation:', error)
-            setStatus('error')
-          })
-      } else {
-        completionsService.completions({
-          model: selectedModel.id,
-          messages: [
-            {
-              role: 'user',
-              content: message.text || '',
-            },
-          ],
-          conversation: conversationId,
-          stream: true,
-          store_reasoning: true,
-          store: true,
+          // Call completions service after redirect
+          // return completionsService.completions({
+          //   model: selectedModel.id,
+          //   messages: [
+          //     {
+          //       role: 'user',
+          //       content: message.text || '',
+          //     },
+          //   ],
+          //   conversation: conversation.id,
+          //   stream: true,
+          //   store_reasoning: true,
+          //   store: true,
+          // })
+          return submit?.()
         })
-      }
+        .catch((error) => {
+          console.error('Failed to create initial conversation:', error)
+          setStatus('error')
+        })
+    } else {
+      // completionsService.completions({
+      //   model: selectedModel.id,
+      //   messages: [
+      //     {
+      //       role: 'user',
+      //       content: message.text || '',
+      //     },
+      //   ],
+      //   conversation: conversationId,
+      //   stream: true,
+      //   store_reasoning: true,
+      //   store: true,
+      // })
+      submit?.()
     }
+    // }
 
     setTimeout(() => {
       setStatus('streaming')
