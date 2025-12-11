@@ -272,7 +272,6 @@ const ChatInput = ({
               {searchEnabled && !deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
-                  size="xs"
                   className="rounded-full group transition-all"
                   onClick={toggleSearch}
                 >
@@ -285,7 +284,6 @@ const ChatInput = ({
               {deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
-                  size="xs"
                   className="rounded-full group transition-all"
                   onClick={toggleDeepResearch}
                 >
