@@ -45,7 +45,7 @@ export const useModels = create<ModelState>((set, get) => ({
       return
     }
     const modelDetail = await modelService.getModelDetail(model.id)
-    set({ modelDetail })
+    set({ modelDetail: modelDetail })
   },
   setModelDetail: (modelDetail: ModelDetail) => set({ modelDetail }),
 }))

@@ -17,12 +17,11 @@ import {
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 
-// import { GlobeIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
-// import { completionsService } from '@/services/completions-service'
+import { useCapabilities } from '@/stores/capabilities-store'
 import { DropDrawerItem, DropDrawerSeparator } from '@/components/ui/dropdrawer'
 import {
   GlobeIcon,
@@ -30,8 +29,14 @@ import {
   MegaphoneIcon,
   Settings2,
   ShapesIcon,
+  X,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 const SUBMITTING_TIMEOUT = 200
 const STREAMING_TIMEOUT = 2000
@@ -52,9 +57,57 @@ const ChatInput = ({
   const navigate = useNavigate()
 
   const selectedModel = useModels((state) => state.selectedModel)
+  const modelDetail = useModels((state) => state.modelDetail)
+
   const createConversation = useConversations(
     (state) => state.createConversation
   )
+
+  const searchEnabled = useCapabilities((state) => state.searchEnabled)
+  const deepResearchEnabled = useCapabilities(
+    (state) => state.deepResearchEnabled
+  )
+  const toggleSearch = useCapabilities((state) => state.toggleSearch)
+  const toggleDeepResearch = useCapabilities(
+    (state) => state.toggleDeepResearch
+  )
+  const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
+  const setDeepResearchEnabled = useCapabilities(
+    (state) => state.setDeepResearchEnabled
+  )
+
+  console.log('modelDetail', modelDetail)
+
+  const isSupportTools =
+    modelDetail.supported_parameters?.names.includes('tools')
+
+  const isSupportReasoning = modelDetail.supports_reasoning
+
+  const isSupportDeepResearch = isSupportTools && isSupportReasoning
+
+  // Auto-disable capabilities when model doesn't support them
+  useEffect(() => {
+    // Only run if we have a valid model loaded
+    if (!modelDetail.id) return
+
+    if (!isSupportTools && searchEnabled) {
+      setSearchEnabled(false)
+    }
+  }, [isSupportTools, searchEnabled, setSearchEnabled, modelDetail.id])
+
+  useEffect(() => {
+    // Only run if we have a valid model loaded
+    if (!modelDetail.id) return
+
+    if (!isSupportDeepResearch && deepResearchEnabled) {
+      setDeepResearchEnabled(false)
+    }
+  }, [
+    isSupportDeepResearch,
+    deepResearchEnabled,
+    setDeepResearchEnabled,
+    modelDetail.id,
+  ])
 
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text)
@@ -134,7 +187,7 @@ const ChatInput = ({
               </PromptInputActionMenu>
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger
-                  className="rounded-full ml-1"
+                  className="rounded-full mx-1"
                   variant="secondary"
                   children={
                     <Settings2 className="size-4 text-muted-foreground" />
@@ -149,24 +202,62 @@ const ChatInput = ({
                       </div>
                     </div>
                   </DropDrawerItem>
-                  <DropDrawerItem onSelect={(e) => e.preventDefault()}>
-                    <div className="flex gap-2 items-center justify-between w-full">
-                      <div className="flex gap-2 items-center w-full">
-                        <GlobeIcon />
-                        <span>Search</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <DropDrawerItem
+                          onSelect={(e) => e.preventDefault()}
+                          disabled={!isSupportTools}
+                        >
+                          <div className="flex gap-2 items-center justify-between w-full">
+                            <div className="flex gap-2 items-center w-full">
+                              <GlobeIcon />
+                              <span>Search</span>
+                            </div>
+                            <Switch
+                              checked={
+                                deepResearchEnabled ? true : searchEnabled
+                              }
+                              onCheckedChange={toggleSearch}
+                              disabled={!isSupportTools || deepResearchEnabled}
+                            />
+                          </div>
+                        </DropDrawerItem>
                       </div>
-                      <Switch />
-                    </div>
-                  </DropDrawerItem>
-                  <DropDrawerItem onSelect={(e) => e.preventDefault()}>
-                    <div className="flex gap-2 items-center justify-between w-full">
-                      <div className="flex gap-2 items-center w-full">
-                        <MegaphoneIcon />
-                        <span>Deep Research</span>
+                    </TooltipTrigger>
+                    {!isSupportTools && (
+                      <TooltipContent>
+                        <p>This model doesn't support search</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <DropDrawerItem
+                          onSelect={(e) => e.preventDefault()}
+                          disabled={!isSupportDeepResearch}
+                        >
+                          <div className="flex gap-2 items-center justify-between w-full">
+                            <div className="flex gap-2 items-center w-full">
+                              <MegaphoneIcon />
+                              <span>Deep Research</span>
+                            </div>
+                            <Switch
+                              checked={deepResearchEnabled}
+                              onCheckedChange={toggleDeepResearch}
+                              disabled={!isSupportDeepResearch}
+                            />
+                          </div>
+                        </DropDrawerItem>
                       </div>
-                      <Switch />
-                    </div>
-                  </DropDrawerItem>
+                    </TooltipTrigger>
+                    {!isSupportDeepResearch && (
+                      <TooltipContent>
+                        <p>This model doesn't support deep research</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
                   <DropDrawerSeparator />
                   <DropDrawerItem>
                     <div className="flex gap-2 items-center justify-between w-full">
@@ -178,10 +269,31 @@ const ChatInput = ({
                   </DropDrawerItem>
                 </PromptInputActionMenuContent>
               </PromptInputActionMenu>
-              <PromptInputButton>
-                <GlobeIcon size={16} />
-                <span>Search</span>
-              </PromptInputButton>
+              {searchEnabled && !deepResearchEnabled && (
+                <PromptInputButton
+                  variant="outline"
+                  size="xs"
+                  className="rounded-full group transition-all"
+                  onClick={toggleSearch}
+                >
+                  <GlobeIcon className="text-muted-foreground size-4 group-hover:hidden" />
+                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
+                  <span>Search</span>
+                </PromptInputButton>
+              )}
+
+              {deepResearchEnabled && (
+                <PromptInputButton
+                  variant="outline"
+                  size="xs"
+                  className="rounded-full group transition-all"
+                  onClick={toggleDeepResearch}
+                >
+                  <MegaphoneIcon className="text-muted-foreground size-4 group-hover:hidden" />
+                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
+                  <span>Deep Research</span>
+                </PromptInputButton>
+              )}
             </PromptInputTools>
             <div className="flex items-center gap-2">
               <PromptInputSpeechButton textareaRef={textareaRef} />

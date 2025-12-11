@@ -99,7 +99,7 @@ function ThreadPageContent() {
         }
       }
     }
-  }, [conversationId])
+  }, [conversationId, sendMessage])
 
   useEffect(() => {
     if (conversationId && !initialMessageSentRef.current)
@@ -111,7 +111,7 @@ function ThreadPageContent() {
         .catch((error) => {
           console.error('Failed to load conversation items:', error)
         })
-  }, [conversationId])
+  }, [conversationId, getUIMessages, setMessages])
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -165,16 +165,10 @@ function ThreadPageContent() {
                                     >
                                       <RefreshCcwIcon className="text-muted-foreground size-3" />
                                     </MessageAction>
-                                    <MessageAction
-                                      label="Like"
-                                      tooltip="Like this response"
-                                    >
+                                    <MessageAction label="Like">
                                       <ThumbsUpIcon className="text-muted-foreground size-3" />
                                     </MessageAction>
-                                    <MessageAction
-                                      label="Dislike"
-                                      tooltip="Dislike this response"
-                                    >
+                                    <MessageAction label="Dislike">
                                       <ThumbsDownIcon className="text-muted-foreground size-3" />
                                     </MessageAction>
                                   </MessageActions>
