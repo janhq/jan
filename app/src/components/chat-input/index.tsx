@@ -7,11 +7,11 @@ import {
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputBody,
-  // PromptInputButton,
+  PromptInputButton,
   PromptInputFooter,
   type PromptInputMessage,
   PromptInputProvider,
-  // PromptInputSpeechButton,
+  PromptInputSpeechButton,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
@@ -22,7 +22,16 @@ import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
-import { completionsService } from '@/services/completions-service'
+// import { completionsService } from '@/services/completions-service'
+import { DropDrawerItem, DropDrawerSeparator } from '@/components/ui/dropdrawer'
+import {
+  GlobeIcon,
+  Leaf,
+  MegaphoneIcon,
+  Settings2,
+  ShapesIcon,
+} from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 
 const SUBMITTING_TIMEOUT = 200
 const STREAMING_TIMEOUT = 2000
@@ -34,7 +43,7 @@ const ChatInput = ({
 }: {
   initialConversation?: boolean
   conversationId?: string | undefined
-  submit?: () => void
+  submit?: (message: PromptInputMessage) => void
 }) => {
   const [status, setStatus] = useState<
     'submitted' | 'streaming' | 'ready' | 'error'
@@ -59,60 +68,38 @@ const ChatInput = ({
     setStatus('submitted')
     console.log('Submitting message:', message)
 
-    // if (selectedModel) {
-    if (initialConversation) {
-      createConversation({
-        title: message.text || 'New Chat',
-        metadata: {
-          model_id: selectedModel.id,
-          model_provider: selectedModel.owned_by,
-          is_favorite: 'false',
-        },
-      })
-        .then((conversation) => {
-          // Redirect to the conversation detail page
-          // navigate({
-          //   to: '/threads/$conversationId',
-          //   params: { conversationId: conversation.id },
-          // })
+    if (selectedModel) {
+      if (initialConversation) {
+        createConversation({
+          title: message.text || 'New Chat',
+          metadata: {
+            model_id: selectedModel.id,
+            model_provider: selectedModel.owned_by,
+            is_favorite: 'false',
+          },
+        })
+          .then((conversation) => {
+            // Store the initial message in sessionStorage for the new conversation
+            sessionStorage.setItem(
+              `initial-message-${conversation.id}`,
+              JSON.stringify(message)
+            )
 
-          // Call completions service after redirect
-          // return completionsService.completions({
-          //   model: selectedModel.id,
-          //   messages: [
-          //     {
-          //       role: 'user',
-          //       content: message.text || '',
-          //     },
-          //   ],
-          //   conversation: conversation.id,
-          //   stream: true,
-          //   store_reasoning: true,
-          //   store: true,
-          // })
-          return submit?.()
-        })
-        .catch((error) => {
-          console.error('Failed to create initial conversation:', error)
-          setStatus('error')
-        })
-    } else {
-      // completionsService.completions({
-      //   model: selectedModel.id,
-      //   messages: [
-      //     {
-      //       role: 'user',
-      //       content: message.text || '',
-      //     },
-      //   ],
-      //   conversation: conversationId,
-      //   stream: true,
-      //   store_reasoning: true,
-      //   store: true,
-      // })
-      submit?.()
+            // Redirect to the conversation detail page
+            navigate({
+              to: '/threads/$conversationId',
+              params: { conversationId: conversation.id },
+            })
+            return
+          })
+          .catch((error) => {
+            console.error('Failed to create initial conversation:', error)
+            setStatus('error')
+          })
+      } else {
+        submit?.(message)
+      }
     }
-    // }
 
     setTimeout(() => {
       setStatus('streaming')
@@ -144,13 +131,61 @@ const ChatInput = ({
                   <PromptInputActionAddAttachments />
                 </PromptInputActionMenuContent>
               </PromptInputActionMenu>
-              {/* <PromptInputSpeechButton textareaRef={textareaRef} /> */}
-              {/* <PromptInputButton>
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger
+                  className="rounded-full ml-1"
+                  variant="secondary"
+                  children={
+                    <Settings2 className="size-4 text-muted-foreground" />
+                  }
+                />
+                <PromptInputActionMenuContent>
+                  <DropDrawerItem>
+                    <div className="flex gap-2 items-center justify-between w-full">
+                      <div className="flex gap-2 items-center w-full">
+                        <Leaf />
+                        <span>Tone</span>
+                      </div>
+                    </div>
+                  </DropDrawerItem>
+                  <DropDrawerItem onSelect={(e) => e.preventDefault()}>
+                    <div className="flex gap-2 items-center justify-between w-full">
+                      <div className="flex gap-2 items-center w-full">
+                        <GlobeIcon />
+                        <span>Search</span>
+                      </div>
+                      <Switch />
+                    </div>
+                  </DropDrawerItem>
+                  <DropDrawerItem onSelect={(e) => e.preventDefault()}>
+                    <div className="flex gap-2 items-center justify-between w-full">
+                      <div className="flex gap-2 items-center w-full">
+                        <MegaphoneIcon />
+                        <span>Deep Research</span>
+                      </div>
+                      <Switch />
+                    </div>
+                  </DropDrawerItem>
+                  <DropDrawerSeparator />
+                  <DropDrawerItem>
+                    <div className="flex gap-2 items-center justify-between w-full">
+                      <div className="flex gap-2 items-center w-full">
+                        <ShapesIcon />
+                        <span>Connectors</span>
+                      </div>
+                    </div>
+                  </DropDrawerItem>
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+              <PromptInputButton>
                 <GlobeIcon size={16} />
                 <span>Search</span>
-              </PromptInputButton> */}
+              </PromptInputButton>
             </PromptInputTools>
-            <PromptInputSubmit status={status} className="rounded-full " />
+            <div className="flex items-center gap-2">
+              <PromptInputSpeechButton textareaRef={textareaRef} />
+              <PromptInputSubmit status={status} className="rounded-full " />
+            </div>
           </PromptInputFooter>
         </PromptInput>
       </PromptInputProvider>

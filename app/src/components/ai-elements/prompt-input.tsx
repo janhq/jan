@@ -1204,7 +1204,7 @@ export const PromptInputSpeechButton = ({
   return (
     <PromptInputButton
       className={cn(
-        'relative transition-all duration-200',
+        'relative transition-all duration-200 rounded-full',
         isListening && 'animate-pulse bg-accent text-accent-foreground',
         className
       )}
@@ -1212,7 +1212,7 @@ export const PromptInputSpeechButton = ({
       onClick={toggleListening}
       {...props}
     >
-      <MicIcon className="size-4" />
+      <MicIcon className="size-4 text-muted-foreground" />
     </PromptInputButton>
   )
 }
