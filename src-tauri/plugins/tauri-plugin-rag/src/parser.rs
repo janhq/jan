@@ -93,7 +93,7 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
 fn parse_docx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
     if metadata.len() > MAX_DOCX_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
     }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
@@ -186,7 +186,7 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
 fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_SPREADSHEET_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
     }
     let mut workbook = open_workbook_auto(file_path)
         .map_err(|e| RagError::ParseError(e.to_string()))?;
@@ -220,7 +220,7 @@ fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
 fn parse_pptx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
     if metadata.len() > MAX_PPTX_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
     }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
