@@ -54,7 +54,7 @@ export function NavUser() {
             >
               <Avatar className="h-8 w-8 rounded-full">
                 <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="bg-primary text-white">
+                <AvatarFallback className="bg-primary text-background font-medium">
                   {getInitialsAvatar(user.name)}
                 </AvatarFallback>
               </Avatar>

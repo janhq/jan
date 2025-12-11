@@ -296,7 +296,7 @@ const ChatInput = ({
             </PromptInputTools>
             <div className="flex items-center gap-2">
               <PromptInputSpeechButton textareaRef={textareaRef} />
-              <PromptInputSubmit status={status} className="rounded-full " />
+              <PromptInputSubmit status={status} className="rounded-full" />
             </div>
           </PromptInputFooter>
         </PromptInput>
