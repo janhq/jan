@@ -6,7 +6,6 @@ import ChatInput from '@/components/chat-input'
 import { useEffect } from 'react'
 import { useModels } from '@/stores/models-store'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
-import { ThemeProvider } from './components/themes/theme-provider'
 
 function AppPageContent() {
   const models = useModels((state) => state.models)
@@ -30,7 +29,7 @@ function AppPageContent() {
   }, [models.length])
 
   return (
-    <ThemeProvider defaultTheme="system" storageKey="theme">
+    <>
       <AppSidebar />
       <SidebarInset>
         <NavHeader />
@@ -45,7 +44,7 @@ function AppPageContent() {
           </div>
         </div>
       </SidebarInset>
-    </ThemeProvider>
+    </>
   )
 }
 
