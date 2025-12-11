@@ -1,4 +1,4 @@
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useParams } from '@tanstack/react-router'
 
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -42,8 +42,6 @@ declare const JAN_API_BASE_URL: string
 function ThreadPageContent() {
   const params = useParams({ strict: false })
   const conversationId = params.conversationId as string | undefined
-  const search = useSearch({ from: '/threads/$conversationId' })
-  const initialConversation = search.initialConversation
   const selectedModel = useModels((state) => state.selectedModel)
   const initialMessageSentRef = useRef(false)
 
@@ -60,7 +58,13 @@ function ThreadPageContent() {
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
   const { messages, status, sendMessage, regenerate, setMessages } = useChat(
-    provider(selectedModel?.id)
+    provider(selectedModel?.id),
+    {
+      onFinish: () => {
+        // After finishing a message, refresh the conversation list to get updated timestamps
+        initialMessageSentRef.current = false
+      }
+    }
   )
 
   const handleSubmit = (message: PromptInputMessage) => {
@@ -72,7 +76,7 @@ function ThreadPageContent() {
 
   // Check for initial message and send it automatically
   useEffect(() => {
-    if (conversationId && !initialMessageSentRef.current) {
+    if (conversationId) {
       const initialMessageKey = `initial-message-${conversationId}`
       const storedMessage = sessionStorage.getItem(initialMessageKey)
       if (storedMessage) {
@@ -82,6 +86,7 @@ function ThreadPageContent() {
           sessionStorage.removeItem(initialMessageKey)
           // Mark as sent to prevent duplicate sends
           initialMessageSentRef.current = true
+
           // Send the message
           sendMessage({
             text: message.text,
@@ -90,22 +95,21 @@ function ThreadPageContent() {
         } catch (error) {
           console.error('Failed to parse initial message:', error)
         }
-        return
       }
     }
-  }, [conversationId, sendMessage, selectedModel])
+  }, [conversationId])
 
   useEffect(() => {
-    if (conversationId && !initialConversation)
+    if (conversationId && !initialMessageSentRef.current)
       // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
-          setMessages(uiMessages)
+          if (!initialMessageSentRef.current) setMessages(uiMessages)
         })
         .catch((error) => {
           console.error('Failed to load conversation items:', error)
         })
-  }, [conversationId, getUIMessages, initialConversation, setMessages])
+  }, [conversationId])
 
   return (
     <>
@@ -172,7 +176,6 @@ function ThreadPageContent() {
                             <Reasoning
                               key={`${message.id}-${i}`}
                               className="w-full text-muted-foreground"
-                              defaultOpen={false}
                               isStreaming={
                                 status === 'streaming' &&
                                 i === message.parts.length - 1 &&
@@ -215,9 +218,4 @@ function ThreadPage() {
 
 export const Route = createFileRoute('/threads/$conversationId')({
   component: ThreadPage,
-  validateSearch: (search: Record<string, unknown>) => {
-    return {
-      initialConversation: search.initialConversation as boolean | undefined,
-    }
-  },
 })
