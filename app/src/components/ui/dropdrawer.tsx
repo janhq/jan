@@ -498,7 +498,7 @@ function DropDrawerItem({
       {...props}
     >
       <div className="flex w-full items-center justify-between">
-        <div>{children}</div>
+        {children}
         {icon && <div>{icon}</div>}
       </div>
     </DropdownMenuItem>
