@@ -1,4 +1,4 @@
-import { type UIMessage } from "@ai-sdk/react";
+import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
   streamText,
@@ -6,35 +6,35 @@ import {
   type ChatTransport,
   type LanguageModel,
   type UIMessageChunk,
-} from "ai";
+} from 'ai'
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
-  private model: LanguageModel;
+  private model: LanguageModel
 
   constructor(model: LanguageModel) {
-    this.model = model;
+    this.model = model
   }
 
   updateModel(model: LanguageModel) {
-    this.model = model;
+    this.model = model
   }
 
   async sendMessages(
     options: {
-      chatId: string;
-      messages: UIMessage[];
-      abortSignal: AbortSignal | undefined;
+      chatId: string
+      messages: UIMessage[]
+      abortSignal: AbortSignal | undefined
     } & {
-      trigger: "submit-message" | "regenerate-message";
-      messageId: string | undefined;
-    } & ChatRequestOptions,
+      trigger: 'submit-message' | 'regenerate-message'
+      messageId: string | undefined
+    } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     const result = streamText({
       model: this.model,
       messages: convertToModelMessages(options.messages),
       abortSignal: options.abortSignal,
-      toolChoice: "auto",
-    });
+      toolChoice: 'auto',
+    })
 
     return result.toUIMessageStream({
       onError: (error) => {
@@ -42,27 +42,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // which is intentionally vague in case the error contains sensitive information like API keys.
         // If you want to provide more detailed error messages, keep the code below. Otherwise, remove this whole onError callback.
         if (error == null) {
-          return "Unknown error";
+          return 'Unknown error'
         }
-        if (typeof error === "string") {
-          return error;
+        if (typeof error === 'string') {
+          return error
         }
         if (error instanceof Error) {
-          return error.message;
+          return error.message
         }
-        return JSON.stringify(error);
+        return JSON.stringify(error)
       },
-    });
+    })
   }
 
   async reconnectToStream(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options: {
-      chatId: string;
-    } & ChatRequestOptions,
+      chatId: string
+    } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk> | null> {
     // This function normally handles reconnecting to a stream on the backend, e.g. /api/chat
     // Since this project has no backend, we can't reconnect to a stream, so this is intentionally no-op.
-    return null;
+    return null
   }
 }

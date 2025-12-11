@@ -54,20 +54,10 @@ function ThreadPageContent() {
   )
 
   const handleSubmit = (message: PromptInputMessage) => {
-    sendMessage(
-      {
-        text: message.text || 'Sent with attachments',
-        files: message.files,
-      },
-      {
-        body: {
-          model: selectedModel.id,
-          stream: true,
-          store_reasoning: true,
-          store: true,
-        },
-      }
-    )
+    sendMessage({
+      text: message.text || 'Sent with attachments',
+      files: message.files,
+    })
   }
 
   // Check for initial message and send it automatically
@@ -84,20 +74,10 @@ function ThreadPageContent() {
           // Mark as sent to prevent duplicate sends
           initialMessageSentRef.current = true
           // Send the message
-          sendMessage(
-            {
-              text: message.text || 'Sent with attachments',
-              files: message.files,
-            },
-            {
-              body: {
-                model: selectedModel.id,
-                stream: true,
-                store_reasoning: true,
-                store: true,
-              },
-            }
-          )
+          sendMessage({
+            text: message.text,
+            files: message.files,
+          })
         } catch (error) {
           console.error('Failed to parse initial message:', error)
         }
@@ -110,74 +90,81 @@ function ThreadPageContent() {
       <AppSidebar />
       <SidebarInset>
         <NavHeader />
-        <div className="flex flex-1 flex-col h-full gap-4 px-4 pt-10 pb-4 max-w-3xl w-full mx-auto">
+        <div className="flex flex-1 flex-col h-full overflow-hidden max-h-[calc(100vh-56px)] w-full ">
           {/* Messages Area */}
+
           <div className="flex-1 overflow-y-auto">
-            <Conversation className="h-full text-start">
-              <ConversationContent>
-                {messages.map((message) => (
-                  <div key={message.id}>
-                    {message.parts.map((part, i) => {
-                      switch (part.type) {
-                        case 'text':
-                          return (
-                            <Message
-                              key={`${message.id}-${i}`}
-                              from={message.role}
-                            >
-                              <MessageContent>
-                                <MessageResponse>{part.text}</MessageResponse>
-                              </MessageContent>
-                              {message.role === 'assistant' &&
-                                i === messages.length - 1 && (
-                                  <MessageActions>
-                                    <MessageAction
-                                      onClick={() => regenerate()}
-                                      label="Retry"
-                                    >
-                                      <RefreshCcwIcon className="size-3" />
-                                    </MessageAction>
-                                    <MessageAction
-                                      onClick={() =>
-                                        navigator.clipboard.writeText(part.text)
-                                      }
-                                      label="Copy"
-                                    >
-                                      <CopyIcon className="size-3" />
-                                    </MessageAction>
-                                  </MessageActions>
-                                )}
-                            </Message>
-                          )
-                        case 'reasoning':
-                          return (
-                            <Reasoning
-                              key={`${message.id}-${i}`}
-                              className="w-full"
-                              isStreaming={
-                                status === 'streaming' &&
-                                i === message.parts.length - 1 &&
-                                message.id === messages.at(-1)?.id
-                              }
-                            >
-                              <ReasoningTrigger />
-                              <ReasoningContent>{part.text}</ReasoningContent>
-                            </Reasoning>
-                          )
-                        default:
-                          return null
-                      }
-                    })}
-                  </div>
-                ))}
-                {status === 'submitted' && <Loader />}
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
+            <div className="max-w-3xl mx-auto">
+              <Conversation className="h-full text-start">
+                <ConversationContent>
+                  {messages.map((message) => (
+                    <div key={message.id}>
+                      {message.parts.map((part, i) => {
+                        switch (part.type) {
+                          case 'text':
+                            return (
+                              <Message
+                                key={`${message.id}-${i}`}
+                                from={message.role}
+                              >
+                                <MessageContent>
+                                  <MessageResponse>{part.text}</MessageResponse>
+                                </MessageContent>
+                                {message.role === 'assistant' &&
+                                  i === messages.length - 1 && (
+                                    <MessageActions>
+                                      <MessageAction
+                                        onClick={() => regenerate()}
+                                        label="Retry"
+                                      >
+                                        <RefreshCcwIcon className="size-3" />
+                                      </MessageAction>
+                                      <MessageAction
+                                        onClick={() =>
+                                          navigator.clipboard.writeText(
+                                            part.text
+                                          )
+                                        }
+                                        label="Copy"
+                                      >
+                                        <CopyIcon className="size-3" />
+                                      </MessageAction>
+                                    </MessageActions>
+                                  )}
+                              </Message>
+                            )
+                          case 'reasoning':
+                            return (
+                              <Reasoning
+                                key={`${message.id}-${i}`}
+                                className="w-full text-muted-foreground"
+                                isStreaming={
+                                  status === 'streaming' &&
+                                  i === message.parts.length - 1 &&
+                                  message.id === messages.at(-1)?.id
+                                }
+                              >
+                                <ReasoningTrigger />
+                                <ReasoningContent>{part.text}</ReasoningContent>
+                              </Reasoning>
+                            )
+                          default:
+                            return null
+                        }
+                      })}
+                    </div>
+                  ))}
+                  {status === 'submitted' && <Loader />}
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            </div>
           </div>
 
-          {/* Chat Input */}
-          <ChatInput conversationId={conversationId} submit={handleSubmit} />
+          {/* Chat Input - Fixed at bottom */}
+          <div className="px-4 pb-4 max-w-3xl mx-auto w-full">
+            <ChatInput conversationId={conversationId} submit={handleSubmit} />
+          </div>
         </div>
       </SidebarInset>
     </>
