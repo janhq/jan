@@ -79,6 +79,7 @@ interface JanModelCatalogResponse {
   supports_reasoning?: boolean
   supports_audio?: boolean
   supports_video?: boolean
+  supported_tools?: boolean
   [key: string]: unknown
 }
 
@@ -377,10 +378,11 @@ function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null):
 
   const parameters = extractSupportedParameters(catalog)
 
-  if (parameters.includes('tools')) {
+  // Use supported_tools field if available, otherwise fallback to checking parameters
+  if (catalog.supported_tools ) {
     capabilities.add('tools')
   }
-  if (parameters.includes('vision') || catalog.supports_images) {
+  if (catalog.supports_images) {
     capabilities.add('vision')
   }
 
@@ -390,7 +392,8 @@ function deriveCapabilitiesFromCatalog(catalog: JanModelCatalogResponse | null):
 
   // Debug log - remove after testing
   console.log('[deriveCapabilities]', catalog.id, { 
-    supports_reasoning: catalog.supports_reasoning, 
+    supports_reasoning: catalog.supports_reasoning,
+    supported_tools: catalog.supported_tools,
     capabilities: Array.from(capabilities) 
   })
 
