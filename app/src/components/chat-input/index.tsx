@@ -76,8 +76,6 @@ const ChatInput = ({
     (state) => state.setDeepResearchEnabled
   )
 
-  console.log('modelDetail', modelDetail)
-
   const isSupportTools =
     modelDetail.supported_parameters?.names.includes('tools')
 

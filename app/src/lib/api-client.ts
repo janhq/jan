@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 let isRefreshing = false
 let refreshPromise: Promise<string> | null = null
 
