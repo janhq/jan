@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useParams } from '@tanstack/react-router'
 
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -6,6 +6,9 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { NavHeader } from '@/components/sidebar/nav-header'
 
 function ThreadPageContent() {
+  const params = useParams({ strict: false })
+  const conversationId = params.conversationId as string | undefined
+
   return (
     <>
       <AppSidebar />
@@ -23,7 +26,7 @@ function ThreadPageContent() {
           </div>
 
           {/* Chat Input */}
-          <ChatInput />
+          <ChatInput conversationId={conversationId} />
         </div>
       </SidebarInset>
     </>
