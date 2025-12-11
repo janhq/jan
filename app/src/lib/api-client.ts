@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-declare const JAN_API_BASE_URL: string
-
-interface RefreshTokenResponse {
-  refresh_token: string
-}
-
 let isRefreshing = false
 let refreshPromise: Promise<string> | null = null
 
@@ -18,23 +11,10 @@ export class ApiError extends Error {
   }
 }
 
-async function refreshAccessToken(): Promise<RefreshTokenResponse> {
-  const response = await fetch(`${JAN_API_BASE_URL}auth/refresh-token`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      `Token refresh failed: ${response.statusText}`
-    )
-  }
-
-  return response.json()
+async function refreshAccessToken(): Promise<string> {
+  const { useAuth } = await import('@/stores/auth-store')
+  await useAuth.getState().refreshAccessToken()
+  return useAuth.getState().accessToken!
 }
 
 interface FetchWithAuthOptions extends RequestInit {
@@ -94,16 +74,8 @@ export async function fetchWithAuth(
     isRefreshing = true
     refreshPromise = (async () => {
       try {
-        const refreshData = await refreshAccessToken()
-
-        // Update auth store with new tokens
-        const { useAuth: freshAuthStore } = await import('@/stores/auth-store')
-        freshAuthStore.setState({
-          accessToken: refreshData.refresh_token,
-          refreshToken: refreshData.refresh_token,
-        })
-
-        return refreshData.refresh_token
+        const newAccessToken = await refreshAccessToken()
+        return newAccessToken
       } catch (error) {
         // Refresh failed, logout user
         const { logout } = useAuth.getState()
@@ -146,4 +118,22 @@ export async function fetchJsonWithAuth<T>(
   }
 
   return response.json()
+}
+
+/**
+ * Creates a custom fetch function that handles token refresh automatically.
+ * This is useful for AI SDK providers that need authenticated requests.
+ *
+ * @returns A fetch function that can be used with AI SDK providers
+ */
+export function createAuthenticatedFetch(): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+
+    // Pass through fetchWithAuth which handles token refresh
+    return fetchWithAuth(url, {
+      ...init,
+      skipAuthRefresh: false,
+    })
+  }
 }

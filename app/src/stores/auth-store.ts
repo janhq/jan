@@ -76,6 +76,9 @@ export const useAuth = create<AuthState>()(
               headers: {
                 'Content-Type': 'application/json',
               },
+              body: JSON.stringify({
+                refresh_token: useAuth.getState().refreshToken,
+              })
             }
           )
 
