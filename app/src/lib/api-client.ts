@@ -126,13 +126,24 @@ export async function fetchJsonWithAuth<T>(
  *
  * @returns A fetch function that can be used with AI SDK providers
  */
-export function createAuthenticatedFetch(): typeof fetch {
+export function createAuthenticatedFetch(customBody?: object): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
 
     // Pass through fetchWithAuth which handles token refresh
     return fetchWithAuth(url, {
       ...init,
+      body: customBody
+        ? JSON.stringify({
+            ...customBody,
+            ...(init?.body ? JSON.parse(init.body.toString()) : {}),
+          })
+        : init?.body,
       skipAuthRefresh: false,
     })
   }

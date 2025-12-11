@@ -41,7 +41,9 @@ function ThreadPageContent() {
   const provider = createOpenAICompatible({
     name: 'janhq',
     baseURL: `${JAN_API_BASE_URL}v1`,
-    fetch: createAuthenticatedFetch(),
+    fetch: createAuthenticatedFetch({
+      store: true
+    }),
   })
 
   const { messages, status, sendMessage, regenerate } = useChat(
