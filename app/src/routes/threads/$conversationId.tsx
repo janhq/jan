@@ -118,7 +118,7 @@ function ThreadPageContent() {
                               {message.role === 'assistant' &&
                                 isLastMessage &&
                                 isLastPart && (
-                                  <MessageActions className="mt-1">
+                                  <MessageActions className="mt-1 gap-0">
                                     <MessageAction
                                       onClick={() =>
                                         navigator.clipboard.writeText(part.text)
