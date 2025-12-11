@@ -9,6 +9,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { LoginForm } from '@/components/form/login'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { useAuth } from '@/stores/auth-store'
+import { ThemeProvider } from '@/components/themes/theme-provider'
 
 function RootLayout() {
   const location = useLocation()
@@ -42,7 +43,7 @@ function RootLayout() {
   }
 
   return (
-    <>
+    <ThemeProvider defaultTheme="system" storageKey="theme">
       {/* Main content - always rendered */}
       <Outlet />
 
@@ -65,7 +66,7 @@ function RootLayout() {
         open={isSettingsOpen}
         section={settingSection || 'general'}
       />
-    </>
+    </ThemeProvider>
   )
 }
 

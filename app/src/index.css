@@ -122,4 +122,12 @@
     width: 14px;
     height: 14px;
   }
+
+  svg {
+    stroke-width: 1.5;
+  }
+
+  [data-streamdown='code-block-header'] {
+    padding: 8px 16px !important;
+  }
 }
