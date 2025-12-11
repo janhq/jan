@@ -115,10 +115,7 @@ const ChatInput = ({
       return
     }
 
-    console.log('conversationId,', conversationId)
-    console.log('selectedModel', selectedModel)
     setStatus('submitted')
-    console.log('Submitting message:', message)
 
     if (selectedModel) {
       if (initialConversation) {
