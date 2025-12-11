@@ -1,6 +1,7 @@
 import { NavActions } from '@/components/sidebar/nav-actions'
 import { ModelSelector } from '@/components/sidebar/model-selector'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
+import { ThemeToggle } from '../themes/theme-toggle'
 
 export function NavHeader() {
   const { state, isMobile } = useSidebar()
@@ -13,7 +14,8 @@ export function NavHeader() {
         )}
         <ModelSelector />
       </div>
-      <div className="ml-auto px-3">
+      <div className="ml-auto px-3 flex items-center gap-2">
+        <ThemeToggle />
         <NavActions />
       </div>
     </header>

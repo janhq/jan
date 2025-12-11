@@ -14,7 +14,7 @@ export function GeneralSettings() {
       <div className="flex items-center gap-4 mb-6 bg-muted/50 p-4 rounded-lg">
         <Avatar className="size-12">
           <AvatarImage src={user?.avatar} alt={user?.name} />
-          <AvatarFallback className="bg-primary text-white text-xl font-semibold">
+          <AvatarFallback className="bg-primary text-background text-xl font-semibold">
             {getInitialsAvatar(user?.name || '')}
           </AvatarFallback>
         </Avatar>
