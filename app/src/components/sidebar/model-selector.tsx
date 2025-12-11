@@ -22,8 +22,6 @@ export function ModelSelector() {
 
   useEffect(() => {
     getModels()
-    const firstModel = models.length > 0 ? models[0] : null
-    setSelectedModel(firstModel as Model)
   }, [getModels, models, setSelectedModel])
 
   const handleSelectModel = (model: Model) => {

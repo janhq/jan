@@ -21,6 +21,12 @@ export const conversationService = {
     )
   },
 
+  getConversation: async (conversationId: string): Promise<Conversation> => {
+    return fetchJsonWithAuth<Conversation>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}`
+    )
+  },
+
   deleteConversation: async (conversationId: string): Promise<void> => {
     return fetchJsonWithAuth<void>(
       `${JAN_API_BASE_URL}v1/conversations/${conversationId}`,

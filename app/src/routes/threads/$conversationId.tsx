@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/refs */
 import { createFileRoute, useParams } from '@tanstack/react-router'
 
 import ChatInput from '@/components/chat-input'
@@ -45,6 +44,9 @@ function ThreadPageContent() {
   const params = useParams({ strict: false })
   const conversationId = params.conversationId as string | undefined
   const selectedModel = useModels((state) => state.selectedModel)
+  const models = useModels((state) => state.models)
+  const setSelectedModel = useModels((state) => state.setSelectedModel)
+  const getConversation = useConversations((state) => state.getConversation)
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
@@ -78,6 +80,26 @@ function ThreadPageContent() {
     })
   }
 
+  useEffect(() => {
+    if (conversationId && models.length > 0) {
+      getConversation(conversationId)
+        .then((conversation) => {
+          // Load model from metadata
+          const modelId = conversation.metadata?.model_id
+          if (modelId) {
+            const model = models.find((m) => m.id === modelId)
+            if (model && model.id !== selectedModel?.id) {
+              setSelectedModel(model)
+            }
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to load conversation:', error)
+        })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, models.length])
+
   // Check for initial message and send it automatically
   useEffect(() => {
     if (conversationId) {
@@ -90,7 +112,6 @@ function ThreadPageContent() {
           sessionStorage.removeItem(initialMessageKey)
           // Mark as sent to prevent duplicate sends
           initialMessageSentRef.current = true
-
           // Send the message
           sendMessage({
             text: message.text,
@@ -104,7 +125,11 @@ function ThreadPageContent() {
   }, [conversationId, sendMessage])
 
   useEffect(() => {
-    if (conversationId && !initialMessageSentRef.current && !fetchingMessagesRef.current) {
+    if (
+      conversationId &&
+      !initialMessageSentRef.current &&
+      !fetchingMessagesRef.current
+    ) {
       fetchingMessagesRef.current = true
       // Fetch messages for old conversations
       getUIMessages(conversationId)
@@ -211,7 +236,7 @@ function ThreadPageContent() {
                                   className={twMerge(
                                     'w-full overflow-auto relative',
                                     status === 'streaming' && isLastMessage
-                                      ? 'mt-1 max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                                      ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                                       : 'h-auto opacity-100'
                                   )}
                                 >
