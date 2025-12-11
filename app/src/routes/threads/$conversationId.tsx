@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 import { createFileRoute, useParams } from '@tanstack/react-router'
 
 import ChatInput from '@/components/chat-input'
@@ -193,7 +194,7 @@ function ThreadPageContent() {
 
                               <div className="relative">
                                 {status === 'streaming' && isLastMessage && (
-                                  <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-br from-main-view to-transparent pointer-events-none z-10" />
+                                  <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
                                 )}
                                 <div
                                   ref={
