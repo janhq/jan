@@ -6,17 +6,54 @@ import {
   type ChatTransport,
   type LanguageModel,
   type UIMessageChunk,
+  type Tool,
+  jsonSchema,
 } from 'ai'
+import { mcpService } from '@/services/mcp-service'
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   private model: LanguageModel
+  private tools: Record<string, Tool> = {}
+  private enabledTool = false
 
-  constructor(model: LanguageModel) {
+  constructor(model: LanguageModel, enabledTool?: boolean) {
     this.model = model
+    this.enabledTool = enabledTool ?? false
+    this.initializeTools()
   }
 
   updateModel(model: LanguageModel) {
     this.model = model
+  }
+
+  /**
+   * Initialize MCP tools and convert them to AI SDK format
+   */
+  private async initializeTools() {
+    try {
+      const toolsResponse = await mcpService.getTools()
+
+      // Convert MCP tools to AI SDK CoreTool format
+      this.tools = toolsResponse.data.reduce((acc, tool) => {
+        acc[tool.name] = {
+          description: tool.description,
+          inputSchema: jsonSchema(tool.inputSchema),
+        }
+        return acc
+      }, {} as Record<string, Tool>)
+
+      console.log(`Initialized ${Object.keys(this.tools).length} MCP tools`)
+    } catch (error) {
+      console.error('Failed to initialize MCP tools:', error)
+      this.tools = {}
+    }
+  }
+
+  /**
+   * Refresh tools from MCP server
+   */
+  async refreshTools() {
+    await this.initializeTools()
   }
 
   async sendMessages(
@@ -29,10 +66,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+
+    await this.refreshTools()
     const result = streamText({
       model: this.model,
       messages: convertToModelMessages(options.messages),
       abortSignal: options.abortSignal,
+      tools: this.enabledTool ? this.tools : undefined,
       toolChoice: 'auto',
     })
 
@@ -61,6 +101,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       chatId: string
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk> | null> {
+    console.log("GGGGGGG")
     // This function normally handles reconnecting to a stream on the backend, e.g. /api/chat
     // Since this project has no backend, we can't reconnect to a stream, so this is intentionally no-op.
     return null

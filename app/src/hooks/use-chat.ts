@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/refs */
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
+import { useCapabilities } from '@/stores/capabilities-store'
 import {
   type UIMessage,
   type UseChatOptions,
@@ -16,9 +17,9 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
 // making a nice reusable hook for chat functionality.
 export function useChat(model: LanguageModel, options?: CustomChatOptions) {
   const transportRef = useRef<CustomChatTransport | null>(null) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
-
+  const searchEnabled = useCapabilities((state) => state.searchEnabled)
   if (!transportRef.current) {
-    transportRef.current = new CustomChatTransport(model)
+    transportRef.current = new CustomChatTransport(model, searchEnabled)
   }
 
   useEffect(() => {

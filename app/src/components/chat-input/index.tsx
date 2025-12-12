@@ -49,7 +49,7 @@ const ChatInput = ({
 }: {
   initialConversation?: boolean
   conversationId?: string | undefined
-  status: ChatStatus
+  status?: ChatStatus
   submit?: (message: PromptInputMessage) => void
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
