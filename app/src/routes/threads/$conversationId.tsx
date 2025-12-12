@@ -7,7 +7,7 @@ import { NavHeader } from '@/components/sidebar/nav-header'
 
 import { useChat } from '@/hooks/use-chat'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { createAuthenticatedFetch } from '@/lib/api-client'
+import { createAuthenticatedFetch, janProvider } from '@/lib/api-client'
 import {
   Conversation,
   ConversationContent,
@@ -38,8 +38,6 @@ import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
 
-declare const JAN_API_BASE_URL: string
-
 function ThreadPageContent() {
   const params = useParams({ strict: false })
   const conversationId = params.conversationId as string | undefined
@@ -51,15 +49,7 @@ function ThreadPageContent() {
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
 
-  const provider = createOpenAICompatible({
-    name: 'janhq',
-    baseURL: `${JAN_API_BASE_URL}v1`,
-    fetch: createAuthenticatedFetch({
-      store: true,
-      store_reasoning: true,
-      conversation: conversationId,
-    }),
-  })
+  const provider = janProvider(conversationId)
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
