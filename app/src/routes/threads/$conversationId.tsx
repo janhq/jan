@@ -24,16 +24,26 @@ import {
   ReasoningContent,
 } from '@/components/ai-elements/reasoning'
 import {
+  Tool,
+  ToolHeader,
+  ToolContent,
+  ToolInput,
+  ToolOutput,
+} from '@/components/ai-elements/tool'
+import {
   RefreshCcwIcon,
   CopyIcon,
   Loader,
   ThumbsDownIcon,
   ThumbsUpIcon,
 } from 'lucide-react'
+// import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
+import { mcpService } from '@/services/mcp-service'
+import { lastAssistantMessageIsCompleteWithToolCalls } from '@/lib/last-assistant-message-is-complete-with-tool-calls'
 
 function ThreadPageContent() {
   const params = useParams({ strict: false })
@@ -50,15 +60,44 @@ function ThreadPageContent() {
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
-  const { messages, status, sendMessage, regenerate, setMessages } = useChat(
-    provider(selectedModel?.id),
-    {
-      onFinish: () => {
-        // After finishing a message, refresh the conversation list to get updated timestamps
-        initialMessageSentRef.current = false
-      },
-    }
-  )
+  const {
+    messages,
+    status,
+    sendMessage,
+    regenerate,
+    setMessages,
+    addToolOutput,
+  } = useChat(provider(selectedModel?.id), {
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onFinish: () => {
+      // After finishing a message, refresh the conversation list to get updated timestamps
+      initialMessageSentRef.current = false
+    },
+    // run client-side tools that are automatically executed:
+    async onToolCall({ toolCall }) {
+      const result = await mcpService.callTool({
+        toolName: toolCall.toolName,
+        serverName: 'Jan MCP Server',
+        arguments: toolCall.input as any,
+      })
+
+      if (result.error) {
+        addToolOutput({
+          state: 'output-error',
+          tool: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+          errorText: result.error,
+        })
+        return
+      }
+
+      addToolOutput({
+        tool: toolCall.toolName,
+        toolCallId: toolCall.toolCallId,
+        output: result,
+      })
+    },
+  })
 
   const handleSubmit = (message: PromptInputMessage) => {
     sendMessage({
@@ -156,7 +195,6 @@ function ThreadPageContent() {
                     {message.parts.map((part, i) => {
                       const isLastMessage = messageIndex === messages.length - 1
                       const isLastPart = i === message.parts.length - 1
-
                       switch (part.type) {
                         case 'text':
                           return (
@@ -234,8 +272,60 @@ function ThreadPageContent() {
                               </div>
                             </Reasoning>
                           )
+                        case 'step-start':
+                          // show step boundaries as horizontal lines:
+                          return i > 0 ? (
+                            <div key={i} className="text-gray-500">
+                              <hr className="my-2 border-gray-300" />
+                            </div>
+                          ) : null
                         default:
-                          return null
+                          // Handle all tool-* cases (tool-call, tool-result, etc.)
+                          if (!part.type.startsWith('tool-')) {
+                            return null
+                          }
+                          // Type narrowing: ensure part has tool-related properties
+                          if (!('state' in part) || !('input' in part)) {
+                            return null
+                          }
+                          // Extract tool name from the type (e.g., 'tool-call-web_search' -> 'web_search')
+                          const toolName = part.type
+                            .split('-')
+                            .slice(1)
+                            .join('-')
+                          return (
+                            <Tool key={`${message.id}-${i}`}>
+                              <ToolHeader
+                                title={toolName}
+                                type={part.type as `tool-${string}`}
+                                state={part.state}
+                              />
+                              <ToolContent>
+                                {<ToolInput input={part.input} />}
+                                {part.state === 'output-available' &&
+                                  'output' in part && (
+                                    <ToolOutput
+                                      output={part.output}
+                                      errorText={
+                                        'errorText' in part
+                                          ? part.errorText
+                                          : undefined
+                                      }
+                                    />
+                                  )}
+                                {part.state === 'output-error' && (
+                                  <ToolOutput
+                                    output={undefined}
+                                    errorText={
+                                      'errorText' in part
+                                        ? part.errorText
+                                        : undefined
+                                    }
+                                  />
+                                )}
+                              </ToolContent>
+                            </Tool>
+                          )
                       }
                     })}
                   </div>
