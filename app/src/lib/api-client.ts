@@ -1,4 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+import {
+  createOpenAICompatible,
+  type OpenAICompatibleProvider,
+} from '@ai-sdk/openai-compatible'
+
+declare const JAN_API_BASE_URL: string
 let isRefreshing = false
 let refreshPromise: Promise<string> | null = null
 
@@ -148,4 +153,23 @@ export function createAuthenticatedFetch(customBody?: object): typeof fetch {
       skipAuthRefresh: false,
     })
   }
+}
+
+/**
+ * Creates an OpenAI-compatible provider for Jan API with authentication.
+ * @param conversationId 
+ * @returns 
+ */
+export function janProvider(
+  conversationId?: string,
+): OpenAICompatibleProvider<string, string, string> {
+  return createOpenAICompatible({
+    name: 'janhq',
+    baseURL: `${JAN_API_BASE_URL}v1`,
+    fetch: createAuthenticatedFetch({
+      store: true,
+      store_reasoning: true,
+      conversation: conversationId,
+    }),
+  })
 }
