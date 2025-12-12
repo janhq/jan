@@ -164,10 +164,7 @@ function ThreadPageContent() {
                               key={`${message.id}-${i}`}
                               from={message.role}
                             >
-                              <MessageContent
-                                from={message.role}
-                                className="leading-relaxed"
-                              >
+                              <MessageContent className="leading-relaxed">
                                 <MessageResponse>{part.text}</MessageResponse>
                               </MessageContent>
                               {message.role === 'assistant' &&
