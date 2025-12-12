@@ -35,18 +35,23 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   />
 )
 
-export type MessageContentProps = HTMLAttributes<HTMLDivElement>
+export type MessageContentProps = HTMLAttributes<HTMLDivElement> & {
+  from: UIMessage['role']
+}
 
 export const MessageContent = ({
   children,
   className,
+  from,
   ...props
 }: MessageContentProps) => (
   <div
     className={cn(
       'is-user:dark flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm',
-      'group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:text-foreground',
+      'group-[.is-user]:ml-auto group-[.is-user]:bg-secondary group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:text-foreground',
       'group-[.is-assistant]:text-foreground',
+      from === 'user' &&
+        'bg-linear-to-b from-card ring-foreground/10 inset-ring inset-ring-background/50 w-fit rounded-t-2xl rounded-bl-2xl to-emerald-70/50 p-3 text-sm text-emerald-950 shadow-md shadow-emerald-600/10 ring-1',
       className
     )}
     {...props}
