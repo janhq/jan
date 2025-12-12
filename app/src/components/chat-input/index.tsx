@@ -79,11 +79,8 @@ const ChatInput = ({
     (state) => state.setLastUsedModelId
   )
 
-  const isSupportTools =
-    modelDetail.supported_parameters?.names.includes('tools')
-
+  const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
-
   const isSupportDeepResearch = isSupportTools && isSupportReasoning
 
   // Auto-disable capabilities when model doesn't support them
