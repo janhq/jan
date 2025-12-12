@@ -21,7 +21,7 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
       // Determine the content type
       let contentType: 'text' | 'reasoning' = 'text'
 
-      if (content.type === 'reasoning_content') {
+      if (content.type === 'reasoning_text') {
         contentType = 'reasoning'
       } else if (content.type === 'input_text' || item.role === 'user') {
         contentType = 'text'
