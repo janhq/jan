@@ -1,13 +1,10 @@
 import { createFileRoute, useParams } from '@tanstack/react-router'
-
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { NavHeader } from '@/components/sidebar/nav-header'
-
 import { useChat } from '@/hooks/use-chat'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { createAuthenticatedFetch, janProvider } from '@/lib/api-client'
+import { janProvider } from '@/lib/api-client'
 import {
   Conversation,
   ConversationContent,
