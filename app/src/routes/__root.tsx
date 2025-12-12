@@ -8,6 +8,7 @@ import { useEffect, useRef } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { LoginForm } from '@/components/form/login'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { ProjectsDialog } from '@/components/projects/projects-dialog'
 import { useAuth } from '@/stores/auth-store'
 import { ThemeProvider } from '@/components/themes/theme-provider'
 
@@ -34,6 +35,8 @@ function RootLayout() {
   const isLoginModal = searchParams.get('modal') === 'login'
   const settingSection = searchParams.get('setting')
   const isSettingsOpen = !!settingSection
+  const projectsSection = searchParams.get('projects')
+  const isProjectsOpen = !!projectsSection
 
   const handleCloseModal = () => {
     // Remove the modal search param by navigating without it
@@ -65,6 +68,12 @@ function RootLayout() {
       <SettingsDialog
         open={isSettingsOpen}
         section={settingSection || 'general'}
+      />
+
+      {/* Projects Dialog */}
+      <ProjectsDialog
+        open={isProjectsOpen}
+        section={projectsSection || undefined}
       />
     </ThemeProvider>
   )

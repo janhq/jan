@@ -22,7 +22,6 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { GitHub } from '@/components/ui/svgs/github'
 import { Discord } from '@/components/ui/svgs/discord'
-import { useIsMobile } from '@/hooks/use-mobile'
 
 interface SettingsDialogProps {
   open: boolean
@@ -46,7 +45,6 @@ export function SettingsDialog({
   section = 'general',
 }: SettingsDialogProps) {
   const router = useRouter()
-  const isMobile = useIsMobile()
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     section as SettingsSection
   )

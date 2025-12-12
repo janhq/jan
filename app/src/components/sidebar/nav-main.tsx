@@ -7,7 +7,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { Link } from '@tanstack/react-router'
+import { Link, useRouter } from '@tanstack/react-router'
 
 type NavMainItem = {
   title: string
@@ -15,37 +15,58 @@ type NavMainItem = {
   icon: LucideIcon
   isActive?: boolean
   badge?: string
+  onClick?: () => void
 }
 
-const navMain: NavMainItem[] = [
-  {
-    title: 'New Chat',
-    url: '/',
-    icon: MessageCirclePlusIcon,
-    isActive: false,
-  },
-  {
-    title: 'New Project',
-    url: '#',
-    icon: FolderPenIcon,
-  },
-  {
-    title: 'Search',
-    url: '#',
-    icon: Search,
-  },
-]
-
 export function NavMain() {
+  const router = useRouter()
+
+  const handleNewProject = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('projects', 'create')
+    router.navigate({ to: url.pathname + url.search })
+  }
+
+  const navMain: NavMainItem[] = [
+    {
+      title: 'New Chat',
+      url: '/',
+      icon: MessageCirclePlusIcon,
+      isActive: false,
+    },
+    {
+      title: 'New Project',
+      url: '#',
+      icon: FolderPenIcon,
+      onClick: handleNewProject,
+    },
+    {
+      title: 'Search',
+      url: '#',
+      icon: Search,
+    },
+  ]
+
   return (
     <SidebarMenu>
       {navMain.map((item) => (
         <SidebarMenuItem key={item.title}>
-          <SidebarMenuButton asChild isActive={item.isActive}>
-            <Link to={item.url}>
-              <item.icon />
-              <span>{item.title}</span>
-            </Link>
+          <SidebarMenuButton
+            asChild={!item.onClick}
+            isActive={item.isActive}
+            onClick={item.onClick}
+          >
+            {item.onClick ? (
+              <>
+                <item.icon />
+                <span>{item.title}</span>
+              </>
+            ) : (
+              <Link to={item.url}>
+                <item.icon />
+                <span>{item.title}</span>
+              </Link>
+            )}
           </SidebarMenuButton>
         </SidebarMenuItem>
       ))}

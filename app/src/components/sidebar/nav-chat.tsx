@@ -78,9 +78,7 @@ export function NavChats() {
     try {
       // Delete all conversations
       await Promise.all(
-        conversations.map((conversation) =>
-          deleteConversation(conversation.id)
-        )
+        conversations.map((conversation) => deleteConversation(conversation.id))
       )
       setDeleteAllDialogOpen(false)
       // Redirect to home after deleting all
@@ -201,7 +199,9 @@ export function NavChats() {
             <DialogTitle>Delete All Chats</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete all{' '}
-              <span className="font-semibold">{conversations.length} chats</span>
+              <span className="font-semibold">
+                {conversations.length} chats
+              </span>
               ? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>

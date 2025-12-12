@@ -1,5 +1,6 @@
 import { NavChats } from '@/components/sidebar/nav-chat'
 import { NavMain } from '@/components/sidebar/nav-main'
+import { NavProjects } from '@/components/sidebar/nav-projects'
 import {
   Sidebar,
   SidebarContent,
@@ -30,6 +31,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain />
       </SidebarHeader>
       <SidebarContent className="mask-b-from-95% mask-t-from-98%">
+        <NavProjects />
         <NavChats />
       </SidebarContent>
       <SidebarFooter>

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   createOpenAICompatible,
   type OpenAICompatibleProvider,
@@ -157,11 +158,11 @@ export function createAuthenticatedFetch(customBody?: object): typeof fetch {
 
 /**
  * Creates an OpenAI-compatible provider for Jan API with authentication.
- * @param conversationId 
- * @returns 
+ * @param conversationId
+ * @returns
  */
 export function janProvider(
-  conversationId?: string,
+  conversationId?: string
 ): OpenAICompatibleProvider<string, string, string> {
   return createOpenAICompatible({
     name: 'janhq',

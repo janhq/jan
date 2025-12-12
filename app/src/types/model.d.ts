@@ -60,6 +60,7 @@ interface ModelDetail {
   experimental: boolean
   supports_images: boolean
   supports_embeddings: boolean
+  supports_tools: boolean
   supports_reasoning: boolean
   supports_audio: boolean
   supports_video: boolean
