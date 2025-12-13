@@ -14,7 +14,7 @@ jobs:
       pull-requests: write
     env:
       JAN_BASE_URL: "https://api.jan.ai"
-      GA_MEASUREMENT_ID: "G-YK53MX8M8M"
+      GA_MEASUREMENT_ID: "G-5HCJWQTZLD"
       CLOUDFLARE_PROJECT_NAME: "jan-server-web"
       ENVIRONMENT: "prod"
     steps:
