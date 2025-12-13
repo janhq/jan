@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, useSyncExternalStore } from 'react'
+import { useMemo, useCallback, useState, useSyncExternalStore, useRef, useEffect } from 'react'
 import { IconBrowser, IconAlertCircle, IconDownload, IconBrowserOff } from '@tabler/icons-react'
 import type { MCPToolComponentProps } from '@janhq/core'
 import { getBrowserToolNames } from '../tools'
@@ -30,6 +30,8 @@ export const BrowserToolButton = ({
   const [showPopup, setShowPopup] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [popupPlacement, setPopupPlacement] = useState<'top' | 'bottom'>('top')
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   // Get browser tool names
   const browserToolNames = useMemo(() => getBrowserToolNames(), [])
@@ -48,6 +50,34 @@ export const BrowserToolButton = ({
 
   // Check if connected
   const isConnected = connectionState === 'connected'
+
+  // Calculate popup placement
+  const updatePlacement = useCallback(() => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      // If less than 250px space below, show on top
+      if (spaceBelow < 250) {
+        setPopupPlacement('top')
+      } else {
+        setPopupPlacement('bottom')
+      }
+    }
+  }, [])
+
+  // Update placement when showing popup
+  useEffect(() => {
+    if (showPopup) {
+      updatePlacement()
+      // Also update on resize/scroll while open
+      window.addEventListener('resize', updatePlacement)
+      window.addEventListener('scroll', updatePlacement, true)
+    }
+    return () => {
+      window.removeEventListener('resize', updatePlacement)
+      window.removeEventListener('scroll', updatePlacement, true)
+    }
+  }, [showPopup, updatePlacement])
 
   // Toggle all browser tools
   const handleToggleBrowserTools = useCallback(() => {
@@ -78,6 +108,7 @@ export const BrowserToolButton = ({
   // Handle button click
   const handleClick = useCallback(() => {
     setError(null)
+    updatePlacement()
 
     if (!isBrowserSupported) {
       // Show unsupported browser popup
@@ -92,7 +123,7 @@ export const BrowserToolButton = ({
       // Try to connect
       handleConnect()
     }
-  }, [isBrowserSupported, isConnected, isExtensionInstalled, handleToggleBrowserTools, handleConnect])
+  }, [isBrowserSupported, isConnected, isExtensionInstalled, handleToggleBrowserTools, handleConnect, updatePlacement])
 
   const handleInstallClick = useCallback(() => {
     window.open(CHROME_STORE_URL, '_blank')
@@ -152,6 +183,7 @@ export const BrowserToolButton = ({
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         onClick={handleClick}
         disabled={isConnecting}
         className={`h-7 px-2 py-1 flex items-center justify-center rounded-md transition-all duration-200 ease-in-out gap-1 cursor-pointer ml-1 border-0 ${getButtonStyle()}`}
@@ -174,7 +206,15 @@ export const BrowserToolButton = ({
           <div className="fixed inset-0 z-40" onClick={handlePopupClose} />
 
           {/* Popup */}
-          <div className="absolute bottom-full left-0 mb-2 z-50 w-72 bg-main-view border border-main-view-fg/10 rounded-lg shadow-lg p-4">
+          <div
+            className={`absolute left-0 z-50 w-72 bg-main-view border border-main-view-fg/10 rounded-lg shadow-lg p-4 ${popupPlacement === 'top' ? 'mb-2' : 'mt-2'
+              }`}
+            style={
+              popupPlacement === 'top'
+                ? { bottom: '100%' }
+                : { top: '100%' }
+            }
+          >
             {!isBrowserSupported ? (
               <>
                 <div className="flex items-start gap-3 mb-3">
