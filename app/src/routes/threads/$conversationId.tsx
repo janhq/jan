@@ -88,14 +88,13 @@ function ThreadPageContent() {
           toolCallId: toolCall.toolCallId,
           errorText: result.error,
         })
-        return
+      } else {
+        addToolOutput({
+          tool: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+          output: result,
+        })
       }
-
-      addToolOutput({
-        tool: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
-        output: result,
-      })
     },
   })
 
