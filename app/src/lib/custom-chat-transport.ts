@@ -38,6 +38,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         acc[tool.name] = {
           description: tool.description,
           inputSchema: jsonSchema(tool.inputSchema),
+          name: tool.name,
         }
         return acc
       }, {} as Record<string, Tool>)
@@ -101,7 +102,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       chatId: string
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk> | null> {
-    console.log("GGGGGGG")
     // This function normally handles reconnecting to a stream on the backend, e.g. /api/chat
     // Since this project has no backend, we can't reconnect to a stream, so this is intentionally no-op.
     return null
