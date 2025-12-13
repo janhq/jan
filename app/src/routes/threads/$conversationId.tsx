@@ -1,3 +1,5 @@
+/* eslint-disable no-case-declarations */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -46,8 +48,6 @@ import { mcpService } from '@/services/mcp-service'
 import { lastAssistantMessageIsCompleteWithToolCalls } from '@/lib/last-assistant-message-is-complete-with-tool-calls'
 import { useCapabilities } from '@/stores/capabilities-store'
 
-declare const JAN_API_BASE_URL: string
-
 function ThreadPageContent() {
   const params = useParams({ strict: false })
   const conversationId = params.conversationId as string | undefined
@@ -58,7 +58,9 @@ function ThreadPageContent() {
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
-  const deepResearchEnabled = useCapabilities((state) => state.deepResearchEnabled)
+  const deepResearchEnabled = useCapabilities(
+    (state) => state.deepResearchEnabled
+  )
 
   const provider = janProvider(conversationId, deepResearchEnabled)
 

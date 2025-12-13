@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { LoginForm } from '@/components/form/login'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
-import { ProjectsDialog } from '@/components/projects/projects-dialog'
+import { CreateProject } from '@/components/projects/create-project'
 import { useAuth } from '@/stores/auth-store'
 import { ThemeProvider } from '@/components/themes/theme-provider'
 
@@ -71,10 +71,7 @@ function RootLayout() {
       />
 
       {/* Projects Dialog */}
-      <ProjectsDialog
-        open={isProjectsOpen}
-        section={projectsSection || undefined}
-      />
+      <CreateProject open={isProjectsOpen} />
     </ThemeProvider>
   )
 }

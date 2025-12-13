@@ -45,10 +45,12 @@ import type { ChatStatus } from 'ai'
 const ChatInput = ({
   initialConversation = false,
   status,
+  projectId,
   submit,
 }: {
   initialConversation?: boolean
   conversationId?: string | undefined
+  projectId?: string
   status?: ChatStatus
   submit?: (message: PromptInputMessage) => void
 }) => {
@@ -117,14 +119,17 @@ const ChatInput = ({
 
     if (selectedModel) {
       if (initialConversation) {
-        createConversation({
+        const conversationPayload: CreateConversationPayload = {
           title: message.text || 'New Chat',
+          ...(projectId && { project_id: String(projectId) }),
           metadata: {
             model_id: selectedModel.id,
             model_provider: selectedModel.owned_by,
             is_favorite: 'false',
           },
-        })
+        }
+
+        createConversation(conversationPayload)
           .then((conversation) => {
             // Store the initial message in sessionStorage for the new conversation
             sessionStorage.setItem(
@@ -311,8 +316,8 @@ const ChatInput = ({
           </div>
         )}
       </PromptInputProvider>
-      {initialConversation && (
-        <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-20 blur-xl transition-all duration-100">
+      {status !== 'streaming' && (
+        <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-25 blur-xl transition-all duration-100">
           <div className="bg-linear-to-r/increasing animate-hue-rotate absolute inset-x-0 bottom-0 top-6 from-pink-300 to-purple-300" />
         </div>
       )}

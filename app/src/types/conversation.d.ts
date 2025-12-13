@@ -3,6 +3,7 @@ interface Conversation {
   object: string
   title: string
   created_at: number
+  project_id?: string
   metadata: {
     is_favorite: string
     model_id: string
@@ -23,6 +24,7 @@ interface ConversationsResponse {
 
 interface CreateConversationPayload {
   title: string
+  project_id?: string
   metadata: {
     model_id: string
     model_provider: string

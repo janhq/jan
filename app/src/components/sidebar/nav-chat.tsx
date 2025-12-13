@@ -36,7 +36,7 @@ export function NavChats() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as { conversationId?: string }
-  const conversations = useConversations((state) => state.conversations)
+  const allConversations = useConversations((state) => state.conversations)
   const getConversations = useConversations((state) => state.getConversations)
   const deleteConversation = useConversations(
     (state) => state.deleteConversation
@@ -44,6 +44,11 @@ export function NavChats() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
+
+  // Filter conversations to only show those without a project_id
+  const conversations = allConversations.filter(
+    (conversation) => !conversation.project_id
+  )
 
   useEffect(() => {
     getConversations()
