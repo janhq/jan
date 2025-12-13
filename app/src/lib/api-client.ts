@@ -162,7 +162,8 @@ export function createAuthenticatedFetch(customBody?: object): typeof fetch {
  * @returns
  */
 export function janProvider(
-  conversationId?: string
+  conversationId?: string,
+  deepResearch?: boolean
 ): OpenAICompatibleProvider<string, string, string> {
   return createOpenAICompatible({
     name: 'janhq',
@@ -171,6 +172,7 @@ export function janProvider(
       store: true,
       store_reasoning: true,
       conversation: conversationId,
+      deep_research: deepResearch ?? false
     }),
   })
 }

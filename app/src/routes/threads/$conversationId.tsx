@@ -44,6 +44,9 @@ import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { lastAssistantMessageIsCompleteWithToolCalls } from '@/lib/last-assistant-message-is-complete-with-tool-calls'
+import { useCapabilities } from '@/stores/capabilities-store'
+
+declare const JAN_API_BASE_URL: string
 
 function ThreadPageContent() {
   const params = useParams({ strict: false })
@@ -55,8 +58,9 @@ function ThreadPageContent() {
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
+  const deepResearchEnabled = useCapabilities((state) => state.deepResearchEnabled)
 
-  const provider = janProvider(conversationId)
+  const provider = janProvider(conversationId, deepResearchEnabled)
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
@@ -68,10 +72,19 @@ function ThreadPageContent() {
     setMessages,
     addToolOutput,
   } = useChat(provider(selectedModel?.id), {
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-    onFinish: () => {
-      // After finishing a message, refresh the conversation list to get updated timestamps
+    onFinish: ({ messages: finishedMessages }) => {
+      // After finishing a message, check if we need to resubmit for tool calls
       initialMessageSentRef.current = false
+
+      // Check if the last assistant message has completed tool calls
+      if (
+        lastAssistantMessageIsCompleteWithToolCalls({
+          messages: finishedMessages,
+        })
+      ) {
+        // Resubmit the assistant message with tool outputs to continue the conversation
+        sendMessage(undefined)
+      }
     },
     // run client-side tools that are automatically executed:
     async onToolCall({ toolCall }) {
@@ -272,10 +285,20 @@ function ThreadPageContent() {
                             </Reasoning>
                           )
                         case 'step-start':
-                          // show step boundaries as horizontal lines:
+                          // show step boundaries with elegant separation:
                           return i > 0 ? (
-                            <div key={i} className="text-gray-500">
-                              <hr className="my-2 border-gray-300" />
+                            <div
+                              key={i}
+                              className="relative flex items-center justify-center my-6"
+                            >
+                              <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-border/40" />
+                              </div>
+                              <div className="relative flex justify-center">
+                                <span className="bg-background px-3 text-xs text-muted-foreground/60 font-medium">
+                                  •••
+                                </span>
+                              </div>
                             </div>
                           ) : null
                         default:
