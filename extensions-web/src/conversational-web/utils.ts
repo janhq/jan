@@ -114,6 +114,35 @@ export class ObjectParser {
     const imageUrls: string[] = []
     let toolCalls: any[] = []
 
+    // Check for item-level tool_calls first (new backend format)
+    if (item.tool_calls && Array.isArray(item.tool_calls)) {
+      toolCalls = item.tool_calls.map((toolCall) => {
+        const callId = toolCall.id || 'unknown'
+        const rawArgs = toolCall.function?.arguments
+        const normalizedArgs =
+          typeof rawArgs === 'string'
+            ? rawArgs
+            : JSON.stringify(rawArgs ?? {})
+        return {
+          id: callId,
+          tool_call_id: callId,
+          tool: {
+            id: callId,
+            function: {
+              name: toolCall.function?.name || 'unknown',
+              arguments: normalizedArgs,
+            },
+            type: toolCall.type || 'function',
+          },
+          response: {
+            error: '',
+            content: [],
+          },
+          state: 'pending',
+        }
+      })
+    }
+
     if (item.content && item.content.length > 0) {
       for (const content of item.content) {
         extractContentByType(content, {
@@ -133,31 +162,34 @@ export class ObjectParser {
             }
           },
           onToolCalls: (calls) => {
-            toolCalls = calls.map((toolCall) => {
-              const callId = toolCall.id || 'unknown'
-              const rawArgs = toolCall.function?.arguments
-              const normalizedArgs =
-                typeof rawArgs === 'string'
-                  ? rawArgs
-                  : JSON.stringify(rawArgs ?? {})
-              return {
-                id: callId,
-                tool_call_id: callId,
-                tool: {
+            // Only use content-level tool_calls if we don't already have item-level ones
+            if (toolCalls.length === 0) {
+              toolCalls = calls.map((toolCall) => {
+                const callId = toolCall.id || 'unknown'
+                const rawArgs = toolCall.function?.arguments
+                const normalizedArgs =
+                  typeof rawArgs === 'string'
+                    ? rawArgs
+                    : JSON.stringify(rawArgs ?? {})
+                return {
                   id: callId,
-                  function: {
-                    name: toolCall.function?.name || 'unknown',
-                    arguments: normalizedArgs,
+                  tool_call_id: callId,
+                  tool: {
+                    id: callId,
+                    function: {
+                      name: toolCall.function?.name || 'unknown',
+                      arguments: normalizedArgs,
+                    },
+                    type: toolCall.type || 'function',
                   },
-                  type: toolCall.type || 'function',
-                },
-                response: {
-                  error: '',
-                  content: [],
-                },
-                state: 'pending',
-              }
-            })
+                  response: {
+                    error: '',
+                    content: [],
+                  },
+                  state: 'pending',
+                }
+              })
+            }
           },
         })
       }
@@ -173,6 +205,12 @@ export class ObjectParser {
         finalTextValue += '\n'
       }
       finalTextValue += textSegments.join('\n')
+    }
+    if (!finalTextValue) {
+      finalTextValue =
+        item.content && item.content.length > 0
+          ? JSON.stringify(item.content)
+          : '(no content)'
     }
 
     // Build content array for ThreadMessage
@@ -252,13 +290,29 @@ export const combineConversationItemsToMessages = (
   // First pass: collect tool responses
   for (const item of sortedItems) {
     if (item.role === 'tool') {
+      // Try to get tool_call_id from the item level first (new backend format)
+      // or fall back to content level for backward compatibility
+      const itemLevelToolCallId = item.tool_call_id
+      
       for (const content of item.content ?? []) {
-        const toolCallId = content.tool_call_id || item.id
+        const toolCallId = itemLevelToolCallId || content.tool_call_id || item.id
+        const toolResultText =
+          content.tool_result?.output_text?.text ||
+          (Array.isArray(content.tool_result?.content)
+            ? content.tool_result?.content
+                ?.map((entry) => entry.text || entry.output_text?.text)
+                .filter((text): text is string => Boolean(text))
+                .join('\n')
+            : undefined)
         const toolContent =
-          (typeof content.text === 'string' ? content.text : content.text?.text || content.text?.value) ||
+          (typeof content.text === 'string'
+            ? content.text
+            : content.text?.text || content.text?.value) ||
           content.output_text?.text ||
+          content.input_text ||
           content.text_result ||
-          ''
+          toolResultText ||
+          JSON.stringify(content)
         toolResponseMap.set(toolCallId, {
           error: '',
           content: [
@@ -346,34 +400,39 @@ const extractContentByType = (
 
   switch (type) {
     case 'input_text':
-    case 'reasoning_text':
-    case 'tool_result':
-      // These types have text as a simple string
-      if (typeof content.text === 'string') {
-        if (type === 'reasoning_text') {
-          handlers.onReasoning(content.text)
-        } else {
-          handlers.onText(content.text)
-        }
-      } else if (content.text?.text || content.text?.value) {
-        // Fallback for nested structure
-        const textValue = content.text.text || content.text.value || ''
-        if (type === 'reasoning_text') {
-          handlers.onReasoning(textValue)
-        } else {
-          handlers.onText(textValue)
-        }
+      {
+        const textValue =
+          content.input_text ||
+          (typeof content.text === 'string'
+            ? content.text
+            : content.text?.text || content.text?.value) ||
+          ''
+        handlers.onText(textValue)
       }
       break
     case 'text':
-      if (typeof content.text === 'string') {
-        handlers.onText(content.text)
-      } else if (content.text) {
-        handlers.onText(content.text.text || content.text.value || '')
+      {
+        const textValue =
+          typeof content.text === 'string'
+            ? content.text
+            : content.text?.text || content.text?.value || ''
+        handlers.onText(textValue || '')
       }
       break
     case 'output_text':
       handlers.onText(content.output_text?.text || '')
+      break
+    case 'reasoning_content':
+      handlers.onReasoning(content.reasoning_content || '')
+      break
+    case 'reasoning_text':
+      {
+        const reasoningValue =
+          typeof content.text === 'string'
+            ? content.text
+            : content.reasoning_content || content.text?.text || content.text?.value || ''
+        handlers.onReasoning(reasoningValue || '')
+      }
       break
     case 'image':
     case 'image_url':
@@ -386,18 +445,28 @@ const extractContentByType = (
         handlers.onToolCalls(content.tool_calls)
       }
       break
+    case 'tool_result':
+      if (content.tool_result?.output_text?.text) {
+        handlers.onText(content.tool_result.output_text.text)
+      }
+      break
     default:
       // Fallback for legacy fields without explicit type
-      if (typeof content.text === 'string') {
-        handlers.onText(content.text)
-      } else if (content.text?.value || content.text?.text) {
-        handlers.onText(content.text.value || content.text.text || '')
+      const fallbackText =
+        typeof content.text === 'string'
+          ? content.text
+          : content.text?.value || content.text?.text
+      if (fallbackText) {
+        handlers.onText(fallbackText)
       }
       if (content.text_result) {
         handlers.onText(content.text_result)
       }
       if (content.output_text?.text) {
         handlers.onText(content.output_text.text)
+      }
+      if (content.reasoning_content) {
+        handlers.onReasoning(content.reasoning_content)
       }
       if (content.image?.url) {
         handlers.onImage(content.image.url)

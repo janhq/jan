@@ -1,5 +1,5 @@
 /**
- * TypeScript Types for Conversational API (OpenAI-Compatible)
+ * TypeScript Types for Conversational API
  */
 
 export interface PaginationParams {
@@ -40,69 +40,7 @@ export interface ConversationResponse {
 export type ListConversationsParams = PaginationParams
 export type ListConversationsResponse = PaginatedResponse<ConversationResponse>
 
-// ===============================================
-// OpenAI-Compatible Conversation Item Types
-// ===============================================
-
-// Item Type Enums
-export type ItemType = 
-  | 'message'
-  | 'function_call'
-  | 'function_call_output'
-  | 'reasoning'
-  | 'file_search_call'
-  | 'web_search_call'
-  | 'image_generation_call'
-  | 'computer_call'
-  | 'computer_call_output'
-  | 'code_interpreter_call'
-  | 'local_shell_call'
-  | 'local_shell_call_output'
-  | 'shell_call'
-  | 'shell_call_output'
-  | 'apply_patch_call'
-  | 'apply_patch_call_output'
-  | 'mcp_list_tools'
-  | 'mcp_approval_request'
-  | 'mcp_approval_response'
-  | 'mcp_call'
-  | 'custom_tool_call'
-  | 'custom_tool_call_output'
-
-export type ItemRole = 
-  | 'system'
-  | 'user'
-  | 'assistant'
-  | 'tool'
-  | 'developer'
-  | 'critic'
-  | 'discriminator'
-  | 'unknown'
-
-export type ItemStatus =
-  | 'incomplete'
-  | 'in_progress'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'searching'
-  | 'generating'
-  | 'calling'
-  | 'streaming'
-  | 'rate_limited'
-
-export type ContentType =
-  | 'text'
-  | 'input_text'
-  | 'output_text'
-  | 'summary_text'
-  | 'reasoning_text'
-  | 'refusal'
-  | 'input_image'
-  | 'computer_screenshot'
-  | 'input_file'
-
-// Annotation types
+// Conversation Items types
 export interface ConversationItemAnnotation {
   end_index?: number
   file_id?: string
@@ -113,43 +51,6 @@ export interface ConversationItemAnnotation {
   url?: string
 }
 
-// Content types
-export interface BaseContent {
-  type: ContentType
-}
-
-export interface TextContentData {
-  text: string
-  annotations?: ConversationItemAnnotation[]
-}
-
-export interface RefusalContent extends BaseContent {
-  type: 'refusal'
-  refusal: string
-}
-
-export interface ImageContent extends BaseContent {
-  type: 'input_image'
-  file_id?: string
-  url?: string
-  detail?: 'auto' | 'low' | 'high'
-}
-
-export interface ScreenshotContent extends BaseContent {
-  type: 'computer_screenshot'
-  file_id?: string
-  url?: string
-}
-
-export interface FileContent extends BaseContent {
-  type: 'input_file'
-  file_id?: string
-  file_url?: string
-  file_data?: string
-  filename?: string
-}
-
-// Consolidated content type (for API responses)
 export interface ConversationItemContent {
   type?: string
   file?: {
@@ -168,14 +69,16 @@ export interface ConversationItemContent {
     file_id?: string
     mime_type?: string
   }
-  text?: string | {
-    value?: string
-    text?: string
-  }
+  input_text?: string
   output_text?: {
     annotations?: ConversationItemAnnotation[]
     text?: string
   }
+  text?: {
+    value?: string
+    text?: string
+  }
+  reasoning_content?: string
   tool_calls?: Array<{
     id?: string
     type?: string
@@ -185,177 +88,38 @@ export interface ConversationItemContent {
     }
   }>
   tool_call_id?: string
+  tool_result?: {
+    content?: Array<{
+      type?: string
+      text?: string
+      output_text?: {
+        text?: string
+      }
+    }>
+    output_text?: {
+      text?: string
+    }
+  }
   text_result?: string
 }
 
-// MCP Types
-export interface McpTool {
-  name: string
-  input_schema: any
-  description?: string
-  annotations?: any
-}
-
-export interface SafetyCheck {
-  type: string
-  reason: string
-}
-
-export interface LocalShellCallAction {
-  type: 'exec'
-  command: string[]
-  env: Record<string, string>
-  timeout_ms?: number
-  user?: string
-  working_directory?: string
-}
-
-export interface ComputerAction {
-  type: 'click' | 'type' | 'screenshot' | 'scroll' | 'drag'
-  [key: string]: any
-}
-
-export interface ShellOutput {
-  type: 'stdout' | 'stderr' | 'exit_code'
-  value: string
-}
-
-export interface PatchOperation {
-  type: string
-  file_path: string
-  patch_data: string
-}
-
-// Base Item Interface
-export interface BaseConversationItem {
+// Tool call types for tracking
+export interface ToolCall {
   id: string
-  object: 'conversation.item'
-  type: ItemType
-  created_at: number | string
-  status?: ItemStatus
-  incomplete_at?: number
-  incomplete_details?: {
-    type?: string
-    reason?: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string // JSON string of arguments
   }
-  completed_at?: number
 }
 
-// Type-specific item interfaces
-export interface MessageItem extends BaseConversationItem {
-  type: 'message'
-  role: ItemRole
-  content?: ConversationItemContent[]
+export interface ToolResultContent {
+  type: 'text' | 'image' | 'resource'
+  text?: string
+  data?: string
+  mimeType?: string
 }
 
-export interface McpListToolsItem extends BaseConversationItem {
-  type: 'mcp_list_tools'
-  server_label: string
-  tools: McpTool[]
-  error?: string
-}
-
-export interface McpApprovalRequestItem extends BaseConversationItem {
-  type: 'mcp_approval_request'
-  name: string
-  arguments: string
-  server_label: string
-}
-
-export interface McpApprovalResponseItem extends BaseConversationItem {
-  type: 'mcp_approval_response'
-  approval_request_id: string
-  approve: boolean
-  reason?: string
-}
-
-export interface McpCallItem extends BaseConversationItem {
-  type: 'mcp_call'
-  name: string
-  arguments: string
-  server_label: string
-  approval_request_id?: string
-  output?: string
-  error?: string
-  status: ItemStatus
-}
-
-export interface LocalShellCallItem extends BaseConversationItem {
-  type: 'local_shell_call'
-  call_id: string
-  action: LocalShellCallAction
-  status: ItemStatus
-}
-
-export interface LocalShellCallOutputItem extends BaseConversationItem {
-  type: 'local_shell_call_output'
-  call_id: string
-  output: string
-  status?: ItemStatus
-}
-
-export interface ComputerCallItem extends BaseConversationItem {
-  type: 'computer_call'
-  call_id: string
-  action: ComputerAction
-  status: ItemStatus
-  pending_safety_checks?: SafetyCheck[]
-}
-
-export interface ComputerCallOutputItem extends BaseConversationItem {
-  type: 'computer_call_output'
-  call_id: string
-  output: any
-  status: ItemStatus
-  acknowledged_safety_checks?: SafetyCheck[]
-}
-
-export interface ShellCallItem extends BaseConversationItem {
-  type: 'shell_call'
-  call_id: string
-  commands: string[]
-  max_output_length?: number
-  status: ItemStatus
-}
-
-export interface ShellCallOutputItem extends BaseConversationItem {
-  type: 'shell_call_output'
-  call_id: string
-  output: ShellOutput[]
-  status: ItemStatus
-}
-
-export interface ApplyPatchCallItem extends BaseConversationItem {
-  type: 'apply_patch_call'
-  call_id: string
-  operation: PatchOperation
-  status: ItemStatus
-}
-
-export interface ApplyPatchCallOutputItem extends BaseConversationItem {
-  type: 'apply_patch_call_output'
-  call_id: string
-  output: string
-  status: ItemStatus
-}
-
-// Union type for all conversation items
-export type ConversationItemVariant =
-  | MessageItem
-  | McpListToolsItem
-  | McpApprovalRequestItem
-  | McpApprovalResponseItem
-  | McpCallItem
-  | LocalShellCallItem
-  | LocalShellCallOutputItem
-  | ComputerCallItem
-  | ComputerCallOutputItem
-  | ShellCallItem
-  | ShellCallOutputItem
-  | ApplyPatchCallItem
-  | ApplyPatchCallOutputItem
-
-// Legacy ConversationItem interface for backward compatibility
 export interface ConversationItem {
   content?: ConversationItemContent[]
   created_at: number | string
@@ -365,24 +129,9 @@ export interface ConversationItem {
   role: string
   status?: string
   type?: string
-  
-  // OpenAI-compatible fields
-  call_id?: string
-  server_label?: string
-  approval_request_id?: string
-  arguments?: string
-  output?: string
-  error?: string
-  action?: any
-  tools?: McpTool[]
-  pending_safety_checks?: SafetyCheck[]
-  acknowledged_safety_checks?: SafetyCheck[]
-  approve?: boolean
-  reason?: string
-  commands?: string[]
-  max_output_length?: number
-  shell_outputs?: ShellOutput[]
-  operation?: any
+  // Tool call tracking fields
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
 }
 
 export interface ListConversationItemsParams extends PaginationParams {

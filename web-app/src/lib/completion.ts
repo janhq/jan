@@ -618,6 +618,10 @@ export const postMessageProcessing = async (
               toolName,
               serverName,
               arguments: toolArgs,
+              metadata: {
+                toolCallId: toolCall.id,
+                conversationId: message.thread_id,
+              },
             })
           })()
 
