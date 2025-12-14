@@ -82,12 +82,31 @@ interface JanModelCatalogResponse {
   [key: string]: unknown
 }
 
+export interface JanToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string // JSON string
+  }
+}
+
 export interface JanChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | Content[] // Support both text-only and multimodal (text + images)
   reasoning?: string
   reasoning_content?: string
-  tool_calls?: any[]
+  tool_calls?: JanToolCall[]
+  tool_call_id?: string // For tool role messages
+}
+
+export interface JanTool {
+  type: 'function'
+  function: {
+    name: string
+    description?: string
+    parameters?: Record<string, unknown>
+  }
 }
 
 export interface JanChatCompletionRequest {
@@ -103,15 +122,15 @@ export interface JanChatCompletionRequest {
   repetition_penalty?: number
   stream?: boolean
   stop?: string | string[]
-  tools?: any[]
-  tool_choice?: any
+  tools?: JanTool[]
+  tool_choice?: 'auto' | 'none' | 'required' | { type: 'function', function: { name: string } }
   deep_research?: boolean
 }
 
 export interface JanChatCompletionChoice {
   index: number
   message: JanChatMessage
-  finish_reason: string | null
+  finish_reason: string | null | 'tool_calls'
 }
 
 export interface JanChatCompletionResponse {
@@ -139,9 +158,9 @@ export interface JanChatCompletionChunk {
       content?: string
       reasoning?: string
       reasoning_content?: string
-      tool_calls?: any[]
+      tool_calls?: JanToolCall[]
     }
-    finish_reason: string | null
+    finish_reason: string | null | 'tool_calls'
   }>
 }
 
