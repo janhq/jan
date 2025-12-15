@@ -17,6 +17,16 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       JAN_API_BASE_URL: JSON.stringify(env.JAN_API_BASE_URL),
+      VITE_AUTH_URL: JSON.stringify(
+        env.VITE_AUTH_URL || 'https://auth-dev.jan.ai'
+      ),
+      VITE_AUTH_REALM: JSON.stringify(env.VITE_AUTH_REALM || 'jan'),
+      VITE_AUTH_CLIENT_ID: JSON.stringify(
+        env.VITE_AUTH_CLIENT_ID || 'jan-client'
+      ),
+      VITE_OAUTH_REDIRECT_URI: JSON.stringify(
+        env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:3001/auth/callback'
+      ),
     },
   }
 })

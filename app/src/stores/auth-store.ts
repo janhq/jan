@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { extractUserFromTokens } from '@/lib/oauth'
 
 declare const JAN_API_BASE_URL: string
 
@@ -10,6 +11,7 @@ interface AuthState {
   accessToken: string | null
   refreshToken: string | null
   login: (user: User) => void
+  loginWithOAuth: (tokens: OAuthTokenResponse) => void
   logout: () => void
   guestLogin: () => Promise<void>
   refreshAccessToken: () => Promise<void>
@@ -24,6 +26,22 @@ export const useAuth = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       login: (user) => set({ user, isAuthenticated: true, isGuest: false }),
+      loginWithOAuth: (tokens) => {
+        const userData = extractUserFromTokens(tokens)
+        set({
+          user: {
+            id: userData.id,
+            name: userData.name,
+            email: userData.email,
+            avatar: userData.avatar,
+            pro: userData.pro,
+          },
+          isAuthenticated: true,
+          isGuest: false,
+          accessToken: userData.accessToken,
+          refreshToken: userData.refreshToken,
+        })
+      },
       logout: () =>
         set({
           user: null,

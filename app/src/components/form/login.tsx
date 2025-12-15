@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Google } from '@/components/ui/svgs/google'
+import { buildGoogleAuthUrl } from '@/lib/oauth'
+import { useState } from 'react'
 
 const loginSchema = z.object({
   email: z.email({ error: 'Please enter a valid email address' }),
@@ -33,6 +35,7 @@ export function LoginForm({
 }: React.ComponentProps<'div'>) {
   const login = useAuth((state) => state.login)
   const router = useRouter()
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const {
     register,
     handleSubmit,
@@ -61,22 +64,21 @@ export function LoginForm({
   }
 
   const handleGoogleLogin = async () => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      setIsGoogleLoading(true)
 
-    // Mock Google login - replace with actual OAuth flow
-    login({
-      id: '1',
-      name: 'John Doe',
-      email: 'johndoe@gmail.com',
-      avatar: '',
-      pro: false,
-    })
+      // Store the current URL to redirect back after OAuth
+      const currentUrl = window.location.pathname + window.location.search
 
-    // Remove modal param from URL
-    const url = new URL(window.location.href)
-    url.searchParams.delete('modal')
-    router.navigate({ to: url.pathname + url.search })
+      // Build Keycloak authorization URL with Google IdP
+      const authUrl = await buildGoogleAuthUrl(currentUrl)
+      // Redirect to Keycloak for Google OAuth
+      window.location.href = authUrl
+    } catch (error) {
+      console.error('Google login error:', error)
+      setIsGoogleLoading(false)
+      // TODO: Show error toast to user
+    }
   }
 
   return (
@@ -114,12 +116,17 @@ export function LoginForm({
             )}
           </Field>
           <Field>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || isGoogleLoading}>
               {isSubmitting ? 'Loading...' : 'Continue'}
             </Button>
-            <Button variant="outline" type="button" onClick={handleGoogleLogin}>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isSubmitting || isGoogleLoading}
+            >
               <Google className="size-4" />
-              Continue with Google
+              {isGoogleLoading ? 'Redirecting...' : 'Continue with Google'}
             </Button>
             <FieldDescription className="text-center">
               Don&apos;t have an account? <a href="/">Sign up</a>
