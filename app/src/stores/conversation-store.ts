@@ -47,7 +47,8 @@ export const useConversations = create<ConversationState>((set, get) => ({
   },
   getConversation: async (conversationId: string) => {
     try {
-      const conversation = await conversationService.getConversation(conversationId)
+      const conversation =
+        await conversationService.getConversation(conversationId)
       return conversation
     } catch (err) {
       console.error('Error fetching conversation:', err)

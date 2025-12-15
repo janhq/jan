@@ -131,9 +131,15 @@ export function NavProjects() {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" className="rounded-full">
+                Cancel
+              </Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
+            <Button
+              className="rounded-full"
+              variant="destructive"
+              onClick={handleConfirmDelete}
+            >
               Delete
             </Button>
           </DialogFooter>

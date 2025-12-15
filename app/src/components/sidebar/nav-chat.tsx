@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
@@ -29,7 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-// import { useConversations, type Conversation } from '@/hooks/use-conversations'
+import { Input } from '@/components/ui/input'
 
 import { useConversations } from '@/stores/conversation-store'
 
@@ -47,7 +47,10 @@ export function NavChats() {
   )
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
+  const [itemToRename, setItemToRename] = useState<Conversation | null>(null)
+  const [newTitle, setNewTitle] = useState('')
 
   // Filter conversations to only show those without a project_id
   const conversations = allConversations.filter(
@@ -105,6 +108,25 @@ export function NavChats() {
       await updateConversation(conversationId, { project_id: projectId })
     } catch (error) {
       console.error('Failed to move conversation to project:', error)
+    }
+  }
+
+  const handleRenameClick = (item: Conversation) => {
+    setItemToRename(item)
+    setNewTitle(item.title)
+    setRenameDialogOpen(true)
+  }
+
+  const handleConfirmRename = async () => {
+    if (!itemToRename || !newTitle.trim()) return
+
+    try {
+      await updateConversation(itemToRename.id, { title: newTitle.trim() })
+      setRenameDialogOpen(false)
+      setItemToRename(null)
+      setNewTitle('')
+    } catch (error) {
+      console.error('Failed to rename conversation:', error)
     }
   }
 
@@ -167,6 +189,12 @@ export function NavChats() {
                   side={isMobile ? 'bottom' : 'right'}
                   align={isMobile ? 'end' : 'start'}
                 >
+                  <DropDrawerItem onClick={() => handleRenameClick(item)}>
+                    <div className="flex gap-2 items-center justify-center">
+                      <PencilLine />
+                      <span>Rename</span>
+                    </div>
+                  </DropDrawerItem>
                   <ProjectsChatInput
                     title="Move to Project"
                     currentProjectId={item.project_id}
@@ -205,9 +233,15 @@ export function NavChats() {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" className="rounded-full">
+                Cancel
+              </Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              className="rounded-full"
+            >
               Delete
             </Button>
           </DialogFooter>
@@ -228,10 +262,53 @@ export function NavChats() {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" className="rounded-full">
+                Cancel
+              </Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDeleteAll}>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteAll}
+              className="rounded-full"
+            >
               Delete All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Rename Chat</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 pt-4">
+            <div className="grid gap-2">
+              <Input
+                id="title"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Enter new title"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newTitle.trim()) {
+                    handleConfirmRename()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" className="rounded-full">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              className="rounded-full"
+              onClick={handleConfirmRename}
+              disabled={!newTitle.trim()}
+            >
+              Rename
             </Button>
           </DialogFooter>
         </DialogContent>
