@@ -136,7 +136,9 @@ function ProjectPageContent() {
             <div className="size-full mx-auto flex flex-col">
               <div>
                 <div className="flex justify-between items-center">
-                  <h1 className="text-xl font-semibold">{project?.name}</h1>
+                  <h1 className="text-xl font-semibold font-studio">
+                    {project?.name}
+                  </h1>
                   <DropDrawer>
                     <DropDrawerTrigger asChild>
                       <Button variant="ghost" size="sm">
@@ -169,7 +171,7 @@ function ProjectPageContent() {
                 <p className="mt-2 text-muted-foreground">
                   A short description about the project goes here
                 </p>
-                <div className="py-4 max-w-3xl mx-auto w-full">
+                <div className="py-4 mx-auto w-full">
                   <ChatInput
                     submit={handleSubmit}
                     status={status}
@@ -214,7 +216,7 @@ function ProjectPageContent() {
             </div>
           </div>
 
-          <div className="size-full flex flex-col pb-4 col-span-1 lg:col-span-4">
+          <div className="size-full flex-col pb-4 hidden lg:flex col-span-1 lg:col-span-4">
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-base font-semibold inline-block">
