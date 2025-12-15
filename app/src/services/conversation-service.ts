@@ -36,6 +36,19 @@ export const conversationService = {
     )
   },
 
+  updateConversation: async (
+    conversationId: string,
+    payload: UpdateConversationPayload
+  ): Promise<Conversation> => {
+    return fetchJsonWithAuth<Conversation>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    )
+  },
+
   getItems: async (
     conversationId: string
   ): Promise<ConversationItemsResponse> => {

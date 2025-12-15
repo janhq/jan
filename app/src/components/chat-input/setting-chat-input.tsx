@@ -3,15 +3,29 @@ import {
   DropDrawerContent,
   DropDrawerItem,
   DropDrawerSeparator,
+  DropDrawerSub,
+  DropDrawerSubContent,
+  DropDrawerSubTrigger,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
-import { GlobeIcon, Leaf, MegaphoneIcon, ShapesIcon } from 'lucide-react'
+import {
+  BriefcaseBusinessIcon,
+  CircleCheck,
+  GlobeIcon,
+  Leaf,
+  MegaphoneIcon,
+  ShapesIcon,
+  SmileIcon,
+  type LucideIcon,
+} from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+
+type ToneOption = 'Friendly' | 'Concise' | 'Professional'
 
 interface SettingChatInputProps {
   searchEnabled: boolean
@@ -20,8 +34,16 @@ interface SettingChatInputProps {
   toggleDeepResearch: () => void
   isSupportTools: boolean
   isSupportDeepResearch: boolean
+  selectedTone?: ToneOption
+  onToneChange?: (tone: ToneOption) => void
   children: React.ReactNode
 }
+
+const toneOptions: { value: ToneOption; label: string; icon: LucideIcon }[] = [
+  { value: 'Friendly', label: 'Friendly', icon: SmileIcon },
+  { value: 'Concise', label: 'Concise', icon: CircleCheck },
+  { value: 'Professional', label: 'Professional', icon: BriefcaseBusinessIcon },
+]
 
 export const SettingChatInput = ({
   searchEnabled,
@@ -30,20 +52,44 @@ export const SettingChatInput = ({
   toggleDeepResearch,
   isSupportTools,
   isSupportDeepResearch,
+  selectedTone = 'Friendly',
+  onToneChange,
   children,
 }: SettingChatInputProps) => {
   return (
     <DropDrawer>
       <DropDrawerTrigger asChild>{children}</DropDrawerTrigger>
       <DropDrawerContent align="start">
-        <DropDrawerItem>
-          <div className="flex gap-2 items-center justify-between w-full">
+        <DropDrawerSub id="tone-submenu">
+          {/* TODO remove hidden class when it's thread based */}
+          <DropDrawerSubTrigger className="hidden">
             <div className="flex gap-2 items-center w-full">
               <Leaf />
               <span>Tone</span>
             </div>
-          </div>
-        </DropDrawerItem>
+          </DropDrawerSubTrigger>
+          <DropDrawerSubContent className="w-56 max-h-80 overflow-auto">
+            {toneOptions.map((tone) => (
+              <DropDrawerItem
+                key={tone.value}
+                onSelect={(e) => {
+                  e.preventDefault()
+                  onToneChange?.(tone.value)
+                }}
+              >
+                <div className="flex gap-2 items-center justify-between w-full">
+                  <div className="flex gap-2 items-center w-full">
+                    {tone.icon && <tone.icon />}
+                    <span>{tone.label}</span>
+                  </div>
+                  {selectedTone === tone.value && (
+                    <span className="text-xs">✓</span>
+                  )}
+                </div>
+              </DropDrawerItem>
+            ))}
+          </DropDrawerSubContent>
+        </DropDrawerSub>
         <Tooltip>
           <TooltipTrigger asChild>
             <div>

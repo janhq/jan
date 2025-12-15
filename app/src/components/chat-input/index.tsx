@@ -17,17 +17,25 @@ import {
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
-import { GlobeIcon, MegaphoneIcon, Settings2, X } from 'lucide-react'
+import { useProjects } from '@/stores/projects-store'
+import {
+  FolderIcon,
+  GlobeIcon,
+  MegaphoneIcon,
+  Settings2,
+  X,
+} from 'lucide-react'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
 import { BorderAnimate } from '../ui/border-animate'
 import { cn } from '@/lib/utils'
 import type { ChatStatus } from 'ai'
 import { SettingChatInput } from './setting-chat-input'
+import { ProjectsChatInput } from './projects-chat-input'
 import { Button } from '@/components/ui/button'
 
 const ChatInput = ({
@@ -37,7 +45,6 @@ const ChatInput = ({
   submit,
 }: {
   initialConversation?: boolean
-  conversationId?: string | undefined
   projectId?: string
   status?: ChatStatus
   submit?: (message: PromptInputMessage) => void
@@ -50,6 +57,11 @@ const ChatInput = ({
 
   const createConversation = useConversations(
     (state) => state.createConversation
+  )
+
+  const { projects } = useProjects()
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null
   )
 
   const searchEnabled = useCapabilities((state) => state.searchEnabled)
@@ -110,6 +122,7 @@ const ChatInput = ({
         const conversationPayload: CreateConversationPayload = {
           title: message.text || 'New Chat',
           ...(projectId && { project_id: String(projectId) }),
+          ...(selectedProjectId && { project_id: selectedProjectId }),
           metadata: {
             model_id: selectedModel.id,
             model_provider: selectedModel.owned_by,
@@ -124,6 +137,9 @@ const ChatInput = ({
               `initial-message-${conversation.id}`,
               JSON.stringify(message)
             )
+
+            // Clear selected project after creating conversation
+            setSelectedProjectId(null)
 
             // Redirect to the conversation detail page
             navigate({
@@ -171,8 +187,16 @@ const ChatInput = ({
                   className="rounded-full"
                   variant="secondary"
                 />
-                <PromptInputActionMenuContent>
+                <PromptInputActionMenuContent className="lg:w-56">
                   <PromptInputActionAddAttachments />
+                  {initialConversation && !projectId && (
+                    <ProjectsChatInput
+                      currentProjectId={selectedProjectId || undefined}
+                      onProjectSelect={(projectId) => {
+                        setSelectedProjectId(projectId)
+                      }}
+                    />
+                  )}
                 </PromptInputActionMenuContent>
               </PromptInputActionMenu>
               <SettingChatInput
@@ -211,6 +235,20 @@ const ChatInput = ({
                   <MegaphoneIcon className="text-muted-foreground size-4 group-hover:hidden" />
                   <X className="text-muted-foreground size-4 hidden group-hover:block" />
                   <span>Deep Research</span>
+                </PromptInputButton>
+              )}
+              {selectedProjectId && (
+                <PromptInputButton
+                  variant="outline"
+                  className="rounded-full group transition-all"
+                  onClick={() => setSelectedProjectId(null)}
+                >
+                  <FolderIcon className="text-muted-foreground size-4 group-hover:hidden" />
+                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
+                  <span>
+                    {projects.find((p) => p.id === selectedProjectId)?.name ||
+                      'Project'}
+                  </span>
                 </PromptInputButton>
               )}
             </PromptInputTools>

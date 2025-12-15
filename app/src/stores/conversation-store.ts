@@ -14,6 +14,10 @@ interface ConversationState {
   createConversation: (
     payload: CreateConversationPayload
   ) => Promise<Conversation>
+  updateConversation: (
+    conversationId: string,
+    payload: UpdateConversationPayload
+  ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<void>
   clearConversations: () => void
 }
@@ -69,6 +73,27 @@ export const useConversations = create<ConversationState>((set, get) => ({
       return newConversation
     } catch (err) {
       console.error('Error creating conversation:', err)
+      throw err
+    }
+  },
+
+  updateConversation: async (
+    conversationId: string,
+    payload: UpdateConversationPayload
+  ) => {
+    try {
+      const updatedConversation = await conversationService.updateConversation(
+        conversationId,
+        payload
+      )
+      set((state) => ({
+        conversations: state.conversations.map((conv) =>
+          conv.id === conversationId ? updatedConversation : conv
+        ),
+      }))
+      return updatedConversation
+    } catch (err) {
+      console.error('Error updating conversation:', err)
       throw err
     }
   },
