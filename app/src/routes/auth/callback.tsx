@@ -29,9 +29,7 @@ function OAuthCallbackPage() {
 
         // Handle OAuth errors
         if (errorParam) {
-          throw new Error(
-            errorDescription || `OAuth error: ${errorParam}`
-          )
+          throw new Error(errorDescription || `OAuth error: ${errorParam}`)
         }
 
         // Validate required parameters
@@ -52,15 +50,19 @@ function OAuthCallbackPage() {
 
         // Login with OAuth tokens
         loginWithOAuth(tokens)
-        console.log("OAuth login successful")
+        console.log('OAuth login successful')
         // Navigate to the original URL or home
-        const redirectUrl = oauthData.redirectUrl || '/'
+        let redirectUrl = oauthData.redirectUrl || '/'
+
+        // Remove modal parameter from redirect URL
+        const url = new URL(redirectUrl, window.location.origin)
+        url.searchParams.delete('modal')
+        redirectUrl = url.pathname + url.search
+
         navigate({ to: redirectUrl })
       } catch (err) {
         console.error('OAuth callback error:', err)
-        setError(
-          err instanceof Error ? err.message : 'Authentication failed'
-        )
+        setError(err instanceof Error ? err.message : 'Authentication failed')
 
         // Navigate to home with error after 3 seconds
         setTimeout(() => {
@@ -80,9 +82,7 @@ function OAuthCallbackPage() {
             Authentication Failed
           </h1>
           <p className="mb-4 text-sm text-red-700">{error}</p>
-          <p className="text-xs text-red-600">
-            Redirecting to home page...
-          </p>
+          <p className="text-xs text-red-600">Redirecting to home page...</p>
         </div>
       </div>
     )
