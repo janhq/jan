@@ -163,16 +163,17 @@ export function createAuthenticatedFetch(customBody?: object): typeof fetch {
  */
 export function janProvider(
   conversationId?: string,
-  deepResearch?: boolean
+  deepResearch?: boolean,
+  isPrivateChat?: boolean
 ): OpenAICompatibleProvider<string, string, string> {
   return createOpenAICompatible({
     name: 'janhq',
     baseURL: `${JAN_API_BASE_URL}v1`,
     fetch: createAuthenticatedFetch({
-      store: true,
-      store_reasoning: true,
-      conversation: conversationId,
-      deep_research: deepResearch ?? false
+      ...(!isPrivateChat && { store_reasoning: true }),
+      ...(!isPrivateChat && { store: true }),
+      ...(!isPrivateChat && { conversation: conversationId }),
+      deep_research: deepResearch ?? false,
     }),
   })
 }
