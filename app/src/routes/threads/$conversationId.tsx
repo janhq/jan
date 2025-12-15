@@ -39,13 +39,12 @@ import {
   ThumbsDownIcon,
   ThumbsUpIcon,
 } from 'lucide-react'
-// import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
-import { lastAssistantMessageIsCompleteWithToolCalls } from '@/lib/last-assistant-message-is-complete-with-tool-calls'
 import { useCapabilities } from '@/stores/capabilities-store'
 
 function ThreadPageContent() {
