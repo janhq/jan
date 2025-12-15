@@ -147,7 +147,7 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
-        className="max-w-full max-h-full sm:max-w-[75%] p-0 gap-0 rounded-none md:rounded-lg overflow-hidden"
+        className="max-w-full max-h-full mt-10 lg:mt-0 sm:max-w-full  md:max-w-full lg:max-w-[80%] p-0 gap-0 rounded-xl overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
@@ -155,10 +155,10 @@ export function SettingsDialog({
           <DialogTitle className="font-medium">Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col md:flex-row h-screen md:h-[600px]">
+        <div className="flex flex-col lg:flex-row h-screen lg:h-[600px]">
           {/* Sidebar - Mobile: Horizontal Scrollable Tabs */}
-          <div className="md:w-60 md:p-4 flex md:flex-col justify-between shrink-0">
-            <nav className="flex md:flex-col gap-1 w-full whitespace-nowrap overflow-x-auto md:overflow-x-visible p-4 md:p-0 border-b md:border-b-0">
+          <div className="lg:w-60 lg:p-4 flex lg:flex-col justify-between shrink-0">
+            <nav className="flex lg:flex-col gap-1 w-full whitespace-nowrap overflow-x-auto lg:overflow-x-visible p-4 lg:p-0 border-b lg:border-b-0">
               {sections.map((s) => (
                 <button
                   key={s.id}
@@ -175,13 +175,13 @@ export function SettingsDialog({
                 </button>
               ))}
             </nav>
-            <div className="text-muted-foreground hidden md:block">
+            <div className="text-muted-foreground hidden lg:block">
               {renderSettingFooter()}
             </div>
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6 pb-30 md:pb-6">
+          <div className="flex-1 overflow-y-auto p-6 pb-30 lg:pb-6">
             {renderContent()}
           </div>
         </div>

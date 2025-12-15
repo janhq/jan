@@ -6,7 +6,7 @@ import { HatGlassesIcon, LockKeyhole, MessagesSquareIcon } from 'lucide-react'
 export function PrivacySettings() {
   return (
     <div>
-      <p className="text-base font-medium mb-2">Privacy</p>
+      <p className="text-base font-medium mb-2 font-studio">Privacy</p>
       <div className="flex justify-between items-center">
         <div className="mt-6 font-medium">Export Data</div>
         <Button variant="outline">Export data</Button>

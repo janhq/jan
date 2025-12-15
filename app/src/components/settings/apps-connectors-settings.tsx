@@ -10,7 +10,9 @@ import { ShapesIcon } from 'lucide-react'
 export function AppsConnectorSettings() {
   return (
     <div>
-      <p className="text-base font-medium mb-4">Apps & connectors</p>
+      <p className="text-base font-medium mb-4 font-studio">
+        Apps & connectors
+      </p>
       <div className="mt-6">
         <Empty>
           <EmptyHeader>
