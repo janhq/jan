@@ -1,4 +1,4 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -31,19 +31,31 @@ import {
   DropDrawerTrigger,
   DropDrawerSeparator,
 } from '@/components/ui/dropdrawer'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ProjectConversations } from '@/components/projects/project-conversations'
 import { useConversations } from '@/stores/conversation-store'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
 
 function ProjectPageContent() {
+  const navigate = useNavigate()
   const params = useParams({ strict: false })
   const projectId = params.projectId as string | undefined
   const selectedModel = useModels((state) => state.selectedModel)
   const getProject = useProjects((state) => state.getProject)
+  const deleteProject = useProjects((state) => state.deleteProject)
   const [project, setProject] = useState<Project | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isManageInstructionsOpen, setIsManageInstructionsOpen] =
     useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const allConversations = useConversations((state) => state.conversations)
 
@@ -77,6 +89,23 @@ function ProjectPageContent() {
 
   const handleOpenManageInstructions = () => {
     setIsManageInstructionsOpen(true)
+  }
+
+  const handleDeleteClick = () => {
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!projectId) return
+
+    try {
+      await deleteProject(projectId)
+      setDeleteDialogOpen(false)
+      // Redirect to home after deletion
+      navigate({ to: '/' })
+    } catch (error) {
+      console.error('Failed to delete project:', error)
+    }
   }
 
   const handleProjectUpdated = () => {
@@ -131,8 +160,8 @@ function ProjectPageContent() {
       <AppSidebar />
       <SidebarInset>
         <NavHeader />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 mt-2 w-full px-4 md:px-10 py-2 overflow-y-auto h-[calc(100vh-56px)]">
-          <div className="col-span-full lg:col-span-8 flex flex-col h-full">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-20 mt-2 w-full px-4 md:px-10 py-2 overflow-y-auto h-[calc(100vh-56px)]">
+          <div className="col-span-full xl:col-span-8 flex flex-col h-full">
             <div className="size-full mx-auto flex flex-col">
               <div>
                 <div className="flex justify-between items-center">
@@ -159,9 +188,9 @@ function ProjectPageContent() {
                         </div>
                       </DropDrawerItem>
                       <DropDrawerSeparator />
-                      <DropDrawerItem variant="destructive">
+                      <DropDrawerItem variant="destructive" onClick={handleDeleteClick}>
                         <div className="flex items-center gap-2">
-                          <Trash2Icon />
+                          <Trash2Icon className="text-destructive" />
                           <span>Delete project</span>
                         </div>
                       </DropDrawerItem>
@@ -213,7 +242,7 @@ function ProjectPageContent() {
             </div>
           </div>
 
-          <div className="size-full flex-col pb-4 hidden lg:flex col-span-1 lg:col-span-4">
+          <div className="size-full flex-col pb-4 hidden xl:flex col-span-1 xl:col-span-4">
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-base font-semibold inline-block">
@@ -291,6 +320,36 @@ function ProjectPageContent() {
         onSuccess={handleProjectUpdated}
         onOpenChange={setIsManageInstructionsOpen}
       />
+
+      {/* Delete Project Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{' '}
+              <span className="font-semibold">
+                &quot;{project?.name}&quot;?
+              </span>
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" className="rounded-full">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              className="rounded-full"
+              variant="destructive"
+              onClick={handleConfirmDelete}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
