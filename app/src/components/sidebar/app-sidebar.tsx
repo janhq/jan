@@ -12,16 +12,10 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { NavUser } from '@/components/sidebar/nav-user'
-import { usePrivateChat } from '@/stores/private-chat-store'
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const isOpen = state === 'expanded'
-  const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
-
-  if (isPrivateChat) {
-    return null
-  }
 
   return (
     <Sidebar className="border-r-0" {...props}>
