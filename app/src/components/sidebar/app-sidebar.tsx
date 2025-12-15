@@ -25,7 +25,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             isOpen && 'pl-2 mb-2'
           )}
         >
-          <span className="text-lg font-bold">Jan</span>
+          <span className="text-lg font-bold font-studio">Jan</span>
           <SidebarTrigger className="text-muted-foreground" />
         </div>
         <NavMain />

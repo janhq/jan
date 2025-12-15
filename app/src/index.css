@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@source "../node_modules/streamdown/dist/index.js";
+@source '../node_modules/streamdown/dist/index.js';
+@import './fonts.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -41,6 +42,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --animate-hue-rotate: hue-rotate 4s infinite;
+  --font-studio: 'StudioFeixenSans';
+  --font-sans: 'Inter', sans-serif;
 }
 
 :root {
