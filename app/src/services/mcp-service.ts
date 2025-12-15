@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './mcp-oauth-provider'
+import { fetchWithAuth } from '@/lib/api-client'
 
 declare const JAN_API_BASE_URL: string
 
@@ -138,12 +139,14 @@ class MCPService {
 
   /**
    * Executes an MCP tool with the provided arguments
-   * Uses MCP SDK's callTool() method
+   * Makes a direct fetch call to the MCP endpoint with custom headers
    *
    * @param payload - Tool execution parameters
    * @param payload.toolName - Name of the tool to execute
    * @param payload.serverName - Optional server name (if multiple servers have same tool)
    * @param payload.arguments - Tool-specific arguments matching the tool's inputSchema
+   * @param payload.conversationId - Optional conversation ID to include in headers
+   * @param payload.toolCallId - Optional tool call ID to include in headers
    *
    * @returns Promise<MCPToolCallResult> - Tool execution result with content or error
    * @throws Error if the request fails
@@ -153,7 +156,9 @@ class MCPService {
    * const result = await mcpService.callTool({
    *   toolName: 'web_search',
    *   serverName: 'Jan MCP Server',
-   *   arguments: { query: 'latest AI news' }
+   *   arguments: { query: 'latest AI news' },
+   *   conversationId: 'conv-123',
+   *   toolCallId: 'call-456'
    * })
    *
    * if (result.error) {
@@ -163,58 +168,109 @@ class MCPService {
    * }
    * ```
    */
-  async callTool(payload: CallToolPayload): Promise<MCPToolCallResult> {
+  async callTool(
+    payload: CallToolPayload,
+    metadata?: { conversationId?: string; toolCallId?: string }
+  ): Promise<MCPToolCallResult> {
     try {
-      await this.ensureInitialized()
-
-      if (!this.mcpClient) {
-        return {
-          error: 'MCP client not initialized',
-          content: [{ type: 'text', text: 'MCP client not initialized' }],
-        }
+      // Build headers
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
       }
 
-      // Use MCP SDK to call tool (OAuth provider handles auth automatically)
-      const result = await this.mcpClient.callTool({
-        name: payload.toolName,
-        arguments: payload.arguments,
-      })
+      if (metadata?.conversationId) {
+        headers['X-Conversation-Id'] = metadata.conversationId
+      }
+      if (metadata?.toolCallId) {
+        headers['X-Tool-Call-Id'] = metadata.toolCallId
+      }
 
-      console.log(`MCP tool call result for ${payload.toolName}:`, result)
+      // Build JSON-RPC request
+      const jsonRpcRequest = {
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: {
+          name: payload.toolName,
+          arguments: payload.arguments,
+        },
+      }
 
-      // Handle tool call result
-      if (result.isError) {
+      console.log(`Calling MCP tool ${payload.toolName} with headers:`, headers)
+
+      // Make fetch request
+      const response = await fetchWithAuth(
+        `${JAN_API_BASE_URL}${this.mcpEndpoint}`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(jsonRpcRequest),
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(
+          `MCP tool call failed: ${response.status} ${response.statusText} - ${errorText}`
+        )
+      }
+
+      // Handle both direct JSON and SSE responses
+      const contentType = response.headers.get('content-type') || ''
+      let result: any
+
+      if (contentType.includes('text/event-stream')) {
+        // Parse SSE response
+        const text = await response.text()
+        const lines = text.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              result = JSON.parse(line.substring(6))
+              break
+            } catch (e) {
+              console.warn('Failed to parse SSE line:', line)
+            }
+          }
+        }
+      } else {
+        // Direct JSON response
+        result = await response.json()
+      }
+
+      if (!result) {
+        throw new Error('No valid response from MCP server')
+      }
+
+      // Check for JSON-RPC error
+      if (result.error) {
+        return createErrorResult(result.error.message || 'Tool call failed')
+      }
+
+      // Extract content from result
+      const toolResult = result.result || result
+      if (toolResult.isError) {
         const errorText =
-          Array.isArray(result.content) && result.content.length > 0
-            ? result.content[0].type === 'text'
-              ? (result.content[0] as any).text
+          Array.isArray(toolResult.content) && toolResult.content.length > 0
+            ? toolResult.content[0].type === 'text'
+              ? toolResult.content[0].text
               : 'Tool call failed'
             : 'Tool call failed'
-
-        return {
-          error: errorText,
-          content: [{ type: 'text', text: errorText }],
-        }
+        return createErrorResult(errorText)
       }
 
-      // Convert MCP content to Jan's format
-      const content = Array.isArray(result.content)
-        ? result.content.map((item) => {
-            if (item.type === 'text') {
-              return { type: 'text' as const, text: (item as any).text }
-            } else {
-              // For non-text types, convert to text representation
-              return { type: 'text' as const, text: JSON.stringify(item) }
-            }
-          })
+      const content = Array.isArray(toolResult.content)
+        ? toolResult.content.map((item: any) => item)
         : [{ type: 'text' as const, text: 'No content returned' }]
 
-      return {
-        error: '',
-        content,
-      }
+      console.log(`[MCP] Tool call succeeded:`, {
+        toolName: payload.toolName,
+        contentItems: content.length,
+      })
+      return { error: '', content }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${payload.toolName}:`, error)
 
       return {
@@ -267,6 +323,15 @@ class MCPService {
     return this.getTools()
   }
 }
+
+/** Create an error result with the given message */
+export const createErrorResult = (
+  error: string,
+  text?: string
+): MCPToolCallResult => ({
+  error,
+  content: [{ type: 'text' as const, text: text || error }],
+})
 
 // Export singleton instance
 export const mcpService = new MCPService()

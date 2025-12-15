@@ -95,6 +95,9 @@ function ThreadPageContent() {
         toolName: toolCall.toolName,
         serverName: 'Jan MCP Server',
         arguments: toolCall.input as any,
+      }, {
+        conversationId,
+        toolCallId: toolCall.toolCallId,
       })
 
       if (result.error) {
