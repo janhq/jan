@@ -1,4 +1,4 @@
-import { FolderXIcon, MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 
@@ -6,8 +6,10 @@ import {
   DropDrawer,
   DropDrawerContent,
   DropDrawerItem,
+  DropDrawerSeparator,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
+import { ProjectsChatInput } from '@/components/chat-input/projects-chat-input'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -116,19 +118,14 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
     }
   }
 
-  const handleRemoveFromProject = async (conversationId: string) => {
+  const handleMoveToProject = async (
+    conversationId: string,
+    projectId: string
+  ) => {
     try {
-      console.log('Removing conversation from project:', conversationId)
-      const result = await updateConversation(conversationId, {
-        project_id: '',
-      })
-      console.log('Successfully removed conversation from project:', result)
+      await updateConversation(conversationId, { project_id: projectId })
     } catch (error) {
-      console.error('Failed to remove conversation from project:', error)
-      // Log the full error for debugging
-      if (error instanceof Error) {
-        console.error('Error details:', error.message, error.stack)
-      }
+      console.error('Failed to move conversation to project:', error)
     }
   }
 
@@ -168,14 +165,14 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                 </Button>
               </DropDrawerTrigger>
               <DropDrawerContent className="md:w-56" align="end">
-                <DropDrawerItem
-                  onClick={() => handleRemoveFromProject(conversation.id)}
-                >
-                  <div className="flex gap-2 items-center">
-                    <FolderXIcon />
-                    <span>Remove from project</span>
-                  </div>
-                </DropDrawerItem>
+                <ProjectsChatInput
+                  title="Move to Project"
+                  currentProjectId={conversation.project_id}
+                  onProjectSelect={(projectId) =>
+                    handleMoveToProject(conversation.id, projectId)
+                  }
+                />
+                <DropDrawerSeparator />
                 <DropDrawerItem
                   variant="destructive"
                   onClick={() => handleDeleteClick(conversation)}
