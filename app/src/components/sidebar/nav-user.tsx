@@ -30,6 +30,7 @@ export function NavUser() {
   const { isMobile } = useSidebar()
   const user = useAuth((state) => state.user)
   const isGuest = useAuth((state) => state.isGuest)
+  const refreshToken = useAuth((state) => state.refreshToken)
   const logout = useAuth((state) => state.logout)
   const router = useRouter()
 
@@ -104,9 +105,12 @@ export function NavUser() {
                 </div>
               </DropDrawerItem>
               <DropDrawerItem
-                onClick={() => {
-                  logout()
-                  router.navigate({ to: '/' })
+                onClick={async () => {
+                  await logout({ refresh_token: String(refreshToken) })
+                  router.navigate({
+                    to: '/',
+                    replace: true,
+                  })
                 }}
               >
                 <div className="flex gap-2 items-center justify-center">

@@ -15,6 +15,7 @@ interface ConversationState {
     payload: CreateConversationPayload
   ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<void>
+  clearConversations: () => void
 }
 
 export const useConversations = create<ConversationState>((set, get) => ({
@@ -84,5 +85,9 @@ export const useConversations = create<ConversationState>((set, get) => ({
       console.error('Error deleting conversation:', err)
       throw err
     }
+  },
+  clearConversations: () => {
+    set({ conversations: [], loading: false })
+    fetchPromise = null
   },
 }))

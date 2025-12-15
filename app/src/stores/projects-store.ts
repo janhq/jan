@@ -14,6 +14,7 @@ interface ProjectsState {
     data: UpdateProjectRequest
   ) => Promise<Project>
   deleteProject: (projectId: string) => Promise<void>
+  clearProjects: () => void
 }
 
 export const useProjects = create<ProjectsState>((set, get) => ({
@@ -84,5 +85,9 @@ export const useProjects = create<ProjectsState>((set, get) => ({
       console.error('Error deleting project:', err)
       throw err
     }
+  },
+  clearProjects: () => {
+    set({ projects: [], loading: false })
+    fetchPromise = null
   },
 }))

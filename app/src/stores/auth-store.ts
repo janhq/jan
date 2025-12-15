@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { extractUserFromTokens } from '@/lib/oauth'
+import { fetchJsonWithAuth } from '@/lib/api-client'
 
 declare const JAN_API_BASE_URL: string
 
@@ -12,7 +13,7 @@ interface AuthState {
   refreshToken: string | null
   login: (user: User) => void
   loginWithOAuth: (tokens: OAuthTokenResponse) => void
-  logout: () => void
+  logout: (data: { refresh_token: string }) => Promise<void>
   guestLogin: () => Promise<void>
   refreshAccessToken: () => Promise<void>
 }
@@ -42,14 +43,34 @@ export const useAuth = create<AuthState>()(
           refreshToken: userData.refreshToken,
         })
       },
-      logout: () =>
-        set({
-          user: null,
-          isAuthenticated: false,
-          isGuest: false,
-          accessToken: null,
-          refreshToken: null,
-        }),
+      logout: async (data: { refresh_token: string }) => {
+        try {
+          await fetchJsonWithAuth<{ status: string }>(
+            `${JAN_API_BASE_URL}auth/logout`,
+            {
+              method: 'POST',
+              body: JSON.stringify(data),
+            }
+          )
+
+          // Clear all stores
+          const { useProjects } = await import('@/stores/projects-store')
+          const { useConversations } = await import('@/stores/conversation-store')
+
+          useProjects.getState().clearProjects()
+          useConversations.getState().clearConversations()
+
+          set({
+            user: null,
+            isAuthenticated: false,
+            isGuest: false,
+            accessToken: null,
+            refreshToken: null,
+          })
+        } catch (error) {
+          console.error('Logout error:', error)
+        }
+      },
       guestLogin: async () => {
         try {
           const response = await fetch(`${JAN_API_BASE_URL}/auth/guest-login`, {
@@ -96,7 +117,7 @@ export const useAuth = create<AuthState>()(
               },
               body: JSON.stringify({
                 refresh_token: useAuth.getState().refreshToken,
-              })
+              }),
             }
           )
 
