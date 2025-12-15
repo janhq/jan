@@ -13,7 +13,7 @@ interface AuthState {
   refreshToken: string | null
   login: (user: User) => void
   loginWithOAuth: (tokens: OAuthTokenResponse) => void
-  logout: (data: { refresh_token: string }) => Promise<void>
+  logout: () => Promise<void>
   guestLogin: () => Promise<void>
   refreshAccessToken: () => Promise<void>
 }
@@ -43,23 +43,24 @@ export const useAuth = create<AuthState>()(
           refreshToken: userData.refreshToken,
         })
       },
-      logout: async (data: { refresh_token: string }) => {
+      logout: async () => {
         try {
+          const refreshToken = useAuth.getState().refreshToken
           await fetchJsonWithAuth<{ status: string }>(
             `${JAN_API_BASE_URL}auth/logout`,
             {
               method: 'POST',
-              body: JSON.stringify(data),
+              body: JSON.stringify({ refresh_token: refreshToken }),
             }
           )
 
           // Clear all stores
           const { useProjects } = await import('@/stores/projects-store')
-          const { useConversations } = await import('@/stores/conversation-store')
-
+          const { useConversations } = await import(
+            '@/stores/conversation-store'
+          )
           useProjects.getState().clearProjects()
           useConversations.getState().clearConversations()
-
           set({
             user: null,
             isAuthenticated: false,
