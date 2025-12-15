@@ -56,4 +56,5 @@ interface ConversationItemContent {
   text?: string & { text?: string }
   input_text?: string
   reasoning_content?: string
+  image?: { url: string}
 }

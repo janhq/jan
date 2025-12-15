@@ -18,6 +18,8 @@ import {
   MessageResponse,
   MessageActions,
   MessageAction,
+  MessageAttachments,
+  MessageAttachment,
 } from '@/components/ai-elements/message'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import {
@@ -246,6 +248,16 @@ function ThreadPageContent() {
                                 )}
                             </Message>
                           )
+                        case 'file':
+                          return (
+                            <MessageAttachments className="mb-2">
+                              <MessageAttachment
+                                data={part}
+                                key={part.filename || 'image'}
+                              />
+                            </MessageAttachments>
+                          )
+
                         case 'reasoning':
                           return (
                             <Reasoning
