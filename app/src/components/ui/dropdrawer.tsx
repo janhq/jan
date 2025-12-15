@@ -453,9 +453,9 @@ function DropDrawerItem({
         data-inset={inset}
         data-disabled={disabled}
         className={cn(
-          'flex cursor-pointer items-center justify-between px-4 py-4',
+          'flex cursor-pointer items-center justify-between px-4 py-2',
           // Only apply margin, background and rounded corners if not in a group
-          !isInsideGroup && 'bg-accent dark:bg-accent mx-2 my-1.5 rounded-md',
+          !isInsideGroup && 'mx-2 my-1.5 rounded-md',
           // For items in a group, don't add background but add more padding
           isInsideGroup && 'bg-transparent py-4',
           inset && 'pl-8',
@@ -467,7 +467,7 @@ function DropDrawerItem({
         aria-disabled={disabled}
         {...props}
       >
-        <div className="flex items-center gap-2">{children}</div>
+        <div className="flex items-center gap-2 size-full">{children}</div>
         {icon && <div className="shrink-0">{icon}</div>}
       </div>
     )
