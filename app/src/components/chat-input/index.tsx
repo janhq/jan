@@ -11,7 +11,7 @@ import {
   PromptInputFooter,
   type PromptInputMessage,
   PromptInputProvider,
-  PromptInputSpeechButton,
+  // PromptInputSpeechButton,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
@@ -253,7 +253,8 @@ const ChatInput = ({
               )}
             </PromptInputTools>
             <div className="flex items-center gap-2">
-              <PromptInputSpeechButton textareaRef={textareaRef} />
+              {/* Disabled speech input button */}
+              {/* <PromptInputSpeechButton textareaRef={textareaRef} /> */}
               <PromptInputSubmit
                 status={status}
                 className="rounded-full"
