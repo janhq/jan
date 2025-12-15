@@ -19,14 +19,16 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
   return items.map((item) => {
     const parts = item.content.map((content) => {
       // Determine the content type
-      let contentType: 'text' | 'reasoning' = 'text'
+      let contentType: 'text' | 'reasoning' | 'file' = 'text'
 
       if (content.type === 'reasoning_text') {
         contentType = 'reasoning'
-      } else if (content.type === 'input_text' || item.role === 'user') {
+      } else if (content.type === 'input_text' || content.type === 'text') {
         contentType = 'text'
+      } else if (content.type === 'image') {
+        contentType = 'file'
       } else {
-        contentType = content.type as 'text' | 'reasoning'
+        contentType = content.type as 'text' | 'reasoning' | 'file'
       }
 
       return {
@@ -37,6 +39,8 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
           content.input_text ||
           content.reasoning_content ||
           '',
+        mediaType: contentType === 'file' ? 'image/jpeg' : undefined,
+        url: contentType === 'file' ? content.image?.url : undefined,
       }
     })
 
@@ -51,6 +55,6 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
       id: item.id,
       role: item.role as 'user' | 'assistant' | 'system',
       parts: sortedParts,
-    }
+    } as UIMessage
   })
 }
