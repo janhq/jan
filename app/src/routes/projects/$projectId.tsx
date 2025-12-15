@@ -131,7 +131,7 @@ function ProjectPageContent() {
       <AppSidebar />
       <SidebarInset>
         <NavHeader />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 mt-4 w-full px-4 md:px-10 pt-2 size-full overflow-y-auto max-h-[100vh-56px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 mt-2 w-full px-4 md:px-10 py-2 overflow-y-auto h-[calc(100vh-56px)]">
           <div className="col-span-full lg:col-span-8 flex flex-col h-full">
             <div className="size-full mx-auto flex flex-col">
               <div>
@@ -168,9 +168,10 @@ function ProjectPageContent() {
                     </DropDrawerContent>
                   </DropDrawer>
                 </div>
-                <p className="mt-2 text-muted-foreground">
+                {/* Enable this when we have desc project */}
+                {/* <p className="mt-2 text-muted-foreground">
                   A short description about the project goes here
-                </p>
+                </p> */}
                 <div className="py-4 mx-auto w-full">
                   <ChatInput
                     submit={handleSubmit}
@@ -182,8 +183,8 @@ function ProjectPageContent() {
               </div>
               <Separator className="my-4" />
               <div className="flex-1 flex pb-4 min-h-0">
-                <div className="w-full flex flex-col gap-4">
-                  <span className="text-base font-semibold mt-4 inline-block shrink-0">
+                <div className="size-full flex flex-col gap-4">
+                  <span className="text-base font-studio font-semibold mt-4 inline-block shrink-0">
                     Conversation
                   </span>
 
@@ -203,11 +204,7 @@ function ProjectPageContent() {
                       </div>
                     </div>
                   ) : (
-                    <div
-                      className={cn(
-                        'relative rounded-2xl flex-1 overflow-hidden  min-h-0'
-                      )}
-                    >
+                    <div className={cn('relative overflow-hidden min-h-0')}>
                       <ProjectConversations projectId={project?.id || ''} />
                     </div>
                   )}
