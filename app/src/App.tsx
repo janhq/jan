@@ -36,7 +36,7 @@ function AppPageContent() {
         <div className="flex flex-1 flex-col items-center justify-center h-full gap-4 px-4 py-10 max-w-3xl w-full mx-auto ">
           <div className="mx-auto flex justify-center items-center h-full w-full rounded-xl">
             <div className="w-full text-center">
-              <h2 className="text-xl font-medium mb-6">
+              <h2 className="text-2xl font-medium mb-6 font-studio">
                 How can I help you today?
               </h2>
               <ChatInput initialConversation={true} />
