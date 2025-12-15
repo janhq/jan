@@ -9,26 +9,32 @@ import {
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
 import { AppsConnectorSettings } from '@/components/settings/apps-connectors-settings'
-import { PrivacySettings } from '@/components/settings/privacy-settings'
+// import { PrivacySettings } from '@/components/settings/privacy-settings'
 import {
-  LockKeyhole,
+  // LockKeyhole,
   Settings2,
   ShapesIcon,
   Globe,
   type LucideIcon,
   BugIcon,
   BookOpen,
+  LeafIcon,
 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { GitHub } from '@/components/ui/svgs/github'
 import { Discord } from '@/components/ui/svgs/discord'
+import { PersonalizationSettings } from './personalization-setting'
 
 interface SettingsDialogProps {
   open: boolean
   section?: string
 }
 
-type SettingsSection = 'general' | 'apps-connectors' | 'privacy'
+type SettingsSection =
+  | 'general'
+  | 'apps-connectors'
+  // | 'privacy'
+  | 'personalization'
 
 const sections: Array<{
   id: SettingsSection
@@ -36,8 +42,9 @@ const sections: Array<{
   icon: LucideIcon
 }> = [
   { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'personalization', label: 'Personalization', icon: LeafIcon },
   { id: 'apps-connectors', label: 'Apps & connectors', icon: ShapesIcon },
-  { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
+  // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
 ]
 
 export function SettingsDialog({
@@ -68,8 +75,10 @@ export function SettingsDialog({
         return <GeneralSettings />
       case 'apps-connectors':
         return <AppsConnectorSettings />
-      case 'privacy':
-        return <PrivacySettings />
+      case 'personalization':
+        return <PersonalizationSettings />
+      // case 'privacy':
+      //   return <PrivacySettings />
       default:
         return <GeneralSettings />
     }
