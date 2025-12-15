@@ -186,7 +186,7 @@ const ChatInput = ({
           globalDrop
           multiple
           onSubmit={handleSubmit}
-          className="rounded-3xl relative z-40 bg-background "
+          className="rounded-3xl relative z-40 bg-background"
         >
           <PromptInputAttachments>
             {(attachment) => <PromptInputAttachment data={attachment} />}

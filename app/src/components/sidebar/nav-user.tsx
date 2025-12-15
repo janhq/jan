@@ -1,10 +1,4 @@
-import {
-  ChevronsUpDown,
-  CreditCard,
-  LogOut,
-  SettingsIcon,
-  LifeBuoyIcon,
-} from 'lucide-react'
+import { ChevronsUpDown, LogOut, SettingsIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -91,18 +85,19 @@ export function NavUser() {
                   Setting
                 </div>
               </DropDrawerItem>
-              <DropDrawerItem>
+              {/* <DropDrawerItem>
                 <div className="flex gap-2 items-center justify-center">
                   <CreditCard className="text-muted-foreground" />
                   Manage Plan
                 </div>
-              </DropDrawerItem>
-              <DropDrawerItem>
+              </DropDrawerItem> */}
+              {/* <DropDrawerItem>
                 <div className="flex gap-2 items-center justify-center">
                   <LifeBuoyIcon className="text-muted-foreground" />
                   Support
                 </div>
-              </DropDrawerItem>
+              </DropDrawerItem> */}
+              <DropDrawerSeparator />
               <DropDrawerItem
                 onClick={async () => {
                   await logout()
