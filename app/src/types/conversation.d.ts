@@ -34,6 +34,18 @@ interface CreateConversationPayload {
   }
 }
 
+interface UpdateConversationPayload {
+  title?: string
+  project_id?: string
+  metadata?: {
+    model_id?: string
+    model_provider?: string
+    is_favorite?: string
+    search_enabled?: string
+    deep_research_enabled?: string
+  }
+}
+
 interface ConversationItemsResponse {
   object: string
   data: ConversationItem[]

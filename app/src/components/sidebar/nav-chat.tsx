@@ -1,4 +1,4 @@
-import { ArrowUpRight, MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
@@ -9,6 +9,7 @@ import {
   DropDrawerSeparator,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
+import { ProjectsChatInput } from '@/components/chat-input/projects-chat-input'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -40,6 +41,9 @@ export function NavChats() {
   const getConversations = useConversations((state) => state.getConversations)
   const deleteConversation = useConversations(
     (state) => state.deleteConversation
+  )
+  const updateConversation = useConversations(
+    (state) => state.updateConversation
   )
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
@@ -90,6 +94,17 @@ export function NavChats() {
       navigate({ to: '/' })
     } catch (error) {
       console.error('Failed to delete all conversations:', error)
+    }
+  }
+
+  const handleMoveToProject = async (
+    conversationId: string,
+    projectId: string
+  ) => {
+    try {
+      await updateConversation(conversationId, { project_id: projectId })
+    } catch (error) {
+      console.error('Failed to move conversation to project:', error)
     }
   }
 
@@ -152,12 +167,13 @@ export function NavChats() {
                   side={isMobile ? 'bottom' : 'right'}
                   align={isMobile ? 'end' : 'start'}
                 >
-                  <DropDrawerItem>
-                    <div className="flex gap-2 items-center justify-center">
-                      <ArrowUpRight className="text-muted-foreground" />
-                      <span>Open in New Tab</span>
-                    </div>
-                  </DropDrawerItem>
+                  <ProjectsChatInput
+                    title="Move to Project"
+                    currentProjectId={item.project_id}
+                    onProjectSelect={(projectId) =>
+                      handleMoveToProject(item.id, projectId)
+                    }
+                  />
                   <DropDrawerSeparator />
                   <DropDrawerItem
                     variant="destructive"

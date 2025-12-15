@@ -1,4 +1,4 @@
-import { ArrowUpRight, MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
@@ -6,7 +6,6 @@ import {
   DropDrawer,
   DropDrawerContent,
   DropDrawerItem,
-  DropDrawerSeparator,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
 import {
@@ -99,17 +98,9 @@ export function NavProjects() {
                   </SidebarMenuAction>
                 </DropDrawerTrigger>
                 <DropDrawerContent
-                  className="md:w-56"
                   side={isMobile ? 'bottom' : 'right'}
                   align={isMobile ? 'end' : 'start'}
                 >
-                  <DropDrawerItem>
-                    <div className="flex gap-2 items-center justify-center">
-                      <ArrowUpRight className="text-muted-foreground" />
-                      <span>Open in New Tab</span>
-                    </div>
-                  </DropDrawerItem>
-                  <DropDrawerSeparator />
                   <DropDrawerItem
                     variant="destructive"
                     onClick={() => handleDeleteClick(item)}
