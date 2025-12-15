@@ -63,10 +63,20 @@ interface ConversationItem {
   created_at: number
 }
 
+interface ToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: Record<string, unknown>
+  }
+}
+
 interface ConversationItemContent {
   type: string
   text?: string & { text?: string }
   input_text?: string
   reasoning_content?: string
-  image?: { url: string}
+  image?: { url: string }
+  tool_calls?: Array<ToolCall>
 }

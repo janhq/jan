@@ -22,4 +22,6 @@ interface CallToolPayload {
   toolName: string
   serverName?: string
   arguments: Record<string, unknown>
+  conversationId?: string
+  toolCallId?: string
 }
