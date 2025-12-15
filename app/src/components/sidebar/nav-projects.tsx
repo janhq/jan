@@ -107,7 +107,7 @@ export function NavProjects() {
                   >
                     <div className="flex gap-2 items-center justify-center">
                       <Trash2 className="text-destructive" />
-                      <span>Delete</span>
+                      <span>Delete Project</span>
                     </div>
                   </DropDrawerItem>
                 </DropDrawerContent>
