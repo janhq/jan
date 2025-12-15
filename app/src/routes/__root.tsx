@@ -9,6 +9,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { LoginForm } from '@/components/form/login'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { CreateProject } from '@/components/projects/create-project'
+import { SearchDialog } from '@/components/search/search-dialog'
 import { useAuth } from '@/stores/auth-store'
 import { ThemeProvider } from '@/components/themes/theme-provider'
 
@@ -37,6 +38,8 @@ function RootLayout() {
   const isSettingsOpen = !!settingSection
   const projectsSection = searchParams.get('projects')
   const isProjectsOpen = !!projectsSection
+  const searchSection = searchParams.get('search')
+  const isSearchOpen = !!searchSection
 
   const handleCloseModal = () => {
     // Remove the modal search param by navigating without it
@@ -72,6 +75,9 @@ function RootLayout() {
 
       {/* Projects Dialog */}
       <CreateProject open={isProjectsOpen} />
+
+      {/* Search Dialog */}
+      <SearchDialog open={isSearchOpen} />
     </ThemeProvider>
   )
 }

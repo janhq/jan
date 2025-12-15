@@ -27,6 +27,12 @@ export function NavMain() {
     router.navigate({ to: url.pathname + url.search })
   }
 
+  const handleSearch = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('search', 'open')
+    router.navigate({ to: url.pathname + url.search })
+  }
+
   const navMain: NavMainItem[] = [
     {
       title: 'New Chat',
@@ -44,6 +50,7 @@ export function NavMain() {
       title: 'Search',
       url: '#',
       icon: Search,
+      onClick: handleSearch,
     },
   ]
 
