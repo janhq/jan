@@ -15,11 +15,11 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import {
-  DropDrawer,
-  DropDrawerContent,
-  DropDrawerItem,
-  DropDrawerTrigger,
-} from '@/components/ui/dropdrawer'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   HoverCard,
   HoverCardContent,
@@ -406,7 +406,7 @@ export function PromptInputAttachments({
 }
 
 export type PromptInputActionAddAttachmentsProps = ComponentProps<
-  typeof DropDrawerItem
+  typeof DropdownMenuItem
 > & {
   label?: string
 }
@@ -418,7 +418,7 @@ export const PromptInputActionAddAttachments = ({
   const attachments = usePromptInputAttachments()
 
   return (
-    <DropDrawerItem
+    <DropdownMenuItem
       {...props}
       onSelect={(e) => {
         e.preventDefault()
@@ -428,7 +428,7 @@ export const PromptInputActionAddAttachments = ({
       <div className="flex gap-2 items-center">
         <Paperclip className="mr-2 size-4 text-muted-foreground" /> {label}
       </div>
-    </DropDrawerItem>
+    </DropdownMenuItem>
   )
 }
 
@@ -981,9 +981,9 @@ export const PromptInputButton = ({
   )
 }
 
-export type PromptInputActionMenuProps = ComponentProps<typeof DropDrawer>
+export type PromptInputActionMenuProps = ComponentProps<typeof DropdownMenu>
 export const PromptInputActionMenu = (props: PromptInputActionMenuProps) => (
-  <DropDrawer {...props} />
+  <DropdownMenu {...props} />
 )
 
 export type PromptInputActionMenuTriggerProps = PromptInputButtonProps
@@ -993,31 +993,31 @@ export const PromptInputActionMenuTrigger = ({
   children,
   ...props
 }: PromptInputActionMenuTriggerProps) => (
-  <DropDrawerTrigger asChild>
+  <DropdownMenuTrigger asChild>
     <PromptInputButton className={className} {...props}>
       {children ?? <PlusIcon className="size-4 text-muted-foreground" />}
     </PromptInputButton>
-  </DropDrawerTrigger>
+  </DropdownMenuTrigger>
 )
 
 export type PromptInputActionMenuContentProps = ComponentProps<
-  typeof DropDrawerContent
+  typeof DropdownMenuContent
 >
 export const PromptInputActionMenuContent = ({
   className,
   ...props
 }: PromptInputActionMenuContentProps) => (
-  <DropDrawerContent align="start" className={cn(className)} {...props} />
+  <DropdownMenuContent align="start" className={cn(className)} {...props} />
 )
 
 export type PromptInputActionMenuItemProps = ComponentProps<
-  typeof DropDrawerItem
+  typeof DropdownMenuItem
 >
 export const PromptInputActionMenuItem = ({
   className,
   ...props
 }: PromptInputActionMenuItemProps) => (
-  <DropDrawerItem className={cn(className)} {...props} />
+  <DropdownMenuItem className={cn(className)} {...props} />
 )
 
 // Note: Actions that perform side-effects (like opening a file dialog)
