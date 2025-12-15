@@ -46,8 +46,8 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
   const handleClose = () => {
     onOpenChange?.(false)
     // Fallback to URL-based closing if no callback provided
-    if (!onOpenChange) {
-      const url = new URL(window.location.href)
+    const url = new URL(window.location.href)
+    if (!onOpenChange && url.searchParams.get('projects') === 'create') {
       url.searchParams.delete('projects')
       router.navigate({ to: url.pathname + url.search })
     }
@@ -60,12 +60,11 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
         instruction: data.instruction || '',
       })
       reset()
+      handleClose()
       router.navigate({
         to: '/projects/$projectId',
         params: { projectId: newProject.id },
       })
-
-      handleClose()
     } catch (error) {
       console.error('Failed to create project:', error)
     }
