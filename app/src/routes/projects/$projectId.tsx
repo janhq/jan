@@ -40,14 +40,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer'
 import { ProjectConversations } from '@/components/projects/project-conversations'
 import { useConversations } from '@/stores/conversation-store'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 function ProjectPageContent() {
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const projectId = params.projectId as string | undefined
+  const isMobile = useIsMobile()
   const selectedModel = useModels((state) => state.selectedModel)
   const getProject = useProjects((state) => state.getProject)
   const deleteProject = useProjects((state) => state.deleteProject)
