@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
 import { usePrivateChat } from '@/stores/private-chat-store'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export function NavActions() {
   const isAuthenticated = useAuth((state) => state.isAuthenticated)
@@ -28,9 +29,13 @@ export function NavActions() {
 
   return (
     <>
-      {isPrivateChat ? (
-        <>
-          <div
+      <AnimatePresence>
+        {isPrivateChat && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="
               hidden md:block fixed top-0 left-1/2 -translate-x-1/2 z-10
               h-12 bg-foreground
@@ -48,19 +53,22 @@ export function NavActions() {
             <div className="bg-foreground fixed size-4 -right-4 top-0">
               <div className="absolute top-0 right-0 w-4 h-4 bg-background rounded-tl-full" />
             </div>
-          </div>
-          <Button
-            variant="destructive"
-            className="rounded-full"
-            onClick={() => {
-              setIsPrivateChat(false)
-              router.navigate({ to: '/' })
-            }}
-          >
-            <span className="hidden md:flex">End Chat</span>
-            <XIcon className="size-3.5" />
-          </Button>
-        </>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {isPrivateChat ? (
+        <Button
+          variant="destructive"
+          className="rounded-full"
+          onClick={() => {
+            setIsPrivateChat(false)
+            router.navigate({ to: '/' })
+          }}
+        >
+          <span className="hidden md:flex">End Chat</span>
+          <XIcon className="size-3.5" />
+        </Button>
       ) : (
         <Button
           variant="ghost"

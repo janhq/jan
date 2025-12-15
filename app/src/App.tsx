@@ -8,6 +8,8 @@ import { useModels } from '@/stores/models-store'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
 import { usePrivateChat } from './stores/private-chat-store'
 import { HatGlassesIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { motion } from 'framer-motion'
 
 function AppPageContent() {
   const models = useModels((state) => state.models)
@@ -42,38 +44,111 @@ function AppPageContent() {
               {isPrivateChat ? (
                 <>
                   <div className="flex items-center justify-center mb-3">
-                    <div className="bg-foreground size-10 rounded-full flex items-center justify-center">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: 0,
+                        ease: [0, 0.71, 0.2, 1.01],
+                      }}
+                      className="bg-foreground size-10 rounded-full flex items-center justify-center"
+                    >
                       <HatGlassesIcon className="text-background/80 size-6" />
-                    </div>
-                    <div className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center">
+                    </motion.div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: 0.1,
+                        ease: [0, 0.71, 0.2, 1.01],
+                      }}
+                      className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center"
+                    >
                       <span className="text-background/80 text-2xl font-medium">
                         private
                       </span>
-                    </div>
-                    <div className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center">
+                    </motion.div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: 0.2,
+                        ease: [0, 0.71, 0.2, 1.01],
+                      }}
+                      className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center"
+                    >
                       <span className="text-background/80 text-2xl font-medium">
                         chat
                       </span>
-                    </div>
-                    <div className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center">
+                    </motion.div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: 0.3,
+                        ease: [0, 0.71, 0.2, 1.01],
+                      }}
+                      className="bg-foreground h-10 px-4 w-auto rounded-full flex items-center justify-center"
+                    >
                       <div className="flex items-center justify-center gap-1">
-                        <div className="size-3 bg-background/80 rounded-full" />
-                        <div className="size-3 bg-background/80 rounded-full" />
-                        <div className="size-3 bg-background/80 rounded-full" />
+                        <motion.div
+                          animate={{ y: [0, -3, 0] }}
+                          transition={{
+                            duration: 1,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 0,
+                          }}
+                          className="size-3 bg-background/80 rounded-full"
+                        />
+                        <motion.div
+                          animate={{ y: [0, -3, 0] }}
+                          transition={{
+                            duration: 1,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 0.15,
+                          }}
+                          className="size-3 bg-background/80 rounded-full"
+                        />
+                        <motion.div
+                          animate={{ y: [0, -3, 0] }}
+                          transition={{
+                            duration: 1,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 0.3,
+                          }}
+                          className="size-3 bg-background/80 rounded-full"
+                        />
                       </div>
-                    </div>
+                    </motion.div>
                   </div>
-                  <p className="w-full text-muted-foreground md:w-3/5 mx-auto mb-6">
-                    This is a temporary chat. It won’t be saved to your
-                    conversation history, can’t use memory, and will be deleted
+                  <motion.p
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.5 }}
+                    className="w-full text-muted-foreground md:w-3/5 mx-auto mb-6"
+                  >
+                    This is a temporary chat. It won't be saved to your
+                    conversation history, can't use memory, and will be deleted
                     when you close it.
-                  </p>
+                  </motion.p>
                 </>
               ) : (
                 <>
-                  <h2 className="text-2xl font-medium mb-6 font-studio">
+                  <motion.h2
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="text-2xl font-medium mb-6 font-studio"
+                  >
                     How can I help you today?
-                  </h2>
+                  </motion.h2>
                 </>
               )}
               <ChatInput initialConversation={true} />
@@ -86,8 +161,15 @@ function AppPageContent() {
 }
 
 export default function AppPage() {
+  const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+
   return (
-    <SidebarProvider>
+    <SidebarProvider
+      className={cn(
+        isPrivateChat &&
+          '**:data-[slot="sidebar"]:opacity-0 **:data-[slot="sidebar"]:-translate-x-full **:data-[slot="sidebar-gap"]:w-0 **:data-[slot="sidebar"]:transition-all **:data-[slot="sidebar-gap"]:transition-all **:data-[slot="sidebar"]:duration-300 **:data-[slot="sidebar-gap"]:duration-300'
+      )}
+    >
       <AppPageContent />
     </SidebarProvider>
   )
