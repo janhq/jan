@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2 } from 'lucide-react'
+import { FolderXIcon, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 
@@ -34,6 +34,9 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
   const getUIMessages = useConversations((state) => state.getUIMessages)
   const deleteConversation = useConversations(
     (state) => state.deleteConversation
+  )
+  const updateConversation = useConversations(
+    (state) => state.updateConversation
   )
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
@@ -113,6 +116,22 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
     }
   }
 
+  const handleRemoveFromProject = async (conversationId: string) => {
+    try {
+      console.log('Removing conversation from project:', conversationId)
+      const result = await updateConversation(conversationId, {
+        project_id: '',
+      })
+      console.log('Successfully removed conversation from project:', result)
+    } catch (error) {
+      console.error('Failed to remove conversation from project:', error)
+      // Log the full error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', error.message, error.stack)
+      }
+    }
+  }
+
   const displayConversations =
     conversationsWithMessages.length > 0
       ? conversationsWithMessages
@@ -120,7 +139,6 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
 
   return (
     <div className="w-full h-full overflow-y-auto">
-      {/* TODO make sure scrollable */}
       <div className="space-y-2">
         {displayConversations.map((conversation) => (
           <div
@@ -135,7 +153,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
               <h3 className="font-medium text-sm truncate">
                 {conversation.title}
               </h3>
-              <p className="text-xs text-muted-foreground truncate mt-1">
+              <p className="text-muted-foreground truncate mt-1">
                 {(conversation as ConversationWithLatestMessage).latestMessage}
               </p>
             </Link>
@@ -150,8 +168,11 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                 </Button>
               </DropDrawerTrigger>
               <DropDrawerContent className="md:w-56" align="end">
-                <DropDrawerItem>
+                <DropDrawerItem
+                  onClick={() => handleRemoveFromProject(conversation.id)}
+                >
                   <div className="flex gap-2 items-center">
+                    <FolderXIcon />
                     <span>Remove from project</span>
                   </div>
                 </DropDrawerItem>
