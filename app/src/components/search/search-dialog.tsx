@@ -21,7 +21,7 @@ interface SearchDialogProps {
   open: boolean
 }
 
-const RECENT_SEARCHES_KEY = 'jan-recent-searches'
+const RECENT_SEARCHES_KEY = 'recent-searches'
 const MAX_RECENT_SEARCHES = 5
 
 export function SearchDialog({ open }: SearchDialogProps) {
