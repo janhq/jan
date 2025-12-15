@@ -121,17 +121,6 @@ const ChatInput = ({
 
     if (selectedModel) {
       if (initialConversation) {
-        const conversationPayload: CreateConversationPayload = {
-          title: message.text || 'New Chat',
-          ...(projectId && { project_id: String(projectId) }),
-          ...(selectedProjectId && { project_id: selectedProjectId }),
-          metadata: {
-            model_id: selectedModel.id,
-            model_provider: selectedModel.owned_by,
-            is_favorite: 'false',
-          },
-        }
-
         if (isPrivateChat) {
           sessionStorage.setItem(
             `initial-message-temporary`,
@@ -142,6 +131,17 @@ const ChatInput = ({
           })
           setLastUsedModelId(selectedModel.id)
           return
+        }
+
+        const conversationPayload: CreateConversationPayload = {
+          title: message.text || 'New Chat',
+          ...(projectId && { project_id: String(projectId) }),
+          ...(selectedProjectId && { project_id: selectedProjectId }),
+          metadata: {
+            model_id: selectedModel.id,
+            model_provider: selectedModel.owned_by,
+            is_favorite: 'false',
+          },
         }
 
         createConversation(conversationPayload)
@@ -251,7 +251,7 @@ const ChatInput = ({
                   <span>Deep Research</span>
                 </PromptInputButton>
               )}
-              {selectedProjectId && (
+              {selectedProjectId && !isPrivateChat && (
                 <PromptInputButton
                   variant="outline"
                   className="rounded-full group transition-all"
