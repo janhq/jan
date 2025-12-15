@@ -121,3 +121,55 @@ export interface SystemMemory {
   totalMemory: number
 }
 
+// backend types
+export type BackendVersion = { version: string; backend: string }
+
+export type BackendFeatures = {
+  cuda11: boolean
+  cuda12: boolean
+  cuda13: boolean
+  vulkan: boolean
+}
+
+export type SupportedFeatures = {
+  avx: boolean
+  avx2: boolean
+  avx512: boolean
+  cuda11: boolean
+  cuda12: boolean
+  cuda13: boolean
+  vulkan: boolean
+}
+export type NvidiaInfo = {
+  compute_capability: string
+}
+
+export type VulkanInfo = {
+  api_version: string
+}
+
+export type GpuInfo = {
+  driver_version: string
+  nvidia_info?: NvidiaInfo | null
+  vulkan_info?: VulkanInfo | null
+}
+
+export interface BestBackendResult {
+  backend_string: string
+  version: string
+  backend_type: string
+}
+
+export interface UpdateCheckResult {
+  update_needed: boolean
+  new_version: string
+  target_backend?: string
+}
+
+export interface SettingUpdateResult {
+  backend_type_updated: boolean
+  effective_backend_type?: string
+  needs_backend_installation: boolean
+  version?: string
+  backend?: string
+}
