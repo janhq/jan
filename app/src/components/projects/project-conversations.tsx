@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdrawer'
 import { ProjectsChatInput } from '@/components/chat-input/projects-chat-input'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogClose,
@@ -41,7 +42,10 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
     (state) => state.updateConversation
   )
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
+  const [itemToRename, setItemToRename] = useState<Conversation | null>(null)
+  const [newTitle, setNewTitle] = useState('')
   const [conversationsWithMessages, setConversationsWithMessages] = useState<
     ConversationWithLatestMessage[]
   >([])
@@ -129,6 +133,37 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
     }
   }
 
+  const handleRenameClick = (item: Conversation) => {
+    setItemToRename(item)
+    setNewTitle(item.title)
+    setRenameDialogOpen(true)
+  }
+
+  const handleConfirmRename = async () => {
+    if (!itemToRename || !newTitle.trim()) return
+
+    try {
+      const updatedConversation = await updateConversation(itemToRename.id, {
+        title: newTitle.trim(),
+      })
+
+      // Update the local state to reflect the rename immediately
+      setConversationsWithMessages((prev) =>
+        prev.map((conv) =>
+          conv.id === updatedConversation.id
+            ? { ...conv, title: updatedConversation.title }
+            : conv
+        )
+      )
+
+      setRenameDialogOpen(false)
+      setItemToRename(null)
+      setNewTitle('')
+    } catch (error) {
+      console.error('Failed to rename conversation:', error)
+    }
+  }
+
   const displayConversations =
     conversationsWithMessages.length > 0
       ? conversationsWithMessages
@@ -165,6 +200,12 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                 </Button>
               </DropDrawerTrigger>
               <DropDrawerContent className="md:w-56" align="end">
+                <DropDrawerItem onClick={() => handleRenameClick(conversation)}>
+                  <div className="flex gap-2 items-center">
+                    <PencilLine />
+                    <span>Rename</span>
+                  </div>
+                </DropDrawerItem>
                 <ProjectsChatInput
                   title="Move to Project"
                   currentProjectId={conversation.project_id}
@@ -202,10 +243,53 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" className="rounded-full">
+                Cancel
+              </Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              className="rounded-full"
+            >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Rename Chat</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Input
+                id="title"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Enter new title"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newTitle.trim()) {
+                    handleConfirmRename()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" className="rounded-full">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              className="rounded-full"
+              onClick={handleConfirmRename}
+              disabled={!newTitle.trim()}
+            >
+              Rename
             </Button>
           </DialogFooter>
         </DialogContent>
