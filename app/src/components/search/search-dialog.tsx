@@ -12,7 +12,7 @@ import {
   MessageCircleMore,
   History,
   MessageCirclePlus,
-  Search,
+  TextSearch,
 } from 'lucide-react'
 import { useConversations } from '@/stores/conversation-store'
 import { useProjects } from '@/stores/projects-store'
@@ -145,7 +145,7 @@ export function SearchDialog({ open }: SearchDialogProps) {
       <CommandList>
         <CommandEmpty>
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <Search
+            <TextSearch
               className="size-6 text-muted-foreground mb-4"
               strokeWidth={1.5}
             />

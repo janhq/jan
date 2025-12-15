@@ -37,6 +37,7 @@ import type { ChatStatus } from 'ai'
 import { SettingChatInput } from './setting-chat-input'
 import { ProjectsChatInput } from './projects-chat-input'
 import { Button } from '@/components/ui/button'
+import { usePrivateChat } from '@/stores/private-chat-store'
 
 const ChatInput = ({
   initialConversation = false,
@@ -51,6 +52,7 @@ const ChatInput = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
+  const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
 
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
@@ -130,6 +132,18 @@ const ChatInput = ({
           },
         }
 
+        if (isPrivateChat) {
+          sessionStorage.setItem(
+            `initial-message-temporary`,
+            JSON.stringify(message)
+          )
+          navigate({
+            to: '/threads/temporary',
+          })
+          setLastUsedModelId(selectedModel.id)
+          return
+        }
+
         createConversation(conversationPayload)
           .then((conversation) => {
             // Store the initial message in sessionStorage for the new conversation
@@ -189,7 +203,7 @@ const ChatInput = ({
                 />
                 <PromptInputActionMenuContent className="lg:w-56">
                   <PromptInputActionAddAttachments />
-                  {initialConversation && !projectId && (
+                  {initialConversation && !projectId && !isPrivateChat && (
                     <ProjectsChatInput
                       currentProjectId={selectedProjectId || undefined}
                       onProjectSelect={(projectId) => {

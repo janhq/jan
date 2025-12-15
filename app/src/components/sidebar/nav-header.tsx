@@ -7,7 +7,7 @@ export function NavHeader() {
   const { state, isMobile } = useSidebar()
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2">
+    <header className="flex h-14 shrink-0 items-center gap-2 justify-between">
       <div className="flex flex-1 items-center gap-2 px-3">
         {(isMobile || state === 'collapsed') && (
           <SidebarTrigger className="text-muted-foreground" />
