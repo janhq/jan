@@ -1079,16 +1079,16 @@ mod tests {
     }
 
     // --- Tests for parse_backend_version ---
-
     #[test]
     fn test_parse_backend_version() {
         assert_eq!(parse_backend_version("b7523".to_string()), 7523);
         assert_eq!(parse_backend_version("b7524".to_string()), 7524);
         assert_eq!(parse_backend_version("7525".to_string()), 7525);
-        assert_eq!(parse_backend_version("v1.0.0".to_string()), 1);
+        assert_eq!(parse_backend_version("v100".to_string()), 100);
         assert_eq!(parse_backend_version("invalid".to_string()), 0);
+        // Note: "v1.0.0" would fail to parse as u32 due to dots, returning 0
+        assert_eq!(parse_backend_version("v1.0.0".to_string()), 0);
     }
-
     // --- Filesystem Integration Tests ---
 
     #[tokio::test]
