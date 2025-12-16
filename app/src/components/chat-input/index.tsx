@@ -48,7 +48,7 @@ const ChatInput = ({
   initialConversation?: boolean
   projectId?: string
   status?: ChatStatus
-  submit?: (message: PromptInputMessage) => void
+  submit?: (message?: PromptInputMessage) => void
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
@@ -116,6 +116,7 @@ const ChatInput = ({
     const hasAttachments = Boolean(message.files?.length)
 
     if (!(hasText || hasAttachments)) {
+      submit?.()
       return
     }
 

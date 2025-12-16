@@ -74,6 +74,7 @@ function ThreadPageContent() {
     regenerate,
     setMessages,
     addToolOutput,
+    stop,
   } = useChat(provider(selectedModel?.id), {
     onFinish: ({ messages: finishedMessages }) => {
       // After finishing a message, check if we need to resubmit for tool calls
@@ -91,14 +92,17 @@ function ThreadPageContent() {
     },
     // run client-side tools that are automatically executed:
     async onToolCall({ toolCall }) {
-      const result = await mcpService.callTool({
-        toolName: toolCall.toolName,
-        serverName: 'Jan MCP Server',
-        arguments: toolCall.input as any,
-      }, {
-        conversationId,
-        toolCallId: toolCall.toolCallId,
-      })
+      const result = await mcpService.callTool(
+        {
+          toolName: toolCall.toolName,
+          serverName: 'Jan MCP Server',
+          arguments: toolCall.input as any,
+        },
+        {
+          conversationId,
+          toolCallId: toolCall.toolCallId,
+        }
+      )
 
       if (result.error) {
         addToolOutput({
@@ -117,11 +121,15 @@ function ThreadPageContent() {
     },
   })
 
-  const handleSubmit = (message: PromptInputMessage) => {
-    sendMessage({
-      text: message.text || 'Sent with attachments',
-      files: message.files,
-    })
+  const handleSubmit = (message?: PromptInputMessage) => {
+    if (message) {
+      sendMessage({
+        text: message.text || 'Sent with attachments',
+        files: message.files,
+      })
+    } else if(status === 'streaming') {
+      stop()
+    }
   }
 
   useEffect(() => {
