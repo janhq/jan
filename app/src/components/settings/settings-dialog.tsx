@@ -8,12 +8,11 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
-import { AppsConnectorSettings } from '@/components/settings/apps-connectors-settings'
+// import { AppsConnectorSettings } from '@/components/settings/apps-connectors-settings'
 // import { PrivacySettings } from '@/components/settings/privacy-settings'
 import {
   // LockKeyhole,
   Settings2,
-  ShapesIcon,
   Globe,
   type LucideIcon,
   BugIcon,
@@ -32,7 +31,7 @@ interface SettingsDialogProps {
 
 type SettingsSection =
   | 'general'
-  | 'apps-connectors'
+  // | 'apps-connectors'
   // | 'privacy'
   | 'personalization'
 
@@ -43,7 +42,7 @@ const sections: Array<{
 }> = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'personalization', label: 'Personalization', icon: LeafIcon },
-  { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
+  // { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
   // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
 ]
 
@@ -73,8 +72,8 @@ export function SettingsDialog({
     switch (activeSection) {
       case 'general':
         return <GeneralSettings />
-      case 'apps-connectors':
-        return <AppsConnectorSettings />
+      // case 'apps-connectors':
+      //   return <AppsConnectorSettings />
       case 'personalization':
         return <PersonalizationSettings />
       // case 'privacy':
