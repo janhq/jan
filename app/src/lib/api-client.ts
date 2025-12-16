@@ -36,16 +36,16 @@ export async function fetchWithAuth(
 
   // Get auth store dynamically to avoid circular dependencies
   const { useAuth } = await import('@/stores/auth-store')
-  const { accessToken } = useAuth.getState()
+  const isAuthenticated = useAuth.getState().isAuthenticated
 
-  if (!accessToken) {
-    throw new ApiError(401, 'No access token available')
+  if (!isAuthenticated) {
+    await useAuth.getState().guestLogin()
   }
 
   // Add authorization header
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${accessToken}`,
+    'Authorization': `Bearer ${useAuth.getState().accessToken}`,
     ...fetchOptions.headers,
   }
 
