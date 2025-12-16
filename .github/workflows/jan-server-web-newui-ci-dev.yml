@@ -1,4 +1,4 @@
-name: Jan Web Server build image and push to Harbor Registry
+name: Jan Web Server New UI build image and push to Harbor Registry
 
 on:
   push:

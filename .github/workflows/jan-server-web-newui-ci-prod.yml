@@ -1,4 +1,4 @@
-name: Jan Web Server deploy to production
+name: Jan Web Server New UI deploy to production
 
 on:
   push:
