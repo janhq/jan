@@ -1,0 +1,68 @@
+name: Jan Web Server New UI deploy to production
+
+on:
+  push:
+    branches:
+      - prod-web
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      deployments: write
+      pull-requests: write
+    env:
+      JAN_BASE_URL: "https://api.jan.ai"
+      GA_MEASUREMENT_ID: "G-5HCJWQTZLD"
+      VITE_AUTH_URL: "https://auth.jan.ai"
+      VITE_AUTH_REALM: "jan"
+      VITE_AUTH_CLIENT_ID: "jan-client"
+      VITE_OAUTH_REDIRECT_URI: "https://chat.jan.ai/auth/callback"
+      CLOUDFLARE_PROJECT_NAME: "jan-server-web"
+      ENVIRONMENT: "prod"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install jq      
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      # - name: Fill env vars
+      #   run: |
+      #     env_example_file=".env.example"
+      #     touch .env
+      #     while IFS= read -r line || [[ -n "$line" ]]; do
+      #       if [[ "$line" == *"="* ]]; then
+      #         var_name=$(echo $line | cut -d '=' -f 1)
+      #         echo $var_name
+      #         var_value="$(jq -r --arg key "$var_name" '.[$key]' <<< "$SECRETS")"
+      #         echo "$var_name=$var_value" >> .env
+      #       fi
+      #     done < "$env_example_file"
+      #   env:
+      #     SECRETS: '${{ toJson(secrets) }}'
+
+      - name: Install dependencies
+        run: make config-yarn && yarn install && yarn build:core && make build-web-app-newui
+        env:
+          JAN_BASE_URL: ${{ env.JAN_BASE_URL }}
+          GA_MEASUREMENT_ID: ${{ env.GA_MEASUREMENT_ID }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          VITE_AUTH_URL: ${{ env.VITE_AUTH_URL }}
+          VITE_AUTH_REALM: ${{ env.VITE_AUTH_REALM }} 
+          VITE_AUTH_CLIENT_ID: ${{ env.VITE_AUTH_CLIENT_ID }}
+          VITE_OAUTH_REDIRECT_URI: ${{ env.VITE_OAUTH_REDIRECT_URI }}
+
+      - name: Publish to Cloudflare Pages Production
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./app/dist
+          branch: main
+          # Optional: Enable this if you want to have GitHub Deployments triggered
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
