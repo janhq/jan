@@ -76,7 +76,7 @@ interface ConversationItemContent {
   type: string
   text?: string & { text?: string }
   input_text?: string
-  reasoning_content?: string
+  reasoning_text?: string
   image?: { url: string }
   tool_calls?: Array<ToolCall>
 }

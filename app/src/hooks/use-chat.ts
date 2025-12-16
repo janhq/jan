@@ -18,8 +18,9 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
 export function useChat(model: LanguageModel, options?: CustomChatOptions) {
   const transportRef = useRef<CustomChatTransport | null>(null) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
   const searchEnabled = useCapabilities((state) => state.searchEnabled)
+  const deepResearchEnabled = useCapabilities((state) => state.deepResearchEnabled)
   if (!transportRef.current) {
-    transportRef.current = new CustomChatTransport(model, searchEnabled)
+    transportRef.current = new CustomChatTransport(model, searchEnabled || deepResearchEnabled)
   }
 
   useEffect(() => {
@@ -27,6 +28,12 @@ export function useChat(model: LanguageModel, options?: CustomChatOptions) {
       transportRef.current.updateModel(model)
     }
   }, [model])
+
+  useEffect(() => {
+    if (transportRef.current) {
+      transportRef.current.updateToolEnabled(searchEnabled || deepResearchEnabled)
+    }
+  }, [searchEnabled, deepResearchEnabled])
 
   const chatResult = useChatSDK({
     transport: transportRef.current,
