@@ -28,7 +28,7 @@ export const ProjectsChatInput = ({
 
   return (
     <DropDrawerSub id="projects-submenu">
-      <DropDrawerSubTrigger>
+      <DropDrawerSubTrigger data-mobile-title="Select project">
         <div className="flex gap-2 items-center">
           <FolderEdit className="size-4 text-muted-foreground" />
           {title}
@@ -47,12 +47,10 @@ export const ProjectsChatInput = ({
             </div>
           </DropDrawerItem>
         ) : projects.length === 0 ? (
-          <DropDrawerItem disabled className="lg:h-40 px-4">
+          <DropDrawerItem disabled className="h-40 px-4">
             <div className="flex items-center flex-col w-full justify-center text-center">
               <LayoutGrid className="size-6 text-muted-foreground mb-2" />
-              <h3 className="font-medium text-black text-base">
-                No projects created
-              </h3>
+              <h3 className="font-medium  text-base">No projects created</h3>
               <span className="text-muted-foreground">
                 Create a project to organize conversations and utilize memory.
               </span>

@@ -220,7 +220,7 @@ export function NavChats() {
       </SidebarGroup>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+        <DialogContent className="md:max-w-[500px]" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Delete Chat</DialogTitle>
             <DialogDescription>
@@ -249,7 +249,7 @@ export function NavChats() {
       </Dialog>
 
       <Dialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+        <DialogContent className="md:max-w-[500px]" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Delete All Chats</DialogTitle>
             <DialogDescription>
@@ -278,7 +278,7 @@ export function NavChats() {
       </Dialog>
 
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+        <DialogContent className="sm:max-w-[500px]" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Rename Chat</DialogTitle>
           </DialogHeader>

@@ -73,7 +73,7 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
-        className="sm:max-w-[500px] p-0 gap-0 overflow-hidden"
+        className="p-0 gap-0 overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >

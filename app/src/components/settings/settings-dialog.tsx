@@ -146,7 +146,7 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
-        className="max-w-full max-h-full mt-10 lg:mt-0 sm:max-w-full  md:max-w-full lg:max-w-[80%] p-0 gap-0 rounded-xl overflow-hidden"
+        className="md:max-w-2xl lg:max-w-[80%] p-0 gap-0 rounded-xl overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
@@ -154,7 +154,7 @@ export function SettingsDialog({
           <DialogTitle className="font-medium">Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col lg:flex-row h-screen lg:h-[600px]">
+        <div className="flex flex-col lg:flex-row max-h-screen lg:h-[500px]">
           {/* Sidebar - Mobile: Horizontal Scrollable Tabs */}
           <div className="lg:w-60 lg:p-4 flex lg:flex-col justify-between shrink-0">
             <nav className="flex lg:flex-col gap-1 w-full whitespace-nowrap overflow-x-auto lg:overflow-x-visible p-4 lg:p-0 border-b lg:border-b-0">
