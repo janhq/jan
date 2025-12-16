@@ -129,11 +129,12 @@ function ProjectPageContent() {
     },
   })
 
-  const handleSubmit = (message: PromptInputMessage) => {
-    sendMessage({
-      text: message.text || 'Sent with attachments',
-      files: message.files,
-    })
+  const handleSubmit = (message?: PromptInputMessage) => {
+    if (message)
+      sendMessage({
+        text: message.text || 'Sent with attachments',
+        files: message.files,
+      })
   }
 
   useEffect(() => {
