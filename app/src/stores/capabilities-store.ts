@@ -8,6 +8,9 @@ interface CapabilitiesState {
   setDeepResearchEnabled: (enabled: boolean) => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
+  thinkingEnabled: boolean
+  setThinkingEnabled: (enabled: boolean) => void
+  toggleThinking: () => void
 }
 
 export const useCapabilities = create<CapabilitiesState>()(
@@ -22,6 +25,11 @@ export const useCapabilities = create<CapabilitiesState>()(
         set((state) => ({ searchEnabled: !state.searchEnabled })),
       toggleDeepResearch: () =>
         set((state) => ({ deepResearchEnabled: !state.deepResearchEnabled })),
+      thinkingEnabled: false,
+      setThinkingEnabled: (enabled: boolean) =>
+        set({ thinkingEnabled: enabled }),
+      toggleThinking: () =>
+        set((state) => ({ thinkingEnabled: !state.thinkingEnabled })),
     }),
     {
       name: 'capabilities-storage',

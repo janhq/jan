@@ -56,8 +56,13 @@ function ThreadPageContent() {
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
+  const thinkingEnabled = useCapabilities((state) => state.thinkingEnabled)
 
-  const provider = janProvider(conversationId, deepResearchEnabled)
+  const provider = janProvider(
+    conversationId,
+    deepResearchEnabled,
+    thinkingEnabled
+  )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
@@ -121,7 +126,7 @@ function ThreadPageContent() {
         text: message.text || 'Sent with attachments',
         files: message.files,
       })
-    } else if(status === 'streaming') {
+    } else if (status === 'streaming') {
       stop()
     }
   }

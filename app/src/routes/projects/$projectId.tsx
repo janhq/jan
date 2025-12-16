@@ -44,6 +44,7 @@ import {
 import { ProjectConversations } from '@/components/projects/project-conversations'
 import { useConversations } from '@/stores/conversation-store'
 import { useLastUsedModel } from '@/stores/last-used-model-store'
+import { useCapabilities } from '@/stores/capabilities-store'
 
 function ProjectPageContent() {
   const navigate = useNavigate()
@@ -59,6 +60,10 @@ function ProjectPageContent() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const allConversations = useConversations((state) => state.conversations)
+  const deepResearchEnabled = useCapabilities(
+    (state) => state.deepResearchEnabled
+  )
+  const thinkingEnabled = useCapabilities((state) => state.thinkingEnabled)
 
   const models = useModels((state) => state.models)
   const setSelectedModel = useModels((state) => state.setSelectedModel)
@@ -121,7 +126,7 @@ function ProjectPageContent() {
     }
   }
 
-  const provider = janProvider()
+  const provider = janProvider(undefined, deepResearchEnabled, thinkingEnabled)
 
   const { status, sendMessage } = useChat(provider(selectedModel?.id), {
     onFinish: () => {

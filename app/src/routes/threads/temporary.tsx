@@ -52,9 +52,15 @@ function ThreadPageContent() {
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
+  const thinkingEnabled = useCapabilities((state) => state.thinkingEnabled)
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
 
-  const provider = janProvider(undefined, deepResearchEnabled, isPrivateChat)
+  const provider = janProvider(
+    undefined,
+    deepResearchEnabled,
+    thinkingEnabled,
+    isPrivateChat
+  )
 
   // const getUIMessages = useConversations((state) => state.getUIMessages)
 

@@ -14,6 +14,7 @@ import {
   Leaf,
   MegaphoneIcon,
   SmileIcon,
+  BrainIcon,
   type LucideIcon,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -32,6 +33,9 @@ interface SettingChatInputProps {
   toggleDeepResearch: () => void
   isSupportTools: boolean
   isSupportDeepResearch: boolean
+  isSupportInstruct: boolean
+  thinkingEnabled: boolean
+  toggleThinking: () => void
   selectedTone?: ToneOption
   onToneChange?: (tone: ToneOption) => void
   children: React.ReactNode
@@ -50,6 +54,9 @@ export const SettingChatInput = ({
   toggleDeepResearch,
   isSupportTools,
   isSupportDeepResearch,
+  isSupportInstruct,
+  thinkingEnabled,
+  toggleThinking,
   selectedTone = 'Friendly',
   onToneChange,
   children,
@@ -139,6 +146,33 @@ export const SettingChatInput = ({
           {!isSupportDeepResearch && (
             <TooltipContent>
               <p>This model doesn't support deep research</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropDrawerItem
+                onSelect={(e) => e.preventDefault()}
+                disabled={!isSupportInstruct}
+              >
+                <div className="flex gap-2 items-center justify-between w-full">
+                  <div className="flex gap-2 items-center w-full">
+                    <BrainIcon />
+                    <span>Thinking</span>
+                  </div>
+                  <Switch
+                    checked={thinkingEnabled}
+                    onCheckedChange={toggleThinking}
+                    disabled={!isSupportInstruct}
+                  />
+                </div>
+              </DropDrawerItem>
+            </div>
+          </TooltipTrigger>
+          {!isSupportInstruct && (
+            <TooltipContent>
+              <p>This model doesn't support thinking</p>
             </TooltipContent>
           )}
         </Tooltip>

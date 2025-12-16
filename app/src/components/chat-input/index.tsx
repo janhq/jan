@@ -26,6 +26,7 @@ import { useProjects } from '@/stores/projects-store'
 import {
   FolderIcon,
   GlobeIcon,
+  BrainIcon,
   MegaphoneIcon,
   Settings2,
   X,
@@ -78,6 +79,11 @@ const ChatInput = ({
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
   )
+  const thinkingEnabled = useCapabilities((state) => state.thinkingEnabled)
+  const toggleThinking = useCapabilities((state) => state.toggleThinking)
+  const setThinkingEnabled = useCapabilities(
+    (state) => state.setThinkingEnabled
+  )
 
   const setLastUsedModelId = useLastUsedModel(
     (state) => state.setLastUsedModelId
@@ -86,6 +92,7 @@ const ChatInput = ({
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
   const isSupportDeepResearch = isSupportTools && isSupportReasoning
+  const isSupportInstruct = modelDetail.supports_instruct
 
   // Auto-disable capabilities when model doesn't support them
   useEffect(() => {
@@ -110,6 +117,15 @@ const ChatInput = ({
     setDeepResearchEnabled,
     modelDetail.id,
   ])
+
+  useEffect(() => {
+    // Only run if we have a valid model loaded
+    if (!modelDetail.id) return
+
+    if (!isSupportInstruct && thinkingEnabled) {
+      setThinkingEnabled(false)
+    }
+  }, [isSupportInstruct, thinkingEnabled, setThinkingEnabled, modelDetail.id])
 
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text)
@@ -178,8 +194,8 @@ const ChatInput = ({
       className={cn(
         'w-full relative rounded-3xl p-[1.5px]',
         !initialConversation &&
-          status === 'streaming' &&
-          'overflow-hidden outline-0'
+        status === 'streaming' &&
+        'overflow-hidden outline-0'
       )}
     >
       <PromptInputProvider>
@@ -220,8 +236,11 @@ const ChatInput = ({
                 deepResearchEnabled={deepResearchEnabled}
                 toggleSearch={toggleSearch}
                 toggleDeepResearch={toggleDeepResearch}
+                thinkingEnabled={thinkingEnabled}
+                toggleThinking={toggleThinking}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}
+                isSupportInstruct={isSupportInstruct}
               >
                 <Button
                   className="rounded-full mx-1 size-8"
@@ -251,6 +270,18 @@ const ChatInput = ({
                   <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
                   <X className="text-primary size-4 hidden group-hover:block" />
                   <span className="text-primary">Deep Research</span>
+                </PromptInputButton>
+              )}
+
+              {thinkingEnabled && (
+                <PromptInputButton
+                  variant="outline"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  onClick={toggleThinking}
+                >
+                  <BrainIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">Thinking</span>
                 </PromptInputButton>
               )}
               {selectedProjectId && !isPrivateChat && (
