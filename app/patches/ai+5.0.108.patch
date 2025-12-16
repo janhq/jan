@@ -1,0 +1,13 @@
+diff --git a/node_modules/ai/dist/index.mjs b/node_modules/ai/dist/index.mjs
+index 47dbb3e..35d5564 100644
+--- a/node_modules/ai/dist/index.mjs
++++ b/node_modules/ai/dist/index.mjs
+@@ -9432,7 +9432,7 @@ var AbstractChat = class {
+     } finally {
+       try {
+         (_b = this.onFinish) == null ? void 0 : _b.call(this, {
+-          message: this.activeResponse.state.message,
++          message: this.activeResponse == null ? null : this.activeResponse.state.message,
+           messages: this.state.messages,
+           isAbort,
+           isDisconnect,
