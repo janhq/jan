@@ -34,10 +34,10 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { RefreshCcwIcon, CopyIcon, Loader } from 'lucide-react'
+import { RefreshCcwIcon, CopyIcon, Loader, CheckIcon } from 'lucide-react'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
@@ -56,6 +56,7 @@ function ThreadPageContent() {
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
   const provider = janProvider(conversationId, deepResearchEnabled)
 
@@ -121,7 +122,7 @@ function ThreadPageContent() {
         text: message.text || 'Sent with attachments',
         files: message.files,
       })
-    } else if(status === 'streaming') {
+    } else if (status === 'streaming') {
       stop()
     }
   }
@@ -230,12 +231,23 @@ function ThreadPageContent() {
                                 isLastPart && (
                                   <MessageActions className="mt-1 gap-0">
                                     <MessageAction
-                                      onClick={() =>
-                                        navigator.clipboard.writeText(part.text)
-                                      }
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(
+                                          part.text.trim()
+                                        )
+                                        setCopiedMessageId(message.id)
+                                        setTimeout(
+                                          () => setCopiedMessageId(null),
+                                          2000
+                                        )
+                                      }}
                                       label="Copy"
                                     >
-                                      <CopyIcon className="text-muted-foreground size-3" />
+                                      {copiedMessageId === message.id ? (
+                                        <CheckIcon className="text-green-600 dark:text-green-400 size-3" />
+                                      ) : (
+                                        <CopyIcon className="text-muted-foreground size-3" />
+                                      )}
                                     </MessageAction>
                                     <MessageAction
                                       onClick={() => regenerate()}
