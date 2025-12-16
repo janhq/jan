@@ -100,6 +100,9 @@ export default defineConfig({
     GA_MEASUREMENT_ID: JSON.stringify(process.env.GA_MEASUREMENT_ID),
     MODEL_CATALOG_URL: JSON.stringify(process.env.MODEL_CATALOG_URL || ''),
     ENVIRONMENT: JSON.stringify(process.env.ENVIRONMENT || 'dev'),
+    BROWSER_EXTENSION_ID: JSON.stringify(
+      process.env.BROWSER_EXTENSION_ID || 'mkciifcjehgnpaigoiaakdgabbpfppal'
+    ),
   },
   server: {
     port: 3001,

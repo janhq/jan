@@ -33,6 +33,8 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isRootDir } from '@/utils/path'
 
+declare const BROWSER_EXTENSION_ID: string
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
   component: General,
@@ -437,11 +439,11 @@ function General() {
                       id="browser-extension-id"
                       value={browserExtensionId || ''}
                       onChange={(e) => setBrowserExtensionId(e.target.value)}
-                      placeholder={'mkciifcjehgnpaigoiaakdgabbpfppal'}
+                      placeholder={BROWSER_EXTENSION_ID}
                       className="font-mono text-xs"
                     />
                     <button
-                      onClick={() => setBrowserExtensionId('mkciifcjehgnpaigoiaakdgabbpfppal')}
+                      onClick={() => setBrowserExtensionId(BROWSER_EXTENSION_ID)}
                       className="size-8 flex-shrink-0 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                       title="Reset to default"
                     >

@@ -107,6 +107,9 @@ export default defineConfig(({ mode }) => {
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),
+      BROWSER_EXTENSION_ID: JSON.stringify(
+        env.BROWSER_EXTENSION_ID || 'mkciifcjehgnpaigoiaakdgabbpfppal'
+      ),
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
