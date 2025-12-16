@@ -1,135 +1,161 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { JanMCPOAuthProvider } from './mcp-oauth-provider'
-import { fetchWithAuth } from '@/lib/api-client'
-
-declare const JAN_API_BASE_URL: string
+import { JanBrowserClient } from '@/lib/jan-browser-client'
+import { StreamableHttpMCPClient } from '@/lib/streamable-mcp-client'
 
 /**
- * MCP Service - Provides Model Context Protocol functionality
+ * MCP Service - Registry for managing multiple MCP clients
  *
- * This service integrates with the MCP backend using the official MCP SDK:
- * - Uses StreamableHTTPClientTransport for HTTP communication
- * - Handles OAuth authentication automatically via JanMCPOAuthProvider
- * - Fetches available MCP tools from connected servers
- * - Executes tool calls with proper session handling
+ * This service acts as a central registry for MCP clients:
+ * - Maintains a map of MCP clients keyed by endpoint identifier
+ * - Provides methods to register, retrieve, and manage multiple clients
+ * - Aggregates tools and calls from all registered clients
+ * - Handles client lifecycle (initialization, health checks, cleanup)
  */
 class MCPService {
-  private mcpEndpoint = 'mcp'
-  private mcpClient: Client | null = null
-  private oauthProvider: JanMCPOAuthProvider
+  private clients: Map<string, ToolCallClient> = new Map()
+  private defaultClientKey = 'default'
 
   constructor() {
-    this.oauthProvider = new JanMCPOAuthProvider()
+    // Initialize with default client
+    this.initializeMCPClient()
+    // Register default clients
+    this.registerClient('search', new StreamableHttpMCPClient())
+    this.registerClient('browse', new JanBrowserClient())
   }
 
   /**
-   * Initializes the MCP client with OAuth authentication
-   * Creates a new client connection with StreamableHTTPClientTransport
+   * Initializes the default MCP client
+   * Creates a client connection to the default MCP endpoint
    *
    * @throws Error if client initialization fails
    */
   private async initializeMCPClient(): Promise<void> {
     try {
-      // Close existing client if any
-      if (this.mcpClient) {
-        try {
-          await this.mcpClient.close()
-        } catch (error) {
-          console.warn('Error closing existing MCP client:', error)
-        }
-        this.mcpClient = null
-      }
-
-      // Create transport with OAuth provider (handles token refresh automatically)
-      const transport = new StreamableHTTPClientTransport(
-        new URL(`${JAN_API_BASE_URL}${this.mcpEndpoint}`),
-        {
-          authProvider: this.oauthProvider,
-          // No sessionId needed - server will generate one automatically
-        }
-      )
-
-      // Create MCP client
-      this.mcpClient = new Client(
-        {
-          name: 'jan-app-client',
-          version: '1.0.0',
-        },
-        {
-          capabilities: {},
-        }
-      )
-
-      // Connect to MCP server (OAuth provider handles auth automatically)
-      await this.mcpClient.connect(transport)
-
-      console.log(
-        'MCP client connected successfully, session ID:',
-        transport.sessionId
-      )
+      const defaultClient = new StreamableHttpMCPClient()
+      this.clients.set(this.defaultClientKey, defaultClient)
+      console.log('Default MCP client initialized')
     } catch (error) {
-      console.error('Failed to initialize MCP client:', error)
+      console.error('Failed to initialize default MCP client:', error)
       throw error
     }
   }
 
   /**
-   * Ensures the MCP client is initialized and connected
+   * Registers a new MCP client with a custom endpoint
+   *
+   * @param key - Unique identifier for this client
+   * @param apiUrl - Base API URL for the MCP server
+   * @param mcpEndpoint - MCP endpoint path (default: 'mcp')
+   * @returns The registered client instance
+   *
+   * @example
+   * ```typescript
+   * const client = mcpService.registerClient(
+   *   'custom-server',
+   *   'http://localhost:8080',
+   *   'mcp'
+   * )
+   * ```
+   */
+  registerClient(key: string, client: ToolCallClient): ToolCallClient {
+    if (this.clients.has(key)) {
+      console.warn(`MCP client with key "${key}" already exists, replacing it`)
+    }
+
+    this.clients.set(key, client)
+    console.log(`Registered MCP client: ${key}`)
+    return client
+  }
+
+  /**
+   * Gets an MCP client by key
+   *
+   * @param key - Client identifier (defaults to 'default')
+   * @returns The client instance or undefined if not found
+   */
+  getClient(key: string = this.defaultClientKey): ToolCallClient | undefined {
+    return this.clients.get(key)
+  }
+
+  /**
+   * Removes a client from the registry and disconnects it
+   *
+   * @param key - Client identifier
+   * @returns true if client was found and removed, false otherwise
+   */
+  async unregisterClient(key: string): Promise<boolean> {
+    const client = this.clients.get(key)
+    if (!client) {
+      return false
+    }
+
+    await client.disconnect()
+    this.clients.delete(key)
+    console.log(`Unregistered MCP client: ${key}`)
+    return true
+  }
+
+  /**
+   * Gets all registered client keys
+   *
+   * @returns Array of client identifiers
+   */
+  getClientKeys(): string[] {
+    return Array.from(this.clients.keys())
+  }
+
+  /**
+   * Ensures the default MCP client is initialized and connected
    * @throws Error if initialization fails
    */
   private async ensureInitialized(): Promise<void> {
-    if (!this.mcpClient) {
+    if (!this.clients.has(this.defaultClientKey)) {
       await this.initializeMCPClient()
     }
   }
 
   /**
-   * Fetches all available MCP tools from connected servers
-   * Uses MCP SDK's listTools() method
+   * Fetches all available MCP tools from all connected servers
+   * Aggregates tools from all registered clients
    *
-   * @returns Promise<GetToolsResponse> - List of available tools with metadata
+   * @returns Promise<GetToolsResponse> - Combined list of tools from all clients
    * @throws Error if the request fails
    *
    * @example
    * ```typescript
    * const response = await mcpService.getTools()
-   * console.log(response.data) // Array of MCPTool objects
+   * console.log(response.data) // Array of MCPTool objects from all servers
    * ```
    */
-  async getTools(): Promise<GetToolsResponse> {
+  async getTools(servers?: string[]): Promise<GetToolsResponse> {
     try {
       await this.ensureInitialized()
 
-      if (!this.mcpClient) {
-        throw new Error('MCP client not initialized')
+      const allTools: MCPTool[] = []
+
+      // Fetch tools from all registered clients
+      for (const [key, client] of this.clients.entries()) {
+        try {
+          if (servers && servers.length > 0 && !servers.includes(key)) {
+            continue
+          }
+          const response = await client.getTools()
+          // Tag tools with their source client for routing calls later
+          const taggedTools = response.map((tool) => ({
+            ...tool,
+            server: tool.server || key,
+          }))
+          allTools.push(...taggedTools)
+          console.log(`Fetched ${taggedTools.length} tools from client: ${key}`)
+        } catch (error) {
+          console.error(`Failed to fetch tools from client ${key}:`, error)
+        }
       }
 
-      // Use MCP SDK to list tools
-      const result = await this.mcpClient.listTools()
-      console.log('MCP tools/list response:', result)
-
-      let tools: MCPTool[] = []
-
-      if (result.tools && Array.isArray(result.tools)) {
-        tools = result.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description || '',
-          inputSchema: (tool.inputSchema || {}) as Record<string, unknown>,
-          server: 'Jan MCP Server',
-        }))
-      } else {
-        console.warn('No tools found in MCP server response')
-      }
-
-      console.log(
-        `Fetched ${tools.length} MCP tools:`,
-        tools.map((t) => t.name)
-      )
+      console.log(`Total MCP tools aggregated: ${allTools.length}`)
 
       return {
         object: 'list',
-        data: tools,
+        data: allTools,
       }
     } catch (error) {
       console.error('Failed to fetch MCP tools:', error)
@@ -139,33 +165,34 @@ class MCPService {
 
   /**
    * Executes an MCP tool with the provided arguments
-   * Makes a direct fetch call to the MCP endpoint with custom headers
+   * Searches for the tool across all registered clients and routes the call automatically
    *
    * @param payload - Tool execution parameters
    * @param payload.toolName - Name of the tool to execute
-   * @param payload.serverName - Optional server name (if multiple servers have same tool)
+   * @param payload.serverName - Optional: specific server name to use (if not provided, will search)
    * @param payload.arguments - Tool-specific arguments matching the tool's inputSchema
-   * @param payload.conversationId - Optional conversation ID to include in headers
-   * @param payload.toolCallId - Optional tool call ID to include in headers
+   * @param metadata - Optional metadata (conversationId, toolCallId)
    *
    * @returns Promise<MCPToolCallResult> - Tool execution result with content or error
    * @throws Error if the request fails
    *
    * @example
    * ```typescript
+   * // Automatic tool search across all clients
    * const result = await mcpService.callTool({
    *   toolName: 'web_search',
-   *   serverName: 'Jan MCP Server',
-   *   arguments: { query: 'latest AI news' },
+   *   arguments: { query: 'latest AI news' }
+   * }, {
    *   conversationId: 'conv-123',
    *   toolCallId: 'call-456'
    * })
    *
-   * if (result.error) {
-   *   console.error('Tool call failed:', result.error)
-   * } else {
-   *   console.log('Tool result:', result.content)
-   * }
+   * // Or specify a specific server
+   * const result = await mcpService.callTool({
+   *   toolName: 'web_search',
+   *   serverName: 'custom-server',
+   *   arguments: { query: 'latest AI news' }
+   * })
    * ```
    */
   async callTool(
@@ -173,154 +200,140 @@ class MCPService {
     metadata?: { conversationId?: string; toolCallId?: string }
   ): Promise<MCPToolCallResult> {
     try {
-      // Build headers
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
+      await this.ensureInitialized()
 
-      if (metadata?.conversationId) {
-        headers['X-Conversation-Id'] = metadata.conversationId
-      }
-      if (metadata?.toolCallId) {
-        headers['X-Tool-Call-Id'] = metadata.toolCallId
-      }
+      let targetClient: ToolCallClient | undefined
+      let targetClientKey: string | undefined
 
-      // Build JSON-RPC request
-      const jsonRpcRequest = {
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: payload.toolName,
-          arguments: payload.arguments,
-        },
-      }
+      // If no client found yet, search for the tool across all clients
+      if (!targetClient) {
+        console.log(
+          `Searching for tool "${payload.toolName}" across ${this.clients.size} registered clients...`
+        )
 
-      console.log(`Calling MCP tool ${payload.toolName} with headers:`, headers)
+        for (const [key, client] of this.clients.entries()) {
+          try {
+            const response = await client.getTools()
+            const hasTool = response.some(
+              (tool) => tool.name === payload.toolName
+            )
 
-      // Make fetch request
-      const response = await fetchWithAuth(
-        `${JAN_API_BASE_URL}${this.mcpEndpoint}`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(jsonRpcRequest),
+            if (hasTool) {
+              targetClient = client
+              targetClientKey = key
+              console.log(`Found tool "${payload.toolName}" in client: ${key}`)
+              break
+            }
+          } catch (error) {
+            console.warn(`Error searching for tool in client ${key}:`, error)
+            // Continue searching in other clients
+          }
         }
-      )
+      }
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(
-          `MCP tool call failed: ${response.status} ${response.statusText} - ${errorText}`
+      // If still no client found, return error
+      if (!targetClient || !targetClientKey) {
+        return createErrorResult(
+          `Tool not found: ${payload.toolName}`,
+          `Tool "${payload.toolName}" is not available in any registered MCP client`
         )
       }
 
-      // Handle both direct JSON and SSE responses
-      const contentType = response.headers.get('content-type') || ''
-      let result: any
-
-      if (contentType.includes('text/event-stream')) {
-        // Parse SSE response
-        const text = await response.text()
-        const lines = text.split('\n')
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              result = JSON.parse(line.substring(6))
-              break
-            } catch (e) {
-              console.warn('Failed to parse SSE line:', line)
-            }
-          }
-        }
-      } else {
-        // Direct JSON response
-        result = await response.json()
-      }
-
-      if (!result) {
-        throw new Error('No valid response from MCP server')
-      }
-
-      // Check for JSON-RPC error
-      if (result.error) {
-        return createErrorResult(result.error.message || 'Tool call failed')
-      }
-
-      // Extract content from result
-      const toolResult = result.result || result
-      if (toolResult.isError) {
-        const errorText =
-          Array.isArray(toolResult.content) && toolResult.content.length > 0
-            ? toolResult.content[0].type === 'text'
-              ? toolResult.content[0].text
-              : 'Tool call failed'
-            : 'Tool call failed'
-        return createErrorResult(errorText)
-      }
-
-      const content = Array.isArray(toolResult.content)
-        ? toolResult.content.map((item: any) => item)
-        : [{ type: 'text' as const, text: 'No content returned' }]
-
-      console.log(`[MCP] Tool call succeeded:`, {
-        toolName: payload.toolName,
-        contentItems: content.length,
+      // Route the call to the appropriate client
+      console.log(
+        `Routing tool call "${payload.toolName}" to client: ${targetClientKey}`
+      )
+      return await targetClient.callTool(payload, metadata).then((result) => {
+        console.log(
+          `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`
+        )
+        return result
       })
-      return { error: '', content }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${payload.toolName}:`, error)
 
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: errorMessage }],
-      }
+      return createErrorResult(errorMessage)
     }
   }
 
   /**
-   * Checks if the MCP client is healthy and connected
-   * @returns Promise<boolean> - true if client is connected and operational
+   * Checks if all MCP clients are healthy and connected
+   * @returns Promise<boolean> - true if all clients are operational
    */
   async isHealthy(): Promise<boolean> {
-    if (!this.mcpClient) {
+    if (this.clients.size === 0) {
       return false
     }
 
-    try {
-      // Try to list tools as health check (OAuth provider handles auth)
-      await this.mcpClient.listTools()
-      return true
-    } catch (error) {
-      console.warn('MCP health check failed:', error)
-      return false
-    }
+    const healthChecks = await Promise.all(
+      Array.from(this.clients.values()).map((client) => client.isHealthy())
+    )
+
+    return healthChecks.every((isHealthy) => isHealthy)
   }
 
   /**
-   * Closes the MCP client connection and cleans up resources
+   * Checks health of a specific client
+   * @param key - Client identifier
+   * @returns Promise<boolean> - true if client is operational
+   */
+  async isClientHealthy(key: string): Promise<boolean> {
+    const client = this.clients.get(key)
+    if (!client) {
+      return false
+    }
+
+    return await client.isHealthy()
+  }
+
+  /**
+   * Closes all MCP client connections and cleans up resources
    */
   async disconnect(): Promise<void> {
-    if (this.mcpClient) {
-      try {
-        await this.mcpClient.close()
-      } catch (error) {
-        console.warn('Error closing MCP client:', error)
+    const disconnectPromises = Array.from(this.clients.entries()).map(
+      async ([key, client]) => {
+        try {
+          await client.disconnect()
+          console.log(`Disconnected MCP client: ${key}`)
+        } catch (error) {
+          console.error(`Error disconnecting client ${key}:`, error)
+        }
       }
-      this.mcpClient = null
+    )
+
+    await Promise.all(disconnectPromises)
+    this.clients.clear()
+    console.log('All MCP clients disconnected')
+  }
+
+  /**
+   * Disconnects a specific client
+   * @param key - Client identifier
+   */
+  async disconnectClient(key: string): Promise<void> {
+    const client = this.clients.get(key)
+    if (client) {
+      await client.disconnect()
+      console.log(`Disconnected MCP client: ${key}`)
     }
   }
 
   /**
-   * Refreshes the tools list by re-fetching from the server
-   * Reinitializes the client to get fresh data
-   * @returns Promise<GetToolsResponse> - Updated list of tools
+   * Refreshes the tools list by re-fetching from all servers
+   * Reconnects all clients to get fresh data
+   * @returns Promise<void> - Updated list of tools
    */
-  async refreshTools(): Promise<GetToolsResponse> {
-    await this.disconnect()
-    return this.getTools()
+  async refreshTools(): Promise<void> {
+    const refreshPromises = Array.from(this.clients.values()).map((client) =>
+      client.refreshTools().catch((error) => {
+        console.error('Error refreshing client tools:', error)
+        return { object: 'list', data: [] }
+      })
+    )
+
+    await Promise.all(refreshPromises)
   }
 }
 

@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdrawer'
 import {
   BriefcaseBusinessIcon,
+  ChromiumIcon,
   CircleCheck,
   GlobeIcon,
   Leaf,
@@ -22,12 +23,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { isExtensionAvailable } from '@janhq/mcp-web-client'
 
 type ToneOption = 'Friendly' | 'Concise' | 'Professional'
 
 interface SettingChatInputProps {
   searchEnabled: boolean
   deepResearchEnabled: boolean
+  browserEnabled: boolean
+  toggleBrowser: () => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
   isSupportTools: boolean
@@ -43,17 +47,31 @@ const toneOptions: { value: ToneOption; label: string; icon: LucideIcon }[] = [
   { value: 'Professional', label: 'Professional', icon: BriefcaseBusinessIcon },
 ]
 
+declare const EXTENSION_ID: string
+declare const CHROME_STORE_URL: string
+
 export const SettingChatInput = ({
   searchEnabled,
   deepResearchEnabled,
+  browserEnabled,
   toggleSearch,
   toggleDeepResearch,
+  toggleBrowser,
   isSupportTools,
   isSupportDeepResearch,
   selectedTone = 'Friendly',
   onToneChange,
   children,
 }: SettingChatInputProps) => {
+  const toggleBrowserAttempt = async () => {
+    const browserUseAvailable = await isExtensionAvailable(EXTENSION_ID)
+    if ((browserUseAvailable && !browserEnabled) || browserEnabled) {
+      toggleBrowser()
+    } else {
+      // Redirect to chrome extension store
+      window.open(CHROME_STORE_URL, '_blank')
+    }
+  }
   return (
     <DropDrawer>
       <DropDrawerTrigger asChild>{children}</DropDrawerTrigger>
@@ -88,6 +106,24 @@ export const SettingChatInput = ({
             ))}
           </DropDrawerSubContent>
         </DropDrawerSub>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropDrawerItem onSelect={(e) => e.preventDefault()}>
+                <div className="flex gap-2 items-center justify-between w-full">
+                  <div className="flex gap-2 items-center w-full">
+                    <ChromiumIcon />
+                    <span>Browse</span>
+                  </div>
+                  <Switch
+                    checked={browserEnabled}
+                    onCheckedChange={toggleBrowserAttempt}
+                  />
+                </div>
+              </DropDrawerItem>
+            </div>
+          </TooltipTrigger>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <div>

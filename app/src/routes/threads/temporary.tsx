@@ -77,6 +77,7 @@ function ThreadPageContent() {
       },
       // run client-side tools that are automatically executed:
       async onToolCall({ toolCall }) {
+        console.log(`Executing tool call: ${toolCall.toolName}`, toolCall)
         const result = await mcpService.callTool(
           {
             toolName: toolCall.toolName,
@@ -272,7 +273,7 @@ function ThreadPageContent() {
                             return null
                           }
                           // Type narrowing: ensure part has tool-related properties
-                          if (!('state' in part) || !('input' in part)) {
+                          if (!('state' in part)) {
                             return null
                           }
                           // Extract tool name from the type (e.g., 'tool-call-web_search' -> 'web_search')
