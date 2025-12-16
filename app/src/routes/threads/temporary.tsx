@@ -35,13 +35,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import {
-  RefreshCcwIcon,
-  CopyIcon,
-  Loader,
-  ThumbsDownIcon,
-  ThumbsUpIcon,
-} from 'lucide-react'
+import { RefreshCcwIcon, CopyIcon, Loader } from 'lucide-react'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef } from 'react'
@@ -194,12 +188,13 @@ function ThreadPageContent() {
                                     >
                                       <RefreshCcwIcon className="text-muted-foreground size-3" />
                                     </MessageAction>
-                                    <MessageAction label="Like">
+                                    {/* Temporary hide till we have function */}
+                                    {/* <MessageAction label="Like">
                                       <ThumbsUpIcon className="text-muted-foreground size-3" />
-                                    </MessageAction>
-                                    <MessageAction label="Dislike">
+                                    </MessageAction> */}
+                                    {/* <MessageAction label="Dislike">
                                       <ThumbsDownIcon className="text-muted-foreground size-3" />
-                                    </MessageAction>
+                                    </MessageAction> */}
                                   </MessageActions>
                                 )}
                             </Message>

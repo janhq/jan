@@ -2,7 +2,6 @@ import {
   DropDrawer,
   DropDrawerContent,
   DropDrawerItem,
-  DropDrawerSeparator,
   DropDrawerSub,
   DropDrawerSubContent,
   DropDrawerSubTrigger,
@@ -14,7 +13,6 @@ import {
   GlobeIcon,
   Leaf,
   MegaphoneIcon,
-  ShapesIcon,
   SmileIcon,
   type LucideIcon,
 } from 'lucide-react'
@@ -144,7 +142,8 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
-        <DropDrawerSeparator />
+        {/* Temporary hide till we have connector */}
+        {/* <DropDrawerSeparator />
         <DropDrawerItem>
           <div className="flex gap-2 items-center justify-between w-full">
             <div className="flex gap-2 items-center w-full">
@@ -152,7 +151,7 @@ export const SettingChatInput = ({
               <span>Connectors</span>
             </div>
           </div>
-        </DropDrawerItem>
+        </DropDrawerItem> */}
       </DropDrawerContent>
     </DropDrawer>
   )

@@ -183,6 +183,7 @@ const ChatInput = ({
     >
       <PromptInputProvider>
         <PromptInput
+          accept="image/jpeg,image/jpg,image/png"
           globalDrop
           multiple
           onSubmit={handleSubmit}
@@ -202,7 +203,7 @@ const ChatInput = ({
                   variant="secondary"
                 />
                 <PromptInputActionMenuContent className="lg:w-56">
-                  <PromptInputActionAddAttachments />
+                  <PromptInputActionAddAttachments label="Add photos" />
                   {initialConversation && !projectId && !isPrivateChat && (
                     <ProjectsChatInput
                       currentProjectId={selectedProjectId || undefined}
