@@ -109,7 +109,7 @@ function ThreadPageContent() {
         addToolOutput({
           tool: toolCall.toolName,
           toolCallId: toolCall.toolCallId,
-          output: result,
+          output: result.content,
         })
       }
     },
