@@ -3,9 +3,7 @@ import { Check, ChevronsUpDown, Box } from 'lucide-react'
 import {
   DropDrawer,
   DropDrawerContent,
-  DropDrawerGroup,
   DropDrawerItem,
-  DropDrawerLabel,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
 import { Button } from '@/components/ui/button'
@@ -54,34 +52,31 @@ export function ModelSelector() {
               </div>
             ) : (
               <>
-                <DropDrawerLabel className="text-left">Model</DropDrawerLabel>
-                <DropDrawerGroup>
-                  {models.map((model) => (
-                    <DropDrawerItem
-                      key={model.id}
-                      onClick={() => handleSelectModel(model)}
-                      icon={
-                        selectedModel?.id === model.id ? (
-                          <Check className="size-4" />
-                        ) : undefined
-                      }
-                    >
-                      <div className="flex items-start gap-3">
-                        <Box className="size-4 shrink-0 text-muted-foreground mt-1" />
-                        <div className="flex flex-col items-start gap-0.5">
-                          <span className="font-medium">
-                            {model.model_display_name}
+                {models.map((model) => (
+                  <DropDrawerItem
+                    key={model.id}
+                    onClick={() => handleSelectModel(model)}
+                    icon={
+                      selectedModel?.id === model.id ? (
+                        <Check className="size-4" />
+                      ) : undefined
+                    }
+                  >
+                    <div className="flex items-start gap-3">
+                      <Box className="size-4 shrink-0 text-muted-foreground mt-1" />
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className="font-medium">
+                          {model.model_display_name}
+                        </span>
+                        {model.owned_by && (
+                          <span className="text-xs text-muted-foreground">
+                            {model.owned_by}
                           </span>
-                          {model.owned_by && (
-                            <span className="text-xs text-muted-foreground">
-                              {model.owned_by}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
-                    </DropDrawerItem>
-                  ))}
-                </DropDrawerGroup>
+                    </div>
+                  </DropDrawerItem>
+                ))}
               </>
             )}
           </>

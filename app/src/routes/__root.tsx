@@ -59,7 +59,6 @@ function RootLayout() {
         onOpenChange={(open: boolean) => !open && handleCloseModal()}
       >
         <DialogContent
-          className="sm:max-w-[425px]"
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >

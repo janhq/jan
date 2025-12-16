@@ -861,7 +861,9 @@ function DropDrawerSubTrigger({
       }
 
       // Get the title
-      const title = typeof children === 'string' ? children : 'Submenu'
+      const triggerElement = e.currentTarget as HTMLElement
+      const mobileTitle = triggerElement.getAttribute('data-mobile-title')
+      const title = mobileTitle || (typeof children === 'string' ? children : 'Submenu')
 
       // Navigate to the submenu
       if (navigateToSubmenu) {
@@ -895,7 +897,7 @@ function DropDrawerSubTrigger({
         className={cn(
           'flex cursor-pointer items-center justify-between px-4 py-4',
           // Only apply margin, background and rounded corners if not in a group
-          !isInsideGroup && 'bg-accent dark:bg-accent mx-2 my-1.5 rounded-md',
+          !isInsideGroup && 'mx-2 my-1.5 rounded-md',
           // For items in a group, don't add background but add more padding
           isInsideGroup && 'bg-transparent py-4',
           inset && 'pl-8',

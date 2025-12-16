@@ -136,6 +136,7 @@ export function SearchDialog({ open }: SearchDialogProps) {
       onOpenChange={(isOpen) => !isOpen && handleClose()}
       title="Search"
       description="Search for conversations"
+      className="min-h-80"
     >
       <CommandInput
         placeholder="Search for conversations"

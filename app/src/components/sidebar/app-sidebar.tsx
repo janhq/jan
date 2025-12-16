@@ -13,8 +13,11 @@ import {
 import { cn } from '@/lib/utils'
 import { NavUser } from '@/components/sidebar/nav-user'
 import { memo } from 'react'
+import { Jan } from '@/components/ui/svgs/jan'
 
-export const AppSidebar = memo(function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export const AppSidebar = memo(function AppSidebar({
+  ...props
+}: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const isOpen = state === 'expanded'
 
@@ -27,7 +30,10 @@ export const AppSidebar = memo(function AppSidebar({ ...props }: React.Component
             isOpen && 'pl-2 mb-2'
           )}
         >
-          <span className="text-lg font-bold font-studio">Jan</span>
+          <div className="flex items-center gap-2">
+            <Jan className="size-4 shrink-0 block md:hidden" />
+            <span className="text-lg font-bold font-studio">Jan</span>
+          </div>
           <SidebarTrigger className="text-muted-foreground" />
         </div>
         <NavMain />

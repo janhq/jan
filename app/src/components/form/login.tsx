@@ -35,7 +35,7 @@ export function LoginForm({
 
   return (
     <div className={cn('flex flex-col gap-3', className)} {...props}>
-      <DialogHeader className="mb-2">
+      <DialogHeader className="mb-2 text-left">
         <DialogTitle>Login to your account</DialogTitle>
         <DialogDescription>
           Sign in with your Google account to continue

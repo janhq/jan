@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropDrawer,
   DropDrawerContent,
-  DropDrawerGroup,
   DropDrawerItem,
   DropDrawerLabel,
   DropDrawerSeparator,
@@ -55,7 +54,8 @@ export function NavUser() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {user.pro ? 'Pro Plan' : 'Free Plan'}
+                  {/* temporary till we have manage billing */}
+                  {/* {user.pro ? 'Pro Plan' : 'Free Plan'} */}
                 </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
@@ -67,7 +67,7 @@ export function NavUser() {
             align="end"
             sideOffset={4}
           >
-            <DropDrawerLabel className="p-0 font-normal">
+            <DropDrawerLabel className="lg:p-0 font-normal">
               <div className="flex items-center gap-2 px-3 py-1.5 text-left text-sm">
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>
@@ -78,41 +78,40 @@ export function NavUser() {
               </div>
             </DropDrawerLabel>
             <DropDrawerSeparator />
-            <DropDrawerGroup>
-              <DropDrawerItem onClick={() => handleOpenSettings('general')}>
-                <div className="flex gap-2 items-center justify-center">
-                  <SettingsIcon className="text-muted-foreground" />
-                  Setting
-                </div>
-              </DropDrawerItem>
-              {/* <DropDrawerItem>
+
+            <DropDrawerItem onClick={() => handleOpenSettings('general')}>
+              <div className="flex gap-2 items-center justify-center">
+                <SettingsIcon className="text-muted-foreground" />
+                Setting
+              </div>
+            </DropDrawerItem>
+            {/* <DropDrawerItem>
                 <div className="flex gap-2 items-center justify-center">
                   <CreditCard className="text-muted-foreground" />
                   Manage Plan
                 </div>
               </DropDrawerItem> */}
-              {/* <DropDrawerItem>
+            {/* <DropDrawerItem>
                 <div className="flex gap-2 items-center justify-center">
                   <LifeBuoyIcon className="text-muted-foreground" />
                   Support
                 </div>
               </DropDrawerItem> */}
-              <DropDrawerSeparator />
-              <DropDrawerItem
-                onClick={async () => {
-                  await logout()
-                  router.navigate({
-                    to: '/',
-                    replace: true,
-                  })
-                }}
-              >
-                <div className="flex gap-2 items-center justify-center">
-                  <LogOut className="text-muted-foreground ml-0.5" />
-                  Log out
-                </div>
-              </DropDrawerItem>
-            </DropDrawerGroup>
+            <DropDrawerSeparator />
+            <DropDrawerItem
+              onClick={async () => {
+                await logout()
+                router.navigate({
+                  to: '/',
+                  replace: true,
+                })
+              }}
+            >
+              <div className="flex gap-2 items-center justify-center">
+                <LogOut className="text-muted-foreground ml-0.5" />
+                Log out
+              </div>
+            </DropDrawerItem>
           </DropDrawerContent>
         </DropDrawer>
       </SidebarMenuItem>

@@ -60,7 +60,7 @@ export function NavActions() {
       {isPrivateChat ? (
         <Button
           variant="destructive"
-          className="rounded-full"
+          className="rounded-full size-8 md:size-auto"
           onClick={() => {
             setIsPrivateChat(false)
             router.navigate({ to: '/' })

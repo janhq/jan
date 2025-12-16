@@ -62,7 +62,7 @@ export function PersonalizationSettings() {
 
   return (
     <div>
-      <p className="text-base font-medium mb-4 font-studio">About you</p>
+      <p className="text-base font-semibold mb-4 font-studio">About you</p>
       {/* Personalization */}
       <div className="mb-6">
         <FieldGroup className="gap-8">
