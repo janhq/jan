@@ -14,7 +14,8 @@ jobs:
   build-and-preview:
     runs-on: [ubuntu-24-04-docker]
     env:
-      JAN_BASE_URL: "https://api-dev.jan.ai"
+      JAN_BASE_URL: "https://api-dev.jan.ai/v1"
+      JAN_API_BASE_URL: "https://api-dev.jan.ai/"
       ENVIRONMENT: "dev"
       VITE_AUTH_URL: "https://auth-dev.jan.ai"
       VITE_AUTH_REALM: "jan"
@@ -61,6 +62,7 @@ jobs:
         run: |
           docker build \
             --build-arg JAN_BASE_URL=${{ env.JAN_BASE_URL }} \
+            --build-arg JAN_API_BASE_URL=${{ env.JAN_API_BASE_URL }} \
             --build-arg ENVIRONMENT=${{ env.ENVIRONMENT }} \
             --build-arg VITE_AUTH_URL=${{ env.VITE_AUTH_URL }} \
             --build-arg VITE_AUTH_REALM=${{ env.VITE_AUTH_REALM }} \

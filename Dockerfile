@@ -4,6 +4,9 @@ FROM node:20-alpine AS builder
 ARG JAN_BASE_URL=https://api-dev.jan.ai/v1
 ENV JAN_BASE_URL=$JAN_BASE_URL
 
+ARG JAN_API_BASE_URL=https://api-dev.jan.ai/
+ENV JAN_API_BASE_URL=$JAN_API_BASE_URL
+
 ARG ENVIRONMENT=dev
 ENV ENVIRONMENT=$ENVIRONMENT
 
