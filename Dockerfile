@@ -37,16 +37,14 @@ RUN yarn --version
 WORKDIR /appdir
 
 # Copy source code
-COPY ./extensions-web ./extensions-web
 COPY ./app ./app
 COPY ./Makefile ./Makefile
 COPY ./.* /
 COPY ./package.json ./package.json
 COPY ./yarn.lock ./yarn.lock
-COPY ./core ./core
 
 # Build web application
-RUN yarn install && yarn build:core && make build-web-app-newui
+RUN yarn install && make build-web-app-newui
 
 # Stage 2: Production stage with Nginx
 FROM nginx:alpine

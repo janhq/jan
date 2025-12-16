@@ -79,7 +79,6 @@ build-web-app: install-web-app
 	yarn build:web-app
 
 build-web-app-newui: install-web-app
-	yarn build:core
 	yarn build:web-app-newui
 
 serve-web-app:
