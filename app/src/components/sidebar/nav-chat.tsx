@@ -34,7 +34,7 @@ import { Input } from '@/components/ui/input'
 import { useConversations } from '@/stores/conversation-store'
 
 export function NavChats() {
-  const { isMobile } = useSidebar()
+  const { isMobile, setOpenMobile } = useSidebar()
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as { conversationId?: string }
   const allConversations = useConversations((state) => state.conversations)
@@ -173,6 +173,11 @@ export function NavChats() {
                   to="/threads/$conversationId"
                   params={{ conversationId: item.id }}
                   title={item.title}
+                  onClick={() => {
+                    if (isMobile) {
+                      setOpenMobile(false)
+                    }
+                  }}
                 >
                   <span>{item.title}</span>
                 </Link>
