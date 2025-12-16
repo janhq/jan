@@ -69,6 +69,7 @@ export class TauriMCPService extends DefaultMCPService {
     toolName: string
     serverName?: string
     arguments: object
+    metadata?: { toolCallId?: string; conversationId?: string }
   }): Promise<MCPToolCallResult> {
     return window.core?.api?.callTool(args)
   }
@@ -77,6 +78,7 @@ export class TauriMCPService extends DefaultMCPService {
     toolName: string
     serverName?: string
     arguments: object
+    metadata?: { toolCallId?: string; conversationId?: string }
     cancellationToken?: string
   }): {
     promise: Promise<MCPToolCallResult>

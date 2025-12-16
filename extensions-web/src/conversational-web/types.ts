@@ -103,6 +103,23 @@ export interface ConversationItemContent {
   text_result?: string
 }
 
+// Tool call types for tracking
+export interface ToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string // JSON string of arguments
+  }
+}
+
+export interface ToolResultContent {
+  type: 'text' | 'image' | 'resource'
+  text?: string
+  data?: string
+  mimeType?: string
+}
+
 export interface ConversationItem {
   content?: ConversationItemContent[]
   created_at: number | string
@@ -112,6 +129,9 @@ export interface ConversationItem {
   role: string
   status?: string
   type?: string
+  // Tool call tracking fields
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
 }
 
 export interface ListConversationItemsParams extends PaginationParams {

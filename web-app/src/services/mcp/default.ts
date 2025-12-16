@@ -28,7 +28,7 @@ export class DefaultMCPService implements MCPService {
     return []
   }
 
-  async callTool(args: { toolName: string; arguments: object }): Promise<MCPToolCallResult> {
+  async callTool(args: { toolName: string; arguments: object; serverName?: string; metadata?: { toolCallId?: string; conversationId?: string } }): Promise<MCPToolCallResult> {
     console.log('callTool called with args:', args)
     return {
       error: '',
@@ -39,6 +39,8 @@ export class DefaultMCPService implements MCPService {
   callToolWithCancellation(args: {
     toolName: string
     arguments: object
+    serverName?: string
+    metadata?: { toolCallId?: string; conversationId?: string }
     cancellationToken?: string
   }): ToolCallWithCancellationResult {
     console.log('callToolWithCancellation called with args:', args)

@@ -149,12 +149,24 @@ export default class MCPExtensionWeb extends MCPExtension {
     return this.tools
   }
 
-  async callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<MCPToolCallResult> {
+  async callTool(
+    toolName: string, 
+    args: Record<string, unknown>, 
+    serverName?: string,
+    metadata?: { toolCallId?: string, conversationId?: string }
+  ): Promise<MCPToolCallResult> {
     if (!this.mcpClient) {
       return createErrorResult('MCP client not initialized')
     }
 
     try {
+      // For tool call tracking, we need to make a direct HTTP request with custom headers
+      // instead of using the MCP client, since the SDK doesn't support custom headers
+      if (metadata?.toolCallId || metadata?.conversationId) {
+        return await this.callToolWithTracking(toolName, args, metadata)
+      }
+
+      // Fall back to standard MCP client for backward compatibility
       const result = await this.mcpClient.callTool({
         name: toolName,
         arguments: args
@@ -177,6 +189,119 @@ export default class MCPExtensionWeb extends MCPExtension {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${toolName}:`, error)
+      return createErrorResult(errorMessage)
+    }
+  }
+
+  /**
+   * Call MCP tool with tracking headers for conversation and tool call ID
+   */
+  private async callToolWithTracking(
+    toolName: string,
+    args: Record<string, unknown>,
+    metadata: { toolCallId?: string, conversationId?: string }
+  ): Promise<MCPToolCallResult> {
+    try {
+      const authHeader = await this.authService.getAuthHeader()
+      const endpoint = `${JAN_BASE_URL}${this.mcpEndpoint}`
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...authHeader,
+      }
+
+      // Add tracking headers
+      if (metadata.toolCallId) {
+        headers['X-Tool-Call-ID'] = metadata.toolCallId
+      }
+      if (metadata.conversationId) {
+        headers['X-Conversation-ID'] = metadata.conversationId
+      }
+
+      // Merge tracking context into arguments to avoid losing it on proxies/CORS strips
+      const mergedArgs: Record<string, unknown> = {
+        ...args,
+        ...(metadata.toolCallId ? { tool_call_id: metadata.toolCallId } : {}),
+        ...(metadata.conversationId ? { conversation_id: metadata.conversationId } : {}),
+      }
+
+      const payload = {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: mergedArgs
+        },
+        id: Date.now()
+      }
+
+      console.log(`[MCP] Calling tool with tracking:`, {
+        toolName,
+        toolCallId: metadata.toolCallId,
+        conversationId: metadata.conversationId
+      })
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`MCP tool call failed: ${response.status} ${response.statusText} - ${errorText}`)
+      }
+
+      // Handle both direct JSON and SSE responses
+      const contentType = response.headers.get('content-type') || ''
+      let result: any
+
+      if (contentType.includes('text/event-stream')) {
+        // Parse SSE response
+        const text = await response.text()
+        const lines = text.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              result = JSON.parse(line.substring(6))
+              break
+            } catch (e) {
+              console.warn('Failed to parse SSE line:', line)
+            }
+          }
+        }
+      } else {
+        // Direct JSON response
+        result = await response.json()
+      }
+
+      if (!result) {
+        throw new Error('No valid response from MCP server')
+      }
+
+      // Check for JSON-RPC error
+      if (result.error) {
+        return createErrorResult(result.error.message || 'Tool call failed')
+      }
+
+      // Extract content from result
+      const toolResult = result.result || result
+      if (toolResult.isError) {
+        const errorText = Array.isArray(toolResult.content) && toolResult.content.length > 0
+          ? (toolResult.content[0].type === 'text' ? toolResult.content[0].text : 'Tool call failed')
+          : 'Tool call failed'
+        return createErrorResult(errorText)
+      }
+
+      const content = Array.isArray(toolResult.content)
+        ? toolResult.content.map((item: any) => normalizeContentItem(item))
+        : [{ type: 'text' as const, text: 'No content returned' }]
+
+      console.log(`[MCP] Tool call succeeded:`, { toolName, contentItems: content.length })
+      return { error: '', content }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`Failed to call MCP tool ${toolName} with tracking:`, error)
       return createErrorResult(errorMessage)
     }
   }

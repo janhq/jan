@@ -161,7 +161,7 @@ export class WebMCPService implements MCPService {
     }
   }
 
-  async callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult> {
+  async callTool(args: { toolName: string; serverName?: string; arguments: object; metadata?: { toolCallId?: string; conversationId?: string } }): Promise<MCPToolCallResult> {
     if (!args.toolName || typeof args.toolName !== 'string') {
       return createErrorResult('Invalid tool name provided', 'Tool name must be a non-empty string')
     }
@@ -172,7 +172,28 @@ export class WebMCPService implements MCPService {
     }
 
     try {
-      const result = await extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
+      const callToolFn = extension.callTool as unknown as (
+        toolName: string,
+        argumentsObj: Record<string, unknown>,
+        serverName?: string,
+        metadata?: { toolCallId?: string; conversationId?: string }
+      ) => Promise<MCPToolCallResult>
+
+      // Prefer metadata-aware calls (4 args), fall back to legacy signature (3 args)
+      const result =
+        callToolFn.length >= 4
+          ? await callToolFn.call(
+              extension,
+              args.toolName,
+              args.arguments as Record<string, unknown>,
+              args.serverName,
+              args.metadata
+            )
+          : await extension.callTool(
+              args.toolName,
+              args.arguments as Record<string, unknown>,
+              args.serverName
+            )
 
       if (!result.content || !Array.isArray(result.content)) {
         return createErrorResult('Invalid tool response format', 'Tool returned invalid response format')
@@ -189,6 +210,7 @@ export class WebMCPService implements MCPService {
     toolName: string
     serverName?: string
     arguments: object
+    metadata?: { toolCallId?: string; conversationId?: string }
     cancellationToken?: string
   }): ToolCallWithCancellationResult {
     if (!args.toolName || typeof args.toolName !== 'string') {
@@ -222,7 +244,7 @@ export class WebMCPService implements MCPService {
   }
 
   private async callToolWithAbort(
-    args: { toolName: string; serverName?: string; arguments: object },
+    args: { toolName: string; serverName?: string; arguments: object; metadata?: { toolCallId?: string; conversationId?: string } },
     signal: AbortSignal
   ): Promise<MCPToolCallResult> {
     const cancelledResult = createErrorResult('Tool call was cancelled', 'Tool call was cancelled by user')
@@ -240,7 +262,29 @@ export class WebMCPService implements MCPService {
       const abortHandler = () => resolve(cancelledResult)
       signal.addEventListener('abort', abortHandler, { once: true })
 
-      extension.callTool(args.toolName, args.arguments as Record<string, unknown>, args.serverName)
+      const callToolFn = extension.callTool as unknown as (
+        toolName: string,
+        argumentsObj: Record<string, unknown>,
+        serverName?: string,
+        metadata?: { toolCallId?: string; conversationId?: string }
+      ) => Promise<MCPToolCallResult>
+
+      const callPromise =
+        callToolFn.length >= 4
+          ? callToolFn.call(
+              extension,
+              args.toolName,
+              args.arguments as Record<string, unknown>,
+              args.serverName,
+              args.metadata
+            )
+          : extension.callTool(
+              args.toolName,
+              args.arguments as Record<string, unknown>,
+              args.serverName
+            )
+
+      callPromise
         .then(result => {
           if (!signal.aborted) {
             if (!result.content || !Array.isArray(result.content)) {
