@@ -43,7 +43,7 @@ const sections: Array<{
 }> = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'personalization', label: 'Personalization', icon: LeafIcon },
-  { id: 'apps-connectors', label: 'Apps & connectors', icon: ShapesIcon },
+  { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
   // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
 ]
 
