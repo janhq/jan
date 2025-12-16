@@ -2,8 +2,9 @@ import { NavActions } from '@/components/sidebar/nav-actions'
 import { ModelSelector } from '@/components/sidebar/model-selector'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { ThemeToggle } from '../themes/theme-toggle'
+import { memo } from 'react'
 
-export function NavHeader() {
+export const NavHeader = memo(function NavHeader() {
   const { state, isMobile } = useSidebar()
 
   return (
@@ -20,4 +21,4 @@ export function NavHeader() {
       </div>
     </header>
   )
-}
+})

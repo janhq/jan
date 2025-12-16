@@ -12,8 +12,9 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { NavUser } from '@/components/sidebar/nav-user'
+import { memo } from 'react'
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export const AppSidebar = memo(function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const isOpen = state === 'expanded'
 
@@ -41,4 +42,4 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarRail />
     </Sidebar>
   )
-}
+})

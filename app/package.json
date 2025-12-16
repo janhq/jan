@@ -7,7 +7,8 @@
     "dev": "vite --port 3001",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "npx patch-package"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^1.0.28",
@@ -29,7 +30,7 @@
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-router": "^1.140.0",
-    "ai": "^5.0.112",
+    "ai": "5.0.108",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
