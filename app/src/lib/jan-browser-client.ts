@@ -48,6 +48,7 @@ export class JanBrowserClient implements ToolCallClient {
   }
   async callTool(
     payload: CallToolPayload,
+    // @ts-expect-error unused parameter
     metadata?: { conversationId?: string; toolCallId?: string }
   ): Promise<MCPToolCallResult> {
     try {
