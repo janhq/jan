@@ -35,15 +35,16 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { RefreshCcwIcon, CopyIcon, Loader } from 'lucide-react'
+import { RefreshCcwIcon, CopyIcon, Loader, CheckIcon } from 'lucide-react'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { usePrivateChat } from '@/stores/private-chat-store'
+import { cn } from '@/lib/utils'
 
 function ThreadPageContent() {
   const selectedModel = useModels((state) => state.selectedModel)
@@ -53,6 +54,7 @@ function ThreadPageContent() {
     (state) => state.deepResearchEnabled
   )
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
   const provider = janProvider(undefined, deepResearchEnabled, isPrivateChat)
 
@@ -176,12 +178,23 @@ function ThreadPageContent() {
                                 isLastPart && (
                                   <MessageActions className="mt-1 gap-0">
                                     <MessageAction
-                                      onClick={() =>
-                                        navigator.clipboard.writeText(part.text)
-                                      }
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(
+                                          part.text.trim()
+                                        )
+                                        setCopiedMessageId(message.id)
+                                        setTimeout(
+                                          () => setCopiedMessageId(null),
+                                          2000
+                                        )
+                                      }}
                                       label="Copy"
                                     >
-                                      <CopyIcon className="text-muted-foreground size-3" />
+                                      {copiedMessageId === message.id ? (
+                                        <CheckIcon className="text-muted-foreground size-3" />
+                                      ) : (
+                                        <CopyIcon className="text-muted-foreground size-3" />
+                                      )}
                                     </MessageAction>
                                     <MessageAction
                                       onClick={() => regenerate()}
@@ -334,8 +347,15 @@ function ThreadPageContent() {
 }
 
 function ThreadPage() {
+  const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+
   return (
-    <SidebarProvider>
+    <SidebarProvider
+      className={cn(
+        isPrivateChat &&
+          '**:data-[slot="sidebar"]:opacity-0 **:data-[slot="sidebar"]:-translate-x-full **:data-[slot="sidebar-gap"]:w-0 **:data-[slot="sidebar"]:transition-all **:data-[slot="sidebar-gap"]:transition-all **:data-[slot="sidebar"]:duration-300 **:data-[slot="sidebar-gap"]:duration-300'
+      )}
+    >
       <ThreadPageContent />
     </SidebarProvider>
   )
