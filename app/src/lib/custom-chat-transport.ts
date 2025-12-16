@@ -26,6 +26,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.model = model
   }
 
+  updateToolEnabled(enabledTool: boolean) {
+    this.enabledTool = enabledTool
+  }
+
   /**
    * Initialize MCP tools and convert them to AI SDK format
    */
