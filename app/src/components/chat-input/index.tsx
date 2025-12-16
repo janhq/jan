@@ -222,7 +222,7 @@ const ChatInput = ({
                 isSupportDeepResearch={isSupportDeepResearch}
               >
                 <Button
-                  className="rounded-full mx-1 size-9"
+                  className="rounded-full mx-1 size-8"
                   variant="secondary"
                   size="icon"
                 >
@@ -232,34 +232,34 @@ const ChatInput = ({
               {searchEnabled && !deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
-                  className="rounded-full group transition-all"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
                   onClick={toggleSearch}
                 >
-                  <GlobeIcon className="text-muted-foreground size-4 group-hover:hidden" />
-                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
-                  <span>Search</span>
+                  <GlobeIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">Search</span>
                 </PromptInputButton>
               )}
               {deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
-                  className="rounded-full group transition-all"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
                   onClick={toggleDeepResearch}
                 >
-                  <MegaphoneIcon className="text-muted-foreground size-4 group-hover:hidden" />
-                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
-                  <span>Deep Research</span>
+                  <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">Deep Research</span>
                 </PromptInputButton>
               )}
               {selectedProjectId && !isPrivateChat && (
                 <PromptInputButton
                   variant="outline"
-                  className="rounded-full group transition-all"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
                   onClick={() => setSelectedProjectId(null)}
                 >
-                  <FolderIcon className="text-muted-foreground size-4 group-hover:hidden" />
-                  <X className="text-muted-foreground size-4 hidden group-hover:block" />
-                  <span>
+                  <FolderIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">
                     {projects.find((p) => p.id === selectedProjectId)?.name ||
                       'Project'}
                   </span>
