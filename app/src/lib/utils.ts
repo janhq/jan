@@ -72,7 +72,7 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                 content.text?.text ||
                 content.text ||
                 content.input_text ||
-                content.reasoning_content ||
+                content.reasoning_text ||
                 '',
               mediaType: contentType === 'file' ? 'image/jpeg' : undefined,
               url: contentType === 'file' ? content.image?.url : undefined,
