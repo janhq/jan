@@ -28,7 +28,6 @@ import {
   FolderIcon,
   GlobeIcon,
   LightbulbIcon,
-  LightbulbOffIcon,
   MegaphoneIcon,
   Settings2,
   X,
@@ -74,7 +73,7 @@ const ChatInput = ({
     (state) => state.deepResearchEnabled
   )
   const browserEnabled = useCapabilities((state) => state.browserEnabled)
-  const instructEnabled = useCapabilities((state) => state.reasoningEnabled)
+  const reasoningEnabled = useCapabilities((state) => state.reasoningEnabled)
   const toggleSearch = useCapabilities((state) => state.toggleSearch)
   const toggleDeepResearch = useCapabilities(
     (state) => state.toggleDeepResearch
@@ -227,7 +226,7 @@ const ChatInput = ({
                 searchEnabled={searchEnabled}
                 deepResearchEnabled={deepResearchEnabled}
                 browserEnabled={browserEnabled}
-                instructEnabled={instructEnabled}
+                reasoningEnabled={reasoningEnabled}
                 toggleSearch={toggleSearch}
                 toggleDeepResearch={toggleDeepResearch}
                 toggleBrowser={toggleBrowser}
@@ -244,7 +243,7 @@ const ChatInput = ({
                   <Settings2 className="size-4 text-muted-foreground" />
                 </Button>
               </SettingChatInput>
-              {isSupportInstruct && instructEnabled && (
+              {isSupportInstruct && reasoningEnabled && !deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
                   className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"

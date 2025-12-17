@@ -14,7 +14,6 @@ import {
   GlobeIcon,
   Leaf,
   LightbulbIcon,
-  LightbulbOffIcon,
   MegaphoneIcon,
   SmileIcon,
   type LucideIcon,
@@ -33,7 +32,7 @@ interface SettingChatInputProps {
   searchEnabled: boolean
   deepResearchEnabled: boolean
   browserEnabled: boolean
-  instructEnabled: boolean
+  reasoningEnabled: boolean
   toggleInstruct: () => void
   toggleBrowser: () => void
   toggleSearch: () => void
@@ -59,7 +58,7 @@ export const SettingChatInput = ({
   searchEnabled,
   deepResearchEnabled,
   browserEnabled,
-  instructEnabled,
+  reasoningEnabled,
   toggleInstruct,
   toggleSearch,
   toggleDeepResearch,
@@ -118,15 +117,18 @@ export const SettingChatInput = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
-              <DropDrawerItem onSelect={(e) => e.preventDefault()} disabled={!isSupportReasoningToggle}>
+              <DropDrawerItem
+                onSelect={(e) => e.preventDefault()}
+                disabled={!isSupportReasoningToggle || deepResearchEnabled}
+              >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
                     <LightbulbIcon />
                     <span>Think</span>
                   </div>
                   <Switch
-                  disabled={!isSupportReasoningToggle}
-                    checked={instructEnabled}
+                    disabled={!isSupportReasoningToggle}
+                    checked={deepResearchEnabled ? true :reasoningEnabled}
                     onCheckedChange={toggleInstruct}
                   />
                 </div>
@@ -135,7 +137,7 @@ export const SettingChatInput = ({
           </TooltipTrigger>
           {!isSupportReasoningToggle && (
             <TooltipContent>
-              <p>This model doesn't support toggle reasoning</p>
+              <p>The model does not have toggle-based reasoning capabilities</p>
             </TooltipContent>
           )}
         </Tooltip>
