@@ -7,6 +7,10 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import {
+  isJanMediaUrl,
+  resolveJanMediaUrl,
+} from '@/services/media-upload-service'
 import type { ToolUIPart } from 'ai'
 import {
   CheckCircleIcon,
@@ -17,7 +21,7 @@ import {
   XCircleIcon,
 } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
-import { isValidElement } from 'react'
+import { isValidElement, useEffect, useState } from 'react'
 import { CodeBlock } from './code-block'
 
 export type ToolProps = ComponentProps<typeof Collapsible>
@@ -119,6 +123,56 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
   </div>
 )
 
+type ToolImageProps = {
+  data: string
+  index: number
+}
+
+const ToolImage = ({ data, index }: ToolImageProps) => {
+  const [displayUrl, setDisplayUrl] = useState<string | undefined>(undefined)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    // Check if data is a jan media URL or base64
+    if (isJanMediaUrl(data)) {
+      setIsLoading(true)
+      resolveJanMediaUrl(data)
+        .then(setDisplayUrl)
+        .catch((err) => {
+          console.error('Failed to resolve jan media URL:', err)
+          setDisplayUrl(undefined)
+        })
+        .finally(() => setIsLoading(false))
+    } else if (data.startsWith('data:image')) {
+      // Already a data URL
+      setDisplayUrl(data)
+    } else {
+      // Assume it's base64 encoded
+      setDisplayUrl(`data:image/png;base64,${data}`)
+    }
+  }, [data])
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center">
+        <div className="flex size-24 items-center justify-center rounded-md bg-muted">
+          <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!displayUrl) {
+    return null
+  }
+
+  return (
+    <div key={index} className="flex justify-center">
+      <img src={displayUrl} alt="Tool output" className="max-w-full rounded-md" />
+    </div>
+  )
+}
+
 export type ToolOutputProps = ComponentProps<'div'> & {
   output: ToolUIPart['output']
   errorText: ToolUIPart['errorText']
@@ -158,13 +212,7 @@ export const ToolOutput = ({
             {output
               .filter((item) => item?.type === 'image' && item?.data)
               .map((item, index) => (
-                <div key={index} className="flex justify-center">
-                  <img
-                    src={`data:image/png;base64,${item.data}`}
-                    alt="Tool output"
-                    className="max-w-full rounded-md"
-                  />
-                </div>
+                <ToolImage key={index} data={item.data} index={index} />
               ))}
           </div>
         )
