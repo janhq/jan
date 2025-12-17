@@ -1,4 +1,4 @@
-name: Jan Web Server build image and push to Harbor Registry
+name: Jan Web Server New UI build image and push to Harbor Registry
 
 on:
   push:
@@ -14,8 +14,13 @@ jobs:
   build-and-preview:
     runs-on: [ubuntu-24-04-docker]
     env:
-      JAN_BASE_URL: "https://api-dev.jan.ai"
+      JAN_BASE_URL: "https://api-dev.jan.ai/v1"
+      JAN_API_BASE_URL: "https://api-dev.jan.ai/"
       ENVIRONMENT: "dev"
+      VITE_AUTH_URL: "https://auth-dev.jan.ai"
+      VITE_AUTH_REALM: "jan"
+      VITE_AUTH_CLIENT_ID: "jan-client"
+      VITE_OAUTH_REDIRECT_URI: "https://chat-dev.jan.ai/auth/callback"
     permissions:
       pull-requests: write
       contents: write
@@ -55,7 +60,16 @@ jobs:
 
       - name: Build docker image
         run: |
-          docker build --build-arg JAN_BASE_URL=${{ env.JAN_BASE_URL }} --build-arg ENVIRONMENT=${{ env.ENVIRONMENT }} -t ${{ steps.vars.outputs.FULL_IMAGE }} .
+          docker build \
+            --build-arg JAN_BASE_URL=${{ env.JAN_BASE_URL }} \
+            --build-arg JAN_API_BASE_URL=${{ env.JAN_API_BASE_URL }} \
+            --build-arg ENVIRONMENT=${{ env.ENVIRONMENT }} \
+            --build-arg VITE_AUTH_URL=${{ env.VITE_AUTH_URL }} \
+            --build-arg VITE_AUTH_REALM=${{ env.VITE_AUTH_REALM }} \
+            --build-arg VITE_AUTH_CLIENT_ID=${{ env.VITE_AUTH_CLIENT_ID }} \
+            --build-arg VITE_OAUTH_REDIRECT_URI=${{ env.VITE_OAUTH_REDIRECT_URI }} \
+            -t ${{ steps.vars.outputs.FULL_IMAGE }} \
+            .
 
       - name: Push docker image
         if: github.event_name == 'push'
