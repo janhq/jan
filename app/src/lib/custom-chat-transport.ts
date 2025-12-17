@@ -8,8 +8,124 @@ import {
   type UIMessageChunk,
   type Tool,
   jsonSchema,
+  type CoreMessage,
 } from 'ai'
 import { mcpService } from '@/services/mcp-service'
+
+/**
+ * Custom download function that returns null for all URLs.
+ * This tells the AI SDK to pass URLs directly to the model
+ * instead of downloading and converting to base64.
+ * 
+ * This avoids CORS issues with presigned S3 URLs and reduces payload size.
+ */
+async function passUrlsDirectly(
+  options: Array<{ url: URL; isUrlSupportedByModel: boolean }>
+): Promise<Array<{ data: Uint8Array; mediaType: string | undefined } | null>> {
+  // Return null for all URLs to pass them directly to the model
+  return options.map(() => null)
+}
+
+/**
+ * Convert file parts to custom image_url format for the API.
+ * The server expects: { type: "image_url", image_url: { url: "data:image/jpeg;jan_MEDIA_ID", detail: "auto" } }
+ */
+function convertToImageUrlFormat(messages: CoreMessage[]): CoreMessage[] {
+  return messages.map((message) => {
+    if (message.role === 'user' && Array.isArray(message.content)) {
+      return {
+        ...message,
+        content: message.content.map((part) => {
+          // Convert image parts to image_url format
+          if (part.type === 'image' && 'image' in part) {
+            const imageData = part.image
+            // If it's a URL string (jan media URL or presigned URL)
+            if (typeof imageData === 'string') {
+              return {
+                type: 'image_url',
+                image_url: {
+                  url: imageData,
+                  detail: 'auto',
+                },
+              }
+            }
+          }
+          return part
+        }),
+      }
+    }
+    return message
+  }) as CoreMessage[]
+}
+
+/**
+ * Filter out base64 image data from tool messages to reduce payload size.
+ * Browser MCP tools return screenshots as base64 which are very large.
+ * We replace them with a placeholder to avoid sending huge payloads to the API.
+ */
+function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
+  const base64Pattern = /data:image\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g
+  
+  return messages.map((message) => {
+    if (message.role === 'tool') {
+      // Tool messages have content as array of ToolResultPart
+      if (Array.isArray(message.content)) {
+        return {
+          ...message,
+          content: message.content.map((part) => {
+            // ToolResultPart has type 'tool-result' with a result property
+            // The result can contain text with embedded base64
+            if ('result' in part && part.result) {
+              const resultStr = typeof part.result === 'string' 
+                ? part.result 
+                : JSON.stringify(part.result)
+              
+              if (base64Pattern.test(resultStr)) {
+                return {
+                  ...part,
+                  result: resultStr.replace(base64Pattern, '[base64 image data removed]'),
+                }
+              }
+            }
+            return part
+          }),
+        }
+      }
+    }
+    
+    // Handle user messages with image parts
+    if (message.role === 'user' && Array.isArray(message.content)) {
+      return {
+        ...message,
+        content: message.content.map((part) => {
+          // Check for image parts with base64 data
+          if (part.type === 'image') {
+            const imageData = 'image' in part ? part.image : null
+            if (typeof imageData === 'string' && (imageData.startsWith('data:') || imageData.length > 10000)) {
+              // Replace with placeholder text
+              return {
+                type: 'text' as const,
+                text: `[Image: screenshot captured]`,
+              }
+            }
+          }
+          // Check for text parts with embedded base64
+          if (part.type === 'text' && 'text' in part && typeof part.text === 'string') {
+            if (base64Pattern.test(part.text)) {
+              return {
+                ...part,
+                text: part.text.replace(base64Pattern, '[base64 image data removed]'),
+              }
+            }
+          }
+          return part
+        }),
+      }
+    }
+    
+    return message
+  })
+}
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   private model: LanguageModel
@@ -83,10 +199,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     await this.initializeTools()
+    
+    // Convert UI messages to model messages
+    const modelMessages = convertToModelMessages(options.messages)
+    
+    // Filter out base64 data from tool results
+    const filteredMessages = filterBase64FromMessages(modelMessages)
+    
+    // Convert image parts to image_url format for the API
+    const messagesWithImageUrls = convertToImageUrlFormat(filteredMessages)
+    
     const result = streamText({
       model: this.model,
-      messages: convertToModelMessages(options.messages),
+      messages: messagesWithImageUrls,
       abortSignal: options.abortSignal,
+      // Pass URLs directly to the model instead of downloading
+      // This avoids CORS issues with presigned S3 URLs
+      experimental_download: passUrlsDirectly,
       tools:
         (this.enabledSearch || this.enableBrowse) &&
         Object.keys(this.tools).length > 0

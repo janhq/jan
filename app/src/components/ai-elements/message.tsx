@@ -9,6 +9,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import {
+  isJanMediaUrl,
+  resolveJanMediaUrl,
+} from '@/services/media-upload-service'
 import type { FileUIPart, UIMessage } from 'ai'
 import {
   ChevronLeftIcon,
@@ -335,6 +339,28 @@ export function MessageAttachment({
     data.mediaType?.startsWith('image/') && data.url ? 'image' : 'file'
   const isImage = mediaType === 'image'
   const attachmentLabel = filename || (isImage ? 'Image' : 'Attachment')
+  
+  // Resolve jan media URL to presigned URL
+  const [displayUrl, setDisplayUrl] = useState<string | undefined>(data.url)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!data.url) return
+    
+    // If it's a jan media URL, resolve it to presigned URL
+    if (isJanMediaUrl(data.url)) {
+      setIsLoading(true)
+      resolveJanMediaUrl(data.url)
+        .then(setDisplayUrl)
+        .catch((err) => {
+          console.error('Failed to resolve jan media URL:', err)
+          setDisplayUrl(undefined)
+        })
+        .finally(() => setIsLoading(false))
+    } else {
+      setDisplayUrl(data.url)
+    }
+  }, [data.url])
 
   return (
     <div
@@ -346,13 +372,23 @@ export function MessageAttachment({
     >
       {isImage ? (
         <>
-          <img
-            alt={filename || 'attachment'}
-            className="size-full object-cover"
-            height={100}
-            src={data.url}
-            width={100}
-          />
+          {isLoading ? (
+            <div className="flex size-full items-center justify-center bg-muted">
+              <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : displayUrl ? (
+            <img
+              alt={filename || 'attachment'}
+              className="size-full object-cover"
+              height={100}
+              src={displayUrl}
+              width={100}
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center bg-muted text-muted-foreground">
+              <PaperclipIcon className="size-4" />
+            </div>
+          )}
           {onRemove && (
             <Button
               aria-label="Remove attachment"

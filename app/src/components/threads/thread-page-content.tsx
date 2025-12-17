@@ -406,7 +406,11 @@ export function ThreadPageContent({
 
           {/* Chat Input - Fixed at bottom */}
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
-            <ChatInput submit={handleSubmit} status={status} />
+            <ChatInput
+              submit={handleSubmit}
+              status={status}
+              conversationId={conversationId}
+            />
           </div>
         </div>
       </SidebarInset>
