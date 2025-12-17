@@ -128,7 +128,7 @@ export const SettingChatInput = ({
                   </div>
                   <Switch
                     disabled={!isSupportReasoningToggle}
-                    checked={deepResearchEnabled ? true :reasoningEnabled}
+                    checked={(!isSupportReasoningToggle || deepResearchEnabled) ? true :reasoningEnabled}
                     onCheckedChange={toggleInstruct}
                   />
                 </div>
