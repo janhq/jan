@@ -109,6 +109,7 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
                     id="instruction"
                     placeholder="Project instructions (optional)"
                     rows={4}
+                    className="max-h-100"
                     {...register('instruction')}
                   />
                   {errors.instruction && (
