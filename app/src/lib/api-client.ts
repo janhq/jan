@@ -175,7 +175,7 @@ export function janProvider(
       ...(!isPrivateChat && { store: true }),
       ...(!isPrivateChat && { conversation: conversationId }),
       deep_research: deepResearch ?? false,
-      enable_thinking: isEnableThinking,
+      enable_thinking: deepResearch ? true : isEnableThinking,
     }),
   })
 }
