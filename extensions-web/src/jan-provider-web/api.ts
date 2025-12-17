@@ -11,7 +11,7 @@ import type { JanModel } from './types'
 
 // JAN_BASE_URL is defined in vite.config.ts
 
-// Constants
+// Constant
 const TEMPORARY_CHAT_ID = 'temporary-chat'
 const authService: JanAuthService = getSharedAuthService()
 
