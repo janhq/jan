@@ -41,6 +41,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
+import { cn } from '@/lib/utils'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -229,6 +230,7 @@ export function ThreadPageContent({
                 {messages.map((message, messageIndex) => (
                   <div key={message.id}>
                     {message.parts.map((part, i) => {
+                      const isFirstMessage = messageIndex === 0
                       const isLastMessage = messageIndex === messages.length - 1
                       const isLastPart = i === message.parts.length - 1
                       switch (part.type) {
@@ -237,6 +239,11 @@ export function ThreadPageContent({
                             <Message
                               key={`${message.id}-${i}`}
                               from={message.role}
+                              className={cn(
+                                isFirstMessage &&
+                                  message.role === 'user' &&
+                                  'mt-0!'
+                              )}
                             >
                               <MessageContent className="leading-relaxed">
                                 <MessageResponse>{part.text}</MessageResponse>
