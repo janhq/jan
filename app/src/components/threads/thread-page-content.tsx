@@ -330,23 +330,7 @@ export function ThreadPageContent({
                               </div>
                             </Reasoning>
                           )
-                        case 'step-start':
-                          // show step boundaries with elegant separation:
-                          return i > 0 ? (
-                            <div
-                              key={i}
-                              className="relative flex items-center justify-center my-6"
-                            >
-                              <div className="absolute inset-0 flex items-center">
-                                <div className="w-full border-t border-border/40" />
-                              </div>
-                              <div className="relative flex justify-center">
-                                <span className="bg-background px-3 text-xs text-muted-foreground/60 font-medium">
-                                  •••
-                                </span>
-                              </div>
-                            </div>
-                          ) : null
+
                         default:
                           // Handle all tool-* cases (tool-call, tool-result, etc.)
                           if (!part.type.startsWith('tool-')) {
