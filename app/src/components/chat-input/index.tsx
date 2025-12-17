@@ -94,6 +94,7 @@ const ChatInput = ({
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
   )
+  const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
 
   const setLastUsedModelId = useLastUsedModel(
     (state) => state.setLastUsedModelId
@@ -127,6 +128,13 @@ const ChatInput = ({
     setDeepResearchEnabled,
     modelDetail.id,
   ])
+
+  // Auto-disable browser capability when disconnected
+  useEffect(() => {
+    if (browserConnectionState === 'disconnected' && browserEnabled) {
+      setBrowserEnabled(false)
+    }
+  }, [browserConnectionState, browserEnabled, setBrowserEnabled])
 
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text)
@@ -307,9 +315,6 @@ const ChatInput = ({
                         {browserConnectionState === 'connected' && (
                           <div className="size-3 bg-green-400 rounded-full" />
                         )}
-                        {browserConnectionState === 'disconnected' && (
-                          <div className="size-3 bg-neutral-400 dark:bg-neutral-500 rounded-full" />
-                        )}
                       </div>
                       <X className="text-primary size-4 hidden group-hover:block" />
                       <span className="text-primary">Browse</span>
@@ -324,9 +329,6 @@ const ChatInput = ({
                     )}
                     {browserConnectionState === 'connected' && (
                       <p>Ready to use</p>
-                    )}
-                    {browserConnectionState === 'disconnected' && (
-                      <p>Disconnected</p>
                     )}
                   </TooltipContent>
                 </Tooltip>
