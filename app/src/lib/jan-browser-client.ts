@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { createErrorResult } from '@/services/mcp-service'
 import {
   ConnectionError,
@@ -21,15 +22,32 @@ export class JanBrowserClient implements ToolCallClient {
   private client?: McpWebClient
   private connectionState: ConnectionState = 'disconnected'
   private detectionResult: DetectionResult | null = null
+  private onStateChange?: (state: ConnectionState) => void
 
   constructor() {
     this.connect()
+  }
+
+  /**
+   * Set callback for connection state changes
+   */
+  setOnStateChange(callback: (state: ConnectionState) => void): void {
+    this.onStateChange = callback
+    // Immediately notify with current state
+    callback(this.connectionState)
+  }
+
+  /**
+   * Get current connection state
+   */
+  getConnectionState(): ConnectionState {
+    return this.connectionState
   }
   async getTools(): Promise<MCPTool[]> {
     return getToolSchemas().map((schema: ToolSchema) => {
       if (!Object.keys(schema.inputSchema.properties as object).length) {
         schema.inputSchema.properties = {
-          '__type': {
+          __type: {
             type: 'string',
             description: 'Make it default to "default".',
             default: 'default',
@@ -95,7 +113,7 @@ export class JanBrowserClient implements ToolCallClient {
     await this.detectExtensionState()
 
     if (this.client?.isConnected()) {
-      this.connectionState = 'connected'
+      this.updateConnectionState('connected')
       return
     }
 
@@ -117,27 +135,35 @@ export class JanBrowserClient implements ToolCallClient {
 
     // Set up event handlers
     this.client.on('connect', () => {
-      this.connectionState = 'connected'
+      this.updateConnectionState('connected')
       console.log('Connected to browser extension MCP server')
     })
 
     this.client.on('disconnect', async () => {
-      this.connectionState = 'disconnected'
+      this.updateConnectionState('disconnected')
       // Immediately re-detect to check if extension still exists
       await this.detectExtensionState()
     })
 
     this.client.on('error', (error: Error) => {
       console.error('Browser extension error:', error)
-      this.connectionState = 'error'
+      this.updateConnectionState('error')
     })
 
     this.client.on('stateChange', (state: ConnectionState) => {
-      this.connectionState = state
+      this.updateConnectionState(state)
     })
 
     // Connect (synchronous)
     this.client.connect()
+  }
+
+  /**
+   * Update connection state and notify callback
+   */
+  private updateConnectionState(state: ConnectionState): void {
+    this.connectionState = state
+    this.onStateChange?.(state)
   }
 
   /**
@@ -166,7 +192,7 @@ export class JanBrowserClient implements ToolCallClient {
       this.client.disconnect()
       this.client = undefined
     }
-    this.connectionState = 'disconnected'
+    this.updateConnectionState('disconnected')
   }
 
   /**
