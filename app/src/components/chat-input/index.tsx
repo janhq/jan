@@ -27,6 +27,7 @@ import {
   ChromiumIcon,
   FolderIcon,
   GlobeIcon,
+  LightbulbIcon,
   MegaphoneIcon,
   Settings2,
   X,
@@ -72,11 +73,13 @@ const ChatInput = ({
     (state) => state.deepResearchEnabled
   )
   const browserEnabled = useCapabilities((state) => state.browserEnabled)
+  const reasoningEnabled = useCapabilities((state) => state.reasoningEnabled)
   const toggleSearch = useCapabilities((state) => state.toggleSearch)
   const toggleDeepResearch = useCapabilities(
     (state) => state.toggleDeepResearch
   )
   const toggleBrowser = useCapabilities((state) => state.toggleBrowser)
+  const toggleInstruct = useCapabilities((state) => state.toggleReasoning)
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
@@ -89,6 +92,7 @@ const ChatInput = ({
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
   const isSupportDeepResearch = isSupportTools && isSupportReasoning
+  const isSupportInstruct = modelDetail.supports_instruct
 
   // Auto-disable capabilities when model doesn't support them
   useEffect(() => {
@@ -222,11 +226,14 @@ const ChatInput = ({
                 searchEnabled={searchEnabled}
                 deepResearchEnabled={deepResearchEnabled}
                 browserEnabled={browserEnabled}
+                reasoningEnabled={reasoningEnabled}
                 toggleSearch={toggleSearch}
                 toggleDeepResearch={toggleDeepResearch}
                 toggleBrowser={toggleBrowser}
+                toggleInstruct={toggleInstruct}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}
+                isSupportReasoningToggle={isSupportInstruct}
               >
                 <Button
                   className="rounded-full mx-1 size-8"
@@ -236,6 +243,17 @@ const ChatInput = ({
                   <Settings2 className="size-4 text-muted-foreground" />
                 </Button>
               </SettingChatInput>
+              {isSupportInstruct && reasoningEnabled && !deepResearchEnabled && (
+                <PromptInputButton
+                  variant="outline"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  onClick={toggleInstruct}
+                >
+                  <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">Think</span>
+                </PromptInputButton>
+              )}
               {searchEnabled && !deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"

@@ -164,7 +164,8 @@ export function createAuthenticatedFetch(customBody?: object): typeof fetch {
 export function janProvider(
   conversationId?: string,
   deepResearch?: boolean,
-  isPrivateChat?: boolean
+  isPrivateChat?: boolean,
+  isEnableThinking: boolean = false
 ): OpenAICompatibleProvider<string, string, string> {
   return createOpenAICompatible({
     name: 'janhq',
@@ -174,6 +175,7 @@ export function janProvider(
       ...(!isPrivateChat && { store: true }),
       ...(!isPrivateChat && { conversation: conversationId }),
       deep_research: deepResearch ?? false,
+      enable_thinking: deepResearch ? true : isEnableThinking,
     }),
   })
 }

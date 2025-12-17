@@ -13,6 +13,7 @@ import {
   CircleCheck,
   GlobeIcon,
   Leaf,
+  LightbulbIcon,
   MegaphoneIcon,
   SmileIcon,
   type LucideIcon,
@@ -31,10 +32,13 @@ interface SettingChatInputProps {
   searchEnabled: boolean
   deepResearchEnabled: boolean
   browserEnabled: boolean
+  reasoningEnabled: boolean
+  toggleInstruct: () => void
   toggleBrowser: () => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
   isSupportTools: boolean
+  isSupportReasoningToggle: boolean
   isSupportDeepResearch: boolean
   selectedTone?: ToneOption
   onToneChange?: (tone: ToneOption) => void
@@ -54,11 +58,14 @@ export const SettingChatInput = ({
   searchEnabled,
   deepResearchEnabled,
   browserEnabled,
+  reasoningEnabled,
+  toggleInstruct,
   toggleSearch,
   toggleDeepResearch,
   toggleBrowser,
   isSupportTools,
   isSupportDeepResearch,
+  isSupportReasoningToggle,
   selectedTone = 'Friendly',
   onToneChange,
   children,
@@ -106,6 +113,34 @@ export const SettingChatInput = ({
             ))}
           </DropDrawerSubContent>
         </DropDrawerSub>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropDrawerItem
+                onSelect={(e) => e.preventDefault()}
+                disabled={!isSupportReasoningToggle || deepResearchEnabled}
+              >
+                <div className="flex gap-2 items-center justify-between w-full">
+                  <div className="flex gap-2 items-center w-full">
+                    <LightbulbIcon />
+                    <span>Think</span>
+                  </div>
+                  <Switch
+                    disabled={!isSupportReasoningToggle}
+                    checked={deepResearchEnabled ? true :reasoningEnabled}
+                    onCheckedChange={toggleInstruct}
+                  />
+                </div>
+              </DropDrawerItem>
+            </div>
+          </TooltipTrigger>
+          {!isSupportReasoningToggle && (
+            <TooltipContent>
+              <p>The model does not have toggle-based reasoning capabilities</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
@@ -178,6 +213,7 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
+
         {/* Temporary hide till we have connector */}
         {/* <DropDrawerSeparator />
         <DropDrawerItem>
