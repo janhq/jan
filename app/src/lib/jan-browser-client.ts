@@ -23,9 +23,11 @@ export class JanBrowserClient implements ToolCallClient {
   private connectionState: ConnectionState = 'disconnected'
   private detectionResult: DetectionResult | null = null
   private onStateChange?: (state: ConnectionState) => void
+  private reconnectIntervalId?: ReturnType<typeof setInterval>
 
   constructor() {
     this.connect()
+    this.startReconnectInterval()
   }
 
   /**
@@ -185,9 +187,38 @@ export class JanBrowserClient implements ToolCallClient {
   }
 
   /**
+   * Start automatic reconnection interval
+   */
+  private startReconnectInterval(): void {
+    // Clear any existing interval
+    if (this.reconnectIntervalId) {
+      clearInterval(this.reconnectIntervalId)
+    }
+
+    // Try to reconnect every 10 seconds if not connected
+    this.reconnectIntervalId = setInterval(async () => {
+      if (!this.client?.isConnected()) {
+        console.log('Attempting to reconnect to browser extension...')
+        await this.connect()
+      }
+    }, 5000)
+  }
+
+  /**
+   * Stop automatic reconnection interval
+   */
+  private stopReconnectInterval(): void {
+    if (this.reconnectIntervalId) {
+      clearInterval(this.reconnectIntervalId)
+      this.reconnectIntervalId = undefined
+    }
+  }
+
+  /**
    * Disconnect from the browser extension
    */
   async disconnect(): Promise<void> {
+    this.stopReconnectInterval()
     if (this.client) {
       this.client.disconnect()
       this.client = undefined
