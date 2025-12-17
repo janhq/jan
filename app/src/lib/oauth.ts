@@ -38,10 +38,7 @@ function base64URLEncode(buffer: ArrayBuffer): string {
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i])
   }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
 /**
@@ -173,7 +170,16 @@ export function decodeJWT(token: string): Record<string, unknown> {
     }
 
     const payload = parts[1]
-    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    // Decode base64url to binary string
+    const binaryString = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    // Convert binary string to bytes
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    // Decode UTF-8 bytes to proper string
+    const decoder = new TextDecoder('utf-8')
+    const decoded = decoder.decode(bytes)
     return JSON.parse(decoded)
   } catch (error) {
     console.error('JWT decode error:', error)
@@ -191,7 +197,8 @@ export function extractUserFromTokens(
 
   return {
     id: (claims.sub as string) || '',
-    name: (claims.name as string) || (claims.preferred_username as string) || '',
+    name:
+      (claims.name as string) || (claims.preferred_username as string) || '',
     email: (claims.email as string) || '',
     avatar: (claims.picture as string) || undefined,
     pro: false, // Will be determined by backend
