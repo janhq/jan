@@ -66,26 +66,13 @@ dev: install-and-build
 install-web-app: config-yarn
 	yarn install
 
-dev-web-app: install-web-app
-	yarn build:core
-	yarn dev:web-app
 
 dev-web-app-newui: install-web-app
 	yarn build:core
 	yarn dev:web-app-newui
 
-build-web-app: install-web-app
-	yarn build:core
-	yarn build:web-app
-
 build-web-app-newui: install-web-app
 	yarn build:web-app-newui
-
-serve-web-app:
-	yarn serve:web-app
-
-build-serve-web-app: build-web-app
-	yarn serve:web-app
 
 # Mobile
 dev-android: install-and-build install-android-rust-targets
