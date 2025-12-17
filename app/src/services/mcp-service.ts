@@ -1,5 +1,6 @@
 import { JanBrowserClient } from '@/lib/jan-browser-client'
 import { StreamableHttpMCPClient } from '@/lib/streamable-mcp-client'
+import { useBrowserConnection } from '@/stores/browser-connection-store'
 
 /**
  * MCP Service - Registry for managing multiple MCP clients
@@ -19,7 +20,13 @@ class MCPService {
     this.initializeMCPClient()
     // Register default clients
     this.registerClient('search', new StreamableHttpMCPClient())
-    this.registerClient('browse', new JanBrowserClient())
+
+    // Register browser client and connect it to the store
+    const browserClient = new JanBrowserClient()
+    browserClient.setOnStateChange((state) => {
+      useBrowserConnection.getState().setConnectionState(state)
+    })
+    this.registerClient('browse', browserClient)
   }
 
   /**

@@ -24,7 +24,6 @@ import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import {
-  ChromiumIcon,
   FolderIcon,
   GlobeIcon,
   LightbulbIcon,
@@ -40,6 +39,12 @@ import { SettingChatInput } from './setting-chat-input'
 import { ProjectsChatInput } from './projects-chat-input'
 import { Button } from '@/components/ui/button'
 import { usePrivateChat } from '@/stores/private-chat-store'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { useBrowserConnection } from '@/stores/browser-connection-store'
 
 const ChatInput = ({
   initialConversation = false,
@@ -57,6 +62,9 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+  const browserConnectionState = useBrowserConnection(
+    (state) => state.connectionState
+  )
 
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
@@ -246,17 +254,19 @@ const ChatInput = ({
                   <Settings2 className="size-4 text-muted-foreground" />
                 </Button>
               </SettingChatInput>
-              {isSupportInstruct && reasoningEnabled && !deepResearchEnabled && (
-                <PromptInputButton
-                  variant="outline"
-                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                  onClick={toggleInstruct}
-                >
-                  <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
-                  <X className="text-primary size-4 hidden group-hover:block" />
-                  <span className="text-primary">Think</span>
-                </PromptInputButton>
-              )}
+              {isSupportInstruct &&
+                reasoningEnabled &&
+                !deepResearchEnabled && (
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    onClick={toggleInstruct}
+                  >
+                    <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
+                    <X className="text-primary size-4 hidden group-hover:block" />
+                    <span className="text-primary">Think</span>
+                  </PromptInputButton>
+                )}
               {searchEnabled && !deepResearchEnabled && (
                 <PromptInputButton
                   variant="outline"
@@ -280,15 +290,46 @@ const ChatInput = ({
                 </PromptInputButton>
               )}
               {browserEnabled && (
-                <PromptInputButton
-                  variant="outline"
-                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                  onClick={toggleBrowser}
-                >
-                  <ChromiumIcon className="text-primary size-4 group-hover:hidden" />
-                  <X className="text-primary size-4 hidden group-hover:block" />
-                  <span className="text-primary">Browse</span>
-                </PromptInputButton>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PromptInputButton
+                      variant="outline"
+                      className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                      onClick={toggleBrowser}
+                    >
+                      <div className="size-4 flex items-center justify-center group-hover:hidden">
+                        {browserConnectionState === 'error' && (
+                          <div className="size-3 bg-red-400 rounded-full" />
+                        )}
+                        {browserConnectionState === 'connecting' && (
+                          <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
+                        )}
+                        {browserConnectionState === 'connected' && (
+                          <div className="size-3 bg-green-400 rounded-full" />
+                        )}
+                        {browserConnectionState === 'disconnected' && (
+                          <div className="size-3 bg-neutral-400 dark:bg-neutral-500 rounded-full" />
+                        )}
+                      </div>
+                      <X className="text-primary size-4 hidden group-hover:block" />
+                      <span className="text-primary">Browse</span>
+                    </PromptInputButton>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {browserConnectionState === 'error' && (
+                      <p>Connection error</p>
+                    )}
+                    {browserConnectionState === 'connecting' && (
+                      <p>Connecting...</p>
+                    )}
+                    {browserConnectionState === 'connected' && (
+                      <p>Ready to use</p>
+                    )}
+                    {browserConnectionState === 'disconnected' && (
+                      <p>Disconnected</p>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               )}
               {selectedProjectId && !isPrivateChat && (
                 <PromptInputButton
