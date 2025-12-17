@@ -14,11 +14,17 @@ import { mcpService } from '@/services/mcp-service'
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   private model: LanguageModel
   private tools: Record<string, Tool> = {}
-  private enabledTool = false
+  private enabledSearch = false
+  private enableBrowse = false
 
-  constructor(model: LanguageModel, enabledTool?: boolean) {
+  constructor(
+    model: LanguageModel,
+    enabledSearch?: boolean,
+    enableBrowse?: boolean
+  ) {
     this.model = model
-    this.enabledTool = enabledTool ?? false
+    this.enabledSearch = enabledSearch ?? false
+    this.enableBrowse = enableBrowse ?? false
     this.initializeTools()
   }
 
@@ -26,8 +32,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.model = model
   }
 
-  updateToolEnabled(enabledTool: boolean) {
-    this.enabledTool = enabledTool
+  updateSearchEnabled(enabledSearch: boolean) {
+    this.enabledSearch = enabledSearch
+  }
+  updateBrowseEnabled(enableBrowse: boolean) {
+    this.enableBrowse = enableBrowse
   }
 
   /**
@@ -35,17 +44,25 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    */
   private async initializeTools() {
     try {
-      const toolsResponse = await mcpService.getTools()
+      const toolsResponse = await mcpService.getTools(
+        [
+          this.enabledSearch ? 'search' : null,
+          this.enableBrowse ? 'browse' : null,
+        ].filter(Boolean) as string[]
+      )
 
       // Convert MCP tools to AI SDK CoreTool format
-      this.tools = toolsResponse.data.reduce((acc, tool) => {
-        acc[tool.name] = {
-          description: tool.description,
-          inputSchema: jsonSchema(tool.inputSchema),
-          name: tool.name,
-        }
-        return acc
-      }, {} as Record<string, Tool>)
+      this.tools = toolsResponse.data.reduce(
+        (acc, tool) => {
+          acc[tool.name] = {
+            description: tool.description,
+            inputSchema: jsonSchema(tool.inputSchema),
+            name: tool.name,
+          }
+          return acc
+        },
+        {} as Record<string, Tool>
+      )
 
       console.log(`Initialized ${Object.keys(this.tools).length} MCP tools`)
     } catch (error) {
@@ -54,12 +71,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
-  /**
-   * Refresh tools from MCP server
-   */
-  async refreshTools() {
-    await this.initializeTools()
-  }
 
   async sendMessages(
     options: {
@@ -71,13 +82,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-
-    await this.refreshTools()
+    await this.initializeTools()
     const result = streamText({
       model: this.model,
       messages: convertToModelMessages(options.messages),
       abortSignal: options.abortSignal,
-      tools: this.enabledTool ? this.tools : undefined,
+      tools: Object.keys(this.tools).length > 0 ? this.tools : undefined,
       toolChoice: 'auto',
     })
 

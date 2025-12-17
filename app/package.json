@@ -14,6 +14,7 @@
     "@ai-sdk/openai-compatible": "^1.0.28",
     "@ai-sdk/react": "^2.0.109",
     "@hookform/resolvers": "^5.2.2",
+    "@janhq/mcp-web-client": "^0.14.4",
     "@modelcontextprotocol/sdk": "^1.24.3",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",

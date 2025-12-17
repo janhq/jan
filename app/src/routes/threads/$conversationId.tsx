@@ -110,7 +110,7 @@ function ThreadPageContent() {
         addToolOutput({
           tool: toolCall.toolName,
           toolCallId: toolCall.toolCallId,
-          output: result,
+          output: result.content,
         })
       }
     },
@@ -338,7 +338,7 @@ function ThreadPageContent() {
                             return null
                           }
                           // Type narrowing: ensure part has tool-related properties
-                          if (!('state' in part) || !('input' in part)) {
+                          if (!('state' in part)) {
                             return null
                           }
                           // Extract tool name from the type (e.g., 'tool-call-web_search' -> 'web_search')

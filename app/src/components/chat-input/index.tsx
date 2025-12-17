@@ -24,6 +24,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import {
+  ChromiumIcon,
   FolderIcon,
   GlobeIcon,
   MegaphoneIcon,
@@ -70,10 +71,12 @@ const ChatInput = ({
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
+  const browserEnabled = useCapabilities((state) => state.browserEnabled)
   const toggleSearch = useCapabilities((state) => state.toggleSearch)
   const toggleDeepResearch = useCapabilities(
     (state) => state.toggleDeepResearch
   )
+  const toggleBrowser = useCapabilities((state) => state.toggleBrowser)
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
@@ -218,8 +221,10 @@ const ChatInput = ({
               <SettingChatInput
                 searchEnabled={searchEnabled}
                 deepResearchEnabled={deepResearchEnabled}
+                browserEnabled={browserEnabled}
                 toggleSearch={toggleSearch}
                 toggleDeepResearch={toggleDeepResearch}
+                toggleBrowser={toggleBrowser}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}
               >
@@ -251,6 +256,17 @@ const ChatInput = ({
                   <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
                   <X className="text-primary size-4 hidden group-hover:block" />
                   <span className="text-primary">Deep Research</span>
+                </PromptInputButton>
+              )}
+              {browserEnabled && (
+                <PromptInputButton
+                  variant="outline"
+                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  onClick={toggleBrowser}
+                >
+                  <ChromiumIcon className="text-primary size-4 group-hover:hidden" />
+                  <X className="text-primary size-4 hidden group-hover:block" />
+                  <span className="text-primary">Browse</span>
                 </PromptInputButton>
               )}
               {selectedProjectId && !isPrivateChat && (
