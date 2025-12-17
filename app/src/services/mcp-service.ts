@@ -1,6 +1,7 @@
 import { JanBrowserClient } from '@/lib/jan-browser-client'
 import { StreamableHttpMCPClient } from '@/lib/streamable-mcp-client'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
+import { createJanMediaUrl, uploadMedia } from './media-upload-service'
 
 /**
  * MCP Service - Registry for managing multiple MCP clients
@@ -250,12 +251,57 @@ class MCPService {
       console.log(
         `Routing tool call "${payload.toolName}" to client: ${targetClientKey}`
       )
-      return await targetClient.callTool(payload, metadata).then((result) => {
-        console.log(
-          `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`
-        )
-        return result
-      })
+      return await targetClient
+        .callTool(payload, metadata)
+        .then(async (toolResult) => {
+          console.log(
+            `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`
+          )
+
+          // Process content to upload images and convert to Jan media URLs
+          const processedContent = await Promise.all(
+            toolResult.content.map(async (item) => {
+              // Check if this is an image with base64 data
+              if (item.type === 'image' && item.data && item.mimeType) {
+                try {
+                  // Add base64 prefix if not present
+                  let dataUrl = item.data
+                  if (!dataUrl.startsWith('data:')) {
+                    dataUrl = `data:${item.mimeType};base64,${item.data}`
+                  }
+
+                  // Upload to media service
+                  const uploadResponse = await uploadMedia(
+                    dataUrl,
+                    'mcp-image',
+                    metadata?.conversationId || 'anonymous'
+                  )
+
+                  // Convert to Jan media URL format
+                  const janMediaUrl = createJanMediaUrl(
+                    uploadResponse.id,
+                    uploadResponse.mime
+                  )
+
+                  // Return updated item with Jan media URL
+                  return {
+                    ...item,
+                    data: janMediaUrl,
+                  }
+                } catch (uploadError) {
+                  console.error('Failed to upload MCP image:', uploadError)
+                  // Keep original data if upload fails
+                  return item
+                }
+              }
+              return item
+            })
+          )
+          return {
+            error: toolResult.error,
+            content: processedContent,
+          }
+        })
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error)
