@@ -55,8 +55,13 @@ function ThreadPageContent() {
   )
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-
-  const provider = janProvider(undefined, deepResearchEnabled, isPrivateChat)
+  const enableThinking = useCapabilities((state) => state.reasoningEnabled)
+  const provider = janProvider(
+    undefined,
+    deepResearchEnabled,
+    isPrivateChat,
+    enableThinking
+  )
 
   // const getUIMessages = useConversations((state) => state.getUIMessages)
 

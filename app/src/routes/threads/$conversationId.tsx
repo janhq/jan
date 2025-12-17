@@ -56,9 +56,10 @@ function ThreadPageContent() {
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
+  const enableThinking = useCapabilities((state) => state.reasoningEnabled)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
-  const provider = janProvider(conversationId, deepResearchEnabled)
+  const provider = janProvider(conversationId, deepResearchEnabled, false, enableThinking)
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
 
