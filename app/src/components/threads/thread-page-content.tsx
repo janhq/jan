@@ -33,7 +33,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { RefreshCcwIcon, CopyIcon, Loader, CheckIcon } from 'lucide-react'
+import { CopyIcon, Loader, CheckIcon } from 'lucide-react'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
@@ -78,7 +78,7 @@ export function ThreadPageContent({
     messages,
     status,
     sendMessage,
-    regenerate,
+    // regenerate,
     setMessages,
     addToolOutput,
     stop,
@@ -271,12 +271,12 @@ export function ThreadPageContent({
                                         <CopyIcon className="text-muted-foreground size-3" />
                                       )}
                                     </MessageAction>
-                                    <MessageAction
+                                    {/* <MessageAction
                                       onClick={() => regenerate()}
                                       label="Retry"
                                     >
                                       <RefreshCcwIcon className="text-muted-foreground size-3" />
-                                    </MessageAction>
+                                    </MessageAction> */}
                                     {/* Temporary hide till we have function */}
                                     {/* <MessageAction label="Like">
                                       <ThumbsUpIcon className="text-muted-foreground size-3" />
