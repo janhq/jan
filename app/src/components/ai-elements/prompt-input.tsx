@@ -41,6 +41,12 @@ import {
 import { cn } from '@/lib/utils'
 import type { ChatStatus, FileUIPart } from 'ai'
 import {
+  type UploadStatus,
+  blobUrlToDataUrl,
+  uploadMedia,
+  createJanMediaUrl,
+} from '@/services/media-upload-service'
+import {
   ArrowUp,
   Loader2Icon,
   Paperclip,
@@ -49,8 +55,28 @@ import {
   PlusIcon,
   SquareIcon,
   XIcon,
+  AlertCircleIcon,
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
+
+// ============================================================================
+// Extended FileUIPart Type (wrapper around AI SDK's FileUIPart)
+// ============================================================================
+
+/**
+ * Extended FileUIPart that includes upload tracking fields.
+ * We wrap the AI SDK's FileUIPart instead of modifying it.
+ */
+export type ExtendedFileUIPart = FileUIPart & {
+  /** Jan media ID after successful upload */
+  mediaId?: string
+  /** Current upload status */
+  uploadStatus?: UploadStatus
+  /** Error message if upload failed */
+  uploadError?: string
+  /** Blob URL for local preview (separate from url which will contain jan media URL after upload) */
+  previewUrl?: string
+}
 import {
   type ChangeEvent,
   type ChangeEventHandler,
@@ -79,12 +105,14 @@ import {
 // ============================================================================
 
 export type AttachmentsContext = {
-  files: (FileUIPart & { id: string })[]
+  files: (ExtendedFileUIPart & { id: string })[]
   add: (files: File[] | FileList) => void
   remove: (id: string) => void
   clear: () => void
   openFileDialog: () => void
   fileInputRef: RefObject<HTMLInputElement | null>
+  /** Update a file's upload status and mediaId */
+  updateFile: (id: string, updates: Partial<ExtendedFileUIPart>) => void
 }
 
 export type TextInputContext = {
@@ -154,7 +182,7 @@ export function PromptInputProvider({
 
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
-    (FileUIPart & { id: string })[]
+    (ExtendedFileUIPart & { id: string })[]
   >([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef<() => void>(() => {})
@@ -167,13 +195,18 @@ export function PromptInputProvider({
 
     setAttachmentFiles((prev) =>
       prev.concat(
-        incoming.map((file) => ({
-          id: nanoid(),
-          type: 'file' as const,
-          url: URL.createObjectURL(file),
-          mediaType: file.type,
-          filename: file.name,
-        }))
+        incoming.map((file) => {
+          const blobUrl = URL.createObjectURL(file)
+          return {
+            id: nanoid(),
+            type: 'file' as const,
+            url: blobUrl,
+            previewUrl: blobUrl,
+            uploadStatus: 'pending' as const,
+            mediaType: file.type,
+            filename: file.name,
+          }
+        })
       )
     )
   }, [])
@@ -181,8 +214,8 @@ export function PromptInputProvider({
   const remove = useCallback((id: string) => {
     setAttachmentFiles((prev) => {
       const found = prev.find((f) => f.id === id)
-      if (found?.url) {
-        URL.revokeObjectURL(found.url)
+      if (found?.previewUrl) {
+        URL.revokeObjectURL(found.previewUrl)
       }
       return prev.filter((f) => f.id !== id)
     })
@@ -191,13 +224,22 @@ export function PromptInputProvider({
   const clear = useCallback(() => {
     setAttachmentFiles((prev) => {
       for (const f of prev) {
-        if (f.url) {
-          URL.revokeObjectURL(f.url)
+        if (f.previewUrl) {
+          URL.revokeObjectURL(f.previewUrl)
         }
       }
       return []
     })
   }, [])
+
+  const updateFile = useCallback(
+    (id: string, updates: Partial<ExtendedFileUIPart>) => {
+      setAttachmentFiles((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+      )
+    },
+    []
+  )
 
   // Keep a ref to attachments for cleanup on unmount (avoids stale closure)
   const attachmentsRef = useRef(attachmentFiles)
@@ -207,8 +249,8 @@ export function PromptInputProvider({
   useEffect(() => {
     return () => {
       for (const f of attachmentsRef.current) {
-        if (f.url) {
-          URL.revokeObjectURL(f.url)
+        if (f.previewUrl) {
+          URL.revokeObjectURL(f.previewUrl)
         }
       }
     }
@@ -226,8 +268,9 @@ export function PromptInputProvider({
       clear,
       openFileDialog,
       fileInputRef,
+      updateFile,
     }),
-    [attachmentFiles, add, remove, clear, openFileDialog]
+    [attachmentFiles, add, remove, clear, openFileDialog, updateFile]
   )
 
   const __registerFileInput = useCallback(
@@ -279,8 +322,27 @@ export const usePromptInputAttachments = () => {
   return context
 }
 
+/**
+ * Hook to check if any attachments are currently uploading or pending.
+ * Useful for disabling submit button during uploads.
+ */
+export const usePromptInputIsUploading = () => {
+  const attachments = usePromptInputAttachments()
+  return attachments.files.some(
+    (f) => f.uploadStatus === 'pending' || f.uploadStatus === 'uploading'
+  )
+}
+
+/**
+ * Hook to check if any attachments have failed to upload.
+ */
+export const usePromptInputHasFailedUploads = () => {
+  const attachments = usePromptInputAttachments()
+  return attachments.files.some((f) => f.uploadStatus === 'failed')
+}
+
 export type PromptInputAttachmentProps = HTMLAttributes<HTMLDivElement> & {
-  data: FileUIPart & { id: string }
+  data: ExtendedFileUIPart & { id: string }
   className?: string
 }
 
@@ -293,11 +355,24 @@ export function PromptInputAttachment({
 
   const filename = data.filename || ''
 
+  // Use previewUrl for display, fall back to url
+  const displayUrl = data.previewUrl || data.url
+
   const mediaType =
-    data.mediaType?.startsWith('image/') && data.url ? 'image' : 'file'
+    data.mediaType?.startsWith('image/') && displayUrl ? 'image' : 'file'
   const isImage = mediaType === 'image'
 
   const attachmentLabel = filename || (isImage ? 'Image' : 'Attachment')
+
+  const isUploading = data.uploadStatus === 'uploading'
+  const isCompleted = data.uploadStatus === 'completed'
+  const isFailed = data.uploadStatus === 'failed'
+
+  // Retry failed upload
+  const handleRetry = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    attachments.updateFile(data.id, { uploadStatus: 'pending', uploadError: undefined })
+  }
 
   return (
     <PromptInputHoverCard>
@@ -305,6 +380,7 @@ export function PromptInputAttachment({
         <div
           className={cn(
             'group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-all hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+            isFailed && 'border-destructive/50 bg-destructive/10',
             className
           )}
           key={data.id}
@@ -312,12 +388,30 @@ export function PromptInputAttachment({
         >
           <div className="relative size-5 shrink-0">
             <div className="absolute inset-0 flex size-5 items-center justify-center overflow-hidden rounded bg-background transition-opacity group-hover:opacity-0">
-              {isImage ? (
+              {isUploading ? (
+                <Loader2Icon className="size-3 animate-spin text-muted-foreground" />
+              ) : isCompleted ? (
+                isImage ? (
+                  <img
+                    alt={filename || 'attachment'}
+                    className="size-5 object-cover"
+                    height={20}
+                    src={displayUrl}
+                    width={20}
+                  />
+                ) : (
+                  <div className="flex size-5 items-center justify-center text-muted-foreground">
+                    <PaperclipIcon className="size-3" />
+                  </div>
+                )
+              ) : isFailed ? (
+                <AlertCircleIcon className="size-3 text-destructive" />
+              ) : isImage ? (
                 <img
                   alt={filename || 'attachment'}
                   className="size-5 object-cover"
                   height={20}
-                  src={data.url}
+                  src={displayUrl}
                   width={20}
                 />
               ) : (
@@ -326,33 +420,52 @@ export function PromptInputAttachment({
                 </div>
               )}
             </div>
-            <Button
-              aria-label="Remove attachment"
-              className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
-              onClick={(e) => {
-                e.stopPropagation()
-                attachments.remove(data.id)
-              }}
-              type="button"
-              variant="ghost"
-            >
-              <XIcon />
-              <span className="sr-only">Remove</span>
-            </Button>
+            {isFailed ? (
+              <Button
+                aria-label="Retry upload"
+                className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
+                onClick={handleRetry}
+                type="button"
+                variant="ghost"
+              >
+                <ArrowUp />
+                <span className="sr-only">Retry</span>
+              </Button>
+            ) : (
+              <Button
+                aria-label="Remove attachment"
+                className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  attachments.remove(data.id)
+                }}
+                type="button"
+                variant="ghost"
+              >
+                <XIcon />
+                <span className="sr-only">Remove</span>
+              </Button>
+            )}
           </div>
 
           <span className="flex-1 truncate">{attachmentLabel}</span>
+          {isUploading && (
+            <span className="text-xs text-muted-foreground">Uploading...</span>
+          )}
+          {isFailed && (
+            <span className="text-xs text-destructive">Failed</span>
+          )}
         </div>
       </HoverCardTrigger>
       <PromptInputHoverCardContent className="w-auto p-2">
         <div className="w-auto space-y-3">
-          {isImage && (
+          {isImage && displayUrl && (
             <div className="flex max-h-96 w-96 items-center justify-center overflow-hidden rounded-md border">
               <img
                 alt={filename || 'attachment preview'}
                 className="max-h-full max-w-full object-contain"
                 height={384}
-                src={data.url}
+                src={displayUrl}
                 width={448}
               />
             </div>
@@ -367,6 +480,17 @@ export function PromptInputAttachment({
                   {data.mediaType}
                 </p>
               )}
+              {data.uploadStatus && (
+                <p className="truncate font-mono text-muted-foreground text-xs">
+                  Status: {data.uploadStatus}
+                  {data.mediaId && ` (${data.mediaId})`}
+                </p>
+              )}
+              {data.uploadError && (
+                <p className="truncate font-mono text-destructive text-xs">
+                  Error: {data.uploadError}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -379,7 +503,7 @@ export type PromptInputAttachmentsProps = Omit<
   HTMLAttributes<HTMLDivElement>,
   'children'
 > & {
-  children: (attachment: FileUIPart & { id: string }) => ReactNode
+  children: (attachment: ExtendedFileUIPart & { id: string }) => ReactNode
 }
 
 export function PromptInputAttachments({
@@ -434,7 +558,7 @@ export const PromptInputActionAddAttachments = ({
 
 export type PromptInputMessage = {
   text: string
-  files: FileUIPart[]
+  files: ExtendedFileUIPart[]
 }
 
 export type PromptInputProps = Omit<
@@ -443,6 +567,8 @@ export type PromptInputProps = Omit<
 > & {
   accept?: string // e.g., "image/*" or leave undefined for any
   multiple?: boolean
+  /** User ID for media upload tracking (e.g., conversation ID) */
+  userId?: string
   // When true, accepts drops anywhere on document. Default false (opt-in).
   globalDrop?: boolean
   // Render a hidden input with given name and keep it in sync for native form posts. Default false.
@@ -464,6 +590,7 @@ export const PromptInput = ({
   className,
   accept,
   multiple,
+  userId,
   globalDrop,
   syncHiddenInput,
   maxFiles,
@@ -480,9 +607,14 @@ export const PromptInput = ({
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+  
+  // Track which files are currently being uploaded to prevent duplicate uploads
+  const uploadingFilesRef = useRef<Set<string>>(new Set())
+  // Track abort controllers for cleanup
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map())
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([])
+  const [items, setItems] = useState<(ExtendedFileUIPart & { id: string })[]>([])
   const files = usingProvider ? controller.attachments.files : items
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
@@ -550,12 +682,15 @@ export const PromptInput = ({
             message: 'Too many files. Some were not added.',
           })
         }
-        const next: (FileUIPart & { id: string })[] = []
+        const next: (ExtendedFileUIPart & { id: string })[] = []
         for (const file of capped) {
+          const blobUrl = URL.createObjectURL(file)
           next.push({
             id: nanoid(),
             type: 'file',
-            url: URL.createObjectURL(file),
+            url: blobUrl,
+            previewUrl: blobUrl,
+            uploadStatus: 'pending',
             mediaType: file.type,
             filename: file.name,
           })
@@ -570,8 +705,8 @@ export const PromptInput = ({
     (id: string) =>
       setItems((prev) => {
         const found = prev.find((file) => file.id === id)
-        if (found?.url) {
-          URL.revokeObjectURL(found.url)
+        if (found?.previewUrl) {
+          URL.revokeObjectURL(found.previewUrl)
         }
         return prev.filter((file) => file.id !== id)
       }),
@@ -582,8 +717,8 @@ export const PromptInput = ({
     () =>
       setItems((prev) => {
         for (const file of prev) {
-          if (file.url) {
-            URL.revokeObjectURL(file.url)
+          if (file.previewUrl) {
+            URL.revokeObjectURL(file.previewUrl)
           }
         }
         return []
@@ -591,9 +726,21 @@ export const PromptInput = ({
     []
   )
 
+  const updateFileLocal = useCallback(
+    (id: string, updates: Partial<ExtendedFileUIPart>) => {
+      setItems((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+      )
+    },
+    []
+  )
+
   const add = usingProvider ? controller.attachments.add : addLocal
   const remove = usingProvider ? controller.attachments.remove : removeLocal
   const clear = usingProvider ? controller.attachments.clear : clearLocal
+  const updateFile = usingProvider
+    ? controller.attachments.updateFile
+    : updateFileLocal
   const openFileDialog = usingProvider
     ? controller.attachments.openFileDialog
     : openFileDialogLocal
@@ -667,7 +814,7 @@ export const PromptInput = ({
     () => () => {
       if (!usingProvider) {
         for (const f of filesRef.current) {
-          if (f.url) URL.revokeObjectURL(f.url)
+          if (f.previewUrl) URL.revokeObjectURL(f.previewUrl)
         }
       }
     },
@@ -675,29 +822,83 @@ export const PromptInput = ({
     [usingProvider]
   )
 
+  // Upload pending files automatically
+  useEffect(() => {
+    const pendingFiles = files.filter(
+      (f) => f.uploadStatus === 'pending' && !uploadingFilesRef.current.has(f.id)
+    )
+    if (pendingFiles.length === 0) return
+
+    pendingFiles.forEach((file) => {
+      // Mark as being uploaded in ref (to prevent duplicate uploads)
+      uploadingFilesRef.current.add(file.id)
+      
+      const abortController = new AbortController()
+      abortControllersRef.current.set(file.id, abortController)
+
+      // Mark as uploading in state
+      updateFile(file.id, { uploadStatus: 'uploading' })
+
+      // Start async upload (not awaited to avoid blocking)
+      ;(async () => {
+        try {
+          // Convert blob URL to data URL for upload
+          if (!file.previewUrl) {
+            throw new Error('No preview URL available')
+          }
+          const dataUrl = await blobUrlToDataUrl(file.previewUrl)
+
+          // Upload to media service
+          const response = await uploadMedia(
+            dataUrl,
+            file.filename || 'attachment',
+            userId || 'anonymous',
+            abortController.signal
+          )
+
+          // Update file with media ID and jan media URL
+          // Use jan media URL format (data:image/jpeg;jan_MEDIA_ID) for server to resolve
+          const janMediaUrl = createJanMediaUrl(response.id, response.mime)
+          updateFile(file.id, {
+            mediaId: response.id,
+            url: janMediaUrl,
+            uploadStatus: 'completed',
+          })
+        } catch (error) {
+          if ((error as Error).name === 'AbortError') {
+            // Upload was cancelled, don't update status
+            return
+          }
+          console.error('Upload failed:', error)
+          updateFile(file.id, {
+            uploadStatus: 'failed',
+            uploadError:
+              error instanceof Error ? error.message : 'Upload failed',
+          })
+        } finally {
+          // Cleanup refs
+          uploadingFilesRef.current.delete(file.id)
+          abortControllersRef.current.delete(file.id)
+        }
+      })()
+    })
+  }, [files, updateFile, userId])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllersRef.current.forEach((controller) => controller.abort())
+      abortControllersRef.current.clear()
+      uploadingFilesRef.current.clear()
+    }
+  }, [])
+
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     if (event.currentTarget.files) {
       add(event.currentTarget.files)
     }
     // Reset input value to allow selecting files that were previously removed
     event.currentTarget.value = ''
-  }
-
-  const convertBlobUrlToDataUrl = async (
-    url: string
-  ): Promise<string | null> => {
-    try {
-      const response = await fetch(url)
-      const blob = await response.blob()
-      return new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result as string)
-        reader.onerror = () => resolve(null)
-        reader.readAsDataURL(blob)
-      })
-    } catch {
-      return null
-    }
   }
 
   const ctx = useMemo<AttachmentsContext>(
@@ -708,12 +909,29 @@ export const PromptInput = ({
       clear,
       openFileDialog,
       fileInputRef: inputRef,
+      updateFile,
     }),
-    [files, add, remove, clear, openFileDialog]
+    [files, add, remove, clear, openFileDialog, updateFile]
   )
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault()
+
+    // Block submission if any files are still uploading or pending
+    const hasIncompleteUploads = files.some(
+      (f) => f.uploadStatus === 'pending' || f.uploadStatus === 'uploading'
+    )
+    if (hasIncompleteUploads) {
+      console.warn('Cannot submit while files are uploading')
+      return
+    }
+
+    // Block submission if any files failed to upload
+    const hasFailedUploads = files.some((f) => f.uploadStatus === 'failed')
+    if (hasFailedUploads) {
+      console.warn('Cannot submit with failed uploads. Please retry or remove the failed files.')
+      return
+    }
 
     const form = event.currentTarget
     const text = usingProvider
@@ -729,50 +947,37 @@ export const PromptInput = ({
       form.reset()
     }
 
-    // Convert blob URLs to data URLs asynchronously
-    Promise.all(
-      files.map(async ({ id, ...item }) => {
-        if (item.url && item.url.startsWith('blob:')) {
-          const dataUrl = await convertBlobUrlToDataUrl(item.url)
-          // If conversion failed, keep the original blob URL
-          return {
-            ...item,
-            url: dataUrl ?? item.url,
-          }
-        }
-        return item
-      })
+    // Files already have jan media URLs from successful uploads - no conversion needed
+    // Just strip internal fields (id, uploadStatus, etc.) before sending
+    const submittableFiles: ExtendedFileUIPart[] = files.map(
+      ({ id, uploadStatus, uploadError, previewUrl, ...rest }) => rest
     )
-      .then((convertedFiles: FileUIPart[]) => {
-        try {
-          const result = onSubmit({ text, files: convertedFiles }, event)
 
-          // Handle both sync and async onSubmit
-          if (result instanceof Promise) {
-            result
-              .then(() => {
-                clear()
-                if (usingProvider) {
-                  controller.textInput.clear()
-                }
-              })
-              .catch(() => {
-                // Don't clear on error - user may want to retry
-              })
-          } else {
-            // Sync function completed without throwing, clear attachments
+    try {
+      const result = onSubmit({ text, files: submittableFiles }, event)
+
+      // Handle both sync and async onSubmit
+      if (result instanceof Promise) {
+        result
+          .then(() => {
             clear()
             if (usingProvider) {
               controller.textInput.clear()
             }
-          }
-        } catch {
-          // Don't clear on error - user may want to retry
+          })
+          .catch(() => {
+            // Don't clear on error - user may want to retry
+          })
+      } else {
+        // Sync function completed without throwing, clear attachments
+        clear()
+        if (usingProvider) {
+          controller.textInput.clear()
         }
-      })
-      .catch(() => {
-        // Don't clear on error - user may want to retry
-      })
+      }
+    } catch {
+      // Don't clear on error - user may want to retry
+    }
   }
 
   // Render with or without local provider
@@ -1032,16 +1237,24 @@ export const PromptInputSubmit = ({
   variant = 'default',
   size = 'icon-sm',
   status,
+  disabled,
   children,
   ...props
 }: PromptInputSubmitProps) => {
+  const isUploading = usePromptInputIsUploading()
+  const hasFailedUploads = usePromptInputHasFailedUploads()
+
   let Icon = <ArrowUp className="size-4" />
 
-  if (status === 'submitted') {
+  if (isUploading) {
+    Icon = <Loader2Icon className="size-4 animate-spin" />
+  } else if (status === 'submitted') {
     Icon = <Loader2Icon className="size-4 animate-spin" />
   } else if (status === 'streaming') {
     Icon = <SquareIcon className="size-4" />
   }
+
+  const isDisabled = disabled || isUploading || hasFailedUploads
 
   return (
     <InputGroupButton
@@ -1050,6 +1263,7 @@ export const PromptInputSubmit = ({
       size={size}
       type="submit"
       variant={variant}
+      disabled={isDisabled}
       {...props}
     >
       {children ?? Icon}

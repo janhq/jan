@@ -45,10 +45,12 @@ const ChatInput = ({
   initialConversation = false,
   status,
   projectId,
+  conversationId,
   submit,
 }: {
   initialConversation?: boolean
   projectId?: string
+  conversationId?: string
   status?: ChatStatus
   submit?: (message?: PromptInputMessage) => void
 }) => {
@@ -194,6 +196,7 @@ const ChatInput = ({
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
           multiple
+          userId={conversationId || projectId || 'anonymous'}
           onSubmit={handleSubmit}
           className="rounded-3xl relative z-40 bg-background"
         >
