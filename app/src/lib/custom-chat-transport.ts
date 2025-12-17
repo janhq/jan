@@ -87,7 +87,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       model: this.model,
       messages: convertToModelMessages(options.messages),
       abortSignal: options.abortSignal,
-      tools: Object.keys(this.tools).length > 0 ? this.tools : undefined,
+      tools:
+        (this.enabledSearch || this.enableBrowse) &&
+        Object.keys(this.tools).length > 0
+          ? this.tools
+          : undefined,
       toolChoice: 'auto',
     })
 
