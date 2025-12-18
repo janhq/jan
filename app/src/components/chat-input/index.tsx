@@ -47,6 +47,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
+import { useProfile } from '@/stores/profile-store'
 
 const ChatInput = ({
   initialConversation = false,
@@ -104,11 +105,15 @@ const ChatInput = ({
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
   )
+  const setReasoningEnabled = useCapabilities(
+    (state) => state.setReasoningEnabled
+  )
   const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
 
   const setLastUsedModelId = useLastUsedModel(
     (state) => state.setLastUsedModelId
   )
+  const { settings, fetchSettings } = useProfile()
 
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
@@ -145,6 +150,21 @@ const ChatInput = ({
       setBrowserEnabled(false)
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
+
+  useEffect(() => {
+    fetchSettings()
+  }, [])
+
+  useEffect(() => {
+    if (settings) {
+      settings.preferences['enable_search'] === true && setSearchEnabled(true)
+      settings.preferences['enable_browser'] === true && setBrowserEnabled(true)
+      settings.preferences['enable_deep_research'] === true &&
+        setDeepResearchEnabled(true)
+      settings.preferences['enable_thinking'] === true &&
+        setReasoningEnabled(true)
+    }
+  }, [settings])
 
   const handleError = (err: {
     code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
