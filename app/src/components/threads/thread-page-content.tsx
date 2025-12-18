@@ -316,7 +316,7 @@ export function ThreadPageContent({
                               </MessageContent>
                               {/* Edit button for user messages */}
                               {message.role === 'user' && !isEditing && conversationId && (
-                                <MessageActions className="mt-1 gap-0">
+                                <MessageActions className="mt-1 gap-0 ml-auto justify-end w-fit">
                                   <MessageAction
                                     onClick={() => {
                                       setEditingMessageId(message.id)
