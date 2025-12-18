@@ -79,14 +79,33 @@ export const useCapabilities = create<CapabilitiesState>()(
   )
 )
 
+let pendingPreferences: Partial<Preferences> = {}
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
 // Helper function to update preferences in the background
 async function updatePreferencesInBackground(
   preferences: Partial<Preferences>
 ) {
-  try {
-    const { useProfile } = await import('./profile-store')
-    await useProfile.getState().updatePreferences({ preferences })
-  } catch (error) {
-    console.error('Failed to update preferences:', error)
+  // Merge new preferences into pending
+  pendingPreferences = { ...pendingPreferences, ...preferences }
+
+  // Clear existing timer
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
   }
+
+  // Set new timer
+  debounceTimer = setTimeout(async () => {
+    try {
+      const { useProfile } = await import('./profile-store')
+      const preferencesToUpdate = { ...pendingPreferences }
+      pendingPreferences = {} // Reset pending preferences
+
+      await useProfile.getState().updatePreferences({ preferences: preferencesToUpdate })
+    } catch (error) {
+      console.error('Failed to update preferences:', error)
+    } finally {
+      debounceTimer = null
+    }
+  }, 100)
 }
