@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { isExtensionAvailable } from '@janhq/mcp-web-client'
+import { useIsMobileDevice } from '@/hooks/use-is-mobile-device'
 
 type ToneOption = 'Friendly' | 'Concise' | 'Professional'
 
@@ -70,6 +71,8 @@ export const SettingChatInput = ({
   onToneChange,
   children,
 }: SettingChatInputProps) => {
+  const isMobileDevice = useIsMobileDevice()
+
   const toggleBrowserAttempt = async () => {
     const browserUseAvailable = await isExtensionAvailable(EXTENSION_ID)
     if ((browserUseAvailable && !browserEnabled) || browserEnabled) {
@@ -128,7 +131,11 @@ export const SettingChatInput = ({
                   </div>
                   <Switch
                     disabled={!isSupportReasoningToggle}
-                    checked={(!isSupportReasoningToggle || deepResearchEnabled) ? true :reasoningEnabled}
+                    checked={
+                      !isSupportReasoningToggle || deepResearchEnabled
+                        ? true
+                        : reasoningEnabled
+                    }
                     onCheckedChange={toggleInstruct}
                   />
                 </div>
@@ -141,24 +148,26 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropDrawerItem onSelect={(e) => e.preventDefault()}>
-                <div className="flex gap-2 items-center justify-between w-full">
-                  <div className="flex gap-2 items-center w-full">
-                    <ChromiumIcon />
-                    <span>Browse</span>
+        {!isMobileDevice && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <DropDrawerItem onSelect={(e) => e.preventDefault()}>
+                  <div className="flex gap-2 items-center justify-between w-full">
+                    <div className="flex gap-2 items-center w-full">
+                      <ChromiumIcon />
+                      <span>Browse</span>
+                    </div>
+                    <Switch
+                      checked={browserEnabled}
+                      onCheckedChange={toggleBrowserAttempt}
+                    />
                   </div>
-                  <Switch
-                    checked={browserEnabled}
-                    onCheckedChange={toggleBrowserAttempt}
-                  />
-                </div>
-              </DropDrawerItem>
-            </div>
-          </TooltipTrigger>
-        </Tooltip>
+                </DropDrawerItem>
+              </div>
+            </TooltipTrigger>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
