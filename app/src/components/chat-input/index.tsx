@@ -103,12 +103,10 @@ const ChatInput = ({
   )
   const toggleBrowser = useCapabilities((state) => state.toggleBrowser)
   const toggleInstruct = useCapabilities((state) => state.toggleReasoning)
+  const hydrateCapabilities = useCapabilities((state) => state.hydrate)
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
-  )
-  const setReasoningEnabled = useCapabilities(
-    (state) => state.setReasoningEnabled
   )
   const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
 
@@ -157,12 +155,9 @@ const ChatInput = ({
 
   useEffect(() => {
     if (pref) {
-      setSearchEnabled(pref.preferences.enable_search)
-      setBrowserEnabled(pref.preferences.enable_browser)
-      setDeepResearchEnabled(pref.preferences.enable_deep_research)
-      setReasoningEnabled(pref.preferences.enable_thinking)
+      hydrateCapabilities(pref.preferences)
     }
-  }, [])
+  }, [pref, hydrateCapabilities])
 
   const handleError = (err: {
     code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
