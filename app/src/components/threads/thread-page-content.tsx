@@ -41,7 +41,7 @@ import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { cn } from '@/lib/utils'
-import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import { lastAssistantMessageIsCompleteWithToolCalls, tool } from 'ai'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -86,32 +86,36 @@ export function ThreadPageContent({
   } = useChat(provider(selectedModel?.id), {
     onFinish: () => {
       // After finishing a message, check if we need to resubmit for tool calls
-      tools.current.forEach(async (toolCall: any) => {
-        const result = await mcpService.callTool(
-          {
-            toolName: toolCall.toolName,
-            serverName: 'Jan MCP Server',
-            arguments: toolCall.input as any,
-          },
-          {
-            conversationId,
-            toolCallId: toolCall.toolCallId,
+      Promise.all(
+        tools.current.map(async (toolCall: any) => {
+          const result = await mcpService.callTool(
+            {
+              toolName: toolCall.toolName,
+              serverName: 'Jan MCP Server',
+              arguments: toolCall.input as any,
+            },
+            {
+              conversationId,
+              toolCallId: toolCall.toolCallId,
+            }
+          )
+          if (result.error) {
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: result.error,
+            })
+          } else {
+            addToolOutput({
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              output: result.content,
+            })
           }
-        )
-        if (result.error) {
-          addToolOutput({
-            state: 'output-error',
-            tool: toolCall.toolName,
-            toolCallId: toolCall.toolCallId,
-            errorText: result.error,
-          })
-        } else {
-          addToolOutput({
-            tool: toolCall.toolName,
-            toolCallId: toolCall.toolCallId,
-            output: result.content,
-          })
-        }
+        })
+      ).then(() => {
+        tools.current = []
       })
     },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
@@ -394,7 +398,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={status}
+              status={tools.current.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>
