@@ -14,6 +14,7 @@ interface CapabilitiesState {
   toggleDeepResearch: () => void
   toggleBrowser: () => void
   toggleReasoning: () => void
+  hydrate: (preferences: Partial<Preferences>) => void
 }
 
 export const useCapabilities = create<CapabilitiesState>()(
@@ -62,6 +63,13 @@ export const useCapabilities = create<CapabilitiesState>()(
           const newValue = !state.reasoningEnabled
           updatePreferencesInBackground({ enable_thinking: newValue })
           return { reasoningEnabled: newValue }
+        }),
+      hydrate: (preferences: Partial<Preferences>) =>
+        set({
+          searchEnabled: preferences.enable_search ?? false,
+          browserEnabled: preferences.enable_browser ?? false,
+          deepResearchEnabled: preferences.enable_deep_research ?? false,
+          reasoningEnabled: preferences.enable_thinking ?? false,
         }),
     }),
     {
