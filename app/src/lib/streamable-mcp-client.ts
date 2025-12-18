@@ -95,12 +95,6 @@ export class StreamableHttpMCPClient implements ToolCallClient {
    *
    * @returns Promise<GetToolsResponse> - List of available tools with metadata
    * @throws Error if the request fails
-   *
-   * @example
-   * ```typescript
-   * const response = await mcpService.getTools()
-   * console.log(response.data) // Array of MCPTool objects
-   * ```
    */
   async getTools(): Promise<MCPTool[]> {
     try {
@@ -218,6 +212,8 @@ export class StreamableHttpMCPClient implements ToolCallClient {
       const contentType = response.headers.get('content-type') || ''
       let result: any
 
+      console.log('MCP tool call response content-type:', contentType)
+
       if (contentType.includes('text/event-stream')) {
         // Parse SSE response
         const text = await response.text()
@@ -259,7 +255,7 @@ export class StreamableHttpMCPClient implements ToolCallClient {
       }
 
       const content = Array.isArray(toolResult.content)
-        ? toolResult.content.map((item: any) => item)
+        ? toolResult.content
         : [{ type: 'text' as const, text: 'No content returned' }]
 
       console.log(`[MCP] Tool call succeeded:`, {
