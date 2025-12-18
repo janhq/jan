@@ -173,8 +173,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           acc[tool.name] = {
             description: tool.description,
             inputSchema: jsonSchema(tool.inputSchema),
-            // name: tool.name,
-            type: 'dynamic'
+            name: tool.name,
           }
           return acc
         },
