@@ -93,8 +93,11 @@ export function ThreadPageContent({
           messages: finishedMessages,
         })
       ) {
+        console.log('Resubmitting for tool calls...')
         // Resubmit the assistant message with tool outputs to continue the conversation
         sendMessage(undefined)
+      } else {
+        console.log('No resubmission needed.')
       }
     },
     // run client-side tools that are automatically executed:
@@ -340,7 +343,7 @@ export function ThreadPageContent({
 
                         default:
                           // Handle all tool-* cases (tool-call, tool-result, etc.)
-                          if (!part.type.startsWith('tool-')) {
+                          if (part.type !== 'dynamic-tool') {
                             return null
                           }
                           // Type narrowing: ensure part has tool-related properties
@@ -348,10 +351,7 @@ export function ThreadPageContent({
                             return null
                           }
                           // Extract tool name from the type (e.g., 'tool-call-web_search' -> 'web_search')
-                          const toolName = part.type
-                            .split('-')
-                            .slice(1)
-                            .join('-')
+                          const toolName = part.toolName
                           return (
                             <Tool key={`${message.id}-${i}`}>
                               <ToolHeader
