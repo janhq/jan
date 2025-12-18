@@ -34,7 +34,6 @@ import {
   ToolOutput,
 } from '@/components/ai-elements/tool'
 import { CopyIcon, Loader, CheckIcon } from 'lucide-react'
-import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
@@ -42,6 +41,7 @@ import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { cn } from '@/lib/utils'
+import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -73,6 +73,7 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
+  const tools = useRef<any>([])
 
   const {
     messages,
@@ -83,53 +84,50 @@ export function ThreadPageContent({
     addToolOutput,
     stop,
   } = useChat(provider(selectedModel?.id), {
-    onFinish: ({ messages: finishedMessages }) => {
+    onFinish: () => {
       // After finishing a message, check if we need to resubmit for tool calls
-      initialMessageSentRef.current = false
-
-      // Check if the last assistant message has completed tool calls
-      if (
-        lastAssistantMessageIsCompleteWithToolCalls({
-          messages: finishedMessages,
+      Promise.all(
+        tools.current.map(async (toolCall: any) => {
+          const result = await mcpService.callTool(
+            {
+              toolName: toolCall.toolName,
+              serverName: 'Jan MCP Server',
+              arguments: toolCall.input as any,
+            },
+            {
+              conversationId,
+              toolCallId: toolCall.toolCallId,
+            }
+          )
+          if (result.error) {
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: result.error,
+            })
+          } else {
+            addToolOutput({
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              output: result.content,
+            })
+          }
         })
-      ) {
-        // Resubmit the assistant message with tool outputs to continue the conversation
-        sendMessage(undefined)
-      }
+      ).then(() => {
+        tools.current = []
+      })
     },
-    // run client-side tools that are automatically executed:
-    async onToolCall({ toolCall }) {
-      const result = await mcpService.callTool(
-        {
-          toolName: toolCall.toolName,
-          serverName: 'Jan MCP Server',
-          arguments: toolCall.input as any,
-        },
-        {
-          conversationId,
-          toolCallId: toolCall.toolCallId,
-        }
-      )
-
-      if (result.error) {
-        addToolOutput({
-          state: 'output-error',
-          tool: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          errorText: result.error,
-        })
-      } else {
-        addToolOutput({
-          tool: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          output: result.content,
-        })
-      }
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onToolCall: ({ toolCall }) => {
+      tools.current.push(toolCall)
+      return
     },
   })
 
   const handleSubmit = (message?: PromptInputMessage) => {
     if (message) {
+      tools.current = []
       sendMessage({
         text: message.text || 'Sent with attachments',
         files: message.files,
@@ -174,6 +172,7 @@ export function ThreadPageContent({
         sessionStorage.removeItem(initialMessageKey)
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
+        tools.current = []
         // Send the message
         sendMessage({
           text: message.text,
@@ -399,7 +398,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={status}
+              status={tools.current.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>
