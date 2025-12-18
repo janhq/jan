@@ -12,6 +12,7 @@ import { CreateProject } from '@/components/projects/create-project'
 import { SearchDialog } from '@/components/search/search-dialog'
 import { useAuth } from '@/stores/auth-store'
 import { ThemeProvider } from '@/components/themes/theme-provider'
+import { Toaster } from '@/components/ui/sonner'
 
 function RootLayout() {
   const location = useLocation()
@@ -77,6 +78,10 @@ function RootLayout() {
 
       {/* Search Dialog */}
       <SearchDialog open={isSearchOpen} />
+
+      {/* Toast Notifications */}
+      {/* <Toaster position="top-center" /> */}
+      <Toaster richColors position="top-center" />
     </ThemeProvider>
   )
 }

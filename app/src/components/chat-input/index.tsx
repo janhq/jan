@@ -24,6 +24,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { toast } from 'sonner'
 import {
   FolderIcon,
   GlobeIcon,
@@ -145,6 +146,13 @@ const ChatInput = ({
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
 
+  const handleError = (err: {
+    code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
+    message: string
+  }) => {
+    toast.error(err.message)
+  }
+
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text)
     const hasAttachments = Boolean(message.files?.length)
@@ -216,12 +224,18 @@ const ChatInput = ({
           'overflow-hidden outline-0'
       )}
     >
-      <PromptInputProvider>
+      <PromptInputProvider
+        maxImages={10}
+        maxFileSize={10 * 1024 * 1024} //10MB
+        accept="image/jpeg,image/jpg,image/png"
+        onError={handleError}
+      >
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
           multiple
           userId={conversationId || projectId || 'anonymous'}
+          onError={handleError}
           onSubmit={handleSubmit}
           className="rounded-3xl relative z-40 bg-background"
         >

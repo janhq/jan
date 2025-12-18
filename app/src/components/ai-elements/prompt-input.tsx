@@ -166,6 +166,13 @@ const useOptionalProviderAttachments = () =>
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string
+  maxImages?: number
+  maxFileSize?: number
+  accept?: string
+  onError?: (err: {
+    code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
+    message: string
+  }) => void
 }>
 
 /**
@@ -174,6 +181,10 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export function PromptInputProvider({
   initialInput: initialTextInput = '',
+  maxImages = 10,
+  maxFileSize,
+  accept,
+  onError,
   children,
 }: PromptInputProviderProps) {
   // ----- textInput state
@@ -187,29 +198,105 @@ export function PromptInputProvider({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef<() => void>(() => {})
 
-  const add = useCallback((files: File[] | FileList) => {
-    const incoming = Array.from(files)
-    if (incoming.length === 0) {
-      return
-    }
+  const matchesAccept = useCallback(
+    (f: File) => {
+      if (!accept || accept.trim() === '') {
+        return true
+      }
 
-    setAttachmentFiles((prev) =>
-      prev.concat(
-        incoming.map((file) => {
-          const blobUrl = URL.createObjectURL(file)
-          return {
-            id: nanoid(),
-            type: 'file' as const,
-            url: blobUrl,
-            previewUrl: blobUrl,
-            uploadStatus: 'pending' as const,
-            mediaType: file.type,
-            filename: file.name,
-          }
+      const patterns = accept
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+      return patterns.some((pattern) => {
+        if (pattern.endsWith('/*')) {
+          const prefix = pattern.slice(0, -1)
+          return f.type.startsWith(prefix)
+        }
+        return f.type === pattern
+      })
+    },
+    [accept]
+  )
+
+  const add = useCallback(
+    (files: File[] | FileList) => {
+      const incoming = Array.from(files)
+      if (incoming.length === 0) {
+        return
+      }
+
+      // Validate file types
+      const accepted = incoming.filter((f) => matchesAccept(f))
+      if (incoming.length && accepted.length === 0) {
+        onError?.({
+          code: 'accept',
+          message: 'Only JPEG and PNG images are supported.',
         })
-      )
-    )
-  }, [])
+        return
+      }
+
+      // Validate file sizes
+      const withinSize = (f: File) =>
+        maxFileSize ? f.size <= maxFileSize : true
+      const sized = accepted.filter(withinSize)
+      if (accepted.length > 0 && sized.length === 0) {
+        const maxSizeMB = maxFileSize
+          ? Math.round(maxFileSize / 1024 / 1024)
+          : 0
+        onError?.({
+          code: 'max_file_size',
+          message: `File size must be under ${maxSizeMB}MB.`,
+        })
+        return
+      }
+
+      setAttachmentFiles((prev) => {
+        // Count current images
+        const currentImageCount = prev.filter((f) =>
+          f.mediaType?.startsWith('image/')
+        ).length
+
+        // Separate incoming files into images and non-images
+        const incomingImages = sized.filter((f) => f.type.startsWith('image/'))
+        const incomingNonImages = sized.filter(
+          (f) => !f.type.startsWith('image/')
+        )
+
+        // Check if adding these images would exceed the limit
+        const totalImagesAfterAdd = currentImageCount + incomingImages.length
+
+        if (totalImagesAfterAdd > maxImages) {
+          onError?.({
+            code: 'max_images',
+            message: `You may only upload ${maxImages} files at a time.`,
+          })
+          // Don't add any files if limit would be exceeded
+          return prev
+        }
+
+        // Combine images with non-images
+        const filesToAdd = [...incomingImages, ...incomingNonImages]
+
+        return prev.concat(
+          filesToAdd.map((file) => {
+            const blobUrl = URL.createObjectURL(file)
+            return {
+              id: nanoid(),
+              type: 'file' as const,
+              url: blobUrl,
+              previewUrl: blobUrl,
+              uploadStatus: 'pending' as const,
+              mediaType: file.type,
+              filename: file.name,
+            }
+          })
+        )
+      })
+    },
+    [maxImages, maxFileSize, matchesAccept, onError]
+  )
 
   const remove = useCallback((id: string) => {
     setAttachmentFiles((prev) => {
@@ -371,7 +458,10 @@ export function PromptInputAttachment({
   // Retry failed upload
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation()
-    attachments.updateFile(data.id, { uploadStatus: 'pending', uploadError: undefined })
+    attachments.updateFile(data.id, {
+      uploadStatus: 'pending',
+      uploadError: undefined,
+    })
   }
 
   return (
@@ -452,9 +542,7 @@ export function PromptInputAttachment({
           {isUploading && (
             <span className="text-xs text-muted-foreground">Uploading...</span>
           )}
-          {isFailed && (
-            <span className="text-xs text-destructive">Failed</span>
-          )}
+          {isFailed && <span className="text-xs text-destructive">Failed</span>}
         </div>
       </HoverCardTrigger>
       <PromptInputHoverCardContent className="w-auto p-2">
@@ -575,9 +663,10 @@ export type PromptInputProps = Omit<
   syncHiddenInput?: boolean
   // Minimal constraints
   maxFiles?: number
-  maxFileSize?: number // bytes
+  maxImages?: number // Maximum number of images allowed (default: 10)
+  maxFileSize?: number // Maximum file size in bytes (e.g., 10MB = 10 * 1024 * 1024)
   onError?: (err: {
-    code: 'max_files' | 'max_file_size' | 'accept'
+    code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
     message: string
   }) => void
   onSubmit: (
@@ -594,6 +683,7 @@ export const PromptInput = ({
   globalDrop,
   syncHiddenInput,
   maxFiles,
+  maxImages = 10,
   maxFileSize,
   onError,
   onSubmit,
@@ -607,14 +697,16 @@ export const PromptInput = ({
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
-  
+
   // Track which files are currently being uploaded to prevent duplicate uploads
   const uploadingFilesRef = useRef<Set<string>>(new Set())
   // Track abort controllers for cleanup
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map())
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(ExtendedFileUIPart & { id: string })[]>([])
+  const [items, setItems] = useState<(ExtendedFileUIPart & { id: string })[]>(
+    []
+  )
   const files = usingProvider ? controller.attachments.files : items
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
@@ -654,7 +746,7 @@ export const PromptInput = ({
       if (incoming.length && accepted.length === 0) {
         onError?.({
           code: 'accept',
-          message: 'No files match the accepted types.',
+          message: 'Only JPEG and PNG images are supported.',
         })
         return
       }
@@ -662,26 +754,60 @@ export const PromptInput = ({
         maxFileSize ? f.size <= maxFileSize : true
       const sized = accepted.filter(withinSize)
       if (accepted.length > 0 && sized.length === 0) {
+        const maxSizeMB = maxFileSize
+          ? Math.round(maxFileSize / 1024 / 1024)
+          : 0
         onError?.({
           code: 'max_file_size',
-          message: 'All files exceed the maximum size.',
+          message: `File size must be under ${maxSizeMB}MB.`,
         })
         return
       }
 
       setItems((prev) => {
+        // Count current images
+        const currentImageCount = prev.filter((f) =>
+          f.mediaType?.startsWith('image/')
+        ).length
+
+        // Separate incoming files into images and non-images
+        const incomingImages = sized.filter((f) => f.type.startsWith('image/'))
+        const incomingNonImages = sized.filter(
+          (f) => !f.type.startsWith('image/')
+        )
+
+        // Check if adding these images would exceed the limit
+        const totalImagesAfterAdd = currentImageCount + incomingImages.length
+
+        if (totalImagesAfterAdd > maxImages) {
+          onError?.({
+            code: 'max_images',
+            message: `You may only upload ${maxImages} files at a time.`,
+          })
+          // Don't add any files if limit would be exceeded
+          return prev
+        }
+
+        // Combine images with non-images
+        const filesToAdd = [...incomingImages, ...incomingNonImages]
+
+        // Apply overall maxFiles limit if specified
         const capacity =
           typeof maxFiles === 'number'
             ? Math.max(0, maxFiles - prev.length)
             : undefined
         const capped =
-          typeof capacity === 'number' ? sized.slice(0, capacity) : sized
-        if (typeof capacity === 'number' && sized.length > capacity) {
+          typeof capacity === 'number'
+            ? filesToAdd.slice(0, capacity)
+            : filesToAdd
+
+        if (typeof capacity === 'number' && filesToAdd.length > capacity) {
           onError?.({
             code: 'max_files',
             message: 'Too many files. Some were not added.',
           })
         }
+
         const next: (ExtendedFileUIPart & { id: string })[] = []
         for (const file of capped) {
           const blobUrl = URL.createObjectURL(file)
@@ -698,7 +824,7 @@ export const PromptInput = ({
         return prev.concat(next)
       })
     },
-    [matchesAccept, maxFiles, maxFileSize, onError]
+    [matchesAccept, maxFiles, maxImages, maxFileSize, onError]
   )
 
   const removeLocal = useCallback(
@@ -825,14 +951,15 @@ export const PromptInput = ({
   // Upload pending files automatically
   useEffect(() => {
     const pendingFiles = files.filter(
-      (f) => f.uploadStatus === 'pending' && !uploadingFilesRef.current.has(f.id)
+      (f) =>
+        f.uploadStatus === 'pending' && !uploadingFilesRef.current.has(f.id)
     )
     if (pendingFiles.length === 0) return
 
     pendingFiles.forEach((file) => {
       // Mark as being uploaded in ref (to prevent duplicate uploads)
       uploadingFilesRef.current.add(file.id)
-      
+
       const abortController = new AbortController()
       abortControllersRef.current.set(file.id, abortController)
 
@@ -929,7 +1056,9 @@ export const PromptInput = ({
     // Block submission if any files failed to upload
     const hasFailedUploads = files.some((f) => f.uploadStatus === 'failed')
     if (hasFailedUploads) {
-      console.warn('Cannot submit with failed uploads. Please retry or remove the failed files.')
+      console.warn(
+        'Cannot submit with failed uploads. Please retry or remove the failed files.'
+      )
       return
     }
 
