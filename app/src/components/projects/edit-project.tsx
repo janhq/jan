@@ -18,6 +18,7 @@ import { z } from 'zod'
 import { useProjects } from '@/stores/projects-store'
 import { Folder } from 'lucide-react'
 import { useEffect } from 'react'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 const editProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required'),
@@ -78,12 +79,15 @@ export function EditProject({
     }
   }
 
+  const isMobile = useIsMobile()
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
         className="p-0 gap-0 overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => (isMobile ? e.preventDefault() : undefined)}
       >
         <DialogHeader className="px-6 py-4 border-b border-muted text-left">
           <DialogTitle className="font-medium">Edit Project</DialogTitle>
@@ -104,6 +108,7 @@ export function EditProject({
                       type="text"
                       placeholder="Name"
                       autoComplete="off"
+                      autoFocus={isMobile ? false : true}
                       {...register('name')}
                     />
                   </InputGroup>
@@ -117,6 +122,7 @@ export function EditProject({
                     id="instruction"
                     placeholder="Project instructions (optional)"
                     rows={4}
+                    className="max-h-100"
                     {...register('instruction')}
                   />
                   {errors.instruction && (
