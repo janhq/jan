@@ -38,14 +38,11 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                 const toolResult = items.find(
                   (item) =>
                     item.role === 'tool' &&
-                    item.content.some(
+                    (item.content.some(
                       (c: any) => c.tool_call_id === toolCall.id
-                    )
-                )
-
-                // Extract the output from the matching tool result
-                const outputContent = toolResult?.content.find(
-                  (c: any) => c.tool_call_id === toolCall.id
+                    ) ||
+                      // @ts-ignore fallback for older structure
+                      (item.call_id === toolCall.id && item.type === 'message'))
                 )
 
                 return {
@@ -54,9 +51,7 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                     typeof toolCall.function.arguments === 'string'
                       ? JSON.parse(toolCall.function.arguments)
                       : toolCall.function.arguments,
-                  output: { 
-                    content: outputContent?.text || '',
-                  },
+                  output: toolResult?.content || '',
                   state: 'output-available',
                 }
               }) || []

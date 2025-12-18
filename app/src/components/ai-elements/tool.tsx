@@ -194,7 +194,7 @@ export const ToolOutput = ({
     // Check if output is an array with mixed content
     if (Array.isArray(output)) {
       const hasImages = output.some(
-        (item) => item?.type === 'image' && item?.data
+        (item) => item?.type === 'image' && (item?.data || item?.image)
       )
 
       if (hasImages) {
@@ -210,9 +210,9 @@ export const ToolOutput = ({
               />
             )}
             {output
-              .filter((item) => item?.type === 'image' && item?.data)
+              .filter((item) => item?.type === 'image' && (item?.data || item?.image?.url))
               .map((item, index) => (
-                <ToolImage key={index} data={item.data} index={index} />
+                <ToolImage key={index} data={item.data ?? item.image?.url} index={index} />
               ))}
           </div>
         )
