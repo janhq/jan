@@ -41,7 +41,7 @@ import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { cn } from '@/lib/utils'
-import { lastAssistantMessageIsCompleteWithToolCalls, tool } from 'ai'
+import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 
 interface ThreadPageContentProps {
   conversationId?: string
