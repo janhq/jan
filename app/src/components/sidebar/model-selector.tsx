@@ -9,10 +9,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Jan } from '@/components/ui/svgs/jan'
 import { useModels } from '@/stores/models-store'
+import { useProfile } from '@/stores/profile-store'
 
 export function ModelSelector() {
   const [open, setOpen] = useState(false)
   const models = useModels((state) => state.models)
+  const fetchPreferences = useProfile((state) => state.fetchPreferences)
+  const updatePreferences = useProfile((state) => state.updatePreferences)
   const getModels = useModels((state) => state.getModels)
   const selectedModel = useModels((state) => state.selectedModel)
   const setSelectedModel = useModels((state) => state.setSelectedModel)
@@ -20,10 +23,28 @@ export function ModelSelector() {
 
   useEffect(() => {
     getModels()
-  }, [getModels, models, setSelectedModel])
+    fetchPreferences()
+      .then((preferences) => {
+        const selectedModelId = preferences?.preferences.selected_model
+        if (selectedModelId) {
+          const model = models.find((m) => m.id === selectedModelId)
+          if (model) {
+            setSelectedModel(model)
+          }
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to fetch preferences:', error)
+      })
+  }, [fetchPreferences, getModels, models, setSelectedModel])
 
   const handleSelectModel = (model: Model) => {
     setSelectedModel(model)
+    updatePreferences({
+      preferences: {
+        selected_model: model.id,
+      },
+    })
     setOpen(false)
   }
 

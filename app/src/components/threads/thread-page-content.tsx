@@ -34,7 +34,6 @@ import {
   ToolOutput,
 } from '@/components/ai-elements/tool'
 import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon, PencilIcon } from 'lucide-react'
-import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
@@ -42,6 +41,7 @@ import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { cn } from '@/lib/utils'
+import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -78,6 +78,7 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
+  const tools = useRef<any>([])
 
   const {
     messages,
@@ -88,57 +89,63 @@ export function ThreadPageContent({
     addToolOutput,
     stop,
   } = useChat(provider(selectedModel?.id), {
-    onFinish: ({ messages: finishedMessages }) => {
-      // After finishing a message, check if we need to resubmit for tool calls
+    onFinish: () => {
       initialMessageSentRef.current = false
-
-      // Check if the last assistant message has completed tool calls
-      if (
-        lastAssistantMessageIsCompleteWithToolCalls({
-          messages: finishedMessages,
+      const hadToolCalls = tools.current.length > 0
+      // After finishing a message, check if we need to resubmit for tool calls
+      Promise.all(
+        tools.current.map(async (toolCall: any) => {
+          const result = await mcpService.callTool(
+            {
+              toolName: toolCall.toolName,
+              serverName: 'Jan MCP Server',
+              arguments: toolCall.input as any,
+            },
+            {
+              conversationId,
+              toolCallId: toolCall.toolCallId,
+            }
+          )
+          if (result.error) {
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: result.error,
+            })
+          } else {
+            addToolOutput({
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              output: result.content,
+            })
+          }
         })
-      ) {
-        // Resubmit the assistant message with tool outputs to continue the conversation
-        sendMessage(undefined)
-      } else if (conversationId && !isPrivateChat) {
-        // Refresh messages from backend to sync IDs for edit/regenerate operations
-        // The AI SDK generates temporary IDs during streaming, but the backend has the real IDs
-        getUIMessages(conversationId).then(setMessages).catch(console.error)
-      }
-    },
-    // run client-side tools that are automatically executed:
-    async onToolCall({ toolCall }) {
-      const result = await mcpService.callTool(
-        {
-          toolName: toolCall.toolName,
-          serverName: 'Jan MCP Server',
-          arguments: toolCall.input as any,
-        },
-        {
-          conversationId,
-          toolCallId: toolCall.toolCallId,
-        }
       )
-
-      if (result.error) {
-        addToolOutput({
-          state: 'output-error',
-          tool: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          errorText: result.error,
+        .then(() => {
+          if (hadToolCalls) {
+            // Resubmit the assistant message with tool outputs to continue the conversation
+            sendMessage(undefined)
+          } else if (conversationId && !isPrivateChat) {
+            // Refresh messages from backend to sync IDs for edit/regenerate operations
+            // The AI SDK generates temporary IDs during streaming, but the backend has the real IDs
+            getUIMessages(conversationId).then(setMessages).catch(console.error)
+          }
         })
-      } else {
-        addToolOutput({
-          tool: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          output: result.content,
+        .finally(() => {
+          tools.current = []
         })
-      }
+    },
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onToolCall: ({ toolCall }) => {
+      tools.current.push(toolCall)
+      return
     },
   })
 
   const handleSubmit = (message?: PromptInputMessage) => {
-    if (message) {
+    if (message && status !== 'streaming') {
+      tools.current = []
       sendMessage({
         text: message.text || 'Sent with attachments',
         files: message.files,
@@ -183,6 +190,7 @@ export function ThreadPageContent({
         sessionStorage.removeItem(initialMessageKey)
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
+        tools.current = []
         // Send the message
         sendMessage({
           text: message.text,
@@ -488,7 +496,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={status}
+              status={tools.current.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>

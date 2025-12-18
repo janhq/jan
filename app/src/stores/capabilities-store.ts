@@ -14,6 +14,7 @@ interface CapabilitiesState {
   toggleDeepResearch: () => void
   toggleBrowser: () => void
   toggleReasoning: () => void
+  hydrate: (preferences: Partial<Preferences>) => void
 }
 
 export const useCapabilities = create<CapabilitiesState>()(
@@ -23,21 +24,53 @@ export const useCapabilities = create<CapabilitiesState>()(
       browserEnabled: false,
       deepResearchEnabled: false,
       reasoningEnabled: false,
-      setSearchEnabled: (enabled: boolean) => set({ searchEnabled: enabled }),
-      setDeepResearchEnabled: (enabled: boolean) =>
-        set({ deepResearchEnabled: enabled }),
-      setBrowserEnabled: (enabled: boolean) =>
-        set({ browserEnabled: enabled }),
-      setReasoningEnabled: (enabled: boolean) =>
-        set({ reasoningEnabled: enabled }),
+      setSearchEnabled: (enabled: boolean) => {
+        set({ searchEnabled: enabled })
+        updatePreferencesInBackground({ enable_search: enabled })
+      },
+      setDeepResearchEnabled: (enabled: boolean) => {
+        set({ deepResearchEnabled: enabled })
+        updatePreferencesInBackground({ enable_deep_research: enabled })
+      },
+      setBrowserEnabled: (enabled: boolean) => {
+        set({ browserEnabled: enabled })
+        updatePreferencesInBackground({ enable_browser: enabled })
+      },
+      setReasoningEnabled: (enabled: boolean) => {
+        set({ reasoningEnabled: enabled })
+        updatePreferencesInBackground({ enable_thinking: enabled })
+      },
       toggleSearch: () =>
-        set((state) => ({ searchEnabled: !state.searchEnabled })),
+        set((state) => {
+          const newValue = !state.searchEnabled
+          updatePreferencesInBackground({ enable_search: newValue })
+          return { searchEnabled: newValue }
+        }),
       toggleDeepResearch: () =>
-        set((state) => ({ deepResearchEnabled: !state.deepResearchEnabled })),
+        set((state) => {
+          const newValue = !state.deepResearchEnabled
+          updatePreferencesInBackground({ enable_deep_research: newValue })
+          return { deepResearchEnabled: newValue }
+        }),
       toggleBrowser: () =>
-        set((state) => ({ browserEnabled: !state.browserEnabled })),
+        set((state) => {
+          const newValue = !state.browserEnabled
+          updatePreferencesInBackground({ enable_browser: newValue })
+          return { browserEnabled: newValue }
+        }),
       toggleReasoning: () =>
-        set((state) => ({ reasoningEnabled: !state.reasoningEnabled })),
+        set((state) => {
+          const newValue = !state.reasoningEnabled
+          updatePreferencesInBackground({ enable_thinking: newValue })
+          return { reasoningEnabled: newValue }
+        }),
+      hydrate: (preferences: Partial<Preferences>) =>
+        set({
+          searchEnabled: preferences.enable_search ?? false,
+          browserEnabled: preferences.enable_browser ?? false,
+          deepResearchEnabled: preferences.enable_deep_research ?? false,
+          reasoningEnabled: preferences.enable_thinking ?? false,
+        }),
     }),
     {
       name: 'capabilities-storage',
@@ -45,3 +78,34 @@ export const useCapabilities = create<CapabilitiesState>()(
     }
   )
 )
+
+let pendingPreferences: Partial<Preferences> = {}
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// Helper function to update preferences in the background
+async function updatePreferencesInBackground(
+  preferences: Partial<Preferences>
+) {
+  // Merge new preferences into pending
+  pendingPreferences = { ...pendingPreferences, ...preferences }
+
+  // Clear existing timer
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+  }
+
+  // Set new timer
+  debounceTimer = setTimeout(async () => {
+    try {
+      const { useProfile } = await import('./profile-store')
+      const preferencesToUpdate = { ...pendingPreferences }
+      pendingPreferences = {} // Reset pending preferences
+
+      await useProfile.getState().updatePreferences({ preferences: preferencesToUpdate })
+    } catch (error) {
+      console.error('Failed to update preferences:', error)
+    } finally {
+      debounceTimer = null
+    }
+  }, 100)
+}

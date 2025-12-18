@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -43,7 +44,6 @@ import {
 
 import { ProjectConversations } from '@/components/projects/project-conversations'
 import { useConversations } from '@/stores/conversation-store'
-import { useLastUsedModel } from '@/stores/last-used-model-store'
 
 function ProjectPageContent() {
   const navigate = useNavigate()
@@ -59,26 +59,6 @@ function ProjectPageContent() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const allConversations = useConversations((state) => state.conversations)
-
-  const models = useModels((state) => state.models)
-  const setSelectedModel = useModels((state) => state.setSelectedModel)
-  const lastUsedModelId = useLastUsedModel((state) => state.lastUsedModelId)
-  const setLastUsedModelId = useLastUsedModel(
-    (state) => state.setLastUsedModelId
-  )
-
-  useEffect(() => {
-    if (lastUsedModelId) {
-      const lastUsedModel = models.find((m) => m.id === lastUsedModelId)
-      if (lastUsedModel) {
-        setSelectedModel(lastUsedModel)
-      }
-    } else {
-      setSelectedModel(models[0])
-      setLastUsedModelId(models[0]?.id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models.length])
 
   const projectConversations = allConversations.filter(
     (conversation) => conversation.project_id === projectId

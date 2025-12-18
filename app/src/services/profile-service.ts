@@ -26,4 +26,28 @@ export const profileService = {
       }
     )
   },
+
+  /**
+   * GetPreferences
+   */
+  getPreferences: async (): Promise<ProfileSettingsResponse> => {
+    return fetchJsonWithAuth<ProfileSettingsResponse>(
+      `${JAN_API_BASE_URL}v1//users/me/settings/preferences`
+    )
+  },
+
+  /**
+   * Update user preferences settings
+   */
+  updatePreferences: async (
+    data: UpdateProfileSettingsRequest
+  ): Promise<ProfileSettingsResponse> => {
+    return fetchJsonWithAuth<ProfileSettingsResponse>(
+      `${JAN_API_BASE_URL}v1/users/me/settings/preferences`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }
+    )
+  },
 }

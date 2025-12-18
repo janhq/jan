@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProjects } from '@/stores/projects-store'
 import { useEffect } from 'react'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 const manageInstructionsSchema = z.object({
   instruction: z.string().optional(),
@@ -70,12 +71,15 @@ export function ManageInstructions({
     }
   }
 
+  const isMobile = useIsMobile()
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
         className="p-0 gap-0 overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => (isMobile ? e.preventDefault() : undefined)}
       >
         <DialogHeader className="px-6 py-4 border-b border-muted text-left">
           <DialogTitle className="font-medium">Manage Instructions</DialogTitle>
@@ -91,6 +95,8 @@ export function ManageInstructions({
                     id="instruction"
                     placeholder="Project instructions (optional)"
                     rows={6}
+                    className="max-h-100"
+                    autoFocus={isMobile ? false : true}
                     {...register('instruction')}
                   />
                   {errors.instruction && (

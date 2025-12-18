@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -23,6 +24,8 @@ import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { toast } from 'sonner'
 import {
   FolderIcon,
   GlobeIcon,
@@ -31,7 +34,7 @@ import {
   Settings2,
   X,
 } from 'lucide-react'
-import { useLastUsedModel } from '@/stores/last-used-model-store'
+
 import { BorderAnimate } from '../ui/border-animate'
 import { cn } from '@/lib/utils'
 import type { ChatStatus } from 'ai'
@@ -45,6 +48,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
+import { useProfile } from '@/stores/profile-store'
 
 const ChatInput = ({
   initialConversation = false,
@@ -62,9 +66,18 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+
   const browserConnectionState = useBrowserConnection(
     (state) => state.connectionState
   )
+  const isMobile = useIsMobile()
+
+  // Auto-focus on chat input when component mounts (desktop only)
+  useEffect(() => {
+    if (textareaRef.current && !isMobile) {
+      textareaRef.current.focus()
+    }
+  }, [isMobile])
 
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
@@ -90,15 +103,15 @@ const ChatInput = ({
   )
   const toggleBrowser = useCapabilities((state) => state.toggleBrowser)
   const toggleInstruct = useCapabilities((state) => state.toggleReasoning)
+  const hydrateCapabilities = useCapabilities((state) => state.hydrate)
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
   )
   const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
 
-  const setLastUsedModelId = useLastUsedModel(
-    (state) => state.setLastUsedModelId
-  )
+  const fetchPreferences = useProfile((state) => state.fetchPreferences)
+  const pref = useProfile((state) => state.preferences)
 
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
@@ -136,6 +149,23 @@ const ChatInput = ({
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
 
+  useEffect(() => {
+    fetchPreferences()
+  }, [])
+
+  useEffect(() => {
+    if (pref) {
+      hydrateCapabilities(pref.preferences)
+    }
+  }, [pref, hydrateCapabilities])
+
+  const handleError = (err: {
+    code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
+    message: string
+  }) => {
+    toast.error(err.message)
+  }
+
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text)
     const hasAttachments = Boolean(message.files?.length)
@@ -155,7 +185,7 @@ const ChatInput = ({
           navigate({
             to: '/threads/temporary',
           })
-          setLastUsedModelId(selectedModel.id)
+
           return
         }
 
@@ -186,7 +216,7 @@ const ChatInput = ({
               to: '/threads/$conversationId',
               params: { conversationId: conversation.id },
             })
-            setLastUsedModelId(selectedModel.id)
+
             return
           })
           .catch((error) => {
@@ -207,12 +237,18 @@ const ChatInput = ({
           'overflow-hidden outline-0'
       )}
     >
-      <PromptInputProvider>
+      <PromptInputProvider
+        maxImages={10}
+        maxFileSize={10 * 1024 * 1024} //10MB
+        accept="image/jpeg,image/jpg,image/png"
+        onError={handleError}
+      >
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
           multiple
           userId={conversationId || projectId || 'anonymous'}
+          onError={handleError}
           onSubmit={handleSubmit}
           className="rounded-3xl relative z-40 bg-background"
         >
@@ -246,9 +282,20 @@ const ChatInput = ({
                 deepResearchEnabled={deepResearchEnabled}
                 browserEnabled={browserEnabled}
                 reasoningEnabled={reasoningEnabled}
-                toggleSearch={toggleSearch}
-                toggleDeepResearch={toggleDeepResearch}
-                toggleBrowser={toggleBrowser}
+                disablePreferences={status === 'streaming'}
+                toggleSearch={() => {
+                  toggleSearch()
+                  setBrowserEnabled(false)
+                }}
+                toggleDeepResearch={() => {
+                  toggleDeepResearch()
+                  setBrowserEnabled(false)
+                }}
+                toggleBrowser={() => {
+                  toggleBrowser()
+                  setDeepResearchEnabled(false)
+                  setSearchEnabled(false)
+                }}
                 toggleInstruct={toggleInstruct}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}

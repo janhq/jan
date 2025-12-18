@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { isExtensionAvailable } from '@janhq/mcp-web-client'
+import { useIsMobileDevice } from '@/hooks/use-is-mobile-device'
 
 type ToneOption = 'Friendly' | 'Concise' | 'Professional'
 
@@ -40,6 +41,7 @@ interface SettingChatInputProps {
   isSupportTools: boolean
   isSupportReasoningToggle: boolean
   isSupportDeepResearch: boolean
+  disablePreferences: boolean
   selectedTone?: ToneOption
   onToneChange?: (tone: ToneOption) => void
   children: React.ReactNode
@@ -67,9 +69,12 @@ export const SettingChatInput = ({
   isSupportDeepResearch,
   isSupportReasoningToggle,
   selectedTone = 'Friendly',
+  disablePreferences,
   onToneChange,
   children,
 }: SettingChatInputProps) => {
+  const isMobileDevice = useIsMobileDevice()
+
   const toggleBrowserAttempt = async () => {
     const browserUseAvailable = await isExtensionAvailable(EXTENSION_ID)
     if ((browserUseAvailable && !browserEnabled) || browserEnabled) {
@@ -119,7 +124,11 @@ export const SettingChatInput = ({
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportReasoningToggle || deepResearchEnabled}
+                disabled={
+                  !isSupportReasoningToggle ||
+                  deepResearchEnabled ||
+                  disablePreferences
+                }
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -127,8 +136,12 @@ export const SettingChatInput = ({
                     <span>Think</span>
                   </div>
                   <Switch
-                    disabled={!isSupportReasoningToggle}
-                    checked={(!isSupportReasoningToggle || deepResearchEnabled) ? true :reasoningEnabled}
+                    disabled={!isSupportReasoningToggle || disablePreferences}
+                    checked={
+                      !isSupportReasoningToggle || deepResearchEnabled
+                        ? true
+                        : reasoningEnabled
+                    }
                     onCheckedChange={toggleInstruct}
                   />
                 </div>
@@ -141,30 +154,36 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropDrawerItem onSelect={(e) => e.preventDefault()}>
-                <div className="flex gap-2 items-center justify-between w-full">
-                  <div className="flex gap-2 items-center w-full">
-                    <ChromiumIcon />
-                    <span>Browse</span>
+        {!isMobileDevice && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <DropDrawerItem
+                  onSelect={(e) => e.preventDefault()}
+                  disabled={disablePreferences}
+                >
+                  <div className="flex gap-2 items-center justify-between w-full">
+                    <div className="flex gap-2 items-center w-full">
+                      <ChromiumIcon />
+                      <span>Browse</span>
+                    </div>
+                    <Switch
+                      checked={browserEnabled}
+                      onCheckedChange={toggleBrowserAttempt}
+                      disabled={disablePreferences}
+                    />
                   </div>
-                  <Switch
-                    checked={browserEnabled}
-                    onCheckedChange={toggleBrowserAttempt}
-                  />
-                </div>
-              </DropDrawerItem>
-            </div>
-          </TooltipTrigger>
-        </Tooltip>
+                </DropDrawerItem>
+              </div>
+            </TooltipTrigger>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportTools}
+                disabled={!isSupportTools || disablePreferences}
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -174,7 +193,11 @@ export const SettingChatInput = ({
                   <Switch
                     checked={deepResearchEnabled ? true : searchEnabled}
                     onCheckedChange={toggleSearch}
-                    disabled={!isSupportTools || deepResearchEnabled}
+                    disabled={
+                      !isSupportTools ||
+                      deepResearchEnabled ||
+                      disablePreferences
+                    }
                   />
                 </div>
               </DropDrawerItem>
@@ -191,7 +214,7 @@ export const SettingChatInput = ({
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportDeepResearch}
+                disabled={!isSupportDeepResearch || disablePreferences}
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -201,7 +224,7 @@ export const SettingChatInput = ({
                   <Switch
                     checked={deepResearchEnabled}
                     onCheckedChange={toggleDeepResearch}
-                    disabled={!isSupportDeepResearch}
+                    disabled={!isSupportDeepResearch || disablePreferences}
                   />
                 </div>
               </DropDrawerItem>
