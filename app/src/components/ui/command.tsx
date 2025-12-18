@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { SearchIcon } from 'lucide-react'
-
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 import {
   Dialog,
@@ -40,6 +40,7 @@ function CommandDialog({
   className?: string
   showCloseButton?: boolean
 }) {
+  const isMobile = useIsMobile()
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
@@ -47,6 +48,7 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
+        onOpenAutoFocus={(e) => (isMobile ? e.preventDefault() : undefined)}
         className={cn('overflow-hidden p-0', className)}
         showCloseButton={showCloseButton}
       >
@@ -71,7 +73,7 @@ function CommandInput({
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
+          'placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-sm! outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
           className
         )}
         {...props}
