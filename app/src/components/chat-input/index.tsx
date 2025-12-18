@@ -287,9 +287,19 @@ const ChatInput = ({
                 deepResearchEnabled={deepResearchEnabled}
                 browserEnabled={browserEnabled}
                 reasoningEnabled={reasoningEnabled}
-                toggleSearch={toggleSearch}
-                toggleDeepResearch={toggleDeepResearch}
-                toggleBrowser={toggleBrowser}
+                toggleSearch={() => {
+                  toggleSearch()
+                  setBrowserEnabled(false)
+                }}
+                toggleDeepResearch={() => {
+                  toggleDeepResearch()
+                  setBrowserEnabled(false)
+                }}
+                toggleBrowser={() => {
+                  toggleBrowser()
+                  setDeepResearchEnabled(false)
+                  setSearchEnabled(false)
+                }}
                 toggleInstruct={toggleInstruct}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}
