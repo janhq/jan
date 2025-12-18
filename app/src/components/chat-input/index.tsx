@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -33,7 +34,7 @@ import {
   Settings2,
   X,
 } from 'lucide-react'
-import { useLastUsedModel } from '@/stores/last-used-model-store'
+
 import { BorderAnimate } from '../ui/border-animate'
 import { cn } from '@/lib/utils'
 import type { ChatStatus } from 'ai'
@@ -65,6 +66,7 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+
   const browserConnectionState = useBrowserConnection(
     (state) => state.connectionState
   )
@@ -110,10 +112,8 @@ const ChatInput = ({
   )
   const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
 
-  const setLastUsedModelId = useLastUsedModel(
-    (state) => state.setLastUsedModelId
-  )
-  const { settings, fetchSettings } = useProfile()
+  const fetchPreferences = useProfile((state) => state.fetchPreferences)
+  const pref = useProfile((state) => state.preferences)
 
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
@@ -152,19 +152,17 @@ const ChatInput = ({
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
 
   useEffect(() => {
-    fetchSettings()
+    fetchPreferences()
   }, [])
 
   useEffect(() => {
-    if (settings) {
-      settings.preferences['enable_search'] === true && setSearchEnabled(true)
-      settings.preferences['enable_browser'] === true && setBrowserEnabled(true)
-      settings.preferences['enable_deep_research'] === true &&
-        setDeepResearchEnabled(true)
-      settings.preferences['enable_thinking'] === true &&
-        setReasoningEnabled(true)
+    if (pref) {
+      setSearchEnabled(pref.preferences.enable_search)
+      setBrowserEnabled(pref.preferences.enable_browser)
+      setDeepResearchEnabled(pref.preferences.enable_deep_research)
+      setReasoningEnabled(pref.preferences.enable_thinking)
     }
-  }, [settings])
+  }, [])
 
   const handleError = (err: {
     code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
@@ -192,7 +190,7 @@ const ChatInput = ({
           navigate({
             to: '/threads/temporary',
           })
-          setLastUsedModelId(selectedModel.id)
+
           return
         }
 
@@ -223,7 +221,7 @@ const ChatInput = ({
               to: '/threads/$conversationId',
               params: { conversationId: conversation.id },
             })
-            setLastUsedModelId(selectedModel.id)
+
             return
           })
           .catch((error) => {

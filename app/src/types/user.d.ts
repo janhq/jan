@@ -39,7 +39,7 @@ interface ProfileSettingsResponse {
   advanced_settings: AdvancedSettings
   enable_trace: boolean
   enable_tools: boolean
-  preferences: Record<string, unknown>
+  preferences: Preferences
   created_at: string
   updated_at: string
 }
@@ -50,5 +50,13 @@ interface UpdateProfileSettingsRequest {
   advanced_settings?: Partial<AdvancedSettings>
   enable_trace?: boolean
   enable_tools?: boolean
-  preferences?: Record<string, unknown>
+  preferences?: Partial<Preferences>
+}
+
+interface Preferences {
+  enable_browser: boolean
+  enable_deep_research: boolean
+  enable_search: boolean
+  enable_thinking: boolean
+  selected_model: string
 }

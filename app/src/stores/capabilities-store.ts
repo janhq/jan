@@ -23,21 +23,46 @@ export const useCapabilities = create<CapabilitiesState>()(
       browserEnabled: false,
       deepResearchEnabled: false,
       reasoningEnabled: false,
-      setSearchEnabled: (enabled: boolean) => set({ searchEnabled: enabled }),
-      setDeepResearchEnabled: (enabled: boolean) =>
-        set({ deepResearchEnabled: enabled }),
-      setBrowserEnabled: (enabled: boolean) =>
-        set({ browserEnabled: enabled }),
-      setReasoningEnabled: (enabled: boolean) =>
-        set({ reasoningEnabled: enabled }),
+      setSearchEnabled: (enabled: boolean) => {
+        set({ searchEnabled: enabled })
+        updatePreferencesInBackground({ enable_search: enabled })
+      },
+      setDeepResearchEnabled: (enabled: boolean) => {
+        set({ deepResearchEnabled: enabled })
+        updatePreferencesInBackground({ enable_deep_research: enabled })
+      },
+      setBrowserEnabled: (enabled: boolean) => {
+        set({ browserEnabled: enabled })
+        updatePreferencesInBackground({ enable_browser: enabled })
+      },
+      setReasoningEnabled: (enabled: boolean) => {
+        set({ reasoningEnabled: enabled })
+        updatePreferencesInBackground({ enable_thinking: enabled })
+      },
       toggleSearch: () =>
-        set((state) => ({ searchEnabled: !state.searchEnabled })),
+        set((state) => {
+          const newValue = !state.searchEnabled
+          updatePreferencesInBackground({ enable_search: newValue })
+          return { searchEnabled: newValue }
+        }),
       toggleDeepResearch: () =>
-        set((state) => ({ deepResearchEnabled: !state.deepResearchEnabled })),
+        set((state) => {
+          const newValue = !state.deepResearchEnabled
+          updatePreferencesInBackground({ enable_deep_research: newValue })
+          return { deepResearchEnabled: newValue }
+        }),
       toggleBrowser: () =>
-        set((state) => ({ browserEnabled: !state.browserEnabled })),
+        set((state) => {
+          const newValue = !state.browserEnabled
+          updatePreferencesInBackground({ enable_browser: newValue })
+          return { browserEnabled: newValue }
+        }),
       toggleReasoning: () =>
-        set((state) => ({ reasoningEnabled: !state.reasoningEnabled })),
+        set((state) => {
+          const newValue = !state.reasoningEnabled
+          updatePreferencesInBackground({ enable_thinking: newValue })
+          return { reasoningEnabled: newValue }
+        }),
     }),
     {
       name: 'capabilities-storage',
@@ -45,3 +70,15 @@ export const useCapabilities = create<CapabilitiesState>()(
     }
   )
 )
+
+// Helper function to update preferences in the background
+async function updatePreferencesInBackground(
+  preferences: Partial<Preferences>
+) {
+  try {
+    const { useProfile } = await import('./profile-store')
+    await useProfile.getState().updatePreferences({ preferences })
+  } catch (error) {
+    console.error('Failed to update preferences:', error)
+  }
+}
