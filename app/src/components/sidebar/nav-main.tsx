@@ -6,6 +6,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { Link, useRouter } from '@tanstack/react-router'
 
@@ -54,6 +55,8 @@ export function NavMain() {
     },
   ]
 
+  const { isMobile, setOpenMobile } = useSidebar()
+
   return (
     <SidebarMenu>
       {navMain.map((item) => (
@@ -61,7 +64,12 @@ export function NavMain() {
           <SidebarMenuButton
             asChild={!item.onClick}
             isActive={item.isActive}
-            onClick={item.onClick}
+            onClick={() => {
+              item.onClick?.()
+              if (isMobile) {
+                setOpenMobile(false)
+              }
+            }}
           >
             {item.onClick ? (
               <>
