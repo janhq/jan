@@ -127,7 +127,7 @@ export function ThreadPageContent({
   })
 
   const handleSubmit = (message?: PromptInputMessage) => {
-    if (message) {
+    if (message && status !== 'streaming' && !tools.current.length) {
       tools.current = []
       sendMessage({
         text: message.text || 'Sent with attachments',
