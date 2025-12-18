@@ -85,6 +85,7 @@ export function ThreadPageContent({
     stop,
   } = useChat(provider(selectedModel?.id), {
     onFinish: () => {
+      initialMessageSentRef.current = false
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         tools.current.map(async (toolCall: any) => {
