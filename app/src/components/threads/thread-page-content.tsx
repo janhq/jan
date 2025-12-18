@@ -245,8 +245,18 @@ export function ThreadPageContent({
                                   'mt-0!'
                               )}
                             >
-                              <MessageContent className="leading-relaxed">
-                                <MessageResponse>{part.text}</MessageResponse>
+                              <MessageContent
+                                className={cn(
+                                  'leading-relaxed',
+                                  message.role === 'user' &&
+                                    'whitespace-pre-wrap'
+                                )}
+                              >
+                                {message.role === 'user' ? (
+                                  part.text
+                                ) : (
+                                  <MessageResponse>{part.text}</MessageResponse>
+                                )}
                               </MessageContent>
                               {message.role === 'assistant' &&
                                 isLastMessage &&
