@@ -24,44 +24,92 @@ export const useCapabilities = create<CapabilitiesState>()(
       browserEnabled: false,
       deepResearchEnabled: false,
       reasoningEnabled: false,
-      setSearchEnabled: (enabled: boolean) => {
-        set({ searchEnabled: enabled })
-        updatePreferencesInBackground({ enable_search: enabled })
-      },
-      setDeepResearchEnabled: (enabled: boolean) => {
-        set({ deepResearchEnabled: enabled })
-        updatePreferencesInBackground({ enable_deep_research: enabled })
-      },
-      setBrowserEnabled: (enabled: boolean) => {
-        set({ browserEnabled: enabled })
-        updatePreferencesInBackground({ enable_browser: enabled })
-      },
-      setReasoningEnabled: (enabled: boolean) => {
-        set({ reasoningEnabled: enabled })
-        updatePreferencesInBackground({ enable_thinking: enabled })
-      },
+      setSearchEnabled: (enabled: boolean) =>
+        set((state) => {
+          const newState = { ...state, searchEnabled: enabled }
+          updatePreferencesInBackground({
+            enable_search: newState.searchEnabled,
+            enable_browser: newState.browserEnabled,
+            enable_deep_research: newState.deepResearchEnabled,
+            enable_thinking: newState.reasoningEnabled,
+          })
+          return { searchEnabled: enabled }
+        }),
+      setDeepResearchEnabled: (enabled: boolean) =>
+        set((state) => {
+          const newState = { ...state, deepResearchEnabled: enabled }
+          updatePreferencesInBackground({
+            enable_search: newState.searchEnabled,
+            enable_browser: newState.browserEnabled,
+            enable_deep_research: newState.deepResearchEnabled,
+            enable_thinking: newState.reasoningEnabled,
+          })
+          return { deepResearchEnabled: enabled }
+        }),
+      setBrowserEnabled: (enabled: boolean) =>
+        set((state) => {
+          const newState = { ...state, browserEnabled: enabled }
+          updatePreferencesInBackground({
+            enable_search: newState.searchEnabled,
+            enable_browser: newState.browserEnabled,
+            enable_deep_research: newState.deepResearchEnabled,
+            enable_thinking: newState.reasoningEnabled,
+          })
+          return { browserEnabled: enabled }
+        }),
+      setReasoningEnabled: (enabled: boolean) =>
+        set((state) => {
+          const newState = { ...state, reasoningEnabled: enabled }
+          updatePreferencesInBackground({
+            enable_search: newState.searchEnabled,
+            enable_browser: newState.browserEnabled,
+            enable_deep_research: newState.deepResearchEnabled,
+            enable_thinking: newState.reasoningEnabled,
+          })
+          return { reasoningEnabled: enabled }
+        }),
       toggleSearch: () =>
         set((state) => {
           const newValue = !state.searchEnabled
-          updatePreferencesInBackground({ enable_search: newValue })
+          updatePreferencesInBackground({
+            enable_search: newValue,
+            enable_browser: state.browserEnabled,
+            enable_deep_research: state.deepResearchEnabled,
+            enable_thinking: state.reasoningEnabled,
+          })
           return { searchEnabled: newValue }
         }),
       toggleDeepResearch: () =>
         set((state) => {
           const newValue = !state.deepResearchEnabled
-          updatePreferencesInBackground({ enable_deep_research: newValue })
+          updatePreferencesInBackground({
+            enable_search: state.searchEnabled,
+            enable_browser: state.browserEnabled,
+            enable_deep_research: newValue,
+            enable_thinking: state.reasoningEnabled,
+          })
           return { deepResearchEnabled: newValue }
         }),
       toggleBrowser: () =>
         set((state) => {
           const newValue = !state.browserEnabled
-          updatePreferencesInBackground({ enable_browser: newValue })
+          updatePreferencesInBackground({
+            enable_search: state.searchEnabled,
+            enable_browser: newValue,
+            enable_deep_research: state.deepResearchEnabled,
+            enable_thinking: state.reasoningEnabled,
+          })
           return { browserEnabled: newValue }
         }),
       toggleReasoning: () =>
         set((state) => {
           const newValue = !state.reasoningEnabled
-          updatePreferencesInBackground({ enable_thinking: newValue })
+          updatePreferencesInBackground({
+            enable_search: state.searchEnabled,
+            enable_browser: state.browserEnabled,
+            enable_deep_research: state.deepResearchEnabled,
+            enable_thinking: newValue,
+          })
           return { reasoningEnabled: newValue }
         }),
       hydrate: (preferences: Partial<Preferences>) =>
