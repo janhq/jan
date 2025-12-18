@@ -23,6 +23,7 @@ import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
+import { useIsMobile } from '@/hooks/use-mobile'
 import {
   FolderIcon,
   GlobeIcon,
@@ -65,6 +66,14 @@ const ChatInput = ({
   const browserConnectionState = useBrowserConnection(
     (state) => state.connectionState
   )
+  const isMobile = useIsMobile()
+
+  // Auto-focus on chat input when component mounts (desktop only)
+  useEffect(() => {
+    if (textareaRef.current && !isMobile) {
+      textareaRef.current.focus()
+    }
+  }, [isMobile])
 
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
