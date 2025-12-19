@@ -53,6 +53,7 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                       : toolCall.function.arguments,
                   output: toolResult?.content || '',
                   state: 'output-available',
+                  toolCallId: toolCall.id || '',
                 }
               }) || []
             )
