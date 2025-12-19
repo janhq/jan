@@ -33,14 +33,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import {
-  CopyIcon,
-  Loader,
-  CheckIcon,
-  RefreshCcwIcon,
-  PencilIcon,
-  Trash2Icon,
-} from 'lucide-react'
+import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
@@ -76,7 +69,7 @@ export function ThreadPageContent({
 
   const editMessage = useConversations((state) => state.editMessage)
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
-  const deleteMessage = useConversations((state) => state.deleteMessage)
+  // const deleteMessage = useConversations((state) => state.deleteMessage)
 
   const provider = janProvider(
     conversationId,
@@ -269,6 +262,7 @@ export function ThreadPageContent({
                               )}
                             >
                               <MessageContent className="leading-relaxed">
+                                {/* Note currently we don't use editig Feature */}
                                 {isEditing && message.role === 'user' ? (
                                   <div className="flex flex-col gap-2">
                                     <textarea
@@ -339,11 +333,25 @@ export function ThreadPageContent({
                                     </div>
                                   </div>
                                 ) : (
-                                  <MessageResponse>{part.text}</MessageResponse>
+                                  <MessageContent
+                                    className={cn(
+                                      'leading-relaxed',
+                                      message.role === 'user' &&
+                                        'whitespace-pre-wrap'
+                                    )}
+                                  >
+                                    {message.role === 'user' ? (
+                                      part.text
+                                    ) : (
+                                      <MessageResponse>
+                                        {part.text}
+                                      </MessageResponse>
+                                    )}
+                                  </MessageContent>
                                 )}
                               </MessageContent>
-                              {/* Edit button for user messages */}
-                              {message.role === 'user' &&
+                              {/* Temporary hide Edit and delete button for user messages */}
+                              {/* {message.role === 'user' &&
                                 !isEditing &&
                                 conversationId && (
                                   <MessageActions className="mt-1 gap-0 ml-auto justify-end w-fit">
@@ -379,7 +387,7 @@ export function ThreadPageContent({
                                       <Trash2Icon className="text-muted-foreground size-3" />
                                     </MessageAction>
                                   </MessageActions>
-                                )}
+                                )} */}
                               {message.role === 'assistant' &&
                                 isLastMessage &&
                                 isLastPart && (
@@ -440,7 +448,9 @@ export function ThreadPageContent({
                                         <RefreshCcwIcon className="text-muted-foreground size-3" />
                                       </MessageAction>
                                     )}
-                                    {conversationId && (
+
+                                    {/* Temporary hide till product guy decide we should have this feature? */}
+                                    {/* {conversationId && (
                                       <MessageAction
                                         onClick={async () => {
                                           try {
@@ -465,7 +475,8 @@ export function ThreadPageContent({
                                       >
                                         <Trash2Icon className="text-muted-foreground size-3" />
                                       </MessageAction>
-                                    )}
+                                    )} */}
+
                                     {/* Temporary hide till we have function */}
                                     {/* <MessageAction label="Like">
                                       <ThumbsUpIcon className="text-muted-foreground size-3" />
