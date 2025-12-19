@@ -34,6 +34,7 @@ interface ConversationState {
   // Message actions
   editMessage: (conversationId: string, itemId: string, content: string, regenerate?: boolean) => Promise<EditMessageResponse>
   regenerateMessage: (conversationId: string, itemId: string, options?: RegenerateMessageRequest) => Promise<RegenerateMessageResponse>
+  deleteMessage: (conversationId: string, itemId: string) => Promise<DeleteItemResponse>
 }
 
 export const useConversations = create<ConversationState>((set, get) => ({
@@ -223,6 +224,16 @@ export const useConversations = create<ConversationState>((set, get) => ({
       return response
     } catch (err) {
       console.error('Error regenerating message:', err)
+      throw err
+    }
+  },
+
+  deleteMessage: async (conversationId: string, itemId: string) => {
+    try {
+      const response = await conversationService.deleteMessage(conversationId, itemId)
+      return response
+    } catch (err) {
+      console.error('Error deleting message:', err)
       throw err
     }
   },

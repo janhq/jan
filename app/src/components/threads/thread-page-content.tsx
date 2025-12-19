@@ -33,7 +33,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon, PencilIcon } from 'lucide-react'
+import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
@@ -69,6 +69,7 @@ export function ThreadPageContent({
 
   const editMessage = useConversations((state) => state.editMessage)
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
+  const deleteMessage = useConversations((state) => state.deleteMessage)
 
   const provider = janProvider(
     conversationId,
@@ -326,6 +327,21 @@ export function ThreadPageContent({
                                   >
                                     <PencilIcon className="text-muted-foreground size-3" />
                                   </MessageAction>
+                                  <MessageAction
+                                    onClick={async () => {
+                                      try {
+                                        await deleteMessage(conversationId, message.id)
+                                        // Refresh messages after deletion
+                                        const updatedMessages = await getUIMessages(conversationId)
+                                        setMessages(updatedMessages)
+                                      } catch (error) {
+                                        console.error('Failed to delete message:', error)
+                                      }
+                                    }}
+                                    label="Delete"
+                                  >
+                                    <Trash2Icon className="text-muted-foreground size-3" />
+                                  </MessageAction>
                                 </MessageActions>
                               )}
                               {message.role === 'assistant' &&
@@ -372,6 +388,23 @@ export function ThreadPageContent({
                                         label="Retry"
                                       >
                                         <RefreshCcwIcon className="text-muted-foreground size-3" />
+                                      </MessageAction>
+                                    )}
+                                    {conversationId && (
+                                      <MessageAction
+                                        onClick={async () => {
+                                          try {
+                                            await deleteMessage(conversationId, message.id)
+                                            // Refresh messages after deletion
+                                            const updatedMessages = await getUIMessages(conversationId)
+                                            setMessages(updatedMessages)
+                                          } catch (error) {
+                                            console.error('Failed to delete message:', error)
+                                          }
+                                        }}
+                                        label="Delete"
+                                      >
+                                        <Trash2Icon className="text-muted-foreground size-3" />
                                       </MessageAction>
                                     )}
                                     {/* Temporary hide till we have function */}

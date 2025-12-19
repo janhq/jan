@@ -144,4 +144,17 @@ export const conversationService = {
       }
     )
   },
+
+  // Delete message and all subsequent messages in the branch
+  deleteMessage: async (
+    conversationId: string,
+    itemId: string
+  ): Promise<DeleteItemResponse> => {
+    return fetchJsonWithAuth<DeleteItemResponse>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items/${itemId}`,
+      {
+        method: 'DELETE',
+      }
+    )
+  },
 }
