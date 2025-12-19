@@ -1,4 +1,4 @@
-'use client'
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -28,7 +28,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn('not-prose my-4 w-full rounded-md border', className)}
+    className={cn('not-prose mb-4 w-full rounded-md border', className)}
     {...props}
   />
 )
@@ -168,7 +168,11 @@ const ToolImage = ({ data, index }: ToolImageProps) => {
 
   return (
     <div key={index} className="flex justify-center">
-      <img src={displayUrl} alt="Tool output" className="max-w-full rounded-md" />
+      <img
+        src={displayUrl}
+        alt="Tool output"
+        className="max-w-full rounded-md"
+      />
     </div>
   )
 }
@@ -210,9 +214,16 @@ export const ToolOutput = ({
               />
             )}
             {output
-              .filter((item) => item?.type === 'image' && (item?.data || item?.image?.url))
+              .filter(
+                (item) =>
+                  item?.type === 'image' && (item?.data || item?.image?.url)
+              )
               .map((item, index) => (
-                <ToolImage key={index} data={item.data ?? item.image?.url} index={index} />
+                <ToolImage
+                  key={index}
+                  data={item.data ?? item.image?.url}
+                  index={index}
+                />
               ))}
           </div>
         )

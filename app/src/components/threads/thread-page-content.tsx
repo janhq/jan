@@ -248,6 +248,7 @@ export function ThreadPageContent({
                       const isFirstMessage = messageIndex === 0
                       const isLastMessage = messageIndex === messages.length - 1
                       const isLastPart = i === message.parts.length - 1
+
                       switch (part.type) {
                         case 'text':
                           const isEditing = editingMessageId === message.id
@@ -261,7 +262,13 @@ export function ThreadPageContent({
                                   'mt-0!'
                               )}
                             >
-                              <MessageContent className="leading-relaxed">
+                              <MessageContent
+                                className={cn(
+                                  'leading-relaxed',
+                                  message.role === 'user' &&
+                                    'whitespace-pre-wrap'
+                                )}
+                              >
                                 {/* Note currently we don't use editig Feature */}
                                 {isEditing && message.role === 'user' ? (
                                   <div className="flex flex-col gap-2">
@@ -333,13 +340,7 @@ export function ThreadPageContent({
                                     </div>
                                   </div>
                                 ) : (
-                                  <MessageContent
-                                    className={cn(
-                                      'leading-relaxed',
-                                      message.role === 'user' &&
-                                        'whitespace-pre-wrap'
-                                    )}
-                                  >
+                                  <>
                                     {message.role === 'user' ? (
                                       part.text
                                     ) : (
@@ -347,7 +348,7 @@ export function ThreadPageContent({
                                         {part.text}
                                       </MessageResponse>
                                     )}
-                                  </MessageContent>
+                                  </>
                                 )}
                               </MessageContent>
                               {/* Temporary hide Edit and delete button for user messages */}
@@ -553,7 +554,10 @@ export function ThreadPageContent({
                             .slice(1)
                             .join('-')
                           return (
-                            <Tool key={`${message.id}-${i}`}>
+                            <Tool
+                              key={`${message.id}-${i}`}
+                              className={cn(i < 2 && 'mt-4')}
+                            >
                               <ToolHeader
                                 title={toolName}
                                 type={part.type as `tool-${string}`}
