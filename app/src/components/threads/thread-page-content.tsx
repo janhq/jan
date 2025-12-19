@@ -33,7 +33,14 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import {
+  CopyIcon,
+  Loader,
+  CheckIcon,
+  RefreshCcwIcon,
+  PencilIcon,
+  Trash2Icon,
+} from 'lucide-react'
 import { useModels } from '@/stores/models-store'
 import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
@@ -124,10 +131,7 @@ export function ThreadPageContent({
         })
       )
         .then(() => {
-          if (hadToolCalls) {
-            // Resubmit the assistant message with tool outputs to continue the conversation
-            sendMessage(undefined)
-          } else if (conversationId && !isPrivateChat) {
+          if (conversationId && !isPrivateChat && !hadToolCalls) {
             // Refresh messages from backend to sync IDs for edit/regenerate operations
             // The AI SDK generates temporary IDs during streaming, but the backend has the real IDs
             getUIMessages(conversationId).then(setMessages).catch(console.error)
@@ -270,7 +274,9 @@ export function ThreadPageContent({
                                     <textarea
                                       className="w-full p-2 border rounded-md bg-background text-foreground resize-none"
                                       value={editContent}
-                                      onChange={(e) => setEditContent(e.target.value)}
+                                      onChange={(e) =>
+                                        setEditContent(e.target.value)
+                                      }
                                       rows={3}
                                       autoFocus
                                     />
@@ -287,22 +293,43 @@ export function ThreadPageContent({
                                       <button
                                         className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
                                         onClick={async () => {
-                                          if (conversationId && editContent.trim()) {
+                                          if (
+                                            conversationId &&
+                                            editContent.trim()
+                                          ) {
                                             try {
-                                              const response = await editMessage(conversationId, message.id, editContent.trim())
+                                              const response =
+                                                await editMessage(
+                                                  conversationId,
+                                                  message.id,
+                                                  editContent.trim()
+                                                )
                                               setEditingMessageId(null)
                                               setEditContent('')
                                               // Load the new branch's messages and trigger regeneration
-                                              if (response.branch_created && response.branch) {
-                                                const branchMessages = await getUIMessages(conversationId, response.branch)
+                                              if (
+                                                response.branch_created &&
+                                                response.branch
+                                              ) {
+                                                const branchMessages =
+                                                  await getUIMessages(
+                                                    conversationId,
+                                                    response.branch
+                                                  )
                                                 setMessages(branchMessages)
                                                 // Trigger a new chat completion to generate the AI response
                                                 // Use setTimeout to ensure setMessages state update is applied first
                                                 // Use regenerate() which resubmits the last user message without re-adding it
-                                                setTimeout(() => regenerate(), 0)
+                                                setTimeout(
+                                                  () => regenerate(),
+                                                  0
+                                                )
                                               }
                                             } catch (error) {
-                                              console.error('Failed to edit message:', error)
+                                              console.error(
+                                                'Failed to edit message:',
+                                                error
+                                              )
                                             }
                                           }
                                         }}
@@ -316,34 +343,43 @@ export function ThreadPageContent({
                                 )}
                               </MessageContent>
                               {/* Edit button for user messages */}
-                              {message.role === 'user' && !isEditing && conversationId && (
-                                <MessageActions className="mt-1 gap-0 ml-auto justify-end w-fit">
-                                  <MessageAction
-                                    onClick={() => {
-                                      setEditingMessageId(message.id)
-                                      setEditContent(part.text)
-                                    }}
-                                    label="Edit"
-                                  >
-                                    <PencilIcon className="text-muted-foreground size-3" />
-                                  </MessageAction>
-                                  <MessageAction
-                                    onClick={async () => {
-                                      try {
-                                        await deleteMessage(conversationId, message.id)
-                                        // Refresh messages after deletion
-                                        const updatedMessages = await getUIMessages(conversationId)
-                                        setMessages(updatedMessages)
-                                      } catch (error) {
-                                        console.error('Failed to delete message:', error)
-                                      }
-                                    }}
-                                    label="Delete"
-                                  >
-                                    <Trash2Icon className="text-muted-foreground size-3" />
-                                  </MessageAction>
-                                </MessageActions>
-                              )}
+                              {message.role === 'user' &&
+                                !isEditing &&
+                                conversationId && (
+                                  <MessageActions className="mt-1 gap-0 ml-auto justify-end w-fit">
+                                    <MessageAction
+                                      onClick={() => {
+                                        setEditingMessageId(message.id)
+                                        setEditContent(part.text)
+                                      }}
+                                      label="Edit"
+                                    >
+                                      <PencilIcon className="text-muted-foreground size-3" />
+                                    </MessageAction>
+                                    <MessageAction
+                                      onClick={async () => {
+                                        try {
+                                          await deleteMessage(
+                                            conversationId,
+                                            message.id
+                                          )
+                                          // Refresh messages after deletion
+                                          const updatedMessages =
+                                            await getUIMessages(conversationId)
+                                          setMessages(updatedMessages)
+                                        } catch (error) {
+                                          console.error(
+                                            'Failed to delete message:',
+                                            error
+                                          )
+                                        }
+                                      }}
+                                      label="Delete"
+                                    >
+                                      <Trash2Icon className="text-muted-foreground size-3" />
+                                    </MessageAction>
+                                  </MessageActions>
+                                )}
                               {message.role === 'assistant' &&
                                 isLastMessage &&
                                 isLastPart && (
@@ -371,10 +407,21 @@ export function ThreadPageContent({
                                       <MessageAction
                                         onClick={async () => {
                                           try {
-                                            const response = await regenerateMessage(conversationId, message.id)
+                                            const response =
+                                              await regenerateMessage(
+                                                conversationId,
+                                                message.id
+                                              )
                                             // Load the new branch's messages (this includes the user message to regenerate from)
-                                            if (response.branch_created && response.branch) {
-                                              const branchMessages = await getUIMessages(conversationId, response.branch)
+                                            if (
+                                              response.branch_created &&
+                                              response.branch
+                                            ) {
+                                              const branchMessages =
+                                                await getUIMessages(
+                                                  conversationId,
+                                                  response.branch
+                                                )
                                               setMessages(branchMessages)
                                               // Trigger a new chat completion to regenerate the response
                                               // Use setTimeout to ensure setMessages state update is applied first
@@ -382,7 +429,10 @@ export function ThreadPageContent({
                                               setTimeout(() => regenerate(), 0)
                                             }
                                           } catch (error) {
-                                            console.error('Failed to regenerate:', error)
+                                            console.error(
+                                              'Failed to regenerate:',
+                                              error
+                                            )
                                           }
                                         }}
                                         label="Retry"
@@ -394,12 +444,21 @@ export function ThreadPageContent({
                                       <MessageAction
                                         onClick={async () => {
                                           try {
-                                            await deleteMessage(conversationId, message.id)
+                                            await deleteMessage(
+                                              conversationId,
+                                              message.id
+                                            )
                                             // Refresh messages after deletion
-                                            const updatedMessages = await getUIMessages(conversationId)
+                                            const updatedMessages =
+                                              await getUIMessages(
+                                                conversationId
+                                              )
                                             setMessages(updatedMessages)
                                           } catch (error) {
-                                            console.error('Failed to delete message:', error)
+                                            console.error(
+                                              'Failed to delete message:',
+                                              error
+                                            )
                                           }
                                         }}
                                         label="Delete"
