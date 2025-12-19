@@ -8,20 +8,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
-// import { AppsConnectorSettings } from '@/components/settings/apps-connectors-settings'
-// import { PrivacySettings } from '@/components/settings/privacy-settings'
-import {
-  // LockKeyhole,
-  Settings2,
-  Globe,
-  type LucideIcon,
-  BugIcon,
-  BookOpen,
-  LeafIcon,
-} from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
-import { GitHub } from '@/components/ui/svgs/github'
-import { Discord } from '@/components/ui/svgs/discord'
+import { Settings2, type LucideIcon, LeafIcon } from 'lucide-react'
+
 import { PersonalizationSettings } from './personalization-setting'
 
 interface SettingsDialogProps {
@@ -83,66 +71,6 @@ export function SettingsDialog({
     }
   }
 
-  const renderSettingFooter = () => {
-    return (
-      <>
-        <Separator className="my-4" />
-        <p className="text-xs">
-          Jan is built with ❤️ by the Menlo Research team. Special thanks to our
-          open-source dependencies and our amazing community.
-        </p>
-        <Separator className="my-4" />
-        <div className="flex items-center gap-6">
-          <a
-            href="https://github.com/janhq/jan/issues/new"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2"
-          >
-            <BugIcon className="text-muted-foreground size-4" />
-            <span className="font-medium text-xs">Report Issue</span>
-          </a>
-          <a
-            href="https://jan.ai/docs"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2"
-          >
-            <BookOpen className="text-muted-foreground size-4" />
-            <span className="font-medium text-xs">Docs</span>
-          </a>
-        </div>
-        <Separator className="my-4" />
-        <div className="flex items-center gap-2">
-          <a
-            href="https://jan.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="size-8 items-center flex justify-center rounded-full bg-muted"
-          >
-            <Globe className="text-muted-foreground size-4" />
-          </a>
-          <a
-            href="https://discord.com/invite/FTk2MvZwJH"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="size-8 items-center flex justify-center rounded-full bg-muted"
-          >
-            <Discord className="fill-muted-foreground size-4" />
-          </a>
-          <a
-            href="https://github.com/janhq/jan"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="size-8 items-center flex justify-center rounded-full bg-muted"
-          >
-            <GitHub className="fill-muted-foreground size-4" />
-          </a>
-        </div>
-      </>
-    )
-  }
-
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
@@ -174,9 +102,6 @@ export function SettingsDialog({
                 </button>
               ))}
             </nav>
-            <div className="text-muted-foreground hidden lg:block">
-              {renderSettingFooter()}
-            </div>
           </div>
 
           {/* Content */}
