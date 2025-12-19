@@ -318,6 +318,7 @@ const ChatInput = ({
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    disabled={status === 'streaming'}
                     onClick={toggleInstruct}
                   >
                     <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
@@ -329,6 +330,7 @@ const ChatInput = ({
                 <PromptInputButton
                   variant="outline"
                   className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  disabled={status === 'streaming'}
                   onClick={toggleSearch}
                 >
                   <GlobeIcon className="text-primary size-4 group-hover:hidden" />
@@ -340,6 +342,7 @@ const ChatInput = ({
                 <PromptInputButton
                   variant="outline"
                   className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  disabled={status === 'streaming'}
                   onClick={toggleDeepResearch}
                 >
                   <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
@@ -353,6 +356,7 @@ const ChatInput = ({
                     <PromptInputButton
                       variant="outline"
                       className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                      disabled={status === 'streaming'}
                       onClick={toggleBrowser}
                     >
                       <div className="size-4 flex items-center justify-center group-hover:hidden">
@@ -387,6 +391,7 @@ const ChatInput = ({
                 <PromptInputButton
                   variant="outline"
                   className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                  disabled={status === 'streaming'}
                   onClick={() => setSelectedProjectId(null)}
                 >
                   <FolderIcon className="text-primary size-4 group-hover:hidden" />
