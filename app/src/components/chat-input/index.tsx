@@ -282,6 +282,7 @@ const ChatInput = ({
                 deepResearchEnabled={deepResearchEnabled}
                 browserEnabled={browserEnabled}
                 reasoningEnabled={reasoningEnabled}
+                disablePreferences={status === 'streaming'}
                 toggleSearch={() => {
                   toggleSearch()
                   setBrowserEnabled(false)

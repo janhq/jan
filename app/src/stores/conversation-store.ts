@@ -8,9 +8,14 @@ let fetchPromise: Promise<void> | null = null
 interface ConversationState {
   conversations: Conversation[]
   loading: boolean
+  // Branch state
+  branches: ConversationBranch[]
+  activeBranch: string
+  branchesLoading: boolean
+  // Conversation operations
   getConversations: () => Promise<void>
   getConversation: (conversationId: string) => Promise<Conversation>
-  getUIMessages: (conversationId: string) => Promise<UIMessage[]>
+  getUIMessages: (conversationId: string, branch?: string) => Promise<UIMessage[]>
   createConversation: (
     payload: CreateConversationPayload
   ) => Promise<Conversation>
@@ -20,11 +25,25 @@ interface ConversationState {
   ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<void>
   clearConversations: () => void
+  // Branch operations
+  fetchBranches: (conversationId: string) => Promise<ConversationBranch[]>
+  switchBranch: (conversationId: string, branchName: string) => Promise<void>
+  createBranch: (conversationId: string, request: CreateBranchRequest) => Promise<ConversationBranch>
+  deleteBranch: (conversationId: string, branchName: string) => Promise<void>
+  setActiveBranch: (branchName: string) => void
+  // Message actions
+  editMessage: (conversationId: string, itemId: string, content: string, regenerate?: boolean) => Promise<EditMessageResponse>
+  regenerateMessage: (conversationId: string, itemId: string, options?: RegenerateMessageRequest) => Promise<RegenerateMessageResponse>
+  deleteMessage: (conversationId: string, itemId: string) => Promise<DeleteItemResponse>
 }
 
 export const useConversations = create<ConversationState>((set, get) => ({
   conversations: [],
   loading: false,
+  // Branch state
+  branches: [],
+  activeBranch: 'MAIN',
+  branchesLoading: false,
   getConversations: async () => {
     if (fetchPromise) {
       return fetchPromise
@@ -55,9 +74,10 @@ export const useConversations = create<ConversationState>((set, get) => ({
       throw err
     }
   },
-  getUIMessages: async (conversationId: string) => {
+  getUIMessages: async (conversationId: string, branch?: string) => {
     try {
-      const items = (await conversationService.getItems(conversationId)).data
+      const branchToUse = branch ?? get().activeBranch
+      const items = (await conversationService.getItems(conversationId, branchToUse)).data
       return convertToUIMessages(items)
     } catch (err) {
       console.error('Error fetching conversation items:', err)
@@ -113,7 +133,108 @@ export const useConversations = create<ConversationState>((set, get) => ({
     }
   },
   clearConversations: () => {
-    set({ conversations: [], loading: false })
+    set({ conversations: [], loading: false, branches: [], activeBranch: 'MAIN' })
     fetchPromise = null
+  },
+
+  // Branch operations
+  fetchBranches: async (conversationId: string) => {
+    try {
+      set({ branchesLoading: true })
+      const response = await conversationService.getBranches(conversationId)
+      set({ branches: response.data })
+      return response.data
+    } catch (err) {
+      console.error('Error fetching branches:', err)
+      throw err
+    } finally {
+      set({ branchesLoading: false })
+    }
+  },
+
+  switchBranch: async (conversationId: string, branchName: string) => {
+    try {
+      await conversationService.activateBranch(conversationId, branchName)
+      set({ activeBranch: branchName })
+    } catch (err) {
+      console.error('Error switching branch:', err)
+      throw err
+    }
+  },
+
+  createBranch: async (conversationId: string, request: CreateBranchRequest) => {
+    try {
+      const branch = await conversationService.createBranch(conversationId, request)
+      set((state) => ({
+        branches: [...state.branches, branch],
+      }))
+      return branch
+    } catch (err) {
+      console.error('Error creating branch:', err)
+      throw err
+    }
+  },
+
+  deleteBranch: async (conversationId: string, branchName: string) => {
+    try {
+      await conversationService.deleteBranch(conversationId, branchName)
+      set((state) => ({
+        branches: state.branches.filter((b) => b.name !== branchName),
+        // If we deleted the active branch, switch to MAIN
+        activeBranch: state.activeBranch === branchName ? 'MAIN' : state.activeBranch,
+      }))
+    } catch (err) {
+      console.error('Error deleting branch:', err)
+      throw err
+    }
+  },
+
+  setActiveBranch: (branchName: string) => {
+    set({ activeBranch: branchName })
+  },
+
+  // Message actions
+  editMessage: async (conversationId: string, itemId: string, content: string, regenerate = true) => {
+    try {
+      const response = await conversationService.editMessage(conversationId, itemId, content, regenerate)
+      // If a new branch was created, add it to the list and switch to it
+      if (response.branch_created && response.new_branch) {
+        set((state) => ({
+          branches: [...state.branches, response.new_branch!],
+          activeBranch: response.branch,
+        }))
+      }
+      return response
+    } catch (err) {
+      console.error('Error editing message:', err)
+      throw err
+    }
+  },
+
+  regenerateMessage: async (conversationId: string, itemId: string, options?: RegenerateMessageRequest) => {
+    try {
+      const response = await conversationService.regenerateMessage(conversationId, itemId, options)
+      // If a new branch was created, add it to the list and switch to it
+      if (response.branch_created && response.new_branch) {
+        set((state) => ({
+          branches: [...state.branches, response.new_branch!],
+          activeBranch: response.branch,
+        }))
+      }
+      return response
+    } catch (err) {
+      console.error('Error regenerating message:', err)
+      throw err
+    }
+  },
+
+  deleteMessage: async (conversationId: string, itemId: string) => {
+    try {
+      const response = await conversationService.deleteMessage(conversationId, itemId)
+      return response
+    } catch (err) {
+      console.error('Error deleting message:', err)
+      throw err
+    }
   },
 }))

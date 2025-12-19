@@ -4,6 +4,7 @@ interface Conversation {
   title: string
   created_at: number
   project_id?: string
+  active_branch?: string
   metadata: {
     is_favorite: string
     model_id: string
@@ -61,6 +62,8 @@ interface ConversationItem {
   role: string
   content: ConversationItemContent[]
   created_at: number
+  branch?: string
+  sequence_number?: number
 }
 
 interface ToolCall {
@@ -79,4 +82,69 @@ interface ConversationItemContent {
   reasoning_text?: string
   image?: { url: string }
   tool_calls?: Array<ToolCall>
+}
+
+// Branch types
+interface ConversationBranch {
+  name: string
+  description?: string
+  parent_branch?: string
+  forked_at?: number
+  forked_from_item_id?: string
+  item_count: number
+  created_at: number
+  updated_at: number
+  is_active: boolean
+}
+
+interface ListBranchesResponse {
+  object: string
+  data: ConversationBranch[]
+  active_branch: string
+}
+
+interface EditMessageRequest {
+  content: string
+  regenerate?: boolean
+}
+
+interface EditMessageResponse {
+  branch: string // Always "MAIN" after swap
+  old_main_backup: string // Backup name for old MAIN
+  branch_created: boolean
+  new_branch?: ConversationBranch
+  user_item: ConversationItem
+}
+
+interface RegenerateMessageRequest {
+  model?: string
+  temperature?: number
+  max_tokens?: number
+}
+
+interface RegenerateMessageResponse {
+  branch: string // Always "MAIN" after swap
+  old_main_backup: string // Backup name for old MAIN
+  branch_created: boolean
+  new_branch?: ConversationBranch
+  user_item_id: string
+}
+
+interface DeleteItemResponse {
+  branch: string // Always "MAIN" after swap
+  old_main_backup: string // Backup name for old MAIN
+  branch_created: boolean
+  deleted: boolean
+}
+
+interface ActivateBranchResponse {
+  active_branch: string
+  message: string
+}
+
+interface CreateBranchRequest {
+  name: string
+  parent_branch?: string
+  fork_from_item_id?: string
+  description?: string
 }

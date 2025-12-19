@@ -41,6 +41,7 @@ interface SettingChatInputProps {
   isSupportTools: boolean
   isSupportReasoningToggle: boolean
   isSupportDeepResearch: boolean
+  disablePreferences: boolean
   selectedTone?: ToneOption
   onToneChange?: (tone: ToneOption) => void
   children: React.ReactNode
@@ -68,6 +69,7 @@ export const SettingChatInput = ({
   isSupportDeepResearch,
   isSupportReasoningToggle,
   selectedTone = 'Friendly',
+  disablePreferences,
   onToneChange,
   children,
 }: SettingChatInputProps) => {
@@ -122,7 +124,11 @@ export const SettingChatInput = ({
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportReasoningToggle || deepResearchEnabled}
+                disabled={
+                  !isSupportReasoningToggle ||
+                  deepResearchEnabled ||
+                  disablePreferences
+                }
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -130,7 +136,7 @@ export const SettingChatInput = ({
                     <span>Think</span>
                   </div>
                   <Switch
-                    disabled={!isSupportReasoningToggle}
+                    disabled={!isSupportReasoningToggle || disablePreferences}
                     checked={
                       !isSupportReasoningToggle || deepResearchEnabled
                         ? true
@@ -152,7 +158,10 @@ export const SettingChatInput = ({
           <Tooltip>
             <TooltipTrigger asChild>
               <div>
-                <DropDrawerItem onSelect={(e) => e.preventDefault()}>
+                <DropDrawerItem
+                  onSelect={(e) => e.preventDefault()}
+                  disabled={disablePreferences}
+                >
                   <div className="flex gap-2 items-center justify-between w-full">
                     <div className="flex gap-2 items-center w-full">
                       <ChromiumIcon />
@@ -161,6 +170,7 @@ export const SettingChatInput = ({
                     <Switch
                       checked={browserEnabled}
                       onCheckedChange={toggleBrowserAttempt}
+                      disabled={disablePreferences}
                     />
                   </div>
                 </DropDrawerItem>
@@ -173,7 +183,7 @@ export const SettingChatInput = ({
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportTools}
+                disabled={!isSupportTools || disablePreferences}
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -183,7 +193,11 @@ export const SettingChatInput = ({
                   <Switch
                     checked={deepResearchEnabled ? true : searchEnabled}
                     onCheckedChange={toggleSearch}
-                    disabled={!isSupportTools || deepResearchEnabled}
+                    disabled={
+                      !isSupportTools ||
+                      deepResearchEnabled ||
+                      disablePreferences
+                    }
                   />
                 </div>
               </DropDrawerItem>
@@ -200,7 +214,7 @@ export const SettingChatInput = ({
             <div>
               <DropDrawerItem
                 onSelect={(e) => e.preventDefault()}
-                disabled={!isSupportDeepResearch}
+                disabled={!isSupportDeepResearch || disablePreferences}
               >
                 <div className="flex gap-2 items-center justify-between w-full">
                   <div className="flex gap-2 items-center w-full">
@@ -210,7 +224,7 @@ export const SettingChatInput = ({
                   <Switch
                     checked={deepResearchEnabled}
                     onCheckedChange={toggleDeepResearch}
-                    disabled={!isSupportDeepResearch}
+                    disabled={!isSupportDeepResearch || disablePreferences}
                   />
                 </div>
               </DropDrawerItem>
