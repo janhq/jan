@@ -256,7 +256,10 @@ const ChatInput = ({
             {(attachment) => <PromptInputAttachment data={attachment} />}
           </PromptInputAttachments>
           <PromptInputBody>
-            <PromptInputTextarea ref={textareaRef} />
+            <PromptInputTextarea
+              ref={textareaRef}
+              disabled={status === 'streaming'}
+            />
           </PromptInputBody>
           <PromptInputFooter>
             <PromptInputTools>
