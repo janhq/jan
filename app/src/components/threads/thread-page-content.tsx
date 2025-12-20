@@ -60,6 +60,7 @@ export function ThreadPageContent({
     addToolOutput,
     stop,
   } = useChat(provider(selectedModel?.id), {
+    experimental_throttle: 50,
     onFinish: () => {
       initialMessageSentRef.current = false
       const hadToolCalls = tools.current.length > 0
