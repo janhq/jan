@@ -25,21 +25,14 @@ import {
 import { CopyIcon, CheckIcon, RefreshCcwIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 import { cn } from '@/lib/utils'
-import { useConversations } from '@/stores/conversation-store'
 
 export type MessageItemProps = {
   message: UIMessage
   isFirstMessage: boolean
   isLastMessage: boolean
   status: 'streaming' | 'submitted' | 'ready' | 'error'
-  conversationId?: string
-  getUIMessages: (
-    conversationId: string,
-    branch?: string
-  ) => Promise<UIMessage[]>
-  setMessages: (messages: UIMessage[]) => void
-  regenerate: () => void
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
+  onRegenerate?: (messageId: string) => Promise<void>
 }
 
 export const MessageItem = memo(
@@ -48,16 +41,10 @@ export const MessageItem = memo(
     isFirstMessage,
     isLastMessage,
     status,
-    conversationId,
-    getUIMessages,
-    setMessages,
-    regenerate,
     reasoningContainerRef,
+    onRegenerate,
   }: MessageItemProps) => {
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-    const regenerateMessage = useConversations(
-      (state) => state.regenerateMessage
-    )
 
     const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text.trim())
@@ -65,21 +52,8 @@ export const MessageItem = memo(
       setTimeout(() => setCopiedMessageId(null), 2000)
     }
 
-    const handleRegenerate = async () => {
-      if (!conversationId) return
-      try {
-        const response = await regenerateMessage(conversationId, message.id)
-        if (response.branch_created && response.branch) {
-          const branchMessages = await getUIMessages(
-            conversationId,
-            response.branch
-          )
-          setMessages(branchMessages)
-          setTimeout(() => regenerate(), 0)
-        }
-      } catch (error) {
-        console.error('Failed to regenerate:', error)
-      }
+    const handleRegenerate = () => {
+      onRegenerate?.(message.id)
     }
 
     const renderTextPart = (part: { text: string }, partIndex: number) => {
@@ -115,7 +89,7 @@ export const MessageItem = memo(
                   <CopyIcon className="text-muted-foreground size-3" />
                 )}
               </MessageAction>
-              {conversationId && (
+              {onRegenerate && (
                 <MessageAction onClick={handleRegenerate} label="Retry">
                   <RefreshCcwIcon className="text-muted-foreground size-3" />
                 </MessageAction>
@@ -235,8 +209,7 @@ export const MessageItem = memo(
       prevProps.message === nextProps.message &&
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
-      prevProps.status === nextProps.status &&
-      prevProps.conversationId === nextProps.conversationId
+      prevProps.status === nextProps.status
     )
   }
 )

@@ -18,6 +18,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
 
 interface ThreadPageContentProps {
@@ -50,6 +51,8 @@ export function ThreadPageContent({
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
   const tools = useRef<any>([])
+  const messagesRef = useRef<UIMessage[]>([])
+  const idMapRef = useRef<Map<string, string>>(new Map()) // temp ID -> real ID
 
   const {
     messages,
@@ -96,9 +99,18 @@ export function ThreadPageContent({
       )
         .then(() => {
           if (conversationId && !isPrivateChat && !hadToolCalls) {
-            // Refresh messages from backend to sync IDs for edit/regenerate operations
-            // The AI SDK generates temporary IDs during streaming, but the backend has the real IDs
-            getUIMessages(conversationId).then(setMessages).catch(console.error)
+            // Build ID mapping without updating state to avoid scroll jump
+            getUIMessages(conversationId)
+              .then((backendMessages) => {
+                const currentMessages = messagesRef.current
+                currentMessages.forEach((msg, index) => {
+                  const backendMsg = backendMessages[index]
+                  if (backendMsg && msg.id !== backendMsg.id) {
+                    idMapRef.current.set(msg.id, backendMsg.id)
+                  }
+                })
+              })
+              .catch(console.error)
           }
         })
         .finally(() => {
@@ -111,6 +123,46 @@ export function ThreadPageContent({
       return
     },
   })
+
+  // Keep ref in sync for use in onFinish closure
+  messagesRef.current = messages
+
+  // Resolve temp ID to real backend ID
+  const resolveMessageId = (tempId: string) =>
+    idMapRef.current.get(tempId) ?? tempId
+
+  const regenerateMessage = useConversations((state) => state.regenerateMessage)
+
+  const handleRegenerate = async (messageId: string) => {
+    if (!conversationId) return
+    try {
+      const realId = resolveMessageId(messageId)
+      const response = await regenerateMessage(conversationId, realId)
+
+      if (response.branch_created && response.branch) {
+        // Start regeneration immediately - don't wait for getUIMessages
+        setTimeout(() => regenerate(), 0)
+
+        // Fetch IDs in background for future operations
+        getUIMessages(conversationId, response.branch)
+          .then((branchMessages) => {
+            const currentMessages = messagesRef.current
+            const regenIndex = currentMessages.findIndex((m) => m.id === messageId)
+
+            // Build ID mapping in background
+            branchMessages.forEach((branchMsg, i) => {
+              const current = currentMessages[i]
+              if (i < regenIndex && current && current.id !== branchMsg.id) {
+                idMapRef.current.set(current.id, branchMsg.id)
+              }
+            })
+          })
+          .catch(console.error)
+      }
+    } catch (error) {
+      console.error('Failed to regenerate:', error)
+    }
+  }
 
   const handleSubmit = (message?: PromptInputMessage) => {
     if (message && status !== 'streaming') {
@@ -220,11 +272,8 @@ export function ThreadPageContent({
                     isFirstMessage={messageIndex === 0}
                     isLastMessage={messageIndex === messages.length - 1}
                     status={status}
-                    conversationId={conversationId}
-                    getUIMessages={getUIMessages}
-                    setMessages={setMessages}
-                    regenerate={regenerate}
                     reasoningContainerRef={reasoningContainerRef}
+                    onRegenerate={conversationId ? handleRegenerate : undefined}
                   />
                 ))}
                 {status === 'submitted' && <Loader />}
