@@ -38,7 +38,16 @@ export function ThreadPageContent({
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
-  const [isLoadingMessages, setIsLoadingMessages] = useState(!isPrivateChat)
+  // Only show loading skeleton when fetching existing messages (not for new conversations)
+  const hasInitialMessage = (() => {
+    const key = isPrivateChat
+      ? 'initial-message-temporary'
+      : `initial-message-${conversationId}`
+    return !!sessionStorage.getItem(key)
+  })()
+  const [isLoadingMessages, setIsLoadingMessages] = useState(
+    !isPrivateChat && !hasInitialMessage
+  )
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
