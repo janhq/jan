@@ -9,7 +9,6 @@ import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
-  useConversationAtBottom,
 } from '@/components/ai-elements/conversation'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
@@ -20,44 +19,12 @@ import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
+import {
+  ConversationScrollStabilizer,
+  useConversationScroll,
+} from '@/hooks/use-conversation-scroll'
 import { MessageItem } from './message-item'
 import { ThreadSkeleton } from './thread-skeleton'
-
-// Watches scroll position and signals when stabilized at bottom
-const ScrollStabilizer = ({
-  onStabilized,
-  enabled,
-  hasContent,
-}: {
-  onStabilized: () => void
-  enabled: boolean
-  hasContent: boolean
-}) => {
-  const isAtBottom = useConversationAtBottom()
-  const hasStabilized = useRef(false)
-
-  useEffect(() => {
-    // Only stabilize when enabled, has content, and scroll is at bottom
-    if (enabled && hasContent && isAtBottom && !hasStabilized.current) {
-      hasStabilized.current = true
-      // Small delay to ensure paint is complete
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          onStabilized()
-        })
-      })
-    }
-  }, [isAtBottom, enabled, hasContent, onStabilized])
-
-  // Reset when disabled
-  useEffect(() => {
-    if (!enabled) {
-      hasStabilized.current = false
-    }
-  }, [enabled])
-
-  return null
-}
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -226,6 +193,7 @@ export function ThreadPageContent({
         text: message.text || 'Sent with attachments',
         files: message.files,
       })
+      scrollToBottomAfterSubmit()
     } else if (status === 'streaming') {
       stop()
     }
@@ -307,6 +275,18 @@ export function ThreadPageContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, isPrivateChat])
 
+  const {
+    conversationContextRef,
+    stickToBottomTarget,
+    scrollConversationToBottom,
+    scrollToBottomSmooth,
+    scrollToBottomAfterSubmit,
+  } = useConversationScroll({
+    status,
+    isLoadingMessages,
+    waitingForScroll,
+  })
+
   // Auto-scroll to bottom during streaming
   useEffect(() => {
     if (status === 'streaming' && reasoningContainerRef.current) {
@@ -325,10 +305,12 @@ export function ThreadPageContent({
           <div className="flex-1 relative">
             <Conversation
               className="absolute inset-0 text-start"
+              contextRef={conversationContextRef}
               initialScroll="instant"
               resizeScroll="instant"
+              targetScrollTop={stickToBottomTarget}
             >
-              <ScrollStabilizer
+              <ConversationScrollStabilizer
                 enabled={waitingForScroll}
                 hasContent={messages.length > 0}
                 onStabilized={handleScrollStabilized}
@@ -347,7 +329,7 @@ export function ThreadPageContent({
                 ))}
                 {status === 'submitted' && <Loader />}
               </ConversationContent>
-              <ConversationScrollButton />
+              <ConversationScrollButton onClick={scrollToBottomSmooth} />
             </Conversation>
             {/* Skeleton overlay - renders on top while loading */}
             {isLoadingMessages && (
