@@ -9,11 +9,12 @@ import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
+  useConversationAtBottom,
 } from '@/components/ai-elements/conversation'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
@@ -21,6 +22,42 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
 import { ThreadSkeleton } from './thread-skeleton'
+
+// Watches scroll position and signals when stabilized at bottom
+const ScrollStabilizer = ({
+  onStabilized,
+  enabled,
+  hasContent,
+}: {
+  onStabilized: () => void
+  enabled: boolean
+  hasContent: boolean
+}) => {
+  const isAtBottom = useConversationAtBottom()
+  const hasStabilized = useRef(false)
+
+  useEffect(() => {
+    // Only stabilize when enabled, has content, and scroll is at bottom
+    if (enabled && hasContent && isAtBottom && !hasStabilized.current) {
+      hasStabilized.current = true
+      // Small delay to ensure paint is complete
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          onStabilized()
+        })
+      })
+    }
+  }, [isAtBottom, enabled, hasContent, onStabilized])
+
+  // Reset when disabled
+  useEffect(() => {
+    if (!enabled) {
+      hasStabilized.current = false
+    }
+  }, [enabled])
+
+  return null
+}
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -48,6 +85,13 @@ export function ThreadPageContent({
   const [isLoadingMessages, setIsLoadingMessages] = useState(
     !isPrivateChat && !hasInitialMessage
   )
+  // Track when messages are loaded but waiting for scroll to stabilize
+  const [waitingForScroll, setWaitingForScroll] = useState(false)
+
+  const handleScrollStabilized = useCallback(() => {
+    setWaitingForScroll(false)
+    setIsLoadingMessages(false)
+  }, [])
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
@@ -254,7 +298,8 @@ export function ThreadPageContent({
         })
         .finally(() => {
           fetchingMessagesRef.current = false
-          setIsLoadingMessages(false)
+          // Messages loaded, now wait for scroll to stabilize
+          setWaitingForScroll(true)
         })
     } else if (isPrivateChat) {
       setIsLoadingMessages(false)
@@ -278,29 +323,40 @@ export function ThreadPageContent({
         <div className="flex flex-1 flex-col h-full overflow-hidden max-h-[calc(100vh-56px)] w-full ">
           {/* Messages Area */}
           <div className="flex-1 relative">
-            <Conversation className="absolute inset-0 text-start">
+            <Conversation
+              className="absolute inset-0 text-start"
+              initialScroll="instant"
+              resizeScroll="instant"
+            >
+              <ScrollStabilizer
+                enabled={waitingForScroll}
+                hasContent={messages.length > 0}
+                onStabilized={handleScrollStabilized}
+              />
               <ConversationContent className="max-w-3xl mx-auto">
-                {isLoadingMessages ? (
-                  <ThreadSkeleton />
-                ) : (
-                  <>
-                    {messages.map((message, messageIndex) => (
-                      <MessageItem
-                        key={message.id}
-                        message={message}
-                        isFirstMessage={messageIndex === 0}
-                        isLastMessage={messageIndex === messages.length - 1}
-                        status={status}
-                        reasoningContainerRef={reasoningContainerRef}
-                        onRegenerate={conversationId ? handleRegenerate : undefined}
-                      />
-                    ))}
-                    {status === 'submitted' && <Loader />}
-                  </>
-                )}
+                {messages.map((message, messageIndex) => (
+                  <MessageItem
+                    key={message.id}
+                    message={message}
+                    isFirstMessage={messageIndex === 0}
+                    isLastMessage={messageIndex === messages.length - 1}
+                    status={status}
+                    reasoningContainerRef={reasoningContainerRef}
+                    onRegenerate={conversationId ? handleRegenerate : undefined}
+                  />
+                ))}
+                {status === 'submitted' && <Loader />}
               </ConversationContent>
               <ConversationScrollButton />
             </Conversation>
+            {/* Skeleton overlay - renders on top while loading */}
+            {isLoadingMessages && (
+              <div className="absolute inset-0 bg-background p-4 z-10">
+                <div className="max-w-3xl mx-auto">
+                  <ThreadSkeleton />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Chat Input - Fixed at bottom */}
