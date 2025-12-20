@@ -64,6 +64,7 @@ export const MessageItem = memo(
           key={`${message.id}-${partIndex}`}
           from={message.role}
           className={cn(
+            'group',
             isFirstMessage && message.role === 'user' && 'mt-0!'
           )}
         >
@@ -79,6 +80,18 @@ export const MessageItem = memo(
               <MessageResponse>{part.text}</MessageResponse>
             )}
           </MessageContent>
+
+          {message.role === 'user' && isLastPart && (
+            <MessageActions className="gap-0 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+              <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
+                {copiedMessageId === message.id ? (
+                  <CheckIcon className="text-green-600 dark:text-green-400 size-3" />
+                ) : (
+                  <CopyIcon className="text-muted-foreground size-3" />
+                )}
+              </MessageAction>
+            </MessageActions>
+          )}
 
           {message.role === 'assistant' && isLastMessage && isLastPart && (
             <MessageActions className="mt-1 gap-0">
