@@ -498,7 +498,7 @@ async function _isCudaInstalled(
     // Ensure target directory exists
     const targetDir = await joinPath([backendDir, 'build', 'bin'])
     if (!(await fs.existsSync(targetDir))) {
-      await fs.mkdir(targetDir, { recursive: true })
+      await fs.mkdir(targetDir)
     }
 
     try {
