@@ -13,13 +13,14 @@ import {
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
+import { ThreadSkeleton } from './thread-skeleton'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -37,6 +38,7 @@ export function ThreadPageContent({
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(!isPrivateChat)
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
@@ -232,6 +234,7 @@ export function ThreadPageContent({
       !fetchingMessagesRef.current
     ) {
       fetchingMessagesRef.current = true
+      setIsLoadingMessages(true)
       // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
@@ -242,7 +245,10 @@ export function ThreadPageContent({
         })
         .finally(() => {
           fetchingMessagesRef.current = false
+          setIsLoadingMessages(false)
         })
+    } else if (isPrivateChat) {
+      setIsLoadingMessages(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, isPrivateChat])
@@ -265,18 +271,24 @@ export function ThreadPageContent({
           <div className="flex-1 relative">
             <Conversation className="absolute inset-0 text-start">
               <ConversationContent className="max-w-3xl mx-auto">
-                {messages.map((message, messageIndex) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={messageIndex === 0}
-                    isLastMessage={messageIndex === messages.length - 1}
-                    status={status}
-                    reasoningContainerRef={reasoningContainerRef}
-                    onRegenerate={conversationId ? handleRegenerate : undefined}
-                  />
-                ))}
-                {status === 'submitted' && <Loader />}
+                {isLoadingMessages ? (
+                  <ThreadSkeleton />
+                ) : (
+                  <>
+                    {messages.map((message, messageIndex) => (
+                      <MessageItem
+                        key={message.id}
+                        message={message}
+                        isFirstMessage={messageIndex === 0}
+                        isLastMessage={messageIndex === messages.length - 1}
+                        status={status}
+                        reasoningContainerRef={reasoningContainerRef}
+                        onRegenerate={conversationId ? handleRegenerate : undefined}
+                      />
+                    ))}
+                    {status === 'submitted' && <Loader />}
+                  </>
+                )}
               </ConversationContent>
               <ConversationScrollButton />
             </Conversation>
