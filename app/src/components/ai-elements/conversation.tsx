@@ -5,21 +5,13 @@ import type { ComponentProps } from 'react'
 import { useCallback } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 
-export type ConversationProps = ComponentProps<typeof StickToBottom> & {
-  initialScroll?: 'smooth' | 'instant'
-  resizeScroll?: 'smooth' | 'instant'
-}
+export type ConversationProps = ComponentProps<typeof StickToBottom>
 
-export const Conversation = ({
-  className,
-  initialScroll = 'smooth',
-  resizeScroll = 'smooth',
-  ...props
-}: ConversationProps) => (
+export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
     className={cn('relative flex-1 overflow-y-hidden', className)}
-    initial={initialScroll}
-    resize={resizeScroll}
+    initial="smooth"
+    resize="smooth"
     role="log"
     {...props}
   />
@@ -73,12 +65,6 @@ export const ConversationEmptyState = ({
     )}
   </div>
 )
-
-// Hook to detect when scroll is at bottom (for hiding loading states)
-export const useConversationAtBottom = () => {
-  const { isAtBottom } = useStickToBottomContext()
-  return isAtBottom
-}
 
 export type ConversationScrollButtonProps = ComponentProps<typeof Button>
 

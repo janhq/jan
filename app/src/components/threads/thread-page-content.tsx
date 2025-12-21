@@ -13,18 +13,13 @@ import {
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
-import {
-  ConversationScrollStabilizer,
-  useConversationScroll,
-} from '@/hooks/use-conversation-scroll'
 import { MessageItem } from './message-item'
-import { ThreadSkeleton } from './thread-skeleton'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -42,23 +37,6 @@ export function ThreadPageContent({
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
-  // Only show loading skeleton when fetching existing messages (not for new conversations)
-  const hasInitialMessage = (() => {
-    const key = isPrivateChat
-      ? 'initial-message-temporary'
-      : `initial-message-${conversationId}`
-    return !!sessionStorage.getItem(key)
-  })()
-  const [isLoadingMessages, setIsLoadingMessages] = useState(
-    !isPrivateChat && !hasInitialMessage
-  )
-  // Track when messages are loaded but waiting for scroll to stabilize
-  const [waitingForScroll, setWaitingForScroll] = useState(false)
-
-  const handleScrollStabilized = useCallback(() => {
-    setWaitingForScroll(false)
-    setIsLoadingMessages(false)
-  }, [])
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
@@ -193,7 +171,6 @@ export function ThreadPageContent({
         text: message.text || 'Sent with attachments',
         files: message.files,
       })
-      scrollToBottomAfterSubmit()
     } else if (status === 'streaming') {
       stop()
     }
@@ -255,7 +232,6 @@ export function ThreadPageContent({
       !fetchingMessagesRef.current
     ) {
       fetchingMessagesRef.current = true
-      setIsLoadingMessages(true)
       // Fetch messages for old conversations
       getUIMessages(conversationId)
         .then((uiMessages) => {
@@ -266,26 +242,10 @@ export function ThreadPageContent({
         })
         .finally(() => {
           fetchingMessagesRef.current = false
-          // Messages loaded, now wait for scroll to stabilize
-          setWaitingForScroll(true)
         })
-    } else if (isPrivateChat) {
-      setIsLoadingMessages(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, isPrivateChat])
-
-  const {
-    conversationContextRef,
-    stickToBottomTarget,
-    scrollConversationToBottom,
-    scrollToBottomSmooth,
-    scrollToBottomAfterSubmit,
-  } = useConversationScroll({
-    status,
-    isLoadingMessages,
-    waitingForScroll,
-  })
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -303,18 +263,7 @@ export function ThreadPageContent({
         <div className="flex flex-1 flex-col h-full overflow-hidden max-h-[calc(100vh-56px)] w-full ">
           {/* Messages Area */}
           <div className="flex-1 relative">
-            <Conversation
-              className="absolute inset-0 text-start"
-              contextRef={conversationContextRef}
-              initialScroll="instant"
-              resizeScroll="instant"
-              targetScrollTop={stickToBottomTarget}
-            >
-              <ConversationScrollStabilizer
-                enabled={waitingForScroll}
-                hasContent={messages.length > 0}
-                onStabilized={handleScrollStabilized}
-              />
+            <Conversation className="absolute inset-0 text-start">
               <ConversationContent className="max-w-3xl mx-auto">
                 {messages.map((message, messageIndex) => (
                   <MessageItem
@@ -329,16 +278,8 @@ export function ThreadPageContent({
                 ))}
                 {status === 'submitted' && <Loader />}
               </ConversationContent>
-              <ConversationScrollButton onClick={scrollToBottomSmooth} />
+              <ConversationScrollButton />
             </Conversation>
-            {/* Skeleton overlay - renders on top while loading */}
-            {isLoadingMessages && (
-              <div className="absolute inset-0 bg-background p-4 z-10">
-                <div className="max-w-3xl mx-auto">
-                  <ThreadSkeleton />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Chat Input - Fixed at bottom */}
