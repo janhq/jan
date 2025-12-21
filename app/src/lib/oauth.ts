@@ -59,40 +59,40 @@ export function generateState(): string {
 }
 
 /**
- * Store OAuth flow data in sessionStorage
+ * Store OAuth flow data in localStorage (for PWA/home screen compatibility)
  */
 export function storeOAuthState(data: {
   state: string
   codeVerifier: string
   redirectUrl?: string
 }) {
-  sessionStorage.setItem('oauth_state', data.state)
-  sessionStorage.setItem('oauth_code_verifier', data.codeVerifier)
+  localStorage.setItem('oauth_state', data.state)
+  localStorage.setItem('oauth_code_verifier', data.codeVerifier)
   if (data.redirectUrl) {
-    sessionStorage.setItem('oauth_redirect_url', data.redirectUrl)
+    localStorage.setItem('oauth_redirect_url', data.redirectUrl)
   }
 }
 
 /**
- * Retrieve and validate OAuth state from sessionStorage
+ * Retrieve and validate OAuth state from localStorage (for PWA/home screen compatibility)
  */
 export function retrieveOAuthState(state: string): {
   codeVerifier: string
   redirectUrl?: string
 } | null {
-  const storedState = sessionStorage.getItem('oauth_state')
-  const codeVerifier = sessionStorage.getItem('oauth_code_verifier')
+  const storedState = localStorage.getItem('oauth_state')
+  const codeVerifier = localStorage.getItem('oauth_code_verifier')
 
   if (!storedState || !codeVerifier || storedState !== state) {
     return null
   }
 
-  const redirectUrl = sessionStorage.getItem('oauth_redirect_url') || undefined
+  const redirectUrl = localStorage.getItem('oauth_redirect_url') || undefined
 
   // Clean up
-  sessionStorage.removeItem('oauth_state')
-  sessionStorage.removeItem('oauth_code_verifier')
-  sessionStorage.removeItem('oauth_redirect_url')
+  localStorage.removeItem('oauth_state')
+  localStorage.removeItem('oauth_code_verifier')
+  localStorage.removeItem('oauth_redirect_url')
 
   return { codeVerifier, redirectUrl }
 }
